@@ -1,0 +1,3510 @@
+diff --git a/src/features/media-library/services/media-transcription-service.ts b/src/features/media-library/services/media-transcription-service.ts
+index c0124eaca3..80198c77e6 100644
+--- a/src/features/media-library/services/media-transcription-service.ts
++++ b/src/features/media-library/services/media-transcription-service.ts
+@@ -337,6 +337,49 @@ function syncTranscriptCaptionItems(
+   }
+ }
+ 
++/**
++ * Caption text that changes when transcript words are corrected (Frameleaf FL-562), old to new.
++ * Captions placed on the timeline hold the transcript's phrase text, so a cue whose text was a
++ * changed phrase is rewritten; cues someone edited by hand no longer match and stay as they are.
++ */
++export function transcriptCaptionTextChanges(
++  previous: readonly MediaTranscriptSegment[],
++  next: readonly MediaTranscriptSegment[],
++): Map<string, string> {
++  const changes = new Map<string, string>()
++  const add = (from: string | undefined, to: string | undefined) => {
++    if (from && to && from !== to) changes.set(from, to)
++  }
++  previous.forEach((segment, index) => add(segment.text, next[index]?.text))
++  const before = segmentTranscriptForCaptions([...previous])
++  const after = segmentTranscriptForCaptions([...next])
++  if (before.length === after.length) {
++    before.forEach((cue, index) => add(cue.text, after[index]?.text))
++  }
++  return changes
++}
++
++/** Placed transcript captions of one media, with the corrected text, for the items that change. */
++export function correctPlacedTranscriptCaptions(
++  items: readonly TimelineItem[],
++  mediaId: string,
++  changes: ReadonlyMap<string, string>,
++): Array<{ id: string; cues: SubtitleSegmentItem['cues'] }> {
++  if (changes.size === 0) return []
++  return items.flatMap((item) => {
++    if (item.type !== 'subtitle') return []
++    if (item.source.type !== 'transcript' || item.source.mediaId !== mediaId) return []
++    let changed = false
++    const cues = item.cues.map((cue) => {
++      const text = changes.get(cue.text)
++      if (text === undefined) return cue
++      changed = true
++      return { ...cue, text }
++    })
++    return changed ? [{ id: item.id, cues }] : []
++  })
++}
++
+ class MediaTranscriptionService {
+   private readonly adapter = getDefaultMediaTranscriptionAdapter()
+   private readonly transcriber = this.adapter.createTranscriber({
+@@ -604,6 +647,32 @@ class MediaTranscriptionService {
+     return transcript
+   }
+ 
++  /**
++   * Save a transcript someone edited in the transcript panel (corrected words, speakers) and bring
++   * the captions made from it up to date: clip captions follow the transcript, and placed caption
++   * items get the corrected phrase text (Frameleaf FL-562).
++   */
++  async updateTranscript(
++    next: MediaTranscript,
++    previous?: MediaTranscript,
++  ): Promise<MediaTranscript> {
++    const saved = await saveTranscript(next)
++    this.syncExistingTranscriptCaptions(saved.mediaId, saved)
++    if (previous) {
++      const changes = transcriptCaptionTextChanges(previous.segments, saved.segments)
++      const timeline = useTimelineStore.getState()
++      for (const update of correctPlacedTranscriptCaptions(
++        timeline.items ?? [],
++        saved.mediaId,
++        changes,
++      )) {
++        timeline.updateItem?.(update.id, { cues: update.cues } as Partial<TimelineItem>)
++      }
++    }
++    this.emitTranscriptChanged(saved.mediaId)
++    return saved
++  }
++
+   /**
+    * Refresh transcript-derived cues already attached to timeline clips. Caption
+    * visibility and styling remain clip-owned and are intentionally preserved.
+diff --git a/src/features/media-library/services/transcript-caption-correction.test.ts b/src/features/media-library/services/transcript-caption-correction.test.ts
+new file mode 100644
+index 0000000000..5b81af9b2a
+--- /dev/null
++++ b/src/features/media-library/services/transcript-caption-correction.test.ts
+@@ -0,0 +1,116 @@
++import { describe, expect, it } from 'vite-plus/test'
++import type { MediaTranscriptSegment } from '@/types/storage'
++import type { SubtitleSegmentItem, TimelineItem } from '@/types/timeline'
++import {
++  correctPlacedTranscriptCaptions,
++  transcriptCaptionTextChanges,
++} from './media-transcription-service'
++
++/** FL-562: correcting a misheard word also corrects the captions made from that transcript. */
++
++const segments: MediaTranscriptSegment[] = [
++  {
++    text: 'We made it to the leak.',
++    start: 0,
++    end: 1.6,
++    words: [
++      { text: 'We', start: 0, end: 0.2 },
++      { text: 'made', start: 0.25, end: 0.5 },
++      { text: 'it', start: 0.55, end: 0.7 },
++      { text: 'to', start: 0.75, end: 0.9 },
++      { text: 'the', start: 0.95, end: 1.1 },
++      { text: 'leak.', start: 1.15, end: 1.6 },
++    ],
++  },
++  {
++    text: 'Look at the water.',
++    start: 2.5,
++    end: 3.6,
++    words: [
++      { text: 'Look', start: 2.5, end: 2.8 },
++      { text: 'at', start: 2.85, end: 3 },
++      { text: 'the', start: 3.05, end: 3.2 },
++      { text: 'water.', start: 3.25, end: 3.6 },
++    ],
++  },
++]
++
++const transcript = {
++  id: 'media-1',
++  mediaId: 'media-1',
++  model: 'parakeet-tdt-v3' as const,
++  quantization: 'hybrid' as const,
++  text: 'We made it to the leak. Look at the water.',
++  segments,
++  createdAt: 1,
++  updatedAt: 1,
++}
++
++const subtitle = (
++  id: string,
++  mediaId: string,
++  texts: string[],
++  type: 'transcript' | 'embedded-subtitles' = 'transcript',
++) =>
++  ({
++    id,
++    type: 'subtitle',
++    trackId: 'captions',
++    from: 0,
++    durationInFrames: 120,
++    label: 'Transcript',
++    source:
++      type === 'transcript'
++        ? { type, mediaId, clipId: 'clip-1' }
++        : { type, mediaId, clipId: 'clip-1', trackNumber: 1 },
++    cues: texts.map((text, index) => ({
++      id: `cue-${index}`,
++      startSeconds: index * 2,
++      endSeconds: index * 2 + 1,
++      text,
++    })),
++  }) as unknown as SubtitleSegmentItem
++
++describe('caption correction', () => {
++  // The panel corrected "leak." to "lake." (transcript-document correctTranscriptWord).
++  const corrected = {
++    ...transcript,
++    segments: [
++      {
++        ...segments[0]!,
++        text: 'We made it to the lake.',
++        words: segments[0]!.words!.map((word, index) =>
++          index === 5 ? { ...word, text: 'lake.' } : word,
++        ),
++      },
++      segments[1]!,
++    ],
++  }
++
++  it('maps the phrase that changed to its corrected text', () => {
++    const changes = transcriptCaptionTextChanges(transcript.segments, corrected.segments)
++    expect(changes.get('We made it to the leak.')).toBe('We made it to the lake.')
++    expect(changes.has('Look at the water.')).toBe(false)
++  })
++
++  it('rewrites matching cues of this transcript’s placed captions only', () => {
++    const changes = transcriptCaptionTextChanges(transcript.segments, corrected.segments)
++    const items = [
++      subtitle('captions-1', 'media-1', ['We made it to the leak.', 'Look at the water.']),
++      // Edited by hand: left alone.
++      subtitle('captions-2', 'media-1', ['We made it to the leak!!']),
++      // Another clip's transcript, and imported subtitles: left alone.
++      subtitle('captions-3', 'media-2', ['We made it to the leak.']),
++      subtitle('captions-4', 'media-1', ['We made it to the leak.'], 'embedded-subtitles'),
++    ] as TimelineItem[]
++    const updates = correctPlacedTranscriptCaptions(items, 'media-1', changes)
++    expect(updates).toHaveLength(1)
++    expect(updates[0]!.id).toBe('captions-1')
++    expect(updates[0]!.cues.map((cue) => cue.text)).toEqual([
++      'We made it to the lake.',
++      'Look at the water.',
++    ])
++    // Timing is unchanged.
++    expect(updates[0]!.cues[0]).toMatchObject({ id: 'cue-0', startSeconds: 0, endSeconds: 1 })
++  })
++})
+diff --git a/src/features/timeline/components/transcript-editor/transcript-editor-panel.test.tsx b/src/features/timeline/components/transcript-editor/transcript-editor-panel.test.tsx
+new file mode 100644
+index 0000000000..a5b0d24484
+--- /dev/null
++++ b/src/features/timeline/components/transcript-editor/transcript-editor-panel.test.tsx
+@@ -0,0 +1,191 @@
++import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { MediaTranscript } from '@/types/storage'
++import type { VideoItem } from '@/types/timeline'
++import { useEditorStore } from '@/shared/state/editor'
++import { useSelectionStore } from '@/shared/state/selection'
++import { useItemsStore } from '../../stores/items-store'
++import { useKeyframesStore } from '../../stores/keyframes-store'
++import { useTransitionsStore } from '../../stores/transitions-store'
++import { useTimelineCommandStore } from '../../stores/timeline-command-store'
++import { useTimelineSettingsStore } from '../../stores/timeline-settings-store'
++import { TranscriptEditorPanel } from './transcript-editor-panel'
++
++/** FL-562: the transcript panel cuts, crosses out, restores and corrects through the timeline. */
++
++const { service, analyzeSilence } = vi.hoisted(() => ({
++  service: {
++    getTranscript: vi.fn(),
++    getTranscriptMediaIds: vi.fn(),
++    onTranscriptChanged: vi.fn(() => () => {}),
++    updateTranscript: vi.fn(),
++  },
++  analyzeSilence: vi.fn(),
++}))
++vi.mock('../../deps/media-transcription-service', () => ({
++  mediaTranscriptionService: service,
++  runMediaTranscriptionJob: vi.fn(),
++  cancelMediaTranscriptionJob: vi.fn(),
++}))
++vi.mock('../../utils/silence-removal-preview', async (importOriginal) => ({
++  ...(await importOriginal<typeof import('../../utils/silence-removal-preview')>()),
++  analyzeSilenceForItems: analyzeSilence,
++}))
++
++const transcript: MediaTranscript = {
++  id: 'media-1',
++  mediaId: 'media-1',
++  model: 'parakeet-tdt-v3',
++  quantization: 'hybrid',
++  text: 'Okay, um, this is the leak.',
++  segments: [
++    {
++      text: 'Okay, um, this is the leak.',
++      start: 0.5,
++      end: 3,
++      words: [
++        { text: 'Okay,', start: 0.5, end: 0.9 },
++        { text: 'um,', start: 1, end: 1.3 },
++        { text: 'this', start: 1.5, end: 1.8 },
++        { text: 'is', start: 1.9, end: 2.1 },
++        { text: 'the', start: 2.2, end: 2.4 },
++        { text: 'leak.', start: 2.5, end: 3 },
++      ],
++    },
++  ],
++  createdAt: 1,
++  updatedAt: 1,
++}
++
++const video = (): VideoItem => ({
++  id: 'video-1',
++  type: 'video',
++  trackId: 'video-track',
++  from: 0,
++  durationInFrames: 300,
++  label: 'Lake morning.mov',
++  src: 'blob:video',
++  mediaId: 'media-1',
++  originId: 'origin-1',
++  sourceStart: 0,
++  sourceEnd: 300,
++  sourceDuration: 300,
++  sourceFps: 30,
++})
++
++const word = (text: string) =>
++  screen.getByText(text, { selector: 'span[data-entry-index], del[data-entry-index]' })
++const totalFrames = () =>
++  useItemsStore.getState().items.reduce((sum, item) => sum + item.durationInFrames, 0)
++
++describe('TranscriptEditorPanel', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useEditorStore.setState({
++      linkedSelectionEnabled: true,
++      transcriptEditorShortcutScopeActive: false,
++    })
++    useItemsStore.getState().setTracks([])
++    useItemsStore.getState().setItems([video()])
++    useTransitionsStore.getState().setTransitions([])
++    useKeyframesStore.getState().setKeyframes([])
++    useSelectionStore.getState().clearSelection()
++    service.getTranscript.mockResolvedValue(transcript)
++    service.getTranscriptMediaIds.mockResolvedValue(new Set(['media-1']))
++    service.updateTranscript.mockImplementation(async (next: MediaTranscript) => ({
++      ...next,
++      updatedAt: 2,
++    }))
++    analyzeSilence.mockResolvedValue({
++      analyzedMediaIds: ['media-1'],
++      failedMediaIds: [],
++      rangesByMediaId: { 'media-1': [{ start: 3.2, end: 4.4 }] },
++    })
++  })
++  afterEach(() => {
++    cleanup()
++    vi.clearAllMocks()
++  })
++
++  it('opens on the clip with speech and shows its words, fillers and silences', async () => {
++    render(<TranscriptEditorPanel active />)
++    await waitFor(() => expect(word('leak.')).toBeTruthy())
++    expect(screen.getByText('Lake morning.mov')).toBeTruthy()
++    expect(screen.getByText('Speaker 1')).toBeTruthy()
++    expect(word('this').getAttribute('title')).toBe(
++      '0:01.5 in the movie. Double-click to correct the word.',
++    )
++    expect(screen.getByRole('button', { name: /Remove filler words \(1\)/ })).toBeTruthy()
++    await waitFor(() =>
++      expect(screen.getByRole('button', { name: /Remove silences \(1\)/ })).toBeTruthy(),
++    )
++    expect(screen.getByText('Silence · 1.2 s')).toBeTruthy()
++  })
++
++  it('cuts selected words with Delete, keeps them crossed out, and restores one by click', async () => {
++    render(<TranscriptEditorPanel active />)
++    await waitFor(() => expect(word('this')).toBeTruthy())
++
++    fireEvent.pointerDown(word('um,'), { button: 0, detail: 1 })
++    fireEvent.pointerDown(word('this'), { button: 0, detail: 1, shiftKey: true })
++    expect(screen.getByText('Selected: 2 · 0.8 s')).toBeTruthy()
++    fireEvent.keyDown(screen.getByRole('region'), { key: 'Delete' })
++
++    await waitFor(() => expect(word('um,').tagName).toBe('DEL'))
++    expect(word('this').tagName).toBe('DEL')
++    expect(totalFrames()).toBe(300 - 24)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++
++    // Clicking a crossed-out word brings its cut back.
++    fireEvent.pointerDown(word('um,'), { button: 0, detail: 1 })
++    await waitFor(() => expect(word('um,').tagName).toBe('SPAN'))
++    expect(word('this').tagName).toBe('SPAN')
++    expect(totalFrames()).toBe(300)
++    expect(useItemsStore.getState().items).toHaveLength(1)
++
++    // Studio undo takes the restore back, and undo again the cut.
++    act(() => useTimelineCommandStore.getState().undo())
++    await waitFor(() => expect(word('um,').tagName).toBe('DEL'))
++    act(() => useTimelineCommandStore.getState().undo())
++    await waitFor(() => expect(word('um,').tagName).toBe('SPAN'))
++  })
++
++  it('removes filler words with one click', async () => {
++    render(<TranscriptEditorPanel active />)
++    const button = await screen.findByRole('button', { name: /Remove filler words \(1\)/ })
++    fireEvent.click(button)
++    await waitFor(() => expect(word('um,').tagName).toBe('DEL'))
++    expect(useTimelineCommandStore.getState().getLastCommandType()).toBe('REMOVE_FILLER_WORDS')
++  })
++
++  it('removes silences with one click', async () => {
++    render(<TranscriptEditorPanel active />)
++    const button = await screen.findByRole('button', { name: /Remove silences \(1\)/ })
++    fireEvent.click(button)
++    await waitFor(() => expect(screen.getByText('Silence removed')).toBeTruthy())
++    expect(useTimelineCommandStore.getState().getLastCommandType()).toBe('REMOVE_SILENCE')
++  })
++
++  it('corrects a misheard word through the transcript service', async () => {
++    render(<TranscriptEditorPanel active />)
++    await waitFor(() => expect(word('leak.')).toBeTruthy())
++    fireEvent.doubleClick(word('leak.'))
++    const input = screen.getByLabelText('Correct word')
++    fireEvent.change(input, { target: { value: 'lake.' } })
++    fireEvent.keyDown(input, { key: 'Enter' })
++    await waitFor(() => expect(service.updateTranscript).toHaveBeenCalledTimes(1))
++    const [next, previous] = service.updateTranscript.mock.calls[0]!
++    expect(next.segments[0].text).toBe('Okay, um, this is the lake.')
++    expect(previous).toBe(transcript)
++    await waitFor(() => expect(word('lake.')).toBeTruthy())
++  })
++
++  it('asks for a clip with speech when the timeline has none', () => {
++    useItemsStore.getState().setItems([])
++    render(<TranscriptEditorPanel active />)
++    expect(
++      screen.getByText('Add a clip where people are talking to edit it by its words.'),
++    ).toBeTruthy()
++  })
++})
+diff --git a/src/features/timeline/components/transcript-editor/transcript-editor-panel.tsx b/src/features/timeline/components/transcript-editor/transcript-editor-panel.tsx
+index a220cce93f..f3d56613a3 100644
+--- a/src/features/timeline/components/transcript-editor/transcript-editor-panel.tsx
++++ b/src/features/timeline/components/transcript-editor/transcript-editor-panel.tsx
+@@ -1,6 +1,15 @@
++/**
++ * Transcript panel: edit a clip by editing its transcript (Frameleaf FL-562).
++ *
++ * The panel opens on the selected clip when it has speech, otherwise on the first clip in the
++ * timeline that has a transcript. Selecting words and pressing Delete cuts that part of the clip
++ * with the timeline's own split and ripple delete, so later clips close up and Studio's undo,
++ * save, reopen and export all see an ordinary edit. Cut words stay in the text, crossed out; the
++ * crossed-out state is read from the timeline, and clicking one brings that cut back. "Remove
++ * silences" and "Remove filler words" run the shipped silence and filler removal with their
++ * default settings. Correcting a word saves the transcript and updates the captions made from it.
++ */
+ import {
+-  Fragment,
+-  memo,
+   type PointerEvent as ReactPointerEvent,
+   useCallback,
+   useEffect,
+@@ -10,22 +19,25 @@ import {
+ } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import {
++  AudioWaveform,
+   Captions,
+-  CircleCheck,
+-  ChevronDown,
+-  ChevronUp,
+-  Copy,
++  Check,
++  Info,
+   Loader2,
+-  RotateCcw,
++  MessageSquareOff,
+   Scissors,
+-  Search,
+-  Trash2,
+   Undo2,
+-  X,
+ } from 'lucide-react'
+ import { toast } from 'sonner'
+ import { Button } from '@/components/ui/button'
+ import { Input } from '@/components/ui/input'
++import {
++  DropdownMenu,
++  DropdownMenuContent,
++  DropdownMenuItem,
++  DropdownMenuSeparator,
++  DropdownMenuTrigger,
++} from '@/components/ui/dropdown-menu'
+ import {
+   TranscribeDialog,
+   type TranscribeDialogValues,
+@@ -39,758 +51,507 @@ import {
+ } from '@/shared/utils/transcription-cancellation'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { usePlaybackStore } from '@/shared/state/playback'
+-import { useClipboardStore } from '@/shared/state/clipboard'
+ import { useEditorStore } from '@/shared/state/editor'
+ import type { MediaTranscript } from '@/types/storage'
+ import { useItemsStore } from '../../stores/items-store'
+ import { useTimelineSettingsStore } from '../../stores/timeline-settings-store'
+ import { useTimelineStore } from '../../stores/timeline-store'
+-import {
+-  countIgnoredSpans,
+-  totalIgnoredSeconds,
+-  useTranscriptIgnoreStore,
+-} from '../../stores/transcript-ignore-store'
+-import { buildTranscriptClipboardItems } from '../../utils/transcript-clipboard'
+-import { registerTranscriptCopyHandler } from '../../utils/transcript-copy-bridge'
++import { useTimelineCommandStore } from '../../stores/timeline-command-store'
++import { restoreTranscriptCut } from '../../stores/actions/edit/transcript-restore-actions'
+ import {
+   cancelMediaTranscriptionJob,
+   mediaTranscriptionService,
+   runMediaTranscriptionJob,
+ } from '../../deps/media-transcription-service'
++import { isTranscriptableItem } from '../../utils/transcript-edit-model'
++import {
++  DEFAULT_FILLER_REMOVAL_SETTINGS,
++  detectFillerRangesFromTranscript,
++} from '../../utils/filler-word-removal-preview'
+ import {
+-  buildRemovalRangesByMediaId,
+-  buildTranscriptTokens,
+-  findActiveTokenIndex,
+-  getSelectedTokenSlice,
+-  isTranscriptableItem,
+-  type TranscriptToken,
+-} from '../../utils/transcript-edit-model'
+-import { isSpanIgnored } from '../../utils/source-range-intervals'
+-import { findTranscriptWordMatches } from '../../utils/transcript-fuzzy'
++  analyzeSilenceForItems,
++  DEFAULT_SILENCE_REMOVAL_SETTINGS,
++} from '../../utils/silence-removal-preview'
++import type { SourceRange } from '../../utils/source-range-intervals'
++import {
++  correctTranscriptWord,
++  cutForEntry,
++  liveRanges,
++  placeTranscriptEntries,
++  planCutRestore,
++  renameSpeaker,
++  selectionRanges,
++  setParagraphSpeaker,
++  speakerName,
++  speakerNumbers,
++  timelineSecondsOf,
++  transcriptBlocks,
++  transcriptCuts,
++  transcriptExtent,
++  transcriptPieces,
++  transcriptWords,
++  type PlacedTranscriptEntry,
++  type TranscriptParagraph,
++} from '../../utils/transcript-document'
+ 
+ const logger = createLogger('TranscriptEditorPanel')
+ 
+-type MediaStatus = 'loading' | 'ready' | 'needs' | 'error' | 'transcribing'
+-type TranscriptScope = 'selection' | 'project'
+-
+-/** Pause (seconds) that starts a new transcript paragraph. */
+-const PARAGRAPH_GAP_SECONDS = 0.6
+-/** Soft/hard word caps so pause-less speech still breaks into readable blocks. */
+-const SEGMENT_SOFT_MAX_WORDS = 28
+-const SEGMENT_HARD_MAX_WORDS = 40
++type TranscriptStatus = 'loading' | 'ready' | 'needs' | 'error' | 'transcribing'
+ 
+-/** Timeline seconds → compact `m:ss` (or `h:mm:ss`) timecode. */
+-function formatTimecode(totalSeconds: number): string {
+-  const whole = Math.max(0, Math.floor(totalSeconds))
+-  const hours = Math.floor(whole / 3600)
+-  const minutes = Math.floor((whole % 3600) / 60)
+-  const seconds = whole % 60
+-  const mm = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes)
+-  const ss = String(seconds).padStart(2, '0')
+-  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
++interface TranscriptTarget {
++  originId: string
++  mediaId: string
++  label: string
+ }
+ 
+-interface MediaEntry {
+-  status: MediaStatus
++interface TranscriptState {
++  mediaId: string
++  status: TranscriptStatus
+   transcript?: MediaTranscript
+   errorMessage?: string
+ }
+ 
+-function hasWordTimings(
++const hasWordTimings = (
+   transcript: MediaTranscript | null | undefined,
+-): transcript is MediaTranscript {
+-  return !!transcript && transcript.segments.some((segment) => (segment.words?.length ?? 0) > 0)
++): transcript is MediaTranscript =>
++  !!transcript && transcript.segments.some((segment) => (segment.words?.length ?? 0) > 0)
++
++/** Timeline frame → `m:ss.s`, the precision the hover time shows. */
++function preciseTime(frame: number, fps: number): string {
++  const seconds = Math.max(0, frame / fps)
++  const minutes = Math.floor(seconds / 60)
++  const rest = seconds - minutes * 60
++  return `${minutes}:${rest.toFixed(1).padStart(4, '0')}`
+ }
+ 
+-/** A run of words rendered as one timestamped paragraph. */
+-interface TranscriptSegment {
+-  key: string
+-  startFrame: number
+-  startSeconds: number
+-  firstIndex: number
+-  lastIndex: number
+-  indices: number[]
+-  /** True when this paragraph opens a new source clip (draws a divider). */
+-  isClipStart: boolean
++/** Timeline frame → `m:ss`, for paragraph starts. */
++function shortTime(frame: number, fps: number): string {
++  const whole = Math.max(0, Math.floor(frame / fps))
++  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
+ }
+ 
+-const SENTENCE_END = /[.?!]["')\]]?$/
+-
+-/**
+- * Group the flat token stream into timestamped paragraphs. Breaks fall at clip
+- * changes and real pauses; soft/hard word caps keep pause-less speech from
+- * collapsing back into a wall.
+- */
+-function buildSegments(
+-  tokens: readonly TranscriptToken[],
+-  timelineFps: number,
+-): TranscriptSegment[] {
+-  const segments: TranscriptSegment[] = []
+-  let current: TranscriptSegment | null = null
+-  let wordCount = 0
+-
+-  tokens.forEach((token, index) => {
+-    const prev = index > 0 ? tokens[index - 1] : undefined
+-    const clipChange = !!prev && prev.itemId !== token.itemId
+-    const pause = !!prev && token.sourceStart - prev.sourceEnd >= PARAGRAPH_GAP_SECONDS
+-    const sentenceWrap =
+-      !!prev && wordCount >= SEGMENT_SOFT_MAX_WORDS && SENTENCE_END.test(prev.text)
+-    const overflow = wordCount >= SEGMENT_HARD_MAX_WORDS
++const NO_RANGES: SourceRange[] = []
+ 
+-    if (!current || clipChange || pause || sentenceWrap || overflow) {
+-      current = {
+-        key: token.key,
+-        startFrame: token.startFrame,
+-        startSeconds: token.startFrame / timelineFps,
+-        firstIndex: index,
+-        lastIndex: index,
+-        indices: [index],
+-        isClipStart: clipChange,
+-      }
+-      segments.push(current)
+-      wordCount = 1
+-    } else {
+-      current.indices.push(index)
+-      current.lastIndex = index
+-      wordCount += 1
+-    }
+-  })
+-
+-  return segments
+-}
+-
+-interface TranscriptSegmentRowProps {
+-  segment: TranscriptSegment
+-  tokens: readonly TranscriptToken[]
+-  /** Global index of the active word, or -1 when it falls outside this segment. */
+-  activeIndex: number
+-  selectedKeys: ReadonlySet<string>
+-  matchKeys: ReadonlySet<string>
+-  ignoredKeys: ReadonlySet<string>
+-  matchesApproximate: boolean
+-  onSeek: (frame: number) => void
+-  onPointerDown: (index: number, event: ReactPointerEvent) => void
+-}
+-
+-/**
+- * One timestamped paragraph. Memoized so the per-frame playhead highlight only
+- * re-renders the segment that gains/loses the active word — the parent passes
+- * activeIndex={-1} to every other segment, so React.memo bails on them and the
+- * full transcript no longer reconciles each frame during playback/skim.
+- */
+-const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
+-  segment,
+-  tokens,
+-  activeIndex,
+-  selectedKeys,
+-  matchKeys,
+-  ignoredKeys,
+-  matchesApproximate,
+-  onSeek,
+-  onPointerDown,
+-}: TranscriptSegmentRowProps) {
+-  const { t } = useTranslation()
+-  return (
+-    <Fragment>
+-      {segment.isClipStart && (
+-        <div className="flex items-center gap-2 pt-4 pb-1 first:pt-0" aria-hidden>
+-          <span className="h-px flex-1 bg-border" />
+-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+-            {t('transcript.boundaryClip', { defaultValue: 'New clip' })}
+-          </span>
+-          <span className="h-px flex-1 bg-border" />
+-        </div>
+-      )}
+-      <div className="group grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 py-1.5">
+-        <button
+-          type="button"
+-          onPointerDown={(event) => event.stopPropagation()}
+-          onClick={() => onSeek(segment.startFrame)}
+-          aria-label={t('transcript.jumpTo', {
+-            defaultValue: 'Jump to {{time}}',
+-            time: formatTimecode(segment.startSeconds),
+-          })}
+-          className="mt-px h-fit select-none rounded text-right font-mono text-[11px] tabular-nums leading-7 text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+-        >
+-          {formatTimecode(segment.startSeconds)}
+-        </button>
+-        <p className="min-w-0 break-words text-[13px] leading-7">
+-          {segment.indices.map((index) => {
+-            const token = tokens[index]
+-            if (!token) return null
+-            const nextToken = index < segment.lastIndex ? tokens[index + 1] : undefined
+-            const isActive = index === activeIndex
+-            const isSelected = selectedKeys.has(token.key)
+-            const isMatch = matchKeys.has(token.key)
+-            const isIgnored = ignoredKeys.has(token.key)
+-            return (
+-              <span
+-                key={token.key}
+-                data-token-key={token.key}
+-                data-token-index={index}
+-                onPointerDown={(event) => onPointerDown(index, event)}
+-                className={cn(
+-                  'cursor-text rounded px-0.5',
+-                  isSelected
+-                    ? 'bg-primary text-primary-foreground'
+-                    : isActive
+-                      ? 'bg-yellow-300 text-neutral-900 shadow-sm'
+-                      : isMatch
+-                        ? matchesApproximate
+-                          ? 'text-foreground ring-1 ring-inset ring-amber-500/40'
+-                          : 'text-foreground ring-1 ring-inset ring-amber-500/70'
+-                        : 'text-foreground/85 hover:bg-secondary/60 hover:text-foreground',
+-                  isIgnored && 'line-through decoration-from-font opacity-45',
+-                )}
+-              >
+-                {token.text}
+-                {nextToken && needsTranscriptWordSeparator(token.text, nextToken.text) ? ' ' : ''}
+-              </span>
+-            )
+-          })}
+-        </p>
+-      </div>
+-    </Fragment>
+-  )
+-})
++const seconds1 = (value: number) => value.toFixed(1)
+ 
+ export interface TranscriptEditorPanelProps {
+-  /** Only fetch/transcribe while the tab is actually visible. */
++  /** Only fetch, analyse and follow the playhead while the tab is visible. */
+   active: boolean
+ }
+ 
+ export function TranscriptEditorPanel({ active }: TranscriptEditorPanelProps) {
+   const { t } = useTranslation()
+   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds)
+-  const itemById = useItemsStore((s) => s.itemById)
+-  const allItems = useItemsStore((s) => s.items)
+-  const timelineFps = useTimelineSettingsStore((s) => s.fps)
+-  // Only track the playhead while the tab is visible. The panel is always mounted
+-  // (media-sidebar toggles a CSS `hidden` class, never unmounts), so subscribing to
+-  // currentFrame unconditionally would re-render + reconcile the whole token list on
+-  // every playback/skim frame even when hidden. When inactive the selector returns a
+-  // constant, so zustand skips the re-render entirely.
++  const items = useItemsStore((s) => s.items)
++  const fps = useTimelineSettingsStore((s) => s.fps)
+   const currentFrame = usePlaybackStore((s) => (active ? s.currentFrame : 0))
+-  const isPlaying = usePlaybackStore((s) => s.isPlaying)
+-  const ignoreRanges = useTranscriptIgnoreStore((s) => s.ranges)
+-  const setTranscriptShortcutScope = useEditorStore((s) => s.setTranscriptEditorShortcutScopeActive)
+-
+-  const [scope, setScope] = useState<TranscriptScope>('selection')
+-  const [mediaState, setMediaState] = useState<Record<string, MediaEntry>>({})
+-  const [anchorIndex, setAnchorIndex] = useState(-1)
+-  const [focusIndex, setFocusIndex] = useState(-1)
+-  const [query, setQuery] = useState('')
++  const canUndo = useTimelineCommandStore((s) => s.canUndo)
++  const setShortcutScope = useEditorStore((s) => s.setTranscriptEditorShortcutScopeActive)
++
++  const [transcribedMediaIds, setTranscribedMediaIds] = useState<ReadonlySet<string>>(new Set())
++  const [state, setState] = useState<TranscriptState | null>(null)
++  const [silenceState, setSilenceState] = useState<{
++    originId: string
++    status: 'running' | 'done' | 'failed'
++    ranges: SourceRange[]
++  } | null>(null)
++  const [anchor, setAnchor] = useState(-1)
++  const [focus, setFocus] = useState(-1)
++  const [editingKey, setEditingKey] = useState<string | null>(null)
++  const [renaming, setRenaming] = useState<number | null>(null)
+   const [transcribeDialogOpen, setTranscribeDialogOpen] = useState(false)
+-  // -1 means "no match shown yet", so the first Next/Enter lands on match 0.
+-  const [matchCursor, setMatchCursor] = useState(-1)
+-  // Bumped when a stored transcript changes externally (e.g. deleted from the media
+-  // library) to force the load effect to re-fetch instead of serving the stale cache.
+   const [refreshNonce, setRefreshNonce] = useState(0)
+-
+   const [pointerWithin, setPointerWithin] = useState(false)
+   const [focusWithin, setFocusWithin] = useState(false)
+ 
+-  const isSelectingRef = useRef(false)
+-  const scrollRef = useRef<HTMLDivElement>(null)
+   const rootRef = useRef<HTMLDivElement>(null)
+-  // mediaIds we've already kicked off a load for — keeps the load effect from
+-  // depending on `mediaState` (which would re-run it and cancel its own fetch).
+-  const requestedRef = useRef<Set<string>>(new Set())
++  const textRef = useRef<HTMLDivElement>(null)
++  const selectingRef = useRef(false)
+   const mountedRef = useRef(true)
+-  // Mirror anchorIndex so handlePointerDown can read it without listing it as a
+-  // dependency — otherwise every selection click swaps the callback reference and
+-  // re-renders all TranscriptSegmentRows, defeating their React.memo.
+-  const anchorIndexRef = useRef(anchorIndex)
+-  anchorIndexRef.current = anchorIndex
++  /** Source extent seen per clip, so cuts at either end stay visible (and restorable). */
++  const extentsRef = useRef(new Map<string, SourceRange>())
+ 
+-  // Own Delete/Backspace whenever the pointer or focus is inside the panel, so
+-  // the timeline's clip-delete shortcut yields to us (see use-editing-shortcuts).
+   useEffect(() => {
+-    setTranscriptShortcutScope(active && (pointerWithin || focusWithin))
+-  }, [active, pointerWithin, focusWithin, setTranscriptShortcutScope])
+-
+-  useEffect(() => () => setTranscriptShortcutScope(false), [setTranscriptShortcutScope])
+-
+-  const transcriptableItems = useMemo(() => {
+-    if (scope === 'project') {
+-      return allItems.filter(isTranscriptableItem).toSorted((a, b) => a.from - b.from)
+-    }
+-    return selectedItemIds.map((id) => itemById[id]).filter(isTranscriptableItem)
+-  }, [scope, allItems, selectedItemIds, itemById])
+-
+-  const uniqueMediaIds = useMemo(
+-    () => Array.from(new Set(transcriptableItems.map((item) => item.mediaId))).sort(),
+-    [transcriptableItems],
+-  )
+-
+-  const transcriptsByMediaId = useMemo(() => {
+-    const map: Record<string, MediaTranscript | undefined> = {}
+-    for (const id of uniqueMediaIds) map[id] = mediaState[id]?.transcript
+-    return map
+-  }, [uniqueMediaIds, mediaState])
+-
+-  const tokens = useMemo(
+-    () => buildTranscriptTokens(transcriptableItems, transcriptsByMediaId, timelineFps),
+-    [transcriptableItems, transcriptsByMediaId, timelineFps],
+-  )
+-
+-  const activeIndex = useMemo(
+-    () => findActiveTokenIndex(tokens, currentFrame),
+-    [tokens, currentFrame],
+-  )
+-
+-  const segments = useMemo(() => buildSegments(tokens, timelineFps), [tokens, timelineFps])
+-
+-  const sourceCoverage = useMemo(() => {
+-    if (scope !== 'selection' || uniqueMediaIds.length !== 1 || tokens.length === 0) return null
+-    return tokens.reduce(
+-      (coverage, token) => ({
+-        start: Math.min(coverage.start, token.sourceStart),
+-        end: Math.max(coverage.end, token.sourceEnd),
+-      }),
+-      { start: Number.POSITIVE_INFINITY, end: 0 },
+-    )
+-  }, [scope, uniqueMediaIds, tokens])
+-
+-  const selectedSlice = useMemo(
+-    () => getSelectedTokenSlice(tokens, anchorIndex, focusIndex),
+-    [tokens, anchorIndex, focusIndex],
+-  )
+-  const selectedKeys = useMemo(
+-    () => new Set(selectedSlice.map((token) => token.key)),
+-    [selectedSlice],
+-  )
+-
+-  const ignoredKeys = useMemo(() => {
+-    const keys = new Set<string>()
+-    for (const token of tokens) {
+-      if (isSpanIgnored(token.sourceStart, token.sourceEnd, ignoreRanges[token.mediaId])) {
+-        keys.add(token.key)
+-      }
++    mountedRef.current = true
++    return () => {
++      mountedRef.current = false
+     }
+-    return keys
+-  }, [tokens, ignoreRanges])
+-
+-  const ignoredSpanCount = useMemo(() => countIgnoredSpans(ignoreRanges), [ignoreRanges])
+-  const ignoredSeconds = useMemo(() => totalIgnoredSeconds(ignoreRanges), [ignoreRanges])
++  }, [])
+ 
+-  const hasQuery = query.trim().length > 0
+-  const searchResult = useMemo(
++  // Which media already have a transcript, so the panel can open on a clip with speech.
++  const transcriptableMediaIds = useMemo(
+     () =>
+-      findTranscriptWordMatches(
+-        tokens.map((token) => token.text),
+-        query,
+-      ),
+-    [tokens, query],
++      Array.from(new Set(items.filter(isTranscriptableItem).map((item) => item.mediaId))).sort(),
++    [items],
+   )
+-  const matchSpans = searchResult.spans
+-  const matchesApproximate = searchResult.approximate
+-
+-  // One phrase = one navigable result (count + next/prev use matchSpans); every
+-  // token inside a span is highlighted.
+-  const matchKeys = useMemo(() => {
+-    const keys = new Set<string>()
+-    for (const span of matchSpans) {
+-      for (let index = span.start; index <= span.end; index++) {
+-        const key = tokens[index]?.key
+-        if (key) keys.add(key)
+-      }
++  const mediaKey = transcriptableMediaIds.join('|')
++  useEffect(() => {
++    if (!active) return
++    let cancelled = false
++    void mediaTranscriptionService
++      .getTranscriptMediaIds(transcriptableMediaIds)
++      .then((ids) => {
++        if (!cancelled) setTranscribedMediaIds(ids)
++      })
++      .catch((error) => logger.warn('Could not list transcripts', error))
++    return () => {
++      cancelled = true
+     }
+-    return keys
+-  }, [matchSpans, tokens])
++    // mediaKey stands for the id list.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [active, mediaKey, refreshNonce])
++
++  const target = useMemo<TranscriptTarget | null>(() => {
++    const toTarget = (item: (typeof items)[number] | undefined): TranscriptTarget | null =>
++      isTranscriptableItem(item)
++        ? { originId: item.originId ?? item.id, mediaId: item.mediaId, label: item.label }
++        : null
++    const byId = new Map(items.map((item) => [item.id, item]))
++    for (const id of selectedItemIds) {
++      const selected = toTarget(byId.get(id))
++      if (selected) return selected
++    }
++    const ordered = items.filter(isTranscriptableItem).toSorted((a, b) => a.from - b.from)
++    return toTarget(ordered.find((item) => transcribedMediaIds.has(item.mediaId)) ?? ordered[0])
++  }, [items, selectedItemIds, transcribedMediaIds])
+ 
+-  // Reset transient UI when the document changes (clips or scope).
+-  useEffect(() => {
+-    setAnchorIndex(-1)
+-    setFocusIndex(-1)
+-    setMatchCursor(0)
+-  }, [uniqueMediaIds, scope])
++  const transcript = state?.mediaId === target?.mediaId ? state?.transcript : undefined
++  const status = state?.mediaId === target?.mediaId ? state?.status : 'loading'
+ 
++  // Load the target's transcript; follow changes made elsewhere.
+   useEffect(() => {
+-    mountedRef.current = true
++    return mediaTranscriptionService.onTranscriptChanged(() =>
++      setRefreshNonce((value) => value + 1),
++    )
++  }, [])
++  const targetMediaId = target?.mediaId
++  useEffect(() => {
++    if (!active || !targetMediaId) return
++    const mediaId = targetMediaId
++    let cancelled = false
++    setState((previous) =>
++      previous?.mediaId === mediaId && previous.status === 'transcribing'
++        ? previous
++        : {
++            mediaId,
++            status: previous?.mediaId === mediaId ? previous.status : 'loading',
++            transcript: previous?.mediaId === mediaId ? previous.transcript : undefined,
++          },
++    )
++    void mediaTranscriptionService
++      .getTranscript(mediaId)
++      .then((loaded) => {
++        if (cancelled || !mountedRef.current) return
++        setState((previous) =>
++          previous?.mediaId === mediaId && previous.status === 'transcribing'
++            ? previous
++            : hasWordTimings(loaded)
++              ? { mediaId, status: 'ready', transcript: loaded }
++              : { mediaId, status: 'needs' },
++        )
++      })
++      .catch((error) => {
++        if (cancelled || !mountedRef.current) return
++        logger.warn('Failed to load transcript', { mediaId, error })
++        setState({ mediaId, status: 'error', errorMessage: t('transcript.toastTranscribeFailed') })
++      })
+     return () => {
+-      mountedRef.current = false
++      cancelled = true
+     }
+-  }, [])
++  }, [active, targetMediaId, refreshNonce, t])
+ 
+-  // Invalidate our cached transcript when the stored one changes elsewhere (deleted from
+-  // the media library, or (re)generated). Drop it from the dedup set + local state and
+-  // nudge the load effect so it re-fetches the current state instead of the stale copy.
++  const pieces = useMemo(
++    () => (target ? transcriptPieces(items, target.originId, target.mediaId, fps) : []),
++    [items, target, fps],
++  )
++  const pieceIds = useMemo(() => pieces.map((piece) => piece.id), [pieces])
++  const extent = useMemo(() => {
++    if (!target) return null
++    const next = transcriptExtent(pieces, extentsRef.current.get(target.originId))
++    if (next) extentsRef.current.set(target.originId, next)
++    return next
++  }, [pieces, target])
++
++  // Silences, found once per clip with silence removal's own defaults.
+   useEffect(() => {
+-    return mediaTranscriptionService.onTranscriptChanged((mediaId) => {
+-      if (!requestedRef.current.has(mediaId)) return
+-      requestedRef.current.delete(mediaId)
+-      setMediaState((prev) => {
+-        if (!(mediaId in prev)) return prev
+-        const next = { ...prev }
+-        delete next[mediaId]
+-        return next
++    if (!active || !target || status !== 'ready' || pieceIds.length === 0) return
++    if (silenceState?.originId === target.originId) return
++    const { originId, mediaId } = target
++    setSilenceState({ originId, status: 'running', ranges: [] })
++    void analyzeSilenceForItems(pieceIds, DEFAULT_SILENCE_REMOVAL_SETTINGS)
++      .then((result) => {
++        if (!mountedRef.current) return
++        setSilenceState((current) =>
++          current?.originId === originId
++            ? { originId, status: 'done', ranges: result.rangesByMediaId[mediaId] ?? [] }
++            : current,
++        )
+       })
+-      setRefreshNonce((nonce) => nonce + 1)
+-    })
+-  }, [])
++      .catch((error) => {
++        logger.warn('Silence analysis failed', error)
++        if (!mountedRef.current) return
++        setSilenceState((current) =>
++          current?.originId === originId ? { originId, status: 'failed', ranges: [] } : current,
++        )
++      })
++  }, [active, target, status, pieceIds, silenceState?.originId])
+ 
+-  // Load transcripts for any media we haven't requested yet. Dedupe is tracked in
+-  // a ref so this effect never depends on `mediaState` — depending on it would
+-  // re-run the effect after the `loading` write and strand the fetch.
+-  useEffect(() => {
+-    if (!active) return
+-    const missing = uniqueMediaIds.filter((id) => !requestedRef.current.has(id))
+-    if (missing.length === 0) return
++  const silences = useMemo(
++    () =>
++      silenceState && silenceState.originId === target?.originId ? silenceState.ranges : NO_RANGES,
++    [silenceState, target?.originId],
++  )
++  const fillerRanges = useMemo(
++    () =>
++      transcript
++        ? detectFillerRangesFromTranscript(transcript, DEFAULT_FILLER_REMOVAL_SETTINGS)
++        : [],
++    [transcript],
++  )
++  const words = useMemo(
++    () => (transcript ? transcriptWords(transcript, fillerRanges) : []),
++    [transcript, fillerRanges],
++  )
++  const entries = useMemo(
++    () => placeTranscriptEntries(words, silences, pieces, extent, fps),
++    [words, silences, pieces, extent, fps],
++  )
++  const blocks = useMemo(
++    () => transcriptBlocks(entries, transcript?.speakers),
++    [entries, transcript?.speakers],
++  )
++  const cuts = useMemo(() => transcriptCuts(pieces, extent), [pieces, extent])
++  const liveSilences = useMemo(() => liveRanges(silences, pieces, fps), [silences, pieces, fps])
++  const liveFillers = useMemo(
++    () => liveRanges(fillerRanges, pieces, fps),
++    [fillerRanges, pieces, fps],
++  )
+ 
+-    for (const id of missing) requestedRef.current.add(id)
+-    setMediaState((prev) => {
+-      const next = { ...prev }
+-      for (const id of missing) next[id] = { status: 'loading' }
+-      return next
+-    })
++  const selected = useMemo(() => {
++    if (anchor < 0 || focus < 0) return []
++    const [low, high] = anchor <= focus ? [anchor, focus] : [focus, anchor]
++    return entries.slice(low, high + 1).filter((entry) => !entry.removed)
++  }, [entries, anchor, focus])
++  const selectedKeys = useMemo(() => new Set(selected.map((entry) => entry.key)), [selected])
++  const selectedSeconds = useMemo(
++    () => timelineSecondsOf(selectionRanges(selected), pieces),
++    [selected, pieces],
++  )
++  const activeKey = useMemo(
++    () =>
++      entries.find(
++        (entry) =>
++          entry.kind === 'word' &&
++          entry.frame !== null &&
++          entry.endFrame !== null &&
++          currentFrame >= entry.frame &&
++          currentFrame < Math.max(entry.endFrame, entry.frame + 1),
++      )?.key ?? null,
++    [entries, currentFrame],
++  )
+ 
+-    void Promise.all(
+-      missing.map(async (mediaId) => {
+-        try {
+-          const transcript = await mediaTranscriptionService.getTranscript(mediaId)
+-          if (!mountedRef.current) return
+-          if (transcript) {
+-            mediaTranscriptionService.syncExistingTranscriptCaptions(mediaId, transcript)
+-          }
+-          setMediaState((prev) => ({
+-            ...prev,
+-            [mediaId]: hasWordTimings(transcript)
+-              ? { status: 'ready', transcript }
+-              : { status: 'needs' },
+-          }))
+-        } catch (error) {
+-          if (!mountedRef.current) return
+-          logger.warn('Failed to load transcript', { mediaId, error })
+-          const errorMessage =
+-            error instanceof Error && error.message.trim().length > 0
+-              ? error.message
+-              : t('transcript.toastTranscribeFailed')
+-          setMediaState((prev) => ({
+-            ...prev,
+-            [mediaId]: { status: 'error', errorMessage },
+-          }))
+-        }
+-      }),
+-    )
+-  }, [active, uniqueMediaIds, refreshNonce, t])
++  const clearSelection = useCallback(() => {
++    setAnchor(-1)
++    setFocus(-1)
++  }, [])
++  useEffect(clearSelection, [target?.originId, clearSelection])
+ 
+-  // Keep the active word in view during playback. Skip entirely when hidden — a
+-  // querySelector + scrollIntoView every frame on an off-screen panel is pure waste.
+-  useEffect(() => {
+-    if (!active || !isPlaying || activeIndex < 0) return
+-    const key = tokens[activeIndex]?.key
+-    if (!key) return
+-    const el = scrollRef.current?.querySelector<HTMLElement>(
+-      `[data-token-key="${CSS.escape(key)}"]`,
+-    )
+-    el?.scrollIntoView({ block: 'nearest' })
+-  }, [active, isPlaying, activeIndex, tokens])
++  // Delete belongs to the panel only while it shows and words are picked.
++  const ownsDelete = active && selected.length > 0 && (pointerWithin || focusWithin)
++  useEffect(() => setShortcutScope(ownsDelete), [ownsDelete, setShortcutScope])
++  useEffect(() => () => setShortcutScope(false), [setShortcutScope])
+ 
+   useEffect(() => {
+     const stop = () => {
+-      isSelectingRef.current = false
++      selectingRef.current = false
+     }
+     window.addEventListener('pointerup', stop)
+     return () => window.removeEventListener('pointerup', stop)
+   }, [])
+ 
+-  const seekToToken = useCallback((frame: number) => {
+-    usePlaybackStore.getState().setCurrentFrame(frame)
+-  }, [])
+-
+-  const handlePointerDown = useCallback(
+-    (index: number, event: ReactPointerEvent) => {
+-      const token = tokens[index]
+-      if (!token) return
+-      if (event.shiftKey && anchorIndexRef.current >= 0) {
+-        setFocusIndex(index)
+-      } else {
+-        isSelectingRef.current = true
+-        setAnchorIndex(index)
+-        setFocusIndex(index)
++  const cutRanges = useCallback(
++    (ranges: SourceRange[], kind: 'words' | 'silences' | 'fillers') => {
++      if (!target || ranges.length === 0 || pieceIds.length === 0) return
++      const seconds = timelineSecondsOf(ranges, pieces)
++      const byMedia = { [target.mediaId]: ranges }
++      const timeline = useTimelineStore.getState()
++      try {
++        const result =
++          kind === 'silences'
++            ? timeline.removeSilenceFromItems(pieceIds, byMedia)
++            : kind === 'fillers'
++              ? timeline.removeFillerWordsFromItems(pieceIds, byMedia)
++              : timeline.removeTranscriptRangesFromItems(pieceIds, byMedia)
++        if (result.removedItemCount === 0) {
++          toast.info(t('transcript.toastNothingRemoved'))
++          return
++        }
++      } catch (error) {
++        logger.warn('Transcript cut failed', error)
++        toast.error(t('transcript.toastRemoveFailed'))
++        return
+       }
+-      // Focus the panel so Delete/Backspace land on our handler (which marks the
+-      // selection) instead of leaking to the timeline.
+-      rootRef.current?.focus({ preventScroll: true })
+-      // Capture the pointer so the drag keeps extending even when the cursor
+-      // outruns the words or strays into padding/gaps — pointermove then routes
+-      // here regardless of what's under the cursor.
+-      scrollRef.current?.setPointerCapture(event.pointerId)
+-      seekToToken(token.startFrame)
++      clearSelection()
++      toast.success(t('transcript.edit.cutToast', { seconds: seconds1(seconds) }))
+     },
+-    [tokens, seekToToken],
++    [target, pieceIds, pieces, t, clearSelection],
+   )
+ 
+-  // Drag-extend by hit-testing the word under the cursor on every move. This is
+-  // far smoother than per-span onPointerEnter (which skips words on fast drags
+-  // and stalls over any non-word pixel). setFocusIndex bails out when the index
+-  // is unchanged, so this only re-renders on an actual word boundary crossing.
+-  const handlePointerMove = useCallback((event: ReactPointerEvent) => {
+-    if (!isSelectingRef.current) return
+-    const el = document
+-      .elementFromPoint(event.clientX, event.clientY)
+-      ?.closest<HTMLElement>('[data-token-index]')
+-    if (!el) return
+-    const index = Number(el.dataset.tokenIndex)
+-    if (Number.isInteger(index)) setFocusIndex(index)
+-  }, [])
+-
+-  // Non-destructive: striking words stages them as "ignored" (restorable) rather
+-  // than cutting the timeline. Re-striking an already-ignored selection restores it.
+-  const handleIgnoreToggle = useCallback(() => {
+-    if (selectedSlice.length === 0) return
+-    const ranges = buildRemovalRangesByMediaId(selectedSlice)
+-    const allIgnored = selectedSlice.every((token) => ignoredKeys.has(token.key))
+-    if (allIgnored) {
+-      useTranscriptIgnoreStore.getState().restore(ranges)
+-    } else {
+-      useTranscriptIgnoreStore.getState().ignore(ranges)
+-    }
+-  }, [selectedSlice, ignoredKeys])
+-
+-  // Word-level copy/cut that carries the media: each run of selected words
+-  // becomes a trimmed clone of its clip, placed on the shared clipboard so the
+-  // existing global paste (Ctrl+V) drops the spans onto the timeline. Cut also
+-  // removes the words from the timeline immediately.
+-  const handleCopyWords = useCallback(
+-    (cut: boolean) => {
+-      if (selectedSlice.length === 0) return
+-      const clones = buildTranscriptClipboardItems(selectedSlice, itemById, timelineFps)
+-      if (clones.length === 0) return
++  const cutSelection = useCallback(() => {
++    cutRanges(selectionRanges(selected), 'words')
++  }, [cutRanges, selected])
+ 
+-      const currentFrame = usePlaybackStore.getState().currentFrame
+-      useClipboardStore.getState().copyItems(clones, currentFrame, cut ? 'cut' : 'copy')
+-      void navigator.clipboard
+-        ?.writeText(selectedSlice.map((token) => token.text).join(' '))
+-        .catch(() => {})
+-
+-      const count = selectedSlice.length
+-      if (!cut) {
+-        toast.success(
+-          t('transcript.toastCopied', { defaultValue: 'Copied {{count}} words', count }),
+-        )
++  const restore = useCallback(
++    (entry: PlacedTranscriptEntry) => {
++      const cut = cutForEntry(cuts, entry)
++      const plan = cut ? planCutRestore(pieces, cut, fps) : null
++      if (!cut || !plan || !restoreTranscriptCut(plan)) {
++        toast.info(t('transcript.edit.restoreFailed'))
+         return
+       }
++      const speed = pieces.find((piece) => piece.id === plan.itemId)?.speed ?? 1
++      toast.success(
++        t('transcript.edit.restored', { seconds: seconds1((cut.end - cut.start) / speed) }),
++      )
++    },
++    [cuts, pieces, fps, t],
++  )
+ 
+-      const rangesByMediaId = buildRemovalRangesByMediaId(selectedSlice)
+-      const itemIds = Array.from(new Set(selectedSlice.map((token) => token.itemId)))
++  const saveTranscript = useCallback(
++    async (next: MediaTranscript, message?: string) => {
++      if (!transcript) return
+       try {
+-        useTimelineStore.getState().removeTranscriptRangesFromItems(itemIds, rangesByMediaId)
++        const saved = await mediaTranscriptionService.updateTranscript(next, transcript)
++        if (!mountedRef.current) return
++        setState({ mediaId: saved.mediaId, status: 'ready', transcript: saved })
++        if (message) toast.success(message)
+       } catch (error) {
+-        logger.warn('Transcript cut failed', error)
+-        toast.error(t('transcript.toastRemoveFailed'))
+-        return
++        logger.warn('Saving the transcript failed', error)
++        toast.error(t('transcript.edit.saveFailed'))
+       }
+-      setAnchorIndex(-1)
+-      setFocusIndex(-1)
+-      toast.success(t('transcript.toastCut', { defaultValue: 'Cut {{count}} words', count }))
+     },
+-    [selectedSlice, itemById, timelineFps, t],
++    [transcript, t],
+   )
+ 
+-  // Bridge Ctrl+C / Ctrl+X to word-level copy/cut. The global clipboard hotkeys
+-  // fire on the capture phase before this panel sees the key, so we register a
+-  // handler they consult first — claiming the keys only while the transcript tab
+-  // is visible and words are selected (otherwise they copy the clip as usual).
+-  const handleCopyWordsRef = useRef(handleCopyWords)
+-  handleCopyWordsRef.current = handleCopyWords
+-  const copyActiveRef = useRef(false)
+-  copyActiveRef.current = active && selectedSlice.length > 0
+-  useEffect(() => {
+-    return registerTranscriptCopyHandler({
+-      isActive: () => copyActiveRef.current,
+-      copy: (cut) => handleCopyWordsRef.current(cut),
+-    })
+-  }, [])
+-
+-  const selectionAllIgnored =
+-    selectedSlice.length > 0 && selectedSlice.every((token) => ignoredKeys.has(token.key))
+-
+-  // Commit: turn every staged ignore into a real, single undoable timeline edit.
+-  const handleApply = useCallback(() => {
+-    const ignoredMediaIds = Object.keys(useTranscriptIgnoreStore.getState().ranges)
+-    if (ignoredMediaIds.length === 0) return
+-
+-    const ignoredSet = new Set(ignoredMediaIds)
+-    const affectedOrigins = new Set(
+-      useItemsStore
+-        .getState()
+-        .items.filter((item) => isTranscriptableItem(item) && ignoredSet.has(item.mediaId))
+-        .map((item) => item.originId ?? item.id),
+-    )
+-
+-    let result: { removedItemCount: number } | null = null
+-    try {
+-      result = useTranscriptIgnoreStore.getState().commit()
+-    } catch (error) {
+-      logger.warn('Transcript apply failed', error)
+-      toast.error(t('transcript.toastRemoveFailed'))
+-      return
+-    }
+-
+-    setAnchorIndex(-1)
+-    setFocusIndex(-1)
+-
+-    if (!result || result.removedItemCount === 0) {
+-      toast.info(t('transcript.toastNothingRemoved'))
+-      return
+-    }
+-
+-    // Re-select every surviving piece of the edited clips so the document stays whole.
+-    if (scope === 'selection') {
+-      const survivors = useItemsStore
+-        .getState()
+-        .items.filter((item) => affectedOrigins.has(item.originId ?? item.id))
+-        .map((item) => item.id)
+-      if (survivors.length > 0) useSelectionStore.getState().selectItems(survivors)
+-    }
+-
+-    toast.success(t('transcript.toastRemoved', { count: result.removedItemCount }))
+-  }, [scope, t])
++  const correctWord = useCallback(
++    (entry: PlacedTranscriptEntry, text: string) => {
++      setEditingKey(null)
++      if (!transcript || entry.kind !== 'word') return
++      const next = correctTranscriptWord(transcript, entry.segmentIndex, entry.wordIndex, text)
++      if (next) void saveTranscript(next, t('transcript.edit.corrected'))
++    },
++    [transcript, saveTranscript, t],
++  )
+ 
+-  const handleRestoreAll = useCallback(() => {
+-    useTranscriptIgnoreStore.getState().clear()
+-  }, [])
++  const numbered = useCallback(
++    (number: number) => t('transcript.edit.speakerNumber', { number }),
++    [t],
++  )
+ 
+-  // Jump to a specific match. Callers own the cursor math (next/prev/Enter) and
+-  // pass the target index; this normalizes, selects, and records the cursor in a
+-  // single update so navigation never double-increments.
+-  const goToMatch = useCallback(
+-    (target: number) => {
+-      if (matchSpans.length === 0) return
+-      const cursor = ((target % matchSpans.length) + matchSpans.length) % matchSpans.length
+-      const span = matchSpans[cursor]
+-      if (!span) return
+-      const token = tokens[span.start]
+-      if (!token) return
+-      // Select the whole matched run so a phrase jump highlights the phrase.
+-      setAnchorIndex(span.start)
+-      setFocusIndex(span.end)
+-      seekToToken(token.startFrame)
+-      const el = scrollRef.current?.querySelector<HTMLElement>(
+-        `[data-token-key="${CSS.escape(token.key)}"]`,
+-      )
+-      el?.scrollIntoView({ block: 'center' })
+-      setMatchCursor(cursor)
++  const handlePointerDown = useCallback(
++    (index: number, event: ReactPointerEvent) => {
++      const entry = entries[index]
++      if (!entry || event.button !== 0) return
++      if (entry.removed) {
++        event.preventDefault()
++        restore(entry)
++        return
++      }
++      if (event.detail > 1) return
++      event.preventDefault()
++      rootRef.current?.focus({ preventScroll: true })
++      if (event.shiftKey && anchor >= 0) {
++        setFocus(index)
++      } else {
++        selectingRef.current = true
++        setAnchor(index)
++        setFocus(index)
++        if (entry.frame !== null) usePlaybackStore.getState().setCurrentFrame(entry.frame)
++      }
++      textRef.current?.setPointerCapture?.(event.pointerId)
+     },
+-    [matchSpans, tokens, seekToToken],
++    [entries, anchor, restore],
+   )
+ 
++  const handlePointerMove = useCallback((event: ReactPointerEvent) => {
++    if (!selectingRef.current) return
++    const element = document
++      .elementFromPoint(event.clientX, event.clientY)
++      ?.closest<HTMLElement>('[data-entry-index]')
++    const index = Number(element?.dataset.entryIndex)
++    if (Number.isInteger(index)) setFocus(index)
++  }, [])
++
+   const handleKeyDown = useCallback(
+     (event: React.KeyboardEvent) => {
+-      // Never hijack typing in the search box (or any input that bubbles here).
+-      const target = event.target as HTMLElement
+-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
++      const element = event.target as HTMLElement
++      if (
++        element.tagName === 'INPUT' ||
++        element.tagName === 'TEXTAREA' ||
++        element.isContentEditable
++      )
+         return
+-      }
+-
+-      if (event.key === 'Delete' || event.key === 'Backspace') {
+-        // Always own these so they never fall through to the timeline's clip
+-        // delete — even with no selection (then it's simply a no-op).
+-        event.preventDefault()
+-        event.stopPropagation()
+-        if (selectedKeys.size > 0) handleIgnoreToggle()
+-      } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+-        if (ignoredSpanCount === 0) return
++      if ((event.key === 'Delete' || event.key === 'Backspace') && selected.length > 0) {
+         event.preventDefault()
+         event.stopPropagation()
+-        handleApply()
++        cutSelection()
+       } else if (event.key === 'Escape') {
+-        setAnchorIndex(-1)
+-        setFocusIndex(-1)
++        clearSelection()
+       }
+     },
+-    [selectedKeys.size, handleIgnoreToggle, ignoredSpanCount, handleApply],
+-  )
+-
+-  const needsTranscription = uniqueMediaIds.filter(
+-    (id) => mediaState[id]?.status === 'needs' || mediaState[id]?.status === 'error',
++    [selected.length, cutSelection, clearSelection],
+   )
+-  const isBusy = uniqueMediaIds.some((id) => {
+-    const status = mediaState[id]?.status
+-    return status === 'loading' || status === 'transcribing'
+-  })
+-
+-  const handleTranscribe = useCallback((values: TranscribeDialogValues) => {
+-    const targets = uniqueMediaIds.filter((id) => {
+-      const status = mediaState[id]?.status
+-      return status === 'needs' || status === 'error'
+-    })
+-    if (targets.length === 0) return
+ 
+-    setTranscribeDialogOpen(false)
+-
+-    for (const id of targets) requestedRef.current.add(id)
+-    setMediaState((prev) => {
+-      const next = { ...prev }
+-      for (const id of targets) next[id] = { status: 'transcribing' }
+-      return next
+-    })
+-
+-    void Promise.all(
+-      targets.map(async (mediaId) => {
++  const handleTranscribe = useCallback(
++    (values: TranscribeDialogValues) => {
++      if (!target) return
++      const { mediaId } = target
++      setTranscribeDialogOpen(false)
++      setState({ mediaId, status: 'transcribing' })
++      void (async () => {
+         try {
+           const result = await runMediaTranscriptionJob(mediaId, {
+             ...values,
+-            onModelFallback: () => {
+-              toast.info(t('transcript.largeTurboFallback'))
+-            },
++            onModelFallback: () => toast.info(t('transcript.largeTurboFallback')),
+           })
+           if (!mountedRef.current) return
+           if (result.status === 'cancelled') {
+-            setMediaState((prev) => ({ ...prev, [mediaId]: { status: 'needs' } }))
++            setState({ mediaId, status: 'needs' })
+             return
+           }
+-          const { transcript } = result
+-          setMediaState((prev) => ({
+-            ...prev,
+-            [mediaId]: hasWordTimings(transcript)
+-              ? { status: 'ready', transcript }
+-              : { status: 'needs' },
+-          }))
++          setState(
++            hasWordTimings(result.transcript)
++              ? { mediaId, status: 'ready', transcript: result.transcript }
++              : { mediaId, status: 'needs' },
++          )
+         } catch (error) {
+           logger.warn('Transcription failed', { mediaId, error })
+           const errorMessage = isTranscriptionOutOfMemoryError(error)
+             ? TRANSCRIPTION_OOM_HINT
+-            : error instanceof Error && error.message.trim().length > 0
++            : error instanceof Error && error.message.trim()
+               ? error.message
+               : t('transcript.toastTranscribeFailed')
+-          if (mountedRef.current) {
+-            setMediaState((prev) => ({
+-              ...prev,
+-              [mediaId]: { status: 'error', errorMessage },
+-            }))
+-          }
++          if (mountedRef.current) setState({ mediaId, status: 'error', errorMessage })
+           toast.error(errorMessage)
+         }
+-      }),
+-    )
+-  }, [uniqueMediaIds, mediaState, t])
+-
+-  const transcriptionError = useMemo(
+-    () =>
+-      needsTranscription
+-        .map((mediaId) => mediaState[mediaId])
+-        .find((entry) => entry?.status === 'error')?.errorMessage,
+-    [mediaState, needsTranscription],
++      })()
++    },
++    [target, t],
+   )
+ 
+-  const transcriptionFileName = useMemo(() => {
+-    if (needsTranscription.length !== 1) {
+-      return t('transcript.selectedClips', {
+-        defaultValue: '{{count}} selected clips',
+-        count: needsTranscription.length,
+-      })
+-    }
+-    const mediaId = needsTranscription[0]
++  if (!target) {
+     return (
+-      transcriptableItems.find((item) => item.mediaId === mediaId)?.label ??
+-      t('transcript.selectedClip', { defaultValue: 'Selected clip' })
++      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
++        <Captions className="h-8 w-8 text-muted-foreground/60" />
++        <p className="max-w-[34ch] text-sm text-muted-foreground">{t('transcript.edit.empty')}</p>
++      </div>
+     )
+-  }, [needsTranscription, transcriptableItems, t])
++  }
+ 
+-  const selectionCount = selectedKeys.size
++  const speed = pieces[0]?.speed ?? 1
++  const removedSeconds = cuts.reduce((sum, cut) => sum + (cut.end - cut.start) / speed, 0)
++  const busy = status === 'loading' || status === 'transcribing'
++  const ready = status === 'ready' && !!transcript
+ 
+   return (
+     <div
+@@ -802,338 +563,384 @@ export function TranscriptEditorPanel({ active }: TranscriptEditorPanelProps) {
+       onPointerLeave={() => setPointerWithin(false)}
+       onFocus={() => setFocusWithin(true)}
+       onBlur={(event) => {
+-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+-          setFocusWithin(false)
+-        }
++        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false)
+       }}
+       role="region"
+       aria-label={t('transcript.title')}
+     >
+-      {/* Scope toggle */}
+-      <div className="flex items-center gap-1 border-b border-border p-2">
+-        <ScopeToggle scope={scope} onChange={setScope} t={t} />
+-      </div>
+-
+-      {/* Search */}
+-      <div className="flex items-center gap-2 border-b border-border p-2">
+-        <div className="relative flex-1">
+-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+-          <Input
+-            value={query}
+-            onChange={(event) => {
+-              setQuery(event.target.value)
+-              setMatchCursor(-1)
+-            }}
+-            onKeyDown={(event) => {
+-              if (event.key === 'Enter') {
+-                event.preventDefault()
+-                goToMatch(matchCursor + 1)
+-              }
+-            }}
+-            placeholder={t('transcript.searchPlaceholder')}
+-            className={cn('h-8 pl-7 text-xs', query.length > 0 && 'pr-7')}
+-          />
+-          {query.length > 0 && (
+-            <button
+-              type="button"
+-              onClick={() => {
+-                setQuery('')
+-                setMatchCursor(-1)
+-              }}
+-              aria-label={t('transcript.clearSearch', { defaultValue: 'Clear search' })}
+-              className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+-            >
+-              <X className="h-3.5 w-3.5" />
+-            </button>
++      <div className="flex flex-col gap-3 border-b border-border p-3">
++        <div className="min-w-0">
++          <h3 className="truncate text-sm font-medium text-foreground">{target.label}</h3>
++          {ready && cuts.length > 0 && (
++            <p className="text-xs text-muted-foreground">
++              {t('transcript.edit.shorterBy', { seconds: seconds1(removedSeconds) })}
++            </p>
+           )}
+         </div>
+-        {hasQuery && (
+-          <div className="flex items-center gap-1">
+-            <span
+-              className="w-12 text-right text-xs tabular-nums text-muted-foreground"
+-              data-tooltip={
+-                matchesApproximate
+-                  ? t('transcript.approxMatches', { defaultValue: 'Approximate matches' })
+-                  : undefined
+-              }
+-            >
+-              {matchesApproximate && matchSpans.length > 0 ? '~' : ''}
+-              {matchSpans.length}
+-            </span>
++        {ready && (
++          <div className="flex flex-wrap gap-2">
+             <Button
+-              type="button"
+-              variant="ghost"
+-              size="icon"
+-              className="h-7 w-7"
+-              disabled={matchSpans.length === 0}
+-              onClick={() => goToMatch(matchCursor + 1)}
+-              aria-label={t('transcript.nextMatch')}
++              size="sm"
++              variant="secondary"
++              className="flex-1 gap-2"
++              disabled={liveSilences.length === 0}
++              onClick={() => cutRanges(liveSilences, 'silences')}
+             >
+-              <ChevronDown className="h-3.5 w-3.5" />
++              {silenceState?.status === 'running' ? (
++                <Loader2 className="h-3.5 w-3.5 animate-spin" />
++              ) : (
++                <AudioWaveform className="h-3.5 w-3.5" />
++              )}
++              {t('transcript.edit.removeSilences')}
++              {liveSilences.length > 0 ? ` (${liveSilences.length})` : ''}
+             </Button>
+             <Button
+-              type="button"
+-              variant="ghost"
+-              size="icon"
+-              className="h-7 w-7"
+-              disabled={matchSpans.length === 0}
+-              onClick={() => goToMatch(matchCursor - 1)}
+-              aria-label={t('transcript.previousMatch')}
++              size="sm"
++              variant="secondary"
++              className="flex-1 gap-2"
++              disabled={liveFillers.length === 0}
++              onClick={() => cutRanges(liveFillers, 'fillers')}
+             >
+-              <ChevronUp className="h-3.5 w-3.5" />
++              <MessageSquareOff className="h-3.5 w-3.5" />
++              {t('transcript.edit.removeFillers')}
++              {liveFillers.length > 0 ? ` (${liveFillers.length})` : ''}
+             </Button>
+           </div>
+         )}
++        {ready && (
++          <div
++            className={cn(
++              'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2',
++              selected.length > 0 ? 'border-primary' : 'border-border',
++            )}
++            aria-live="polite"
++          >
++            {selected.length > 0 ? (
++              <>
++                <span className="min-w-0 flex-1 text-xs text-foreground">
++                  {t('transcript.edit.selected', {
++                    count: selected.length,
++                    seconds: seconds1(selectedSeconds),
++                  })}
++                </span>
++                <Button size="sm" variant="ghost" onClick={clearSelection}>
++                  {t('transcript.edit.clear')}
++                </Button>
++                <Button size="sm" className="gap-1.5" onClick={cutSelection}>
++                  <Scissors className="h-3.5 w-3.5" />
++                  {t('transcript.edit.cut')}
++                </Button>
++              </>
++            ) : (
++              <>
++                <span className="min-w-0 flex-1 text-xs text-muted-foreground">
++                  {t('transcript.edit.hint')}
++                </span>
++                <Button
++                  size="sm"
++                  variant="ghost"
++                  className="gap-1.5"
++                  disabled={!canUndo}
++                  onClick={() => useTimelineCommandStore.getState().undo()}
++                >
++                  <Undo2 className="h-3.5 w-3.5" />
++                  {t('transcript.edit.undo')}
++                </Button>
++              </>
++            )}
++          </div>
++        )}
+       </div>
+ 
+-      {/* Transcript body */}
+       <div
+-        ref={scrollRef}
++        ref={textRef}
+         onPointerMove={handlePointerMove}
+-        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-2"
++        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4"
++        aria-label={t('transcript.title')}
+       >
+-        {transcriptableItems.length === 0 ? (
+-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+-            <Captions className="h-8 w-8 text-muted-foreground/60" />
+-            <p className="text-sm text-muted-foreground">
+-              {scope === 'project'
+-                ? t('transcript.emptyProject', {
+-                    defaultValue: 'No video or audio clips in this project yet.',
+-                  })
+-                : t('transcript.emptySelection')}
++        {ready ? (
++          <div className="mx-auto flex max-w-[62ch] select-none flex-col gap-4">
++            {blocks.map((block, blockIndex) => {
++              if (block.kind === 'silence') {
++                const entry = entries[block.index]!
++                return (
++                  <p key={entry.key} className="m-0">
++                    <button
++                      type="button"
++                      data-entry-index={block.index}
++                      onPointerDown={(event) => handlePointerDown(block.index, event)}
++                      title={entry.removed ? t('transcript.edit.restoreHint') : undefined}
++                      className={cn(
++                        'inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground',
++                        selectedKeys.has(entry.key) &&
++                          'border-solid border-primary text-foreground',
++                        entry.removed && 'line-through opacity-60',
++                      )}
++                    >
++                      {entry.removed
++                        ? t('transcript.edit.silenceRemoved')
++                        : t('transcript.edit.silence', {
++                            seconds: seconds1(entry.end - entry.start),
++                          })}
++                    </button>
++                  </p>
++                )
++              }
++              const nextParagraph = blocks
++                .slice(blockIndex + 1)
++                .find((candidate) => candidate.kind === 'paragraph')
++              const nextStart =
++                nextParagraph?.kind === 'paragraph'
++                  ? (entries[nextParagraph.paragraph.indices[0]!]?.start ?? null)
++                  : null
++              return (
++                <ParagraphView
++                  key={block.paragraph.key}
++                  paragraph={block.paragraph}
++                  entries={entries}
++                  fps={fps}
++                  transcript={transcript}
++                  nextStart={nextStart}
++                  selectedKeys={selectedKeys}
++                  activeKey={activeKey}
++                  editingKey={editingKey}
++                  renaming={renaming === block.paragraph.speaker ? block.paragraph.key : null}
++                  numbered={numbered}
++                  onPointerDown={handlePointerDown}
++                  onEdit={setEditingKey}
++                  onCorrect={correctWord}
++                  onRename={(speaker) => setRenaming(speaker)}
++                  onRenamed={(speaker, name) => {
++                    setRenaming(null)
++                    void saveTranscript({
++                      ...transcript,
++                      speakers: renameSpeaker(transcript.speakers, speaker, name),
++                    })
++                  }}
++                  onSpeaker={(speaker, start) =>
++                    void saveTranscript({
++                      ...transcript,
++                      speakers: setParagraphSpeaker(transcript.speakers, start, nextStart, speaker),
++                    })
++                  }
++                />
++              )
++            })}
++            <p className="flex items-start gap-2 text-xs text-muted-foreground">
++              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
++              {t('transcript.edit.note')}
+             </p>
+           </div>
+-        ) : needsTranscription.length > 0 && tokens.length === 0 ? (
+-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+-            <Captions className="h-8 w-8 text-muted-foreground/60" />
+-            <div className="max-w-[34ch] space-y-1">
+-              <p className="text-sm text-muted-foreground">
+-                {transcriptionError
+-                  ? t('transcript.transcriptionFailed')
+-                  : t('transcript.noTranscript')}
+-              </p>
+-              {transcriptionError && (
+-                <p className="break-words text-xs leading-5 text-destructive">
+-                  {transcriptionError}
+-                </p>
+-              )}
+-            </div>
+-            <Button size="sm" onClick={() => setTranscribeDialogOpen(true)} disabled={isBusy}>
+-              {isBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+-              {isBusy
+-                ? t('transcript.transcribing')
+-                : transcriptionError
+-                  ? t('transcript.tryAgain')
+-                  : t('transcript.generate')}
+-            </Button>
+-          </div>
+-        ) : tokens.length === 0 && isBusy ? (
++        ) : busy ? (
+           <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+             <Loader2 className="h-4 w-4 animate-spin" />
+-            {t('transcript.loading')}
++            {status === 'transcribing' ? t('transcript.transcribing') : t('transcript.loading')}
+           </div>
+         ) : (
+-          <div className="mx-auto max-w-[62ch] select-none">
+-            {sourceCoverage && (
+-              <div className="mb-2 flex items-start gap-2 rounded-md border border-border/70 bg-secondary/30 px-2.5 py-2">
+-                <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+-                <div className="min-w-0">
+-                  <p className="text-xs font-medium text-foreground">
+-                    {t('transcript.sourceAnalyzed', {
+-                      defaultValue: 'Full source analyzed',
+-                    })}
+-                  </p>
+-                  <p className="text-[11px] leading-4 text-muted-foreground">
+-                    {t('transcript.detectedRange', {
+-                      defaultValue:
+-                        'Voice detected from {{start}} to {{end}}. Silent and music-only sections are omitted.',
+-                      start: formatTimecode(sourceCoverage.start),
+-                      end: formatTimecode(sourceCoverage.end),
+-                    })}
+-                  </p>
+-                </div>
+-              </div>
++          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
++            <Captions className="h-8 w-8 text-muted-foreground/60" />
++            <p className="max-w-[34ch] text-sm text-muted-foreground">
++              {status === 'error'
++                ? t('transcript.transcriptionFailed')
++                : t('transcript.noTranscript')}
++            </p>
++            {status === 'error' && state?.errorMessage && (
++              <p className="max-w-[34ch] break-words text-xs text-destructive">
++                {state.errorMessage}
++              </p>
+             )}
+-            {segments.map((segment) => (
+-              <TranscriptSegmentRow
+-                key={segment.key}
+-                segment={segment}
+-                tokens={tokens}
+-                activeIndex={
+-                  activeIndex >= segment.firstIndex && activeIndex <= segment.lastIndex
+-                    ? activeIndex
+-                    : -1
+-                }
+-                selectedKeys={selectedKeys}
+-                matchKeys={matchKeys}
+-                ignoredKeys={ignoredKeys}
+-                matchesApproximate={matchesApproximate}
+-                onSeek={seekToToken}
+-                onPointerDown={handlePointerDown}
+-              />
+-            ))}
+-          </div>
+-        )}
+-      </div>
+-
+-      {/* Pending edits bar */}
+-      {ignoredSpanCount > 0 && (
+-        <div className="@container flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-t border-border bg-secondary/30 px-2 py-1.5">
+-          <span className="min-w-0 text-xs font-medium text-foreground">
+-            {t('transcript.pendingHidden', {
+-              defaultValue: '{{count}} marked for deletion · {{seconds}}s',
+-              count: ignoredSpanCount,
+-              seconds: ignoredSeconds.toFixed(1),
+-            })}
+-          </span>
+-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+-            <Button
+-              size="sm"
+-              variant="ghost"
+-              className="h-7 gap-1.5 text-muted-foreground"
+-              onClick={handleRestoreAll}
+-              aria-label={t('transcript.restoreAll', { defaultValue: 'Restore all' })}
+-              data-tooltip={t('transcript.restoreAll', { defaultValue: 'Restore all' })}
+-            >
+-              <RotateCcw className="h-3.5 w-3.5" />
+-              <span className="hidden @[340px]:inline">
+-                {t('transcript.restoreAll', { defaultValue: 'Restore all' })}
+-              </span>
+-            </Button>
+-            <Button
+-              size="sm"
+-              className="h-7 gap-1.5"
+-              onClick={handleApply}
+-              aria-label={t('transcript.applyEdits', { defaultValue: 'Delete marked' })}
+-              data-tooltip={t('transcript.applyEdits', { defaultValue: 'Delete marked' })}
+-            >
+-              <Trash2 className="h-3.5 w-3.5" />
+-              <span className="hidden @[340px]:inline">
+-                {t('transcript.applyEdits', { defaultValue: 'Delete marked' })}
+-              </span>
++            <Button size="sm" onClick={() => setTranscribeDialogOpen(true)}>
++              {status === 'error' ? t('transcript.tryAgain') : t('transcript.generate')}
+             </Button>
+           </div>
+-        </div>
+-      )}
+-
+-      {/* Footer actions */}
+-      <div className="@container flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-t border-border p-2">
+-        <span className="min-w-0 text-xs text-muted-foreground">
+-          {selectionCount > 0
+-            ? t('transcript.wordsSelected', { count: selectionCount })
+-            : t('transcript.ignoreHint', {
+-                defaultValue: 'Select words, then Backspace to mark them for deletion',
+-              })}
+-        </span>
+-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+-          <Button
+-            size="sm"
+-            variant="ghost"
+-            className="h-7 gap-1.5 px-2 text-muted-foreground"
+-            onClick={() => handleCopyWords(false)}
+-            disabled={selectionCount === 0}
+-            aria-label={t('transcript.copy', { defaultValue: 'Copy' })}
+-            data-tooltip={t('transcript.copyHint', {
+-              defaultValue: 'Copy words (paste onto the timeline with Ctrl+V)',
+-            })}
+-          >
+-            <Copy className="h-3.5 w-3.5" />
+-            <span className="hidden @[340px]:inline">
+-              {t('transcript.copy', { defaultValue: 'Copy' })}
+-            </span>
+-          </Button>
+-          <Button
+-            size="sm"
+-            variant="ghost"
+-            className="h-7 gap-1.5 px-2 text-muted-foreground"
+-            onClick={() => handleCopyWords(true)}
+-            disabled={selectionCount === 0}
+-            aria-label={t('transcript.cut', { defaultValue: 'Cut' })}
+-            data-tooltip={t('transcript.cut', { defaultValue: 'Cut' })}
+-          >
+-            <Scissors className="h-3.5 w-3.5" />
+-            <span className="hidden @[340px]:inline">
+-              {t('transcript.cut', { defaultValue: 'Cut' })}
+-            </span>
+-          </Button>
+-          <Button
+-            size="sm"
+-            variant="secondary"
+-            className="gap-1.5"
+-            onClick={handleIgnoreToggle}
+-            disabled={selectionCount === 0}
+-            aria-label={
+-              selectionAllIgnored
+-                ? t('transcript.restoreSelection', { defaultValue: 'Restore' })
+-                : t('transcript.ignoreSelection', { defaultValue: 'Mark for delete' })
+-            }
+-            data-tooltip={
+-              selectionAllIgnored
+-                ? t('transcript.restoreSelection', { defaultValue: 'Restore' })
+-                : t('transcript.ignoreSelection', { defaultValue: 'Mark for delete' })
+-            }
+-          >
+-            {selectionAllIgnored ? (
+-              <Undo2 className="h-3.5 w-3.5" />
+-            ) : (
+-              <Trash2 className="h-3.5 w-3.5" />
+-            )}
+-            <span className="hidden @[340px]:inline">
+-              {selectionAllIgnored
+-                ? t('transcript.restoreSelection', { defaultValue: 'Restore' })
+-                : t('transcript.ignoreSelection', { defaultValue: 'Mark for delete' })}
+-            </span>
+-          </Button>
+-        </div>
++        )}
+       </div>
+ 
+       <TranscribeDialog
+         open={transcribeDialogOpen}
+         onOpenChange={setTranscribeDialogOpen}
+-        fileName={transcriptionFileName}
++        fileName={target.label}
+         hasTranscript={false}
+-        isRunning={isBusy}
++        isRunning={status === 'transcribing'}
+         progressPercent={null}
+         progressLabel={t('transcript.transcribing')}
+         onStart={handleTranscribe}
+-        onCancel={() => {
+-          for (const mediaId of uniqueMediaIds) cancelMediaTranscriptionJob(mediaId)
+-        }}
++        onCancel={() => cancelMediaTranscriptionJob(target.mediaId)}
+       />
+     </div>
+   )
+ }
+ 
+-function ScopeToggle({
+-  scope,
+-  onChange,
+-  t,
+-}: {
+-  scope: TranscriptScope
+-  onChange: (scope: TranscriptScope) => void
+-  t: (key: string, options?: Record<string, unknown>) => string
+-}) {
+-  const options: { value: TranscriptScope; label: string }[] = [
+-    { value: 'selection', label: t('transcript.scopeSelection', { defaultValue: 'Selection' }) },
+-    { value: 'project', label: t('transcript.scopeProject', { defaultValue: 'Whole project' }) },
+-  ]
++interface ParagraphViewProps {
++  paragraph: TranscriptParagraph
++  entries: readonly PlacedTranscriptEntry[]
++  fps: number
++  transcript: MediaTranscript
++  nextStart: number | null
++  selectedKeys: ReadonlySet<string>
++  activeKey: string | null
++  editingKey: string | null
++  renaming: string | null
++  numbered: (number: number) => string
++  onPointerDown: (index: number, event: ReactPointerEvent) => void
++  onEdit: (key: string | null) => void
++  onCorrect: (entry: PlacedTranscriptEntry, text: string) => void
++  onRename: (speaker: number) => void
++  onRenamed: (speaker: number, name: string) => void
++  onSpeaker: (speaker: number, start: number) => void
++}
++
++function ParagraphView({
++  paragraph,
++  entries,
++  fps,
++  transcript,
++  selectedKeys,
++  activeKey,
++  editingKey,
++  renaming,
++  numbered,
++  onPointerDown,
++  onEdit,
++  onCorrect,
++  onRename,
++  onRenamed,
++  onSpeaker,
++}: ParagraphViewProps) {
++  const { t } = useTranslation()
++  const first = entries[paragraph.indices[0]!]!
++  const name = speakerName(transcript.speakers, paragraph.speaker, numbered)
++  const { used, next } = speakerNumbers(transcript.speakers)
++  const firstLive = paragraph.indices
++    .map((index) => entries[index]!)
++    .find((entry) => !entry.removed)
++
+   return (
+-    <div className="flex w-full gap-1">
+-      {options.map((option) => (
+-        <button
+-          key={option.value}
+-          type="button"
+-          onClick={() => onChange(option.value)}
+-          className={cn(
+-            'flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+-            scope === option.value
+-              ? 'bg-primary text-primary-foreground'
+-              : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
+-          )}
++    <section className="flex flex-col gap-2">
++      <header className="flex items-center gap-2 text-xs">
++        <span
++          aria-hidden
++          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-medium text-foreground"
+         >
+-          {option.label}
+-        </button>
+-      ))}
+-    </div>
++          {name.slice(0, 1).toUpperCase()}
++        </span>
++        {renaming === paragraph.key ? (
++          <Input
++            autoFocus
++            defaultValue={name}
++            aria-label={t('transcript.edit.renameSpeaker')}
++            className="h-7 max-w-[16ch] text-xs"
++            onKeyDown={(event) => {
++              event.stopPropagation()
++              if (event.key === 'Enter') onRenamed(paragraph.speaker, event.currentTarget.value)
++              if (event.key === 'Escape') onRenamed(paragraph.speaker, name)
++            }}
++            onBlur={(event) => onRenamed(paragraph.speaker, event.currentTarget.value)}
++          />
++        ) : (
++          <DropdownMenu>
++            <DropdownMenuTrigger asChild>
++              <button
++                type="button"
++                className="rounded px-1 font-medium text-foreground hover:bg-secondary/60"
++                aria-label={t('transcript.edit.speakerMenu', { name })}
++              >
++                {name}
++              </button>
++            </DropdownMenuTrigger>
++            <DropdownMenuContent align="start">
++              {used.map((speaker) => (
++                <DropdownMenuItem key={speaker} onSelect={() => onSpeaker(speaker, first.start)}>
++                  <Check
++                    className={cn('mr-2 h-3.5 w-3.5', speaker !== paragraph.speaker && 'invisible')}
++                  />
++                  {speakerName(transcript.speakers, speaker, numbered)}
++                </DropdownMenuItem>
++              ))}
++              <DropdownMenuItem onSelect={() => onSpeaker(next, first.start)}>
++                <span className="mr-2 inline-block h-3.5 w-3.5" />
++                {t('transcript.edit.newSpeaker')}
++              </DropdownMenuItem>
++              <DropdownMenuSeparator />
++              <DropdownMenuItem onSelect={() => onRename(paragraph.speaker)}>
++                <span className="mr-2 inline-block h-3.5 w-3.5" />
++                {t('transcript.edit.renameSpeaker')}
++              </DropdownMenuItem>
++            </DropdownMenuContent>
++          </DropdownMenu>
++        )}
++        <span className="tabular-nums text-muted-foreground">
++          {firstLive?.frame != null
++            ? shortTime(firstLive.frame, fps)
++            : t('transcript.edit.cutLabel')}
++        </span>
++      </header>
++      <p className="m-0 break-words text-sm leading-7">
++        {paragraph.indices.map((index, position) => {
++          const entry = entries[index]!
++          if (entry.kind !== 'word') return null
++          const following = entries[paragraph.indices[position + 1] ?? -1]
++          const separator =
++            following?.kind === 'word' && needsTranscriptWordSeparator(entry.text, following.text)
++              ? ' '
++              : ''
++          if (editingKey === entry.key) {
++            return (
++              <span key={entry.key}>
++                <input
++                  autoFocus
++                  defaultValue={entry.text}
++                  aria-label={t('transcript.edit.correctWord')}
++                  size={Math.max(entry.text.length + 2, 4)}
++                  className="rounded border border-primary bg-background px-1 text-sm outline-none"
++                  onKeyDown={(event) => {
++                    event.stopPropagation()
++                    if (event.key === 'Enter') onCorrect(entry, event.currentTarget.value)
++                    if (event.key === 'Escape') onEdit(null)
++                  }}
++                  onBlur={(event) => onCorrect(entry, event.currentTarget.value)}
++                />
++                {separator}
++              </span>
++            )
++          }
++          const time = entry.frame !== null ? preciseTime(entry.frame, fps) : null
++          return (
++            <span key={entry.key}>
++              {entry.removed ? (
++                <del
++                  data-entry-index={index}
++                  title={t('transcript.edit.restoreHint')}
++                  onPointerDown={(event) => onPointerDown(index, event)}
++                  className="cursor-pointer rounded text-muted-foreground opacity-60 line-through hover:opacity-90"
++                >
++                  {entry.text}
++                </del>
++              ) : (
++                <span
++                  data-entry-index={index}
++                  title={time ? t('transcript.edit.wordTime', { time }) : undefined}
++                  onPointerDown={(event) => onPointerDown(index, event)}
++                  onDoubleClick={() => onEdit(entry.key)}
++                  className={cn(
++                    'cursor-text rounded py-px',
++                    selectedKeys.has(entry.key)
++                      ? 'bg-primary/30 text-foreground'
++                      : activeKey === entry.key
++                        ? 'text-primary'
++                        : 'text-foreground/90 hover:bg-secondary/60',
++                    entry.filler &&
++                      'underline decoration-dotted decoration-muted-foreground underline-offset-4',
++                  )}
++                >
++                  {entry.text}
++                </span>
++              )}
++              {separator}
++            </span>
++          )
++        })}
++      </p>
++    </section>
+   )
+ }
+diff --git a/src/features/timeline/stores/actions/edit/transcript-restore-actions.ts b/src/features/timeline/stores/actions/edit/transcript-restore-actions.ts
+new file mode 100644
+index 0000000000..626b84a97e
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/transcript-restore-actions.ts
+@@ -0,0 +1,49 @@
++import { useItemsStore } from '../../items-store'
++import { useTimelineCommandStore } from '../../timeline-command-store'
++import { captureSnapshot } from '../../commands/snapshot'
++import type { TranscriptRestorePlan } from '../../../utils/transcript-document'
++import { joinItems } from './join-actions'
++import { rippleTrimItem } from './trim-actions'
++
++/**
++ * Bring back one transcript cut (Frameleaf FL-562) with the timeline's own edits: a ripple trim
++ * that extends the piece next to the cut over it (`clip.trimEnd` / `clip.trimStart` with ripple),
++ * then a join with the piece after it when they meet again (`clip.join`). The two edits are kept
++ * as one undo step, so Undo takes the whole restore back.
++ *
++ * Returns false when the trim could not be made (a locked track, or a clip at its source limit).
++ */
++export function restoreTranscriptCut(plan: TranscriptRestorePlan): boolean {
++  const before = captureSnapshot()
++  const history = useTimelineCommandStore.getState()
++  const priorEntries = new Set(history.undoStack)
++  const item = useItemsStore.getState().itemById[plan.itemId]
++  if (!item) return false
++  const priorDuration = item.durationInFrames
++
++  if (plan.handle === 'end') rippleTrimItem(plan.itemId, 'end', plan.frames)
++  else rippleTrimItem(plan.itemId, 'start', -plan.frames)
++
++  const trimmed = useItemsStore.getState().itemById[plan.itemId]
++  const extended = !!trimmed && trimmed.durationInFrames === priorDuration + plan.frames
++  if (extended && plan.joinWithId) {
++    const next = useItemsStore.getState().itemById[plan.joinWithId]
++    if (next && next.from === trimmed.from + trimmed.durationInFrames) {
++      joinItems([plan.itemId, plan.joinWithId])
++    }
++  }
++
++  // Fold the edits this restore made into one history entry.
++  const added = useTimelineCommandStore
++    .getState()
++    .undoStack.filter((entry) => !priorEntries.has(entry))
++  if (added.length > 0) {
++    useTimelineCommandStore.setState((state) => ({
++      undoStack: state.undoStack.filter((entry) => priorEntries.has(entry)),
++    }))
++    useTimelineCommandStore
++      .getState()
++      .addUndoEntry({ type: 'RESTORE_TRANSCRIPT_CUT', payload: { itemId: plan.itemId } }, before)
++  }
++  return extended
++}
+diff --git a/src/features/timeline/stores/actions/transcript-editing.test.ts b/src/features/timeline/stores/actions/transcript-editing.test.ts
+new file mode 100644
+index 0000000000..c1d28ceda8
+--- /dev/null
++++ b/src/features/timeline/stores/actions/transcript-editing.test.ts
+@@ -0,0 +1,271 @@
++// @vitest-environment node
++
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import type { AudioItem, TimelineItem, VideoItem } from '@/types/timeline'
++import type { MediaTranscript } from '@/types/storage'
++import { useEditorStore } from '@/shared/state/editor'
++import { useSelectionStore } from '@/shared/state/selection'
++import { useKeyframesStore } from '../keyframes-store'
++import { useItemsStore } from '../items-store'
++import { useTimelineCommandStore } from '../timeline-command-store'
++import { useTimelineSettingsStore } from '../timeline-settings-store'
++import { useTransitionsStore } from '../transitions-store'
++import {
++  removeFillerWordsFromItems,
++  removeSilenceFromItems,
++  removeTranscriptRangesFromItems,
++} from './edit/range-removal-actions'
++import { restoreTranscriptCut } from './edit/transcript-restore-actions'
++import {
++  cutForEntry,
++  liveRanges,
++  placeTranscriptEntries,
++  planCutRestore,
++  selectionRanges,
++  transcriptCuts,
++  transcriptExtent,
++  transcriptPieces,
++  transcriptWords,
++} from '../../utils/transcript-document'
++import {
++  DEFAULT_FILLER_REMOVAL_SETTINGS,
++  detectFillerRangesFromTranscript,
++} from '../../utils/filler-word-removal-preview'
++
++/**
++ * FL-562: transcript cuts are the timeline's own split + ripple delete, crossed-out words are read
++ * back from the timeline, and one cut comes back on its own with a ripple trim and a join.
++ */
++
++const base = {
++  trackId: 'video-track',
++  from: 0,
++  durationInFrames: 300,
++  label: 'Lake morning.mov',
++  mediaId: 'media-1',
++  originId: 'origin-1',
++  linkedGroupId: 'group-1',
++  sourceStart: 0,
++  sourceEnd: 300,
++  sourceDuration: 300,
++  sourceFps: 30,
++}
++const video = (): VideoItem => ({ ...base, id: 'video-1', type: 'video', src: 'blob:video' })
++const audio = (): AudioItem => ({
++  ...base,
++  id: 'audio-1',
++  type: 'audio',
++  trackId: 'audio-track',
++  src: 'blob:audio',
++})
++const music = (): AudioItem => ({
++  ...base,
++  id: 'music',
++  type: 'audio',
++  trackId: 'music-track',
++  mediaId: 'song',
++  originId: 'song',
++  linkedGroupId: undefined,
++  src: 'blob:song',
++})
++
++const track = (id: string, kind: 'video' | 'audio', order: number, syncLock: boolean) => ({
++  id,
++  name: id,
++  kind,
++  height: 80,
++  order,
++  locked: false,
++  visible: true,
++  muted: false,
++  solo: false,
++  volume: 0,
++  syncLock,
++  items: [],
++})
++
++const transcript: MediaTranscript = {
++  id: 'media-1',
++  mediaId: 'media-1',
++  model: 'parakeet-tdt-v3',
++  quantization: 'hybrid',
++  text: '',
++  segments: [
++    {
++      text: 'Okay, um, this is the lake.',
++      start: 0.5,
++      end: 3,
++      words: [
++        { text: 'Okay,', start: 0.5, end: 0.9 },
++        { text: 'um,', start: 1, end: 1.3 },
++        { text: 'this', start: 1.5, end: 1.8 },
++        { text: 'is', start: 1.9, end: 2.1 },
++        { text: 'the', start: 2.2, end: 2.4 },
++        { text: 'lake.', start: 2.5, end: 3 },
++      ],
++    },
++  ],
++  createdAt: 1,
++  updatedAt: 1,
++}
++
++const spans = (type: TimelineItem['type'], trackId?: string) =>
++  useItemsStore
++    .getState()
++    .items.filter((item) => item.type === type && (!trackId || item.trackId === trackId))
++    .toSorted((a, b) => a.from - b.from)
++    .map((item) => ({
++      from: item.from,
++      durationInFrames: item.durationInFrames,
++      sourceStart: (item as VideoItem).sourceStart,
++      sourceEnd: (item as VideoItem).sourceEnd,
++    }))
++
++const document = (remembered?: { start: number; end: number } | null) => {
++  const pieces = transcriptPieces(useItemsStore.getState().items, 'origin-1', 'media-1', 30)
++  const extent = transcriptExtent(pieces, remembered)
++  const entries = placeTranscriptEntries(transcriptWords(transcript), [], pieces, extent, 30)
++  return { pieces, extent, entries, cuts: transcriptCuts(pieces, extent) }
++}
++const word = (entries: ReturnType<typeof document>['entries'], text: string) =>
++  entries.find((entry) => entry.kind === 'word' && entry.text === text)!
++
++describe('editing a clip by its transcript', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useEditorStore.setState({ linkedSelectionEnabled: true })
++    useItemsStore.getState().setTracks([
++      track('video-track', 'video', 0, true),
++      track('audio-track', 'audio', 1, true),
++      // Music with sync lock off stays put, as with any ripple delete.
++      track('music-track', 'audio', 2, false),
++    ])
++    useItemsStore.getState().setItems([video(), audio(), music()])
++    useTransitionsStore.getState().setTransitions([])
++    useKeyframesStore.getState().setKeyframes([])
++    useSelectionStore.getState().clearSelection()
++  })
++
++  it('cuts selected words with split and ripple delete, picture and sound together', () => {
++    const before = document()
++    // Select "um, this" and cut it.
++    const selection = before.entries.slice(1, 3)
++    const ranges = selectionRanges(selection)
++    expect(ranges).toEqual([{ start: 1, end: 1.8 }])
++    removeTranscriptRangesFromItems(
++      before.pieces.map((p) => p.id),
++      { 'media-1': ranges },
++    )
++
++    const expected = [
++      { from: 0, durationInFrames: 30, sourceStart: 0, sourceEnd: 30 },
++      { from: 30, durationInFrames: 246, sourceStart: 54, sourceEnd: 300 },
++    ]
++    expect(spans('video')).toEqual(expected)
++    expect(spans('audio', 'audio-track')).toEqual(expected)
++    // Music on its own track stays where it was.
++    expect(spans('audio', 'music-track')).toEqual([
++      { from: 0, durationInFrames: 300, sourceStart: 0, sourceEnd: 300 },
++    ])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++
++    const after = document(before.extent)
++    expect(word(after.entries, 'um,').removed).toBe(true)
++    expect(word(after.entries, 'this').removed).toBe(true)
++    expect(word(after.entries, 'is').removed).toBe(false)
++    // "is" (1.9 s in the file) now plays at 1.1 s in the movie.
++    expect(word(after.entries, 'is').frame).toBe(33)
++  })
++
++  it('Studio undo puts the words back', () => {
++    const before = document()
++    removeTranscriptRangesFromItems(
++      before.pieces.map((p) => p.id),
++      { 'media-1': [{ start: 1, end: 1.3 }] },
++    )
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items).toEqual([video(), audio(), music()])
++    expect(word(document(before.extent).entries, 'um,').removed).toBe(false)
++  })
++
++  it('clicking a crossed-out word brings that cut back on its own, as one undo step', () => {
++    const before = document()
++    const ids = before.pieces.map((p) => p.id)
++    removeTranscriptRangesFromItems(ids, { 'media-1': [{ start: 1, end: 1.3 }] })
++    removeTranscriptRangesFromItems(
++      document(before.extent).pieces.map((p) => p.id),
++      { 'media-1': [{ start: 2.2, end: 2.4 }] },
++    )
++    expect(spans('video')).toHaveLength(3)
++
++    const cut = document(before.extent)
++    const um = word(cut.entries, 'um,')
++    const plan = planCutRestore(cut.pieces, cutForEntry(cut.cuts, um)!, 30)!
++    expect(plan).toMatchObject({ handle: 'end', frames: 9 })
++    const historyBefore = useTimelineCommandStore.getState().undoStack.length
++    expect(restoreTranscriptCut(plan)).toBe(true)
++
++    const restored = document(before.extent)
++    expect(word(restored.entries, 'um,').removed).toBe(false)
++    // The other cut ("the") is still cut.
++    expect(word(restored.entries, 'the').removed).toBe(true)
++    expect(spans('video')).toEqual([
++      { from: 0, durationInFrames: 66, sourceStart: 0, sourceEnd: 66 },
++      { from: 66, durationInFrames: 228, sourceStart: 72, sourceEnd: 300 },
++    ])
++    expect(spans('audio', 'audio-track')).toEqual(spans('video'))
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(historyBefore + 1)
++    expect(useTimelineCommandStore.getState().getLastCommandType()).toBe('RESTORE_TRANSCRIPT_CUT')
++
++    // One undo takes the whole restore back.
++    useTimelineCommandStore.getState().undo()
++    expect(word(document(before.extent).entries, 'um,').removed).toBe(true)
++    expect(spans('video')).toHaveLength(3)
++  })
++
++  it('brings back a cut at the start of the clip', () => {
++    const before = document()
++    removeTranscriptRangesFromItems(['video-1'], { 'media-1': [{ start: 0, end: 0.95 }] })
++    const cut = document(before.extent)
++    expect(word(cut.entries, 'Okay,').removed).toBe(true)
++    const plan = planCutRestore(cut.pieces, cutForEntry(cut.cuts, word(cut.entries, 'Okay,'))!, 30)!
++    expect(plan.handle).toBe('start')
++    expect(restoreTranscriptCut(plan)).toBe(true)
++    expect(spans('video')).toEqual([
++      { from: 0, durationInFrames: 300, sourceStart: 0, sourceEnd: 300 },
++    ])
++  })
++
++  it('Remove filler words cuts every filler in one undo step with the shipped defaults', () => {
++    const fillers = detectFillerRangesFromTranscript(transcript, DEFAULT_FILLER_REMOVAL_SETTINGS)
++    expect(fillers.map((range) => range.text)).toEqual(['um,'])
++    const before = document()
++    const live = liveRanges(fillers, before.pieces, 30)
++    removeFillerWordsFromItems(
++      before.pieces.map((p) => p.id),
++      { 'media-1': live },
++    )
++    expect(word(document(before.extent).entries, 'um,').removed).toBe(true)
++    expect(useTimelineCommandStore.getState().getLastCommandType()).toBe('REMOVE_FILLER_WORDS')
++    expect(liveRanges(fillers, document(before.extent).pieces, 30)).toEqual([])
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items).toEqual([video(), audio(), music()])
++  })
++
++  it('Remove silences cuts the silences still in the clip in one undo step', () => {
++    const silences = [
++      { start: 3.1, end: 4.4 },
++      { start: 6, end: 7 },
++    ]
++    const before = document()
++    removeSilenceFromItems(
++      before.pieces.map((p) => p.id),
++      { 'media-1': liveRanges(silences, before.pieces, 30) },
++    )
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    const after = document(before.extent)
++    expect(liveRanges(silences, after.pieces, 30)).toEqual([])
++    expect(spans('video').reduce((sum, span) => sum + span.durationInFrames, 0)).toBe(300 - 39 - 30)
++  })
++})
+diff --git a/src/features/timeline/utils/transcript-document.test.ts b/src/features/timeline/utils/transcript-document.test.ts
+new file mode 100644
+index 0000000000..7909e1ac9d
+--- /dev/null
++++ b/src/features/timeline/utils/transcript-document.test.ts
+@@ -0,0 +1,341 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import type { MediaTranscript } from '@/types/storage'
++import type { VideoItem } from '@/types/timeline'
++import {
++  correctTranscriptWord,
++  cutForEntry,
++  liveRanges,
++  placeTranscriptEntries,
++  planCutRestore,
++  renameSpeaker,
++  selectionRanges,
++  setParagraphSpeaker,
++  sourceTimeToFrame,
++  speakerAt,
++  speakerName,
++  speakerNumbers,
++  timelineSecondsOf,
++  transcriptBlocks,
++  transcriptCuts,
++  transcriptExtent,
++  transcriptPieces,
++  transcriptWords,
++  type TranscriptPiece,
++} from './transcript-document'
++
++function video(overrides: Partial<VideoItem> = {}): VideoItem {
++  return {
++    id: 'video-1',
++    type: 'video',
++    trackId: 'video-track',
++    from: 0,
++    durationInFrames: 300,
++    label: 'Lake morning.mov',
++    src: 'blob:video',
++    mediaId: 'media-1',
++    originId: 'origin-1',
++    sourceStart: 0,
++    sourceEnd: 300,
++    sourceDuration: 300,
++    sourceFps: 30,
++    ...overrides,
++  }
++}
++
++/** "Okay, um, this is the lake." then a pause, then "It's like glass." (seconds) */
++function transcript(): MediaTranscript {
++  return {
++    id: 'media-1',
++    mediaId: 'media-1',
++    model: 'parakeet-tdt-v3',
++    quantization: 'hybrid',
++    text: 'Okay, um, this is the lake. It’s like glass.',
++    segments: [
++      {
++        text: 'Okay, um, this is the lake.',
++        start: 0.5,
++        end: 3,
++        words: [
++          { text: 'Okay,', start: 0.5, end: 0.9 },
++          { text: 'um,', start: 1, end: 1.3 },
++          { text: 'this', start: 1.5, end: 1.8 },
++          { text: 'is', start: 1.9, end: 2.1 },
++          { text: 'the', start: 2.2, end: 2.4 },
++          { text: 'lake.', start: 2.5, end: 3 },
++        ],
++      },
++      {
++        text: 'It’s like glass.',
++        start: 4.5,
++        end: 5.6,
++        words: [
++          { text: 'It’s', start: 4.5, end: 4.8 },
++          { text: 'like', start: 4.9, end: 5.1 },
++          { text: 'glass.', start: 5.2, end: 5.6 },
++        ],
++      },
++    ],
++    createdAt: 1,
++    updatedAt: 1,
++  }
++}
++
++const piece = (overrides: Partial<TranscriptPiece>): TranscriptPiece => ({
++  id: 'p',
++  trackId: 'video-track',
++  from: 0,
++  durationInFrames: 300,
++  speed: 1,
++  start: 0,
++  end: 10,
++  ...overrides,
++})
++
++describe('word → time mapping', () => {
++  it('maps source words to movie frames through the clip pieces', () => {
++    const pieces = transcriptPieces(
++      [video({ from: 90, sourceStart: 30, sourceEnd: 300 })],
++      'origin-1',
++      'media-1',
++      30,
++    )
++    expect(pieces).toEqual([
++      {
++        id: 'video-1',
++        trackId: 'video-track',
++        from: 90,
++        durationInFrames: 300,
++        speed: 1,
++        start: 1,
++        end: 10,
++      },
++    ])
++    // Source 1.5 s is 0.5 s into the clip, which starts at frame 90.
++    expect(sourceTimeToFrame(pieces, 1.5, 30)).toBe(105)
++    expect(sourceTimeToFrame(pieces, 0.5, 30)).toBeNull()
++  })
++
++  it('follows speed', () => {
++    const pieces = [piece({ start: 0, end: 10, speed: 2, durationInFrames: 150 })]
++    expect(sourceTimeToFrame(pieces, 4, 30)).toBe(60)
++    expect(timelineSecondsOf([{ start: 2, end: 4 }], pieces)).toBe(1)
++  })
++
++  it('prefers video pieces and ignores other origins and reversed clips', () => {
++    const items = [
++      video(),
++      { ...video({ id: 'audio-1' }), type: 'audio' as const },
++      video({ id: 'other', originId: 'origin-2' }),
++      video({ id: 'reversed', isReversed: true }),
++    ]
++    expect(
++      transcriptPieces(items as VideoItem[], 'origin-1', 'media-1', 30).map((p) => p.id),
++    ).toEqual(['video-1'])
++  })
++
++  it('places words, marks fillers and gives every word its movie frame', () => {
++    const pieces = [piece({ end: 10 })]
++    const fillers = [{ start: 0.95, end: 1.35 }]
++    const entries = placeTranscriptEntries(
++      transcriptWords(transcript(), fillers),
++      [{ start: 3.2, end: 4.3 }],
++      pieces,
++      transcriptExtent(pieces),
++      30,
++    )
++    expect(entries.map((entry) => (entry.kind === 'word' ? entry.text : 'silence'))).toEqual([
++      'Okay,',
++      'um,',
++      'this',
++      'is',
++      'the',
++      'lake.',
++      'silence',
++      'It’s',
++      'like',
++      'glass.',
++    ])
++    expect(entries.find((entry) => entry.kind === 'word' && entry.text === 'um,')).toMatchObject({
++      filler: true,
++      frame: 30,
++      endFrame: 39,
++      removed: false,
++    })
++    expect(entries.filter((entry) => entry.kind === 'word' && entry.filler)).toHaveLength(1)
++  })
++})
++
++describe('cuts read from the timeline', () => {
++  // "um," (1.0–1.3) was cut: the clip is now two pieces, the second rippled up 0.3 s.
++  const cutPieces = [
++    piece({ id: 'left', start: 0, end: 1, durationInFrames: 30 }),
++    piece({ id: 'right', from: 30, start: 1.3, end: 10, durationInFrames: 261 }),
++  ]
++
++  it('crosses out words whose middle is no longer in the movie', () => {
++    const extent = transcriptExtent(cutPieces)
++    const entries = placeTranscriptEntries(transcriptWords(transcript()), [], cutPieces, extent, 30)
++    const um = entries.find((entry) => entry.kind === 'word' && entry.text === 'um,')!
++    expect(um).toMatchObject({ removed: true, frame: null })
++    // "this" now plays 0.3 s earlier than in the source.
++    expect(entries.find((entry) => entry.kind === 'word' && entry.text === 'this')!.frame).toBe(36)
++    expect(transcriptCuts(cutPieces, extent)).toEqual([{ start: 1, end: 1.3 }])
++    expect(cutForEntry(transcriptCuts(cutPieces, extent), um)).toEqual({ start: 1, end: 1.3 })
++  })
++
++  it('remembers the extent so a cut at the end stays visible', () => {
++    const remembered = { start: 0, end: 10 }
++    const shortened = [piece({ id: 'only', start: 0, end: 5 })]
++    const extent = transcriptExtent(shortened, remembered)
++    expect(extent).toEqual({ start: 0, end: 10 })
++    expect(transcriptCuts(shortened, extent)).toEqual([{ start: 5, end: 10 }])
++    const entries = placeTranscriptEntries(transcriptWords(transcript()), [], shortened, extent, 30)
++    expect(entries.find((entry) => entry.kind === 'word' && entry.text === 'glass.')!.removed).toBe(
++      true,
++    )
++  })
++
++  it('builds cut ranges from a selection, joined across pauses and split at cut words', () => {
++    const entries = placeTranscriptEntries(
++      transcriptWords(transcript()),
++      [],
++      cutPieces,
++      transcriptExtent(cutPieces),
++      30,
++    )
++    // "Okay, um, this is": um is already cut.
++    expect(selectionRanges(entries.slice(0, 4))).toEqual([
++      { start: 0.5, end: 0.9 },
++      { start: 1.5, end: 2.1 },
++    ])
++  })
++
++  it('counts only silences and fillers still in the movie', () => {
++    expect(
++      liveRanges(
++        [
++          { start: 1, end: 1.3 },
++          { start: 3, end: 4 },
++        ],
++        cutPieces,
++        30,
++      ),
++    ).toEqual([{ start: 3, end: 4 }])
++  })
++})
++
++describe('restoring one cut', () => {
++  it('extends the piece before the cut and joins it to the next one', () => {
++    const pieces = [
++      piece({ id: 'left', start: 0, end: 1, durationInFrames: 30 }),
++      piece({ id: 'right', from: 30, start: 1.3, end: 10, durationInFrames: 261 }),
++    ]
++    expect(planCutRestore(pieces, { start: 1, end: 1.3 }, 30)).toEqual({
++      handle: 'end',
++      itemId: 'left',
++      frames: 9,
++      joinWithId: 'right',
++    })
++  })
++
++  it('does not join pieces that no longer meet', () => {
++    const pieces = [
++      piece({ id: 'left', start: 0, end: 1, durationInFrames: 30 }),
++      piece({ id: 'right', from: 120, start: 1.3, end: 10, durationInFrames: 261 }),
++    ]
++    expect(planCutRestore(pieces, { start: 1, end: 1.3 }, 30)).toMatchObject({ joinWithId: null })
++  })
++
++  it('extends the next piece backwards for a cut at the start', () => {
++    const pieces = [piece({ id: 'rest', start: 0.9, end: 10, durationInFrames: 273 })]
++    expect(planCutRestore(pieces, { start: 0, end: 0.9 }, 30)).toEqual({
++      handle: 'start',
++      itemId: 'rest',
++      frames: 27,
++      joinWithId: null,
++    })
++  })
++
++  it('gives up when no piece touches the cut', () => {
++    expect(planCutRestore([piece({ start: 5, end: 10 })], { start: 1, end: 2 }, 30)).toBeNull()
++  })
++})
++
++describe('speakers', () => {
++  const numbered = (n: number) => `Speaker ${n}`
++
++  it('starts with one numbered speaker and breaks paragraphs on pauses', () => {
++    const pieces = [piece({})]
++    const entries = placeTranscriptEntries(
++      transcriptWords(transcript()),
++      [],
++      pieces,
++      transcriptExtent(pieces),
++      30,
++    )
++    const blocks = transcriptBlocks(entries, undefined)
++    expect(
++      blocks.map((block) =>
++        block.kind === 'paragraph' ? block.paragraph.indices.length : 'silence',
++      ),
++    ).toEqual([6, 3])
++    expect(speakerName(undefined, 0, numbered)).toBe('Speaker 1')
++  })
++
++  it('gives one paragraph a new speaker and keeps the next paragraph’s speaker', () => {
++    const speakers = setParagraphSpeaker(undefined, 4.5, null, 1)
++    expect(speakers.turns).toEqual([{ start: 4.5, speaker: 1 }])
++    expect(speakerAt(speakers, 5)).toBe(1)
++    expect(speakerAt(speakers, 1)).toBe(0)
++    const middle = setParagraphSpeaker(undefined, 1.5, 4.5, 1)
++    expect(middle.turns).toEqual([
++      { start: 1.5, speaker: 1 },
++      { start: 4.5, speaker: 0 },
++    ])
++    // Setting it back drops turns that change nothing.
++    expect(setParagraphSpeaker(middle, 1.5, 4.5, 0).turns).toEqual([])
++    expect(speakerNumbers(speakers)).toEqual({ used: [0, 1], next: 2 })
++  })
++
++  it('splits paragraphs where the speaker changes', () => {
++    const pieces = [piece({})]
++    const entries = placeTranscriptEntries(
++      transcriptWords(transcript()),
++      [],
++      pieces,
++      transcriptExtent(pieces),
++      30,
++    )
++    const speakers = setParagraphSpeaker(undefined, 1.5, null, 1)
++    const blocks = transcriptBlocks(entries, speakers)
++    // "Okay, um," | "this is the lake." | (pause) "It’s like glass."
++    expect(
++      blocks.map((block) => (block.kind === 'paragraph' ? block.paragraph.speaker : -1)),
++    ).toEqual([0, 1, 1])
++  })
++
++  it('renames a speaker and an empty name goes back to the number', () => {
++    const named = renameSpeaker(undefined, 1, '  Jamie ')
++    expect(speakerName(named, 1, numbered)).toBe('Jamie')
++    expect(speakerName(renameSpeaker(named, 1, ''), 1, numbered)).toBe('Speaker 2')
++  })
++})
++
++describe('correcting a word', () => {
++  it('changes the word, its segment and the full text', () => {
++    const corrected = correctTranscriptWord(transcript(), 0, 5, 'Louise.')!
++    expect(corrected.segments[0]!.words![5]!.text).toBe('Louise.')
++    expect(corrected.segments[0]!.text).toBe('Okay, um, this is the Louise.')
++    expect(corrected.text).toBe('Okay, um, this is the Louise. It’s like glass.')
++    // Timings are untouched.
++    expect(corrected.segments[0]!.words![5]).toMatchObject({ start: 2.5, end: 3 })
++  })
++
++  it('ignores an empty or unchanged word', () => {
++    expect(correctTranscriptWord(transcript(), 0, 5, '  ')).toBeNull()
++    expect(correctTranscriptWord(transcript(), 0, 5, 'lake.')).toBeNull()
++    expect(correctTranscriptWord(transcript(), 9, 0, 'x')).toBeNull()
++  })
++})
+diff --git a/src/features/timeline/utils/transcript-document.ts b/src/features/timeline/utils/transcript-document.ts
+new file mode 100644
+index 0000000000..74cbadf30e
+--- /dev/null
++++ b/src/features/timeline/utils/transcript-document.ts
+@@ -0,0 +1,447 @@
++/**
++ * Edit a clip by its transcript (Frameleaf FL-562): the pure model.
++ *
++ * One clip's words (and the silences found in its sound) are laid out in source order. Whether a
++ * word is still in the movie is read from the timeline itself: a word is cut when the middle of
++ * its source span is no longer covered by any piece of the clip. So Studio's normal undo and redo,
++ * a reopened project and edits made elsewhere all keep the transcript right.
++ *
++ * A "piece" is one timeline item made from the clip: splitting a clip keeps its `originId`, so
++ * every piece of a cut clip shares it. The holes between pieces, in source time, are the cuts;
++ * each crossed-out word belongs to exactly one of them, and bringing a word back restores that cut.
++ *
++ * Nothing here reads a store, so it is unit-tested directly.
++ */
++
++import type { TimelineItem } from '@/types/timeline'
++import type { MediaTranscript, MediaTranscriptSpeakers } from '@/types/storage'
++import { joinTranscriptWords } from '@/shared/utils/transcript-text'
++import { getItemSourceSpanSeconds } from './media-item-frames'
++import type { SourceRange } from './source-range-intervals'
++
++/** Source seconds within which two edges count as the same point (one 60 fps frame is 0.0167). */
++const EDGE_TOLERANCE_SECONDS = 0.02
++/** A pause of this length or more starts a new paragraph. */
++const PARAGRAPH_GAP_SECONDS = 0.6
++const PARAGRAPH_SOFT_MAX_WORDS = 28
++const PARAGRAPH_HARD_MAX_WORDS = 40
++const SENTENCE_END = /[.?!]["')\]]?$/
++
++export interface TranscriptPiece {
++  id: string
++  trackId: string
++  /** Timeline frame where the piece starts. */
++  from: number
++  durationInFrames: number
++  speed: number
++  /** Source seconds the piece shows. */
++  start: number
++  end: number
++}
++
++export interface TranscriptDocWord {
++  kind: 'word'
++  key: string
++  segmentIndex: number
++  wordIndex: number
++  text: string
++  start: number
++  end: number
++  filler: boolean
++}
++
++export interface TranscriptDocSilence {
++  kind: 'silence'
++  key: string
++  start: number
++  end: number
++}
++
++export type TranscriptDocEntry = TranscriptDocWord | TranscriptDocSilence
++
++export type PlacedTranscriptEntry = TranscriptDocEntry & {
++  /** Timeline frame where the entry plays now, or null once it is cut. */
++  frame: number | null
++  /** Timeline frame where the entry ends, or null once it is cut. */
++  endFrame: number | null
++  removed: boolean
++}
++
++export interface TranscriptParagraph {
++  key: string
++  speaker: number
++  /** Indices into the placed entry list. */
++  indices: number[]
++}
++
++export type TranscriptBlock =
++  | { kind: 'paragraph'; paragraph: TranscriptParagraph }
++  | { kind: 'silence'; index: number }
++
++/** Plan for bringing one cut back with existing timeline edits (ripple trim, then join). */
++export type TranscriptRestorePlan =
++  | { handle: 'end'; itemId: string; frames: number; joinWithId: string | null }
++  | { handle: 'start'; itemId: string; frames: number; joinWithId: null }
++
++const midpoint = (range: SourceRange) => (range.start + range.end) / 2
++
++/** The timeline items a clip with speech plays through: video pieces, or audio when it has none. */
++export function transcriptPieces(
++  items: readonly TimelineItem[],
++  originId: string,
++  mediaId: string,
++  timelineFps: number,
++): TranscriptPiece[] {
++  const candidates = items.filter(
++    (item) =>
++      (item.type === 'video' || item.type === 'audio') &&
++      item.mediaId === mediaId &&
++      item.isReversed !== true &&
++      (item.originId ?? item.id) === originId,
++  )
++  const hasVideo = candidates.some((item) => item.type === 'video')
++  return candidates
++    .filter((item) => (hasVideo ? item.type === 'video' : item.type === 'audio'))
++    .flatMap((item) => {
++      const span = getItemSourceSpanSeconds(item, timelineFps)
++      if (!span || span.end <= span.start) return []
++      const speed = item.type === 'video' || item.type === 'audio' ? (item.speed ?? 1) : 1
++      return [
++        {
++          id: item.id,
++          trackId: item.trackId,
++          from: item.from,
++          durationInFrames: item.durationInFrames,
++          speed,
++          start: span.start,
++          end: span.end,
++        },
++      ]
++    })
++    .toSorted((left, right) => left.start - right.start)
++}
++
++/** Source span from the first piece to the last, widened by `remembered` (cuts at either end). */
++export function transcriptExtent(
++  pieces: readonly TranscriptPiece[],
++  remembered?: SourceRange | null,
++): SourceRange | null {
++  if (pieces.length === 0) return remembered ?? null
++  const start = Math.min(...pieces.map((piece) => piece.start), remembered?.start ?? Infinity)
++  const end = Math.max(...pieces.map((piece) => piece.end), remembered?.end ?? -Infinity)
++  return { start, end }
++}
++
++/** Where a moment of the source plays on the timeline now, or null when it is cut. */
++export function sourceTimeToFrame(
++  pieces: readonly TranscriptPiece[],
++  seconds: number,
++  timelineFps: number,
++): number | null {
++  for (const piece of pieces) {
++    if (seconds < piece.start - 1e-6 || seconds > piece.end + 1e-6) continue
++    return Math.round(piece.from + ((seconds - piece.start) * timelineFps) / piece.speed)
++  }
++  return null
++}
++
++/** The cuts: parts of the extent that no piece covers, in source order. */
++export function transcriptCuts(
++  pieces: readonly TranscriptPiece[],
++  extent: SourceRange | null,
++): SourceRange[] {
++  if (!extent) return []
++  const cuts: SourceRange[] = []
++  let cursor = extent.start
++  for (const piece of pieces) {
++    if (piece.start - cursor > EDGE_TOLERANCE_SECONDS)
++      cuts.push({ start: cursor, end: piece.start })
++    cursor = Math.max(cursor, piece.end)
++  }
++  if (extent.end - cursor > EDGE_TOLERANCE_SECONDS) cuts.push({ start: cursor, end: extent.end })
++  return cuts
++}
++
++/** The cut a crossed-out entry belongs to. */
++export function cutForEntry(cuts: readonly SourceRange[], entry: SourceRange): SourceRange | null {
++  const middle = midpoint(entry)
++  return cuts.find((cut) => middle >= cut.start - 1e-6 && middle <= cut.end + 1e-6) ?? null
++}
++
++/** Every word of the transcript, in source order, marked when it is a filler. */
++export function transcriptWords(
++  transcript: MediaTranscript,
++  fillerRanges: readonly SourceRange[] = [],
++): TranscriptDocWord[] {
++  const words: TranscriptDocWord[] = []
++  transcript.segments.forEach((segment, segmentIndex) => {
++    segment.words?.forEach((word, wordIndex) => {
++      const text = word.text.trim()
++      if (!text || !(word.end > word.start)) return
++      const middle = (word.start + word.end) / 2
++      words.push({
++        kind: 'word',
++        key: `w:${segmentIndex}:${wordIndex}`,
++        segmentIndex,
++        wordIndex,
++        text,
++        start: word.start,
++        end: word.end,
++        filler: fillerRanges.some((range) => middle >= range.start && middle <= range.end),
++      })
++    })
++  })
++  return words.toSorted((left, right) => left.start - right.start)
++}
++
++/**
++ * Words and silences of the clip's extent, each with its place on the timeline. Silences are the
++ * ranges silence removal found; one inside a word's span is dropped.
++ */
++export function placeTranscriptEntries(
++  words: readonly TranscriptDocWord[],
++  silences: readonly SourceRange[],
++  pieces: readonly TranscriptPiece[],
++  extent: SourceRange | null,
++  timelineFps: number,
++): PlacedTranscriptEntry[] {
++  if (!extent) return []
++  const inside = (range: SourceRange) => range.end > extent.start && range.start < extent.end
++  const entries: TranscriptDocEntry[] = [
++    ...words.filter(inside),
++    ...silences
++      .filter(inside)
++      .filter(
++        (silence) => !words.some((word) => word.start < silence.start && word.end > silence.end),
++      )
++      .map((silence) => ({
++        kind: 'silence' as const,
++        key: `s:${silence.start.toFixed(3)}`,
++        start: silence.start,
++        end: silence.end,
++      })),
++  ]
++  return entries
++    .toSorted((left, right) => left.start - right.start || (left.kind === 'silence' ? 1 : -1))
++    .map((entry) => {
++      const middle = sourceTimeToFrame(pieces, midpoint(entry), timelineFps)
++      const frame =
++        middle === null ? null : (sourceTimeToFrame(pieces, entry.start, timelineFps) ?? middle)
++      const endFrame =
++        middle === null ? null : (sourceTimeToFrame(pieces, entry.end, timelineFps) ?? middle + 1)
++      return { ...entry, frame, endFrame, removed: middle === null }
++    })
++}
++
++/** Speaker number at a moment of the source (speaker 0 until the first change). */
++export function speakerAt(speakers: MediaTranscriptSpeakers | undefined, seconds: number): number {
++  let speaker = 0
++  for (const turn of speakers?.turns ?? []) {
++    if (turn.start <= seconds + 1e-6) speaker = turn.speaker
++    else break
++  }
++  return speaker
++}
++
++/** Split the entries into speaker paragraphs and silence chips, in reading order. */
++export function transcriptBlocks(
++  entries: readonly PlacedTranscriptEntry[],
++  speakers: MediaTranscriptSpeakers | undefined,
++): TranscriptBlock[] {
++  const blocks: TranscriptBlock[] = []
++  let current: TranscriptParagraph | null = null
++  let previousWord: PlacedTranscriptEntry | null = null
++
++  entries.forEach((entry, index) => {
++    if (entry.kind === 'silence') {
++      blocks.push({ kind: 'silence', index })
++      current = null
++      return
++    }
++    const speaker = speakerAt(speakers, entry.start)
++    const count = current?.indices.length ?? 0
++    const breaks =
++      !current ||
++      current.speaker !== speaker ||
++      (!!previousWord && entry.start - previousWord.end >= PARAGRAPH_GAP_SECONDS) ||
++      (count >= PARAGRAPH_SOFT_MAX_WORDS &&
++        !!previousWord &&
++        SENTENCE_END.test(previousWord.kind === 'word' ? previousWord.text : '')) ||
++      count >= PARAGRAPH_HARD_MAX_WORDS
++    if (breaks) {
++      current = { key: entry.key, speaker, indices: [index] }
++      blocks.push({ kind: 'paragraph', paragraph: current })
++    } else {
++      current!.indices.push(index)
++    }
++    previousWord = entry
++  })
++  return blocks
++}
++
++/** Display name of a speaker: the name they were given, or the numbered default. */
++export function speakerName(
++  speakers: MediaTranscriptSpeakers | undefined,
++  speaker: number,
++  numbered: (number: number) => string,
++): string {
++  const name = speakers?.names?.[String(speaker)]?.trim()
++  return name ? name : numbered(speaker + 1)
++}
++
++/** Every speaker number used, plus the next free one. */
++export function speakerNumbers(speakers: MediaTranscriptSpeakers | undefined): {
++  used: number[]
++  next: number
++} {
++  const used = new Set<number>([0])
++  for (const turn of speakers?.turns ?? []) used.add(turn.speaker)
++  for (const key of Object.keys(speakers?.names ?? {})) {
++    const value = Number(key)
++    if (Number.isInteger(value) && value >= 0) used.add(value)
++  }
++  const sorted = [...used].toSorted((left, right) => left - right)
++  return { used: sorted, next: (sorted.at(-1) ?? 0) + 1 }
++}
++
++/** Give a speaker a name (an empty name goes back to "Speaker n"). */
++export function renameSpeaker(
++  speakers: MediaTranscriptSpeakers | undefined,
++  speaker: number,
++  name: string,
++): MediaTranscriptSpeakers {
++  const names = { ...speakers?.names }
++  const trimmed = name.trim()
++  if (trimmed) names[String(speaker)] = trimmed
++  else delete names[String(speaker)]
++  return { names, turns: [...(speakers?.turns ?? [])] }
++}
++
++/**
++ * Say who speaks one paragraph: `[start, nextStart)` in source seconds. The paragraph after it
++ * keeps its own speaker. Turns that change nothing are dropped.
++ */
++export function setParagraphSpeaker(
++  speakers: MediaTranscriptSpeakers | undefined,
++  start: number,
++  nextStart: number | null,
++  speaker: number,
++): MediaTranscriptSpeakers {
++  const after = nextStart === null ? null : speakerAt(speakers, nextStart)
++  const turns = (speakers?.turns ?? []).filter(
++    (turn) =>
++      Math.abs(turn.start - start) > 1e-6 &&
++      !(nextStart !== null && Math.abs(turn.start - nextStart) <= 1e-6),
++  )
++  turns.push({ start, speaker })
++  if (nextStart !== null && after !== null) turns.push({ start: nextStart, speaker: after })
++  const sorted = turns.toSorted((left, right) => left.start - right.start)
++  const normalized: MediaTranscriptSpeakers['turns'] = []
++  let effective = 0
++  for (const turn of sorted) {
++    if (turn.speaker === effective) continue
++    normalized.push(turn)
++    effective = turn.speaker
++  }
++  return { names: { ...speakers?.names }, turns: normalized }
++}
++
++/**
++ * Source ranges to cut for a selection: runs of entries still in the movie, joined across the
++ * pauses between them and split where an entry is already cut.
++ */
++export function selectionRanges(entries: readonly PlacedTranscriptEntry[]): SourceRange[] {
++  const ranges: SourceRange[] = []
++  let run: SourceRange | null = null
++  for (const entry of entries) {
++    if (entry.removed) {
++      run = null
++      continue
++    }
++    if (run) run.end = Math.max(run.end, entry.end)
++    else {
++      run = { start: entry.start, end: entry.end }
++      ranges.push(run)
++    }
++  }
++  return ranges
++}
++
++/** Seconds of the movie a set of source ranges takes up on these pieces. */
++export function timelineSecondsOf(
++  ranges: readonly SourceRange[],
++  pieces: readonly TranscriptPiece[],
++): number {
++  let seconds = 0
++  for (const range of ranges) {
++    for (const piece of pieces) {
++      const overlap = Math.min(range.end, piece.end) - Math.max(range.start, piece.start)
++      if (overlap > 0) seconds += overlap / piece.speed
++    }
++  }
++  return seconds
++}
++
++/** Ranges that are still (mostly) in the movie, for "Remove silences" and "Remove filler words". */
++export function liveRanges<T extends SourceRange>(
++  ranges: readonly T[],
++  pieces: readonly TranscriptPiece[],
++  timelineFps: number,
++): T[] {
++  return ranges.filter((range) => sourceTimeToFrame(pieces, midpoint(range), timelineFps) !== null)
++}
++
++/**
++ * How to bring a cut back: extend the piece before it over the cut with a ripple trim, then join
++ * it to the piece after it; or, for a cut at the very start, extend the piece after it backwards.
++ */
++export function planCutRestore(
++  pieces: readonly TranscriptPiece[],
++  cut: SourceRange,
++  timelineFps: number,
++): TranscriptRestorePlan | null {
++  const before = pieces.find((piece) => Math.abs(piece.end - cut.start) <= EDGE_TOLERANCE_SECONDS)
++  const after = pieces.find((piece) => Math.abs(piece.start - cut.end) <= EDGE_TOLERANCE_SECONDS)
++  if (before) {
++    const frames = Math.round(((cut.end - cut.start) * timelineFps) / before.speed)
++    if (frames <= 0) return null
++    const adjacent =
++      !!after &&
++      after.trackId === before.trackId &&
++      after.speed === before.speed &&
++      after.from === before.from + before.durationInFrames
++    return { handle: 'end', itemId: before.id, frames, joinWithId: adjacent ? after.id : null }
++  }
++  if (after) {
++    const frames = Math.round(((cut.end - cut.start) * timelineFps) / after.speed)
++    if (frames <= 0) return null
++    return { handle: 'start', itemId: after.id, frames, joinWithId: null }
++  }
++  return null
++}
++
++/** The transcript with one word corrected; the segment and full text follow the word. */
++export function correctTranscriptWord(
++  transcript: MediaTranscript,
++  segmentIndex: number,
++  wordIndex: number,
++  text: string,
++): MediaTranscript | null {
++  const next = text.trim()
++  const segment = transcript.segments[segmentIndex]
++  const word = segment?.words?.[wordIndex]
++  if (!segment || !word || !next || next === word.text.trim()) return null
++  const words = segment.words!.map((item, index) =>
++    index === wordIndex ? { ...item, text: next } : item,
++  )
++  const segments = transcript.segments.map((item, index) =>
++    index === segmentIndex
++      ? { ...item, words, text: joinTranscriptWords(words.map((entry) => entry.text.trim())) }
++      : item,
++  )
++  return {
++    ...transcript,
++    segments,
++    text: joinTranscriptWords(segments.map((item) => item.text)),
++  }
++}
+diff --git a/src/i18n/locales/partials/en/transcript.json b/src/i18n/locales/partials/en/transcript.json
+index 93fe4cf107..31743c221b 100644
+--- a/src/i18n/locales/partials/en/transcript.json
++++ b/src/i18n/locales/partials/en/transcript.json
+@@ -23,6 +23,33 @@
+     "toastRemoved": "Removed {{count}} clip(s)",
+     "toastNothingRemoved": "Nothing was removed",
+     "toastRemoveFailed": "Could not remove the selected words",
+-    "toastTranscribeFailed": "Transcription failed"
++    "toastTranscribeFailed": "Transcription failed",
++    "edit": {
++      "empty": "Add a clip where people are talking to edit it by its words.",
++      "removeSilences": "Remove silences",
++      "removeFillers": "Remove filler words",
++      "hint": "Select words, then press Delete to cut them from the movie.",
++      "selected": "Selected: {{count}} · {{seconds}} s",
++      "clear": "Clear",
++      "cut": "Cut",
++      "undo": "Undo",
++      "cutToast": "{{seconds}} s shorter. Undo brings it back.",
++      "restored": "Brought back {{seconds}} s.",
++      "restoreFailed": "This cut can’t be brought back here. Use Undo instead.",
++      "restoreHint": "Cut from the movie. Click to bring it back.",
++      "wordTime": "{{time}} in the movie. Double-click to correct the word.",
++      "correctWord": "Correct word",
++      "corrected": "Word corrected. Captions made from this transcript are updated too.",
++      "saveFailed": "The transcript couldn’t be saved.",
++      "silence": "Silence · {{seconds}} s",
++      "silenceRemoved": "Silence removed",
++      "shorterBy": "{{seconds}} s shorter",
++      "cutLabel": "Cut",
++      "note": "Filler words are underlined. Cut words stay here, crossed out. Click one to bring it back.",
++      "speakerNumber": "Speaker {{number}}",
++      "speakerMenu": "{{name}}: change who is speaking",
++      "newSpeaker": "New speaker",
++      "renameSpeaker": "Rename speaker"
++    }
+   }
+ }
+diff --git a/src/infrastructure/storage/workspace-fs/ai-outputs/types.ts b/src/infrastructure/storage/workspace-fs/ai-outputs/types.ts
+index 7485d623cc..e3e8bc4bd8 100644
+--- a/src/infrastructure/storage/workspace-fs/ai-outputs/types.ts
++++ b/src/infrastructure/storage/workspace-fs/ai-outputs/types.ts
+@@ -12,6 +12,7 @@ import type {
+   MediaTranscript,
+   MediaTranscriptModel,
+   MediaTranscriptQuantization,
++  MediaTranscriptSpeakers,
+ } from '@/types/storage'
+ 
+ /**
+@@ -62,6 +63,7 @@ export interface TranscriptPayload {
+   modelVariant: MediaTranscriptModel
+   text: string
+   segments: Array<{ text: string; start: number; end: number }>
++  speakers?: MediaTranscriptSpeakers
+ }
+ 
+ export type CaptionsPayload = {
+@@ -134,6 +136,7 @@ export function transcriptFromLegacy(record: MediaTranscript): AiOutput<'transcr
+       modelVariant: record.model,
+       text: record.text,
+       segments: record.segments,
++      ...(record.speakers ? { speakers: record.speakers } : {}),
+     },
+   }
+ }
+@@ -148,6 +151,7 @@ export function transcriptToLegacy(envelope: AiOutput<'transcript'>): MediaTrans
+     quantization: envelope.data.quantization,
+     text: envelope.data.text,
+     segments: envelope.data.segments,
++    ...(envelope.data.speakers ? { speakers: envelope.data.speakers } : {}),
+     createdAt: envelope.createdAt,
+     updatedAt: envelope.updatedAt,
+   }
+diff --git a/src/types/storage.ts b/src/types/storage.ts
+index ed534ef970..8c072a69ad 100644
+--- a/src/types/storage.ts
++++ b/src/types/storage.ts
+@@ -214,10 +214,22 @@ export interface MediaTranscript {
+   quantization: MediaTranscriptQuantization
+   text: string
+   segments: MediaTranscriptSegment[]
++  /** Who speaks when, and the names people gave speakers (Frameleaf FL-562). */
++  speakers?: MediaTranscriptSpeakers
+   createdAt: number
+   updatedAt: number
+ }
+ 
++/**
++ * Speakers of a transcript, set by hand in the transcript panel. `turns` are speaker changes in
++ * source seconds, sorted; speaker 0 speaks before the first. `names` are keyed by speaker number;
++ * an unnamed speaker shows as "Speaker n".
++ */
++export interface MediaTranscriptSpeakers {
++  names: Record<string, string>
++  turns: Array<{ start: number; speaker: number }>
++}
++
+ // Waveform data for timeline audio clip visualization
+ export interface WaveformData {
+   id: string // Same as mediaId

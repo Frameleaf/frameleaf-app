@@ -192,7 +192,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' ||
           // FL-505 Node 22.23.4 pin retains the same raster producers and Chromium version.
           binding.sourceSha256 ===
-            '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf')),
+            '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
+          // FL-562 transcript editing changes the transcript panel and timeline edits only.
+          binding.sourceSha256 ===
+            'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b')),
     'SOURCE_BROWSER',
   )
   check(
