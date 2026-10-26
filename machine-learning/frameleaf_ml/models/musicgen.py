@@ -96,7 +96,8 @@ def sample_top_k(logits: NDArray[np.float32], rng: np.random.Generator, top_k: i
     weights = np.exp(picked)
     weights /= weights.sum(axis=-1, keepdims=True)
     choice = np.array([rng.choice(top_k, p=row) for row in weights])
-    return top[np.arange(len(top)), choice].astype(np.int64)
+    tokens: NDArray[np.int64] = top[np.arange(len(top)), choice].astype(np.int64)
+    return tokens
 
 
 def to_wav(samples: NDArray[np.float32], sample_rate: int = SAMPLE_RATE) -> bytes:

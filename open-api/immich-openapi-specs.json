@@ -129588,12 +129588,7 @@
             "type": "string"
           },
           "kind": {
-            "description": "An audio file, or a video whose soundtrack is used",
-            "enum": [
-              "audio",
-              "video"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/StudioMovieSongKind"
           },
           "name": {
             "type": "string"
@@ -129606,6 +129601,14 @@
           "name"
         ],
         "type": "object"
+      },
+      "StudioMovieSongKind": {
+        "description": "An audio file, or a video whose soundtrack is used",
+        "enum": [
+          "audio",
+          "video"
+        ],
+        "type": "string"
       },
       "StudioMovieStep": {
         "description": "What the job is doing: choosing moments, making or reading the music, cutting, adding the title",

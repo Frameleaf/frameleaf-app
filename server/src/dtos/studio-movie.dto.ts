@@ -13,6 +13,11 @@ export const StudioMovieMusicKindSchema = z
   .describe('`generated`: new music made for the movie; `song`: a song from the library')
   .meta({ id: 'StudioMovieMusicKind' });
 
+export const StudioMovieSongKindSchema = z
+  .enum(['audio', 'video'])
+  .describe('An audio file, or a video whose soundtrack is used')
+  .meta({ id: 'StudioMovieSongKind' });
+
 export const StudioMovieStepSchema = z
   .enum(['moments', 'music', 'cuts', 'title', 'done'])
   .describe('What the job is doing: choosing moments, making or reading the music, cutting, adding the title')
@@ -112,7 +117,7 @@ export class StudioMovieSongDto extends createZodDto(
   z
     .object({
       id: z.uuid(),
-      kind: z.enum(['audio', 'video']).describe('An audio file, or a video whose soundtrack is used'),
+      kind: StudioMovieSongKindSchema,
       name: z.string(),
       durationSeconds: z.number().min(0).meta({ format: 'double' }),
     })

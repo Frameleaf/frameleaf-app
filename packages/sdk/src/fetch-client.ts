@@ -14893,8 +14893,7 @@ export type StudioMovieQueuedDto = {
 export type StudioMovieSongDto = {
     durationSeconds: number;
     id: string;
-    /** An audio file, or a video whose soundtrack is used */
-    kind: Kind11;
+    kind: StudioMovieSongKind;
     name: string;
 };
 export type StudioMovieShot = {
@@ -16515,7 +16514,7 @@ export type PinnedCollection = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind12;
+    kind: Kind11;
     /** Null when unavailable; the inaccessible target identity is not disclosed */
     targetId: string | null;
     /** Current access-filtered title; null when unavailable */
@@ -16530,7 +16529,7 @@ export type PinnedCollectionsResponseDto = {
 export type PinnedCollectionRef = {
     /** Opaque pin ID chosen by the client and retained across reorders */
     id: string;
-    kind: Kind12;
+    kind: Kind11;
     /** Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID */
     targetId: string | null;
 };
@@ -18294,7 +18293,7 @@ export type SyncPinnedCollectionV1 = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind12;
+    kind: Kind11;
     position: number;
     targetId: string;
     /** Current access-filtered title; null when unavailable */
@@ -18352,7 +18351,7 @@ export type SyncSharedSpaceV1 = {
     description: string | null;
     icon: string | null;
     id: string;
-    kind: Kind13;
+    kind: Kind12;
     name: string;
     updatedAt: string;
 };
@@ -36020,7 +36019,7 @@ export enum StudioMovieMusicKind {
     Generated = "generated",
     Song = "song"
 }
-export enum Kind11 {
+export enum StudioMovieSongKind {
     Audio = "audio",
     Video = "video"
 }
@@ -36541,7 +36540,7 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
-export enum Kind12 {
+export enum Kind11 {
     Album = "album",
     SmartAlbum = "smart-album",
     SavedSearch = "saved-search",
@@ -36674,7 +36673,7 @@ export enum Status12 {
     Trashed = "trashed",
     Deleted = "deleted"
 }
-export enum Kind13 {
+export enum Kind12 {
     Space = "space"
 }
 export enum UserMetadataKey {

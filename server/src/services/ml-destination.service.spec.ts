@@ -1650,7 +1650,7 @@ describe(MlDestinationService.name, () => {
       });
 
       mocks.mlDestination.getAll.mockResolvedValue([
-        { ...mlDestinationStub.frameleafCloud, ...serving, consentGranted: true },
+        { ...mlDestinationStub.frameleafCloud, ...serving },
       ]);
       const cloudOnly = await sut.getCapabilities();
       expect(cloudOnly.studio.generationWorker).toBe(false);
