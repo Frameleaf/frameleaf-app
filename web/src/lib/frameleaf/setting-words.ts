@@ -171,6 +171,8 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // ACCOUNT-P2, P3, P5: the account preferences added to Downloads, Look & playback and People & sharing.
   'download.includeSidecar': { label: 'frameleaf_prefs_downloads_details' },
   'search.includeArchived': { label: 'frameleaf_prefs_look_archived' },
+  // FL-556: Look & playback › Safety.
+  'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },
