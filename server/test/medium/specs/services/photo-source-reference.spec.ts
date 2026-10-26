@@ -4,7 +4,7 @@ import { Kysely, sql } from 'kysely';
 import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { createServer } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +14,8 @@ import request from 'supertest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
+import { SourceResourceController } from 'src/controllers/source-resource.controller.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
   AssetFileType,
@@ -48,6 +50,10 @@ import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
+import { SourceOriginalService } from 'src/services/source-original.service.js';
+import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
+import { SourceResourceDeliveryService } from 'src/services/source-resource-delivery.service.js';
+import { SourceResourceReadService } from 'src/services/source-resource-read.service.js';
 import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { developSourceVersion } from 'src/utils/develop-source-binding.js';
@@ -1367,15 +1373,31 @@ it('replaces a video reference and retires dependent current key frames while ke
 });
 
 it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
-  'runs the actual native reference publisher over HTTPS through lost and foreign receipts without uploading originals',
+  'runs the actual native reference publisher and explicitly approved original serving over HTTPS',
   async () => {
     const desktop = process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT!;
     const f = await setup();
     const root = await mkdtemp(join(await realpath(tmpdir()), 'frameleaf-native-reference-'));
     const metadata = new SystemMetadataRepository(db);
     const policies = new DesktopAssistancePolicyService(metadata);
+    const grants = new SourceResourceRepository(db);
+    const cache = new SourceResourceCacheRepository(db);
+    const reads = new SourceResourceReadRepository(db, grants, cache);
+    const sourceAuth = new SourceResourceAuthService(grants, metadata);
+    const sourceReads = new SourceResourceReadService(sourceAuth, reads);
+    const sourceDelivery = new SourceResourceDeliveryService(
+      sourceAuth,
+      grants,
+      reads,
+      cache,
+      LoggingRepository.create(),
+    );
+    const originals = new SourceOriginalService(reads, cache);
+    await mkdir(join(root, 'server-media'), { mode: 0o700 });
+    const media = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(join(root, 'server-media'));
+
     const http = await controllerSetup(
-      [DesktopDeviceController, PhotoSourceController],
+      [DesktopDeviceController, PhotoSourceController, SourceResourceController],
       [
         {
           provide: DesktopDeviceService,
@@ -1384,6 +1406,9 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         { provide: DesktopAssistancePolicyService, useValue: policies },
         { provide: DesktopWorkerAuthService, useValue: {} },
         { provide: PhotoSourceService, useValue: f.service },
+        { provide: SourceResourceAuthService, useValue: sourceAuth },
+        { provide: SourceResourceReadService, useValue: sourceReads },
+        { provide: SourceResourceDeliveryService, useValue: sourceDelivery },
       ],
     );
     http.authenticate.mockResolvedValue(f.auth);
@@ -1405,7 +1430,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
     });
     const token = randomBytes(32).toString('base64url');
     let currentToken = token;
-    const requests: { method: string | undefined; path: string }[] = [];
+    const requests: { method: string | undefined; path: string; sourceCredential: boolean }[] = [];
     const parse = json({ limit: '16kb' });
     const tls = createServer(
       {
@@ -1413,11 +1438,19 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         cert: readFileSync('test/fixtures/frameleaf-relay/tun.cert.pem'),
       },
       (incoming, outgoing) => {
-        if (!incoming.url?.startsWith('/api/') || incoming.headers.authorization !== `Bearer ${currentToken}`) {
+        const sourceRoute = /^\/api\/source-resources\/(poll|heartbeat|deliver)$/u.test(incoming.url ?? '');
+        if (
+          !incoming.url?.startsWith('/api/') ||
+          (!sourceRoute && incoming.headers.authorization !== `Bearer ${currentToken}`)
+        ) {
           outgoing.writeHead(401).end();
           return;
         }
-        requests.push({ method: incoming.method, path: incoming.url });
+        requests.push({
+          method: incoming.method,
+          path: incoming.url,
+          sourceCredential: incoming.headers.authorization?.startsWith('Bearer flsrc1_') === true,
+        });
         incoming.url = incoming.url.slice(4);
         parse(incoming, outgoing, (error) => {
           if (error) {
@@ -1578,6 +1611,101 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
             .executeTakeFirstOrThrow()
         ).resourceId,
       ).toBe(rescanned.receipt.resourceId);
+      native.stdin!.write(JSON.stringify({ command: 'serve-original' }) + '\n');
+      expect(await message()).toMatchObject({ phase: 'serving-unapproved-ready', bytes: edited.length });
+      const deniedAbort = new AbortController();
+      const deniedEnqueue = vi.spyOn(reads, 'enqueue');
+      const deniedInput = originals.open(
+        first.assetId!,
+        { kind: 'http', readerId: randomUUID(), ownerId: randomUUID() },
+        async () => {
+          await lookup(
+            { ...f.auth, session: { ...fresh, hasElevatedPermission: false } },
+            lost.sourceId,
+            rescanned.receipt.runId,
+            rescanned.receipt.itemId,
+          );
+        },
+        deniedAbort.signal,
+        edited.length,
+      );
+      void deniedInput.catch(() => {});
+      try {
+        await expect.poll(() => deniedEnqueue.mock.results.length).toBe(1);
+        expect(await deniedEnqueue.mock.results[0].value).toBeDefined();
+        native.stdin!.write(JSON.stringify({ command: 'start-unapproved-serving' }) + '\n');
+        expect(await message()).toMatchObject({
+          phase: 'serving-blocked',
+          additionalOriginalReads: 0,
+          transferUsed: 0,
+          cacheRetained: true,
+        });
+        expect(requests.some(({ path }) => path === '/api/source-resources/deliver')).toBe(false);
+      } finally {
+        deniedAbort.abort();
+        await deniedInput.catch(() => {});
+        deniedEnqueue.mockRestore();
+      }
+      native.stdin!.write(JSON.stringify({ command: 'approve-transfer' }) + '\n');
+      expect(await message()).toMatchObject({
+        phase: 'serving-ready',
+        bytes: edited.length,
+        originalReadAllowance: 0,
+        transferAllowance: edited.length,
+      });
+      const abort = new AbortController();
+      const enqueue = vi.spyOn(reads, 'enqueue');
+      const input = originals.open(
+        first.assetId!,
+        { kind: 'http', readerId: randomUUID(), ownerId: randomUUID() },
+        async () => {
+          await lookup(
+            { ...f.auth, session: { ...fresh, hasElevatedPermission: false } },
+            lost.sourceId,
+            rescanned.receipt.runId,
+            rescanned.receipt.itemId,
+          );
+        },
+        abort.signal,
+        edited.length,
+      );
+      void input.catch(() => {});
+      let opened: Awaited<typeof input> | undefined;
+      try {
+        await expect.poll(() => enqueue.mock.results.length).toBe(1);
+        expect(await enqueue.mock.results[0].value).toBeDefined();
+        native.stdin!.write(JSON.stringify({ command: 'start-serving' }) + '\n');
+        expect(await message()).toMatchObject({ phase: 'serving-started' });
+        opened = await input;
+        expect(Buffer.concat(await Array.fromAsync(opened.stream))).toEqual(edited);
+        await opened.settled;
+        expect(opened.verifiedSha256).toBe(createHash('sha256').update(edited).digest('hex'));
+        expect(opened.resourceId).toBe(rescanned.receipt.resourceId);
+        expect(await readFile(opened.localPath)).toEqual(edited);
+        await opened.release();
+        await expect(readFile(opened.localPath)).rejects.toMatchObject({ code: 'ENOENT' });
+        expect(
+          await db
+            .selectFrom('source_resource_cache')
+            .select('id')
+            .where('resourceId', '=', rescanned.receipt.resourceId)
+            .execute(),
+        ).toEqual([]);
+        native.stdin!.write(JSON.stringify({ command: 'stop-serving' }) + '\n');
+        expect(await message()).toMatchObject({
+          phase: 'served-original',
+          bytes: edited.length,
+          additionalOriginalReads: 0,
+          transferUsed: edited.length,
+          workerStopped: true,
+          sourceAndPriorCacheRetained: true,
+        });
+      } finally {
+        abort.abort();
+        await opened?.release();
+        await input.catch(() => {});
+        enqueue.mockRestore();
+      }
       native.stdin!.write(JSON.stringify({ command: 'forget' }) + '\n');
       expect(await message()).toMatchObject({ phase: 'forgotten', originalAndCacheRetained: true });
       expect(
@@ -1601,6 +1729,11 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         }),
       ]).finally(() => clearTimeout(timer));
       expect(code, errors).toBe(0);
+      expect(requests.filter(({ path }) => path === '/api/source-resources/grants')).toHaveLength(1);
+      const deliveries = requests.filter(
+        ({ method, path }) => method === 'PUT' && path === '/api/source-resources/deliver',
+      );
+      expect(deliveries).toEqual([{ method: 'PUT', path: '/api/source-resources/deliver', sourceCredential: true }]);
       expect(attempts).toBe(2);
       expect(lookups).toBe(5);
       expect(requests.filter(({ method, path }) => method === 'POST' && path.endsWith('/reference'))).toHaveLength(2);
@@ -1647,6 +1780,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
       await new Promise<void>((resolve) => tls.close(() => resolve()));
       replies.mockRestore();
       recoveryReplies.mockRestore();
+      media.mockRestore();
       await http.close();
       await f.http.close();
       await rm(root, { recursive: true, force: true });
