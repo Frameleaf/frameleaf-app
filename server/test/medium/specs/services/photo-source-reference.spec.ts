@@ -1161,6 +1161,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
       return receipt;
     });
     const token = randomBytes(32).toString('base64url');
+    let currentToken = token;
     const requests: { method: string | undefined; path: string }[] = [];
     const parse = json({ limit: '16kb' });
     const tls = createServer(
@@ -1169,7 +1170,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         cert: readFileSync('test/fixtures/frameleaf-relay/tun.cert.pem'),
       },
       (incoming, outgoing) => {
-        if (!incoming.url?.startsWith('/api/') || incoming.headers.authorization !== `Bearer ${token}`) {
+        if (!incoming.url?.startsWith('/api/') || incoming.headers.authorization !== `Bearer ${currentToken}`) {
           outgoing.writeHead(401).end();
           return;
         }
@@ -1288,6 +1289,37 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
           storage: 'reference',
         },
       });
+      const fresh = await new SessionRepository(db).create({ userId: f.user.id, token: Buffer.alloc(32, 9) });
+      await db.deleteFrom('session').where('id', '=', f.session.id).execute();
+      currentToken = randomBytes(32).toString('base64url');
+      http.authenticate.mockResolvedValue({ ...f.auth, session: { ...fresh, hasElevatedPermission: false } });
+      native.stdin!.write(JSON.stringify({ command: 'reconnect', token: currentToken }) + '\n');
+      expect(await message()).toMatchObject({
+        phase: 'reconnected',
+        receipt: done.receipt,
+        readAndUploadAllowancesUnchanged: true,
+      });
+      const rebound = await db
+        .selectFrom('photo_source')
+        .selectAll()
+        .where('id', '=', lost.sourceId)
+        .executeTakeFirstOrThrow();
+      expect(rebound.photoSessionId).toBe(fresh.id);
+      await expect(f.repository.snapshot(f.authority, lost.sourceId, first.runId)).rejects.toThrow();
+      native.stdin!.write(JSON.stringify({ command: 'forget' }) + '\n');
+      expect(await message()).toMatchObject({ phase: 'forgotten', originalAndCacheRetained: true });
+      expect(
+        (
+          await db
+            .selectFrom('photo_source')
+            .select('revokedAt')
+            .where('id', '=', lost.sourceId)
+            .executeTakeFirstOrThrow()
+        ).revokedAt,
+      ).not.toBeNull();
+      expect(await db.selectFrom('asset').select('id').where('id', '=', first.assetId!).execute()).toEqual([
+        { id: first.assetId },
+      ]);
       native.stdin!.end();
       let timer: NodeJS.Timeout | undefined;
       const code = await Promise.race([
@@ -1297,7 +1329,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         }),
       ]).finally(() => clearTimeout(timer));
       expect(code, errors).toBe(0);
-      expect(attempts).toBe(4);
+      expect(attempts).toBe(5);
       expect(
         await db.selectFrom('photo_source_run').selectAll().where('sourceId', '=', lost.sourceId).execute(),
       ).toMatchObject([{ id: first.runId, state: 'complete' }]);
@@ -1313,9 +1345,12 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         await db.selectFrom('asset_upload_resource').select('id').where('ownerId', '=', f.user.id).execute(),
       ).toHaveLength(0);
       expect(f.jobs.queueInTransaction).toHaveBeenCalledTimes(1);
-      expect(requests.some(({ path }) => path.includes('?') || path.includes(token) || path.includes('/assets'))).toBe(
-        false,
-      );
+      expect(
+        requests.some(
+          ({ path }) =>
+            path.includes('?') || path.includes(token) || path.includes(currentToken) || path.includes('/assets'),
+        ),
+      ).toBe(false);
     } finally {
       if (native && native.exitCode === null) {
         native.kill('SIGTERM');
