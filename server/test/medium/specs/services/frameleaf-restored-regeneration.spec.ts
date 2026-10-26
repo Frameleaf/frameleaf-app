@@ -47,7 +47,8 @@ it('releases a restored prepared import once with a real admin and effective set
       { getJobCounts: vi.fn().mockResolvedValue({ active: 0, waiting: 0, delayed: 0, paused: 0, failed: 0 }) } as never,
       users,
       {} as never,
-      {} as never,
+      // Setup scans every account, including the asset-less admin made below.
+      { startMissingScan: vi.fn().mockResolvedValue({ operationId: randomUUID() }) } as never,
       setup.sut,
     );
   const run = async () =>

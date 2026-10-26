@@ -443,7 +443,10 @@ limit
 select
   "id",
   "checksum",
-  "deletedAt"
+  "deletedAt",
+  "originalPath",
+  "libraryId",
+  "isExternal"
 from
   "asset"
 where

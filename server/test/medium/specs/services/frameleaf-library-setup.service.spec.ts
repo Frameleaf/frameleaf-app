@@ -258,6 +258,8 @@ it('waits for a fresh full integrity scan when the existing operation is increme
   try {
     const { user } = await ctx.newUser();
     await ctx.newAsset({ ownerId: user.id });
+    // Photos that survive only as untracked files in the upload folder still need the scan.
+    const { user: filesOnly } = await ctx.newUser();
     process.env.FRAMELEAF_MANAGER_INSTALLATION = 'eeeeeeeeffff';
     process.env.FRAMELEAF_MANAGER_ORIGIN = 'new_library';
     delete process.env.FRAMELEAF_MANAGER_ML_ENABLED;
@@ -306,7 +308,11 @@ it('waits for a fresh full integrity scan when the existing operation is increme
       value: { health: Record<string, string> };
     }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db);
     expect(state.rows[0].value.health).toEqual({ [user.id]: freshFull });
-    expect(mediaHealth.startMissingScan).toHaveBeenCalledTimes(2);
+    expect(mediaHealth.startMissingScan).toHaveBeenCalledWith({ user: { id: filesOnly.id } });
+    const owners = await sql<{
+      value: { owners: string[] };
+    }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(db);
+    expect(owners.rows[0].value.owners.sort()).toEqual([user.id, filesOnly.id].sort());
   } finally {
     for (const [key, value] of [
       ['FRAMELEAF_MANAGER_INSTALLATION', previous.installation],

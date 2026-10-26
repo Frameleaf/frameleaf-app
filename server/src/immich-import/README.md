@@ -88,7 +88,16 @@ checks containment, regular-file type, complete content hashes, original checksu
 and before/after file metadata. The source fingerprint additionally includes the
 SHA-256 of every present referenced media file, including legacy path-checksummed
 external originals. Changed media therefore invalidates a resumed operation.
-Missing regenerable files are recorded consistently; originals cannot be missing.
+Missing regenerable files are recorded consistently. An original Immich had already lost
+(shown there as unavailable), one whose bytes no longer match Immich's checksum, or one
+outside every mapped root is still imported, never dropped and never a reason to stop:
+verification lists it and, before activation, notifies its owner (and every administrator,
+with the per-account list) with the file name, paths, dates, size, camera and checksum. An
+empty or absent root reads as unmounted and still stops the import, as do copy-safety
+failures (symlink escape, shared inode, a file present in Immich but not copied). After
+setup, Library Care's full scan covers every account, relinks a lost original to an
+untracked file with the same bytes in the owner's own storage, and brings other untracked
+media back; uploading the same file again restores a lost original under its photo.
 The importer never writes media. After activation Frameleaf becomes the media
 writer; restarting Immich against these originals is not a safe rollback.
 

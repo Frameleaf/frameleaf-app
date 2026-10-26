@@ -81,8 +81,70 @@ export class AssetMediaService extends BaseService {
     if (!assetId) {
       return;
     }
+    // Its original is gone: let the file come, the upload restores it.
+    if ((await this.lostOriginalMatches(auth, [fromChecksum(checksum)])).length > 0) {
+      return;
+    }
 
     return { id: assetId, status: AssetMediaStatus.DUPLICATE };
+  }
+
+  /**
+   * Media health: the owner's assets with these bytes whose original file is gone. Those are not
+   * duplicates of a re-upload; the upload restores them. Empty when any match still has its file
+   * (a real duplicate), or for trashed, hidden, external or shared-link matches.
+   */
+  private async lostOriginalMatches(auth: AuthDto, checksums: Buffer[], { includeHidden = false } = {}) {
+    if (auth.sharedLink) {
+      return [];
+    }
+    const options = includeHidden ? undefined : this.getDuplicateCheckOptions(auth);
+    const matches = options
+      ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options)
+      : await this.assetRepository.getByChecksums(auth.user.id, checksums);
+    const present = await Promise.all(
+      matches.map(({ originalPath }) => this.storageRepository.checkFileExists(originalPath)),
+    );
+    if (matches.length === 0 || present.some(Boolean)) {
+      return [];
+    }
+    return matches.filter((match) => !match.deletedAt && !match.libraryId && !match.isExternal);
+  }
+
+  /**
+   * A re-upload of a lost original puts it back under the asset it belonged to, keeping everything else.
+   * Hidden photos (Locked, or hidden by this session's content settings) are repaired too, but their id
+   * is only returned when this session may see them.
+   */
+  async restoreLostOriginal(auth: AuthDto, dto: AssetMediaCreateDto, file: UploadFile) {
+    const checksums = [file.checksum, ...(file.legacyChecksum ? [file.legacyChecksum] : [])];
+    const lost = await this.lostOriginalMatches(auth, checksums, { includeHidden: true });
+    if (lost.length === 0) {
+      return;
+    }
+    const sha1 = file.legacyChecksum ?? (await this.cryptoRepository.hashFileDigests(file.originalPath)).sha1;
+    for (const asset of lost) {
+      const restored = await this.physicalFileRepository.restoreLostOriginal({
+        assetId: asset.id,
+        expectedOriginalPath: asset.originalPath,
+        originalPath: file.originalPath,
+        sha1,
+        sha256: file.checksum,
+        sizeInBytes: file.size,
+        reason: 'restored_by_upload',
+      });
+      if (restored) {
+        await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
+        await this.jobRepository.queueAll([
+          { name: JobName.SidecarCheck, data: { id: asset.id, source: 'upload' } },
+          { name: JobName.AssetGenerateThumbnails, data: { id: asset.id, source: 'upload' } },
+        ]);
+        this.logger.log(`Upload restored the lost original of asset ${asset.id}`);
+        const options = this.getDuplicateCheckOptions(auth);
+        const visible = options ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options) : lost;
+        return { id: asset.id, visible: visible.some(({ id }) => id === asset.id) };
+      }
+    }
   }
 
   canUploadFile({ auth, fieldName, file, body }: UploadRequest): true {
@@ -286,6 +348,17 @@ export class AssetMediaService extends BaseService {
     let asset: Asset | undefined;
     try {
       const prepared = await this.prepareUploadAsset(auth, dto, file);
+      const restored = await this.restoreLostOriginal(auth, dto, file);
+      if (restored) {
+        if (sidecarFile) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [sidecarFile.originalPath] } });
+        }
+        // ponytail: reported as created (the file was taken), so every client keeps working unchanged.
+        // A photo this session may not see answers exactly like a hidden duplicate: no id, no hint.
+        return restored.visible
+          ? { id: restored.id, status: AssetMediaStatus.CREATED }
+          : { id: '00000000-0000-0000-0000-000000000000', status: AssetMediaStatus.DUPLICATE };
+      }
       if (prepared.asset.livePhotoVideoId) {
         const published = await this.assetRepository.createLivePhotoUpload(prepared.asset, prepared.lock);
         asset = published.asset;
@@ -710,8 +783,17 @@ export class AssetMediaService extends BaseService {
       : await this.assetRepository.getByChecksums(auth.user.id, lookups);
     const checksumMap: Record<string, { id: string; isTrashed: boolean }> = {};
 
-    for (const { id, deletedAt, checksum } of results) {
-      checksumMap[checksum.toString('hex')] = { id, isTrashed: !!deletedAt };
+    // Media health: a match whose original is gone is accepted, so the upload can restore it.
+    const present = await Promise.all(
+      results.map(
+        async ({ originalPath, deletedAt, libraryId, isExternal }) =>
+          !!deletedAt || !!libraryId || isExternal || (await this.storageRepository.checkFileExists(originalPath)),
+      ),
+    );
+    for (const [index, { id, deletedAt, checksum }] of results.entries()) {
+      if (present[index]) {
+        checksumMap[checksum.toString('hex')] = { id, isTrashed: !!deletedAt };
+      }
     }
 
     for (const { sha1, checksum } of translations) {
