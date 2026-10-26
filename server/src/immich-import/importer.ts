@@ -39,8 +39,8 @@ const BOOTSTRAP_TABLES = new Set([
 const localColumns = new Set(['updateId', 'createId']);
 const LOST_REPORT_ITEMS = 1000;
 const LOST_REASON_TEXT: Record<LostOriginalReason, string> = {
-  missing: 'already missing in Immich',
-  changed: 'changed since Immich recorded them',
+  missing: 'already missing in the source library',
+  changed: 'changed since the source library recorded them',
   unmapped: 'outside the imported media folders',
 };
 
@@ -548,7 +548,7 @@ export class ImmichImportService {
         ownerId,
         'owner',
         list,
-        `${list.length} ${list.length === 1 ? 'original' : 'originals'} from Immich need attention`,
+        `${list.length} imported ${list.length === 1 ? 'original needs' : 'originals need'} attention`,
       );
     }
     if (byOwner.size > 1 || admins.some(({ id }) => !byOwner.has(String(id)))) {
@@ -562,7 +562,7 @@ export class ImmichImportService {
           String(id),
           'admin',
           items,
-          `Immich import: ${items.length} originals need attention`,
+          `Library import: ${items.length} originals need attention`,
           `By account: ${accounts}. `,
         );
       }

@@ -428,7 +428,7 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
     for (const notification of notifications) {
       expect(notification).toMatchObject({ level: 'warning', type: 'SystemMessage' });
       expect(notification.description).toContain('IMG_0420.HEIC');
-      expect(notification.description).toContain('1 already missing in Immich');
+      expect(notification.description).toContain('1 already missing in the source library');
       expect(notification.data).toMatchObject({
         kind: 'immich-import-lost-originals',
         total: 1,

@@ -89,14 +89,14 @@ describe('NotificationPanel', () => {
     sdkMock.updateNotification.mockResolvedValue(undefined as never);
     notificationManager.notifications = [
       {
-        ...notification('lost', '2 originals from Immich need attention'),
+        ...notification('lost', '2 imported originals need attention'),
         level: NotificationLevel.Warning,
         data: { kind: 'immich-import-lost-originals', total: 2, items: [] },
       },
     ];
     render(NotificationPanel, { onNavigate: vi.fn() });
 
-    await fireEvent.click(screen.getByText('2 originals from Immich need attention'));
+    await fireEvent.click(screen.getByText('2 imported originals need attention'));
 
     await waitFor(() => expect(goto).toHaveBeenCalledWith(Route.missingMediaUtility()));
   });
