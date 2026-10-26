@@ -141,6 +141,7 @@ import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
+import { StudioMovieService } from 'src/services/studio-movie.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
@@ -150,7 +151,6 @@ import { StudioReverseConformCommandService } from 'src/services/studio-reverse-
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
 import { StudioSourceResolutionService } from 'src/services/studio-source-resolution.service.js';
-import { StudioMovieService } from 'src/services/studio-movie.service.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
 import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';

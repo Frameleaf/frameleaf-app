@@ -1649,9 +1649,7 @@ describe(MlDestinationService.name, () => {
         studio: { transcriptionWorker: true, generationWorker: true },
       });
 
-      mocks.mlDestination.getAll.mockResolvedValue([
-        { ...mlDestinationStub.frameleafCloud, ...serving },
-      ]);
+      mocks.mlDestination.getAll.mockResolvedValue([{ ...mlDestinationStub.frameleafCloud, ...serving }]);
       const cloudOnly = await sut.getCapabilities();
       expect(cloudOnly.studio.generationWorker).toBe(false);
     });
