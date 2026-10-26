@@ -14,6 +14,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { HDR_MASTER_FORMAT, hdrEvidenceToken, probeHdrMasters } from './bundled-worker-hdr.mjs';
+import { REFRAME_PROFILE } from './bundled-worker-reframe.mjs';
 
 /** Cancellation must join the child before its output directory can be removed. */
 export function execFileClosed(file, args, options) {
@@ -505,6 +506,9 @@ export async function probeExportMatrix({
   }
   signal?.throwIfAborted();
   if (sidecar) formats.add(SIDECAR_PROFILE);
+  // FL-563: vertical and square exports are a graph this worker derives (`bundled-worker-reframe.mjs`),
+  // rendered and probed like any other export at the sealed size; offered with any SDR video writer.
+  if (Object.keys(writers).some((id) => BUNDLED_FORMATS[id].kind === 'video')) formats.add(REFRAME_PROFILE);
   if (
     [...Object.keys(writers)].some(
       (id) => BUNDLED_FORMATS[id].kind === 'video' && codecs.has(BUNDLED_FORMATS[id].textTrack),

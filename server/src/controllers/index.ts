@@ -102,6 +102,7 @@ import { StudioPreviewStreamController } from 'src/controllers/studio-preview-st
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
 import { StudioProjectImportController } from 'src/controllers/studio-project-import.controller.js';
 import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
+import { StudioReframeController } from 'src/controllers/studio-reframe.controller.js';
 import { StudioSourceResolutionController } from 'src/controllers/studio-source-resolution.controller.js';
 import { StudioSourceController } from 'src/controllers/studio-source.controller.js';
 import { StudioWorkspaceController } from 'src/controllers/studio-workspace.controller.js';
@@ -225,6 +226,7 @@ export const controllers = [
   StudioMediaController,
   StudioBundleController,
   StudioExportController,
+  StudioReframeController,
   StudioPreviewController,
   StudioPreviewStreamController,
   StudioProjectImportController,

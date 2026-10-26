@@ -1146,6 +1146,114 @@ describe(StudioExportService.name, () => {
       expect(version).toEqual(expect.objectContaining({ ownerId: OWNER, projectId: PROJECT, revision: 3 }));
     });
 
+    describe('vertical and square exports (FL-563)', () => {
+      const shapedGraph = () => {
+        const graph = clipGraph();
+        return {
+          ...graph,
+          metadata: { ...graph.metadata, width: 1920, height: 1080 },
+          timeline: {
+            ...graph.timeline,
+            items: graph.timeline.items.map((item) =>
+              item.type === 'video' ? { ...item, sourceWidth: 1920, sourceHeight: 1080 } : item,
+            ),
+          },
+        };
+      };
+      const shapedDto = {
+        ...dto,
+        shape: 'vertical',
+        framing: [
+          {
+            clipId: 'clip-v',
+            path: [
+              { t: 0, x: 0.05 },
+              { t: 1, x: 0.6 },
+            ],
+          },
+        ],
+      } as StudioExportCreateDto;
+
+      beforeEach(() => {
+        studio.authorizeRevision.mockResolvedValue(authorized({ envelope: { graph: shapedGraph() } }));
+        repository.createWithRender.mockResolvedValue({
+          operation: operation({ status: MediaOperationStatus.Queued }),
+          version: versionRow({ state: StudioExportVersionState.Rendering }),
+        });
+      });
+
+      it('seals the shape and each shot’s framing as export settings, never an edit of the project', async () => {
+        mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1'] })]);
+        await sut.create(auth(), PROJECT, shapedDto);
+        const [job, version] = repository.createWithRender.mock.calls[0];
+        const reframe = {
+          version: 1,
+          shape: 'vertical',
+          output: { width: 720, height: 1280 },
+          // the crop never leaves the frame: 0.05 is pulled in to half a crop from the edge
+          shots: {
+            'clip-v': [
+              { t: 0, x: 0.1582 },
+              { t: 1, x: 0.6 },
+            ],
+          },
+        };
+        expect(job.settings).toMatchObject({ shape: 'vertical', reframe });
+        expect(version.settings).toMatchObject({ shape: 'vertical', reframe });
+        expect(job.snapshot.studio).not.toHaveProperty('graph');
+      });
+
+      it('shows the shape on the version but keeps the crop paths with the render', async () => {
+        mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1'] })]);
+        await sut.create(auth(), PROJECT, shapedDto);
+        const settings = repository.createWithRender.mock.calls[0][1].settings;
+        repository.createWithRender.mockResolvedValue({
+          operation: operation({ status: MediaOperationStatus.Queued }),
+          version: versionRow({ state: StudioExportVersionState.Rendering, settings }),
+        });
+        const { version } = await sut.create(auth(), PROJECT, shapedDto);
+        expect(version.settings).toMatchObject({ shape: 'vertical' });
+        expect(version.settings).not.toHaveProperty('reframe');
+      });
+
+      it('is offered only to a render worker that reframes', async () => {
+        mockRenderSessions([liveSession({ formats: ['mp4'] })]);
+        await expect(sut.create(auth(), PROJECT, shapedDto)).rejects.toMatchObject({
+          response: { code: 'studio_export_unsupported', reason: 'codec-unavailable' },
+        });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a 10-bit format', { format: 'mp4-hevc-main10' }],
+        ['a still', { format: 'sdr-jpeg', resolution: 'original' }],
+        ['sound alone', { format: 'audio-mp3' }],
+        ['HDR10 colour', { color: 'hdr10' }],
+        ['the original resolution', { resolution: 'original' }],
+        [
+          'a path out of order',
+          {
+            framing: [
+              {
+                clipId: 'clip-v',
+                path: [
+                  { t: 0.6, x: 0.5 },
+                  { t: 0.2, x: 0.5 },
+                ],
+              },
+            ],
+          },
+        ],
+        ['a framing without a shape', { shape: 'original' }],
+      ])('refuses %s before creating any work', async (_name, patch) => {
+        mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1'] })]);
+        await expect(sut.create(auth(), PROJECT, { ...shapedDto, ...patch } as never)).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+      });
+    });
+
     it('keeps Smooth motion out of the render: it rides along as its own job for after publication (FL-162)', async () => {
       studio.authorizeRevision.mockResolvedValue(authorized());
       repository.createWithRender.mockResolvedValue({

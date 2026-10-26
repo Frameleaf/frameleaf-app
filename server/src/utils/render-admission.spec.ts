@@ -901,3 +901,60 @@ describe('Sidecar v1 same-session capability admission', () => {
     expect(formats.safeParse(Array.from({ length: 33 }, () => 'mp4')).success).toBe(false);
   });
 });
+
+describe('vertical and square exports (FL-563)', () => {
+  const gib = 1024 ** 3;
+  const capabilities = { codecs: ['webcodecs-avc', 'aac'], formats: ['mp4', 'reframe-v1'] };
+  const candidate = { gpuMemoryBytes: 8 * gib, ...capabilities, colorPrecision: null };
+  const settings = { format: 'mp4-h264', color: 'preserve', resolution: '2160p', shape: 'vertical' };
+
+  it('needs a session that names the reframe profile', () => {
+    expect(requiredOutput(settings)).toMatchObject({ format: 'mp4-h264', reframe: true });
+    expect(provesOutput(capabilities, requiredOutput(settings)!)).toBe(true);
+    expect(provesOutput({ ...capabilities, formats: ['mp4'] }, requiredOutput(settings)!)).toBe(false);
+    expect(evaluateRenderOutput([candidate], settings)).toEqual({ supported: true });
+    expect(evaluateRenderOutput([{ ...candidate, formats: ['mp4'] }], settings)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.CodecUnavailable,
+    });
+    // the project's own shape needs nothing new
+    for (const shape of [undefined, 'original']) {
+      expect(provesOutput({ ...capabilities, formats: ['mp4'] }, requiredOutput({ ...settings, shape })!)).toBe(true);
+    }
+  });
+
+  it('admits 2160 × 3840 with the 2160p memory it already needs, and a square at any resolution', () => {
+    expect(evaluateRenderOutput([{ ...candidate, gpuMemoryBytes: 6 * gib }], settings)).toEqual({
+      supported: false,
+      refusal: RenderOutputRefusal.InsufficientMemory,
+    });
+    for (const resolution of ['720p', '1080p', '1440p', '2160p']) {
+      expect(evaluateRenderOutput([candidate], { ...settings, shape: 'square', resolution })).toEqual({
+        supported: true,
+      });
+    }
+  });
+
+  it('refuses shapes on anything but SDR video, and unknown shapes', () => {
+    for (const patch of [
+      { shape: 'round' },
+      { format: 'mp4-hevc-main10' },
+      { format: 'audio-mp3' },
+      { format: 'sdr-jpeg', resolution: 'original' },
+      { color: 'hdr10' },
+    ]) {
+      expect(provesOutput(capabilities, requiredOutput({ ...settings, ...patch })!)).toBe(false);
+    }
+  });
+
+  it('is checked again when a worker claims the export', () => {
+    expect(evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings } }))).toEqual({
+      admitted: true,
+    });
+    expect(
+      evaluateClaimAdmission(
+        claimInput({ session: { capabilities: { ...capabilities, formats: ['mp4'] } }, operation: { settings } }),
+      ),
+    ).toMatchObject({ admitted: false });
+  });
+});

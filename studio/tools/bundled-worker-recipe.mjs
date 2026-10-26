@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { prepareSidecarPlan } from '../runtime/subtitle-sidecar.mjs';
 import { TEN_BIT_FORMATS, bundledFormat, formatMismatch } from './bundled-worker-formats.mjs';
 import { HDR_MASTER_ENCODER, HDR_MASTER_FORMAT, hdrEvidenceToken } from './bundled-worker-hdr.mjs';
+import { ReframeRefusal, reframeGraph, reframeOf } from './bundled-worker-reframe.mjs';
 
 export const BUNDLED_RECIPE = 'frameleaf-bundled-worker-v2';
 
@@ -228,6 +229,27 @@ const captionsOf = (claim, target, contract) => {
   return { mode: subtitleMode };
 };
 
+/** FL-563: the sealed framing of a vertical or square export, or null for the project's own shape. */
+const shapedFraming = (settings, target) => {
+  try {
+    const reframe = reframeOf(settings);
+    if (reframe && target.kind !== 'video') refuse('reframe_invalid', 'Only a video export has a shape.');
+    return reframe;
+  } catch (error) {
+    if (error instanceof ReframeRefusal) refuse(error.code, error.message);
+    throw error;
+  }
+};
+
+const derivedGraph = (graph, reframe) => {
+  try {
+    return reframeGraph(graph, reframe).graph;
+  } catch (error) {
+    if (error instanceof ReframeRefusal) refuse(error.code, error.message);
+    throw error;
+  }
+};
+
 /**
  * The render recipe for one claim. Throws `BundledRefusal` for anything this worker cannot render.
  * `softwareRenderer` is what its conformance check reported for the renderer it will use;
@@ -235,8 +257,12 @@ const captionsOf = (claim, target, contract) => {
  */
 export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
   if (claim.kind !== 'studio_export') refuse('unsupported_kind', 'The bundled Studio worker renders Studio exports only.');
-  const graph = claim.snapshot?.studio?.graph;
-  if (!graph?.metadata || !Array.isArray(graph.timeline?.items) || !Array.isArray(graph.timeline?.tracks)) {
+  const projectGraph = claim.snapshot?.studio?.graph;
+  if (
+    !projectGraph?.metadata ||
+    !Array.isArray(projectGraph.timeline?.items) ||
+    !Array.isArray(projectGraph.timeline?.tracks)
+  ) {
     refuse('invalid_graph', 'The export has no immutable project graph.');
   }
   if (typeof claim.artifactInputDigest !== 'string' || !/^[a-f0-9]{64}$/.test(claim.artifactInputDigest)) {
@@ -291,16 +317,23 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
   if (
     hdr &&
     captions.mode === 'off' &&
-    timelinesOf(graph).some((timeline) => (timeline?.items ?? []).some((item) => item.type === 'subtitle'))
+    timelinesOf(projectGraph).some((timeline) => (timeline?.items ?? []).some((item) => item.type === 'subtitle'))
   ) {
     refuse('subtitles_unsupported', 'An HDR master draws the project captions into the picture; turn captions on, or remove them.');
   }
 
   for (const key of ['width', 'height']) {
-    if (!Number.isSafeInteger(graph.metadata[key]) || graph.metadata[key] <= 0 || graph.metadata[key] > 16_384) {
+    if (
+      !Number.isSafeInteger(projectGraph.metadata[key]) ||
+      projectGraph.metadata[key] <= 0 ||
+      projectGraph.metadata[key] > 16_384
+    ) {
       refuse('invalid_graph', 'The project canvas is invalid.');
     }
   }
+  // FL-563: a vertical or square export renders a graph derived from the project's, never the project.
+  const reframe = shapedFraming(claim.settings, target);
+  const graph = reframe ? derivedGraph(projectGraph, reframe) : projectGraph;
   const cadence = parseRational(claim.snapshot?.timing?.cadence);
   const timeBase = parseRational(claim.snapshot?.timing?.timeBase);
   if (!cadence || !timeBase) refuse('invalid_timing', 'The export snapshot declares no exact cadence and time base.');
@@ -310,8 +343,9 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
   const frames = bounds.outPoint - bounds.inPoint;
   const endTicks = frameTicks(frames, cadence, timeBase);
   if (endTicks === null) refuse('invalid_timing', 'The export range is not a whole number of time-base ticks.');
+  // Captions are sealed from the project graph; reframing moves where they are drawn, not their words.
   const captionText = captions.mode === 'sidecar' || captions.mode === 'embedded'
-    ? sealedCaptions(graph, range, cadence, captions.mode === 'sidecar' ? captions.seal : captions.seal.source)
+    ? sealedCaptions(projectGraph, range, cadence, captions.mode === 'sidecar' ? captions.seal : captions.seal.source)
     : null;
 
   // One engine pass writes MP4/H.264 with nothing to add; every other format is a second ffmpeg pass.
@@ -324,10 +358,16 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
         ? 'remux'
         : 'encode';
   const fps = cadence.num / cadence.den;
+  // A shaped export is rendered at its sealed size: the crop of the frame is scaled to fill it.
   const dimensions =
     target.kind === 'audio'
       ? outputDimensions(graph.metadata, '720p', SOUND_ONLY_PICTURE_SHORT_SIDE)
-      : outputDimensions(graph.metadata, resolution);
+      : reframe
+        ? { ...reframe.output }
+        : outputDimensions(graph.metadata, resolution);
+  if (hdr && reframe) {
+    refuse('hdr_resolution', 'A vertical or square export is written in SDR; choose another format or the original shape.');
+  }
   if (hdr && (dimensions.width !== graph.metadata.width || dimensions.height !== graph.metadata.height)) {
     refuse(
       'hdr_resolution',
@@ -355,6 +395,7 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
     pass,
     captions: captions.mode ?? null,
     ...(hdr && { hdr: { transfer: hdr.transfer, mastering: hdr.mastering } }),
+    ...(reframe && { shape: reframe.shape }),
   };
   const configDigest = digest(JSON.stringify({ recipe: BUNDLED_RECIPE, settings, output, audio, range: range ?? null }));
   const historyDigest = digest(JSON.stringify(graph));
@@ -375,6 +416,7 @@ export const bundledRecipe = (claim, { softwareRenderer, writers }) => {
     bounds,
     timebase: claim.snapshot.timing.timeBase,
     endTicks: String(endTicks),
+    shape: reframe?.shape ?? 'original',
     configDigest,
     historyDigest,
     chunkKey: digest(`${claim.artifactInputDigest}:${configDigest}:${historyDigest}`),

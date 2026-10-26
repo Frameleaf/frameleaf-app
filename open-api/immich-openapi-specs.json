@@ -48196,6 +48196,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/framing": {
+      "get": {
+        "description": "Owner only. For a vertical (9:16) or square (1:1) export of the head revision: where the subject is through each video and still on the main timeline, from the faces found in the source and in a few frames sampled through each video clip on this server or a computer on your home network. Shots without a face are centred. Nothing is stored and the project is not changed; send the framing back with `POST /studio/projects/{id}/exports`.",
+        "operationId": "getStudioFraming",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioReframeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the automatic framing of a Studio project’s shots",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/imports": {
       "get": {
         "description": "Every file kept with one of your projects, with its type, size and checksum.",
@@ -128193,6 +128249,14 @@
           "format": {
             "$ref": "#/components/schemas/StudioExportFormat"
           },
+          "framing": {
+            "description": "For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
+            "items": {
+              "$ref": "#/components/schemas/StudioExportFramingDto"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          },
           "mastering": {
             "$ref": "#/components/schemas/StudioExportMastering",
             "description": "Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults"
@@ -128212,6 +128276,10 @@
           },
           "resolution": {
             "$ref": "#/components/schemas/StudioExportResolution"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/StudioExportShape",
+            "description": "Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed"
           },
           "smoothMotion": {
             "$ref": "#/components/schemas/StudioExportSmoothMotionDto"
@@ -128273,6 +128341,31 @@
           "audio-wav"
         ],
         "type": "string"
+      },
+      "StudioExportFramingDto": {
+        "additionalProperties": false,
+        "properties": {
+          "clipId": {
+            "description": "A video or still on the main timeline",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "description": "Where the crop centre is through the shot, in order of progress",
+            "items": {
+              "$ref": "#/components/schemas/StudioReframePointDto"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "clipId",
+          "path"
+        ],
+        "type": "object"
       },
       "StudioExportListResponseDto": {
         "properties": {
@@ -128431,6 +128524,10 @@
           "resolution": {
             "$ref": "#/components/schemas/StudioExportResolution"
           },
+          "shape": {
+            "$ref": "#/components/schemas/StudioExportShape",
+            "description": "Absent on exports in the project’s own shape"
+          },
           "subtitleMode": {
             "$ref": "#/components/schemas/StudioExportSubtitleMode",
             "description": "Absent uses the native `burn` default"
@@ -128442,6 +128539,15 @@
           "resolution"
         ],
         "type": "object"
+      },
+      "StudioExportShape": {
+        "description": "Shape of the picture: the project’s own, vertical 9:16 or square 1:1 (FL-563)",
+        "enum": [
+          "original",
+          "vertical",
+          "square"
+        ],
+        "type": "string"
       },
       "StudioExportSmoothMotionDto": {
         "description": "Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
@@ -130750,6 +130856,131 @@
         ],
         "type": "object"
       },
+      "StudioReframePointDto": {
+        "additionalProperties": false,
+        "properties": {
+          "t": {
+            "description": "Progress through the shot, 0 to 1",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "x": {
+            "description": "Centre of the crop (or of the subject) as a share of the project frame width, 0 left to 1 right",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "t",
+          "x"
+        ],
+        "type": "object"
+      },
+      "StudioReframeResponseDto": {
+        "properties": {
+          "height": {
+            "description": "Project frame height in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "revision": {
+            "description": "The stored revision the framing was worked out for",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "shots": {
+            "description": "Every shot of the main timeline, in the order they start",
+            "items": {
+              "$ref": "#/components/schemas/StudioReframeShotDto"
+            },
+            "type": "array"
+          },
+          "width": {
+            "description": "Project frame width in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "height",
+          "revision",
+          "shots",
+          "width"
+        ],
+        "type": "object"
+      },
+      "StudioReframeShotDto": {
+        "properties": {
+          "assetId": {
+            "description": "The library asset it shows, when this session may read it",
+            "nullable": true,
+            "type": "string"
+          },
+          "clipId": {
+            "description": "The video or still on the main timeline",
+            "type": "string"
+          },
+          "durationInFrames": {
+            "description": "Length of the shot in frames",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "from": {
+            "description": "First frame of the shot on the main timeline",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Where the subject is through the shot, as a share of the project frame width",
+            "items": {
+              "$ref": "#/components/schemas/StudioReframePointDto"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/StudioReframeSubject"
+          },
+          "type": {
+            "$ref": "#/components/schemas/StudioReframeShotType"
+          }
+        },
+        "required": [
+          "assetId",
+          "clipId",
+          "durationInFrames",
+          "from",
+          "path",
+          "subject",
+          "type"
+        ],
+        "type": "object"
+      },
+      "StudioReframeShotType": {
+        "description": "A video clip or a still",
+        "enum": [
+          "video",
+          "image"
+        ],
+        "type": "string"
+      },
+      "StudioReframeSubject": {
+        "description": "What the framing follows: faces found in the shot, or nothing found (centred)",
+        "enum": [
+          "face",
+          "none"
+        ],
+        "type": "string"
+      },
       "StudioRenderCandidateDto": {
         "properties": {
           "dolbyVision": {
@@ -130781,6 +131012,10 @@
               "$ref": "#/components/schemas/StudioExportFormat"
             },
             "type": "array"
+          },
+          "reframe": {
+            "description": "This session renders vertical and square exports of its SDR video formats (FL-563)",
+            "type": "boolean"
           },
           "sidecarOutputFormats": {
             "description": "Output formats whose versioned paired SRT profile this same session verified",

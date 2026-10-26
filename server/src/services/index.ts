@@ -145,6 +145,7 @@ import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.s
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
+import { StudioReframeService } from 'src/services/studio-reframe.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
@@ -313,6 +314,7 @@ export const services = [
   ZeroShotTaggingService,
   StackService,
   StudioExportService,
+  StudioReframeService,
   StudioPreviewService,
   StudioPreviewStreamService,
   StorageService,

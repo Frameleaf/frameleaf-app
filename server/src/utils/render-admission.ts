@@ -22,6 +22,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReason } from 'src/enum.js';
 import { isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
 import { studioExportFormatSpec } from 'src/utils/studio-export-formats.js';
+import { REFRAME_PROFILE, isReframeShape } from 'src/utils/studio-reframe.js';
 
 /* ------------------------------------------------------------------ */
 /* Seams                                                                */
@@ -450,6 +451,8 @@ export type RequiredOutput = {
   subtitleCodec?: string;
   /** The format id itself must appear in the evidence (FL-105 matrix formats). */
   combination?: boolean;
+  /** FL-563: a vertical or square export; the session must name `reframe-v1`. */
+  reframe?: boolean;
 };
 
 const impossible = (format: unknown): RequiredOutput => ({
@@ -460,6 +463,20 @@ const impossible = (format: unknown): RequiredOutput => ({
 
 /** What a job's output needs, or null when it names no output format. An unknown format needs the impossible. */
 export const requiredOutput = (settings: Record<string, unknown> | undefined): RequiredOutput | null => {
+  const output = requiredFormatOutput(settings);
+  const shape = settings?.shape;
+  if (!output || shape === undefined || shape === 'original') {
+    return output;
+  }
+  // FL-563: only SDR video takes a shape, and only from a worker that derives the shaped graph.
+  const spec = studioExportFormatSpec(output.format);
+  if (!isReframeShape(shape) || spec?.kind !== 'video' || spec.bitDepth !== 8 || settings?.color !== 'preserve') {
+    return impossible(output.format);
+  }
+  return { ...output, reframe: true };
+};
+
+const requiredFormatOutput = (settings: Record<string, unknown> | undefined): RequiredOutput | null => {
   const format = settings?.format;
   const mode = settings?.subtitleMode;
   const sidecar = mode === 'sidecar';
@@ -521,7 +538,8 @@ export const provesOutput = (
     (!output.subtitleCodec || codecs.has(output.subtitleCodec)) &&
     formats.includes(output.container) &&
     (!output.combination || capabilities.formats.includes(output.format)) &&
-    (!output.profiles || output.profiles.some((profile) => capabilities.formats.includes(profile)))
+    (!output.profiles || output.profiles.some((profile) => capabilities.formats.includes(profile))) &&
+    (!output.reframe || capabilities.formats.includes(REFRAME_PROFILE))
   );
 };
 
@@ -692,6 +710,8 @@ export type RenderOutputRequest = {
   subtitleMode?: string;
   quality?: string;
   audio?: string;
+  /** FL-563: `vertical` or `square` needs a session that names `reframe-v1`; same memory as the resolution. */
+  shape?: string;
 };
 
 export type RenderOutputCandidate = {

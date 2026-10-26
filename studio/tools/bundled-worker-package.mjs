@@ -27,6 +27,7 @@ export const WORKER_MODULES = [
   'preflight-validators.mjs',
   'render-worker-font-inputs.mjs',
   'bundled-worker-recipe.mjs',
+  'bundled-worker-reframe.mjs',
   'bundled-worker-renderer.mjs',
 ];
 export const RUNTIME_MODULES = ['subtitle-sidecar.mjs'];

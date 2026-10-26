@@ -10,6 +10,7 @@ import {
   STUDIO_EXPORT_RESOLUTIONS,
   STUDIO_EXPORT_SUBTITLE_MODES,
 } from 'src/utils/studio-export.js';
+import { REFRAME_MAX_POINTS, STUDIO_EXPORT_SHAPES } from 'src/utils/studio-reframe.js';
 
 /**
  * Studio exports and the versions they publish (FL-106, `STU-404`).
@@ -62,6 +63,36 @@ const StudioExportRangeSchema = z
   .refine((range) => range.outPoint > range.inPoint, { message: 'The end frame must follow the start frame' })
   .meta({ id: 'StudioExportRangeDto' });
 
+const StudioExportShapeSchema = z
+  .enum(STUDIO_EXPORT_SHAPES)
+  .describe('Shape of the picture: the project’s own, vertical 9:16 or square 1:1 (FL-563)')
+  .meta({ id: 'StudioExportShape' });
+
+export const StudioReframePointSchema = z
+  .object({
+    t: z.number().min(0).max(1).meta({ format: 'double' }).describe('Progress through the shot, 0 to 1'),
+    x: z
+      .number()
+      .min(0)
+      .max(1)
+      .meta({ format: 'double' })
+      .describe('Centre of the crop (or of the subject) as a share of the project frame width, 0 left to 1 right'),
+  })
+  .strict()
+  .meta({ id: 'StudioReframePointDto' });
+
+const StudioExportFramingSchema = z
+  .object({
+    clipId: z.string().min(1).max(128).describe('A video or still on the main timeline'),
+    path: z
+      .array(StudioReframePointSchema)
+      .min(1)
+      .max(REFRAME_MAX_POINTS)
+      .describe('Where the crop centre is through the shot, in order of progress'),
+  })
+  .strict()
+  .meta({ id: 'StudioExportFramingDto' });
+
 export const StudioExportResolutionSchema = z
   .enum(STUDIO_EXPORT_RESOLUTIONS)
   .describe('Output resolution')
@@ -91,6 +122,17 @@ const StudioExportCreateSchema = z
     requestKey: IdentifierSchema.optional().describe(
       'Idempotency key; a repeated submit answers with the first export',
     ),
+    // FL-563
+    shape: StudioExportShapeSchema.optional().describe(
+      'Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed',
+    ),
+    framing: z
+      .array(StudioExportFramingSchema)
+      .max(2000)
+      .optional()
+      .describe(
+        'For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored',
+      ),
     // FL-162
     smoothMotion: z
       .object({
@@ -124,6 +166,7 @@ const StudioExportSettingsSchema = z
     mastering: StudioExportMasteringSchema.optional().describe(
       'Declared PQ mastering display, fixed when this export was submitted',
     ),
+    shape: StudioExportShapeSchema.optional().describe('Absent on exports in the project’s own shape'),
   })
   .meta({ id: 'StudioExportSettingsDto' });
 
