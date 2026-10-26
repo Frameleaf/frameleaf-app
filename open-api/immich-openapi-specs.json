@@ -79502,8 +79502,36 @@
         ],
         "type": "object"
       },
+      "DuplicateReviewAlbumsDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "names": {
+            "description": "Albums of the viewer that hold this photo",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "names"
+        ],
+        "type": "object"
+      },
       "DuplicateReviewGroupDto": {
         "properties": {
+          "albums": {
+            "description": "Per photo, the albums the viewer can see it in (FL-558): what is lost with a copy",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateReviewAlbumsDto"
+            },
+            "type": "array"
+          },
           "assets": {
             "description": "The photos of the group this session may see",
             "items": {
@@ -79537,6 +79565,10 @@
           },
           "kind": {
             "$ref": "#/components/schemas/DuplicateGroupKind"
+          },
+          "lookAlike": {
+            "description": "Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558)",
+            "type": "boolean"
           },
           "otherOwnerNames": {
             "description": "Display names of the other accounts owning photos of a group blocked by another owner",
@@ -79575,12 +79607,14 @@
           }
         },
         "required": [
+          "albums",
           "assets",
           "blockedReason",
           "duplicateId",
           "editable",
           "hiddenMemberCount",
           "kind",
+          "lookAlike",
           "qualities",
           "suggestedKeepAssetIds",
           "totalBytes"

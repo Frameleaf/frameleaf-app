@@ -7159,12 +7159,19 @@ export type DuplicateResolveDto = {
     /** List of duplicate groups to resolve */
     groups: DuplicateResolveGroupDto[];
 };
+export type DuplicateReviewAlbumsDto = {
+    assetId: string;
+    /** Albums of the viewer that hold this photo */
+    names: string[];
+};
 export type DuplicateReviewQualityDto = {
     assetId: string;
     /** Evidence for or against keeping this copy */
     reasons: DuplicateQualityReason[];
 };
 export type DuplicateReviewGroupDto = {
+    /** Per photo, the albums the viewer can see it in (FL-558): what is lost with a copy */
+    albums: DuplicateReviewAlbumsDto[];
     /** The photos of the group this session may see */
     assets: AssetResponseDto[];
     blockedReason: (DuplicateGroupBlock) | null;
@@ -7175,6 +7182,8 @@ export type DuplicateReviewGroupDto = {
     /** Photos of the group this session does not see */
     hiddenMemberCount: number;
     kind: DuplicateGroupKind;
+    /** Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558) */
+    lookAlike: boolean;
     /** Display names of the other accounts owning photos of a group blocked by another owner */
     otherOwnerNames?: string[];
     qualities: DuplicateReviewQualityDto[];

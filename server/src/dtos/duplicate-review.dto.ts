@@ -24,6 +24,13 @@ const DuplicateReviewQualitySchema = z
   })
   .meta({ id: 'DuplicateReviewQualityDto' });
 
+const DuplicateReviewAlbumsSchema = z
+  .object({
+    assetId: z.uuidv4(),
+    names: z.array(z.string()).describe('Albums of the viewer that hold this photo'),
+  })
+  .meta({ id: 'DuplicateReviewAlbumsDto' });
+
 const DuplicateReviewGroupSchema = z
   .object({
     duplicateId: z.uuidv4().describe('Duplicate group ID'),
@@ -36,6 +43,11 @@ const DuplicateReviewGroupSchema = z
       .optional()
       .describe('Safety reasons requiring review before duplicate disposal'),
     kind: DuplicateGroupKindSchema,
+    lookAlike: z
+      .boolean()
+      .describe(
+        'Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558)',
+      ),
     editable: z.boolean().describe('Whether this session may decide the group'),
     blockedReason: DuplicateGroupBlockSchema.nullable(),
     hiddenMemberCount: z.int().min(0).describe('Photos of the group this session does not see'),
@@ -45,6 +57,9 @@ const DuplicateReviewGroupSchema = z
       .describe('Display names of the other accounts owning photos of a group blocked by another owner'),
     totalBytes: z.int().min(0).describe('Size of the originals shown, in bytes'),
     qualities: z.array(DuplicateReviewQualitySchema),
+    albums: z
+      .array(DuplicateReviewAlbumsSchema)
+      .describe('Per photo, the albums the viewer can see it in (FL-558): what is lost with a copy'),
   })
   .meta({ id: 'DuplicateReviewGroupDto' });
 
