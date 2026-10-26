@@ -26,6 +26,7 @@ const group = (id: string, members: string[]): ReviewGroup => ({
   totalBytes: 0,
   qualities: [],
   albums: [],
+  lookAlike: false,
 });
 
 const emptyHistory = (): DuplicateDecisionHistoryDto => ({ recent: [], active: [] });

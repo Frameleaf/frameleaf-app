@@ -43,6 +43,11 @@ const DuplicateReviewGroupSchema = z
       .optional()
       .describe('Safety reasons requiring review before duplicate disposal'),
     kind: DuplicateGroupKindSchema,
+    lookAlike: z
+      .boolean()
+      .describe(
+        'Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558)',
+      ),
     editable: z.boolean().describe('Whether this session may decide the group'),
     blockedReason: DuplicateGroupBlockSchema.nullable(),
     hiddenMemberCount: z.int().min(0).describe('Photos of the group this session does not see'),

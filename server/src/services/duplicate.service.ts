@@ -20,7 +20,6 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
-  DuplicateGroupKind,
   JobName,
   JobStatus,
   MlWorkload,
@@ -35,7 +34,7 @@ import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { classifyDuplicateGroup, duplicateDisposalReasons } from 'src/utils/duplicate-review.js';
+import { duplicateDisposalReasons, reviewKindOf } from 'src/utils/duplicate-review.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
@@ -149,9 +148,7 @@ export class DuplicateService extends BaseService {
       duplicates.map(async ({ duplicateId, assets }) => {
         const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
         const suggestedKeepAssetIds =
-          classifyDuplicateGroup(mappedAssets) === DuplicateGroupKind.Duplicates
-            ? suggestDuplicateKeepAssetIds(mappedAssets)
-            : [];
+          reviewKindOf(mappedAssets) === 'copies' ? suggestDuplicateKeepAssetIds(mappedAssets) : [];
         let motionId: string | undefined;
         if (suggestedKeepAssetIds.length === 1 && assets.some((asset) => asset.livePhotoVideoId)) {
           try {

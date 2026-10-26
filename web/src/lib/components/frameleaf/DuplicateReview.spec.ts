@@ -32,6 +32,7 @@ const group = (id: string, members: string[]): ReviewGroup => ({
   totalBytes: 0,
   qualities: [],
   albums: [],
+  lookAlike: false,
 });
 
 const setup = (blocked: Partial<ReviewGroup> = {}) => {
@@ -200,7 +201,7 @@ it('keeps the chosen look-alikes in the durable decision payload', async () => {
   const { submit } = renderReview([
     {
       ...group('retakes', ['first', 'second', 'third']),
-      kind: DuplicateGroupKind.LookAlike,
+      lookAlike: true,
       suggestedKeepAssetIds: [],
     },
   ]);

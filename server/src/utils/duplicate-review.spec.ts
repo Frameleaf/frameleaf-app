@@ -9,6 +9,7 @@ import {
   duplicateTrashIds,
   groupAlignedBatchSize,
   parseDuplicateGroups,
+  reviewKindOf,
 } from 'src/utils/duplicate-review.js';
 
 const rawImage = (id: string, dateTimeOriginal: string | null, exif: Record<string, unknown> = {}) => ({
@@ -45,11 +46,10 @@ describe('duplicate review rules', () => {
       expect(classifyDuplicateGroup(frames)).toBe(DuplicateGroupKind.Burst);
     });
 
-    it('reads distinct instants further apart than a burst as look-alikes (FL-558)', () => {
-      const later = image('b', '2026-09-06T16:30:12.000Z');
-      expect(classifyDuplicateGroup([image('a', '2026-09-06T16:24:12.000Z'), later])).toBe(
-        DuplicateGroupKind.LookAlike,
-      );
+    it('reads distinct instants further apart than a burst as look-alikes, which the API kind keeps as duplicates (FL-558)', () => {
+      const retakes = [image('a', '2026-09-06T16:24:12.000Z'), image('b', '2026-09-06T16:30:12.000Z')];
+      expect(reviewKindOf(retakes)).toBe('look-alike');
+      expect(classifyDuplicateGroup(retakes)).toBe(DuplicateGroupKind.Duplicates);
     });
 
     it('reads a group as copies when two share an instant or a time is missing', () => {

@@ -57,18 +57,21 @@ type Asset = ReviewGroup['assets'][number];
 export const isBurst = (group: Pick<ReviewGroup, 'kind'> | undefined): boolean =>
   group?.kind === DuplicateGroupKind.Burst;
 
-export const laneOf = (group: Pick<ReviewGroup, 'kind'>): ReviewLane =>
-  group.kind === DuplicateGroupKind.Duplicates ? 'same' : 'alike';
+/** Bursts, and copies the server marks as look-alikes (retakes), go to the look-alike lane. */
+export const laneOf = (group: Pick<ReviewGroup, 'kind' | 'lookAlike'>): ReviewLane =>
+  group.kind === DuplicateGroupKind.Duplicates && !group.lookAlike ? 'same' : 'alike';
 
 /** Bursts and look-alikes are reviewed as a contact sheet of every photo; copies as a comparison. */
-export const usesContactSheet = (group: Pick<ReviewGroup, 'kind'> | undefined): boolean =>
+export const usesContactSheet = (group: Pick<ReviewGroup, 'kind' | 'lookAlike'> | undefined): boolean =>
   !!group && laneOf(group) === 'alike';
 
 export const groupTitle = (group: Pick<ReviewGroup, 'assets' | 'duplicateId'>): string =>
   group.assets[0]?.originalFileName?.replace(/\.[^.]+$/, '') || group.duplicateId;
 
 /** The one suggested keeper, or null: only for copies of one photo, and never a guess between two. */
-export const suggestedKeeper = (group: Pick<ReviewGroup, 'kind' | 'suggestedKeepAssetIds' | 'assets'>) => {
+export const suggestedKeeper = (
+  group: Pick<ReviewGroup, 'kind' | 'lookAlike' | 'suggestedKeepAssetIds' | 'assets'>,
+) => {
   if (laneOf(group) !== 'same' || group.suggestedKeepAssetIds.length !== 1) {
     return null;
   }
@@ -252,8 +255,8 @@ export const undoGroupsFor = (batch: DuplicateDecisionBatchDto): MediaOperationD
  * files are merged by themselves, so one is in the review only when its merge was undone or could not
  * carry everything over; the review says so before anyone merges it.
  */
-export const isIdenticalGroup = (group: Pick<ReviewGroup, 'kind' | 'assets'>): boolean =>
-  group.kind === DuplicateGroupKind.Duplicates &&
+export const isIdenticalGroup = (group: Pick<ReviewGroup, 'kind' | 'lookAlike' | 'assets'>): boolean =>
+  laneOf(group) === 'same' &&
   group.assets.length > 1 &&
   group.assets.every((asset) => !!asset.checksum && asset.checksum === group.assets[0].checksum);
 

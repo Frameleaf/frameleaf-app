@@ -53,6 +53,7 @@ const group = (id: string, ids: string[], overrides: Partial<ReviewGroup> = {}):
   totalBytes: ids.length * 1000,
   qualities: [],
   albums: [],
+  lookAlike: false,
   ...overrides,
 });
 
@@ -99,7 +100,7 @@ describe('duplicate review', () => {
 
     it('never suggests a keeper in a burst or among look-alikes, nor guesses between two suggestions', () => {
       expect(suggestedKeeper(group('b', ['a', 'b'], { kind: DuplicateGroupKind.Burst }))).toBeNull();
-      expect(suggestedKeeper(group('l', ['a', 'b'], { kind: DuplicateGroupKind.LookAlike }))).toBeNull();
+      expect(suggestedKeeper(group('l', ['a', 'b'], { lookAlike: true }))).toBeNull();
       expect(suggestedKeeper(group('g', ['a', 'b'], { suggestedKeepAssetIds: ['a', 'b'] }))).toBeNull();
       expect(suggestedKeeper(group('g', ['a', 'b']))).toBe('a');
     });
@@ -115,17 +116,17 @@ describe('duplicate review', () => {
       expect(usesContactSheet(group('g', ['a', 'b']))).toBe(false);
       expect(usesContactSheet(group('g', ['a', 'b', 'c']))).toBe(false);
       expect(usesContactSheet(group('g', ['a', 'b'], { kind: DuplicateGroupKind.Burst }))).toBe(true);
-      expect(usesContactSheet(group('g', ['a', 'b'], { kind: DuplicateGroupKind.LookAlike }))).toBe(true);
+      expect(usesContactSheet(group('g', ['a', 'b'], { lookAlike: true }))).toBe(true);
     });
 
     it('puts copies in the same-photo lane and bursts and look-alikes in the look-alike lane (FL-558)', () => {
       expect(laneOf(group('g', ['a', 'b']))).toBe('same');
       expect(laneOf(group('g', ['a', 'b'], { kind: DuplicateGroupKind.Burst }))).toBe('alike');
-      expect(laneOf(group('g', ['a', 'b'], { kind: DuplicateGroupKind.LookAlike }))).toBe('alike');
+      expect(laneOf(group('g', ['a', 'b'], { lookAlike: true }))).toBe('alike');
       const groups = [
         group('copies', ['a', 'b']),
         group('burst', ['c', 'd'], { kind: DuplicateGroupKind.Burst }),
-        group('retakes', ['e', 'f'], { kind: DuplicateGroupKind.LookAlike }),
+        group('retakes', ['e', 'f'], { lookAlike: true }),
       ];
       const ids = (lane: 'same' | 'alike') =>
         filterReviewGroups(groups, { lane, progress: none }).map(({ duplicateId }) => duplicateId);
@@ -144,7 +145,7 @@ describe('duplicate review', () => {
     it('refuses to decide a burst by suggestion or a group the person cannot decide', () => {
       const burst = group('b', ['a', 'b'], { kind: DuplicateGroupKind.Burst });
       expect(() => buildDecisionGroups([burst], 'suggested')).toThrow(DuplicateDecisionError);
-      const retakes = group('l', ['a', 'b'], { kind: DuplicateGroupKind.LookAlike });
+      const retakes = group('l', ['a', 'b'], { lookAlike: true });
       expect(() => buildDecisionGroups([retakes], 'suggested')).toThrow(DuplicateDecisionError);
       expect(() => buildDecisionGroups([group('g', ['a', 'b'], { editable: false })], 'keep-all')).toThrow(
         'frameleaf_duplicates_error_not_editable',

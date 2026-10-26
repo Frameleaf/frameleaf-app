@@ -251,7 +251,8 @@ describe(DuplicateDecisionService.name, () => {
 
       const [review] = await sut.getReview(owner);
 
-      expect(review.kind).toBe(DuplicateGroupKind.LookAlike);
+      expect(review.kind).toBe(DuplicateGroupKind.Duplicates);
+      expect(review.lookAlike).toBe(true);
       expect(review.suggestedKeepAssetIds).toEqual([]);
     });
 

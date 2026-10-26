@@ -36,11 +36,11 @@ import { checkAccess } from 'src/utils/access.js';
 import { BulkOperationItem, bulkErrorMessage, classifyBulkError } from 'src/utils/bulk-operation.js';
 import {
   DuplicateGroupDecision,
-  classifyDuplicateGroup,
   duplicateQualityReasons,
   duplicateStackPrimary,
   duplicateTrashIds,
   parseDuplicateGroups,
+  reviewKindOf,
 } from 'src/utils/duplicate-review.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
@@ -200,15 +200,16 @@ export class DuplicateDecisionService {
         : hiddenMemberCount > 0
           ? DuplicateGroupBlock.HiddenMembers
           : null;
-      const kind = classifyDuplicateGroup(group.assets);
+      const reviewKind = reviewKindOf(group.assets);
       const reasons = duplicateQualityReasons(group.assets);
 
       return {
         duplicateId: group.duplicateId,
         assets: group.assets,
         // burst frames and look-alikes are different moments, never disposable copies (FL-61, FL-558)
-        suggestedKeepAssetIds: kind === DuplicateGroupKind.Duplicates ? group.suggestedKeepAssetIds : [],
-        kind,
+        suggestedKeepAssetIds: reviewKind === 'copies' ? group.suggestedKeepAssetIds : [],
+        kind: reviewKind === 'burst' ? DuplicateGroupKind.Burst : DuplicateGroupKind.Duplicates,
+        lookAlike: reviewKind === 'look-alike',
         ...(group.reviewRequiredReasons && { reviewRequiredReasons: group.reviewRequiredReasons }),
         editable: blockedReason === null,
         blockedReason,

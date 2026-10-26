@@ -79376,11 +79376,10 @@
         "type": "string"
       },
       "DuplicateGroupKind": {
-        "description": "Whether a duplicate group holds copies of one photo, frames of a burst, or look-alike photos taken apart",
+        "description": "Whether a duplicate group holds copies of one photo or frames of a burst",
         "enum": [
           "duplicates",
-          "burst",
-          "look-alike"
+          "burst"
         ],
         "type": "string"
       },
@@ -79567,6 +79566,10 @@
           "kind": {
             "$ref": "#/components/schemas/DuplicateGroupKind"
           },
+          "lookAlike": {
+            "description": "Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558)",
+            "type": "boolean"
+          },
           "otherOwnerNames": {
             "description": "Display names of the other accounts owning photos of a group blocked by another owner",
             "items": {
@@ -79611,6 +79614,7 @@
           "editable",
           "hiddenMemberCount",
           "kind",
+          "lookAlike",
           "qualities",
           "suggestedKeepAssetIds",
           "totalBytes"

@@ -7182,6 +7182,8 @@ export type DuplicateReviewGroupDto = {
     /** Photos of the group this session does not see */
     hiddenMemberCount: number;
     kind: DuplicateGroupKind;
+    /** Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558) */
+    lookAlike: boolean;
     /** Display names of the other accounts owning photos of a group blocked by another owner */
     otherOwnerNames?: string[];
     qualities: DuplicateReviewQualityDto[];
@@ -34347,8 +34349,7 @@ export enum DuplicateGroupBlock {
 }
 export enum DuplicateGroupKind {
     Duplicates = "duplicates",
-    Burst = "burst",
-    LookAlike = "look-alike"
+    Burst = "burst"
 }
 export enum DuplicateQualityReason {
     OriginalFormat = "original-format",

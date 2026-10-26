@@ -191,7 +191,7 @@ test.describe('Duplicate review', () => {
 
     const updatedGroups = await reviewGroups();
     const group = updatedGroups.find((group) => group.duplicateId === duplicateId);
-    if (!group || group.assets.length !== 3 || group.kind !== DuplicateGroupKind.LookAlike) {
+    if (!group || group.assets.length !== 3 || !group.lookAlike) {
       throw new Error('Expected a three-photo look-alike group');
     }
     const keepAssetIds = group.assets.slice(0, 2).map((asset) => asset.id);
