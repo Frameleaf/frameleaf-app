@@ -3427,6 +3427,7 @@ describe(CloudBackupService.name, () => {
         expect(transport).toHaveBeenLastCalledWith(expect.anything(), {
           method: 'POST',
           url: 'https://api.frameleaf.test/v4/backup/grant',
+          timeoutMs: 120_000,
           dpop: expect.anything(),
           body: { locationId: 'loc-07', operation: 'upload' },
         });
