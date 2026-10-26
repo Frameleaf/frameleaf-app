@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { SearchController } from 'src/controllers/search.controller.js';
+import { SearchFacetField } from 'src/dtos/search.dto.js';
 import { SearchService } from 'src/services/search.service.js';
 import { errorDto } from 'test/medium/responses.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
@@ -270,7 +271,8 @@ describe(SearchController.name, () => {
       expect(limit.status).toBe(400);
       const tooMany = await request(ctx.getHttpServer())
         .post('/search/facets')
-        .send({ facets: Array.from({ length: 11 }, () => 'city') });
+        // one more entry than there are facet fields
+        .send({ facets: Array.from({ length: Object.values(SearchFacetField).length + 1 }, () => 'city') });
       expect(tooMany.status).toBe(400);
     });
 

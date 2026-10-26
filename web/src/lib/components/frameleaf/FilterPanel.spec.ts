@@ -1,4 +1,4 @@
-import { ImageEnrichmentFilter, SearchFacetField, type PersonResponseDto } from '@frameleaf/sdk';
+import { ImageEnrichmentFilter, SearchFacetField, type PersonResponseDto, type PetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -60,6 +60,15 @@ describe('FilterPanel', () => {
         .getByRole('radio', { name: /^No description/ })
         .closest('label'),
     ).toHaveTextContent('5');
+  });
+
+  it('shows each pet with its live count, as people are shown (LIB-11)', () => {
+    const MAX = '00000000-0000-4000-8000-000000000002';
+    const { panel } = setup(emptyDiscoveryQuery(), {
+      options: { ...options, pets: [{ id: MAX, name: 'Max' } as PetResponseDto] },
+      facets: { [SearchFacetField.Pets]: [{ value: MAX, label: 'Max', count: 4 }] },
+    });
+    expect(within(panel).getByRole('checkbox', { name: /Max/ }).closest('label')).toHaveTextContent('4');
   });
 
   it('keeps its heading and capture labels outside the palette', () => {
