@@ -98,6 +98,12 @@ export const UserAdminCreateSchema = z
     quotaSizeInBytes: z.int().min(0).nullish().describe('Storage quota in bytes'),
     shouldChangePassword: z.boolean().optional().describe('Require password change on next login'),
     notify: z.boolean().optional().describe('Send notification email'),
+    passwordLink: z
+      .boolean()
+      .optional()
+      .describe(
+        'Email the person a single-use link to choose their own password instead of setting one (needs email to be set up and a public address)',
+      ),
     isAdmin: z.boolean().optional().describe('Grant admin privileges'),
   })
   .meta({ id: 'UserAdminCreateDto' });
@@ -115,6 +121,10 @@ const UserAdminUpdateSchema = z
     shouldChangePassword: z.boolean().optional().describe('Require password change on next login'),
     quotaSizeInBytes: z.int().min(0).nullish().describe('Storage quota in bytes'),
     isAdmin: z.boolean().optional().describe('Grant admin privileges'),
+    uploadsPaused: z
+      .boolean()
+      .optional()
+      .describe('Pause new uploads: what the person has stays, and nothing new can be added until this is turned off'),
   })
   .meta({ id: 'UserAdminUpdateDto' });
 
@@ -221,6 +231,7 @@ export const UserAdminResponseSchema = UserResponseSchema.extend({
   oauthId: z.string().describe('OAuth ID'),
   quotaSizeInBytes: z.int().min(0).nullable().describe('Storage quota in bytes'),
   quotaUsageInBytes: z.int().min(0).nullable().describe('Storage usage in bytes'),
+  uploadsPaused: z.boolean().describe('New uploads are paused for this person'),
   status: UserStatusSchema,
   license: UserLicenseSchema.nullable(),
 }).meta({ id: 'UserAdminResponseDto' });
@@ -267,6 +278,7 @@ export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
     oauthId: entity.oauthId ?? '',
     quotaSizeInBytes: entity.quotaSizeInBytes,
     quotaUsageInBytes: entity.quotaUsageInBytes,
+    uploadsPaused: entity.uploadsPaused ?? false,
     status: entity.status,
     license: license
       ? { kind: 'individual', keyHint: license.keyHint, activatedAt: new Date(license.activatedAt) }

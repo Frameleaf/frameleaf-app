@@ -5,6 +5,7 @@ import { MlWorkload } from 'src/enum.js';
 import {
   type CloudModelIdentity,
   CloudModelIdentityMismatchError,
+  type ReleasedModels,
   acceptCloudClipResult,
   acceptCloudFaceResult,
   cloudIdentityProblem,
@@ -14,9 +15,23 @@ import {
   sameModelIdentity,
   withCloudIdentityGuard,
 } from 'src/utils/cloud-model-identity.js';
+import { parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
+import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
+import { parseLocalModelPins } from 'src/utils/local-model-pins.js';
 
 const SIGLIP = 'ViT-B-16-SigLIP-384__webli';
 
+const read = (name: string): unknown =>
+  JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop', name), 'utf8'));
+/** The release files as the guard reads them, for a test that swaps one of them. */
+const released = (): ReleasedModels => {
+  const catalogue = parseDesktopModelCatalogue(read('model-catalogue.json'));
+  return {
+    catalogue,
+    spaces: parseDesktopClipSpaces(read('model-spaces.json'), catalogue),
+    pins: parseLocalModelPins(read('model-pins.json')),
+  };
+};
 const clipPin = () => localPinnedIdentity(MlWorkload.Clip, SIGLIP)!;
 const facePin = () => localPinnedIdentity(MlWorkload.Face, 'buffalo_l')!;
 
@@ -61,9 +76,79 @@ describe('the local pin (FL-455)', () => {
     });
   });
 
-  it('pins nothing for a model the release does not pin, so the cloud is never offered for it', () => {
-    expect(localPinnedIdentity(MlWorkload.Clip, 'ViT-B-32__openai')).toBeNull();
-    expect(localPinnedIdentity(MlWorkload.Face, 'antelopev2')).toBeNull();
+  it('pins nothing for a model the release neither qualifies nor pins, so the cloud is never offered for it', () => {
+    expect(localPinnedIdentity(MlWorkload.Clip, 'ViT-B-16-SigLIP2__webli')).toBeNull();
+    expect(localPinnedIdentity(MlWorkload.Face, 'buffalo_s')).toBeNull();
+    expect(localPinnedIdentity(MlWorkload.Clip, 'antelopev2')).toBeNull();
+    expect(localPinnedIdentity(MlWorkload.Face, 'ViT-B-32__openai')).toBeNull();
+  });
+
+  it("reads ViT-B-32's identity from the release's Cloud pin (A3), image encoder only", () => {
+    const pin = localPinnedIdentity(MlWorkload.Clip, 'ViT-B-32__openai')!;
+    expect(pin).toEqual({
+      name: 'ViT-B-32__openai',
+      repo: 'frameleaf/ViT-B-32__openai',
+      revision: 'a857c8de2c07bbcfa6646adfcf31b798845afa1e',
+      files: [
+        { path: 'config.json', bytes: 196, sha256: '59a182a6dce0adeb303f3d72d73758d68ba29516d928dd92740465f498290409' },
+        {
+          path: 'visual/model.onnx',
+          bytes: 351_613_724,
+          sha256: '33a3df41ceef21acdf371af00f6dd0456ec1f9eba24d03a7720f9c3734e40859',
+        },
+        {
+          path: 'visual/preprocess_cfg.json',
+          bytes: 197,
+          sha256: 'c4fd008cd177c58a8fe107b099bac98913eaa6be6114dd59a4b45145c3c7673f',
+        },
+      ],
+      preprocess: 'frameleaf-clip-visual/1',
+      output: { dim: 512, dtype: 'float32', normalized: false },
+    });
+    // the pin carries the text tower the server needs, which the identity leaves out
+    const profile = localPinnedProfile(MlWorkload.Clip, 'ViT-B-32__openai')!;
+    expect(profile.spec.models[0].artifacts['textual/model.onnx']).toBe(
+      'b80cf0af751533a6712d92247f0ddc0c95208748bc59a1a27f33e67be6864e3b',
+    );
+    expect(profile.artifactBytes['textual/model.onnx']).toBe(254_193_396);
+    expect(profile.modelKey).toMatch(/^clip:[\da-f]{64}$/);
+  });
+
+  it("reads antelopev2's identity from the release's Cloud pin (A3)", () => {
+    expect(localPinnedIdentity(MlWorkload.Face, 'antelopev2')).toEqual({
+      name: 'antelopev2',
+      repo: 'frameleaf/antelopev2',
+      revision: '51ca7e153bccebdbae224779e23c9c243e2fec85',
+      files: [
+        {
+          path: 'detection/model.onnx',
+          bytes: 16_923_827,
+          sha256: '5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91',
+        },
+        {
+          path: 'recognition/model.onnx',
+          bytes: 260_665_334,
+          sha256: '4ab1d6435d639628a6f3e5008dd4f929edf4c4124b1a7169e1048f9fef534cdf',
+        },
+      ],
+      preprocess: 'frameleaf-face/3',
+      output: { dim: 512, dtype: 'float32', normalized: false },
+    });
+  });
+
+  it('prefers a qualified catalogue profile over a pin of the same model', () => {
+    const qualified = localPinnedProfile(MlWorkload.Face, 'buffalo_l')!;
+    const pins = parseLocalModelPins(
+      JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-pins.json'), 'utf8')),
+    );
+    const antelope = pins.pins.find((pin) => pin.modelName === 'antelopev2')!;
+    const models = {
+      ...released(),
+      pins: { ...pins, pins: [{ ...antelope, modelName: 'buffalo_l', modelKey: antelope.modelKey }] },
+    };
+    // the catalogue's profile (with its fixture and reference output) stays the pin, not the entry
+    expect(localPinnedProfile(MlWorkload.Face, 'buffalo_l', models)!.modelKey).toBe(qualified.modelKey);
+    expect(localPinnedProfile(MlWorkload.Face, 'antelopev2', models)).toBeNull();
   });
 });
 

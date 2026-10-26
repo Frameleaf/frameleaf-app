@@ -30,7 +30,7 @@ test.describe('Frameleaf Cloud account & link', () => {
 
     mock.state = 'linked';
     await expect(page.getByText('Linked to Frameleaf')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('owner@example.test')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Linked to owner@example.test' })).toBeVisible();
     expect(mock.requests.some(({ method, path }) => method === 'GET' && path === 'admin/cloud/link')).toBe(true);
   });
 

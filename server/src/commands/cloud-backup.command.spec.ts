@@ -134,6 +134,39 @@ describe('cloud-backup CLI (FL-164)', () => {
     });
   });
 
+  it('exports managed storage without accepting or printing storage credentials', async () => {
+    const keyFile = join(directory, 'managed.json');
+    await writeFile(keyFile, JSON.stringify({ format: 'frameleaf-backup-key', key: key.toString('base64') }));
+    const service = {
+      exportFromBucket: vi.fn().mockResolvedValue({ objects: 3, manifestKey: 'm/20260926T030000Z.json.gz' }),
+      restoreFromBucket: vi.fn(),
+    } as unknown as CloudBackupService;
+    const output = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+
+    await new CloudBackupRestoreCommand(service).run([], { managed: true, keyFile, exportDirectory: directory });
+
+    expect(service.exportFromBucket).toHaveBeenCalledWith(
+      { managed: true, key: expect.any(String), scope: 'library', restoreDatabase: false, manifestKey: undefined },
+      directory,
+    );
+    expect(service.restoreFromBucket).not.toHaveBeenCalled();
+    expect(output.mock.calls.flat().join('')).not.toContain(key.toString('base64'));
+  });
+
+  it.each([
+    {},
+    { exportDirectory: 'export', restoreDatabase: true },
+    { exportDirectory: 'export', offlineDirectory: 'offline' },
+    { exportDirectory: 'export', bucket: 'other' },
+    { exportDirectory: 'export', endpoint: options.endpoint },
+    { exportDirectory: 'export', accessKeyId: 'other' },
+    { exportDirectory: 'export', region: 'other' },
+  ])('refuses conflicting managed export options before reading a key: %j', async (conflict) => {
+    await expect(restoreRequest({ managed: true, keyFile: 'missing', ...conflict }, {})).rejects.toThrow(
+      'Managed mode only exports this server’s configured backup',
+    );
+  });
+
   it('opens an escrow copy with the passphrase from the environment', { timeout: SCRYPT_TEST_TIMEOUT_MS }, async () => {
     const passphrase = 'correct horse battery staple';
     const escrowFile = join(directory, 'escrow.json');

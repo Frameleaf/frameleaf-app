@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import { DatabaseLock } from 'src/enum.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -41,7 +42,7 @@ it.each(['delete', 'move-acknowledgement', 'registration'])(
       if (failureAt === 'delete' && sql.includes('DELETE FROM public.physical_file_trash')) throw failure;
     });
     const move = vi.fn((from: string, to: string) =>
-      Promise.try(() => {
+      tryPromise(() => {
         if (!files.delete(from)) throw new Error('source missing');
         files.add(to);
         if (failureAt === 'move-acknowledgement' && from === entry.path) throw failure;
@@ -49,7 +50,7 @@ it.each(['delete', 'move-acknowledgement', 'registration'])(
     );
 
     const inspection = vi.mocked(fs.lstat).mockImplementation((path) =>
-      Promise.try(() => {
+      tryPromise(() => {
         if (!files.has(String(path))) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
         return {} as never;
       }),
@@ -60,7 +61,7 @@ it.each(['delete', 'move-acknowledgement', 'registration'])(
 
     await expect(
       new PhysicalFileTrashRepository(db).untrash(entry.id, target, move, () =>
-        Promise.try(() => {
+        tryPromise(() => {
           expect(
             queries.some(({ sql }) => sql.includes('DELETE FROM public.physical_file_trash') || sql === 'commit'),
           ).toBe(false);

@@ -13,5 +13,16 @@ export const ALIKE_CHOICES: readonly { id: AlikeChoice; maxDistance: number }[] 
   { id: 'loose', maxDistance: 0.03 },
 ];
 
+/**
+ * FL-520: how long comparing again takes, as said on the page: "about 40 minutes", "about 3 hours".
+ * Returns the translation key and its values.
+ */
+export const aboutDuration = (seconds: number) => {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return minutes < 90
+    ? { key: 'frameleaf_dupes_about_minutes' as const, values: { count: minutes } }
+    : { key: 'frameleaf_dupes_about_hours' as const, values: { count: Math.round(minutes / 60) } };
+};
+
 export const alikeChoiceOf = (maxDistance: number): AlikeChoice | 'custom' =>
   ALIKE_CHOICES.find((choice) => Math.abs(choice.maxDistance - maxDistance) < 1e-9)?.id ?? 'custom';

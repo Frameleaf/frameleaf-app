@@ -68,6 +68,9 @@ const DuplicateDecisionBatchSchema = z
     createdAt: z.string().meta({ format: 'date-time' }),
     groups: z.array(DuplicateDecisionGroupSchema),
     undoable: z.boolean().describe('Every decision of the job is applied and none has been undone'),
+    automatic: z
+      .boolean()
+      .describe('Frameleaf made this job itself, merging identical files in one library (FL-416 "Merged for you")'),
   })
   .meta({ id: 'DuplicateDecisionBatchDto' });
 

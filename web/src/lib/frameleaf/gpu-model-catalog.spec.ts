@@ -21,6 +21,7 @@ import {
   isCloudOffered,
   ladderFor,
   ladderStates,
+  localTwinId,
   matchedLadders,
   modelLadders,
   modelLicenceNoteKey,
@@ -333,8 +334,29 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
       ]);
       expect(ids('faces')).toEqual(['buffalo_s', 'buffalo_m', 'buffalo_l', 'antelopev2']);
       expect(ids('search', { cloudMatched: ['face', 'enrichment'] })).not.toContain('ViT-B-16-SigLIP-384__webli@cloud');
-      expect(ids('search', { cloudMatched: ['clip'] }).at(-1)).toBe('ViT-B-16-SigLIP-384__webli@cloud');
-      expect(ids('faces', { cloudMatched: ['face'] }).at(-1)).toBe('buffalo_l@cloud');
+      expect(ids('search', { cloudMatched: ['clip'] }).slice(-2)).toEqual([
+        'ViT-B-32__openai@cloud',
+        'ViT-B-16-SigLIP-384__webli@cloud',
+      ]);
+      expect(ids('faces', { cloudMatched: ['face'] }).slice(-2)).toEqual(['buffalo_l@cloud', 'antelopev2@cloud']);
+    });
+
+    it("shows only the cloud stop of the model this server is set to (A3: the release's pins)", () => {
+      const search = (model: string) => ids('search', { cloudMatched: ['clip'], model });
+      expect(search('ViT-B-32__openai').filter((id) => id.endsWith('@cloud'))).toEqual(['ViT-B-32__openai@cloud']);
+      expect(search('ViT-B-16-SigLIP-384__webli').filter((id) => id.endsWith('@cloud'))).toEqual([
+        'ViT-B-16-SigLIP-384__webli@cloud',
+      ]);
+      // a model the release does not pin for the cloud gets no blue stop at all
+      expect(search('ViT-SO400M-16-SigLIP2-384__webli').some((id) => id.endsWith('@cloud'))).toBe(false);
+      const faces = (model: string) => ids('faces', { cloudMatched: ['face'], model });
+      expect(faces('antelopev2').filter((id) => id.endsWith('@cloud'))).toEqual(['antelopev2@cloud']);
+      expect(faces('buffalo_l').filter((id) => id.endsWith('@cloud'))).toEqual(['buffalo_l@cloud']);
+      expect(faces('buffalo_s').some((id) => id.endsWith('@cloud'))).toBe(false);
+      // the local stops stay whatever the model
+      expect(faces('buffalo_s').slice(0, 4)).toEqual(['buffalo_s', 'buffalo_m', 'buffalo_l', 'antelopev2']);
+      expect(localTwinId('antelopev2@cloud')).toBe('antelopev2');
+      expect(localTwinId('antelopev2')).toBe('antelopev2');
     });
 
     it('turns the cloud stop blue only when matched; every other stop stays white or green', () => {
@@ -345,17 +367,17 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
       expect(bandFor(cloudSearch, gpus.rtx4090)).toBe('none');
       expect(bandFor(cloudSearch, gpus.rtx4090, 'cpu8', ['clip'])).toBe('cloud');
       expect(cloudPositions('search')).toEqual([]);
-      expect(cloudPositions('search', ['clip'])).toEqual([cloudSearch]);
+      expect(cloudPositions('search', ['clip'])).toEqual([positionById('ViT-B-32__openai@cloud'), cloudSearch]);
       // never part of the routed cloud list (the Cloud processing estimate)
       expect(cloudPositions().some((item) => item.cloudMatch)).toBe(false);
 
       const matched = ['clip', 'face'];
       for (const workload of MATCHED_WORKLOADS) {
         const states = ladderStates(workload, { gpu: gpus.gtx1650, route: 'both', cloudMatched: matched });
-        expect(states.map((entry) => entry.band)).toEqual([...states.slice(0, -1).map(() => 'gpu'), 'cloud']);
+        expect(states.map((entry) => entry.band)).toEqual([...states.slice(0, -2).map(() => 'gpu'), 'cloud', 'cloud']);
         expect(states.every((entry) => !entry.disabled)).toBe(true);
         const cpu = ladderStates(workload, { gpu: null, cloudMatched: matched });
-        expect(cpu.slice(0, -1).every((entry) => entry.band === 'cpu')).toBe(true);
+        expect(cpu.slice(0, -2).every((entry) => entry.band === 'cpu')).toBe(true);
         // only this server's model has a cloud offer
         expect(
           ladderFor(workload)
@@ -380,6 +402,13 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
       const faces = estimateCost('buffalo_l@cloud', 1000, ['face'])!;
       expect(faces.p50).toBeCloseTo(0.1031, 4);
       expect(faces.p90).toBeCloseTo(0.1261, 4);
+      // the pinned models' stops carry the Cloud model ladder's planning figures
+      const vit = estimateCost('ViT-B-32__openai@cloud', 1000, ['clip'])!;
+      expect(vit.p50).toBeCloseTo(0.0862, 4);
+      expect(vit.p90).toBeCloseTo(0.0923, 4);
+      const antelope = estimateCost('antelopev2@cloud', 1000, ['face'])!;
+      expect(antelope.p50).toBeCloseTo(0.1108, 4);
+      expect(antelope.p90).toBeCloseTo(0.1415, 4);
       // not offered, no estimate
       expect(estimateCost('buffalo_l@cloud', 1000)).toBeNull();
       expect(estimateCost('buffalo_l@cloud', 1000, ['clip'])).toBeNull();

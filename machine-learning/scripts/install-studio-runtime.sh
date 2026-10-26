@@ -4,6 +4,8 @@
 # - ffmpeg/ffprobe: check the encoded export, cut copied audio at the end of the picture, and write
 #   every export format other than MP4/H.264 (FL-105: HEVC, VP8, VP9, AV1, ProRes, MOV/MKV/WebM,
 #   MP3/AAC/WAV and caption tracks). The worker offers only the formats this ffmpeg really writes.
+#   FL-107: HDR10/HLG masters also need libx265 and the libzimg `zscale` filter (both in the distro
+#   builds); admission writes and decodes back a master per transfer before offering it.
 # - A Chromium-family browser with H.264/AAC (Studio's engine encodes through WebCodecs):
 #   Debian bases (CPU, OpenVINO, ArmNN, RKNN) use Debian's chromium; the Ubuntu-based CUDA and ROCm
 #   bases (amd64 only) use Google Chrome, whose builds carry the same codecs.
@@ -19,6 +21,7 @@ set -eu
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-dejavu-core fonts-liberation libvulkan1 mesa-vulkan-drivers ca-certificates
+test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem
 case "$ID" in
   debian)
     apt-get install -y --no-install-recommends chromium

@@ -32,6 +32,13 @@
   import { mdiDatabaseOutline, mdiHistory, mdiImageMultipleOutline, mdiServerOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { page } from '$app/state';
+
+  /** FL-520: "Restore from a backup" on Library care › File checks names the findings to restore. */
+  const findings = $derived.by(() => {
+    const value = page.url.searchParams.get('files');
+    return value === 'missing' || value === 'damaged' ? value : undefined;
+  });
 
   let cloud = $state<CloudBackupStatusResponseDto | null>(null);
   let buddy = $state<BuddyStatusDto | null>(null);
@@ -189,7 +196,7 @@
 
 {#if cloud?.configured}
   <div id="restore-cloud" class="tool">
-    <CloudBackupRestoreSection status={cloud} {formatWhen} onStatus={(next) => (cloud = next)} />
+    <CloudBackupRestoreSection status={cloud} {formatWhen} onStatus={(next) => (cloud = next)} {findings} />
   </div>
 {/if}
 {#if buddyOn}

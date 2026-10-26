@@ -1327,6 +1327,11 @@ export class MediaOperationRepository {
     },
     options: {
       retry?: boolean;
+      /**
+       * The runner resumes from its recorded result and repeats no external side effect (a Frameleaf Cloud
+       * batch resumes by its job and idempotency key), so the retry is allowed although it is remote work.
+       */
+      resumable?: boolean;
       /** Opt-in final-write lease fence for workers whose stop state can expire while awaiting a row lock. */
       requireActiveClaim?: boolean;
       executor?: Kysely<DB>;
@@ -1364,7 +1369,7 @@ export class MediaOperationRepository {
               )
               .where('status', 'in', WORKING_STATUSES)
               .where('cancelRequestedAt', 'is', null)
-              .where(safeAutomaticReplay())
+              .$if(options.resumable !== true, (qb) => qb.where(safeAutomaticReplay()))
               .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
               .returning(['id', 'ownerId'])
               .executeTakeFirst(),

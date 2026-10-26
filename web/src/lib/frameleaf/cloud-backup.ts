@@ -61,6 +61,7 @@ export const backupKeyFile = (options: {
   bucket: string;
   mode: CloudBackupKeyMode;
   createdAt?: Date;
+  clientRoot?: string;
 }) =>
   JSON.stringify(
     {
@@ -72,6 +73,9 @@ export const backupKeyFile = (options: {
       mode: options.mode,
       fingerprint: options.fingerprint,
       key: options.key,
+      ...(options.clientRoot && {
+        client: { vaultId: options.instanceId, current: 1, keys: { 1: options.clientRoot } },
+      }),
       createdAt: (options.createdAt ?? new Date()).toISOString(),
     },
     null,

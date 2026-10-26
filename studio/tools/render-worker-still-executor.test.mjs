@@ -441,6 +441,10 @@ test('terminal authority after output read clears the actual returned buffer and
     }});
     const page = { route: async () => {}, goto: async () => {}, waitForFunction: async () => {},
       evaluate: async () => ({vendor:'controlled', architecture:'test', isFallbackAdapter:false}) };
+    // Node 22 cannot require(esm) a graph that reaches a mocked builtin; load the server contracts first.
+    const preload = modules.createRequire(executor);
+    for (const name of ['studio-export-contract', 'rational-time', 'studio-timing', 'studio-subtitle-sidecar',
+      'studio-project', 'studio-embedded-subtitles']) preload('../../server/dist/utils/' + name + '.js');
     mock.module('node:module', { namedExports: { ...moduleNamed, createRequire: base => name => {
       if (name === 'sharp') return {};
       if (name !== 'playwright') return modules.createRequire(base)(name);

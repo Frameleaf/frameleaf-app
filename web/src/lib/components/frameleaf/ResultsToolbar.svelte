@@ -23,6 +23,7 @@
   import { activeFilterFields, withoutDiscoveryFilters } from '$lib/components/discovery/query';
   import { pop } from '$lib/frameleaf/motion';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { resolveEntityName } from '$lib/frameleaf/filter-entity-names';
   import { describeFilterFields, filterFieldEntityIds } from '$lib/frameleaf/library-filters';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibrarySort } from '$lib/frameleaf/library-session';
@@ -199,11 +200,32 @@
       chipFaces = { ...chipFaces, [id]: null };
     }
   };
+  /** A pet chip names the one pet it narrows by ("Pet: Max"), as a people chip shows its person. */
+  let chipPetNames = $state<Record<string, string | null>>({});
+  const chipPetId = (chip: (typeof chips)[number]) => {
+    const ids = chip.field === 'petIds' && !chip.negated ? filterFieldEntityIds(session.query, chip.field) : null;
+    return ids?.length === 1 ? ids[0] : null;
+  };
+  $effect(() => {
+    const chip = chips.find((chip) => chip.field === 'petIds');
+    const id = chip ? chipPetId(chip) : null;
+    if (!id || asked.has(id)) {
+      return;
+    }
+    asked.add(id);
+    const generation = faceGeneration;
+    void resolveEntityName('pet', id).then((name) => {
+      if (generation === faceGeneration) {
+        chipPetNames = { ...chipPetNames, [id]: name };
+      }
+    });
+  });
   onDestroy(
     onLibraryAccessChange(() => {
       faceGeneration++;
       asked.clear();
       chipFaces = {};
+      chipPetNames = {};
     }),
   );
 
@@ -254,12 +276,18 @@
   };
 
   const chipLabel = (chip: (typeof chips)[number]) => {
+    const petId = chipPetId(chip);
+    const petName = petId ? chipPetNames[petId] : null;
+    if (petName) {
+      return $t('frameleaf_library_filter_pet', { values: { name: petName } });
+    }
     const name = $t(chip.labelKey);
     const base = chip.negated ? $t('frameleaf_library_filter_not', { values: { name } }) : name;
     if (chip.count > 1) {
       return `${base} (${chip.count})`;
     }
-    return chip.detail ? `${base}: ${chip.detail}` : base;
+    const detail = chip.detailText ? $t(chip.detailText.key, { values: chip.detailText.values }) : chip.detail;
+    return detail ? `${base}: ${detail}` : base;
   };
 
   /** Prototype "Clear all": the search text and every filter. */

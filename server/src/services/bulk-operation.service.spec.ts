@@ -51,7 +51,7 @@ describe(BulkOperationService.name, () => {
     run: any;
     deleteAll: any;
     lock: any;
-    notifyVisibilityChanged: any;
+    recordVisibilityEdit: any;
   };
   let albums: { addAssets: any; removeAssets: any };
   let tags: { bulkTagAssets: any; removeAssets: any };
@@ -93,7 +93,7 @@ describe(BulkOperationService.name, () => {
       run: vi.fn().mockResolvedValue(undefined),
       deleteAll: vi.fn().mockResolvedValue(undefined),
       lock: vi.fn().mockResolvedValue(undefined),
-      notifyVisibilityChanged: vi.fn().mockResolvedValue(undefined),
+      recordVisibilityEdit: vi.fn().mockResolvedValue(undefined),
     };
     albums = { addAssets: vi.fn(), removeAssets: vi.fn() };
     tags = { bulkTagAssets: vi.fn().mockResolvedValue({ count: 0 }), removeAssets: vi.fn() };
@@ -228,7 +228,7 @@ describe(BulkOperationService.name, () => {
           false,
         );
         expect(assets.updateAll).not.toHaveBeenCalled();
-        expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([archived], authStub.user1.user.id);
+        expect(assets.recordVisibilityEdit).toHaveBeenCalledWith([archived], authStub.user1.user.id);
         expect(outcomes).toEqual([
           { id: archived, status: MediaOperationItemStatus.Ok },
           { id: moved, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_archive_moved' },
@@ -257,7 +257,7 @@ describe(BulkOperationService.name, () => {
           snapshot.assetIds,
           false,
         );
-        expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([restored], authStub.user1.user.id);
+        expect(assets.recordVisibilityEdit).toHaveBeenCalledWith([restored], authStub.user1.user.id);
         expect(outcomes).toEqual([
           { id: restored, status: MediaOperationItemStatus.Ok },
           {
@@ -342,7 +342,7 @@ describe(BulkOperationService.name, () => {
                 reasonKey: 'frameleaf_bulk_reason_locked',
               })),
             );
-            expect(assets.notifyVisibilityChanged).not.toHaveBeenCalled();
+            expect(assets.recordVisibilityEdit).not.toHaveBeenCalled();
           }
         },
       );

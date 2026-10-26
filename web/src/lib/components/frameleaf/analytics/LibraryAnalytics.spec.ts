@@ -1,5 +1,5 @@
 import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import LibraryAnalytics from '$lib/components/frameleaf/analytics/LibraryAnalytics.svelte';
 import { analyticsInsightsFixture, analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
@@ -47,7 +47,7 @@ describe('LibraryAnalytics', () => {
     render(LibraryAnalytics, { report: analyticsReportFixture() });
     expect(screen.getByRole('heading', { level: 1, name: 'Library analytics' })).toBeInTheDocument();
     expect(screen.queryByText(/sample data/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Volume used')).toBeInTheDocument();
+    expect(screen.getAllByText('Storage used').length).toBeGreaterThan(0);
     expect(screen.queryByText(/other libraries|host files/i)).not.toBeInTheDocument();
     expect(
       screen.getByText('Periods without a nightly reading are shown as gaps.', { exact: false }),
@@ -69,7 +69,9 @@ describe('LibraryAnalytics', () => {
       }),
     });
     expect(screen.getByText('No history yet')).toBeInTheDocument();
-    expect(screen.getByText(/Growth history starts with the first nightly collection/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Growth charts start tomorrow, after tonight’s count/).length).toBeGreaterThan(0);
+    // FL-363: the count that starts the charts is a button on the banner
+    expect(screen.getByRole('button', { name: 'Count now' })).toBeInTheDocument();
     expect(screen.getByText('Unknown')).toBeInTheDocument();
     expect(screen.getAllByText(/could not be read/).length).toBeGreaterThan(0);
   });
@@ -103,12 +105,14 @@ describe('LibraryAnalytics', () => {
     });
     expect(screen.getByText(/Processing is recorded for the whole server/)).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /Processing outcomes/ })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Estimated cloud processing/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Estimated cost on Frameleaf Cloud/)).not.toBeInTheDocument();
   });
 
   it('labels the processing cost as an estimate, never a charge', () => {
     render(LibraryAnalytics, { report: analyticsReportFixture() });
-    const row = screen.getByRole('rowheader', { name: 'Estimated cloud processing' }).closest('tr')!;
+    const row = screen
+      .getByRole('rowheader', { name: 'Estimated cost on Frameleaf Cloud', hidden: true })
+      .closest('tr')!;
     expect(within(row).getByText(/Not a bill\./)).toBeInTheDocument();
   });
 
@@ -131,9 +135,9 @@ describe('LibraryAnalytics', () => {
 
   it('exports the CSV in the browser without any request', async () => {
     render(LibraryAnalytics, { report: analyticsReportFixture() });
-    const summary = screen.getByRole('region', { name: 'Backup & hosting' });
-    await waitFor(() => expect(summary).toHaveAttribute('aria-busy', 'false'));
-    // Initial summary status requests are separate from the browser-only export action.
+    // FL-363: backup status is in Backup; this page only links there.
+    expect(screen.queryByRole('region', { name: 'Backup & hosting' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open Backup/ })).toBeInTheDocument();
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     await fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
     expect(downloadBlob).toHaveBeenCalledTimes(1);
@@ -170,7 +174,12 @@ describe('LibraryAnalytics', () => {
       for (const fact of ['2 countries', '3 places', '3 people named', '5 RAW photos', '1 Dolby Vision video']) {
         expect(within(hero).getByText(fact)).toBeInTheDocument();
       }
-      for (const tile of ['Added in this period', 'Volume used', 'Saved by deduplication', 'Photos · videos']) {
+      for (const tile of [
+        'Added in this period',
+        'Storage used',
+        'Saved by keeping identical files once',
+        'Photos · videos',
+      ]) {
         expect(within(hero).getByText(tile)).toBeInTheDocument();
       }
       expect(within(hero).getByRole('img', { name: '60% of the volume used' })).toBeInTheDocument();
@@ -255,7 +264,7 @@ describe('LibraryAnalytics', () => {
         'Described by AI',
         'Faces checked',
         'Search indexed',
-        'Checksummed',
+        'Checked for damage',
       ]);
     });
 
@@ -343,7 +352,14 @@ describe('LibraryAnalytics', () => {
       });
       const storage = within(panel(container, 'storage'));
       const legend = within(panel(container, 'storage').querySelector<HTMLElement>(':scope .an-legend')!);
-      for (const part of ['Originals', 'Previews & thumbnails', 'Encoded video', 'Database', 'Other files', 'Free']) {
+      for (const part of [
+        'Your photos and videos',
+        'Thumbnails',
+        'Videos made for playback',
+        'Library data',
+        'Other files on this drive',
+        'Free',
+      ]) {
         expect(legend.getByText(part)).toBeInTheDocument();
       }
       expect(storage.getByText('60%')).toBeInTheDocument();

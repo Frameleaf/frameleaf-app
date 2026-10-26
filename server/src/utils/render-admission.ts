@@ -687,6 +687,8 @@ export type RenderOutputRequest = {
   resolution: string;
   /** The precision the export's contract needs when its sources raise it (an HDR picture kept as is). */
   minBitDepth?: number;
+  /** FL-107: the HDR transfer the export's contract promises, when it keeps or makes an HDR picture. */
+  transfer?: 'smpte2084' | 'arib-std-b67' | null;
   subtitleMode?: string;
   quality?: string;
   audio?: string;
@@ -702,19 +704,52 @@ export type RenderOutputCandidate = {
   engineDigest?: string | null;
 };
 
-const colorSupported = (color: string, format: string, precision: RenderColorPrecision, minBitDepth = 8) => {
+/**
+ * FL-107: exact evidence that a session wrote `format` with an HDR transfer and decoded it back
+ * (`mp4-hevc-main10+pq`, `mp4-hevc-main10+hlg`). The colour precision flags have no HLG field, so an
+ * HLG export is offered only to a session that names this token for the format asked for.
+ */
+export const hdrMasterEvidence = (format: string, transfer: 'smpte2084' | 'arib-std-b67') =>
+  `${format}+${transfer === 'smpte2084' ? 'pq' : 'hlg'}`;
+
+const colorSupported = (
+  request: Pick<RenderOutputRequest, 'color' | 'format' | 'minBitDepth' | 'transfer'>,
+  candidate: Pick<RenderOutputCandidate, 'colorPrecision' | 'formats'>,
+) => {
+  const { color, format, minBitDepth = 8, transfer } = request;
+  const precision = candidate.colorPrecision ?? SDR_ONLY;
   if (format === 'hdr-jpeg' || format === 'hdr-heic') return precision.maxBitDepth >= 10 && precision.hdr10;
-  const depth = Math.max(formatBitDepth(format), color === 'preserve' ? 8 : 10, minBitDepth);
+  const depth = Math.max(formatBitDepth(format), color === 'preserve' ? 8 : 10, minBitDepth, transfer ? 10 : 8);
   if (precision.maxBitDepth < depth) {
     return false;
   }
-  if (color === 'hdr10') {
+  // An HLG picture (kept from HLG sources) needs a session that wrote and decoded back this format as HLG.
+  if (transfer === 'arib-std-b67' && !(candidate.formats ?? []).includes(hdrMasterEvidence(format, transfer))) {
+    return false;
+  }
+  // A PQ picture, asked for (HDR10) or kept from PQ sources, needs verified HDR10 output.
+  if (color === 'hdr10' || transfer === 'smpte2084') {
     return precision.hdr10;
   }
   if (color === 'dolby-vision') {
     return precision.dolbyVision;
   }
   return true;
+};
+
+/**
+ * The output request of a queued operation: its settings, plus the picture its sealed contract
+ * promises (FL-107), so a claim is offered only to a session that can keep that promise.
+ */
+export const operationOutputRequest = (settings: Record<string, unknown>, snapshot: unknown): RenderOutputRequest => {
+  const video = (snapshot as { contract?: { video?: { minBitDepth?: unknown; transfer?: unknown } } } | null)?.contract
+    ?.video;
+  const transfer = video?.transfer === 'smpte2084' || video?.transfer === 'arib-std-b67' ? video.transfer : null;
+  return {
+    ...(settings as { format: string; color: string; resolution: string }),
+    ...(typeof video?.minBitDepth === 'number' && { minBitDepth: video.minBitDepth }),
+    ...(transfer && { transfer }),
+  };
 };
 
 /**
@@ -752,9 +787,7 @@ export const evaluateRenderOutput = (
   if (withCodec.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.CodecUnavailable };
   }
-  const withColor = withCodec.filter((candidate) =>
-    colorSupported(request.color, request.format, candidate.colorPrecision ?? SDR_ONLY, request.minBitDepth),
-  );
+  const withColor = withCodec.filter((candidate) => colorSupported(request, candidate));
   if (withColor.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.IncompatibleColor };
   }

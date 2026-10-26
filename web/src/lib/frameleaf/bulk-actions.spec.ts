@@ -53,6 +53,17 @@ describe('bulk action descriptors', () => {
     expect(ids).not.toContain('delete-permanently');
   });
 
+  it('makes Delete the confirmed permanent delete when the server has no trash', () => {
+    const assets = [photo('a'), photo('b')];
+    const ids = available({ assets, trashEnabled: false });
+    expect(ids).not.toContain('delete');
+    expect(ids).toContain('delete-permanently');
+    expect(bulkActionById(bulkActions({ assets, trashEnabled: false }))['delete-permanently']?.confirm).toBe(true);
+    const primary = primaryBulkActions(bulkActions({ assets, trashEnabled: false }), false).map((action) => action.id);
+    expect(primary.at(-1)).toBe('delete-permanently');
+    expect(available({ assets, trashEnabled: false, readOnly: true })).not.toContain('delete-permanently');
+  });
+
   it('replaces the live actions with restore and permanent delete in the trash', () => {
     const ids = available({ assets: [photo('a')], trash: true });
     expect(ids).toEqual(expect.arrayContaining(['restore', 'delete-permanently', 'download']));
@@ -73,7 +84,7 @@ describe('bulk action descriptors', () => {
     }
   });
 
-  it('offers no Unmark for Locked-rule matches, which have no lock to remove (FL-34)', () => {
+  it('offers no Unlock for Locked-rule matches, which have no lock to remove (FL-34)', () => {
     // the Locked view also lists what the owner's Locked rules hide; only changing the rules shows them
     const ruleMatch = photo('a', { isLocked: false });
     expect(available({ assets: [ruleMatch], locked: true })).not.toContain('unmark-sensitive');
@@ -91,7 +102,7 @@ describe('bulk action descriptors', () => {
     expect(primaryBulkActions(actions, false, true).map((action) => action.id)).toContain('add-to-album');
   });
 
-  it('offers Mark Sensitive from the ordinary destinations only (FL-34)', () => {
+  it('offers Lock from the ordinary destinations only (FL-34)', () => {
     expect(available({ assets: [photo('a')] })).toContain('mark-sensitive');
     expect(available({ assets: [photo('a')], trash: true })).not.toContain('mark-sensitive');
     expect(available({ assets: [photo('a')], locked: true })).not.toContain('mark-sensitive');

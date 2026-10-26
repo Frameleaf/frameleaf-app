@@ -49,7 +49,5 @@
 - Before changing existing functions/classes/methods, use GitNexus upstream impact
   analysis and report HIGH/CRITICAL risk. Run `detect_changes` before committing
   when the index is available; report missing or stale coverage honestly.
-- Assign one owner per external operation. Prefer event-driven waits; space
-  remote status rechecks at least seven minutes apart and suspend monitoring
-  after two unchanged checks. Reconcile live PR state, exact code ancestry,
+- Assign one owner per external operation. Reconcile live PR state, exact code ancestry,
   exact-head checks, and linked issue status at shipping boundaries.

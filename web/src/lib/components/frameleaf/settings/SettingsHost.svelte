@@ -27,16 +27,20 @@
   import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
-  import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import LibraryCareLanding from '$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte';
+  import ImportLanding from '$lib/components/frameleaf/settings/imports/ImportLanding.svelte';
+  import StorageLanding from '$lib/components/frameleaf/settings/storage/StorageLanding.svelte';
   import MaintenanceLanding from '$lib/components/frameleaf/settings/care/MaintenanceLanding.svelte';
   import EditingLanding from '$lib/components/frameleaf/settings/editing/EditingLanding.svelte';
   import SearchLanding from '$lib/components/frameleaf/settings/intelligence/SearchLanding.svelte';
   import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
   import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
   import ServerLanding from '$lib/components/frameleaf/settings/server-settings/ServerLanding.svelte';
-  import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
+  import CloudLanding from '$lib/components/frameleaf/settings/cloud/CloudLanding.svelte';
+  import WhoCanSignInLanding from '$lib/components/frameleaf/settings/security/WhoCanSignInLanding.svelte';
+  import YourSignInLanding from '$lib/components/frameleaf/settings/security/YourSignInLanding.svelte';
+  import Overview from '$lib/components/frameleaf/settings/overview/Overview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
@@ -90,6 +94,7 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
+    mdiAccountLockOutline,
     mdiAccountMultipleOutline,
     mdiAccountOutline,
     mdiDeleteOutline,
@@ -197,6 +202,12 @@
       description: $t('frameleaf_settings_area_security_description'),
       icon: mdiShieldLockOutline,
     },
+    // FL-367: a person's own sign-in, devices, keys and Locked photos.
+    privacy: {
+      title: $t('frameleaf_settings_area_privacy'),
+      description: $t('frameleaf_settings_area_privacy_description'),
+      icon: mdiAccountLockOutline,
+    },
     notifications: {
       title: $t('frameleaf_settings_area_notifications'),
       description: $t('frameleaf_settings_area_notifications_description'),
@@ -294,7 +305,12 @@
       .join(' '),
   );
   const requestedArea = $derived(
-    resolveSettingsArea({ area: page.url.searchParams.get('area'), isOpen: legacyOpen, isAdmin }),
+    resolveSettingsArea({
+      area: page.url.searchParams.get('area'),
+      section: page.url.searchParams.get('section'),
+      isOpen: legacyOpen,
+      isAdmin,
+    }),
   );
   // An area this account may not open falls back to the first one it may. This is the area the
   // address names; `area` below is the one the page is shown in.
@@ -347,14 +363,18 @@
     'routing',
     'cloud-processing',
     'hardware',
+    // FL-365: the Storage & originals pages draw their own kit cards.
+    'storage-template',
+    'trash',
+    'migration',
+    // FL-363: the Overnight schedule draws its own kit cards.
+    'nightly-tasks',
     // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
     'cloud-account',
     'cloud-plan',
-    'cloud-license',
     'cloud-remote',
     'cloud-backup',
     'frameleaf-signin',
-    'deduplication',
     'mode',
     'backups',
     'integrity',
@@ -947,7 +967,7 @@
                 </div>
               {/if}
               {#if area === 'overview'}
-                <CommandCenterOverview />
+                <Overview />
               {:else if area === 'backups' && backupPage}
                 <BackupArea page={backupPage} />
               {:else if area === 'history'}
@@ -978,15 +998,6 @@
                     class:cc-manager={MANAGER_SECTIONS.includes(selected.key) || isPlainArea(area)}
                     id="setting-{selected.key}"
                   >
-                    {#if area === 'storage' && selected.key === 'trash'}
-                      <!-- The template's Storage → Trash & retention links to the account's own trash. -->
-                      <div class="cc-section-link">
-                        <Button onclick={() => navigate('trash', 'contents')}>
-                          <Icon icon={mdiDeleteOutline} size="1rem" aria-hidden />
-                          {$t('frameleaf_cc_open_trash')}
-                        </Button>
-                      </div>
-                    {/if}
                     {#if selected.component}
                       <selected.component />
                     {:else}
@@ -1002,12 +1013,22 @@
                 <PreferencesLanding sections={areaSections} />
               {:else if area === 'care'}
                 <LibraryCareLanding />
+              {:else if area === 'storage'}
+                <StorageLanding />
+              {:else if area === 'backup'}
+                <ImportLanding />
               {:else if area === 'intelligence'}
                 <SearchLanding sections={areaSections} />
               {:else if area === 'editing'}
                 <EditingLanding sections={areaSections} />
               {:else if area === 'maintenance'}
                 <MaintenanceLanding />
+              {:else if area === 'security'}
+                <WhoCanSignInLanding />
+              {:else if area === 'cloud'}
+                <CloudLanding />
+              {:else if area === 'privacy'}
+                <YourSignInLanding sections={areaSections} />
               {:else}
                 <div class="cc-settings-content">
                   <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />
@@ -1401,9 +1422,6 @@
     padding: 0;
     background: none;
     border: 0;
-  }
-  .cc-section-link {
-    margin: 14px 0;
   }
   .cc-section + .cc-section {
     margin-top: 16px;

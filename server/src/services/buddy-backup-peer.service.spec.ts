@@ -8,6 +8,10 @@ import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.j
 import { BUDDY_BLOCK_BYTES, BUDDY_SEALED_OVERHEAD } from 'src/utils/buddy-backup-crypto.js';
 
 vi.mock('src/services/base.service.js', () => ({ BaseService: class {} }));
+vi.mock('src/utils/frameleaf-cloud-gateway.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  readCloudLink: () => Promise.resolve({ linked: true, link: {} }),
+}));
 
 describe(BuddyBackupPeerService.name, () => {
   // Verification downloads whole files; a large file (the database dump) spans several full 8 MiB objects.
@@ -41,4 +45,26 @@ describe(BuddyBackupPeerService.name, () => {
       server.close();
     }
   }, 30_000);
+
+  it('spends the shared request budget only on requests for a vault paired here', async () => {
+    const hit = vi.fn().mockResolvedValue({ count: 1 });
+    const service = Object.assign(Object.create(BuddyBackupPeerService.prototype), {
+      rates: { hit },
+      state: { state: () => Promise.resolve({ settings: {}, pairing: { state: 'active', vaults: [] } }) },
+      identity: () => Promise.resolve({ instanceId: 'here' }),
+    }) as BuddyBackupPeerService;
+    const vaultId = '00000000-0000-4000-8000-000000000000';
+    await expect(service.authorize({ headers: {} } as never, {} as never, vaultId, 'read')).rejects.toThrow(
+      'Buddy capability and proof required',
+    );
+    await expect(
+      service.authorize(
+        { headers: { authorization: 'DPoP token', dpop: 'proof' } } as never,
+        {} as never,
+        vaultId,
+        'read',
+      ),
+    ).rejects.toThrow('Buddy access is unavailable');
+    expect(hit).not.toHaveBeenCalled();
+  });
 });

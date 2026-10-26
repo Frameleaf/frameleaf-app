@@ -1,6 +1,11 @@
-import type { SearchFilter } from '@frameleaf/sdk';
+import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, type SearchFilter } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
-import type { DiscoveryQuery } from '$lib/components/discovery/query';
+import { ENRICHMENT_FIELD, type DiscoveryQuery } from '$lib/components/discovery/query';
+import {
+  captureDateControlValue,
+  captureDateHasCustomCondition,
+  ratingControlValue,
+} from '$lib/frameleaf/search-filters';
 
 /**
  * Labels for the single Filter control's chips (FL-33).
@@ -14,7 +19,8 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   personIds: 'people',
   hasPeople: 'people',
   petIds: 'frameleaf_pets_title',
-  takenAt: 'date_and_time',
+  takenAt: 'frameleaf_search_field_taken_at',
+  localDateTime: 'frameleaf_search_field_taken_at',
   createdAt: 'created',
   updatedAt: 'frameleaf_library_filter_field_updated',
   trashedAt: 'frameleaf_library_filter_field_trashed',
@@ -28,8 +34,8 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   isMotion: 'frameleaf_library_filter_field_motion',
   isOffline: 'offline',
   isEncoded: 'frameleaf_library_filter_field_encoded',
-  make: 'make',
-  model: 'model',
+  make: 'camera_brand',
+  model: 'camera_model',
   lensModel: 'lens_model',
   fileSizeInBytes: 'file_size',
   tagIds: 'tags',
@@ -43,6 +49,95 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   libraryId: 'frameleaf_library_filter_field_library',
   or: 'frameleaf_library_filter_field_any_of',
 };
+
+/** Text the caller translates: an i18n key and its ICU values. */
+export type FilterText = { key: Translations; values?: Record<string, number | Date> };
+
+/** LIB-09: the filter panel's own wording for each value, shared so a chip never shows the stored one. */
+export const MEDIA_TYPE_LABEL_KEYS: Record<string, Translations> = {
+  [AssetTypeEnum.Image]: 'photos',
+  [AssetTypeEnum.Video]: 'videos',
+};
+
+export const VISIBILITY_LABEL_KEYS: Record<string, Translations> = {
+  [AssetVisibility.Timeline]: 'timeline',
+  [AssetVisibility.Archive]: 'archived',
+  [AssetVisibility.Hidden]: 'frameleaf_people_hidden_badge',
+  [AssetVisibility.Locked]: 'frameleaf_locked',
+};
+
+/**
+ * The rating control's choices, in panel order. "0 stars or more" is not offered: it only means
+ * "has a rating and is not rejected", which nobody asks for, and it read as "everything".
+ */
+export const RATING_CHOICES = ['null', '-1', '0', '1', '2', '3', '4', '5', 'min1', 'min2', 'min3', 'min4', 'min5'];
+
+/** Label for a `ratingControlValue`; null for the empty and custom values. */
+export const ratingChoiceText = (value: string): FilterText | null => {
+  if (value === 'null') {
+    return { key: 'frameleaf_search_rating_unset' };
+  }
+  if (value === '-1') {
+    return { key: 'frameleaf_search_rating_rejected' };
+  }
+  if (/^[0-5]$/.test(value)) {
+    return { key: 'frameleaf_search_rating_exactly', values: { count: Number(value) } };
+  }
+  if (/^min[1-5]$/.test(value)) {
+    return { key: 'frameleaf_search_rating_at_least', values: { count: Number(value.slice(3)) } };
+  }
+  return null;
+};
+
+/**
+ * The "Text & descriptions" and "Sensitivity review" radiogroups (FP-2). The server has one
+ * enrichment enum, so the two groups share it: a choice in one returns the other to Any. The
+ * prototype's "Generated" and "Written manually" description states have no server value and are
+ * not offered; the detection states the prototype does not list stay reachable in the sensitivity
+ * group, so nothing the server supports is lost.
+ */
+export const ENRICHMENT_GROUPS: {
+  section: string;
+  headingKey: Translations;
+  helpKey: Translations;
+  labelKey: Translations;
+  values: readonly { value: ImageEnrichmentFilter; labelKey: Translations }[];
+}[] = [
+  {
+    section: 'text',
+    headingKey: 'frameleaf_search_text_and_descriptions',
+    helpKey: 'frameleaf_search_text_and_descriptions_help',
+    labelKey: 'description',
+    values: [
+      { value: ImageEnrichmentFilter.MissingImageDescription, labelKey: 'frameleaf_search_status_no_description' },
+      { value: ImageEnrichmentFilter.ImageDescriptionFailed, labelKey: 'frameleaf_search_status_generation_failed' },
+    ],
+  },
+  {
+    section: 'sensitivity',
+    headingKey: 'frameleaf_search_sensitivity_review',
+    helpKey: 'frameleaf_search_sensitivity_review_help',
+    labelKey: 'frameleaf_search_review_status',
+    values: [
+      { value: ImageEnrichmentFilter.NsfwReviewed, labelKey: 'frameleaf_search_status_reviewed' },
+      { value: ImageEnrichmentFilter.NsfwReview, labelKey: 'frameleaf_search_status_needs_review' },
+      { value: ImageEnrichmentFilter.NsfwOverridden, labelKey: 'frameleaf_search_status_overridden' },
+      { value: ImageEnrichmentFilter.Nsfw, labelKey: 'frameleaf_search_status_flagged' },
+      { value: ImageEnrichmentFilter.NsfwDetectionFailed, labelKey: 'frameleaf_search_status_check_failed' },
+      { value: ImageEnrichmentFilter.MissingNsfwDetection, labelKey: 'frameleaf_search_status_not_checked' },
+    ],
+  },
+];
+
+/** Library-status flags: the panel's names, and the quick toggle's name for the `false` case. */
+const STATUS_FLAG_LABELS: Record<string, { yes: Translations; no?: Translations }> = {
+  hasPeople: { yes: 'frameleaf_search_has_people' },
+  hasAlbums: { yes: 'frameleaf_search_in_an_album', no: 'not_in_any_album' },
+  hasTags: { yes: 'frameleaf_search_has_tags', no: 'untagged' },
+};
+
+/** A date-only day as a local Date, so the formatted day is the day the user picked. */
+const localDay = (day: string) => new Date(`${day}T00:00:00`);
 
 /** i18n key naming a filter field. Unknown fields fall back to a neutral "Filter". */
 export const filterFieldLabelKey = (field: string) => FIELD_LABEL_KEYS[field] ?? 'frameleaf_library_filter_field_other';
@@ -67,6 +162,8 @@ export type FilterChipDescription = {
   labelKey: Translations;
   /** A short rendering of the condition, or null when the name says it all. */
   detail: string | null;
+  /** The panel's wording for the condition; when set, callers show it instead of `detail`. */
+  detailText?: FilterText;
   /** How many values a list condition holds; 0 when it is not a list. */
   count: number;
   /** True for a boolean condition that is explicitly negated ("not favourite"). */
@@ -78,6 +175,68 @@ export type FilterChipDescription = {
  * can map over a filter without pre-filtering it.
  */
 export const describeFilterField = (query: DiscoveryQuery, field: string): FilterChipDescription | null => {
+  const described = describeRawFilterField(query, field);
+  if (!described) {
+    return field === ENRICHMENT_FIELD ? describeEnrichment(query) : null;
+  }
+  const condition = query.filter[field as keyof SearchFilter] as Record<string, unknown>;
+  const flag = STATUS_FLAG_LABELS[field];
+  if (flag && typeof condition.eq === 'boolean' && Object.keys(condition).length === 1) {
+    if (condition.eq) {
+      return { ...described, labelKey: flag.yes, negated: false };
+    }
+    return flag.no
+      ? { ...described, labelKey: flag.no, negated: false }
+      : { ...described, labelKey: flag.yes, negated: false, detailText: { key: 'no' } };
+  }
+  const detailText = describeValue(field, condition);
+  return detailText ? { ...described, detail: null, detailText } : described;
+};
+
+const describeValue = (field: string, condition: Record<string, unknown>): FilterText | undefined => {
+  const value = condition.eq ?? condition.ne;
+  const labels = field === 'type' ? MEDIA_TYPE_LABEL_KEYS : field === 'visibility' ? VISIBILITY_LABEL_KEYS : undefined;
+  const key = labels && typeof value === 'string' ? labels[value] : undefined;
+  if (key) {
+    return { key };
+  }
+  if (field === 'rating') {
+    return ratingChoiceText(ratingControlValue(condition)) ?? undefined;
+  }
+  if ((field === 'localDateTime' || field === 'takenAt') && !captureDateHasCustomCondition(condition)) {
+    const from = captureDateControlValue(condition, 'gte');
+    const to = captureDateControlValue(condition, 'lte');
+    if (from && to) {
+      return { key: 'frameleaf_library_filter_date_range', values: { from: localDay(from), to: localDay(to) } };
+    }
+    if (from || to) {
+      return from
+        ? { key: 'frameleaf_library_filter_date_from', values: { from: localDay(from) } }
+        : { key: 'frameleaf_library_filter_date_through', values: { to: localDay(to) } };
+    }
+  }
+  return undefined;
+};
+
+/** The enrichment choice lives on the query root; its chip reads like the radiogroup that set it. */
+const describeEnrichment = (query: DiscoveryQuery): FilterChipDescription | null => {
+  for (const group of ENRICHMENT_GROUPS) {
+    const choice = group.values.find(({ value }) => value === query?.imageEnrichment);
+    if (choice) {
+      return {
+        field: ENRICHMENT_FIELD,
+        labelKey: group.labelKey,
+        detail: null,
+        detailText: { key: choice.labelKey },
+        count: 0,
+        negated: false,
+      };
+    }
+  }
+  return null;
+};
+
+const describeRawFilterField = (query: DiscoveryQuery, field: string): FilterChipDescription | null => {
   const condition = query?.filter?.[field as keyof SearchFilter] as unknown;
   if (condition === undefined || condition === null) {
     return null;

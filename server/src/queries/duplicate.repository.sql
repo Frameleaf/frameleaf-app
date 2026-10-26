@@ -156,6 +156,37 @@ from
 where
   "asset"."duplicateId" = "singletons"."duplicateId"
 
+-- DuplicateRepository.countGroupsForOwner
+select
+  count(*) as "count"
+from
+  (
+    select
+      "asset"."duplicateId"
+    from
+      "asset"
+    where
+      (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."ownerId" = $1::uuid
+      and "asset"."duplicateId" is not null
+      and "asset"."deletedAt" is null
+      and "asset"."stackId" is null
+    group by
+      "asset"."duplicateId"
+    having
+      count("asset"."id") > $2
+  ) as "grouped"
+
 -- DuplicateRepository.get
 select
   "asset"."duplicateId",

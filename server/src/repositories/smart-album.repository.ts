@@ -1,9 +1,24 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, RawBuilder, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AlbumUserRole } from 'src/enum.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
+import { withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked } from 'src/utils/locked.js';
+
+/** FL-522: sample pictures shown for an album or a change. */
+export const SMART_ALBUM_SAMPLES = 4;
+
+export type SmartAlbumRulePreview = {
+  current: number;
+  matched: number;
+  adds: number;
+  removes: number;
+  addSamples: string[];
+  removeSamples: string[];
+};
 
 @Injectable()
 export class SmartAlbumRepository {
@@ -283,6 +298,164 @@ export class SmartAlbumRepository {
   }
   async deleteOwner(ownerId: string, kysely: Kysely<DB> = this.db): Promise<void> {
     await kysely.deleteFrom('smart_album').where('ownerId', '=', ownerId).execute();
+  }
+
+  /**
+   * FL-522: the owner's smart albums with how many photos each holds and a few of the newest, as the
+   * owner sees them: deleted, hidden and Locked photos are left out, and so is content the owner hides.
+   */
+  async listForOwner(
+    ownerId: string,
+    privacy?: HiddenContentQueryOptions,
+    sampleSize = SMART_ALBUM_SAMPLES,
+  ): Promise<{ kind: string; albumId: string; hidden: boolean; count: number; samples: string[] }[]> {
+    const albums = await this.db
+      .selectFrom('smart_album')
+      .select(['id', 'kind', 'albumId', 'hiddenAt'])
+      .where('ownerId', '=', ownerId)
+      .orderBy('kind')
+      .execute();
+    const result = [];
+    for (const album of albums) {
+      const members = () =>
+        this.db
+          .selectFrom('smart_album_asset')
+          .innerJoin('asset', 'asset.id', 'smart_album_asset.assetId')
+          .where('smart_album_asset.smartAlbumId', '=', album.id)
+          .where('asset.deletedAt', 'is', null)
+          .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+          .where(isNotLocked())
+          .$call((qb) => withHiddenContentFilter(qb, privacy));
+      const [counted, samples] = await Promise.all([
+        members()
+          .select((eb) => eb.fn.countAll<number>().as('count'))
+          .executeTakeFirst(),
+        members().select('asset.id').orderBy('asset.fileCreatedAt', 'desc').limit(sampleSize).execute(),
+      ]);
+      result.push({
+        kind: album.kind,
+        albumId: album.albumId,
+        hidden: album.hiddenAt !== null,
+        count: Number(counted?.count ?? 0),
+        samples: samples.map(({ id }) => id),
+      });
+    }
+    return result;
+  }
+
+  /** FL-522: the owner shows or hides one smart album in their own library. False when they have none. */
+  async setHidden(ownerId: string, kind: string, hidden: boolean): Promise<boolean> {
+    const result = await this.db
+      .updateTable('smart_album')
+      .set({ hiddenAt: hidden ? new Date() : null })
+      .where('ownerId', '=', ownerId)
+      .where('kind', '=', kind)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
+
+  /** FL-522: the albums behind the smart albums this owner hid from their library. */
+  async getHiddenAlbumIds(ownerId: string): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('smart_album')
+      .select('albumId')
+      .where('ownerId', '=', ownerId)
+      .where('hiddenAt', 'is not', null)
+      .execute();
+    return new Set(rows.map(({ albumId }) => albumId));
+  }
+
+  /**
+   * FL-522: for an administrator, each kind across the household: photos held (counted once even when
+   * two people hold the same photo), how many people have one with photos in it, and how many hid it.
+   * Counts only: no photo of anyone else is shown.
+   */
+  async getHouseholdCounts(): Promise<{ kind: string; count: number; people: number; hiddenBy: number }[]> {
+    const { rows } = await sql<{ kind: string; count: number; people: number; hiddenBy: number }>`
+      SELECT sa.kind,
+        count(DISTINCT m."assetId") FILTER (WHERE a.id IS NOT NULL)::int AS count,
+        count(DISTINCT sa."ownerId") FILTER (WHERE a.id IS NOT NULL)::int AS people,
+        count(DISTINCT sa."ownerId") FILTER (WHERE sa."hiddenAt" IS NOT NULL)::int AS "hiddenBy"
+      FROM public.smart_album sa
+      LEFT JOIN public.smart_album_asset m ON m."smartAlbumId" = sa.id
+      LEFT JOIN public.asset a ON a.id = m."assetId" AND a."deletedAt" IS NULL
+      GROUP BY sa.kind
+      ORDER BY sa.kind`.execute(this.db);
+    return rows;
+  }
+
+  /**
+   * FL-522: what a rule would hold in the owner's library, against what the album holds now: photos
+   * whose tags include a word, or that look like a phrase (cosine similarity at least `threshold`).
+   * Photos the owner took out of the album stay out. Counts and the newest few of each change.
+   */
+  async previewRule(
+    ownerId: string,
+    kind: string,
+    rule: { tags: string[]; embeddings: string[]; threshold: number },
+    privacy?: HiddenContentQueryOptions,
+    sampleSize = SMART_ALBUM_SAMPLES,
+  ): Promise<SmartAlbumRulePreview> {
+    const smartAlbumId =
+      (await this.getSmartAlbumIdForOwnerAndKind(ownerId, kind)) ?? '00000000-0000-4000-8000-000000000000';
+    const tags = rule.tags.map((tag) => tag.toLowerCase());
+    const looks =
+      rule.embeddings.length > 0
+        ? sql<boolean>`EXISTS (
+            SELECT 1 FROM public.smart_search s
+            WHERE s."assetId" = asset.id AND (${sql.join(
+              rule.embeddings.map((embedding) => sql`1 - (s.embedding <=> ${embedding}::vector) >= ${rule.threshold}`),
+              sql` OR `,
+            )})
+          )`
+        : sql<boolean>`false`;
+    const tagged =
+      tags.length > 0
+        ? sql<boolean>`EXISTS (
+            SELECT 1 FROM public.asset_metadata md,
+              jsonb_array_elements_text(coalesce(md.value -> 'description' -> 'result' -> 'tags', '[]'::jsonb)) AS tag(value)
+            WHERE md."assetId" = asset.id AND md.key = 'ml-enrichment' AND lower(tag.value) = ANY (${tags}::text[])
+          )`
+        : sql<boolean>`false`;
+    const visible = () =>
+      this.db
+        .selectFrom('asset')
+        .where('asset.ownerId', '=', ownerId)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+        .where(isNotLocked())
+        .$call((qb) => withHiddenContentFilter(qb, privacy));
+    const inAlbum = sql<boolean>`EXISTS (SELECT 1 FROM public.smart_album_asset m WHERE m."smartAlbumId" = ${smartAlbumId}::uuid AND m."assetId" = asset.id)`;
+    const excluded = sql<boolean>`EXISTS (SELECT 1 FROM public.smart_album_exclusion x WHERE x."smartAlbumId" = ${smartAlbumId}::uuid AND x."assetId" = asset.id)`;
+    const matches = sql<boolean>`((${tagged}) OR (${looks})) AND NOT ${excluded}`;
+    const adding = sql<boolean>`${matches} AND NOT ${inAlbum}`;
+    const removing = sql<boolean>`${inAlbum} AND NOT (${matches})`;
+
+    const count = async (where: RawBuilder<boolean>) => {
+      const row = await visible()
+        .where(where)
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .executeTakeFirst();
+      return Number(row?.count ?? 0);
+    };
+    const samples = async (where: RawBuilder<boolean>) => {
+      const rows = await visible()
+        .where(where)
+        .select('asset.id')
+        .orderBy('asset.fileCreatedAt', 'desc')
+        .limit(sampleSize)
+        .execute();
+      return rows.map(({ id }) => id);
+    };
+    const [current, matched, adds, removes, addSamples, removeSamples] = await Promise.all([
+      count(inAlbum),
+      count(matches),
+      count(adding),
+      count(removing),
+      samples(adding),
+      samples(removing),
+    ]);
+    return { current, matched, adds, removes, addSamples, removeSamples };
   }
 
   private async getRule(id: string, kysely: Kysely<DB>, assetId: string): Promise<{ albumId: string } | undefined> {

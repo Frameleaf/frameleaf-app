@@ -525,6 +525,9 @@ class AlbumToAssetSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     const userId = options.userId;
+    // FL-447: a removal is sent even for an item that now matches its owner's Locked rules, which the
+    // device may have synced before; the withheld fingerprint only covers items still in the album
+    const hidden = { ...options, othersRulesViewerId: undefined };
     return this.auditQuery('album_asset_audit', options)
       .select(['album_asset_audit.id', 'assetId', 'albumId'])
       .leftJoin('asset', 'asset.id', 'album_asset_audit.assetId')
@@ -535,7 +538,7 @@ class AlbumToAssetSync extends BaseSync {
           eb.selectFrom('album_user').select(['album_user.albumId as id']).where('album_user.userId', '=', userId),
         ),
       )
-      .$call((qb) => withHiddenContentFilter(qb, options))
+      .$call((qb) => withHiddenContentFilter(qb, hidden))
       .stream();
   }
   cleanupAuditTable(daysAgo: number) {

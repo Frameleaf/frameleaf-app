@@ -1918,6 +1918,36 @@ describe(StudioBundleService.name, () => {
       },
     );
 
+    it.each(['commit_unknown', 'UNQUALIFIED'])(
+      'finishes the created project on the retry and reports a carried file it still cannot keep: %s',
+      async (message) => {
+        const id = newUuid();
+        const { bundle, manifest } = handMade([{ id, bytes: wav, fileName: 'take.wav', contentType: 'audio/wav' }]);
+        const upload = uploadOf(bundle, manifest);
+        const job = importJobOf(upload);
+        const project = { id: newUuidV7(), ownerId: owner.user.id, importedFromDigest: upload.digest } as StudioProject;
+        projects.createWithRevision.mockResolvedValueOnce({ project, created: true });
+        publications.retain.mockRejectedValue(new Error(message));
+
+        await sut.run({ operation: job, claimToken: 'token' });
+        expect(operations.fail).toHaveBeenCalledWith(job.id, 'token', expect.objectContaining({ error: message }));
+        const prepared = operations.setBulkResult.mock.calls.find((call) => call[2].result?.projectId === null)?.[2]
+          .result;
+
+        operations.fail.mockClear();
+        projects.getByImportOperation.mockResolvedValueOnce(project);
+        await sut.run({ operation: { ...job, result: prepared } as MediaOperation, claimToken: 'token-retry' });
+
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(operations.complete).toHaveBeenCalledWith(job.id, 'token-retry', { resultAssetId: null });
+        expect(lastResult()).toMatchObject({
+          projectId: project.id,
+          missing: [expect.objectContaining({ id, embedded: true })],
+        });
+        expect(projects.markUploadConsumed).toHaveBeenCalledWith(upload.id);
+      },
+    );
+
     it('does not blanket-unlink a bundle stage after an unknown prepare acknowledgement', async () => {
       const { bundle, manifest } = handMade([
         { id: newUuid(), bytes: wav, fileName: 'take.wav', contentType: 'audio/wav' },

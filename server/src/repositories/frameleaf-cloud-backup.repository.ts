@@ -87,6 +87,8 @@ export class FrameleafCloudBackupRepository {
       method: 'POST',
       url: backupEndpoints(target).grant,
       dpop: target.token,
+      // First setup also installs the account's isolated roles and storage binding.
+      timeoutMs: 120_000,
       body: backupGrantRequestSchema.parse({ locationId, operation }),
     });
   }

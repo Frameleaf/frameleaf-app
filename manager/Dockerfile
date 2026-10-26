@@ -1,4 +1,4 @@
-ARG NODE_IMAGE=node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+ARG NODE_IMAGE=node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app/manager
 COPY manager/package*.json ./
@@ -8,7 +8,7 @@ RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM ${NODE_IMAGE}
 ARG TARGETARCH
-RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends docker-cli docker-compose restic openssl ca-certificates util-linux curl acl attr && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends docker-cli docker-compose restic openssl ca-certificates util-linux curl acl attr && test ! -e /etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem && test ! -e /etc/ssl/certs/Comodo_AAA_Services_root.pem && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /usr/local/lib/docker/cli-plugins \
     && ln -s /usr/bin/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose \
     && docker --version && docker compose version

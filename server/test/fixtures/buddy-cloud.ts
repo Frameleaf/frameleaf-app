@@ -326,7 +326,8 @@ export const startBuddyCloud = async () => {
     pairing = BuddyPairing.parse({
       version: 1,
       pairId: randomUUID(),
-      state: 'pending',
+      // Like Frameleaf Cloud since FC-139 (FL-513), accepting activates the pairing; nobody confirms.
+      state: 'active',
       readUntil: null,
       vaults: [
         {
@@ -349,13 +350,12 @@ export const startBuddyCloud = async () => {
         },
       ],
     });
-    // Like Frameleaf Cloud, only the inviter confirms a pending pairing; the invitee is refused (FL-434).
+    // Kept for older builds: confirming an active pairing returns it unchanged to either member.
     protectedRoute(`POST /v1/buddy/pairings/${pairing.pairId}/confirm`, (confirm, confirmer) => {
       BuddyAction.parse(confirm.json());
-      if (pairing?.state !== 'pending' || confirmer.id !== source.id) {
+      if (pairing?.state !== 'active' || ![source.id, instance.id].includes(confirmer.id)) {
         return refused();
       }
-      pairing = BuddyPairing.parse({ ...pairing, state: 'active' });
       return answer(pairing);
     });
     return answer(pairing);

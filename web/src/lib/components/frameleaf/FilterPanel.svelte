@@ -24,6 +24,12 @@
     withFilterCondition,
     type SetCondition,
   } from '$lib/frameleaf/search-filters';
+  import {
+    ENRICHMENT_GROUPS,
+    RATING_CHOICES,
+    ratingChoiceText,
+    VISIBILITY_LABEL_KEYS,
+  } from '$lib/frameleaf/library-filters';
   import type { PaletteFacets } from '$lib/frameleaf/search-palette';
   import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
   import '$lib/frameleaf/tokens.css';
@@ -142,7 +148,9 @@
       list.push(asOption(CUSTOM_CONDITION, $t('frameleaf_search_custom_condition')));
     }
     for (const value of values) {
-      list.push(asOption(value, withCount(value, counts?.get(value))));
+      const key = field === 'visibility' ? VISIBILITY_LABEL_KEYS[value] : undefined;
+      const name = key ? $t(key) : value;
+      list.push(asOption(value, withCount(name, counts?.get(value))));
     }
     if (current && current !== CUSTOM_CONDITION && !values.includes(current)) {
       list.push(asOption(current, current));
@@ -177,56 +185,11 @@
   const ratingOptions = $derived<ComboBoxOption[]>([
     asOption('', $t('frameleaf_search_any_rating')),
     ...(ratingValue === CUSTOM_CONDITION ? [asOption(CUSTOM_CONDITION, $t('frameleaf_search_custom_condition'))] : []),
-    asOption('null', $t('frameleaf_search_rating_unset')),
-    asOption('0', $t('frameleaf_search_rating_unrated')),
-    asOption('-1', $t('frameleaf_search_rating_rejected')),
-    ...[1, 2, 3, 4, 5].map((value) =>
-      asOption(String(value), $t('frameleaf_search_rating_exactly', { values: { count: value } })),
-    ),
-    ...[0, 1, 2, 3, 4, 5].map((value) =>
-      asOption(`min${value}`, $t('frameleaf_search_rating_at_least', { values: { count: value } })),
-    ),
+    ...RATING_CHOICES.map((value) => {
+      const text = ratingChoiceText(value)!;
+      return asOption(value, $t(text.key, { values: text.values }));
+    }),
   ]);
-
-  /**
-   * The prototype's "Text & descriptions" and "Sensitivity review" radiogroups (FP-2). The server has
-   * one enrichment enum, so the two groups share it: a choice in one returns the other to Any. The
-   * prototype's "Generated" and "Written manually" description states have no server value and are
-   * not offered; the detection states the prototype does not list stay reachable in the sensitivity
-   * group, so nothing the server supports is lost.
-   */
-  const ENRICHMENT_GROUPS: {
-    section: string;
-    headingKey: Translations;
-    helpKey: Translations;
-    labelKey: Translations;
-    values: readonly { value: ImageEnrichmentFilter; labelKey: Translations }[];
-  }[] = [
-    {
-      section: 'text',
-      headingKey: 'frameleaf_search_text_and_descriptions',
-      helpKey: 'frameleaf_search_text_and_descriptions_help',
-      labelKey: 'description',
-      values: [
-        { value: ImageEnrichmentFilter.MissingImageDescription, labelKey: 'frameleaf_search_status_no_description' },
-        { value: ImageEnrichmentFilter.ImageDescriptionFailed, labelKey: 'frameleaf_search_status_generation_failed' },
-      ],
-    },
-    {
-      section: 'sensitivity',
-      headingKey: 'frameleaf_search_sensitivity_review',
-      helpKey: 'frameleaf_search_sensitivity_review_help',
-      labelKey: 'frameleaf_search_review_status',
-      values: [
-        { value: ImageEnrichmentFilter.NsfwReviewed, labelKey: 'frameleaf_search_status_reviewed' },
-        { value: ImageEnrichmentFilter.NsfwReview, labelKey: 'frameleaf_search_status_needs_review' },
-        { value: ImageEnrichmentFilter.NsfwOverridden, labelKey: 'frameleaf_search_status_overridden' },
-        { value: ImageEnrichmentFilter.Nsfw, labelKey: 'frameleaf_search_status_flagged' },
-        { value: ImageEnrichmentFilter.NsfwDetectionFailed, labelKey: 'frameleaf_search_status_check_failed' },
-        { value: ImageEnrichmentFilter.MissingNsfwDetection, labelKey: 'frameleaf_search_status_not_checked' },
-      ],
-    },
-  ];
 
   type EnrichmentChoice = { value: ImageEnrichmentFilter; labelKey: Translations };
 
@@ -286,6 +249,7 @@
   const typeCounts = $derived(countsFor(SearchFacetField.Type));
   const peopleCounts = $derived(countsFor(SearchFacetField.People));
   const tagCounts = $derived(countsFor(SearchFacetField.Tags));
+  const petCounts = $derived(countsFor(SearchFacetField.Pets));
 
   const visibilityOptions = $derived(facetOptions('visibility', $t('visibility'), Object.values(AssetVisibility)));
 
@@ -343,7 +307,11 @@
         field="petIds"
         anchor="pets"
         label={$t('frameleaf_pets_title')}
-        options={options.pets.map((pet) => ({ value: pet.id, label: pet.name || $t('frameleaf_pets_unnamed') }))}
+        options={options.pets.map((pet) => ({
+          value: pet.id,
+          label: pet.name || $t('frameleaf_pets_unnamed'),
+          count: petCounts.get(pet.id),
+        }))}
         condition={filter.petIds as SetCondition}
         onChange={setCondition}
       />

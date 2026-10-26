@@ -27,6 +27,12 @@ const ApiKeyResponseSchema = z
     createdAt: isoDatetimeToDate.describe('Creation date'),
     updatedAt: isoDatetimeToDate.describe('Last update date'),
     permissions: z.array(PermissionSchema).describe('List of permissions'),
+    // FL-367: recorded at most every few minutes, so it is a moment to the nearest few minutes
+    lastUsedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the key was last used to reach the server; null when it never has been'),
   })
   .meta({ id: 'ApiKeyResponseDto' });
 

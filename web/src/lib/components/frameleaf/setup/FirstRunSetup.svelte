@@ -20,6 +20,7 @@
   import SetupChange from '$lib/components/frameleaf/setup/SetupChange.svelte';
   import SetupChoiceCard from '$lib/components/frameleaf/setup/SetupChoiceCard.svelte';
   import SetupFrameleafLink from '$lib/components/frameleaf/setup/SetupFrameleafLink.svelte';
+  import { cloudPlanPrice, formatUsd } from '$lib/frameleaf/cloud';
   import SetupImports from '$lib/components/frameleaf/setup/SetupImports.svelte';
   import SetupLogoIntro from '$lib/components/frameleaf/setup/SetupLogoIntro.svelte';
   import SetupRadio from '$lib/components/frameleaf/setup/SetupRadio.svelte';
@@ -43,6 +44,7 @@
     modelTiers,
     needsReindex,
     processingOptions,
+    recommendedTier,
     reindexHours,
     saveLocalSetup,
     setLinked,
@@ -51,6 +53,7 @@
     themeAfterSetup,
     toProgress,
     validateStep,
+    withDefaultTier,
     type SetupChoices,
     type SetupState,
   } from '$lib/frameleaf/first-run-setup';
@@ -95,6 +98,7 @@
     type FrameleafSetupStorageResponseDto,
     type HardwareCheckResponseDto,
     type UserAdminResponseDto,
+    getLicenseProducts,
   } from '@frameleaf/sdk';
   import { Icon, ThemePreference, themeManager } from '@frameleaf/ui';
   import {
@@ -232,6 +236,9 @@
     }
     hardware = hardwareResult.status === 'fulfilled' ? hardwareResult.value : null;
     users = usersResult.status === 'fulfilled' ? usersResult.value : [];
+    // A2: the tier starts from what the hardware runs well (a new server) or from the models the
+    // library already uses (an existing one), unless the administrator already took that decision.
+    setup = withDefaultTier(setup, { hardware, currentModel: config?.machineLearning.clip.modelName });
     serverLoading = false;
   };
 
@@ -504,10 +511,9 @@
       themeManager.setPreference(
         themeAfterSetup(choices.theme) === 'light' ? ThemePreference.Light : ThemePreference.Dark,
       );
-      await goto(
-        choices.restore === 'restore' && linked ? commandCenterUrl('cloud', 'cloud-account') : Route.photos(),
-        { invalidateAll: true },
-      );
+      await goto(choices.restore === 'restore' && linked ? commandCenterUrl('backups', 'cloud') : Route.photos(), {
+        invalidateAll: true,
+      });
       // Still here (the navigation was turned back): never leave the faded stage on screen.
       showStage();
     } catch (error) {
@@ -540,6 +546,8 @@
   const preset = $derived(layoutPresets.find((entry) => entry.id === choices.layout) ?? layoutPresets[0]);
   const pathParts = $derived(examplePath(choices.layout).split('/'));
   const tier = $derived(modelTiers.find((entry) => entry.id === choices.model) ?? modelTiers[1]);
+  /** The tier this hardware is recommended (A2); shown as such on the tier step whatever is chosen. */
+  const recommendedTierId = $derived(recommendedTier(hardware));
   const gpu = $derived(!!hardware && hardware.ml.backend !== HardwareBackend.Cpu && hardware.ml.reachable);
   const perHour = $derived(itemsPerHour(gpu, hardware?.benchmark?.embeddingMs));
   const existing = $derived(setup.flow === 'existing');
@@ -567,6 +575,29 @@
   const fieldErrors = $derived(['name', 'email', 'password', 'confirm'].filter((field) => errors[field]).length);
   const hours = $derived(reindexHours(items, choices.model, perHour));
   const options = $derived(processingOptions(setup));
+  // FL-544: the Frameleaf Cloud card on Protection names the price, from the bundled prices
+  let cloudBundle = $state('');
+  let getCloud = $state(false);
+  $effect(() => {
+    if (!linked || cloudBundle) {
+      return;
+    }
+    const load = async () => {
+      try {
+        const products = await getLicenseProducts();
+        const price = (id: string) => products.products.find((product) => product.id === id)?.priceUsd ?? 0;
+        cloudBundle = $t('frameleaf_gc_price_year', {
+          values: {
+            once: formatUsd(price('supporter-server')),
+            renew: formatUsd(cloudPlanPrice(price('cloud-annual'), products.licensedDiscount)),
+          },
+        });
+      } catch {
+        cloudBundle = '';
+      }
+    };
+    void load();
+  });
   const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
   /** Originals in the unit that fits: an imported library of a few hundred MB never reads as "0.0 TB". */
   const formatSize = (bytes: number) => getByteUnitString(bytes, $locale);
@@ -581,7 +612,7 @@
     (current.id === 'sign-in-choice' && choices.signIn === (frameleafAvailable === false ? 'local' : 'frameleaf')) ||
       (current.id === 'library-check' && choices.layout === KEEP_LAYOUT) ||
       (current.id === 'account' && existing) ||
-      (current.id === 'processing' && choices.processing === 'local' && choices.model === 'balanced') ||
+      (current.id === 'processing' && choices.processing === 'local' && choices.model === recommendedTierId) ||
       (current.id === 'protection' && choices.nightlyBackup) ||
       current.id === 'privacy',
   );
@@ -1326,7 +1357,7 @@
                   {#snippet summary()}
                     <strong>
                       {$t('frameleaf_setup_tier_models', { values: { tier: $t(tier.label) } })}
-                      {#if tier.recommended}<SetupRecommended />{/if}
+                      {#if tier.id === recommendedTierId}<SetupRecommended />{/if}
                     </strong>
                     <span>{$t(tier.summary)}</span>
                   {/snippet}
@@ -1339,7 +1370,7 @@
                         onchange={() => choose({ model: entry.id })}
                         title={$t('frameleaf_setup_tier_models', { values: { tier: $t(entry.label) } })}
                         detail={$t(entry.summary)}
-                        recommended={entry.recommended}
+                        recommended={entry.id === recommendedTierId}
                       />
                     {/each}
                   </div>
@@ -1412,20 +1443,34 @@
                   />
                 </div>
                 {#if linked}
+                  <!-- FL-544: Frameleaf Cloud as one purchase, with the price said here -->
                   <section class="frs-cloud-backup">
                     <header>
                       <span class="frs-found-icon"><Icon icon={mdiCloudOutline} size="24" aria-hidden={true} /></span>
                       <div>
-                        <h2>{$t('frameleaf_setup_cloud_backup_title')}</h2>
-                        <p>{$t('frameleaf_setup_cloud_backup_body')}</p>
+                        <h2>{$t('frameleaf_setup_cloud_title')}</h2>
+                        <p>{$t('frameleaf_setup_cloud_body')}</p>
                       </div>
                     </header>
-                    <p class="frs-later">
-                      <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t(
-                        'frameleaf_setup_cloud_backup_after',
-                      )}
-                    </p>
+                    {#if cloudBundle}
+                      <p class="frs-later">
+                        <Icon icon={mdiClockOutline} size="14" aria-hidden={true} />{$t('frameleaf_setup_cloud_price', {
+                          values: { price: cloudBundle },
+                        })}
+                      </p>
+                    {/if}
+                    <div class="frs-choices two">
+                      <button type="button" class="button primary" onclick={() => (getCloud = true)}
+                        >{$t('frameleaf_get_cloud')}</button
+                      >
+                      <span class="frs-quiet">{$t('frameleaf_setup_cloud_later')}</span>
+                    </div>
                   </section>
+                  {#if getCloud}
+                    {#await import('$lib/components/frameleaf/cloud/GetCloudSheet.svelte') then { default: GetCloudSheet }}
+                      <GetCloudSheet feature="backup" close={() => (getCloud = false)} />
+                    {/await}
+                  {/if}
                 {:else}
                   <p class="frs-quiet">
                     <Icon icon={mdiInformationOutline} size="16" aria-hidden={true} />{$t(

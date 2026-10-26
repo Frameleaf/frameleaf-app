@@ -218,8 +218,8 @@ export class CloudBackupDetailsService extends BaseService {
       ownedAlbum = !row || (!!owner && !row.deletedAt);
     }
     const existing = await repositories.album.getById(input.albumId, { withAssets: false });
-    if (context && (!ownedAlbum || (!existing && input.album?.ownerId !== context.ownerId)))
-      throw new Error('Owner restore album unavailable');
+    // an owner restore never changes someone else's album: the item comes back without that membership
+    if (context && (!ownedAlbum || (!existing && input.album?.ownerId !== context.ownerId))) return null;
     if (existing) {
       await repositories.album.addAssetIds(input.albumId, input.memberIds);
       return 'updated';
@@ -367,7 +367,7 @@ export class CloudBackupDetailsService extends BaseService {
           .forShare()
           .noWait()
           .executeTakeFirst();
-        if (album && (!owner || album.deletedAt)) throw new Error('Owner restore album unavailable');
+        if (album && (!owner || album.deletedAt)) continue;
       }
       if (await repositories.album.getById(albumId, { withAssets: false })) {
         await repositories.album.addAssetIds(albumId, [assetId]);
