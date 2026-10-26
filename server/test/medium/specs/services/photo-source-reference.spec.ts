@@ -1552,6 +1552,32 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         .executeTakeFirstOrThrow();
       expect(rebound.photoSessionId).toBe(fresh.id);
       await expect(f.repository.snapshot(f.authority, lost.sourceId, first.runId)).rejects.toThrow();
+      native.stdin!.write(JSON.stringify({ command: 'rescan' }) + '\n');
+      const rescanned = await message();
+      expect(rescanned).toMatchObject({
+        phase: 'rescanned',
+        remaining: 0,
+        oldReadAndUploadAllowancesUnchanged: true,
+        newReadAndUploadAllowancesZero: true,
+        receipt: { assetId: first.assetId, sourceId: lost.sourceId, ownerId: f.user.id, storage: 'reference' },
+      });
+      const edited = Buffer.from('owner-edited independent original after lost reply');
+      expect(rescanned.explicitReadSpent).toBe(edited.length);
+      expect(rescanned.receipt).toMatchObject({
+        bytes: edited.length,
+        sha256: createHash('sha256').update(edited).digest('hex'),
+      });
+      expect(rescanned.receipt.resourceId).not.toBe(first.id);
+      expect(rescanned.receipt.version).not.toBe(first.version);
+      expect(
+        (
+          await db
+            .selectFrom('source_original')
+            .select('resourceId')
+            .where('assetId', '=', first.assetId!)
+            .executeTakeFirstOrThrow()
+        ).resourceId,
+      ).toBe(rescanned.receipt.resourceId);
       native.stdin!.write(JSON.stringify({ command: 'forget' }) + '\n');
       expect(await message()).toMatchObject({ phase: 'forgotten', originalAndCacheRetained: true });
       expect(
@@ -1575,25 +1601,33 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         }),
       ]).finally(() => clearTimeout(timer));
       expect(code, errors).toBe(0);
-      expect(attempts).toBe(1);
+      expect(attempts).toBe(2);
       expect(lookups).toBe(5);
-      expect(requests.filter(({ method, path }) => method === 'POST' && path.endsWith('/reference'))).toHaveLength(1);
+      expect(requests.filter(({ method, path }) => method === 'POST' && path.endsWith('/reference'))).toHaveLength(2);
       expect(requests.filter(({ method, path }) => method === 'GET' && path.endsWith('/reference'))).toHaveLength(5);
-      expect(
-        await db.selectFrom('photo_source_run').selectAll().where('sourceId', '=', lost.sourceId).execute(),
-      ).toMatchObject([{ id: first.runId, state: 'complete' }]);
-      expect(
-        await db
-          .selectFrom('photo_source_resource as resource')
-          .innerJoin('photo_source_run as run', 'run.id', 'resource.runId')
-          .select('resource.id')
-          .where('run.sourceId', '=', lost.sourceId)
-          .execute(),
-      ).toEqual([{ id: first.id }]);
+      const runs = await db.selectFrom('photo_source_run').selectAll().where('sourceId', '=', lost.sourceId).execute();
+      expect(runs).toHaveLength(2);
+      expect(runs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: first.runId, state: 'complete' }),
+          expect.objectContaining({ id: rescanned.receipt.runId, state: 'complete' }),
+        ]),
+      );
+      const resources = await db
+        .selectFrom('photo_source_resource as resource')
+        .innerJoin('photo_source_run as run', 'run.id', 'resource.runId')
+        .select('resource.id')
+        .where('run.sourceId', '=', lost.sourceId)
+        .execute();
+      expect(resources).toHaveLength(2);
+      expect(resources).toEqual(expect.arrayContaining([{ id: first.id }, { id: rescanned.receipt.itemId }]));
+      expect(await db.selectFrom('asset').select('id').where('libraryId', '=', lost.sourceId).execute()).toEqual([
+        { id: first.assetId },
+      ]);
       expect(
         await db.selectFrom('asset_upload_resource').select('id').where('ownerId', '=', f.user.id).execute(),
       ).toHaveLength(0);
-      expect(f.jobs.queueInTransaction).toHaveBeenCalledTimes(1);
+      expect(f.jobs.queueInTransaction).toHaveBeenCalledTimes(2);
       expect(
         requests.some(
           ({ path }) =>
