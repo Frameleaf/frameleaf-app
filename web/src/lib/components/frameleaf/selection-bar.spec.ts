@@ -125,25 +125,25 @@ describe('Frameleaf selection bar', () => {
   it('groups the rest of the bulk set in the More menu, including both sensitive actions', async () => {
     const { unmount } = mount();
     await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    for (const name of ['Stack', 'Tag', 'Change date', 'Archive', 'Mark Sensitive', 'Refresh metadata']) {
+    for (const name of ['Stack', 'Tag', 'Change date', 'Archive', 'Lock', 'Refresh metadata']) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
     }
     unmount();
 
-    // As in the prototype's selection.mjs, Unmark Sensitive is offered only when a selected item is
+    // As in the prototype's selection.mjs, Unlock is offered only when a selected item is
     // marked, so a selection mixing a marked and an unmarked item offers both.
     mount({ assets: [photo('a'), photo('b', { isLocked: true })] });
     await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    for (const name of ['Mark Sensitive', 'Unmark Sensitive']) {
+    for (const name of ['Lock', 'Unlock']) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
     }
   });
 
-  it('offers no Unmark Sensitive when nothing selected is marked', async () => {
+  it('offers no Unlock when nothing selected is marked', async () => {
     mount();
     await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-    expect(screen.getByRole('menuitem', { name: 'Mark Sensitive' })).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Unmark Sensitive' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Lock' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Unlock' })).not.toBeInTheDocument();
   });
 
   it('carries the stack ids Unstack needs, which only the bar knows', async () => {

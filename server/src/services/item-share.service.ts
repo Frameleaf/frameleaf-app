@@ -34,7 +34,7 @@ export const ITEM_SHARE_HIDDEN = 'Hidden items cannot be shared. Unhide them fir
  *
  * - Only the owner shares an item, and only with other people who have an account here. It is not
  *   partner sharing: nothing but the chosen items is reachable, and nothing leaves the server.
- * - Locked items are never shared (the prototype refuses "Unmark Sensitive before sharing this
+ * - Locked items are never shared (the prototype refuses "Unlock before sharing this
  *   item"): a share naming an item that is locked, or hidden by one of the owner's Locked rules, is
  *   refused as a whole. An item locked after it was shared disappears for the recipient, from their
  *   list and from every read, until it is unlocked (`ItemShareRepository`, `checkItemShareAccess`).

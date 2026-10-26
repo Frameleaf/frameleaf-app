@@ -3034,7 +3034,7 @@ export const AssetVisibilitySchema = z
  * is hidden everywhere except its owner's elevated (PIN-unlocked) session.
  */
 export enum AssetLockReason {
-  /** The owner locked it (Lock, the former Mark Sensitive, or a request for `visibility: locked`). */
+  /** The owner locked it (Lock, formerly Mark Sensitive, or a request for `visibility: locked`). */
   Marked = 'marked',
   /** Sensitive-content detection flagged it; reviewable and reversible in the Locked view. */
   Detected = 'detected',

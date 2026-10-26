@@ -10,7 +10,7 @@ import type { Translations } from 'svelte-i18n';
  *
  * - Selection is a multi-select state separate from the open item, and the floating selection bar
  *   carries the complete bulk set: favorite, add to album, share link, download, stack, link motion
- *   clips, change date, description and location, archive, Mark Sensitive and Unmark Sensitive,
+ *   clips, change date, description and location, archive, Lock and Unlock,
  *   tag, delete with undo, and the per-item refresh jobs.
  * - Trash undo uses restore; partial failures report per item.
  *
@@ -158,7 +158,7 @@ export type BulkActionContext = {
    * there (FL-48 map/space follow-ups). Combined with `snapshot`, this narrows the matching set's
    * actions to the two a viewer's role always permits: download and adding what they can see to an
    * album of their own — neither one touches the space. The album-level actions (remove from album,
-   * tag, change date, archive, Mark Sensitive, stacking, ...) need the editor or owner role the server
+   * tag, change date, archive, Lock, stacking, ...) need the editor or owner role the server
    * already checks per item; offering them over a set the client has not resolved would just fail
    * across items the member cannot act on. A manually built selection is unaffected by this flag —
    * those items are already visible, and the per-item check still decides, as it always has.
@@ -403,7 +403,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       available: live && has && (unknown || any((asset) => !!asset.isArchived)),
     },
     {
-      // Mark Sensitive is the lock (FL-34, the prototype's `lock`): one lock record per item, metadata
+      // Lock (FL-34, the prototype's `lock`): one lock record per item, metadata
       // that never relocates it. Album membership and organization are untouched; the item is hidden
       // everywhere until the session is unlocked, and the Locked view lists it.
       id: 'mark-sensitive',
@@ -413,7 +413,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       available: live && has && (unknown || any((asset) => !asset.isLocked)),
     },
     {
-      // Unmark Sensitive is Unlock: each item goes back exactly where it was. Offered in the Locked view
+      // Unlock: each item goes back exactly where it was. Offered in the Locked view
       // and wherever an unlocked session shows a marked item; a Locked-rule match the Locked view also
       // lists has no lock to remove, so it alone never offers it.
       id: 'unmark-sensitive',
