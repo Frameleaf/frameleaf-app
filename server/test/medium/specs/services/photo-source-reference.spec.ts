@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { json } from 'body-parser';
 import { Kysely, sql } from 'kysely';
 import { type ChildProcess, execFile, spawn } from 'node:child_process';
@@ -1393,8 +1393,15 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
       const receipt = await publish(...args);
       attempts++;
       if (attempts === 1) throw new ServiceUnavailableException('Synthetic lost receipt');
-      if (attempts === 2) return { ...receipt, ownerId: randomUUID() };
       return receipt;
+    });
+    const lookup = f.service.referenceReceipt.bind(f.service);
+    let lookups = 0;
+    const recoveryReplies = vi.spyOn(f.service, 'referenceReceipt').mockImplementation(async (...args) => {
+      const receipt = await lookup(...args);
+      lookups++;
+      if (lookups === 2) throw new ConflictException('Synthetic current binding refused');
+      return lookups === 1 ? { ...receipt, ownerId: randomUUID() } : receipt;
     });
     const token = randomBytes(32).toString('base64url');
     let currentToken = token;
@@ -1506,10 +1513,13 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
       native.stdin!.write(JSON.stringify({ command: 'resume' }) + '\n');
       expect((await message()).phase).toBe('foreign-receipt-refused');
       native.stdin!.write(JSON.stringify({ command: 'resume' }) + '\n');
+      expect(await message()).toMatchObject({ phase: 'current-binding-refused', pendingAttemptUnchanged: true });
+      native.stdin!.write(JSON.stringify({ command: 'resume' }) + '\n');
       const done = await message();
       expect(done).toMatchObject({
         phase: 'complete',
-        independentOriginalUnchanged: true,
+        editedOriginalRetained: true,
+        originalValidationStillRequired: true,
         cacheRetained: true,
         readAndUploadAllowancesUnchanged: true,
         receipt: {
@@ -1565,7 +1575,10 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         }),
       ]).finally(() => clearTimeout(timer));
       expect(code, errors).toBe(0);
-      expect(attempts).toBe(5);
+      expect(attempts).toBe(1);
+      expect(lookups).toBe(5);
+      expect(requests.filter(({ method, path }) => method === 'POST' && path.endsWith('/reference'))).toHaveLength(1);
+      expect(requests.filter(({ method, path }) => method === 'GET' && path.endsWith('/reference'))).toHaveLength(5);
       expect(
         await db.selectFrom('photo_source_run').selectAll().where('sourceId', '=', lost.sourceId).execute(),
       ).toMatchObject([{ id: first.runId, state: 'complete' }]);
@@ -1599,6 +1612,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
       tls.closeAllConnections();
       await new Promise<void>((resolve) => tls.close(() => resolve()));
       replies.mockRestore();
+      recoveryReplies.mockRestore();
       await http.close();
       await f.http.close();
       await rm(root, { recursive: true, force: true });
