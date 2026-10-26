@@ -1226,6 +1226,9 @@
   "preferences.tags.sidebarWeb": {
     "type": "boolean"
   },
+  "preferences.trash.reuploadUntil": {
+    "type": "string"
+  },
   "reverseGeocoding.enabled": {
     "type": "boolean"
   },

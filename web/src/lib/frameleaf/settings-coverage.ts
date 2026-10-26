@@ -1694,6 +1694,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'showSupportBadge',
   },
   {
+    pattern: 'trash.reuploadUntil',
+    // FL-556: the 24-hour "bring back from Trash" switch waits for its prototype mock to be approved
+    kind: 'api-only',
+    file: 'src/test-data/factories/preferences-factory.ts',
+    evidence: 'reuploadUntil',
+  },
+  {
     pattern: 'ratings.enabled',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',

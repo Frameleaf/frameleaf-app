@@ -85,6 +85,9 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
           showSupportBadge: true,
           hideBuyButtonUntil: '2100-02-12T00:00:00.000Z',
         },
+        trash: {
+          reuploadUntil: '',
+        },
         cast: {
           gCastEnabled: false,
         },

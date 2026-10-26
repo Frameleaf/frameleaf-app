@@ -1629,6 +1629,10 @@ export type UserPreferences = {
     showSupportBadge: boolean;
     hideBuyButtonUntil: string;
   };
+  /** FL-556: until this time (at most a day ahead), uploading a photo that is in the Trash brings it back; '' is off */
+  trash: {
+    reuploadUntil: string;
+  };
   cast: {
     gCastEnabled: boolean;
   };

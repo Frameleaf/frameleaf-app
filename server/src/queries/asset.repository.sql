@@ -444,6 +444,7 @@ select
   "id",
   "checksum",
   "deletedAt",
+  "status",
   "originalPath",
   "libraryId",
   "isExternal"

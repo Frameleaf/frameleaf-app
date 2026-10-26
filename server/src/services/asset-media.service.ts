@@ -33,6 +33,7 @@ import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import {
   AssetFileType,
   AssetLockReason,
+  AssetStatus,
   AssetType,
   AssetVisibility,
   CacheControl,
@@ -59,6 +60,7 @@ import {
   OriginalPurpose,
   getOriginalLocationPolicies,
 } from 'src/utils/partner-location.js';
+import { getPreferences, isTrashReuploadOpen } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
 
 export interface AssetMediaRedirectResponse {
@@ -81,8 +83,13 @@ export class AssetMediaService extends BaseService {
     if (!assetId) {
       return;
     }
-    // Its original is gone: let the file come, the upload restores it.
-    if ((await this.lostOriginalMatches(auth, [fromChecksum(checksum)])).length > 0) {
+    // Its original is gone, or (FL-556) the account lets uploads bring photos back from the Trash:
+    // let the file come, the upload restores the photo.
+    const checksums = [fromChecksum(checksum)];
+    if (
+      (await this.lostOriginalMatches(auth, checksums)).length > 0 ||
+      (await this.trashedMatches(auth, checksums)).length > 0
+    ) {
       return;
     }
 
@@ -112,39 +119,95 @@ export class AssetMediaService extends BaseService {
   }
 
   /**
-   * A re-upload of a lost original puts it back under the asset it belonged to, keeping everything else.
-   * Hidden photos (Locked, or hidden by this session's content settings) are repaired too, but their id
-   * is only returned when this session may see them.
+   * FL-556: while the account lets uploads bring photos back from the Trash, its own photos in the Trash
+   * with these bytes. Empty when the window is closed, or when a photo outside the Trash already has
+   * them (a real duplicate). Photos awaiting removal and photos this session may not see stay put.
+   */
+  private async trashedMatches(auth: AuthDto, checksums: Buffer[]) {
+    if (auth.sharedLink || !isTrashReuploadOpen(getPreferences(await this.userRepository.getMetadata(auth.user.id)))) {
+      return [];
+    }
+    const options = this.getDuplicateCheckOptions(auth);
+    const matches = options
+      ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options)
+      : await this.assetRepository.getByChecksums(auth.user.id, checksums);
+    if (matches.some(({ deletedAt }) => !deletedAt)) {
+      return [];
+    }
+    return matches.filter(
+      ({ status, libraryId, isExternal }) => status === AssetStatus.Trashed && !libraryId && !isExternal,
+    );
+  }
+
+  /**
+   * A re-upload puts a photo back, keeping its albums, faces and history:
+   * - FL-556, while the account allows it: a photo in the Trash with these bytes leaves the Trash, and
+   *   takes the upload as its file only if its own is gone;
+   * - a lost original goes back under the asset it belonged to. Hidden photos (Locked, or hidden by this
+   *   session's content settings) are repaired too, but their id is only returned when this session may
+   *   see them.
+   * `fileUsed` says whether the uploaded file became the photo's original.
    */
   async restoreLostOriginal(auth: AuthDto, dto: AssetMediaCreateDto, file: UploadFile) {
     const checksums = [file.checksum, ...(file.legacyChecksum ? [file.legacyChecksum] : [])];
+    for (const asset of await this.trashedMatches(auth, checksums)) {
+      let sequenced: string[] = [];
+      const [restored] = await this.trashRepository.restoreAll([asset.id], auth, (ids) => {
+        sequenced = ids;
+      });
+      if (!restored) {
+        continue;
+      }
+      // As the Trash's own restore announces it (TrashService.afterChange).
+      if (sequenced.length > 0) {
+        await this.trashRepository.enqueueLocalEffects();
+      } else {
+        await this.eventRepository.emit('AssetRestoreAll', { assetIds: [restored], userId: auth.user.id });
+      }
+      this.logger.log(`Upload brought asset ${restored} back from the Trash`);
+      const fileUsed =
+        !(await this.storageRepository.checkFileExists(asset.originalPath)) &&
+        (await this.restoreOriginalFrom(asset, dto, file, checksums));
+      return { id: restored, visible: true, fileUsed };
+    }
     const lost = await this.lostOriginalMatches(auth, checksums, { includeHidden: true });
     if (lost.length === 0) {
       return;
     }
-    const sha1 = file.legacyChecksum ?? (await this.cryptoRepository.hashFileDigests(file.originalPath)).sha1;
     for (const asset of lost) {
-      const restored = await this.physicalFileRepository.restoreLostOriginal({
-        assetId: asset.id,
-        expectedOriginalPath: asset.originalPath,
-        originalPath: file.originalPath,
-        sha1,
-        sha256: file.checksum,
-        sizeInBytes: file.size,
-        reason: 'restored_by_upload',
-      });
-      if (restored) {
-        await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
-        await this.jobRepository.queueAll([
-          { name: JobName.SidecarCheck, data: { id: asset.id, source: 'upload' } },
-          { name: JobName.AssetGenerateThumbnails, data: { id: asset.id, source: 'upload' } },
-        ]);
-        this.logger.log(`Upload restored the lost original of asset ${asset.id}`);
+      if (await this.restoreOriginalFrom(asset, dto, file, checksums)) {
         const options = this.getDuplicateCheckOptions(auth);
         const visible = options ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options) : lost;
-        return { id: asset.id, visible: visible.some(({ id }) => id === asset.id) };
+        return { id: asset.id, visible: visible.some(({ id }) => id === asset.id), fileUsed: true };
       }
     }
+  }
+
+  private async restoreOriginalFrom(
+    asset: { id: string; originalPath: string },
+    dto: AssetMediaCreateDto,
+    file: UploadFile,
+    checksums: Buffer[],
+  ) {
+    const sha1 = file.legacyChecksum ?? (await this.cryptoRepository.hashFileDigests(file.originalPath)).sha1;
+    const restored = await this.physicalFileRepository.restoreLostOriginal({
+      assetId: asset.id,
+      expectedOriginalPath: asset.originalPath,
+      originalPath: file.originalPath,
+      sha1,
+      sha256: checksums[0],
+      sizeInBytes: file.size,
+      reason: 'restored_by_upload',
+    });
+    if (restored) {
+      await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
+      await this.jobRepository.queueAll([
+        { name: JobName.SidecarCheck, data: { id: asset.id, source: 'upload' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: asset.id, source: 'upload' } },
+      ]);
+      this.logger.log(`Upload restored the lost original of asset ${asset.id}`);
+    }
+    return restored;
   }
 
   canUploadFile({ auth, fieldName, file, body }: UploadRequest): true {
@@ -350,8 +413,10 @@ export class AssetMediaService extends BaseService {
       const prepared = await this.prepareUploadAsset(auth, dto, file);
       const restored = await this.restoreLostOriginal(auth, dto, file);
       if (restored) {
-        if (sidecarFile) {
-          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [sidecarFile.originalPath] } });
+        // The photo kept its own file (it only left the Trash): the upload is not needed.
+        const unused = [...(restored.fileUsed ? [] : [file.originalPath]), sidecarFile?.originalPath].filter(Boolean);
+        if (unused.length > 0) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: unused } });
         }
         // ponytail: reported as created (the file was taken), so every client keeps working unchanged.
         // A photo this session may not see answers exactly like a hidden duplicate: no id, no hint.
@@ -783,12 +848,19 @@ export class AssetMediaService extends BaseService {
       : await this.assetRepository.getByChecksums(auth.user.id, lookups);
     const checksumMap: Record<string, { id: string; isTrashed: boolean }> = {};
 
-    // Media health: a match whose original is gone is accepted, so the upload can restore it.
+    // Media health: a match whose original is gone is accepted, so the upload can restore it. So is a
+    // photo in the Trash while the account lets uploads bring them back (FL-556).
+    const trashOpen = isTrashReuploadOpen(getPreferences(await this.userRepository.getMetadata(auth.user.id)));
     const present = await Promise.all(
-      results.map(
-        async ({ originalPath, deletedAt, libraryId, isExternal }) =>
-          !!deletedAt || !!libraryId || isExternal || (await this.storageRepository.checkFileExists(originalPath)),
-      ),
+      results.map(async ({ originalPath, deletedAt, status, libraryId, isExternal }) => {
+        if (libraryId || isExternal) {
+          return true;
+        }
+        if (deletedAt) {
+          return !(trashOpen && status === AssetStatus.Trashed);
+        }
+        return this.storageRepository.checkFileExists(originalPath);
+      }),
     );
     for (const [index, { id, deletedAt, checksum }] of results.entries()) {
       if (present[index]) {

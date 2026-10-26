@@ -182,6 +182,9 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       showSupportBadge: true,
       hideBuyButtonUntil: new Date(2022, 1, 12).toISOString(),
     },
+    trash: {
+      reuploadUntil: '',
+    },
     cast: {
       gCastEnabled: false,
       adminDisabled: false,
@@ -269,9 +272,14 @@ export const restrictPreferencesUpdate = (
 ): UserPreferencesUpdateDto => {
   // Locked people, pets and tags, saved searches (FL-49) and how long an unlock lasts (FL-517) are the
   // account owner's private choices.
-  const { privacy: _privacy, savedSearches: _savedSearches, lockedPin: _lockedPin, ...ownerOnly } = dto;
+  // FL-556: so is letting uploads bring photos back from the Trash.
+  const { privacy: _privacy, savedSearches: _savedSearches, lockedPin: _lockedPin, trash: _trash, ...ownerOnly } = dto;
   const allowed =
-    editor === 'admin' && (dto.privacy !== undefined || dto.savedSearches !== undefined || dto.lockedPin !== undefined)
+    editor === 'admin' &&
+    (dto.privacy !== undefined ||
+      dto.savedSearches !== undefined ||
+      dto.lockedPin !== undefined ||
+      dto.trash !== undefined)
       ? ownerOnly
       : dto;
 
@@ -357,6 +365,17 @@ export const mergePreferences = (
   for (const key of getKeysDeep(update)) {
     set(preferences, key, get(update, key));
   }
+  // FL-556: the window is temporary whatever the client asked for.
+  const latest = Date.now() + TRASH_REUPLOAD_WINDOW_MS;
+  if (Date.parse(preferences.trash.reuploadUntil) > latest) {
+    preferences.trash.reuploadUntil = new Date(latest).toISOString();
+  }
 
   return preferences;
 };
+
+/** FL-556: how long uploads may bring photos back from the Trash once an account allows it. */
+export const TRASH_REUPLOAD_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export const isTrashReuploadOpen = (preferences: UserPreferences, now = Date.now()) =>
+  Date.parse(preferences.trash.reuploadUntil) > now;

@@ -138136,6 +138136,27 @@
         ],
         "type": "object"
       },
+      "TrashPreferencesResponse": {
+        "properties": {
+          "reuploadUntil": {
+            "description": "Until when uploading a photo that is in the Trash brings it back (empty when off)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reuploadUntil"
+        ],
+        "type": "object"
+      },
+      "TrashPreferencesUpdate": {
+        "properties": {
+          "reuploadUntil": {
+            "description": "Until when uploading a photo that is in the Trash brings it back instead of reporting a duplicate (empty to turn off; at most 24 hours ahead)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TrashResponseDto": {
         "properties": {
           "count": {
@@ -139795,6 +139816,9 @@
           },
           "tags": {
             "$ref": "#/components/schemas/TagsResponse"
+          },
+          "trash": {
+            "$ref": "#/components/schemas/TrashPreferencesResponse"
           }
         },
         "required": [
@@ -139813,7 +139837,8 @@
           "revision",
           "search",
           "sharedLinks",
-          "tags"
+          "tags",
+          "trash"
         ],
         "type": "object"
       },
@@ -139916,6 +139941,9 @@
           },
           "tags": {
             "$ref": "#/components/schemas/TagsUpdate"
+          },
+          "trash": {
+            "$ref": "#/components/schemas/TrashPreferencesUpdate"
           }
         },
         "type": "object"
