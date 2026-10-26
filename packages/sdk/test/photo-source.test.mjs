@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   publishPhotoSourceReference,
+  getPhotoSourceReference,
   PhotoSourceReferenceAssetType,
 } from "../build/index.js";
 const spec = JSON.parse(
@@ -133,4 +134,38 @@ test("reference replacement keeps the prior-resource fence optional and strict i
     dto.properties.previous.properties.sha256.pattern,
     "^[a-f0-9]{64}$",
   );
+});
+
+test("reference receipt recovery uses GET without originals or a request body", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const runId = "22222222-2222-4222-8222-222222222222";
+  const itemId = "33333333-3333-4333-8333-333333333333";
+  const receipt = { resourceId: itemId, storage: "reference" };
+  const result = await getPhotoSourceReference(
+    { id, runId, itemId },
+    {
+      headers: { Authorization: "Bearer synthetic-photo-session" },
+      fetch: async (url, options) => {
+        assert.equal(
+          url,
+          `/api/photo-sources/${id}/runs/${runId}/items/${itemId}/reference`,
+        );
+        assert.equal(options.method ?? "GET", "GET");
+        assert.equal(options.body, undefined);
+        assert.equal(
+          new Headers(options.headers).get("authorization"),
+          "Bearer synthetic-photo-session",
+        );
+        return new Response(JSON.stringify(receipt), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    },
+  );
+  assert.deepEqual(result, receipt);
+  const operation =
+    spec.paths["/photo-sources/{id}/runs/{runId}/items/{itemId}/reference"].get;
+  assert.equal(operation.operationId, "getPhotoSourceReference");
+  assert.equal(operation.requestBody, undefined);
 });

@@ -31,6 +31,7 @@ import {
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -150,6 +151,222 @@ async function setup(mode: 'copy' | 'reference' = 'reference', kind: 'folder' | 
     publish,
   };
 }
+
+it('reads only the exact current reference receipt without republishing or admitting work', async () => {
+  const f = await setup();
+  try {
+    const published = await f.publish();
+    expect(published.status).toBe(200);
+    const before = await db.selectFrom('asset').selectAll().where('id', '=', f.input.assetId).executeTakeFirstOrThrow();
+    const response = await request(f.http.getHttpServer()).get(
+      `/photo-sources/${f.source.id}/runs/${f.run.id}/items/${f.item.id}/reference`,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(response.body).toEqual(published.body);
+    expect(f.jobs.queueInTransaction).toHaveBeenCalledTimes(1);
+    expect(
+      await db.selectFrom('asset').selectAll().where('id', '=', f.input.assetId).executeTakeFirstOrThrow(),
+    ).toEqual(before);
+    await f.repository.setState(f.authority, f.source.id, f.run.id, { state: 'complete', inventoryComplete: true });
+    expect(
+      (
+        await request(f.http.getHttpServer()).get(
+          `/photo-sources/${f.source.id}/runs/${f.run.id}/items/${f.item.id}/reference`,
+        )
+      ).body,
+    ).toEqual(published.body);
+  } finally {
+    await f.http.close();
+  }
+});
+it.each(['planned', 'copy'])('does not recover an unpublished %s reference', async (kind) => {
+  const f = await setup(kind === 'copy' ? 'copy' : 'reference');
+  try {
+    const response = await request(f.http.getHttpServer()).get(
+      `/photo-sources/${f.source.id}/runs/${f.run.id}/items/${f.item.id}/reference`,
+    );
+    expect(response.status).toBe(409);
+    expect(f.jobs.queueInTransaction).not.toHaveBeenCalled();
+  } finally {
+    await f.http.close();
+  }
+});
+
+it.each([
+  'offline',
+  'hidden',
+  'locked',
+  'trashed',
+  'deleted',
+  'library-deleted',
+  'binding',
+  'scope',
+  'epoch',
+  'paused',
+  'revoked',
+  'expired',
+  'foreign-session',
+  'foreign-owner',
+  'api-key',
+] as const)('receipt recovery enforces current authority and binding: %s', async (change) => {
+  const f = await setup();
+  try {
+    const published = await f.publish();
+    expect(published.status).toBe(200);
+    switch (change) {
+      case 'offline': {
+        await db.updateTable('asset').set({ isOffline: true }).where('id', '=', f.input.assetId).execute();
+        break;
+      }
+      case 'hidden': {
+        await db
+          .updateTable('asset')
+          .set({ visibility: AssetVisibility.Hidden })
+          .where('id', '=', f.input.assetId)
+          .execute();
+        break;
+      }
+      case 'locked': {
+        await db
+          .insertInto('asset_lock')
+          .values({
+            assetId: f.input.assetId,
+            reason: AssetLockReason.Marked,
+            lockedBy: f.user.id,
+            previousVisibility: null,
+          })
+          .execute();
+        break;
+      }
+      case 'trashed': {
+        await db.updateTable('asset').set({ status: AssetStatus.Trashed }).where('id', '=', f.input.assetId).execute();
+        break;
+      }
+      case 'deleted': {
+        await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', f.input.assetId).execute();
+        break;
+      }
+      case 'library-deleted': {
+        await db.updateTable('library').set({ deletedAt: new Date() }).where('id', '=', f.source.id).execute();
+        break;
+      }
+      case 'binding': {
+        await db.deleteFrom('source_original').where('assetId', '=', f.input.assetId).execute();
+        break;
+      }
+      case 'scope': {
+        await db
+          .updateTable('source_original')
+          .set({ scopeFingerprint: 'f'.repeat(64) })
+          .where('assetId', '=', f.input.assetId)
+          .execute();
+        break;
+      }
+      case 'epoch': {
+        await db
+          .updateTable('source_original')
+          .set({ authorizationEpoch: 999 })
+          .where('assetId', '=', f.input.assetId)
+          .execute();
+        break;
+      }
+      case 'paused': {
+        await db.updateTable('desktop_device').set({ state: 'paused' }).where('id', '=', f.device.id).execute();
+        break;
+      }
+      case 'revoked': {
+        await db.updateTable('photo_source').set({ revokedAt: new Date() }).where('id', '=', f.source.id).execute();
+        break;
+      }
+      case 'expired': {
+        await db
+          .updateTable('session')
+          .set({ expiresAt: new Date(Date.now() - 1000) })
+          .where('id', '=', f.session.id)
+          .execute();
+        break;
+      }
+      case 'foreign-session': {
+        f.http.authenticate.mockResolvedValue({ ...f.auth, session: { ...f.auth.session, id: randomUUID() } });
+        break;
+      }
+      case 'foreign-owner': {
+        f.http.authenticate.mockResolvedValue({ ...f.auth, user: (await f.ctx.newUser()).user });
+        break;
+      }
+      case 'api-key': {
+        f.http.authenticate.mockResolvedValue({ ...f.auth, apiKey: {} });
+        break;
+      }
+      // No default
+    }
+    const get = () =>
+      request(f.http.getHttpServer()).get(
+        `/photo-sources/${f.source.id}/runs/${f.run.id}/items/${f.item.id}/reference`,
+      );
+    const response = await get();
+    if (change === 'offline') {
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(published.body);
+    } else
+      expect(response.status).toBe(
+        change === 'api-key'
+          ? 403
+          : ['revoked', 'expired', 'foreign-session', 'foreign-owner'].includes(change)
+            ? 404
+            : 409,
+      );
+    if (change === 'hidden' || change === 'locked') {
+      await db
+        .updateTable('session')
+        .set({ pinExpiresAt: new Date(Date.now() + 60_000) })
+        .where('id', '=', f.session.id)
+        .execute();
+      const elevated = await get();
+      expect(elevated.status).toBe(200);
+      expect(elevated.body).toEqual(published.body);
+    }
+    expect(f.jobs.queueInTransaction).toHaveBeenCalledOnce();
+  } finally {
+    await f.http.close();
+  }
+});
+
+it('requires PIN when a lock is committed while receipt lookup waits for the asset', async () => {
+  const f = await setup();
+  let pending: Promise<{ status: number }> | undefined;
+  try {
+    expect((await f.publish()).status).toBe(200);
+    await db.transaction().execute(async (tx) => {
+      const {
+        rows: [locker],
+      } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx);
+      await tx.selectFrom('asset').select('id').where('id', '=', f.input.assetId).forUpdate().execute();
+      await new AssetRepository(db).lock([f.input.assetId], AssetLockReason.Marked, f.user.id, tx);
+      pending = request(f.http.getHttpServer())
+        .get(`/photo-sources/${f.source.id}/runs/${f.run.id}/items/${f.item.id}/reference`)
+        .then((response) => response);
+      const deadline = Date.now() + 3000;
+      while (true) {
+        const {
+          rows: [row],
+        } = await sql<{
+          blocked: boolean;
+        }>`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ${locker.pid}=ANY(pg_blocking_pids(pid))) AS blocked`.execute(
+          db,
+        );
+        if (row.blocked) break;
+        if (Date.now() >= deadline) throw new Error('Receipt lookup did not wait on the owned asset lock');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    });
+    expect((await pending!).status).toBe(409);
+    expect(f.jobs.queueInTransaction).toHaveBeenCalledOnce();
+  } finally {
+    await f.http.close();
+  }
+});
 
 it.each(['folder', 'apple-photos'] as const)(
   'publishes a path-free %s reference binding and metadata job atomically without copying or charging original bytes',
@@ -624,49 +841,63 @@ it.each(['hidden', 'locked'])('replay respects %s asset privacy and never change
   }
 });
 
-it('refuses private replay when PIN elevation expires while waiting for the asset lock', async () => {
-  const f = await setup();
-  try {
-    expect((await f.publish()).status).toBe(200);
-    const next = await f.repository.run(f.authority, f.source.id, { id: randomUUID(), maxItems: 2, maxBytes: 100 });
-    const item = await f.repository.plan(f.authority, f.source.id, next.id, { ...f.itemInput, id: randomUUID() });
-    await db
-      .updateTable('asset')
-      .set({ visibility: AssetVisibility.Hidden })
-      .where('id', '=', f.input.assetId)
-      .execute();
-    const pinExpiresAt = new Date(Date.now() + 1500);
-    await db.updateTable('session').set({ pinExpiresAt }).where('id', '=', f.session.id).execute();
-    let pending: Promise<{ status: number }> | undefined;
-    await db.transaction().execute(async (tx) => {
-      const {
-        rows: [locker],
-      } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx);
-      await tx.selectFrom('asset').select('id').where('id', '=', f.input.assetId).forUpdate().execute();
-      pending = f.publish(f.input, next.id, item.id).then((response) => response);
-      const deadline = Date.now() + 3000;
-      while (true) {
+it.each(['replay', 'receipt'])(
+  'refuses private %s when PIN elevation expires while waiting for the asset lock',
+  async (operation) => {
+    const f = await setup();
+    try {
+      expect((await f.publish()).status).toBe(200);
+      const next = await f.repository.run(f.authority, f.source.id, { id: randomUUID(), maxItems: 2, maxBytes: 100 });
+      const item = await f.repository.plan(f.authority, f.source.id, next.id, { ...f.itemInput, id: randomUUID() });
+      await db
+        .updateTable('asset')
+        .set({ visibility: AssetVisibility.Hidden })
+        .where('id', '=', f.input.assetId)
+        .execute();
+      const pinExpiresAt = new Date(Date.now() + 1500);
+      await db.updateTable('session').set({ pinExpiresAt }).where('id', '=', f.session.id).execute();
+      let pending: Promise<{ status: number }> | undefined;
+      await db.transaction().execute(async (tx) => {
         const {
-          rows: [row],
-        } = await sql<{ blocked: boolean }>`SELECT EXISTS (
+          rows: [locker],
+        } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx);
+        await tx.selectFrom('asset').select('id').where('id', '=', f.input.assetId).forUpdate().execute();
+        pending = (
+          operation === 'replay'
+            ? f.publish(f.input, next.id, item.id)
+            : request(f.http.getHttpServer()).get(
+                `/photo-sources/${f.source.id}/runs/${f.run.id}/items/${f.item.id}/reference`,
+              )
+        ).then((response) => response);
+        const deadline = Date.now() + 3000;
+        while (true) {
+          const {
+            rows: [row],
+          } = await sql<{ blocked: boolean }>`SELECT EXISTS (
           SELECT 1 FROM pg_stat_activity WHERE ${locker.pid}=ANY(pg_blocking_pids(pid))
         ) AS blocked`.execute(db);
-        if (row.blocked) break;
-        if (Date.now() >= deadline) throw new Error('Reference replay did not wait on the owned asset lock');
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      expect(pinExpiresAt.getTime()).toBeGreaterThan(Date.now());
-      await new Promise((resolve) => setTimeout(resolve, pinExpiresAt.getTime() - Date.now() + 30));
-    });
-    expect((await pending!).status).toBe(409);
-    expect(
-      (await db.selectFrom('photo_source_resource').select('state').where('id', '=', item.id).executeTakeFirstOrThrow())
-        .state,
-    ).toBe('planned');
-  } finally {
-    await f.http.close();
-  }
-});
+          if (row.blocked) break;
+          if (Date.now() >= deadline) throw new Error('Reference replay did not wait on the owned asset lock');
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(pinExpiresAt.getTime()).toBeGreaterThan(Date.now());
+        await new Promise((resolve) => setTimeout(resolve, pinExpiresAt.getTime() - Date.now() + 30));
+      });
+      expect((await pending!).status).toBe(409);
+      expect(
+        (
+          await db
+            .selectFrom('photo_source_resource')
+            .select('state')
+            .where('id', '=', item.id)
+            .executeTakeFirstOrThrow()
+        ).state,
+      ).toBe('planned');
+    } finally {
+      await f.http.close();
+    }
+  },
+);
 
 it('validates filenames, dates and exact request shape without accepting any provider or server path', async () => {
   const f = await setup();
@@ -803,6 +1034,11 @@ it('rejects old verified-item replay and never revives its source grant when con
     expect(response.status).toBe(200);
     expect(response.body.resourceId).toBe(fresh.id);
     await expect(assertAssetSource(db, old)).rejects.toThrow('Asset inputs changed before publication');
+    const get = (runId: string, itemId: string) =>
+      request(f.http.getHttpServer()).get(`/photo-sources/${f.source.id}/runs/${runId}/items/${itemId}/reference`);
+    expect((await get(f.run.id, f.item.id)).status).toBe(409);
+    expect((await get(f.run.id, item.id)).status).toBe(409);
+    expect((await get(run.id, fresh.id)).body).toEqual(response.body);
   } finally {
     await f.http.close();
   }

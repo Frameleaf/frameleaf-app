@@ -12,7 +12,7 @@ import type {
 import type { DB } from 'src/schema/index.js';
 import type { PhotoSourceResourceTable } from 'src/schema/tables/photo-source.table.js';
 import type { FolderUploadSourceIdentity } from 'src/utils/asset-upload-resource.js';
-import { AssetStatus, AssetVisibility, ChecksumAlgorithm, QueueName } from 'src/enum.js';
+import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, QueueName } from 'src/enum.js';
 import { lockChecksum, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { retireReferenceVersion } from 'src/repositories/reference-version-retirement.js';
 import { AssetSourceChangedError } from 'src/utils/asset-source-authority.js';
@@ -264,6 +264,85 @@ export class PhotoSourceRepository {
         .where('id', '=', runId)
         .returningAll()
         .executeTakeFirstOrThrow();
+    });
+  }
+  referenceReceipt(auth: SourceAuthority, sourceId: string, runId: string, itemId: string) {
+    return this.db.transaction().execute(async (tx) => {
+      if (!(await lockSourceAuthorities(tx, [{ sourceId, ownerId: auth.ownerId }])))
+        throw new NotFoundException('Photo source unavailable');
+      const { source, device } = await this.activeRun(tx, auth, sourceId, runId, false);
+      if (source.mode !== 'reference') throw new ConflictException('photo_source_reference_required');
+      const item = await tx
+        .selectFrom('photo_source_resource')
+        .selectAll()
+        .where('id', '=', itemId)
+        .where('runId', '=', runId)
+        .forShare()
+        .executeTakeFirst();
+      if (!item) throw new NotFoundException('Photo source item unavailable');
+      const conflict = () => new ConflictException('photo_source_reference_changed');
+      if (item.state !== 'verified' || !item.assetId || !item.verifiedAt) throw conflict();
+      const library = await tx
+        .selectFrom('library')
+        .selectAll()
+        .where('id', '=', sourceId)
+        .forShare()
+        .executeTakeFirst();
+      if (
+        !library ||
+        library.ownerId !== auth.ownerId ||
+        library.deletedAt ||
+        !library.readOnly ||
+        library.importPaths.length > 0 ||
+        library.exclusionPatterns.length > 0
+      )
+        throw conflict();
+      const originalPath = sourceOriginalPath({ sourceId, resourceKey: item.resourceKey });
+      // A committed receipt remains recoverable when its original is offline; it grants no byte access.
+      const asset = await tx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', item.assetId)
+        .where('ownerId', '=', auth.ownerId)
+        .where('libraryId', '=', library.id)
+        .where('isExternal', '=', true)
+        .where('physicalOriginalFileId', 'is', null)
+        .where('originalPath', '=', originalPath)
+        .where('checksum', '=', createHash('sha1').update(originalPath).digest())
+        .where('checksumAlgorithm', '=', ChecksumAlgorithm.sha1Path)
+        .where('type', 'in', [AssetType.Image, AssetType.Video])
+        .where('status', '=', AssetStatus.Active)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      const binding = await tx
+        .selectFrom('source_original')
+        .selectAll()
+        .where('assetId', '=', item.assetId)
+        .forShare()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        !binding ||
+        binding.resourceId !== item.id ||
+        binding.scopeFingerprint !== source.scopeFingerprint ||
+        binding.authorizationEpoch !== device.authorizationEpoch
+      )
+        throw conflict();
+      // Lock writers take the asset row first; use a fresh snapshot after any wait on that row.
+      const privacy = await tx
+        .selectFrom('asset')
+        .select('visibility')
+        .select(isLocked().as('locked'))
+        .where('id', '=', item.assetId)
+        .executeTakeFirstOrThrow();
+      const photo = await this.owner(tx, auth);
+      if (
+        (privacy.visibility === AssetVisibility.Hidden || privacy.locked) &&
+        (!photo.pinExpiresAt || new Date(photo.pinExpiresAt).getTime() <= Date.now())
+      )
+        throw conflict();
+      return { item, assetId: item.assetId, resourceId: item.id };
     });
   }
   publishReference(

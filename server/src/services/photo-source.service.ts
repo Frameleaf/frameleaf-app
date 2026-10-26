@@ -65,6 +65,30 @@ export class PhotoSourceService {
   async revoke(auth: AuthDto, id: string): Promise<void> {
     await this.repository.revoke(this.authority(auth), id);
   }
+  async referenceReceipt(
+    auth: AuthDto,
+    sourceId: string,
+    runId: string,
+    itemId: string,
+  ): Promise<PhotoSourceReferenceReceiptDto> {
+    const authority = this.authority(auth);
+    const serverId = await stableServerId({ systemMetadataRepository: this.metadata });
+    const result = await this.repository.referenceReceipt(authority, sourceId, runId, itemId);
+    return PhotoSourceReferenceReceiptDto.schema.parse({
+      sourceId,
+      runId,
+      itemId,
+      assetId: result.assetId,
+      ownerId: authority.ownerId,
+      serverId,
+      resourceId: result.resourceId,
+      version: result.item.version,
+      sha256: result.item.checksum.toString('hex'),
+      bytes: Number(result.item.bytes),
+      publishedAt: iso(result.item.verifiedAt!),
+      storage: 'reference',
+    });
+  }
   async publishReference(
     auth: AuthDto,
     sourceId: string,

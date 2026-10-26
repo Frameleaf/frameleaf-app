@@ -68,6 +68,20 @@ export class PhotoSourceController {
   revokePhotoSource(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.revoke(auth, id);
   }
+  @Get(':id/runs/:runId/items/:itemId/reference')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @ApiResponse({ status: 200, type: PhotoSourceReferenceReceiptDto })
+  @Endpoint({
+    summary: 'Recover the exact current reference receipt without reading or republishing originals',
+    history: history(),
+  })
+  getPhotoSourceReference(
+    @Auth() auth: AuthDto,
+    @Param() { id, runId, itemId }: PhotoSourceItemParamsDto,
+  ): Promise<PhotoSourceReferenceReceiptDto> {
+    return this.service.referenceReceipt(auth, id, runId, itemId);
+  }
   @Post(':id/runs/:runId/items/:itemId/reference')
   @HttpCode(200)
   @Header('Cache-Control', 'private, no-store')

@@ -10014,18 +10014,6 @@ export type PhotoSourceItemResponseDto = {
     verifiedAt: string | null;
     version: string;
 };
-export type PhotoSourceReferenceDto = {
-    assetId: string;
-    fileCreatedAt: string;
-    fileModifiedAt: string;
-    originalFileName: string;
-    previous?: {
-        resourceId: string;
-        sha256: string;
-        version: string;
-    };
-    "type": PhotoSourceReferenceAssetType;
-};
 export type PhotoSourceReferenceReceiptDto = {
     assetId: string;
     bytes: number;
@@ -10039,6 +10027,18 @@ export type PhotoSourceReferenceReceiptDto = {
     sourceId: string;
     storage: PhotoSourceReferenceStorage;
     version: string;
+};
+export type PhotoSourceReferenceDto = {
+    assetId: string;
+    fileCreatedAt: string;
+    fileModifiedAt: string;
+    originalFileName: string;
+    previous?: {
+        resourceId: string;
+        sha256: string;
+        version: string;
+    };
+    "type": PhotoSourceReferenceAssetType;
 };
 export type PhotoSourceVerifyDto = {
     uploadResourceId: string;
@@ -26916,6 +26916,21 @@ export function planPhotoSourceCopy({ id, runId, photoSourceItemDto }: {
     })));
 }
 /**
+ * Recover the exact current reference receipt without reading or republishing originals
+ */
+export function getPhotoSourceReference({ id, itemId, runId }: {
+    id: string;
+    itemId: string;
+    runId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceReferenceReceiptDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/items/${encodeURIComponent(itemId)}/reference`, {
+        ...opts
+    }));
+}
+/**
  * Publish an approved desktop reference without importing its original bytes
  */
 export function publishPhotoSourceReference({ id, itemId, runId, photoSourceReferenceDto }: {
@@ -35051,12 +35066,12 @@ export enum PhotoSourceItemState {
     Planned = "planned",
     Verified = "verified"
 }
+export enum PhotoSourceReferenceStorage {
+    Reference = "reference"
+}
 export enum PhotoSourceReferenceAssetType {
     Image = "IMAGE",
     Video = "VIDEO"
-}
-export enum PhotoSourceReferenceStorage {
-    Reference = "reference"
 }
 export enum PhotoSourceStorage {
     Managed = "managed"
