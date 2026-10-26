@@ -63652,7 +63652,6 @@
           },
           "query": {
             "description": "Natural language Ask Search query",
-            "maxLength": 500,
             "minLength": 1,
             "type": "string"
           },

@@ -939,7 +939,8 @@ export class SearchService extends BaseService {
       return { personIds: [], petIds: [] };
     }
 
-    const match = query.match(
+    // ponytail: names are only read from the first 500 characters; the regex is still quadratic on long word runs
+    const match = query.slice(0, 500).match(
       // one word per step (a joining "and" is itself a word), so the pattern cannot backtrack exponentially
       /\b(?:with|of)\s+([A-Za-z][\w'-]*(?:\s+[A-Za-z][\w'-]*)*?)(?=\s+(?:in|near|around|at|last|this|from|during|before|after|since)\b|$)/,
     );

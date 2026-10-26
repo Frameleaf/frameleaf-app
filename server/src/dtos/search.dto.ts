@@ -672,7 +672,7 @@ export class SearchExploreResponseDto extends createZodDto(SearchExploreResponse
 
 const AskSearchSchema = z
   .object({
-    query: z.string().trim().min(1).max(500).describe('Natural language Ask Search query'),
+    query: z.string().trim().min(1).describe('Natural language Ask Search query'),
     page: z.int().min(1).optional().describe('Page number'),
     size: z.int().min(1).max(1000).optional().describe('Number of results to return'),
     language: z.string().optional().describe('Search language code'),
