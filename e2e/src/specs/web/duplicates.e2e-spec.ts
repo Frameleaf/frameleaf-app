@@ -7,7 +7,6 @@ import {
   getDuplicateDecisions,
   getDuplicateReview,
   LoginResponseDto,
-  updateAsset,
   updateAssets,
   updateConfig,
   VideoCodec,
@@ -23,6 +22,12 @@ const sorted = (ids: string[]) => ids.toSorted((a, b) => a.localeCompare(b));
 
 /** FL-558: capture times decide the lane. One instant reads as copies of one photo. */
 const SAME_INSTANT = '2025-08-12T06:42:10.000Z';
+
+/**
+ * A test photo with its capture time set at upload. These PNGs carry no EXIF date, so the server reads
+ * the file time; setting it afterwards would re-run metadata on the server and can dissolve the group.
+ */
+const takenAt = (taken: string) => ({ fileCreatedAt: taken, fileModifiedAt: taken });
 
 /** Opens a review lane by its tab: "Same photo" or "Look-alikes". */
 const openLane = (page: Page, lane: 'Same photo' | 'Look-alikes') =>
@@ -80,8 +85,8 @@ test.describe('Duplicate review', () => {
 
   test.beforeEach(async ({ context }) => {
     [firstAsset, secondAsset] = await Promise.all([
-      utils.createAsset(admin.accessToken, {}),
-      utils.createAsset(admin.accessToken, {}),
+      utils.createAsset(admin.accessToken, takenAt(SAME_INSTANT)),
+      utils.createAsset(admin.accessToken, takenAt(SAME_INSTANT)),
     ]);
 
     await updateAssets(
@@ -89,7 +94,6 @@ test.describe('Duplicate review', () => {
         assetBulkUpdateDto: {
           ids: [firstAsset.id, secondAsset.id],
           duplicateId: crypto.randomUUID(),
-          dateTimeOriginal: SAME_INSTANT,
         },
       },
       { headers: asBearerAuth(admin.accessToken) },
@@ -166,27 +170,16 @@ test.describe('Duplicate review', () => {
   });
 
   test('keeps two look-alikes from a contact sheet with keyboard shortcuts', async ({ page }) => {
-    const initialGroups = await reviewGroups();
-    const duplicateId = initialGroups.find((group) =>
-      group.assets.some((asset) => asset.id === firstAsset.id),
-    )?.duplicateId;
-    if (!duplicateId) {
-      throw new Error('New duplicate group was not found');
-    }
-    const thirdAsset = await utils.createAsset(admin.accessToken, {});
-    await updateAssets(
-      { assetBulkUpdateDto: { ids: [thirdAsset.id], duplicateId } },
-      { headers: asBearerAuth(admin.accessToken) },
-    );
-
     // retakes minutes apart: a look-alike group, reviewed on a contact sheet
-    await Promise.all(
-      [firstAsset.id, secondAsset.id, thirdAsset.id].map((id, index) =>
-        updateAsset(
-          { id, updateAssetDto: { dateTimeOriginal: `2025-08-12T06:4${index * 3}:10.000Z` } },
-          { headers: asBearerAuth(admin.accessToken) },
-        ),
+    const retakes = await Promise.all(
+      ['06:40', '06:43', '06:46'].map((time) =>
+        utils.createAsset(admin.accessToken, takenAt(`2025-08-12T${time}:10.000Z`)),
       ),
+    );
+    const duplicateId = crypto.randomUUID();
+    await updateAssets(
+      { assetBulkUpdateDto: { ids: retakes.map((asset) => asset.id), duplicateId } },
+      { headers: asBearerAuth(admin.accessToken) },
     );
 
     const updatedGroups = await reviewGroups();
@@ -194,7 +187,6 @@ test.describe('Duplicate review', () => {
     if (!group || group.assets.length !== 3 || !group.lookAlike) {
       throw new Error('Expected a three-photo look-alike group');
     }
-    const keepAssetIds = group.assets.slice(0, 2).map((asset) => asset.id);
 
     await page.goto('/utilities/duplicates');
     const review = page.getByTestId('frameleaf-duplicate-review');
@@ -208,6 +200,12 @@ test.describe('Duplicate review', () => {
     await expect(sheet.getByRole('button', { name: 'Keep frame 1' })).toHaveAttribute('aria-pressed', 'true');
     await expect(sheet.getByRole('button', { name: 'Keep frame 2' })).toHaveAttribute('aria-pressed', 'true');
     await expect(sheet.getByRole('button', { name: 'Keep frame 3' })).toHaveAttribute('aria-pressed', 'false');
+    // the photos as the page shows them, whatever order the server listed them in
+    const keepAssetIds = await Promise.all(
+      ['Keep frame 1', 'Keep frame 2'].map(
+        async (name) => (await sheet.getByRole('button', { name }).getAttribute('data-asset-id')) ?? '',
+      ),
+    );
     await page.keyboard.press('e');
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
@@ -239,12 +237,12 @@ test.describe('Duplicate review', () => {
     const seeded: string[] = [];
     for (const name of ['triage-a', 'triage-b']) {
       const [first, second] = await Promise.all([
-        utils.createAsset(admin.accessToken, { assetData: { filename: `${name}-1.png` } }),
-        utils.createAsset(admin.accessToken, { assetData: { filename: `${name}-2.png` } }),
+        utils.createAsset(admin.accessToken, { ...takenAt(SAME_INSTANT), assetData: { filename: `${name}-1.png` } }),
+        utils.createAsset(admin.accessToken, { ...takenAt(SAME_INSTANT), assetData: { filename: `${name}-2.png` } }),
       ]);
       const duplicateId = crypto.randomUUID();
       await updateAssets(
-        { assetBulkUpdateDto: { ids: [first.id, second.id], duplicateId, dateTimeOriginal: SAME_INSTANT } },
+        { assetBulkUpdateDto: { ids: [first.id, second.id], duplicateId } },
         { headers: asBearerAuth(admin.accessToken) },
       );
       seeded.push(duplicateId);
@@ -259,8 +257,15 @@ test.describe('Duplicate review', () => {
     await review.locator('input[type="search"]').fill('triage-');
     const heading = review.getByRole('heading', { level: 2 });
     const keep = review.getByTestId('frameleaf-duplicate-keep');
+    // the copies as the page shows them, whatever order the server listed them in
+    const copyId = async (index: number) =>
+      (await review
+        .locator('[data-testid="frameleaf-duplicate-compare"] [data-asset-id]')
+        .nth(index)
+        .getAttribute('data-asset-id')) ?? '';
     const headingText = await heading.textContent();
     const firstTitle = headingText?.trim() ?? '';
+    const firstCopy = await copyId(0);
     // test files carry no quality evidence, so choose the copy rather than rely on a suggestion
     await review.getByRole('radio').first().click();
     await expect(keep).toBeEnabled();
@@ -272,22 +277,23 @@ test.describe('Duplicate review', () => {
     await expect(keep).toBeEnabled();
     expect(await keep.boundingBox()).toEqual(before);
 
-    const decided = groups.find((group) => group.assets.some((asset) => asset.originalFileName.startsWith(firstTitle)));
+    const decided = groups.find((group) => group.assets.some((asset) => asset.id === firstCopy));
     const next = groups.find((group) => group !== decided);
     if (!decided || !next) {
       throw new Error('Expected both seeded groups in the review');
     }
     await expect
       .poll(() => appliedDecision(decided.duplicateId), { timeout: 30_000 })
-      .toEqual({ kind: DuplicateDecisionKind.Keepers, keepAssetIds: [decided.assets[0].id] });
+      .toEqual({ kind: DuplicateDecisionKind.Keepers, keepAssetIds: [firstCopy] });
 
     // another copy, by number, then Enter
+    const secondCopy = await copyId(1);
     await heading.focus();
     await page.keyboard.press('2');
     await page.keyboard.press('Enter');
     await expect
       .poll(() => appliedDecision(next.duplicateId), { timeout: 30_000 })
-      .toEqual({ kind: DuplicateDecisionKind.Keepers, keepAssetIds: [next.assets[1].id] });
+      .toEqual({ kind: DuplicateDecisionKind.Keepers, keepAssetIds: [secondCopy] });
   });
 
   test('plays two real duplicate videos side by side while keeping keyboard focus', async ({ page, assetReady }) => {
@@ -377,12 +383,18 @@ test.describe('Duplicate review', () => {
         Array.from({ length: 4 }, async (_, offset) => {
           const index = start + offset;
           const [first, second] = await Promise.all([
-            utils.createAsset(admin.accessToken, { assetData: { filename: `queue-${index}-first.png` } }),
-            utils.createAsset(admin.accessToken, { assetData: { filename: `queue-${index}-second.png` } }),
+            utils.createAsset(admin.accessToken, {
+              ...takenAt(SAME_INSTANT),
+              assetData: { filename: `queue-${index}-first.png` },
+            }),
+            utils.createAsset(admin.accessToken, {
+              ...takenAt(SAME_INSTANT),
+              assetData: { filename: `queue-${index}-second.png` },
+            }),
           ]);
           const duplicateId = crypto.randomUUID();
           await updateAssets(
-            { assetBulkUpdateDto: { ids: [first.id, second.id], duplicateId, dateTimeOriginal: SAME_INSTANT } },
+            { assetBulkUpdateDto: { ids: [first.id, second.id], duplicateId } },
             { headers: asBearerAuth(admin.accessToken) },
           );
           return duplicateId;

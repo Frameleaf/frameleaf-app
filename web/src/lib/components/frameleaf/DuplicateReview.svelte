@@ -1228,6 +1228,7 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     min-width: 0;
+    container-type: inline-size;
   }
   /* The leaving group and the arriving one share one cell while they cross. */
   .fl-dr-comparison {
@@ -1335,7 +1336,8 @@
     position: sticky;
     bottom: 0;
     z-index: 2;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 760px);
     align-items: center;
     gap: 16px;
     padding: 12px 0;
@@ -1344,7 +1346,6 @@
   }
   .fl-dr-dock-status {
     display: flex;
-    flex: 1;
     align-items: center;
     gap: 10px;
     min-width: 0;
@@ -1372,9 +1373,10 @@
     border: 0;
     border-radius: var(--fl-radius-pill);
   }
+  /* Each button is a fixed share of the bar: its place depends on the window, never on the group. */
   .fl-dr-dock-actions {
-    display: flex;
-    flex-shrink: 0;
+    display: grid;
+    grid-template-columns: 1.32fr 1fr 1fr 0.6fr;
     gap: 8px;
   }
   .fl-dr-act {
@@ -1382,7 +1384,7 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    width: 188px;
+    min-width: 0;
     height: 46px;
     padding: 0 10px;
     font: inherit;
@@ -1397,11 +1399,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .fl-dr-act.keep {
-    width: 248px;
-  }
   .fl-dr-act.quiet {
-    width: 112px;
     background: none;
   }
   .fl-dr-act.primary {
@@ -1422,6 +1420,18 @@
   }
   .fl-dr-dock.guarded .fl-dr-act {
     pointer-events: none;
+  }
+  /* A narrow column puts the status line above the buttons, so the two never overlap. */
+  @container (max-width: 980px) {
+    .fl-dr-dock {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+  }
+  @container (max-width: 640px) {
+    .fl-dr-act kbd {
+      display: none;
+    }
   }
   .fl-dr-footer {
     display: flex;
@@ -1506,10 +1516,6 @@
     .fl-dr-queue-scroll {
       height: 240px;
     }
-    .fl-dr-dock {
-      flex-direction: column;
-      align-items: stretch;
-    }
   }
   @media (max-width: 700px) {
     .fl-dr-top input,
@@ -1521,12 +1527,6 @@
     .fl-dr-group {
       height: auto;
       min-height: 420px;
-    }
-    .fl-dr-act,
-    .fl-dr-act.keep,
-    .fl-dr-act.quiet {
-      flex: 1;
-      width: auto;
     }
     .fl-dr-shortcuts,
     kbd {
