@@ -1385,6 +1385,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
     const reads = new SourceResourceReadRepository(db, grants, cache);
     const sourceAuth = new SourceResourceAuthService(grants, metadata);
     const sourceReads = new SourceResourceReadService(sourceAuth, reads);
+    const polls = vi.spyOn(sourceReads, 'poll');
     const sourceDelivery = new SourceResourceDeliveryService(
       sourceAuth,
       grants,
@@ -1431,7 +1432,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
     const token = randomBytes(32).toString('base64url');
     let currentToken = token;
     const requests: { method: string | undefined; path: string; sourceCredential: boolean }[] = [];
-    const parse = json({ limit: '16kb' });
+    const parse = json({ limit: '96kb' });
     const tls = createServer(
       {
         key: readFileSync('test/fixtures/frameleaf-relay/tun.key.pem'),
@@ -1729,7 +1730,17 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
         }),
       ]).finally(() => clearTimeout(timer));
       expect(code, errors).toBe(0);
-      expect(requests.filter(({ path }) => path === '/api/source-resources/grants')).toHaveLength(1);
+      expect(requests.filter(({ path }) => path === '/api/source-resources/grants')).toHaveLength(2);
+      const binding = await db
+        .selectFrom('photo_source_resource')
+        .select(['resourceKey', 'version'])
+        .where('id', '=', rescanned.receipt.resourceId)
+        .executeTakeFirstOrThrow();
+      const selectedPolls = polls.mock.calls
+        .map((call) => JSON.parse(call[2]))
+        .filter((payload) => payload.resources !== undefined);
+      expect(selectedPolls.length).toBeGreaterThan(0);
+      for (const payload of selectedPolls) expect(payload.resources).toEqual([binding]);
       const deliveries = requests.filter(
         ({ method, path }) => method === 'PUT' && path === '/api/source-resources/deliver',
       );
@@ -1780,6 +1791,7 @@ it.skipIf(!process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT)(
       await new Promise<void>((resolve) => tls.close(() => resolve()));
       replies.mockRestore();
       recoveryReplies.mockRestore();
+      polls.mockRestore();
       media.mockRestore();
       await http.close();
       await f.http.close();
