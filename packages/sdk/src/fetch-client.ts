@@ -3702,6 +3702,10 @@ export type TagsResponse = {
     /** Whether tags appear in web sidebar */
     sidebarWeb: boolean;
 };
+export type TrashPreferencesResponse = {
+    /** Until when uploading a photo that is in the Trash brings it back (empty when off) */
+    reuploadUntil: string;
+};
 export type UserPreferencesResponseDto = {
     albums: AlbumsResponse;
     cast: CastResponse;
@@ -3731,6 +3735,7 @@ export type UserPreferencesResponseDto = {
     search: SearchPreferencesResponse;
     sharedLinks: SharedLinksResponse;
     tags: TagsResponse;
+    trash: TrashPreferencesResponse;
 };
 export type AlbumsUpdate = {
     defaultAssetOrder?: AssetOrder;
@@ -3831,6 +3836,10 @@ export type TagsUpdate = {
     /** Whether tags appear in web sidebar */
     sidebarWeb?: boolean;
 };
+export type TrashPreferencesUpdate = {
+    /** Until when uploading a photo that is in the Trash brings it back instead of reporting a duplicate (empty to turn off; at most 24 hours ahead) */
+    reuploadUntil?: string;
+};
 export type UserPreferencesUpdateDto = {
     albums?: AlbumsUpdate;
     avatar?: AvatarUpdate;
@@ -3860,6 +3869,7 @@ export type UserPreferencesUpdateDto = {
     search?: SearchPreferencesUpdate;
     sharedLinks?: SharedLinksUpdate;
     tags?: TagsUpdate;
+    trash?: TrashPreferencesUpdate;
 };
 export type SessionResponseDto = {
     /** App version */

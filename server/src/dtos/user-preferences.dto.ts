@@ -120,6 +120,18 @@ const PurchaseUpdateSchema = z
   .optional()
   .meta({ id: 'PurchaseUpdate' });
 
+const TrashUpdateSchema = z
+  .object({
+    reuploadUntil: z
+      .string()
+      .optional()
+      .describe(
+        'Until when uploading a photo that is in the Trash brings it back instead of reporting a duplicate (empty to turn off; at most 24 hours ahead)',
+      ),
+  })
+  .optional()
+  .meta({ id: 'TrashPreferencesUpdate' });
+
 const CastUpdateSchema = z
   .object({
     gCastEnabled: z.boolean().optional().describe('Whether Google Cast is enabled'),
@@ -238,6 +250,7 @@ const UserPreferencesUpdateSchema = z
     people: PeopleUpdateSchema,
     privacy: PrivacyUpdateSchema,
     purchase: PurchaseUpdateSchema,
+    trash: TrashUpdateSchema,
     ratings: RatingsUpdateSchema,
     search: SearchPreferencesUpdateSchema,
     sharedLinks: SharedLinksUpdateSchema,
@@ -343,6 +356,14 @@ const PurchaseResponseSchema = z
   })
   .meta({ id: 'PurchaseResponse' });
 
+const TrashResponseSchema = z
+  .object({
+    reuploadUntil: z
+      .string()
+      .describe('Until when uploading a photo that is in the Trash brings it back (empty when off)'),
+  })
+  .meta({ id: 'TrashPreferencesResponse' });
+
 const CastResponseSchema = z
   .object({
     gCastEnabled: z
@@ -394,6 +415,7 @@ const UserPreferencesResponseSchema = z
     emailNotifications: EmailNotificationsResponseSchema,
     download: DownloadResponseSchema,
     purchase: PurchaseResponseSchema,
+    trash: TrashResponseSchema,
     cast: CastResponseSchema,
     recentlyAdded: RecentlyAddedResponseSchema,
     // always sent; optional in the schema so older clients keep compiling (FL-517)

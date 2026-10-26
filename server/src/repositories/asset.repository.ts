@@ -2180,7 +2180,7 @@ export class AssetRepository {
   getByChecksums(userId: string, checksums: Buffer[], options: AssetChecksumOptions = {}) {
     return this.db
       .selectFrom('asset')
-      .select(['id', 'checksum', 'deletedAt', 'originalPath', 'libraryId', 'isExternal'])
+      .select(['id', 'checksum', 'deletedAt', 'status', 'originalPath', 'libraryId', 'isExternal'])
       .where('ownerId', '=', asUuid(userId))
       .where('checksum', 'in', checksums)
       .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))

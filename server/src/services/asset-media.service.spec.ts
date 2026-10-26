@@ -14,7 +14,16 @@ import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetLockReason, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetLockReason,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  CacheControl,
+  JobName,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
@@ -189,6 +198,7 @@ describe(AssetMediaService.name, () => {
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.asset.getByChecksums.mockResolvedValue([]);
     mocks.storage.checkFileExists.mockResolvedValue(true);
+    mocks.user.getMetadata.mockResolvedValue([]);
   });
 
   describe('getUploadAssetIdByChecksum', () => {
@@ -447,7 +457,8 @@ describe(AssetMediaService.name, () => {
     const lost = {
       id: 'lost-asset',
       checksum: file1,
-      deletedAt: null,
+      deletedAt: null as Date | null,
+      status: AssetStatus.Active,
       originalPath: '/data/upload/user-id/aa/bb/IMG_0420.jpg',
       libraryId: null,
       isExternal: false,
@@ -540,11 +551,103 @@ describe(AssetMediaService.name, () => {
     });
 
     it('never restores a photo removed as a duplicate (in the Trash)', async () => {
-      mocks.asset.getByChecksums.mockResolvedValue([{ ...lost, deletedAt: new Date() }]);
+      mocks.asset.getByChecksums.mockResolvedValue([{ ...lost, deletedAt: new Date(), status: AssetStatus.Trashed }]);
       mocks.asset.create.mockResolvedValue(assetEntity);
       await sut.uploadAsset(authStub.admin, createDto, upload);
       expect(mocks.physicalFile.restoreLostOriginal).not.toHaveBeenCalled();
       expect(mocks.asset.create).toHaveBeenCalled();
+    });
+
+    describe('while the account lets uploads bring photos back from the Trash (FL-556)', () => {
+      const trashed = { ...lost, deletedAt: new Date(), status: AssetStatus.Trashed };
+      const open = () =>
+        mocks.user.getMetadata.mockResolvedValue([
+          {
+            key: UserMetadataKey.Preferences,
+            value: { trash: { reuploadUntil: new Date(Date.now() + 60_000).toISOString() } },
+          },
+        ] as never);
+
+      beforeEach(() => {
+        mocks.asset.getByChecksums.mockResolvedValue([trashed]);
+        mocks.trash.restoreAll.mockResolvedValue([trashed.id]);
+      });
+
+      it('brings the photo back and drops the upload when the photo still has its file', async () => {
+        open();
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
+          id: trashed.id,
+          status: AssetMediaStatus.CREATED,
+        });
+        expect(mocks.trash.restoreAll).toHaveBeenCalledWith([trashed.id], authStub.admin, expect.any(Function));
+        expect(mocks.event.emit).toHaveBeenCalledWith('AssetRestoreAll', {
+          assetIds: [trashed.id],
+          userId: authStub.admin.user.id,
+        });
+        expect(mocks.physicalFile.restoreLostOriginal).not.toHaveBeenCalled();
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [upload.originalPath] },
+        });
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      });
+
+      it('also puts the upload back as its file when the photo had lost it', async () => {
+        open();
+        mocks.storage.checkFileExists.mockResolvedValue(false);
+        mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
+        await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
+          id: trashed.id,
+          status: AssetMediaStatus.CREATED,
+        });
+        expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenCalledWith(
+          expect.objectContaining({ assetId: trashed.id, originalPath: upload.originalPath }),
+        );
+        expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+      });
+
+      it('accepts the file in the bulk upload check', async () => {
+        open();
+        await expect(
+          sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+        ).resolves.toEqual({ results: [{ id: '1', action: AssetUploadAction.ACCEPT }] });
+      });
+
+      it('leaves the Trash alone once the window has closed', async () => {
+        mocks.user.getMetadata.mockResolvedValue([
+          {
+            key: UserMetadataKey.Preferences,
+            value: { trash: { reuploadUntil: new Date(Date.now() - 1).toISOString() } },
+          },
+        ] as never);
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        await expect(
+          sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+        ).resolves.toEqual({
+          results: [
+            {
+              id: '1',
+              action: AssetUploadAction.REJECT,
+              reason: AssetRejectReason.DUPLICATE,
+              assetId: trashed.id,
+              isTrashed: true,
+            },
+          ],
+        });
+        expect(mocks.trash.restoreAll).not.toHaveBeenCalled();
+      });
+
+      it('never touches photos awaiting removal, or a Trash photo whose bytes a live photo already has', async () => {
+        open();
+        mocks.asset.getByChecksums.mockResolvedValue([
+          { ...trashed, status: AssetStatus.Deleted },
+          { ...lost, id: 'live', originalPath: '/data/live.jpg' },
+        ]);
+        mocks.asset.create.mockResolvedValue(assetEntity);
+        await sut.uploadAsset(authStub.admin, createDto, upload);
+        expect(mocks.trash.restoreAll).not.toHaveBeenCalled();
+      });
     });
 
     it('uploads normally when the photo changed before it could be restored', async () => {
@@ -2019,6 +2122,7 @@ describe(AssetMediaService.name, () => {
           id: 'asset-1',
           checksum: file1,
           deletedAt: null,
+          status: AssetStatus.Active,
           originalPath: '/data/upload/asset-1',
           libraryId: null,
           isExternal: false,
@@ -2027,6 +2131,7 @@ describe(AssetMediaService.name, () => {
           id: 'asset-2',
           checksum: file2,
           deletedAt: null,
+          status: AssetStatus.Active,
           originalPath: '/data/upload/asset-2',
           libraryId: null,
           isExternal: false,
@@ -2075,6 +2180,7 @@ describe(AssetMediaService.name, () => {
           id: 'asset-1',
           checksum: sha256,
           deletedAt: null,
+          status: AssetStatus.Active,
           originalPath: '/data/upload/asset-1',
           libraryId: null,
           isExternal: false,
@@ -2107,6 +2213,7 @@ describe(AssetMediaService.name, () => {
           id: 'asset-1',
           checksum: file1,
           deletedAt: null,
+          status: AssetStatus.Active,
           originalPath: '/data/upload/asset-1',
           libraryId: null,
           isExternal: false,
@@ -2148,6 +2255,7 @@ describe(AssetMediaService.name, () => {
           id: 'asset-1',
           checksum: file1,
           deletedAt: null,
+          status: AssetStatus.Active,
           originalPath: '/data/upload/asset-1',
           libraryId: null,
           isExternal: false,

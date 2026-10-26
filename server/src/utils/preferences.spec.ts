@@ -4,11 +4,13 @@ import { mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import { UserMetadataKey } from 'src/enum.js';
 import { UserMetadataItem } from 'src/types.js';
 import {
+  TRASH_REUPLOAD_WINDOW_MS,
   assertPreferencesRevision,
   changesLockedRules,
   getPreferences,
   getPreferencesPartial,
   getPreferencesRevision,
+  isTrashReuploadOpen,
   mergePreferences,
   relockMinutesOf,
   restrictPreferencesUpdate,
@@ -454,5 +456,28 @@ describe('navigation defaults (FL-30 / FL-146)', () => {
     expect(getPreferencesPartial(preferences)).toEqual({ folders: { sidebarWeb: false } });
     preferences.folders.sidebarWeb = true;
     expect(getPreferencesPartial(preferences)).toEqual({});
+  });
+});
+
+describe('re-uploading from the Trash (FL-556)', () => {
+  it('opens for at most a day, whatever the client sent, and closes when the time passes', () => {
+    const before = Date.now();
+    const merged = mergePreferences(
+      getPreferences([]),
+      { trash: { reuploadUntil: new Date(before + 7 * TRASH_REUPLOAD_WINDOW_MS).toISOString() } },
+      'user',
+    );
+    const until = Date.parse(merged.trash.reuploadUntil);
+    expect(until).toBeGreaterThanOrEqual(before + TRASH_REUPLOAD_WINDOW_MS);
+    expect(until).toBeLessThanOrEqual(Date.now() + TRASH_REUPLOAD_WINDOW_MS);
+    expect(isTrashReuploadOpen(merged)).toBe(true);
+    expect(isTrashReuploadOpen(merged, until + 1)).toBe(false);
+    expect(isTrashReuploadOpen(getPreferences([]))).toBe(false);
+  });
+
+  it("is the account owner's choice, never an administrator's", () => {
+    const reuploadUntil = new Date(Date.now() + 60_000).toISOString();
+    const merged = mergePreferences(getPreferences([]), { trash: { reuploadUntil } }, 'admin');
+    expect(merged.trash.reuploadUntil).toBe('');
   });
 });
