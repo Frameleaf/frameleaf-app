@@ -56,6 +56,8 @@ export type AccountPreferencesDraft = {
   'people.suggestInSpaces': boolean;
   'purchase.showSupportBadge': boolean;
   'purchase.hideBuyButtonUntil': string;
+  /** FL-556: Look & playback › Safety, the account's own choice (never on an administrator's editor) */
+  'trash.reuploadUntil': string;
 };
 
 export type AccountPreferenceKey = keyof AccountPreferencesDraft;
@@ -158,6 +160,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'people.suggestInSpaces': false,
   'purchase.showSupportBadge': true,
   'purchase.hideBuyButtonUntil': new Date(2022, 1, 12).toISOString(),
+  'trash.reuploadUntil': '',
 });
 
 export const draftFromPreferences = (preferences: UserPreferencesResponseDto): AccountPreferencesDraft => ({
@@ -188,6 +191,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'people.suggestInSpaces': preferences.people.suggestInSpaces,
   'purchase.showSupportBadge': preferences.purchase.showSupportBadge,
   'purchase.hideBuyButtonUntil': preferences.purchase.hideBuyButtonUntil,
+  'trash.reuploadUntil': preferences.trash.reuploadUntil,
 });
 
 export const changedPreferenceKeys = (

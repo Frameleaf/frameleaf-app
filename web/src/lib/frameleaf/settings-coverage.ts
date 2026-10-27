@@ -1694,6 +1694,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'showSupportBadge',
   },
   {
+    pattern: 'trash.reuploadUntil',
+    // FL-556: Look & playback › Safety, "Let uploads bring back deleted photos" (24 hours)
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: "'trash.reuploadUntil'",
+  },
+  {
     pattern: 'ratings.enabled',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
