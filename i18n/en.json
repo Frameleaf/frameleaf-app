@@ -7892,7 +7892,6 @@
   "frameleaf_intel_words_add_placeholder": "Add a word",
   "frameleaf_intel_words_remove": "Remove {word}",
   "frameleaf_job_runs_empty": "No server runs yet.",
-  "frameleaf_job_runs_enumerating": "Selection is still being counted.",
   "frameleaf_job_runs_help": "Progress counts selected items once across all stages. Stage totals include follow-up and coordination work.",
   "frameleaf_job_runs_inspect": "Inspect items",
   "frameleaf_job_runs_items": "Selected item outcomes",

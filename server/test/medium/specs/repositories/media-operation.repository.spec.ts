@@ -9,6 +9,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
 } from 'src/enum.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   type CloudDescriptionBatchCreate,
@@ -1295,6 +1296,29 @@ describe(MediaOperationRepository.name, () => {
       const mine = await sut.list({ ownerId: user.id, take: 50, skip: 0 });
       expect(mine.total).toBe(1);
       expect(mine.items.every((item) => item.ownerId === user.id)).toBe(true);
+    });
+
+    it('leaves out the scans of a removed library (FL-588)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const libraries = new LibraryRepository(ctx.database);
+      const kept = await libraries.create({ ownerId: user.id, name: 'Kept', importPaths: [], exclusionPatterns: [] });
+      const removed = await libraries.create({
+        ownerId: user.id,
+        name: 'Removed',
+        importPaths: [],
+        exclusionPatterns: [],
+      });
+      const scan = (libraryId: string) =>
+        newOperation(sut, user.id, { kind: MediaOperationKind.LibraryScan, snapshot: { libraryId } });
+      const keptScan = await scan(kept.id);
+      await scan(removed.id);
+      await scan(randomUUID());
+      await libraries.softDelete(removed.id);
+
+      const { items, total } = await sut.list({ ownerId: user.id, take: 50, skip: 0 });
+      expect(items.map((item) => item.id)).toEqual([keptScan.id]);
+      expect(total).toBe(1);
     });
   });
 

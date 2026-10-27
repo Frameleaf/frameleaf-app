@@ -225,3 +225,19 @@ it('does not complete an empty run before enumeration and returns undefined for 
   expect((await listRuns(db, 25, 0))[0].state).toBe('running');
   expect(await listRunItems(db, randomUUID(), 25, 0)).toBeUndefined();
 });
+
+it('counts jobs outside a run that finished since the oldest waiting one was queued (FL-588)', async () => {
+  const loose = (state: string, createdAgo: number, finishedAgo: number | null) =>
+    sql`insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", state, token, "createdAt", "finishedAt")
+      values (${randomUUID()}::uuid, 'test', 'Thumbnail', '{}', true, false, 1000, ${state},
+        ${state === 'active' ? randomUUID() : null}::uuid, now() - ${createdAgo} * interval '1 minute',
+        case when ${finishedAgo}::int is null then null else now() - ${finishedAgo}::int * interval '1 minute' end)`.execute(
+      db,
+    );
+  await loose('completed', 120, 100);
+  await loose('completed', 10, 9);
+  await loose('completed', 10, 8);
+  await loose('active', 10, null);
+  await loose('pending', 10, null);
+  expect(await observeQueueRun(db, 'test')).toMatchObject({ active: 1, waiting: 1, processed: 2 });
+});

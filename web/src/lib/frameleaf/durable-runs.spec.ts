@@ -24,6 +24,13 @@ describe('durable run views', () => {
     expect(matchesRunFilter(run, 'running')).toBe(true);
     expect(durableRunRow(run).paused).toBe(state === 'paused');
   });
+  it('settles a library scan that needs attention and files it under failed (FL-588)', () => {
+    const run = durableRun({ state: 'needs_attention', enumerationDone: false, active: 0, failed: 0 });
+    expect(isRunSettled(run)).toBe(true);
+    expect(matchesRunFilter(run, 'running')).toBe(false);
+    expect(matchesRunFilter(run, 'done')).toBe(false);
+    expect(matchesRunFilter(run, 'failed')).toBe(true);
+  });
   it('shows completed with errors as settled failure rather than a clean completed run', () => {
     const run = durableRun({ state: 'completed_with_errors', active: 0, failed: 9 });
     expect(isRunSettled(run)).toBe(true);
