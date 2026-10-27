@@ -123,17 +123,15 @@ describe('settings areas', () => {
     expect(SETTINGS_SECTION_KEYWORDS.trash).toEqual(expect.arrayContaining(['trash', 'frameleaf_deleted_keep_photos']));
   });
 
-  it('lands the Public server URL in Remote access, not Server identity (FL-168)', () => {
+  it('lands the Public server URL on Server & updates, which every server has (OPS-14)', () => {
     const commands = buildSettingsCommands($t, context({ isAdmin: true }));
     const publicUrl = commands.find((command) => command.id === 'admin:public-server-url');
     expect(publicUrl?.title).toBe('frameleaf_remote_public_url_title');
-    expect(publicUrl?.href).toBe('/user-settings?area=cloud&section=cloud-remote');
-    expect(commands.find((command) => command.id === 'admin:cloud-remote')?.keywords).toContain(
-      'frameleaf_remote_public_url_title',
-    );
-    expect(commands.find((command) => command.id === 'admin:server')?.keywords).not.toContain(
-      'frameleaf_remote_public_url_title',
-    );
+    expect(publicUrl?.href).toBe(commands.find((command) => command.id === 'admin:server')?.href);
+    // Remote access keeps its copy, so both are found by it
+    for (const id of ['admin:server', 'admin:cloud-remote']) {
+      expect(commands.find((command) => command.id === id)?.keywords).toContain('frameleaf_remote_public_url_title');
+    }
     const index = buildCommandIndex({ settings: commands });
     expect(index.find((item) => item.id === 'settings:admin:public-server-url')).toBeDefined();
   });
