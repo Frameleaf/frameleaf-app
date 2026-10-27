@@ -9165,6 +9165,8 @@ export type StudioRenderCandidateDto = {
     maxBitDepth: number;
     /** Output formats whose exact writer and container this session verified */
     outputFormats: StudioExportFormat[];
+    /** This session renders vertical and square exports of its SDR video formats (FL-563) */
+    reframe?: boolean;
     /** Output formats whose versioned paired SRT profile this same session verified */
     sidecarOutputFormats?: StudioExportFormat[];
 };
@@ -14789,6 +14791,8 @@ export type StudioExportSettingsDto = {
     /** Absent renders the whole main timeline */
     range?: StudioExportRangeDto;
     resolution: StudioExportResolution;
+    /** Absent on exports in the project’s own shape */
+    shape?: StudioExportShape;
     /** Absent uses the native `burn` default */
     subtitleMode?: StudioExportSubtitleMode;
 };
@@ -15238,6 +15242,18 @@ export type StudioExportListResponseDto = {
     /** Matching versions, before paging */
     total: number;
 };
+export type StudioReframePointDto = {
+    /** Progress through the shot, 0 to 1 */
+    t: number;
+    /** Centre of the crop (or of the subject) as a share of the project frame width, 0 left to 1 right */
+    x: number;
+};
+export type StudioExportFramingDto = {
+    /** A video or still on the main timeline */
+    clipId: string;
+    /** Where the crop centre is through the shot, in order of progress */
+    path: StudioReframePointDto[];
+};
 export type StudioExportSmoothMotionDto = {
     /** Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately */
     destinationId: string;
@@ -15255,6 +15271,8 @@ export type StudioExportCreateDto = {
     /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
     expectedRevision?: number;
     format: StudioExportFormat;
+    /** For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
+    framing?: StudioExportFramingDto[];
     /** Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults */
     mastering?: StudioExportMastering;
     /** Defaults to `high` */
@@ -15264,6 +15282,8 @@ export type StudioExportCreateDto = {
     /** Idempotency key; a repeated submit answers with the first export */
     requestKey?: string;
     resolution: StudioExportResolution;
+    /** Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed */
+    shape?: StudioExportShape;
     smoothMotion?: StudioExportSmoothMotionDto;
     /** Defaults to `burn` */
     subtitleMode?: StudioExportSubtitleMode;
@@ -15272,6 +15292,30 @@ export type StudioExportCreateResponseDto = {
     /** The render job; follow it in Activity */
     operation: MediaOperationDto;
     version: StudioExportVersionDto;
+};
+export type StudioReframeShotDto = {
+    /** The library asset it shows, when this session may read it */
+    assetId: string | null;
+    /** The video or still on the main timeline */
+    clipId: string;
+    /** Length of the shot in frames */
+    durationInFrames: number;
+    /** First frame of the shot on the main timeline */
+    "from": number;
+    /** Where the subject is through the shot, as a share of the project frame width */
+    path: StudioReframePointDto[];
+    subject: StudioReframeSubject;
+    "type": StudioReframeShotType;
+};
+export type StudioReframeResponseDto = {
+    /** Project frame height in pixels */
+    height: number;
+    /** The stored revision the framing was worked out for */
+    revision: number;
+    /** Every shot of the main timeline, in the order they start */
+    shots: StudioReframeShotDto[];
+    /** Project frame width in pixels */
+    width: number;
 };
 export type RetainedProcessingProvenance = {
     evidence: "client-reported";
@@ -30466,6 +30510,19 @@ export function createStudioExport({ id, studioExportCreateDto }: {
     })));
 }
 /**
+ * Get the automatic framing of a Studio project’s shots
+ */
+export function getStudioFraming({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioReframeResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/framing`, {
+        ...opts
+    }));
+}
+/**
  * List the files imported into a Studio project
  */
 export function getStudioProjectImports({ id }: {
@@ -35994,6 +36051,11 @@ export enum StudioExportQuality {
     High = "high",
     Ultra = "ultra"
 }
+export enum StudioExportShape {
+    Original = "original",
+    Vertical = "vertical",
+    Square = "square"
+}
 export enum StudioExportSubtitleMode {
     Burn = "burn",
     Off = "off",
@@ -36078,6 +36140,14 @@ export enum StudioProjectSort {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum StudioReframeSubject {
+    Face = "face",
+    None = "none"
+}
+export enum StudioReframeShotType {
+    Video = "video",
+    Image = "image"
 }
 export enum StudioProjectImportKind {
     Audio = "audio",

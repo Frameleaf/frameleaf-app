@@ -1,6 +1,7 @@
 // FL-105 / FL-408: the bundled worker's container × codec matrix, encoded for real with this
 // machine's ffmpeg from a tiny synthetic master and read back with ffprobe.
 import assert from 'node:assert/strict';
+import { REFRAME_PROFILE } from './bundled-worker-reframe.mjs';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -164,6 +165,8 @@ describe('bundled worker admission evidence', () => {
     assert.equal(evidence.writers['mkv-h264'], 'copy');
     for (const track of ['mov_text', 'subrip', 'webvtt']) assert.ok(evidence.codecs.includes(track), track);
     assert.ok(evidence.formats.includes(SIDECAR_PROFILE) && evidence.formats.includes(EMBEDDED_PROFILE));
+    // FL-563: vertical and square exports are offered with its video writers.
+    assert.ok(evidence.formats.includes(REFRAME_PROFILE));
     // Never 10-bit AV1 or ProRes 422 HQ: the bundled worker writes 10-bit only as an HDR master (FL-107).
     for (const id of ['webm-av1', 'prores-422-hq']) assert.ok(!evidence.formats.includes(id));
     if (encoders.has('libx265') && filters.has('zscale')) {

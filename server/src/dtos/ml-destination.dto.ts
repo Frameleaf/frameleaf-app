@@ -374,6 +374,10 @@ const StudioRenderCandidateSchema = z
       .refine(unique, 'Each format is listed once')
       .optional()
       .describe('Output formats whose versioned paired SRT profile this same session verified'),
+    reframe: z
+      .boolean()
+      .optional()
+      .describe('This session renders vertical and square exports of its SDR video formats (FL-563)'),
     maxBitDepth: z.int(),
     hdr10: z.boolean(),
     dolbyVision: z.boolean(),

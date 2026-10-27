@@ -76,6 +76,7 @@ import {
 import { SDR_ONLY, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
 import { STUDIO_EXPORT_FORMATS } from 'src/utils/studio-export.js';
 import { supportsLocalRenderKind } from 'src/utils/studio-preview-worker.js';
+import { REFRAME_PROFILE } from 'src/utils/studio-reframe.js';
 
 /**
  * The check summary a local destination carries while it is off because its URL left the
@@ -898,6 +899,8 @@ export class MlDestinationService extends BaseService {
               ),
               ...(sidecar.length > 0 && { sidecarOutputFormats: sidecar }),
               ...(embedded.length > 0 && { embeddedOutputFormats: embedded }),
+              // FL-563: the session derives and renders vertical and square exports.
+              ...(capabilities?.formats.includes(REFRAME_PROFILE) && { reframe: true }),
               ...(session.colorPrecision ?? SDR_ONLY),
             };
           }),
