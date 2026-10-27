@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
 import en from '../../../../../../../i18n/en.json';
@@ -138,14 +138,15 @@ describe('Overview (FL-363)', () => {
     expect(list.querySelector('li')).toHaveClass('is-now');
   });
 
-  it('lets Studio’s need be dismissed, kept on the server', async () => {
+  it('lists Studio as optional, never raising the headline, and lets it be dismissed on the server', async () => {
     sdk.getRenderWorkerCompatibility.mockResolvedValue({ unavailable: ['studio-export'] });
     sdk.setAttentionDismissed.mockResolvedValue({ ...healthy, dismissed: ['studio'] });
     render(Overview);
-    expect(await screen.findByRole('heading', { name: 'Working, with 1 thing to look at' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Everything is working' })).toBeInTheDocument();
+    expect(screen.getByText('Optional')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(sdk.setAttentionDismissed).toHaveBeenCalledWith({ attentionDismissDto: { id: 'studio', dismissed: true } });
-    expect(await screen.findByRole('heading', { name: 'Everything is working' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Optional')).not.toBeInTheDocument());
     expect(screen.getByText('Needs a computer')).toBeInTheDocument();
   });
 });
@@ -155,12 +156,16 @@ describe('overview rules', () => {
     expect(overviewLevel([])).toBe('ok');
     expect(overviewLevel(['look'])).toBe('attention');
     expect(overviewLevel(['look', 'now'])).toBe('urgent');
+    // An optional feature that is not set up (Studio without a graphics card) never raises the headline.
+    expect(overviewLevel(['optional'])).toBe('ok');
+    expect(overviewLevel(['optional', 'look'])).toBe('attention');
     expect(
       byUrgency([
+        { level: 'optional' as const, id: 0 },
         { level: 'look' as const, id: 1 },
         { level: 'now' as const, id: 2 },
       ]).map((n) => n.id),
-    ).toEqual([2, 1]);
+    ).toEqual([2, 1, 0]);
   });
 
   it('works out the room left at the pace photos are added', () => {

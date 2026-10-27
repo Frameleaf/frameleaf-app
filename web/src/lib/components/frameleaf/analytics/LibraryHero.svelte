@@ -15,7 +15,7 @@
   import AnalyticsSparkline from '$lib/components/frameleaf/analytics/AnalyticsSparkline.svelte';
   import { analyticsFormats, captureSpan, type Translate } from '$lib/frameleaf/analytics';
   import { locale } from '$lib/stores/preferences.store';
-  import { AnalyticsState, type AnalyticsReportResponseDto } from '@frameleaf/sdk';
+  import { AnalyticsScopeKind, AnalyticsState, type AnalyticsReportResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountGroupOutline,
@@ -36,9 +36,11 @@
   const span = $derived(insights ? captureSpan(insights) : null);
   const added = $derived(report.series.reduce((sum, row) => sum + row.photos + row.videos, 0));
   const host = $derived(report.host);
-  const used = $derived(
-    host.volumeUsedBytes === null || !host.capacityBytes ? null : f.percent(host.volumeUsedBytes, host.capacityBytes),
-  );
+  // The whole drive for the whole server; one account's or library's own originals otherwise,
+  // as a share of the same drive, so a single account never shows everyone's 1.8 TB as its own.
+  const scoped = $derived(report.scopeKind !== AnalyticsScopeKind.Host);
+  const usedBytes = $derived(scoped ? report.summary.physicalBytes : host.volumeUsedBytes);
+  const used = $derived(usedBytes === null || !host.capacityBytes ? null : f.percent(usedBytes, host.capacityBytes));
 
   const facts = $derived.by(() => {
     if (!insights) {
@@ -105,7 +107,7 @@
         </AnalyticsRing>
         <div>
           <span>{$t('frameleaf_analytics_kpi_volume_used')}</span>
-          <strong>{f.size(host.volumeUsedBytes!)}</strong>
+          <strong>{f.size(usedBytes!)}</strong>
           <small>
             {host.freeBytes === null
               ? $t('frameleaf_analytics_volume_of', { values: { capacity: f.size(host.capacityBytes!) } })

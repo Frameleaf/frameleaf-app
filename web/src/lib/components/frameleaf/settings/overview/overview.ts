@@ -4,17 +4,21 @@
  */
 import type { AnalyticsBucketDto } from '@frameleaf/sdk';
 
-/** How soon a need wants the person: today, or when they have a moment. */
-export type NeedLevel = 'now' | 'look';
+/**
+ * How soon a need wants the person: today, or when they have a moment. An optional feature that is
+ * not set up (Studio exports without a graphics card) is listed, but is not something wrong.
+ */
+export type NeedLevel = 'now' | 'look' | 'optional';
 
-/** The answer the page opens on, from what needs the person. */
+/** The answer the page opens on, from what needs the person; optional features never raise it. */
 export const overviewLevel = (levels: NeedLevel[]): 'urgent' | 'attention' | 'ok' =>
-  levels.includes('now') ? 'urgent' : levels.length > 0 ? 'attention' : 'ok';
+  levels.includes('now') ? 'urgent' : levels.includes('look') ? 'attention' : 'ok';
 
 /** Most urgent first; within a level, in the order they were found. */
 export const byUrgency = <T extends { level: NeedLevel }>(needs: T[]): T[] => [
   ...needs.filter((need) => need.level === 'now'),
   ...needs.filter((need) => need.level === 'look'),
+  ...needs.filter((need) => need.level === 'optional'),
 ];
 
 const DAY_MS = 86_400_000;
