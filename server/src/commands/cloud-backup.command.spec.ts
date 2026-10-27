@@ -141,15 +141,21 @@ describe('cloud-backup CLI (FL-164)', () => {
       exportFromBucket: vi.fn().mockResolvedValue({ objects: 3, manifestKey: 'm/20260926T030000Z.json.gz' }),
       restoreFromBucket: vi.fn(),
     } as unknown as CloudBackupService;
+    const database = { initialize: vi.fn() };
     const output = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-    await new CloudBackupRestoreCommand(service).run([], { managed: true, keyFile, exportDirectory: directory });
+    await new CloudBackupRestoreCommand(service, database as never).run([], {
+      managed: true,
+      keyFile,
+      exportDirectory: directory,
+    });
 
     expect(service.exportFromBucket).toHaveBeenCalledWith(
       { managed: true, key: expect.any(String), scope: 'library', restoreDatabase: false, manifestKey: undefined },
       directory,
     );
     expect(service.restoreFromBucket).not.toHaveBeenCalled();
+    expect(database.initialize).not.toHaveBeenCalled();
     expect(output.mock.calls.flat().join('')).not.toContain(key.toString('base64'));
   });
 
@@ -212,7 +218,11 @@ describe('cloud-backup CLI (FL-164)', () => {
     } as unknown as CloudBackupService;
     const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
-    await new CloudBackupRestoreCommand(service).run([], { ...options, keyFile, restoreDatabase: false });
+    await new CloudBackupRestoreCommand(service, { initialize: vi.fn() } as never).run([], {
+      ...options,
+      keyFile,
+      restoreDatabase: false,
+    });
 
     expect(service.restoreFromBucket).toHaveBeenCalledWith(
       expect.objectContaining({ key: key.toString('base64'), scope: 'library', restoreDatabase: false }),
@@ -222,9 +232,75 @@ describe('cloud-backup CLI (FL-164)', () => {
     vi.unstubAllEnvs();
   });
 
+  it.each([false, true])(
+    'initializes a schema-free replacement before restoring (database: %s)',
+    async (restoreDatabase) => {
+      const keyFile = join(directory, 'key.txt');
+      await writeFile(keyFile, key.toString('base64'));
+      let ready = false;
+      const database = {
+        initialize: vi.fn(() => {
+          ready = true;
+          return Promise.resolve();
+        }),
+      };
+      const service = {
+        restoreFromBucket: vi.fn(() => {
+          if (!ready)
+            return Promise.reject(
+              Object.assign(new Error('relation system_metadata does not exist'), { code: '42P01' }),
+            );
+          return Promise.resolve({ files: 1, manifestKey: 'm/snapshot.json.gz', databaseRestored: restoreDatabase });
+        }),
+      };
+      vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+      await new CloudBackupRestoreCommand(service as never, database as never).run([], {
+        ...options,
+        keyFile,
+        offlineDirectory: directory,
+        restoreDatabase,
+      });
+      expect(database.initialize).toHaveBeenCalledOnce();
+      expect(service.restoreFromBucket).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('stops before restoring when canonical initialization refuses the destination', async () => {
+    const keyFile = join(directory, 'key.txt');
+    await writeFile(keyFile, key.toString('base64'));
+    const failure = new Error('Foreign database cannot be adopted');
+    const database = { initialize: vi.fn().mockRejectedValue(failure) };
+    const service = { restoreFromBucket: vi.fn() };
+    await expect(
+      new CloudBackupRestoreCommand(service as never, database as never).run([], {
+        ...options,
+        keyFile,
+        offlineDirectory: directory,
+        restoreDatabase: true,
+      }),
+    ).rejects.toBe(failure);
+    expect(service.restoreFromBucket).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed key before initializing the replacement', async () => {
+    const keyFile = join(directory, 'invalid.txt');
+    await writeFile(keyFile, 'not-a-recovery-key');
+    const database = { initialize: vi.fn() };
+    const service = { restoreFromBucket: vi.fn() };
+    await expect(
+      new CloudBackupRestoreCommand(service as never, database as never).run([], {
+        ...options,
+        keyFile,
+        offlineDirectory: directory,
+      }),
+    ).rejects.toThrow();
+    expect(database.initialize).not.toHaveBeenCalled();
+    expect(service.restoreFromBucket).not.toHaveBeenCalled();
+  });
+
   it('takes named options only', async () => {
-    await expect(new CloudBackupRestoreCommand({} as CloudBackupService).run(['family-backup'])).rejects.toThrow(
-      'named options only',
-    );
+    await expect(
+      new CloudBackupRestoreCommand({} as CloudBackupService, {} as never).run(['family-backup']),
+    ).rejects.toThrow('named options only');
   });
 });
