@@ -4,7 +4,13 @@ import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import AddPerson from '$lib/components/frameleaf/settings/people/AddPerson.svelte';
 import PersonPage from '$lib/components/frameleaf/settings/people/PersonPage.svelte';
-import { bytesOfGb, gbOfBytes, spaceChoiceOf, spaceWords } from '$lib/components/frameleaf/settings/people/space';
+import {
+  bytesOfGb,
+  gbOfBytes,
+  gibWords,
+  spaceChoiceOf,
+  spaceWords,
+} from '$lib/components/frameleaf/settings/people/space';
 import en from '../../../../../../../i18n/en.json';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'admin-1' } } }));
@@ -52,6 +58,27 @@ describe('Users as People (FL-516)', () => {
     expect(bytesOfGb(1000)).toBe(1_000_000_000_000);
     expect(spaceWords(1000)).toBe('1 TB');
     expect(spaceWords(192.4)).toBe('192 GB');
+    // older accounts set in whole GiB are said in GiB; anything else in GB (D5)
+    expect(gibWords(500 * 1024 ** 3)).toBe('500 GiB');
+    expect(gibWords(1024 ** 4)).toBe('1 TiB');
+    expect(gibWords(500_000_000_000)).toBeUndefined();
+  });
+
+  it('keeps an older 500 GiB quota as "500 GiB", not "Other… 537", and saves nothing until changed', async () => {
+    render(PersonPage, {
+      user: user({ quotaSizeInBytes: 500 * 1024 ** 3 }),
+      preferences,
+      sessions: [],
+      savePreferences: vi.fn(),
+      loadPreferences: vi.fn(),
+    });
+
+    const picker = screen.getByRole('combobox', { name: 'Space for Emma' });
+    expect(picker).toHaveValue('kept');
+    expect(screen.getByRole('option', { name: '500 GiB' })).toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.getByText(/of 500 GiB\./)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
   });
 
   it('opens one person in three parts and saves only what changed in About', async () => {
@@ -116,6 +143,48 @@ describe('Users as People (FL-516)', () => {
       }),
     });
     expect(await screen.findByText('Their temporary password')).toBeInTheDocument();
+  });
+
+  it('labels the space for this person and keeps naming the server default after Other…', async () => {
+    sdkMock.getConfig.mockResolvedValue({ user: { newUserStorageQuota: 20 } } as never);
+    render(AddPerson, { onDone: vi.fn() });
+
+    expect(await screen.findByText(/Starts from “Space for new people” \(20 GB\)/)).toBeInTheDocument();
+    await fireEvent.change(screen.getByRole('combobox', { name: 'Space for this person' }), {
+      target: { value: 'other' },
+    });
+    const amount = screen.getByRole('spinbutton', { name: 'Space for this person, in GB' });
+    await fireEvent.input(amount, { target: { value: '75' } });
+    expect(screen.getByText(/Starts from “Space for new people” \(20 GB\)/)).toBeInTheDocument();
+  });
+
+  it('says on the email field when the email belongs to another account', async () => {
+    sdkMock.getConfig.mockResolvedValue({ user: { newUserStorageQuota: null } } as never);
+    sdkMock.isHttpError.mockReturnValue(true);
+    sdkMock.createUserAdmin.mockRejectedValue({ status: 400, data: { message: 'Email is not available' } });
+    render(AddPerson, { onDone: vi.fn() });
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Alex' } });
+    const field = screen.getByRole('textbox', { name: 'Email' });
+    await fireEvent.input(field, { target: { value: 'emma@example.test' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That email is already used by another account.');
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    await fireEvent.input(field, { target: { value: 'alex@example.test' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('holds "Email them their sign-in details" off, with the reason, without email set up', async () => {
+    sdkMock.getConfig.mockResolvedValue({ user: { newUserStorageQuota: null } } as never);
+    render(AddPerson, { onDone: vi.fn() });
+
+    const notify = screen.getByRole('switch', { name: 'Email them their sign-in details' });
+    expect(notify).toBeDisabled();
+    expect(notify).not.toBeChecked();
+    expect(
+      screen.getByText('Email isn’t set up on this server yet, so you pass the password on yourself.'),
+    ).toBeInTheDocument();
   });
 
   it('pauses new uploads for one person as soon as it is switched (FL-538)', async () => {
