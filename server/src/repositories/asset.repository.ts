@@ -1636,7 +1636,7 @@ export class AssetRepository {
     }
     const updateAndSelect = (db: Kysely<DB>) =>
       db
-        .with('asset', (qb) => qb.updateTable('asset').set(asset).where('id', '=', asUuid(asset.id)).returningAll())
+        .with('asset', (qb) => qb.updateTable('asset').set(value).where('id', '=', asUuid(asset.id)).returningAll())
         .selectFrom('asset')
         .selectAll('asset')
         .$call(withExif)
