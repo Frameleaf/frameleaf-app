@@ -8,7 +8,7 @@ import {
 import { NoResultError, type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, rm } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { coerce, gt } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
@@ -764,7 +764,11 @@ export class BuddyBackupRestoreService {
         StorageCore.getLibraryFolder(owner),
         StorageCore.getFolderLocation(StorageFolder.Thumbnails, ownerId),
         StorageCore.getFolderLocation(StorageFolder.EncodedVideo, ownerId),
-      ];
+      ].flatMap((root) => {
+        const below = relative(root, file.target);
+        // A fresh owner's directory may not exist; keep its exact prefix and validate from the current mount.
+        return below && below !== '..' && !below.startsWith(`..${sep}`) && !isAbsolute(below) ? [dirname(root)] : [];
+      });
       const external = manifest.assetLinks?.[assetId];
       if (external?.isExternal) {
         if (!job.admin || !external.libraryId || (current && current.libraryId !== external.libraryId))
@@ -1737,6 +1741,7 @@ export class BuddyBackupRestoreService {
           'Buddy administrator authorization changed': 'administrator_changed',
           'Live Photo relationship changed': 'live_photo_changed',
           'Buddy restore destination changed': 'destination_changed',
+          'Owner restore destination unavailable': 'destination_unavailable',
           'External library identity changed': 'external_library_changed',
           'Buddy version destination changed': 'version_destination_changed',
           'Buddy restored file did not verify': 'file_verification',
