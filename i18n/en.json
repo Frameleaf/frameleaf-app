@@ -9570,6 +9570,7 @@
   "frameleaf_notify_test_failed_body": "Check the email address and the password, then try again.",
   "frameleaf_notify_test_failed_unknown": "The mail server did not accept it.",
   "frameleaf_notify_test_save_first": "Save your changes first, and enter the password. The test uses what is saved.",
+  "frameleaf_notify_test_save_first_no_password": "Save your changes first. The test uses what is saved.",
   "frameleaf_notify_test_send": "Send a test email",
   "frameleaf_notify_test_sending": "Sending…",
   "frameleaf_notify_test_sent": "Sent to {email} at {time}",
