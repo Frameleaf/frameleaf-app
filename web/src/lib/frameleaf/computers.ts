@@ -48,6 +48,15 @@ const placeOf = (entry: WorkerInventoryEntryDto): ComputerPlace =>
       ? 'server'
       : 'home';
 
+/**
+ * What a computer's row says about where it is. A Studio worker bundled with this server stays its
+ * own row (it answers on its own), but it runs here, not at home.
+ */
+export const whereOf = (computer: Computer): ComputerPlace =>
+  computer.place === 'home' && computer.entries.every((entry) => entry.kind === MlDestinationKind.Local)
+    ? 'server'
+    : computer.place;
+
 /** One record's state. A record that answers but offers nothing yet still answers. */
 export const entryState = (entry: WorkerInventoryEntryDto): ComputerState => {
   if (!entry.enabled || entry.readiness === MlWorkerReadiness.Disabled) {

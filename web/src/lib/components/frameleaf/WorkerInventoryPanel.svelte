@@ -19,6 +19,7 @@
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { OpenQueryParam } from '$lib/constants';
   import { mlDestinationKindLabelKey, mlRefusalLabelKey, mlWorkloadLabelKey } from '$lib/frameleaf/ml-destinations';
+  import { operationKindKey } from '$lib/frameleaf/render-workers';
   import {
     accelerationLabelKey,
     applyWorkerUrlChange,
@@ -43,6 +44,7 @@
     getMlDestination,
     getWorkerInventory,
     MlDestinationKind,
+    MlWorkerReadiness,
     probeMlDestination,
     updateConfig,
     WorkerInventorySource,
@@ -260,7 +262,7 @@
       <dd>
         {#if entry.source === WorkerInventorySource.RenderWorker}
           {entry.renderKinds.length > 0
-            ? entry.renderKinds.join(', ')
+            ? entry.renderKinds.map((kind) => $t(operationKindKey[kind])).join(', ')
             : $t('admin.frameleaf_workers_capabilities_none')}
         {:else}
           {workloadList(entry.servedWorkloads)}
@@ -334,7 +336,10 @@
         {#if entry.latencyMs !== null}
           · {entry.latencyMs} ms
         {/if}
-        {#if entry.summary}<span class="muted"> · {entry.summary}</span>{/if}
+        <!-- The server's summary repeats the work and the time above when all is well; it only adds the reason it isn't. -->
+        {#if entry.summary && entry.readiness === MlWorkerReadiness.Unreachable}
+          <span class="muted"> · {entry.summary}</span>
+        {/if}
       </dd>
     </div>
   </dl>
@@ -529,7 +534,9 @@
           <li>
             <span>{$t(mlWorkloadLabelKey(route.workload))}</span>
             <span class:refused={!target}>
-              {#if target}
+              {#if target && target.name === kindLabel(target)}
+                {target.name}
+              {:else if target}
                 {$t('admin.frameleaf_workers_route_value', { values: { name: target.name, kind: kindLabel(target) } })}
               {:else}
                 {$t('admin.frameleaf_workers_route_none')}

@@ -1379,6 +1379,9 @@
     white-space: nowrap;
   }
   .cc-main {
+    /* The containing block of the hidden screen-reader labels inside: without it they are placed on
+       the body, grow the document past the window and Manage or a long scroll moves the whole shell. */
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow: auto;

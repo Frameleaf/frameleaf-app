@@ -32,6 +32,7 @@
     computersFrom,
     entryState,
     notAnswering,
+    whereOf,
     type Computer,
   } from '$lib/frameleaf/computers';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -291,10 +292,10 @@
       {#each computers as computer (computer.key)}
         {@const state = status(computer)}
         <Item
-          icon={ICONS[computer.place]}
+          icon={ICONS[whereOf(computer)]}
           off={computer.state === 'off'}
           name={name(computer)}
-          detail={[$t(`frameleaf_computers_where_${computer.place}` as Translations), computer.card]
+          detail={[$t(`frameleaf_computers_where_${whereOf(computer)}` as Translations), computer.card]
             .filter(Boolean)
             .join(' · ')}
           tone={state.tone}
