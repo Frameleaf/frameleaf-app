@@ -81,6 +81,7 @@ import {
   CloudUploadTarget,
   FrameleafCloudError,
   clipResultSchema,
+  cloudCustomerCost,
   cloudErrorCode,
   estimateUsable,
   faceResultSchema,
@@ -570,16 +571,16 @@ export class CloudLibraryBatchService extends BaseService {
         expiresAt: estimate.expiresAt,
         modelRev: estimate.modelRev,
         computeSku: estimate.computeSku,
-        p50Usd: estimate.cost.p50,
-        p90Usd: estimate.cost.p90,
-        holdUsd: estimate.cost.hold,
+        p50Usd: cloudCustomerCost(estimate).p50,
+        p90Usd: cloudCustomerCost(estimate).p90,
+        holdUsd: cloudCustomerCost(estimate).hold,
         startupUsd: estimate.cost.startup,
         request,
         attemptedAt: null,
       },
       waiting: null,
     };
-    await this.preflight(run, gateway, estimate.cost.hold);
+    await this.preflight(run, gateway, cloudCustomerCost(estimate).hold);
     if (await this.save(run)) {
       await this.submit(run, gateway);
     }

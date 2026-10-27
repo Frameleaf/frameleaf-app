@@ -608,6 +608,26 @@ describe(CloudMlJobService.name, () => {
       expect(record.beforePath).toBe(first[1]);
     });
 
+    it('allows a fully promoted job with no wallet balance and approves only its net spending', async () => {
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue(wallet(0));
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        promotion: {
+          campaignId: '00000000-0000-4000-8000-000000000001',
+          discountP50: sealed.cost.p50,
+          discountP90: sealed.cost.p90,
+          netP50: 0,
+          netP90: 0,
+          netHold: 0,
+          finalAtAdmission: true,
+        },
+      });
+      const estimate = await sut.estimate(owner, preview(), now);
+      expect(estimate).toMatchObject({ p50Usd: 0, p90Usd: 0, holdUsd: 0, refusal: null });
+      expect(estimates()[0]!.approved).toMatchObject({ p50Usd: 0, p90Usd: 0, holdUsd: 0 });
+      expect(sealed.cost.hold).toBeGreaterThan(0);
+    });
+
     it('refuses to send a job the AI Wallet cannot hold, without offering a lighter model', async () => {
       mocks.frameleafCloudMl.getWallet.mockResolvedValue({
         ...wallet(1),

@@ -623,6 +623,60 @@ describe(CloudMlBatchService.name, () => {
       expect(mocks.media.writeCloudUpload).toHaveBeenCalledWith('/thumbs/a-1.webp', expect.stringContaining('s1.jpeg'));
     });
 
+    it('approves and queues one fully promoted backfill batch with no wallet cash', async () => {
+      addAssets(photos(ownerA, 5));
+      mocks.frameleafCloudMl.getWallet.mockResolvedValue({
+        balanceUsd: 0,
+        heldUsd: 0,
+        dailyCapUsd: null,
+        spentTodayUsd: 0,
+        topUpUrl: null,
+        autoTopUp: false,
+        settingsUrl: null,
+      });
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        promotion: {
+          campaignId: '00000000-0000-4000-8000-000000000001',
+          discountP50: sealed.cost.p50,
+          discountP90: sealed.cost.p90,
+          netP50: 0,
+          netP90: 0,
+          netHold: 0,
+          finalAtAdmission: true,
+        },
+      });
+      const estimate = await sut.estimateBackfill(admin, now);
+      expect(estimate).toMatchObject({ p50Usd: 0, p90Usd: 0, holdUsd: 0, refusal: null });
+      expect((await sut.startBackfill({ estimateId: estimate.estimateId! }, now)).batches).toBe(1);
+    });
+
+    it('quotes a promoted first batch exactly and does not multiply its allowance across the backfill', async () => {
+      addAssets(photos(ownerA, 205, 'a'));
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
+        ...sealed,
+        promotion: {
+          campaignId: '00000000-0000-4000-8000-000000000001',
+          discountP50: sealed.cost.p50,
+          discountP90: sealed.cost.p90,
+          netP50: 0,
+          netP90: 0,
+          netHold: 0,
+          finalAtAdmission: true,
+        },
+      });
+      const estimate = await sut.estimateBackfill(admin, now);
+      expect(mocks.frameleafCloudMl.createEstimate.mock.calls.map(([, request]) => request.inputs.length)).toEqual([
+        10, 200,
+      ]);
+      expect(estimate.batches).toBe(2);
+      expect(estimate.p90Usd).toBeGreaterThan(0);
+      mocks.mediaOperation.getOpenCloudDescriptionAssetIds.mockResolvedValue(new Set(['a-1']));
+      await expect(sut.startBackfill({ estimateId: estimate.estimateId! }, now)).rejects.toThrow(
+        'The promoted batch changed',
+      );
+    });
+
     it('refuses to start when the AI Wallet cannot cover the p90', async () => {
       addAssets(photos(ownerA, 5));
       mocks.frameleafCloudMl.getWallet.mockResolvedValue({

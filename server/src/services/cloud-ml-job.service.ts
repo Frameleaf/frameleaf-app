@@ -127,6 +127,7 @@ import {
   CloudUploadTarget,
   FrameleafCloudError,
   catalogGroupKey,
+  cloudCustomerCost,
   cloudErrorCode,
   cloudUpscaleAppliedScale,
   estimateUsable,
@@ -569,9 +570,9 @@ export class CloudMlJobService {
       sealed: sealed.estimate,
       approved: {
         estimateId: id,
-        p50Usd: sealed.cost.p50,
-        p90Usd: sealed.cost.p90,
-        holdUsd: sealed.cost.hold,
+        p50Usd: cloudCustomerCost(sealed).p50,
+        p90Usd: cloudCustomerCost(sealed).p90,
+        holdUsd: cloudCustomerCost(sealed).hold,
         startupUsd: sealed.cost.startup,
         minimumUsd: sealed.cost.minimum,
         startFeeUsd: model.rate.startFeeUsd,
@@ -593,24 +594,27 @@ export class CloudMlJobService {
       model: this.modelOf(model),
       models: offered.toSorted((a, b) => a.rank - b.rank).map((entry) => this.modelOf(entry)),
       basis: sealed.basis,
-      p50Usd: sealed.cost.p50,
-      p90Usd: sealed.cost.p90,
+      p50Usd: cloudCustomerCost(sealed).p50,
+      p90Usd: cloudCustomerCost(sealed).p90,
       startupUsd: sealed.cost.startup,
       startFeeUsd: model.rate.startFeeUsd,
       perSecondUsd: model.rate.perSecondUsd,
-      holdUsd: sealed.cost.hold,
+      holdUsd: cloudCustomerCost(sealed).hold,
       minimumUsd: sealed.cost.minimum,
       plannedWorkers: workers,
       coldStartSeconds: sealed.seconds.coldStart,
       runSeconds: sealed.seconds.run,
-      perUnit: { ...perUnitEstimate(sealed, quantity), quantity: Math.round(quantity.value * 100) / 100 },
+      perUnit: {
+        ...perUnitEstimate({ cost: cloudCustomerCost(sealed) }, quantity),
+        quantity: Math.round(quantity.value * 100) / 100,
+      },
       availableUsd,
       dailyCapUsd: wallet.dailyCapUsd,
       spentTodayUsd: wallet.spentTodayUsd,
       consent: { version: consent.requiredVersion, summary: consent.summary, documentUrl: consent.documentUrl },
-      refusal: this.walletRefusal(wallet, availableUsd, sealed.cost.hold),
+      refusal: this.walletRefusal(wallet, availableUsd, cloudCustomerCost(sealed).hold),
       // everyone may see what a job would cost; only those allowed may confirm it
-      permission: await this.spendPermission(auth, sealed.cost.hold, now),
+      permission: await this.spendPermission(auth, cloudCustomerCost(sealed).hold, now),
       upscale: upscale
         ? {
             requestedScale: upscale.requestedScale,
@@ -1511,12 +1515,12 @@ export class CloudMlJobService {
       );
     }
     if (
-      sealed.cost.p90 > snapshot.approved.p90Usd * CLOUD_ML_JOB_PRICE_TOLERANCE ||
-      sealed.cost.hold > snapshot.approved.holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE
+      cloudCustomerCost(sealed).p90 > snapshot.approved.p90Usd * CLOUD_ML_JOB_PRICE_TOLERANCE ||
+      cloudCustomerCost(sealed).hold > snapshot.approved.holdUsd * CLOUD_ML_JOB_PRICE_TOLERANCE
     ) {
       throw new CloudMlJobFailure(
         'cloud_ml_estimate_increased',
-        `Frameleaf Cloud now estimates this job at up to $${sealed.cost.p90.toFixed(2)}, above the $${snapshot.approved.p90Usd.toFixed(2)} you confirmed. Nothing was sent; estimate again.`,
+        `Frameleaf Cloud now estimates this job at up to $${cloudCustomerCost(sealed).p90.toFixed(2)}, above the $${snapshot.approved.p90Usd.toFixed(2)} you confirmed. Nothing was sent; estimate again.`,
         false,
       );
     }
@@ -1527,9 +1531,9 @@ export class CloudMlJobService {
       expiresAt: sealed.expiresAt,
       modelRev: sealed.modelRev,
       computeSku: sealed.computeSku,
-      p50Usd: sealed.cost.p50,
-      p90Usd: sealed.cost.p90,
-      holdUsd: sealed.cost.hold,
+      p50Usd: cloudCustomerCost(sealed).p50,
+      p90Usd: cloudCustomerCost(sealed).p90,
+      holdUsd: cloudCustomerCost(sealed).hold,
       startupUsd: sealed.cost.startup,
       attemptedAt: null,
     };
