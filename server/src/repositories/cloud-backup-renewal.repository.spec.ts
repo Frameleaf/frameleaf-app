@@ -25,6 +25,8 @@ import {
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
+vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
+
 const sha = (body: Buffer) => createHash('sha256').update(body).digest('hex');
 const fixture = (operation: BackupOperation) =>
   backupGrantResponseSchema.parse(cloudContractFixture(`backup/capability-${operation}.json`));

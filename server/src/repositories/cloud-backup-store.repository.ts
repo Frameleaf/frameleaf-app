@@ -5,6 +5,7 @@ import { type FileHandle, mkdir, open, readFile, rename, rm } from 'node:fs/prom
 import { basename, dirname, join } from 'node:path';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { type Response as StorageResponse, fetch } from 'undici';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { BackupTransferJournal } from 'src/utils/cloud-backup-transfer.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -37,7 +38,7 @@ import { type BackupCredentials, ManagedBackupAuthorizationError } from 'src/uti
 
 /**
  * Cloud backup storage (FL-160): the S3 API calls the backup agent makes, signed with AWS Signature
- * Version 4 over Node's own `fetch` and `crypto`. No SDK and no extra binaries are in the image; SSE-C
+ * Version 4 over Undici's `fetch` and Node's `crypto`. No SDK and no extra binaries are in the image; SSE-C
  * needs the S3 API directly, and every provider the agent supports (Wasabi, and any SSE-C-capable S3
  * store for your own bucket) speaks it.
  *
@@ -185,9 +186,13 @@ const PROVIDER_ERROR_CODES = [
 const providerErrorCode = (code: string | null) => PROVIDER_ERROR_CODES.find((knownCode) => knownCode === code) ?? null;
 
 /** Sanitize only transport reads and cancellation; callers retain their checksum and filesystem errors. */
-export const sanitizeProviderResponse = (response: Response, action: string): Response => {
+export const sanitizeProviderResponse = (response: Response | StorageResponse, action: string): Response => {
   if (!response.body) {
-    return response;
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: [...response.headers],
+    });
   }
   const reader = response.body.getReader();
   let cancelled = false;
@@ -233,7 +238,7 @@ export const sanitizeProviderResponse = (response: Response, action: string): Re
   return new Response(body, {
     status: response.status,
     statusText: response.statusText,
-    headers: response.headers,
+    headers: [...response.headers],
   });
 };
 
@@ -2085,7 +2090,7 @@ export class CloudBackupStoreRepository {
 
     const url = `${endpoint.origin}${canonicalUri}${query ? `?${query}` : ''}`;
     const action = `${request.method} ${request.key ?? connection.bucket}`;
-    let response: Response;
+    let response: StorageResponse;
     try {
       response = await fetch(url, {
         method: request.method,

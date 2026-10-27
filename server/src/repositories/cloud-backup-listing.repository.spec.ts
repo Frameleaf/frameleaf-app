@@ -1,6 +1,8 @@
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CLOUD_BACKUP_PROBE_PREFIX } from 'src/utils/cloud-backup.js';
 
+vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
+
 const connection = {
   endpoint: 'https://storage.test',
   bucket: 'backup',
