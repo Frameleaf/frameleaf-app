@@ -14,6 +14,8 @@ import { readManifest } from 'src/utils/cloud-backup-retention.js';
 import { CLOUD_BACKUP_PART_BYTES, CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
+vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
+
 const vaultId = 'f0000000-0000-4000-8000-000000000001';
 const sha = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 type ObjectVersion = { bytes: Buffer; version: string };
