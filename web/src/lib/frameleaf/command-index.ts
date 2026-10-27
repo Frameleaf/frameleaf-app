@@ -302,6 +302,8 @@ export const SETTINGS_SECTION_KEYWORDS: Readonly<Record<string, readonly Transla
   server: ['frameleaf_server_identity_zone'],
   // FL-421: the prototype finds "What needs your attention" by its alerts.
   signals: ['frameleaf_attention_search_keywords'],
+  // Deleted items holds the Trash's retention, so searching "trash" finds it beside the Trash pages.
+  trash: ['trash', 'frameleaf_deleted_keep_photos', 'frameleaf_deleted_keep_account'],
 });
 
 /** Server settings section keys declared by `user-settings/SystemSettings.svelte`. */

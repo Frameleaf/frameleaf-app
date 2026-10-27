@@ -6,6 +6,7 @@ import {
   buildPageCommands,
   buildSettingsCommands,
   emptyCommandCatalogue,
+  SETTINGS_SECTION_KEYWORDS,
   USER_SETTINGS_AREAS,
   type CommandIndexContext,
 } from '$lib/frameleaf/command-index';
@@ -116,6 +117,10 @@ describe('settings areas', () => {
     for (const area of ADMIN_SETTINGS_AREAS) {
       expect(area.icon, area.key).toBeTruthy();
     }
+  });
+
+  it('finds Deleted items by the Trash retention it holds', () => {
+    expect(SETTINGS_SECTION_KEYWORDS.trash).toEqual(expect.arrayContaining(['trash', 'frameleaf_deleted_keep_photos']));
   });
 
   it('lands the Public server URL in Remote access, not Server identity (FL-168)', () => {

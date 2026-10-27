@@ -125,7 +125,7 @@ test.describe('Command Center settings', () => {
 
     await bar.getByRole('button', { name: labels.review }).click();
     const review = page.getByRole('dialog', { name: labels.reviewTitle });
-    await expect(review.getByText(String(days), { exact: true })).toBeVisible();
+    await expect(review.getByText(`${days} days`).first()).toBeVisible();
     await review.getByRole('button', { name: labels.save }).click();
     await expect(page.getByText(labels.saved)).toBeVisible();
 

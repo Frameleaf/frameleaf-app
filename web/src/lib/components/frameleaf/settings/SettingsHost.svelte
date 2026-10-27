@@ -674,12 +674,17 @@
 
   /** Opens an area, or one of its sections, keeping the "Viewing" scope. */
   const navigate = async (next: SettingsAreaId, section?: string, params: Record<string, string> = {}) => {
-    query = '';
     sidebarStore.isOpen = false;
     const currentScope = page.url.searchParams.get('scope') ?? undefined;
-    await gotoWithFocusAndScroll(commandCenterUrl(next, section, { ...params, scope: currentScope }), {
-      keepFocus: true,
-    });
+    try {
+      await gotoWithFocusAndScroll(commandCenterUrl(next, section, { ...params, scope: currentScope }), {
+        keepFocus: true,
+      });
+    } finally {
+      // Clear the search only once the new page is in place: clearing it first shows the page the
+      // search started from until the navigation lands.
+      query = '';
+    }
     await focusHeading();
   };
 
@@ -851,7 +856,12 @@
       {:else}
         <!-- An administrator outside the scoped pages: say who the page applies to instead of offering a picker it ignores. -->
         <p class="cc-account-scope cc-scope-fixed">
-          {appliesToAccount ? $t('frameleaf_cc_scope_applies_account') : $t('frameleaf_cc_scope_applies_server')}
+          <!-- Change history lists the whole server's saves, so it carries the server's scope tag. -->
+          {addressArea === 'history'
+            ? $t('frameleaf_cc_scope_tag_server')
+            : appliesToAccount
+              ? $t('frameleaf_cc_scope_applies_account')
+              : $t('frameleaf_cc_scope_applies_server')}
         </p>
       {/if}
       <label class="cc-search">
