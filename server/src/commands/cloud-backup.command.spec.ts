@@ -20,6 +20,7 @@ import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 /** Each escrow open or wrap runs the real scrypt (N = 2^17, 128 MiB); a busy runner needs more than 5 s. */
 const SCRYPT_TEST_TIMEOUT_MS = 30_000;
 
+const storage = { onBootstrap: vi.fn<() => Promise<void>>() };
 const key = Buffer.alloc(32, 7);
 const options = {
   bucket: 'family-backup',
@@ -31,6 +32,7 @@ describe('cloud-backup CLI (FL-164)', () => {
   let directory: string;
 
   beforeEach(async () => {
+    storage.onBootstrap.mockReset().mockResolvedValue(undefined);
     directory = await mkdtemp(join(tmpdir(), 'cloud-backup-command-'));
   });
 
@@ -144,7 +146,7 @@ describe('cloud-backup CLI (FL-164)', () => {
     const database = { initialize: vi.fn() };
     const output = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
-    await new CloudBackupRestoreCommand(service, database as never).run([], {
+    await new CloudBackupRestoreCommand(service, database as never, storage as never).run([], {
       managed: true,
       keyFile,
       exportDirectory: directory,
@@ -156,6 +158,7 @@ describe('cloud-backup CLI (FL-164)', () => {
     );
     expect(service.restoreFromBucket).not.toHaveBeenCalled();
     expect(database.initialize).not.toHaveBeenCalled();
+    expect(storage.onBootstrap).not.toHaveBeenCalled();
     expect(output.mock.calls.flat().join('')).not.toContain(key.toString('base64'));
   });
 
@@ -218,7 +221,7 @@ describe('cloud-backup CLI (FL-164)', () => {
     } as unknown as CloudBackupService;
     const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
-    await new CloudBackupRestoreCommand(service, { initialize: vi.fn() } as never).run([], {
+    await new CloudBackupRestoreCommand(service, { initialize: vi.fn() } as never, storage as never).run([], {
       ...options,
       keyFile,
       restoreDatabase: false,
@@ -238,6 +241,12 @@ describe('cloud-backup CLI (FL-164)', () => {
       const keyFile = join(directory, 'key.txt');
       await writeFile(keyFile, key.toString('base64'));
       let ready = false;
+      let mountsReady = false;
+      storage.onBootstrap.mockImplementation(() => {
+        if (!ready) return Promise.reject(new Error('Mount bootstrap requires the initialized schema'));
+        mountsReady = true;
+        return Promise.resolve();
+      });
       const database = {
         initialize: vi.fn(() => {
           ready = true;
@@ -250,17 +259,20 @@ describe('cloud-backup CLI (FL-164)', () => {
             return Promise.reject(
               Object.assign(new Error('relation system_metadata does not exist'), { code: '42P01' }),
             );
+          if (restoreDatabase && !mountsReady)
+            return Promise.reject(new Error('Failed to read encoded-video/.frameleaf'));
           return Promise.resolve({ files: 1, manifestKey: 'm/snapshot.json.gz', databaseRestored: restoreDatabase });
         }),
       };
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
-      await new CloudBackupRestoreCommand(service as never, database as never).run([], {
+      await new CloudBackupRestoreCommand(service as never, database as never, storage as never).run([], {
         ...options,
         keyFile,
         offlineDirectory: directory,
         restoreDatabase,
       });
       expect(database.initialize).toHaveBeenCalledOnce();
+      expect(storage.onBootstrap).toHaveBeenCalledTimes(restoreDatabase ? 1 : 0);
       expect(service.restoreFromBucket).toHaveBeenCalledOnce();
     },
   );
@@ -272,7 +284,25 @@ describe('cloud-backup CLI (FL-164)', () => {
     const database = { initialize: vi.fn().mockRejectedValue(failure) };
     const service = { restoreFromBucket: vi.fn() };
     await expect(
-      new CloudBackupRestoreCommand(service as never, database as never).run([], {
+      new CloudBackupRestoreCommand(service as never, database as never, storage as never).run([], {
+        ...options,
+        keyFile,
+        offlineDirectory: directory,
+        restoreDatabase: true,
+      }),
+    ).rejects.toBe(failure);
+    expect(service.restoreFromBucket).not.toHaveBeenCalled();
+  });
+
+  it('preserves missing-mount refusal before importing a full database', async () => {
+    const keyFile = join(directory, 'key.txt');
+    await writeFile(keyFile, key.toString('base64'));
+    const failure = new Error('Existing encoded-video mount marker is missing');
+    storage.onBootstrap.mockRejectedValue(failure);
+    const database = { initialize: vi.fn().mockResolvedValue(undefined) };
+    const service = { restoreFromBucket: vi.fn().mockResolvedValue({ files: 1, manifestKey: 'm/snapshot.json.gz' }) };
+    await expect(
+      new CloudBackupRestoreCommand(service as never, database as never, storage as never).run([], {
         ...options,
         keyFile,
         offlineDirectory: directory,
@@ -288,19 +318,20 @@ describe('cloud-backup CLI (FL-164)', () => {
     const database = { initialize: vi.fn() };
     const service = { restoreFromBucket: vi.fn() };
     await expect(
-      new CloudBackupRestoreCommand(service as never, database as never).run([], {
+      new CloudBackupRestoreCommand(service as never, database as never, storage as never).run([], {
         ...options,
         keyFile,
         offlineDirectory: directory,
       }),
     ).rejects.toThrow();
     expect(database.initialize).not.toHaveBeenCalled();
+    expect(storage.onBootstrap).not.toHaveBeenCalled();
     expect(service.restoreFromBucket).not.toHaveBeenCalled();
   });
 
   it('takes named options only', async () => {
     await expect(
-      new CloudBackupRestoreCommand({} as CloudBackupService, {} as never).run(['family-backup']),
+      new CloudBackupRestoreCommand({} as CloudBackupService, {} as never, storage as never).run(['family-backup']),
     ).rejects.toThrow('named options only');
   });
 });

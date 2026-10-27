@@ -2,6 +2,7 @@ import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
 import { readFile } from 'node:fs/promises';
 import { CloudBackupBareMetalRestore, CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { StorageService } from 'src/services/storage.service.js';
 import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { addClientBackupKeys, parseClientBackupKeys, rotateClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
@@ -48,6 +49,7 @@ export class CloudBackupRestoreCommand extends CommandRunner {
   constructor(
     private readonly service: CloudBackupService,
     private readonly databaseService: DatabaseService,
+    private readonly storageService: StorageService,
   ) {
     super();
   }
@@ -160,6 +162,7 @@ export class CloudBackupRestoreCommand extends CommandRunner {
     }
     parseBackupKey(restore.key);
     await this.databaseService.initialize();
+    if (restore.restoreDatabase) await this.storageService.onBootstrap();
     const result = await this.service.restoreFromBucket(restore, (line) => process.stdout.write(`${line}\n`));
     const dump = result.databaseFile
       ? `The database dump is ${result.databaseFile} in the backups folder: restore it from the maintenance restore, or run this again with --restore-database.`
