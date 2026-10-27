@@ -41,6 +41,8 @@
   let email = $state('');
   let isAdmin = $state(false);
   let space = $state<number | null>(null);
+  /** The server's "Space for new people", which the help names; `space` is this person's own. */
+  let newSpace = $state<number | null>(null);
   let storageLabel = $state('');
   type First = 'link' | 'password' | 'provider';
   const emailOn = $derived(featureFlagsManager.value.email);
@@ -60,6 +62,8 @@
   ] as const;
   let colour = $state<UserAvatarColor>(UserAvatarColor.Green);
   let notify = $state(false);
+  /** The email belongs to another account: said on the field until it is changed. */
+  let emailTaken = $state(false);
   let saving = $state(false);
   /** After adding: who, and the temporary password to pass on (shown once). */
   let added = $state<{ user: UserAdminResponseDto; password?: string; link?: boolean }>();
@@ -71,7 +75,7 @@
   onMount(() => {
     void (async () => {
       try {
-        space = (await getConfig()).user.newUserStorageQuota ?? null;
+        space = newSpace = (await getConfig()).user.newUserStorageQuota ?? null;
       } catch {
         // stays "No limit"; the server applies "Space for new people" only when nothing is chosen
       }
@@ -82,18 +86,22 @@
     saving = true;
     try {
       const password = first === 'password' ? makePassword() : undefined;
-      const user = await handleCreateUserAdmin({
-        name: name.trim(),
-        email: email.trim(),
-        isAdmin,
-        avatarColor: colour,
-        quotaSizeInBytes: bytesOfGb(space),
-        storageLabel: storageLabel.trim() || null,
-        // with a link or a sign-in provider no password is set: the server accepts an empty one only then
-        password: password ?? '',
-        ...(password && { shouldChangePassword: true, notify }),
-        ...(first === 'link' && { passwordLink: true }),
-      });
+      const user = await handleCreateUserAdmin(
+        {
+          name: name.trim(),
+          email: email.trim(),
+          isAdmin,
+          avatarColor: colour,
+          quotaSizeInBytes: bytesOfGb(space),
+          storageLabel: storageLabel.trim() || null,
+          // with a link or a sign-in provider no password is set: the server accepts an empty one only then
+          password: password ?? '',
+          // without email set up there is nothing to send it with
+          ...(password && { shouldChangePassword: true, notify: notify && emailOn }),
+          ...(first === 'link' && { passwordLink: true }),
+        },
+        { onEmailTaken: () => (emailTaken = true) },
+      );
       if (user) {
         added = { user, password, link: first === 'link' };
       }
@@ -141,14 +149,24 @@
         />
       </Row>
       <Row label={$t('frameleaf_userpage_email')} help={$t('frameleaf_userpage_email_help')}>
-        <Field
-          wide
-          type="email"
-          label={$t('frameleaf_userpage_email')}
-          value={email}
-          placeholder="alex@example.test"
-          onChange={(value) => (email = value)}
-        />
+        <div class="field">
+          <Field
+            wide
+            type="email"
+            label={$t('frameleaf_userpage_email')}
+            value={email}
+            placeholder="alex@example.test"
+            invalid={emailTaken}
+            describedBy={emailTaken ? 'add-person-email-taken' : undefined}
+            onChange={(value) => {
+              email = value;
+              emailTaken = false;
+            }}
+          />
+          {#if emailTaken}
+            <p id="add-person-email-taken" class="error" role="alert">{$t('frameleaf_userpage_email_taken')}</p>
+          {/if}
+        </div>
       </Row>
       <Row label={$t('frameleaf_userpage_role')} help={$t('frameleaf_userpage_role_help')}>
         <SegmentedControl
@@ -164,14 +182,10 @@
       <Row
         label={$t('frameleaf_userpage_space')}
         help={$t('frameleaf_userpage_space_add_help', {
-          values: { space: space === null ? $t('frameleaf_userpage_space_none') : spaceWords(space) },
+          values: { space: newSpace === null ? $t('frameleaf_userpage_space_none') : spaceWords(newSpace) },
         })}
       >
-        <SpacePicker
-          label={$t('frameleaf_userpage_space_for_new')}
-          value={space}
-          onChange={(value) => (space = value)}
-        />
+        <SpacePicker label={$t('frameleaf_userpage_space')} value={space} onChange={(value) => (space = value)} />
       </Row>
       <Row
         label={$t('frameleaf_userpage_first')}
@@ -193,8 +207,16 @@
         />
       </Row>
       {#if first === 'password'}
-        <Row label={$t('frameleaf_userpage_notify')} help={$t('frameleaf_userpage_notify_help')}>
-          <Switch label={$t('frameleaf_userpage_notify')} checked={notify} onChange={(value) => (notify = value)} />
+        <Row
+          label={$t('frameleaf_userpage_notify')}
+          help={emailOn ? $t('frameleaf_userpage_notify_help') : $t('frameleaf_userpage_notify_no_email')}
+        >
+          <Switch
+            label={$t('frameleaf_userpage_notify')}
+            checked={notify && emailOn}
+            held={!emailOn}
+            onChange={(value) => (notify = value)}
+          />
         </Row>
       {/if}
       <Row label={$t('frameleaf_userpage_colour')} help={$t('frameleaf_userpage_colour_help')}>
@@ -273,6 +295,16 @@
   }
   .swatches button[aria-pressed='true'] {
     border-color: var(--fl-accent);
+  }
+  .field {
+    display: grid;
+    justify-items: end;
+    gap: var(--fl-space-1);
+  }
+  .error {
+    margin: 0;
+    color: var(--fl-danger);
+    font-size: var(--fl-font-callout);
   }
   .hint {
     margin: 0;

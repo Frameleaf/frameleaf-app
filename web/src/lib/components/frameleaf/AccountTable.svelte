@@ -30,6 +30,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
+  import { gibWords } from '$lib/components/frameleaf/settings/people/space';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import type { UsageByUserDto, UserAdminResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
@@ -147,7 +148,11 @@
             <div class="quota">
               <span>
                 {bytes(used)}
-                <small>/ {quota ? bytes(quota.total) : $t('frameleaf_users_quota_unlimited')}</small>
+                <small
+                  >/ {quota
+                    ? (gibWords(quota.total) ?? bytes(quota.total))
+                    : $t('frameleaf_users_quota_unlimited')}</small
+                >
               </span>
               {#if quota}
                 <progress

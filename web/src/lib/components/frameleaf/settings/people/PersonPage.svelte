@@ -28,7 +28,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import SpacePicker from '$lib/components/frameleaf/settings/people/SpacePicker.svelte';
-  import { bytesOfGb, gbOfBytes, spaceWords } from '$lib/components/frameleaf/settings/people/space';
+  import { bytesOfGb, gbOfBytes, gibWords, spaceWords } from '$lib/components/frameleaf/settings/people/space';
   import { accountLifecycle, canChangeRole } from '$lib/frameleaf/accounts';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleUpdateUserAdmin } from '$lib/services/user-admin.service';
@@ -116,17 +116,23 @@
   };
 
   const usedGb = $derived(gbOfBytes(user.quotaUsageInBytes ?? 0) ?? 0);
+  /** An older account's whole-GiB quota, kept as its own choice until it is changed. */
+  const kept = $derived.by(() => {
+    const label = user.quotaSizeInBytes ? gibWords(user.quotaSizeInBytes) : undefined;
+    return label ? { gb: gbOfBytes(user.quotaSizeInBytes)!, label } : undefined;
+  });
   const spaceHelp = $derived.by(() => {
     const limit = gbOfBytes(user.quotaSizeInBytes);
     const used = spaceWords(usedGb);
     if (limit === null) {
       return $t('frameleaf_userpage_space_help_none', { values: { name: user.name, used } });
     }
+    const limitWords = kept?.label ?? spaceWords(limit);
     return limit > usedGb
       ? $t('frameleaf_userpage_space_help', {
-          values: { name: user.name, used, limit: spaceWords(limit), free: spaceWords(limit - usedGb) },
+          values: { name: user.name, used, limit: limitWords, free: spaceWords(limit - usedGb) },
         })
-      : $t('frameleaf_userpage_space_help_full', { values: { name: user.name, used, limit: spaceWords(limit) } });
+      : $t('frameleaf_userpage_space_help_full', { values: { name: user.name, used, limit: limitWords } });
   });
 
   // ---- What they've turned on: a summary, and the editor only on request ----
@@ -207,6 +213,7 @@
       <SpacePicker
         label={$t('frameleaf_userpage_space_for', { values: { name: user.name } })}
         value={space}
+        {kept}
         disabled={!live}
         onChange={(value) => (space = value)}
       />
