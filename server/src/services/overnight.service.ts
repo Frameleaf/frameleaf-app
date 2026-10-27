@@ -6,6 +6,7 @@ import type { OvernightResponseDto } from 'src/dtos/overnight.dto.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   DatabaseLock,
+  FrameleafEnvironment,
   FrameleafWorker,
   JobName,
   JobStatus,
@@ -248,15 +249,18 @@ export class OvernightService {
     const state = await this.state();
     let quiet = state.quiet ?? { holding: null };
     const { nightlyTasks } = config;
+    // E2E servers start at any hour and wait on every queue, so quiet hours never hold work there.
+    const quietHours =
+      nightlyTasks.quietHours && this.configRepository.getEnv().environment !== FrameleafEnvironment.Testing;
     const zone = serverTimeZone(config.server);
-    if (quiet.holding === null && config.nightlyTasks.quietHours && !nightlyTasks.stopTime) {
+    if (quiet.holding === null && quietHours && !nightlyTasks.stopTime) {
       // With no stop time the window lasts until the heavy work has caught up.
       const counts = await Promise.all(QUIET_HOURS_QUEUES.map((name) => this.jobRepository.getJobCounts(name)));
       if (counts.every(({ active, waiting }) => active + waiting === 0)) {
         quiet = { ...quiet, caughtUpAt: new Date().toISOString() };
       }
     }
-    const open = !nightlyTasks.quietHours || isHeavyWorkWindow(DateTime.now(), nightlyTasks, zone, quiet.caughtUpAt);
+    const open = !quietHours || isHeavyWorkWindow(DateTime.now(), nightlyTasks, zone, quiet.caughtUpAt);
     if (open && quiet.holding !== null) {
       for (const name of quiet.holding) {
         await this.jobRepository.resume(name);

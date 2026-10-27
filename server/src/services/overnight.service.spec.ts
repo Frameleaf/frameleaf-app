@@ -1,6 +1,14 @@
 import { DateTime } from 'luxon';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DatabaseLock, JobName, JobStatus, OvernightStepTiming, QueueName, SystemMetadataKey } from 'src/enum.js';
+import {
+  DatabaseLock,
+  FrameleafEnvironment,
+  JobName,
+  JobStatus,
+  OvernightStepTiming,
+  QueueName,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { OvernightService } from 'src/services/overnight.service.js';
 import {
   OVERNIGHT_NIGHTS_KEPT,
@@ -51,7 +59,7 @@ const setup = (
   };
   const mocks = {
     logger: { setContext: vi.fn(), log: vi.fn(), warn: vi.fn() },
-    config: { getEnv: () => ({ configFile: 'test' }) },
+    config: { getEnv: vi.fn(() => ({ configFile: 'test', environment: 'production' })) },
     metadata: {
       get: vi.fn((key: SystemMetadataKey) =>
         Promise.resolve(key === SystemMetadataKey.OvernightSequence ? stored.state : undefined),
@@ -309,6 +317,15 @@ describe(OvernightService.name, () => {
     busy[QueueName.SmartSearch] = true;
     await sut.move();
     expect(mocks.job.resume).not.toHaveBeenCalled();
+  });
+
+  it('never holds work on a testing server (FL-577)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T14:00:00Z'));
+    const { sut, mocks } = setup({ stopTime: '06:00', quietHours: true });
+    mocks.config.getEnv.mockReturnValue({ configFile: 'test', environment: FrameleafEnvironment.Testing });
+    await sut.move();
+    expect(mocks.job.pause).not.toHaveBeenCalled();
   });
 
   it('releases what quiet hours held when the switch is turned off (FL-577)', async () => {
