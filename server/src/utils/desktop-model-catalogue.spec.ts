@@ -14,8 +14,8 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(13);
-  expect(catalogue.profiles).toHaveLength(72);
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(77);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
@@ -37,7 +37,7 @@ it('preserves every prior binding and selects the qualified precision-corrected 
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(72);
+  expect(catalogue.profiles).toHaveLength(77);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.modelName).toBe('ViT-B-16-SigLIP-384__webli');
@@ -337,7 +337,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(72);
+  expect(catalogue.profiles).toHaveLength(77);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -368,8 +368,8 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(13);
-  expect(catalogue.profiles).toHaveLength(72);
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(77);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 32)))
@@ -402,8 +402,8 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
 
 it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(13);
-  expect(catalogue.profiles).toHaveLength(72);
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(77);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -428,8 +428,8 @@ it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps 
 
 it('adds current-main memory-qualified profiles without changing retained bindings or reference outputs', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(13);
-  expect(catalogue.profiles).toHaveLength(72);
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(77);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 52)))
@@ -465,5 +465,28 @@ it('adds current-main memory-qualified profiles without changing retained bindin
     expect({ ...profile, runtimeSourceRevision: catalogue.profiles[32 + index].runtimeSourceRevision }).toEqual(
       catalogue.profiles[32 + index],
     );
+  }
+});
+
+it('binds Windows allocator-compatible CPU source without changing model outputs or budgets', () => {
+  const catalogue = parseDesktopModelCatalogue(raw());
+  const source = '4588eeb3994e7bd2bcb813536f34dd684e74857d';
+  const current = catalogue.profiles.filter((profile) => profile.runtimeSourceRevision === source);
+  expect(current).toHaveLength(5);
+  for (const profile of current) {
+    const previous = catalogue.profiles.find(
+      (old) =>
+        old.runtimeSourceRevision === '1bf2ad55521c49f574cba2f450eb13d49652ea80' &&
+        old.modelKey === profile.modelKey &&
+        old.spec.provider === 'CPUExecutionProvider',
+    );
+    expect(previous).toBeDefined();
+    expect({ ...profile, runtimeSourceRevision: previous?.runtimeSourceRevision }).toEqual(previous);
+    expect(
+      matchDesktopModelProfile(catalogue, profile.modelName, profile.spec.entries, source, 'CPUExecutionProvider'),
+    ).toEqual(profile);
+    expect(
+      matchDesktopModelProfile(catalogue, profile.modelName, profile.spec.entries, source, 'CoreMLExecutionProvider'),
+    ).toBeUndefined();
   }
 });
