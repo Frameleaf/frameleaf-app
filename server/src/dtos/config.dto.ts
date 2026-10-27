@@ -1228,6 +1228,10 @@ const AdminConfigSchemaWithVisibility = z
         emptyTrash: configBool
           .default(true)
           .describe('The tidy-up step empties Trash and removes deleted accounts; off leaves Trash alone'),
+        // FL-577: quiet hours. The window is the schedule's own start and stop times.
+        quietHours: configBool
+          .default(true)
+          .describe('Heavy background work (beyond thumbnails) waits for the overnight window'),
         weeklyDay: z
           .int()
           .min(0)
@@ -1837,6 +1841,7 @@ export const defaults = Object.freeze<SystemConfig>({
     stopTime: '06:00',
     days: [0, 1, 2, 3, 4, 5, 6],
     emptyTrash: true,
+    quietHours: true,
     weeklyDay: 0,
     steps: {
       cleanup: OvernightStepTiming.Nightly,

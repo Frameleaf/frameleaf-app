@@ -134,7 +134,7 @@ describe('setting words (FL-368)', () => {
     }).toMatchInlineSnapshot(`
       {
         "preference": 7,
-        "server": 170,
+        "server": 171,
       }
     `);
   });

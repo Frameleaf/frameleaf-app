@@ -7,7 +7,7 @@
  * Backups keep a schedule of their own (FL-362). The two are independent, as the owner decided.
  */
 import { DateTime } from 'luxon';
-import { OvernightStepTiming } from 'src/enum.js';
+import { OvernightStepTiming, QueueName } from 'src/enum.js';
 
 /** The steps in the order a night runs them. Tidy-up is first (owner, 2026-10-10). */
 export const OVERNIGHT_STEPS = ['cleanup', 'folders', 'icloud', 'fileChecks'] as const;
@@ -46,6 +46,13 @@ export type OvernightRun = {
   waitingForBackupSince?: string | null;
 };
 
+/** FL-577: quiet hours. `holding`: the heavy queues this server paused; null while heavy work may run. */
+export type OvernightQuiet = {
+  holding: QueueName[] | null;
+  /** With no stop time, when the heavy work last caught up; it waits again until the next start. */
+  caughtUpAt?: string;
+};
+
 export type OvernightNight = {
   startedAt: string;
   finishedAt: string;
@@ -59,6 +66,7 @@ export type OvernightNight = {
 
 export type OvernightState = {
   run: OvernightRun | null;
+  quiet?: OvernightQuiet;
   /** The most recent runs, newest first. */
   nights: OvernightNight[];
 };
@@ -126,3 +134,59 @@ export const overnightStopAt = (startedAt: string, stopTime: string, zone: strin
 /** Adds a finished run to the front of the kept nights. */
 export const keepNight = (nights: OvernightNight[], night: OvernightNight): OvernightNight[] =>
   [night, ...nights].slice(0, OVERNIGHT_NIGHTS_KEPT);
+
+/**
+ * FL-577: quiet hours. With "Save heavy background work for the night" on, these queues wait for the
+ * overnight window: everything beyond thumbnails (owner, 2026-10-27). Uploads, metadata and thumbnails
+ * never wait, so a phone upload shows up at any time. Sensitive-content detection never waits either:
+ * it keeps sensitive items hidden.
+ */
+export const QUIET_HOURS_QUEUES: readonly QueueName[] = [
+  QueueName.VideoConversion,
+  QueueName.FaceDetection,
+  QueueName.FacialRecognition,
+  QueueName.SmartSearch,
+  QueueName.DuplicateDetection,
+  QueueName.VideoDuplicateDetection,
+  QueueName.Ocr,
+  QueueName.ImageEnrichment,
+  QueueName.ImageDescription,
+  QueueName.PetRecognition,
+];
+
+/** The most recent scheduled start at or before `now`, in `zone`; null if none in the last week. */
+export const lastOvernightStart = (
+  now: DateTime,
+  { startTime, days }: { startTime: string; days: number[] },
+  zone: string,
+): DateTime | null => {
+  const [hour, minute] = startTime.split(':').map(Number);
+  const today = now.setZone(zone).set({ hour, minute, second: 0, millisecond: 0 });
+  for (let back = 0; back <= 7; back++) {
+    const start = today.minus({ days: back });
+    if (start <= now && days.includes(start.weekday % 7)) {
+      return start;
+    }
+  }
+  return null;
+};
+
+/**
+ * Whether heavy work may run now: inside the overnight window, from the start time to the stop time.
+ * With no stop time it runs from the start time until it has caught up (`caughtUpAt`).
+ */
+export const isHeavyWorkWindow = (
+  now: DateTime,
+  nightly: { startTime: string; stopTime: string; days: number[] },
+  zone: string,
+  caughtUpAt?: string,
+): boolean => {
+  const start = lastOvernightStart(now, nightly, zone);
+  if (!start) {
+    return false;
+  }
+  if (!nightly.stopTime) {
+    return !caughtUpAt || DateTime.fromISO(caughtUpAt) < start;
+  }
+  return now < overnightStopAt(start.toISO()!, nightly.stopTime, zone)!;
+};

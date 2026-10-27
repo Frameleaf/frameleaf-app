@@ -6,6 +6,7 @@ import type { OvernightResponseDto } from 'src/dtos/overnight.dto.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   DatabaseLock,
+  FrameleafEnvironment,
   FrameleafWorker,
   JobName,
   JobStatus,
@@ -33,6 +34,8 @@ import {
   type OvernightState,
   type OvernightStep,
   type OvernightStepResult,
+  QUIET_HOURS_QUEUES,
+  isHeavyWorkWindow,
   isStepDue,
   keepNight,
   nextOvernightStep,
@@ -111,7 +114,7 @@ export class OvernightService {
 
   private async state(): Promise<OvernightState> {
     const stored = await this.systemMetadataRepository.get(SystemMetadataKey.OvernightSequence);
-    return { run: stored?.run ?? null, nights: stored?.nights ?? [] };
+    return { run: stored?.run ?? null, nights: stored?.nights ?? [], quiet: stored?.quiet };
   }
 
   private save(state: OvernightState) {
@@ -229,7 +232,53 @@ export class OvernightService {
   }
 
   async move(): Promise<void> {
-    return this.databaseRepository.withLock(DatabaseLock.OvernightSequenceRun, () => this.advance());
+    return this.databaseRepository.withLock(DatabaseLock.OvernightSequenceRun, async () => {
+      await this.advance();
+      await this.keepQuietHours();
+    });
+  }
+
+  /**
+   * FL-577: quiet hours. Outside the overnight window the heavy queues are paused, and the ones this
+   * server paused are remembered; when the window opens only those are resumed. A queue the
+   * administrator paused stays paused, and one they resume during the day stays resumed until the
+   * next window.
+   */
+  private async keepQuietHours(): Promise<void> {
+    const config = await this.readConfig();
+    const state = await this.state();
+    let quiet = state.quiet ?? { holding: null };
+    const { nightlyTasks } = config;
+    // E2E servers start at any hour and wait on every queue, so quiet hours never hold work there.
+    const quietHours =
+      nightlyTasks.quietHours && this.configRepository.getEnv().environment !== FrameleafEnvironment.Testing;
+    const zone = serverTimeZone(config.server);
+    if (quiet.holding === null && quietHours && !nightlyTasks.stopTime) {
+      // With no stop time the window lasts until the heavy work has caught up.
+      const counts = await Promise.all(QUIET_HOURS_QUEUES.map((name) => this.jobRepository.getJobCounts(name)));
+      if (counts.every(({ active, waiting }) => active + waiting === 0)) {
+        quiet = { ...quiet, caughtUpAt: new Date().toISOString() };
+      }
+    }
+    const open = !quietHours || isHeavyWorkWindow(DateTime.now(), nightlyTasks, zone, quiet.caughtUpAt);
+    if (open && quiet.holding !== null) {
+      for (const name of quiet.holding) {
+        await this.jobRepository.resume(name);
+      }
+      quiet = { ...quiet, holding: null };
+    } else if (!open && quiet.holding === null) {
+      const holding: QueueName[] = [];
+      for (const name of QUIET_HOURS_QUEUES) {
+        if (!(await this.jobRepository.isPaused(name))) {
+          await this.jobRepository.pause(name);
+          holding.push(name);
+        }
+      }
+      quiet = { ...quiet, holding };
+    }
+    if (JSON.stringify(quiet) !== JSON.stringify(state.quiet ?? { holding: null })) {
+      await this.save({ ...state, quiet });
+    }
   }
 
   /** Whether a step is set up and switched on. A step that is not is left out of the night. */
@@ -404,6 +453,7 @@ export class OvernightService {
         state = { ...state, run };
       } else {
         state = {
+          ...state,
           run: null,
           nights: keepNight(state.nights, await this.night(run, results)),
         };
@@ -426,6 +476,7 @@ export class OvernightService {
         results[step] = step === run.step && run.begunAt ? 'unfinished' : 'stopped';
       }
       await this.save({
+        ...state,
         run: null,
         nights: keepNight(state.nights, await this.night(run, results)),
       });

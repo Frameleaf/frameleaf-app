@@ -1809,6 +1809,8 @@ export type AdminConfigNightlyTasksDto = {
     generateMemories: boolean;
     /** Missing thumbnails */
     missingThumbnails: boolean;
+    /** Heavy background work (beyond thumbnails) waits for the overnight window */
+    quietHours?: boolean;
     /** Start time (HH:MM) */
     startTime: string;
     /** When each step runs: every night, once a week, or only when started */

@@ -920,6 +920,9 @@
   "nightlyTasks.missingThumbnails": {
     "type": "boolean"
   },
+  "nightlyTasks.quietHours": {
+    "type": "boolean"
+  },
   "nightlyTasks.startTime": {
     "type": "string"
   },

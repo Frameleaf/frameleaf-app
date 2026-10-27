@@ -1,9 +1,20 @@
+import { DateTime } from 'luxon';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DatabaseLock, JobName, JobStatus, OvernightStepTiming, QueueName, SystemMetadataKey } from 'src/enum.js';
+import {
+  DatabaseLock,
+  FrameleafEnvironment,
+  JobName,
+  JobStatus,
+  OvernightStepTiming,
+  QueueName,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { OvernightService } from 'src/services/overnight.service.js';
 import {
   OVERNIGHT_NIGHTS_KEPT,
   type OvernightState,
+  QUIET_HOURS_QUEUES,
+  isHeavyWorkWindow,
   isStepDue,
   keepNight,
   overnightCron,
@@ -13,7 +24,9 @@ import {
 const counts = (active = 0, waiting = 0) => ({ active, waiting, delayed: 0, completed: 0, failed: 0, paused: 0 });
 
 /** A server with one added folder, one iCloud Photos connection and the file checks on. */
-const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, OvernightStepTiming>> } = {}) => {
+const setup = (
+  overrides: { stopTime?: string; quietHours?: boolean; steps?: Partial<Record<string, OvernightStepTiming>> } = {},
+) => {
   const stored: { state?: OvernightState } = {};
   let lockTail = Promise.resolve();
   const busy: Record<string, boolean> = {};
@@ -26,6 +39,7 @@ const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, Ov
       weeklyDay: 0,
       databaseCleanup: true,
       emptyTrash: true,
+      quietHours: overrides.quietHours ?? false,
       steps: {
         cleanup: OvernightStepTiming.Nightly,
         folders: OvernightStepTiming.Nightly,
@@ -45,7 +59,7 @@ const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, Ov
   };
   const mocks = {
     logger: { setContext: vi.fn(), log: vi.fn(), warn: vi.fn() },
-    config: { getEnv: () => ({ configFile: 'test' }) },
+    config: { getEnv: vi.fn(() => ({ configFile: 'test', environment: 'production' })) },
     metadata: {
       get: vi.fn((key: SystemMetadataKey) =>
         Promise.resolve(key === SystemMetadataKey.OvernightSequence ? stored.state : undefined),
@@ -66,6 +80,10 @@ const setup = (overrides: { stopTime?: string; steps?: Partial<Record<string, Ov
     },
     job: {
       queue: vi.fn().mockResolvedValue(undefined),
+      paused: new Set<QueueName>(),
+      isPaused: vi.fn((name: QueueName) => Promise.resolve(mocks.job.paused.has(name))),
+      pause: vi.fn((name: QueueName) => Promise.resolve(void mocks.job.paused.add(name))),
+      resume: vi.fn((name: QueueName) => Promise.resolve(void mocks.job.paused.delete(name))),
       getJobCounts: vi.fn((name: QueueName) =>
         Promise.resolve(
           name === QueueName.BackgroundTask ? counts(1, busy.cleanup ? 1 : 0) : counts(busy[name] ? 1 : 0),
@@ -258,6 +276,68 @@ describe(OvernightService.name, () => {
     });
   });
 
+  it('holds heavy work back during the day and lets it run in the window (FL-577)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T14:00:00Z'));
+    const { sut, mocks, stored } = setup({ stopTime: '06:00', quietHours: true });
+    // the administrator paused face detection by hand; quiet hours must not resume it
+    mocks.job.paused.add(QueueName.FaceDetection);
+
+    await sut.move();
+    expect(mocks.job.paused).toEqual(new Set(QUIET_HOURS_QUEUES));
+    expect(mocks.job.pause).not.toHaveBeenCalledWith(QueueName.FaceDetection);
+    expect(mocks.job.pause).not.toHaveBeenCalledWith(QueueName.ThumbnailGeneration);
+    expect(mocks.job.pause).not.toHaveBeenCalledWith(QueueName.MetadataExtraction);
+    expect(stored.state?.quiet?.holding).not.toContain(QueueName.FaceDetection);
+
+    vi.setSystemTime(new Date('2026-10-21T00:01:00Z'));
+    await sut.move();
+    expect(mocks.job.paused).toEqual(new Set([QueueName.FaceDetection]));
+    expect(stored.state?.quiet?.holding).toBeNull();
+
+    vi.setSystemTime(new Date('2026-10-21T06:00:00Z'));
+    await sut.move();
+    expect(mocks.job.paused).toEqual(new Set(QUIET_HOURS_QUEUES));
+  });
+
+  it('with no stop time, holds heavy work again once it has caught up (FL-577)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-21T00:01:00Z'));
+    const { sut, mocks, busy } = setup({ quietHours: true });
+    busy[QueueName.SmartSearch] = true;
+    await sut.move();
+    expect(mocks.job.pause).not.toHaveBeenCalled();
+
+    vi.setSystemTime(new Date('2026-10-21T09:00:00Z'));
+    busy[QueueName.SmartSearch] = false;
+    await sut.move();
+    expect(mocks.job.paused).toEqual(new Set(QUIET_HOURS_QUEUES));
+
+    // new work arriving during the day waits for the next start
+    busy[QueueName.SmartSearch] = true;
+    await sut.move();
+    expect(mocks.job.resume).not.toHaveBeenCalled();
+  });
+
+  it('never holds work on a testing server (FL-577)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T14:00:00Z'));
+    const { sut, mocks } = setup({ stopTime: '06:00', quietHours: true });
+    mocks.config.getEnv.mockReturnValue({ configFile: 'test', environment: FrameleafEnvironment.Testing });
+    await sut.move();
+    expect(mocks.job.pause).not.toHaveBeenCalled();
+  });
+
+  it('releases what quiet hours held when the switch is turned off (FL-577)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-20T14:00:00Z'));
+    const { sut, mocks, config } = setup({ stopTime: '06:00', quietHours: true });
+    await sut.move();
+    config.nightlyTasks.quietHours = false;
+    await sut.move();
+    expect(mocks.job.paused.size).toBe(0);
+  });
+
   it('does not start a second run while one is going', async () => {
     const { sut, busy } = setup();
     busy[QueueName.Library] = true;
@@ -307,6 +387,20 @@ describe('overnight rules', () => {
     expect(overnightStopAt('2026-10-20T00:00:00Z', '06:00', 'UTC')?.toISO()).toBe('2026-10-20T06:00:00.000Z');
     expect(overnightStopAt('2026-10-20T23:00:00Z', '06:00', 'UTC')?.toISO()).toBe('2026-10-21T06:00:00.000Z');
     expect(overnightStopAt('2026-10-20T00:00:00Z', '', 'UTC')).toBeNull();
+  });
+
+  it('opens the heavy-work window from the start time to the stop time, on the chosen days (FL-577)', () => {
+    const nightly = { startTime: '23:00', stopTime: '06:00', days: [1] }; // Monday nights only
+    const at = (iso: string) => DateTime.fromISO(iso, { zone: 'UTC' });
+    expect(isHeavyWorkWindow(at('2026-10-19T23:30:00Z'), nightly, 'UTC')).toBe(true); // Monday night
+    expect(isHeavyWorkWindow(at('2026-10-20T05:59:00Z'), nightly, 'UTC')).toBe(true);
+    expect(isHeavyWorkWindow(at('2026-10-20T06:00:00Z'), nightly, 'UTC')).toBe(false);
+    expect(isHeavyWorkWindow(at('2026-10-20T23:30:00Z'), nightly, 'UTC')).toBe(false); // Tuesday
+    expect(isHeavyWorkWindow(at('2026-10-19T22:59:00Z'), nightly, 'UTC')).toBe(false);
+    // the window follows the server's time zone
+    const edmonton = { startTime: '00:00', stopTime: '06:00', days: [0, 1, 2, 3, 4, 5, 6] };
+    expect(isHeavyWorkWindow(at('2026-10-20T07:00:00Z'), edmonton, 'America/Edmonton')).toBe(true);
+    expect(isHeavyWorkWindow(at('2026-10-20T13:00:00Z'), edmonton, 'America/Edmonton')).toBe(false);
   });
 
   it('keeps the most recent nights', () => {
