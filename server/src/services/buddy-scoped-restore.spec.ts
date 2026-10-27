@@ -1,7 +1,19 @@
 import { NoResultError } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { chmod, lstat, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -510,7 +522,8 @@ describe('a library restore on a fresh replacement server (FL-508)', () => {
     const users = { [administrator]: { id: administrator, storageLabel: 'admin', isAdmin: true } };
     const action = vi.fn().mockResolvedValue('skipped');
     const file = original();
-    mkdirSync(join(directory, 'upload', administrator, 'ab', 'cd'), { recursive: true });
+    // A fresh administrator has no owner folder until the first upload or restore.
+    mkdirSync(join(directory, 'upload'), { recursive: true });
 
     // The replacement has no account for the backed-up owner: a named failure, never an unnamed "no result".
     await expect(
@@ -530,6 +543,34 @@ describe('a library restore on a fresh replacement server (FL-508)', () => {
     );
     expect(action).toHaveBeenCalledExactlyOnceWith(expect.anything(), administrator);
     expect(inspect).toHaveBeenCalledWith(file.target, assetId, administrator, undefined);
+    inspect.mockClear();
+    await expect(
+      restoreService(users).guarded(
+        operation,
+        'token',
+        job({ [previousOwner]: administrator }),
+        manifest,
+        {},
+        { ...file, target: join(directory, 'upload', previousOwner, 'photo.jpg') },
+        action,
+        true,
+      ),
+    ).rejects.toThrow('Owner restore destination unavailable');
+    expect(inspect).not.toHaveBeenCalled();
+    await symlink(directory, join(directory, 'upload', administrator));
+    await expect(
+      restoreService(users).guarded(
+        operation,
+        'token',
+        job({ [previousOwner]: administrator }),
+        manifest,
+        {},
+        file,
+        action,
+        true,
+      ),
+    ).rejects.toThrow('Owner restore destination unavailable');
+    expect(inspect).not.toHaveBeenCalled();
   });
 
   it('maps only the backup owners and album owners that have no account on this server', async () => {
@@ -656,6 +697,7 @@ describe('a library restore on a fresh replacement server (FL-508)', () => {
 
   it.each([
     [new Error('Buddy restore owner is missing'), 'owner_missing'],
+    [new Error('Owner restore destination unavailable'), 'destination_unavailable'],
     [new NoResultError({ kind: 'SelectQueryNode' } as never), 'row_missing'],
   ])('names the failure in the retained diagnostic (%s)', async (error, category) => {
     const logger = { error: vi.fn() };
