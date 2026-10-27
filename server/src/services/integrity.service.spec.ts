@@ -436,12 +436,7 @@ describe(IntegrityService.name, () => {
     });
 
     it('does not count a batch of a run that is no longer current, or one without a run', async () => {
-      mocks.integrityReport.getAssetPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getAssetFilePathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getPersonThumbnailPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getVideoDuplicateFramePathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getDevelopRevisionPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getRegisteredFilePathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
       mocks.systemMetadata.updateIntegrityRun.mockResolvedValue(undefined);
 
       await sut.handleUntrackedFiles({ type: 'asset', paths: [], runId: 'stale' });
@@ -454,16 +449,11 @@ describe(IntegrityService.name, () => {
     it('never reports a registered stored file as untracked, even while no asset names it (FL-412)', async () => {
       const registered = '/data/upload/user/stored.jpg';
       const orphan = '/data/upload/user/orphan.jpg';
-      mocks.integrityReport.getAssetPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getAssetFilePathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getPersonThumbnailPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getVideoDuplicateFramePathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getDevelopRevisionPathsByPaths.mockResolvedValue([]);
-      mocks.integrityReport.getRegisteredFilePathsByPaths.mockResolvedValue([{ path: registered }]);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([{ path: registered }]);
 
       await sut.handleUntrackedFiles({ type: 'asset', paths: [registered, orphan] });
 
-      expect(mocks.integrityReport.getRegisteredFilePathsByPaths).toHaveBeenCalledWith([registered, orphan]);
+      expect(mocks.integrityReport.getTrackedPaths).toHaveBeenCalledWith([registered, orphan]);
       expect(mocks.integrityReport.create).toHaveBeenCalledExactlyOnceWith([
         { type: IntegrityReport.UntrackedFile, path: orphan },
       ]);
