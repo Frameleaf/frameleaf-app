@@ -787,7 +787,7 @@ export class BuddyBackupRestoreService {
         const expected = buddyFidelityFiles(manifest, assetId).find((entry) => entry.fileKey === file.fileKey);
         if (
           !expected ||
-          expected.target !== file.target ||
+          retargetBuddyOwnerPath(expected.target, manifest.library.assets[assetId].owner!, owner) !== file.target ||
           expected.sha256 !== file.sha256 ||
           expected.size !== file.size
         )
@@ -1126,20 +1126,6 @@ export class BuddyBackupRestoreService {
             file.inPlace = true;
           }
         }
-        if (job.owners) {
-          // FL-508: an owner without an account here restores into the administrator's own folders.
-          const accounts = await this.repository.db
-            .selectFrom('user')
-            .select(['id', 'storageLabel'])
-            .where('id', 'in', [...new Set(Object.values(job.owners))])
-            .execute();
-          for (const file of plan.files) {
-            const from = manifest.library.assets[file.assetId!].owner!;
-            const to = accounts.find((account) => account.id === job.owners![from]);
-            // A no-op for paths already outside the backed-up owner's folders, so a resumed run agrees.
-            if (to) file.target = retargetBuddyOwnerPath(file.target, from, to);
-          }
-        }
         plan.files = plan.files.filter(
           (file) =>
             file.role === 'original' ||
@@ -1154,6 +1140,20 @@ export class BuddyBackupRestoreService {
               )),
         );
         plan.files.push(...ids.flatMap((id) => buddyFidelityFiles(manifest, id)));
+        if (job.owners) {
+          // FL-508: an owner without an account here restores into the administrator's own folders.
+          const accounts = await this.repository.db
+            .selectFrom('user')
+            .select(['id', 'storageLabel'])
+            .where('id', 'in', [...new Set(Object.values(job.owners))])
+            .execute();
+          for (const file of plan.files) {
+            const from = manifest.library.assets[file.assetId!].owner!;
+            const to = accounts.find((account) => account.id === job.owners![from]);
+            // A no-op for paths already outside the backed-up owner's folders, so a resumed run agrees.
+            if (to) file.target = retargetBuddyOwnerPath(file.target, from, to);
+          }
+        }
         const projectIds = buddyStudioProjectIds(manifest, job.request.scope);
         for (const projectId of projectIds) {
           if (
@@ -1411,7 +1411,12 @@ export class BuddyBackupRestoreService {
               }
               const state = readBuddyAssetFidelity(manifest, assetId);
               if (state) {
-                const versionFiles = buddyFidelityFiles(manifest, assetId);
+                const versionFiles = buddyFidelityFiles(manifest, assetId).map((expected) => {
+                  const file = plan.files.find((entry) => entry.fileKey === expected.fileKey);
+                  if (!file || file.sha256 !== expected.sha256 || file.size !== expected.size)
+                    throw new Error('Buddy version destination changed');
+                  return file;
+                });
                 const published = await this.guarded(
                   operation,
                   token,
@@ -1424,7 +1429,15 @@ export class BuddyBackupRestoreService {
                       (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
                     );
                     const outcome = await new BuddyBackupFidelityRepository(trx).publish({
-                      state,
+                      state: {
+                        ...state,
+                        ownerId,
+                        videoVersions: state.videoVersions.map((row) => ({ ...row, ownerId })),
+                        developRevisions: state.developRevisions.map((row) => ({ ...row, ownerId })),
+                        artifacts: state.artifacts.map((row) => ({ ...row, ownerId })),
+                        developExports: state.developExports.map((row) => ({ ...row, ownerId })),
+                        restorations: state.restorations.map((row) => ({ ...row, ownerId })),
+                      },
                       ownerId,
                       originalSha256: current.sha256 ?? '',
                       mode: job.request.mode,
@@ -1744,6 +1757,7 @@ export class BuddyBackupRestoreService {
           'Owner restore destination unavailable': 'destination_unavailable',
           'External library identity changed': 'external_library_changed',
           'Buddy version destination changed': 'version_destination_changed',
+          'Buddy version ownership changed': 'version_ownership',
           'Buddy restored file did not verify': 'file_verification',
           'Buddy restored file checkpoint changed': 'checkpoint_changed',
           'Buddy restored file checkpoint unavailable': 'checkpoint_unavailable',

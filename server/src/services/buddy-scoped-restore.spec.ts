@@ -17,11 +17,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetFileType, JobName, MediaOperationStatus } from 'src/enum.js';
+import { AssetFileType, AssetType, ChecksumAlgorithm, JobName, MediaOperationStatus, StorageFolder } from 'src/enum.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { BuddyBackupRestoreService, retargetBuddyOwnerPath } from 'src/services/buddy-backup-restore.service.js';
 import { CloudBackupRestorer } from 'src/services/cloud-backup-restore.js';
+import { buddyFidelityFiles } from 'src/utils/buddy-backup-fidelity.js';
 import { checkOwnerRestoreItems, ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
 
 vi.mock('src/services/base.service.js', () => ({ BaseService: class {} }));
@@ -497,6 +498,69 @@ describe('a library restore on a fresh replacement server (FL-508)', () => {
   });
   const job = (owners?: Record<string, string>): any => ({ admin: true, sessionId: 'session', owners });
 
+  it('recomputes retained-version destinations for the mapped owner and refuses foreign paths or changed bytes', async () => {
+    vi.spyOn(CloudBackupIndexRepository.prototype, 'getOwnerRestoreAuth').mockResolvedValue({
+      auth: { user: { id: administrator, isAdmin: true } },
+    } as never);
+    const sha256 = 'a'.repeat(64),
+      retainedHash = 'b'.repeat(64);
+    const captured = {
+      ...manifest,
+      snapshotId: randomUUID(),
+      library: { assets: { [assetId]: { owner: previousOwner, files: [{ role: 'original', sha256 }] } } },
+      contents: { [retainedHash]: { bytes: 1 } },
+      assetFidelity: {
+        [assetId]: {
+          version: 1,
+          assetId,
+          ownerId: previousOwner,
+          source: { checksum: sha256, checksumAlgorithm: ChecksumAlgorithm.sha256File, sha256, type: AssetType.Image },
+          videoVersions: [],
+          videoSelection: null,
+          edits: [],
+          developRevisions: [],
+          artifacts: [],
+          developExports: [],
+          restorations: [],
+          projection: [
+            {
+              path: 'preview.jpg',
+              type: AssetFileType.Preview,
+              isEdited: true,
+              isProgressive: false,
+              isTransparent: false,
+            },
+          ],
+          files: [{ role: 'project', path: 'preview.jpg', sha256: retainedHash, size: 1, mtime: null }],
+        },
+      },
+    };
+    const owner = { id: administrator, storageLabel: null };
+    const source = buddyFidelityFiles(captured, assetId)[0];
+    const file = { ...source, target: retargetBuddyOwnerPath(source.target, previousOwner, owner) };
+    const action = vi.fn().mockResolvedValue('restored');
+    const physical = vi
+      .spyOn(PhysicalFileRepository.prototype, 'withOwnerRestorePath')
+      .mockImplementation(async (_path, _assetId, _ownerId, publish) => publish());
+    const service = restoreService({ [administrator]: owner });
+    const request = job({ [previousOwner]: administrator });
+    mkdirSync(StorageCore.getBaseFolder(StorageFolder.Thumbnails), { recursive: true });
+    await expect(service.guarded(operation, 'token', request, captured, {}, file, action)).resolves.toBe('restored');
+    expect(action).toHaveBeenCalledExactlyOnceWith(expect.anything(), administrator);
+    expect(physical).toHaveBeenCalledOnce();
+    for (const changed of [source, { ...file, sha256 }, { ...file, size: 2 }]) {
+      await expect(service.guarded(operation, 'token', request, captured, {}, changed, action)).rejects.toThrow(
+        'Buddy version destination changed',
+      );
+    }
+    expect(physical).toHaveBeenCalledOnce();
+    await symlink(directory, StorageCore.getFolderLocation(StorageFolder.Thumbnails, administrator));
+    await expect(service.guarded(operation, 'token', request, captured, {}, file, action)).rejects.toThrow(
+      'Owner restore destination unavailable',
+    );
+    expect(physical).toHaveBeenCalledOnce();
+  });
+
   it('moves an unknown owner’s private paths into the administrator’s folders only', () => {
     const to = { id: administrator, storageLabel: 'admin' };
     expect(
@@ -698,6 +762,7 @@ describe('a library restore on a fresh replacement server (FL-508)', () => {
   it.each([
     [new Error('Buddy restore owner is missing'), 'owner_missing'],
     [new Error('Owner restore destination unavailable'), 'destination_unavailable'],
+    [new Error('Buddy version ownership changed'), 'version_ownership'],
     [new NoResultError({ kind: 'SelectQueryNode' } as never), 'row_missing'],
   ])('names the failure in the retained diagnostic (%s)', async (error, category) => {
     const logger = { error: vi.fn() };
