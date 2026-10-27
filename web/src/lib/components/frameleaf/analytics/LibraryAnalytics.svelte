@@ -38,6 +38,7 @@
     csvFileName,
     historyNotice,
     inventoryRows,
+    oneFullStop,
     type AnalyticsTable,
     type GrowthMetric,
     type Translate,
@@ -96,6 +97,8 @@
   const labels = $derived(report.series.map((row) => bucketLabel(row.key)));
   const notice = $derived(historyNotice(report));
   const added = $derived(report.series.reduce((sum, row) => sum + row.photos + row.videos, 0));
+  // A line needs two nightly readings; with one, say so instead of drawing a lone dot among gaps.
+  const growthReadings = $derived(table('growth').rows.filter((row) => row[1] !== null));
   // People and places come only with the owner's own scope, which the hero calls "Your library".
   const heroKicker = $derived(
     report.insights?.peopleAndPlaces ? $t('frameleaf_analytics_your_library') : selectedLabel,
@@ -181,7 +184,7 @@
       {/if}
     </span>
     <p>
-      {$t('frameleaf_analytics_as_of', { values: { date: dateTime(report.generatedAt) } })}
+      {oneFullStop($t('frameleaf_analytics_as_of', { values: { date: dateTime(report.generatedAt) } }))}
       {#if notice === 'unknown'}
         {$t('frameleaf_analytics_history_unknown')}
         <!-- FL-363: the count that starts the charts, here instead of under another name in Jobs. -->
@@ -240,6 +243,8 @@
       </figcaption>
       {#if notice === 'unknown'}
         <p class="empty" role="status">{$t('frameleaf_analytics_growth_unknown')}</p>
+      {:else if growthReadings.length < 2}
+        <p class="empty" role="status">{$t('frameleaf_analytics_growth_one_reading')}</p>
       {:else}
         <AnalyticsChart
           kind="line"
@@ -406,7 +411,7 @@
               {row.overlaps
                 ? $t('frameleaf_analytics_also_counted')
                 : $t('frameleaf_analytics_photos_videos', {
-                    values: { photos: number(row.photos), videos: number(row.videos) },
+                    values: { photos: row.photos, videos: row.videos },
                   })}
             </dd>
           </div>

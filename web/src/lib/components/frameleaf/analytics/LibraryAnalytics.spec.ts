@@ -108,6 +108,26 @@ describe('LibraryAnalytics', () => {
     expect(screen.queryByText(/Estimated cost on Frameleaf Cloud/)).not.toBeInTheDocument();
   });
 
+  it('shows an account its own storage, and the Storage card as the whole drive', () => {
+    render(LibraryAnalytics, {
+      report: analyticsReportFixture({
+        scope: scopes[1].value,
+        scopeKind: AnalyticsScopeKind.Account,
+        scopeLabel: 'Taylor',
+      }),
+    });
+    // 8 kB of originals on a 1 MB drive that is 60% used: the account's 1%, not the drive's 60%.
+    expect(screen.getByRole('img', { name: '1% of the volume used' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: '60% of the volume used' })).not.toBeInTheDocument();
+    expect(screen.getByText(/^Whole drive: /)).toBeInTheDocument();
+  });
+
+  it('pluralises photo and video counts', () => {
+    render(LibraryAnalytics, { report: analyticsReportFixture() });
+    expect(screen.getByText('5 photos · 1 video')).toBeInTheDocument();
+    expect(screen.queryByText(/1 videos/)).not.toBeInTheDocument();
+  });
+
   it('labels the processing cost as an estimate, never a charge', () => {
     render(LibraryAnalytics, { report: analyticsReportFixture() });
     const row = screen

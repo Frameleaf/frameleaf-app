@@ -239,7 +239,7 @@
       found.push({
         id: 'studio',
         icon: mdiMovieOpenOutline,
-        level: 'look',
+        level: 'optional',
         title: $t('frameleaf_overview_need_studio'),
         body: $t('frameleaf_overview_need_studio_body'),
         actions: [
@@ -257,7 +257,9 @@
     level === 'urgent'
       ? $t('frameleaf_overview_hero_urgent')
       : level === 'attention'
-        ? $t('frameleaf_overview_hero_attention', { values: { count: needs.length } })
+        ? $t('frameleaf_overview_hero_attention', {
+            values: { count: needs.filter((need) => need.level !== 'optional').length },
+          })
         : $t('frameleaf_overview_hero_ok'),
   );
 
@@ -573,8 +575,14 @@
                 <strong>{need.title}</strong>
                 <span>{need.body}</span>
               </div>
-              <Pill tone={need.level === 'now' ? 'bad' : 'warn'}
-                >{$t(need.level === 'now' ? 'frameleaf_attention_level_now' : 'frameleaf_attention_level_soon')}</Pill
+              <Pill tone={need.level === 'now' ? 'bad' : need.level === 'look' ? 'warn' : 'off'}
+                >{$t(
+                  need.level === 'now'
+                    ? 'frameleaf_attention_level_now'
+                    : need.level === 'look'
+                      ? 'frameleaf_attention_level_soon'
+                      : 'frameleaf_overview_level_optional',
+                )}</Pill
               >
               <div class="need-buttons">
                 {#each need.actions as action, actionIndex (action.href)}
