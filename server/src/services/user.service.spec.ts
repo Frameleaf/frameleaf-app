@@ -567,6 +567,37 @@ describe(UserService.name, () => {
       );
     });
 
+    it('should sweep its folders only once the account rows are gone', async () => {
+      // A published Studio export or a media operation attempt names the account's files until the
+      // account row cascades; sweeping before that kept them on disk for good.
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.storage.walkFiles.mockImplementation((folder: string) =>
+        (async function* () {
+          if (folder.includes('/upload/')) {
+            yield `${folder}/01/a1/studio-video.mp4`;
+          }
+        })(),
+      );
+      mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        expect.stringContaining('/upload/deleted-user/01/a1/studio-video.mp4'),
+        expect.any(Function),
+        expect.anything(),
+      );
+      const deleted = mocks.user.delete.mock.invocationCallOrder[0]!;
+      for (const order of [
+        ...mocks.storage.walkFiles.mock.invocationCallOrder,
+        ...mocks.physicalFile.deleteUnreferencedPath.mock.invocationCallOrder,
+        ...mocks.storage.removeEmptyDirs.mock.invocationCallOrder,
+      ]) {
+        expect(order).toBeGreaterThan(deleted);
+      }
+    });
+
     it('should delete the library path for a storage label', async () => {
       const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10), storageLabel: 'admin' } as UserAdmin;
 

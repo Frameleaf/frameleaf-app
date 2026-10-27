@@ -508,6 +508,18 @@ export class UserService extends BaseService {
       await this.jobRepository.queueAll(originalJobs);
     }
 
+    await this.albumRepository.deleteAll(user.id);
+    await this.albumUserRepository.forgetRecipient(user.id);
+    // FL-71 (CC-10), FL-47: the account's own preference history and utility activity go with it. While the fork schema is
+    // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
+    if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
+      this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);
+    }
+    await this.userRepository.delete(user, true);
+
+    // The sweep runs once the account's own rows are gone: its Studio exports, media operation
+    // attempts and other rows still name its files until the account row cascades, and would keep
+    // them. ponytail: a sweep that fails from here leaves strays for Library Care's integrity check.
     // FL-44 (FN-304): media folders can hold files other accounts still reference — a deduplicated
     // original or derivative, a fork mapping's upstream path, a retained render. Each file goes
     // through the same reference-guarded delete as FileDelete, and only emptied folders are removed.
@@ -530,14 +542,6 @@ export class UserService extends BaseService {
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }
 
-    await this.albumRepository.deleteAll(user.id);
-    await this.albumUserRepository.forgetRecipient(user.id);
-    // FL-71 (CC-10), FL-47: the account's own preference history and utility activity go with it. While the fork schema is
-    // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
-    if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
-      this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);
-    }
-    await this.userRepository.delete(user, true);
 
     await this.eventRepository.emit('UserDelete', user);
   }

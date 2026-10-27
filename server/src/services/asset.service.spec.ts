@@ -2337,11 +2337,22 @@ describe(AssetService.name, () => {
       });
     });
 
-    it('should fail if asset could not be found', async () => {
+    it('should skip an asset that is already gone', async () => {
+      // e.g. a library deletion's job racing the owner's purge, which removed the asset first
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(void 0);
-      await expect(sut.handleAssetDeletion({ id: AssetFactory.create().id, deleteOnDisk: true })).resolves.toBe(
-        JobStatus.Failed,
+      await expect(sut.handleAssetDeletion({ id: AssetFactory.create().id, deleteOnDisk: false })).resolves.toBe(
+        JobStatus.Skipped,
       );
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('should skip an asset removed between its read and its removal', async () => {
+      const asset = AssetFactory.create({ deletedAt: new Date() });
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(asset as any);
+      mocks.asset.remove.mockResolvedValue(void 0);
+      await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: false })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
   });
 

@@ -914,8 +914,11 @@ export class AssetService extends BaseService {
 
     const asset = await this.assetJobRepository.getForAssetDeletion(id);
 
+    // Already removed, e.g. by its account's purge racing a library deletion: whoever removed it
+    // released its files, so there is nothing left to do or to retry.
     if (!asset) {
-      return JobStatus.Failed;
+      this.logger.debug(`Skipped deleting asset ${id}: it is already gone`);
+      return JobStatus.Skipped;
     }
 
     // FL-71: a failed deletion can be retried long after it was queued. Only an asset that is still in
@@ -1009,7 +1012,8 @@ export class AssetService extends BaseService {
         }),
     });
     if (!removedAsset) {
-      return JobStatus.Failed;
+      this.logger.debug(`Skipped deleting asset ${id}: it was removed meanwhile`);
+      return JobStatus.Skipped;
     }
 
     // FL-169: the row is gone from here on, so a retry could not repeat or repair any of the steps
