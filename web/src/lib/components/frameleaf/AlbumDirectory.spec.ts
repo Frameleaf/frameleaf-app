@@ -1,7 +1,8 @@
 import { AlbumKind, AlbumUserRole, SmartAlbumBuiltInKind, type AlbumTreeResponseDto } from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { init, register, waitLocale } from 'svelte-i18n';
+import { init, register, t, waitLocale } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { afterNavigate } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -271,6 +272,23 @@ describe('AlbumDirectory', () => {
 
     await waitFor(() => expect(sdkMock.deleteAlbum).toHaveBeenCalledWith({ id: 'rockies' }));
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it('says once, with the count, that a deleted collection keeps its albums (LIB-04)', async () => {
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Family' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Family' }));
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Delete “Family”?' });
+    expect(dialog).toHaveTextContent('The collection is removed. Its 2 albums stay in your library, on their own.');
+    expect(dialog.textContent?.match(/stays? in your library/g)).toHaveLength(1);
+
+    const format = get(t);
+    expect(format('frameleaf_album_delete_collection_keep', { values: { count: 1 } })).toBe(
+      'Its 1 album stays in your library, on its own.',
+    );
   });
 
   it('leaves a shared album through the Frameleaf confirmation as “me”', async () => {

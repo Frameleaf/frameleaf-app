@@ -95,6 +95,21 @@ describe('the bulk controller', () => {
     expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mutated' }));
   });
 
+  it('ends the selection of items added to an album, keeping any that failed selected (LIB-04)', async () => {
+    session = reduceLibrarySession(session, { type: 'selection', ids: ['a', 'b', 'c', 'other'] });
+    api.addAssetsToAlbum = vi.fn().mockResolvedValue([
+      { id: 'a', success: true },
+      { id: 'b', success: true },
+      { id: 'c', success: false, error: 'no_permission' },
+    ]);
+    await controller.run('add-to-album', ['a', 'b', 'c'], { albumId: 'album-1' });
+    expect(session.selection).toEqual(['c', 'other']);
+
+    // A favorite keeps the selection, so the next action can use it.
+    await controller.run('favorite', ['c', 'other']);
+    expect(session.selection).toEqual(['c', 'other']);
+  });
+
   it('offers restore as the undo for a trashed selection and runs it against the same ids', async () => {
     await controller.run('delete', ['a', 'b']);
     expect(api.deleteAssets).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: ['a', 'b'], force: false } });
