@@ -193,6 +193,7 @@ export type CloudDescriptionEstimateRecord = {
   createdBy: string | null;
   /** The photos the estimate covers, per owner. Emptied once the backfill started. */
   owners: Record<string, string[]>;
+  promotionalFirstBatch?: { ownerId: string; assetIds: string[]; p90Usd: number; holdUsd: number };
   started: { at: string; batches: number; photos: number; operationIds: string[] } | null;
 };
 

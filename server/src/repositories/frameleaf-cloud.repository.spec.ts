@@ -45,6 +45,7 @@ type FakeCloud = {
     auth: string | null;
     dpop: string | null;
     idempotencyKey: string | null;
+    promotionPricing: string | null;
     body: string;
   }>;
   publicJwk?: FrameleafInstanceIdentity['publicJwk'];
@@ -100,6 +101,7 @@ const startFakeCloud = async (): Promise<FakeCloud> => {
       auth: request.headers.authorization ?? null,
       dpop: (request.headers.dpop as string | undefined) ?? null,
       idempotencyKey: (request.headers['idempotency-key'] as string | undefined) ?? null,
+      promotionPricing: (request.headers['x-frameleaf-promotion-pricing'] as string | undefined) ?? null,
       body,
     });
     const send = (status: number, payload: unknown) => {
@@ -599,6 +601,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
       const estimate = await ml.createEstimate(gateway, estimateRequest());
       expect(estimate).toMatchObject({ modelSku: 'ms_K6WT70CS', modelRev: 'mr_B2H147RBJBQ0', basis: 'measured' });
       expect(JSON.parse(gatewayRequests('POST', '/v2/estimates')[0].body)).toEqual(estimateRequest());
+      expect(gatewayRequests('POST', '/v2/estimates')[0].promotionPricing).toBe('1');
 
       const admitted = await ml.createJob(gateway, jobRequest(), 'batch-0192f1b0-1');
       expect(admitted).toMatchObject({ jobId, status: 'admitted', hold: { amountUsd: 0.203251 } });

@@ -94,6 +94,7 @@ import {
   CloudUsage,
   FrameleafCloudError,
   catalogGroupKey,
+  cloudCustomerCost,
   cloudErrorCode,
   descriptionsResultSchema,
   estimateUsable,
@@ -363,13 +364,38 @@ export class CloudMlBatchService extends BaseService {
       return empty;
     }
 
-    const sample = await this.estimateSample(
+    let sample = await this.estimateSample(
       gateway,
       model.sku,
       batches[0],
       destination.lastProbeCloud?.features ?? null,
     );
+    if (sample.estimate.promotion && batches[0].assetIds.length > CLOUD_DESCRIPTION_SAMPLE_SIZE) {
+      sample = await this.estimateSample(
+        gateway,
+        model.sku,
+        batches[0],
+        destination.lastProbeCloud?.features ?? null,
+        batches[0].assetIds.length,
+      );
+    }
     const projection = projectCloudDescriptionCost(sample.estimate, sample.photos, batches);
+    const promotionalFirstBatch = sample.estimate.promotion
+      ? {
+          ...batches[0],
+          assetIds: [...batches[0].assetIds],
+          p90Usd: cloudCustomerCost(sample.estimate).p90,
+          holdUsd: cloudCustomerCost(sample.estimate).hold,
+        }
+      : undefined;
+    if (promotionalFirstBatch) {
+      const first = projection.batches[0];
+      const net = cloudCustomerCost(sample.estimate);
+      projection.p50Usd = micros(projection.p50Usd - first.p50Usd + net.p50);
+      projection.p90Usd = micros(projection.p90Usd - first.p90Usd + net.p90);
+      projection.holdUsd = micros(projection.holdUsd - first.holdUsd + net.hold);
+      Object.assign(first, { p50Usd: net.p50, p90Usd: net.p90, holdUsd: net.hold });
+    }
     const guidance = heavyModelGuidance(
       model,
       batches.map(({ assetIds }) => assetIds.length),
@@ -392,6 +418,7 @@ export class CloudMlBatchService extends BaseService {
       photos: projection.photos,
       p90Usd: projection.p90Usd,
       owners,
+      ...(promotionalFirstBatch ? { promotionalFirstBatch } : {}),
       createdBy: auth.user.id,
       started: null,
     };
@@ -405,8 +432,8 @@ export class CloudMlBatchService extends BaseService {
       p90Usd: projection.p90Usd,
       holdUsd: projection.holdUsd,
       startupUsd: projection.startupUsd,
-      perPhotoP50Usd: projection.perPhotoP50Usd,
-      perPhotoP90Usd: projection.perPhotoP90Usd,
+      perPhotoP50Usd: batches.length === 1 ? micros(projection.p50Usd / projection.photos) : projection.perPhotoP50Usd,
+      perPhotoP90Usd: batches.length === 1 ? micros(projection.p90Usd / projection.photos) : projection.perPhotoP90Usd,
       basis: projection.basis,
       guidance,
       refusal: this.spendingRefusal(
@@ -484,6 +511,17 @@ export class CloudMlBatchService extends BaseService {
     const approvals = batches.map(({ assetIds }) =>
       micros(record.startupUsd + assetIds.length * record.perPhotoP90Usd),
     );
+    const promotional = record.promotionalFirstBatch;
+    if (promotional) {
+      const first = batches[0];
+      if (
+        !first ||
+        first.ownerId !== promotional.ownerId ||
+        JSON.stringify(first.assetIds) !== JSON.stringify(promotional.assetIds)
+      )
+        throw new BadRequestException('The promoted batch changed; estimate again');
+      approvals[0] = promotional.p90Usd;
+    }
     const approvedTotal = micros(approvals.reduce((sum, value) => sum + value, 0));
     // a subset of the estimated photos never costs more than the estimate's ceiling; checked anyway
     if (approvedTotal > record.p90Usd + 1e-6) {
@@ -497,7 +535,7 @@ export class CloudMlBatchService extends BaseService {
         wallet,
         Math.max(0, wallet.balanceUsd - wallet.heldUsd),
         approvedTotal,
-        approvals[0],
+        promotional?.holdUsd ?? approvals[0],
         await this.spentInWindow(destination.id, now),
       );
       if (refusal) {
@@ -892,9 +930,9 @@ export class CloudMlBatchService extends BaseService {
         expiresAt: estimate.expiresAt,
         modelRev: estimate.modelRev,
         computeSku: estimate.computeSku,
-        p50Usd: estimate.cost.p50,
-        p90Usd: estimate.cost.p90,
-        holdUsd: estimate.cost.hold,
+        p50Usd: cloudCustomerCost(estimate).p50,
+        p90Usd: cloudCustomerCost(estimate).p90,
+        holdUsd: cloudCustomerCost(estimate).hold,
         startupUsd: estimate.cost.startup,
         request,
         attemptedAt: null,
@@ -902,7 +940,12 @@ export class CloudMlBatchService extends BaseService {
       waiting: null,
     };
 
-    await this.preflight(run, gateway, { p90Usd: estimate.cost.p90, holdUsd: estimate.cost.hold }, destination ?? null);
+    await this.preflight(
+      run,
+      gateway,
+      { p90Usd: cloudCustomerCost(estimate).p90, holdUsd: cloudCustomerCost(estimate).hold },
+      destination ?? null,
+    );
     if (!(await this.save(run))) {
       return;
     }
@@ -2128,8 +2171,9 @@ export class CloudMlBatchService extends BaseService {
     modelSku: string,
     batch: { ownerId: string; assetIds: string[] },
     features: CloudConsentFeatures | null,
+    sampleSize = CLOUD_DESCRIPTION_SAMPLE_SIZE,
   ): Promise<{ estimate: CloudEstimate; photos: number }> {
-    const assetIds = batch.assetIds.slice(0, CLOUD_DESCRIPTION_SAMPLE_SIZE);
+    const assetIds = batch.assetIds.slice(0, sampleSize);
     const locked = await this.mediaOperationRepository.getLockedAssetIds(batch.ownerId, assetIds);
     const folder = join(tmpdir(), 'frameleaf-cloud-descriptions', `sample-${this.cryptoRepository.randomUUID()}`);
     this.storageRepository.mkdirSync(folder);
