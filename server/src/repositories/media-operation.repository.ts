@@ -424,6 +424,18 @@ export class MediaOperationRepository {
     if (!options.includeDismissed) {
       query = query.where('dismissedAt', 'is', null);
     }
+    // A removed library's scans have nothing left to act on (FL-588).
+    query = query.where((eb) =>
+      eb.or([
+        eb('kind', '!=', MediaOperationKind.LibraryScan),
+        eb.exists(
+          eb
+            .selectFrom('library')
+            .where(sql<boolean>`library.id::text = media_operation.snapshot->>'libraryId'`)
+            .where('library.deletedAt', 'is', null),
+        ),
+      ]),
+    );
     const [items, total] = await Promise.all([
       query
         .select(LIST_COLUMNS)
