@@ -152,6 +152,43 @@ describe('AlbumHeader', () => {
     expect(screen.getByRole('status')).toHaveTextContent('You can now add photos and edit this album');
   });
 
+  it('closes an open menu or icon popover on Escape before the page sees it, even with focus outside (LIB-04)', async () => {
+    // The album page's "go back" is an Escape shortcut on document.body (CommandPaletteDefaultProvider).
+    const pageEscape = vi.fn();
+    const onBody = (event: KeyboardEvent) => event.key === 'Escape' && !event.defaultPrevented && pageEscape();
+    document.body.addEventListener('keydown', onBody);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(Response.json({}))),
+    );
+    try {
+      renderHeader(albumAs(AlbumUserRole.Owner));
+      const escapeFromBody = async () => {
+        // A click on a blank part of the popover leaves focus on the body, not inside it.
+        (document.activeElement as HTMLElement | null)?.blur();
+        await fireEvent.keyDown(document.body, { key: 'Escape' });
+      };
+
+      await openMore();
+      await escapeFromBody();
+      await waitFor(() => expect(screen.queryByRole('menu', { name: 'More actions' })).not.toBeInTheDocument());
+      expect(pageEscape).not.toHaveBeenCalled();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Change icon' }));
+      expect(await screen.findByRole('dialog', { name: /Icon for/ })).toBeInTheDocument();
+      await escapeFromBody();
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /Icon for/ })).not.toBeInTheDocument());
+      expect(pageEscape).not.toHaveBeenCalled();
+
+      // With nothing open, Escape is the page's again.
+      await fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(pageEscape).toHaveBeenCalledOnce();
+    } finally {
+      document.body.removeEventListener('keydown', onBody);
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps activity reachable when comments are turned off, so likes and history stay visible', () => {
     renderHeader(albumAs(AlbumUserRole.Viewer, { isActivityEnabled: false }));
     expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();

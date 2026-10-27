@@ -122,16 +122,21 @@
           focusItem(menu, -1);
           break;
         }
-        case 'Escape': {
-          event.preventDefault();
-          close(true);
-          break;
-        }
         case 'Tab': {
           // Let the browser move focus onward; only dismiss the popup.
           close(false);
           break;
         }
+      }
+    };
+
+    // Escape is the open menu's wherever focus is (a click on a gap leaves it on the body), so the
+    // page's own Escape (an album's "go back") never runs while a menu is open (LIB-04).
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        close(true);
       }
     };
 
@@ -159,11 +164,13 @@
     };
 
     menu.addEventListener('keydown', onKeydown);
+    document.addEventListener('keydown', onEscape, { capture: true });
     menu.addEventListener('click', onClick);
     container.addEventListener('focusout', onFocusOut);
     document.addEventListener('pointerdown', onPointerDown, { capture: true });
     return () => {
       menu.removeEventListener('keydown', onKeydown);
+      document.removeEventListener('keydown', onEscape, true);
       menu.removeEventListener('click', onClick);
       container.removeEventListener('focusout', onFocusOut);
       document.removeEventListener('pointerdown', onPointerDown, true);
