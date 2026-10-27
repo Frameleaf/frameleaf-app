@@ -157,7 +157,10 @@ describe('AlbumHeader', () => {
     const pageEscape = vi.fn();
     const onBody = (event: KeyboardEvent) => event.key === 'Escape' && !event.defaultPrevented && pageEscape();
     document.body.addEventListener('keydown', onBody);
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({}))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(Response.json({}))),
+    );
     try {
       renderHeader(albumAs(AlbumUserRole.Owner));
       const escapeFromBody = async () => {
