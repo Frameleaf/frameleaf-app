@@ -665,6 +665,66 @@ describe('temporary backup capability storage integration', () => {
     expect(durable).toBeNull();
   });
 
+  it('renews a permitted restore when a signed download arrives after its access key expires', async () => {
+    const bytes = Buffer.alloc(4096, 5);
+    const object = `o/${sha(bytes)}`;
+    provider.objects.set(object, bytes);
+    const connection = provider.connection('restore', journal());
+    let held = false;
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'GET' && !held) {
+        held = true;
+        provider.clock += 900_000;
+        return error('InvalidAccessKeyId');
+      }
+      return provider.fetch(input, init);
+    });
+    const target = join(folder, 'restored');
+    await store.download(connection, object, key, target, sha(bytes));
+    expect(held).toBe(true);
+    expect(provider.renewals).toBe(1);
+    expect(await readFile(target)).toEqual(bytes);
+    expect(provider.seen.filter((request) => request.method === 'GET').map((request) => request.operation)).toEqual([
+      'restore',
+    ]);
+  });
+
+  it.each(['InvalidAccessKeyId', 'ExpiredToken'])('stops after one renewal on repeated %s refusals', async (code) => {
+    const connection = provider.connection('restore', journal());
+    vi.stubGlobal('fetch', () => Promise.resolve(error(code)));
+    await expect(store.get(connection, 'o/item', key)).rejects.toBeInstanceOf(ManagedBackupAuthorizationError);
+    expect(provider.renewals).toBe(1);
+  });
+
+  it('preserves the destination when an expired access key cannot renew its restore authority', async () => {
+    const connection = provider.connection('restore', journal());
+    const target = join(folder, 'existing');
+    await writeFile(target, 'keep');
+    provider.objects.set('o/item', Buffer.from('data'));
+    vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method !== 'GET') return provider.fetch(input, init);
+      provider.revoked = true;
+      return Promise.resolve(error('InvalidAccessKeyId'));
+    });
+    await expect(store.download(connection, 'o/item', key, target, null)).rejects.toBeInstanceOf(
+      ManagedBackupAuthorizationError,
+    );
+    expect(provider.renewals).toBe(1);
+    expect(await readFile(target, 'utf8')).toBe('keep');
+  });
+
+  it('does not renew an ordinary access denial or an independent storage connection', async () => {
+    const connection = provider.connection('restore', journal());
+    vi.stubGlobal('fetch', () => Promise.resolve(error('AccessDenied')));
+    await expect(store.get(connection, 'o/item', key)).rejects.toBeInstanceOf(ManagedBackupAuthorizationError);
+    expect(provider.renewals).toBe(0);
+    vi.stubGlobal('fetch', () => Promise.resolve(error('InvalidAccessKeyId')));
+    await expect(store.get({ ...connection, managedCredentials: undefined }, 'o/item', key)).rejects.toMatchObject({
+      code: 'InvalidAccessKeyId',
+    });
+    expect(provider.renewals).toBe(0);
+  });
+
   it('stops after one renewal when the provider repeatedly returns an expired session with HTTP 400', async () => {
     const connection = provider.connection('upload', journal());
     vi.stubGlobal('fetch', () => Promise.resolve(error('ExpiredToken', 400)));

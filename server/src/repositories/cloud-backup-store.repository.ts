@@ -1983,7 +1983,7 @@ export class CloudBackupStoreRepository {
         if (
           credentials &&
           error instanceof CloudBackupStoreError &&
-          ['ExpiredToken', 'InvalidToken', 'RequestExpired'].includes(error.code ?? '') &&
+          ['ExpiredToken', 'InvalidToken', 'RequestExpired', 'InvalidAccessKeyId'].includes(error.code ?? '') &&
           !renewed
         ) {
           renewed = true;
