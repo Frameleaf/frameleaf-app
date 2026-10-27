@@ -500,54 +500,13 @@ export class IntegrityService extends BaseService {
     return status;
   }
 
-  private async checkUntrackedFiles({ type, paths }: Omit<IIntegrityUntrackedFilesJob, 'runId'>): Promise<JobStatus> {
+  private async checkUntrackedFiles({ paths }: Omit<IIntegrityUntrackedFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${paths.length} files to check if they are untracked.`);
 
+    // Every owner of a file on disk — originals, sidecars, thumbnails, video frames, develop versions,
+    // Studio outputs, registered files — comes from one list, `getTrackedPaths`, the same one a delete trusts.
     const untrackedFiles = new Set<string>(paths);
-    if (type === 'asset') {
-      const assets = await this.integrityRepository.getAssetPathsByPaths(paths);
-      for (const { originalPath, encodedVideoPath } of assets) {
-        untrackedFiles.delete(originalPath);
-
-        if (encodedVideoPath) {
-          untrackedFiles.delete(encodedVideoPath);
-        }
-      }
-    }
-
-    // Sidecar asset_file rows point into the upload folder (both uploaded
-    // sidecars and the ones physical deduplication migrates), so the
-    // asset-folder walk must be checked against asset_file too — not just
-    // asset.originalPath — or every sidecar is reported as untracked.
-    const assetFiles = await this.integrityRepository.getAssetFilePathsByPaths(paths);
-    for (const { path } of assetFiles) {
-      untrackedFiles.delete(path);
-    }
-
-    const personThumbnailPaths = await this.integrityRepository.getPersonThumbnailPathsByPaths(paths);
-    for (const { thumbnailPath } of personThumbnailPaths) {
-      untrackedFiles.delete(thumbnailPath);
-    }
-
-    // The enhanced video duplicate check stores sampled frames in the
-    // thumbnails folder, tracked in asset_video_duplicate_frame rather than
-    // asset_file, so the walk must exempt them explicitly.
-    const framePaths = await this.integrityRepository.getVideoDuplicateFramePathsByPaths(paths);
-    for (const { path } of framePaths) {
-      untrackedFiles.delete(path);
-    }
-
-    // Develop versions (edited masters, previews, developed files brought back) are tracked by
-    // their version row; they are a person's work, never an orphan to clean up (FL-64).
-    const developPaths = await this.integrityRepository.getDevelopRevisionPathsByPaths(paths);
-    for (const { path } of developPaths) {
-      untrackedFiles.delete(path);
-    }
-
-    // FL-412: a stored file (a shared original, or one waiting to be moved to the file trash) is tracked by
-    // its `physical_file` row even while no asset names it
-    const registeredPaths = await this.integrityRepository.getRegisteredFilePathsByPaths(paths);
-    for (const { path } of registeredPaths) {
+    for (const { path } of await this.integrityRepository.getTrackedPaths(paths)) {
       untrackedFiles.delete(path);
     }
 
