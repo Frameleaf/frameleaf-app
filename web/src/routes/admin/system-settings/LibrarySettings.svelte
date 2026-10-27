@@ -98,10 +98,18 @@
           : $t('frameleaf_checks_skip_nothing_more'),
     };
   };
-  const minutes = (library: LibraryResponseDto) =>
+  const duration = (library: LibraryResponseDto) =>
     library.scan?.startedAt && library.scan.finishedAt
-      ? Math.max(1, Math.round((Date.parse(library.scan.finishedAt) - Date.parse(library.scan.startedAt)) / 60_000))
+      ? Date.parse(library.scan.finishedAt) - Date.parse(library.scan.startedAt)
       : null;
+  const tookNote = (finishedAt: string, ms: number | null) =>
+    ms === null
+      ? ago(finishedAt)
+      : ms < 60_000
+        ? $t('frameleaf_checks_recent_took_seconds', {
+            values: { ago: ago(finishedAt), seconds: Math.min(59, Math.max(1, Math.round(ms / 1000))) },
+          })
+        : $t('frameleaf_checks_recent_took', { values: { ago: ago(finishedAt), minutes: Math.round(ms / 60_000) } });
   const recent = $derived(
     (folders ?? [])
       .filter((library) => library.scan?.finishedAt)
@@ -240,11 +248,7 @@
               status={failed(library)
                 ? $t('frameleaf_checks_recent_status_skipped')
                 : $t('frameleaf_checks_recent_status_done')}
-              note={minutes(library) === null
-                ? ago(scan.finishedAt!)
-                : $t('frameleaf_checks_recent_took', {
-                    values: { ago: ago(scan.finishedAt!), minutes: minutes(library) },
-                  })}
+              note={tookNote(scan.finishedAt!, duration(library))}
             />
           {/each}
         </ItemList>

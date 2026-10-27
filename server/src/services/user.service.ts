@@ -558,7 +558,6 @@ export class UserService extends BaseService {
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }
 
-
     await this.eventRepository.emit('UserDelete', user);
   }
 

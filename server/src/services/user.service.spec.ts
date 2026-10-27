@@ -598,9 +598,7 @@ describe(UserService.name, () => {
       mocks.user.get.mockResolvedValue(user);
       mocks.storage.walkFiles.mockImplementation((folder: string) =>
         (async function* () {
-          if (folder.includes('/upload/')) {
-            yield `${folder}/01/a1/studio-video.mp4`;
-          }
+          yield* await Promise.resolve(folder.includes('/upload/') ? [`${folder}/01/a1/studio-video.mp4`] : []);
         })(),
       );
       mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
