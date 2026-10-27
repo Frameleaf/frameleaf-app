@@ -263,6 +263,9 @@ test.describe('Duplicate review', () => {
         .locator('[data-testid="frameleaf-duplicate-compare"] [data-asset-id]')
         .nth(index)
         .getAttribute('data-asset-id')) ?? '';
+    // wait for the search to narrow the review to a seeded group before reading it
+    const seededAssetIds = new Set(groups.flatMap((group) => group.assets.map((asset) => asset.id)));
+    await expect.poll(async () => seededAssetIds.has(await copyId(0)), { timeout: 30_000 }).toBe(true);
     const headingText = await heading.textContent();
     const firstTitle = headingText?.trim() ?? '';
     const firstCopy = await copyId(0);
