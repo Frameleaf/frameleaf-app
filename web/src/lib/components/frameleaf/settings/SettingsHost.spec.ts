@@ -444,6 +444,28 @@ describe('the Command Center (FL-71)', () => {
     expect(search).toHaveValue('');
   });
 
+  it('keeps the search results up until the result page has opened, not the page it started from', async () => {
+    open('/user-settings?area=overview');
+    let arrive = () => {};
+    state.goto.mockReturnValue(new Promise<void>((resolve) => (arrive = resolve)));
+    render(SettingsHost, { sections });
+    const search = screen.getByRole('searchbox', { name: 'Search all settings' });
+    await userEvent.type(search, 'remote access');
+    await userEvent.click(await screen.findByRole('button', { name: /Remote access/ }));
+    // While the navigation runs, the results stay; the starting page does not flash back.
+    expect(search).toHaveValue('remote access');
+    expect(screen.getByRole('button', { name: /Remote access/ })).toBeInTheDocument();
+    arrive();
+    await waitFor(() => expect(search).toHaveValue(''));
+  });
+
+  it('tags Change history as the whole server for an administrator', () => {
+    open('/user-settings?area=history');
+    render(SettingsHost, { sections });
+    expect(screen.getByText('Whole server')).toHaveClass('cc-scope-fixed');
+    expect(screen.queryByText('Applies to your account')).toBeNull();
+  });
+
   it('finds a section by a setting it holds: the Public server URL lands in Remote access (FL-168)', async () => {
     open('/user-settings?area=storage');
     render(SettingsHost, { sections });

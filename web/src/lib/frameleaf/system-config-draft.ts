@@ -127,6 +127,15 @@ const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
   libraryCare: 'integrity-checks',
   // FL-168: the Public server URL sits on Frameleaf Cloud › Remote access, not Server identity.
   'server.externalDomain': 'cloud-remote',
+  // FL-516: "Space for new people" on Users writes all three; without these it read as Deleted items
+  // (`user`), Who can sign in (`oauth`) and Cloud processing.
+  'user.newUserStorageQuota': 'accounts',
+  'oauth.defaultStorageQuota': 'accounts',
+  'frameleafCloud.signIn.invitedStorageQuota': 'accounts',
+  // Frameleaf Cloud's other groups sit on their own pages, not all on Cloud processing.
+  'frameleafCloud.signIn': 'frameleaf-signin',
+  'frameleafCloud.remoteAccess': 'cloud-remote',
+  'frameleafCloud.cloudBackup': 'cloud-backup',
   'editing.restoration': 'restoration',
 });
 

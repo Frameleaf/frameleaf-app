@@ -76,6 +76,41 @@ describe('setting words (FL-368)', () => {
     });
   });
 
+  it('says Deleted items, Storage and Sign in with Frameleaf in their own words, on their own pages', () => {
+    expect(describeChange($t(), 'server', { path: 'trash.days', before: 30, after: 60 })).toMatchObject({
+      said: 'Keep deleted photos for: 30 days → 60 days',
+      page: { area: 'storage', section: 'trash' },
+    });
+    expect(describeChange($t(), 'server', { path: 'user.deleteDelay', before: 7, after: 14 }).said).toBe(
+      'Keep a deleted account for: 7 days → 14 days',
+    );
+    expect(describeChange($t(), 'server', { path: 'storageWarning.percent', before: 90, after: 80 }).said).toBe(
+      'Warn me when the disk is nearly full: At 90% → At 80%',
+    );
+    expect(
+      describeChange($t(), 'server', { path: 'frameleafCloud.signIn.showOnLocalLogin', before: false, after: true }),
+    ).toMatchObject({
+      said: 'Offer it at home too turned on',
+      page: { area: 'security', section: 'frameleaf-signin' },
+    });
+  });
+
+  it('files each Frameleaf Cloud group and Space for new people under the page that shows it', () => {
+    expect(settingPage('server', 'frameleafCloud.remoteAccess.publicUrl')).toEqual({
+      area: 'cloud',
+      section: 'cloud-remote',
+    });
+    expect(settingPage('server', 'frameleafCloud.cloudBackup.enabled')?.section).toBe('cloud-backup');
+    expect(settingPage('server', 'frameleafCloud.cloudMl.enabled')?.section).toBe('cloud-processing');
+    for (const path of [
+      'user.newUserStorageQuota',
+      'oauth.defaultStorageQuota',
+      'frameleafCloud.signIn.invitedStorageQuota',
+    ]) {
+      expect(settingPage('server', path), path).toEqual({ area: 'users', section: 'accounts' });
+    }
+  });
+
   it('has a string for every label and option in the table', () => {
     const messages = en as Record<string, unknown>;
     for (const words of [...Object.values(SERVER_WORDS), ...Object.values(PREFERENCE_WORDS)]) {
@@ -99,7 +134,7 @@ describe('setting words (FL-368)', () => {
     }).toMatchInlineSnapshot(`
       {
         "preference": 7,
-        "server": 178,
+        "server": 170,
       }
     `);
   });
