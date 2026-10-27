@@ -38,6 +38,7 @@ const answer = (patch: Partial<AttentionResponseDto> = {}): AttentionResponseDto
   checkedAt,
   items: [],
   checks: ok(),
+  dismissed: [],
   ...patch,
 });
 /** The answer at the top, once the page has read what needs attention. */

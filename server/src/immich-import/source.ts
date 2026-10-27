@@ -7,7 +7,7 @@ import {
   frozenSource,
   newestContainedRelease,
 } from 'src/immich-import/adapters.js';
-import { assertMediaPolicy, verifyMediaFile } from 'src/immich-import/media.js';
+import { assertMediaPolicy, lostOriginalReason, verifyMediaFile } from 'src/immich-import/media.js';
 import { readSourceStructure, verifyReadableStructure, verifySourceStructure } from 'src/immich-import/schema.js';
 import {
   FrozenSource,
@@ -97,13 +97,20 @@ export class ImmichSource {
                   },
                 );
               } catch (error) {
-                if (
+                const lost =
+                  table === 'asset'
+                    ? await lostOriginalReason(error, path, this.config.mediaRoots, this.config.media)
+                    : null;
+                if (lost) {
+                  hash.update(`lost-original:${lost}`);
+                } else if (
                   (error as NodeJS.ErrnoException).code !== 'ENOENT' ||
                   (table !== 'asset_file' && table !== 'person')
                 ) {
                   throw error;
+                } else {
+                  hash.update('missing-regenerable-output');
                 }
-                hash.update('missing-regenerable-output');
               }
               hash.update('\n');
             }

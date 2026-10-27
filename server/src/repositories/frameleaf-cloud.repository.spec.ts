@@ -29,6 +29,7 @@ import {
   ed25519Thumbprint,
 } from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { expectLocalisedSystemNotices } from 'test/utils.js';
 
 /**
  * A fake Frameleaf Cloud (FL-159): discovery, the token endpoint (which verifies the EdDSA client
@@ -806,6 +807,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
         instanceId: 'instance-1',
       });
       expect(emit).toHaveBeenCalledWith('AdminNotify', expect.objectContaining({ ...CLONE_SUSPECTED_NOTICE }));
+      expectLocalisedSystemNotices(emit);
       await expect(ml.getWallet(gateway)).rejects.toMatchObject({ message: ML_CLONE_SUSPENDED_DETAIL });
       // one dedupe key: a repeat is the same notice, which the notification path keeps from repeating
       expect(emit.mock.calls.every(([, notice]) => notice.dedupeKey === CLONE_SUSPECTED_NOTICE.dedupeKey)).toBe(true);

@@ -90,6 +90,11 @@ async function verifyBundle(
     ["FRAMELEAF_VERSION=latest"],
     "Environment version differs",
   );
+  assert.deepEqual(
+    env.match(/^# This release: .*$/gm),
+    [`# This release: FRAMELEAF_VERSION=${expectedTag}`],
+    "Environment release tag differs",
+  );
   for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
     const compose = await fs.readFile(path.join(directory, name), "utf8");
     const services = load(compose)?.services;

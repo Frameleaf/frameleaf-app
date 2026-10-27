@@ -69,7 +69,7 @@ describe('CloudTour (FL-196)', () => {
     expect(dialog).toHaveTextContent('1 of 6');
     expect(dialog).toHaveTextContent('This server is linked to owner@example.test');
     expect(within(dialog).getByText('owner@example.test').tagName).toBe('STRONG');
-    expect(within(dialog).getByTestId('cloud-tour-status')).toHaveTextContent('Needs a plan');
+    expect(within(dialog).getByTestId('cloud-tour-status')).toHaveTextContent('Part of Frameleaf Cloud');
 
     await fireEvent.click(within(dialog).getByRole('button', { name: /Open Remote access/ }));
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ area: 'cloud', section: 'cloud-remote' }));

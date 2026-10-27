@@ -68,7 +68,7 @@ describe('AccountTable (FL-76 CC-26)', () => {
 
     // No statistics for this account, and no quota: unlimited without a meter.
     expect(within(second).getByLabelText('Not counted yet')).toBeInTheDocument();
-    expect(within(second).getByText('/ unlimited')).toBeInTheDocument();
+    expect(within(second).getByText('/ no limit')).toBeInTheDocument();
     expect(within(second).queryByRole('progressbar')).toBeNull();
   });
 

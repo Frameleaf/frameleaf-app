@@ -1413,6 +1413,7 @@
     : 'sdr'}
   busy={exporting}
   {renderEvidence}
+  projectId={storedRevision === null ? null : project.id}
   onExport={(choice) => void onExportVideo(choice)}
 />
 

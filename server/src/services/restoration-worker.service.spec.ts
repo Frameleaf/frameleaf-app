@@ -971,6 +971,42 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.fail).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['keeps the files a commit whose acknowledgement was lost recorded', true],
+      ['removes the files a rolled-back publication moved into place', false],
+    ])('%s', async (_name, committed) => {
+      operations.publishValidated.mockImplementationOnce(
+        async (_id: string, _token: string, publish: (trx: never) => Promise<boolean>) => {
+          await publish(TRX as never);
+          throw new Error('Connection terminated');
+        },
+      );
+      restorations.get.mockImplementation(() => {
+        const placed = mocks.storage.rename.mock.calls.map(([, final]) => final);
+        return Promise.resolve(
+          committed && placed.length > 0
+            ? row({
+                status: AssetRestorationStatus.PreviewReady,
+                previewBeforePath: placed[0],
+                previewAfterPath: placed[1],
+              })
+            : row(),
+        );
+      });
+
+      await sut.run(operation(), CLAIM);
+
+      const placed = mocks.storage.rename.mock.calls.map(([, final]) => final);
+      expect(placed).toHaveLength(2);
+      for (const file of placed) {
+        if (committed) {
+          expect(mocks.storage.unlink).not.toHaveBeenCalledWith(file);
+        } else {
+          expect(mocks.storage.unlink).toHaveBeenCalledWith(file);
+        }
+      }
+    });
+
     it('publishes nothing when the owner cancelled while the output was being checked (FL-43)', async () => {
       // The claim no longer holds a validating job when publication starts: the cancel won.
       operations.publishValidated.mockResolvedValueOnce('lost');

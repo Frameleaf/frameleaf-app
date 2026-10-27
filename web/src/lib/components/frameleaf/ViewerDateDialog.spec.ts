@@ -1,13 +1,14 @@
-import { updateAsset } from '@frameleaf/sdk';
+import { updateAssets } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { DateTime } from 'luxon';
+import en from '$i18n/en.json';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import ViewerDateDialog from './ViewerDateDialog.svelte';
 
 vi.mock('@frameleaf/sdk', async () => {
   const sdk = await vi.importActual<typeof import('@frameleaf/sdk')>('@frameleaf/sdk');
-  return { ...sdk, updateAsset: vi.fn() };
+  return { ...sdk, updateAssets: vi.fn() };
 });
 
 describe('ViewerDateDialog (V-23)', () => {
@@ -48,9 +49,12 @@ describe('ViewerDateDialog (V-23)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'save' }));
 
     await waitFor(() =>
-      expect(updateAsset).toHaveBeenCalledWith({
-        id: asset.id,
-        updateAssetDto: { dateTimeOriginal: '2026-09-24T07:30:00.000+09:00' },
+      expect(updateAssets).toHaveBeenCalledWith({
+        assetBulkUpdateDto: {
+          ids: [asset.id],
+          dateTimeOriginal: '2026-09-24T07:30:00.000+09:00',
+          timeZone: 'Asia/Tokyo',
+        },
       }),
     );
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
@@ -64,11 +68,35 @@ describe('ViewerDateDialog (V-23)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'save' }));
 
     await waitFor(() =>
-      expect(updateAsset).toHaveBeenCalledWith({
-        id: asset.id,
-        updateAssetDto: { dateTimeOriginal: '2026-09-24T18:05:00.000Z' },
+      expect(updateAssets).toHaveBeenCalledWith({
+        assetBulkUpdateDto: { ids: [asset.id], dateTimeOriginal: '2026-09-24T18:05:00.000Z', timeZone: 'UTC' },
       }),
     );
+  });
+
+  // LIB-02: America/Edmonton previewed 4:56 p.m. but saved as 3:56 p.m. in America/Vancouver, because only the
+  // offset was sent; a zone with the same offset as the current one saved nothing at all
+  it.each([
+    ['America/Edmonton', '2026-06-21T16:56:00.000-06:00'],
+    ['America/Los_Angeles', '2026-06-21T16:56:00.000-07:00'],
+  ])('keeps the chosen zone %s by name with the previewed wall time', async (chosen, dateTimeOriginal) => {
+    const asset = assetFactory.build();
+    const capture = DateTime.fromISO('2026-06-21T16:56:00', { zone: 'America/Vancouver' });
+    render(ViewerDateDialog, { asset, initialDate: capture, initialTimeZone: 'America/Vancouver', onClose: vi.fn() });
+
+    await fireEvent.change(screen.getByLabelText('frameleaf_info_time_zone'), { target: { value: chosen } });
+    await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+
+    await waitFor(() =>
+      expect(updateAssets).toHaveBeenCalledWith({
+        assetBulkUpdateDto: { ids: [asset.id], dateTimeOriginal, timeZone: chosen },
+      }),
+    );
+  });
+
+  // LIB-02: the time can end in "p.m.", which left "p.m.." at the end of the line
+  it('ends the preview line with the time, not a full stop', () => {
+    expect(en.frameleaf_info_capture_time_becomes).toMatch(/\{time\}$/);
   });
 
   it('refuses an incomplete date', async () => {

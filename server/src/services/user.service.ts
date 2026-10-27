@@ -13,6 +13,8 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import {
+  LockedRulesCountResponseDto,
+  LockedRulesDraftDto,
   type PreferencesAudience,
   UserPreferenceHistoryResponseDto,
   UserPreferencesResponseDto,
@@ -159,6 +161,20 @@ export class UserService extends BaseService {
   async getMyPreferences(auth: AuthDto): Promise<UserPreferencesResponseDto> {
     const metadata = await this.userRepository.getMetadata(auth.user.id);
     return mapPreferences(getPreferences(metadata), preferencesAudience(auth));
+  }
+
+  /**
+   * FL-541: how many of your photos and videos a draft of your Locked rules keeps Locked, before it is
+   * saved. Like editing the rules, it needs an unlocked session.
+   */
+  async countLockedRules(auth: AuthDto, dto: LockedRulesDraftDto): Promise<LockedRulesCountResponseDto> {
+    if (!auth.session?.hasElevatedPermission) {
+      throw new ForbiddenException(LOCKED_RULES_REQUIRE_UNLOCK_MESSAGE);
+    }
+    if (dto.tagIds.length + dto.personIds.length + dto.petIds.length === 0) {
+      return { photos: 0, videos: 0 };
+    }
+    return this.assetRepository.countLockedRuleMatches({ userId: auth.user.id, ...dto });
   }
 
   /**

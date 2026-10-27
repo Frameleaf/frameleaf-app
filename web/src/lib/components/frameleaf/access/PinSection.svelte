@@ -10,14 +10,43 @@
   import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import type { PinDialogMode } from '$lib/frameleaf/personal-access';
-  import { getAuthStatus } from '@frameleaf/sdk';
-  import { modalManager } from '@frameleaf/ui';
+  import { getAuthStatus, getMyPreferences, updateMyPreferences } from '@frameleaf/sdk';
+  import { modalManager, toastManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import './access.css';
 
   let pinEnabled = $state<boolean | undefined>(undefined);
   let failed = $state(false);
+  // FL-517: "Lock again after": how long Locked photos stay open after an unlock
+  const RELOCK_CHOICES = [5, 15, 60] as const;
+  let relock = $state<number | undefined>(undefined);
+  let savingRelock = $state(false);
+  const relockWords = (minutes: number) =>
+    minutes === 60
+      ? $t('frameleaf_access_relock_hour')
+      : $t('frameleaf_access_relock_minutes', { values: { count: minutes } });
+  const loadRelock = async () => {
+    try {
+      relock = (await getMyPreferences()).lockedPin?.relockMinutes ?? 60;
+    } catch {
+      relock = undefined;
+    }
+  };
+  const saveRelock = async (minutes: number) => {
+    const before = relock;
+    relock = minutes;
+    savingRelock = true;
+    try {
+      await updateMyPreferences({ userPreferencesUpdateDto: { lockedPin: { relockMinutes: minutes } } });
+      toastManager.primary($t('frameleaf_access_relock_saved', { values: { time: relockWords(minutes) } }));
+    } catch {
+      relock = before;
+      toastManager.warning($t('frameleaf_access_relock_failed'));
+    } finally {
+      savingRelock = false;
+    }
+  };
 
   const refresh = async () => {
     try {
@@ -34,7 +63,10 @@
     }
   };
 
-  onMount(() => void refresh());
+  onMount(() => {
+    void refresh();
+    void loadRelock();
+  });
 </script>
 
 <OnEvents onUserPinCodeReset={() => (pinEnabled = false)} onUserPinCodeCreated={() => (pinEnabled = true)} />
@@ -67,8 +99,43 @@
     {/if}
   </div>
   {#if pinEnabled}
+    {#if relock !== undefined}
+      <label class="fl-access-relock">
+        <span>
+          <strong>{$t('frameleaf_access_relock_label')}</strong>
+          <small>{$t('frameleaf_access_relock_help', { values: { time: relockWords(relock) } })}</small>
+        </span>
+        <select
+          value={String(relock)}
+          disabled={savingRelock}
+          onchange={(event) => void saveRelock(Number(event.currentTarget.value))}
+        >
+          {#each RELOCK_CHOICES as minutes (minutes)}
+            <option value={String(minutes)}>{relockWords(minutes)}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     <div>
       <Button variant="quiet" onclick={() => open('reset')}>{$t('frameleaf_access_pin_forgot')}</Button>
     </div>
   {/if}
 </section>
+
+<style>
+  .fl-access-relock {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-3);
+    align-items: center;
+    justify-content: space-between;
+    margin-block: var(--fl-space-3);
+  }
+  .fl-access-relock span {
+    display: grid;
+    gap: 2px;
+  }
+  .fl-access-relock small {
+    color: var(--fl-muted);
+  }
+</style>

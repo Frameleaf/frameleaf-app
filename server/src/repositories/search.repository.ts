@@ -310,6 +310,8 @@ export interface SearchFacetOptions {
   /** a session that is not unlocked: these people and tags (with their descendants) are never named */
   suppressedPersonIds: string[];
   suppressedTagIds: string[];
+  /** FL-58: the pet twin of `suppressedPersonIds` */
+  suppressedPetIds: string[];
   /** also pick, per value, the newest matching asset by capture time (Explore's card covers) */
   covers?: boolean;
 }
@@ -338,6 +340,7 @@ const facetExample: SearchFacetOptions = {
   limit: 10,
   suppressedPersonIds: [DummyValue.UUID_1],
   suppressedTagIds: [DummyValue.UUID_1],
+  suppressedPetIds: [DummyValue.UUID_1],
   covers: true,
 };
 const legacySearchExample = { takenAfter: DummyValue.DATE, userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
@@ -1139,6 +1142,17 @@ export class SearchRepository {
           inner join tag t on t.id = tc.id_ancestor and t."userId" = ${viewer}
           where ${options.suppressedTagIds.length > 0 ? sql`not ${tagIsSuppressed(sql.ref('t.id'), options.suppressedTagIds)}` : sql`true`}
           group by t.id`,
+      ],
+      [
+        SearchFacetField.Pets,
+        // FL-58: the viewer's confirmed observations of their own pets, exactly as the petIds filter matches
+        sql`select ${SearchFacetField.Pets}::text as field, pet.id::text as value,
+            max(nullif(pet.name, '')) as label, count(distinct m.id) as count, ${cover} as cover
+          from matched m
+          inner join pet_observation po on po."assetId" = m.id and po.state = ${PetObservationState.Confirmed}
+          inner join pet on pet.id = po."petId" and pet."ownerId" = ${viewer} and not pet."isHidden"
+          where ${options.suppressedPetIds.length > 0 ? sql`not (pet.id = ${anyUuid(options.suppressedPetIds)})` : sql`true`}
+          group by pet.id`,
       ],
     ];
 

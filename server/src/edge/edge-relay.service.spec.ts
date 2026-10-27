@@ -516,7 +516,8 @@ describe(EdgeRelayService.name, () => {
       needsPlan: true,
       revoked: false,
       disconnectedSince: null,
-      lastError: 'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.',
+      lastError:
+        'Connecting through Frameleaf is part of Frameleaf Cloud. Without it, this server is reached directly.',
     });
     // not asked again within ten minutes
     const asked = calls.length;

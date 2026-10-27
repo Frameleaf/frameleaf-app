@@ -237,7 +237,11 @@
             }
           : {
               tone: worker.gpu ? 'good' : 'off',
-              value: worker.gpu ? $t('frameleaf_gpucheck_on_card') : $t('frameleaf_gpucheck_on_processor'),
+              value: worker.gpu?.integrated
+                ? $t('frameleaf_gpucheck_on_integrated')
+                : worker.gpu
+                  ? $t('frameleaf_gpucheck_on_card')
+                  : $t('frameleaf_gpucheck_on_processor'),
               note:
                 descriptionsPerHour === undefined || descriptionsPerHour === null
                   ? $t('frameleaf_gpucheck_not_measured')

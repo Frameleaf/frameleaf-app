@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import gc
 import importlib.util
 import os
@@ -9,7 +10,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import Any, AsyncGenerator, Callable, Iterator
+from typing import Any, AsyncGenerator, Callable
 from zipfile import BadZipFile
 
 import onnxruntime as ort
@@ -24,10 +25,13 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
+from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav
 from frameleaf_ml.models.transforms import decode_pil
+from frameleaf_ml.sessions.ort import flush_denormals
 
 from .config import PreloadModelData, log, model_source, settings
 from .env_aliases import read_env
@@ -57,6 +61,8 @@ thread_pool: ThreadPoolExecutor | None = None
 lock = threading.Lock()
 active_requests = 0
 last_called: float | None = None
+# Hands the memory a burst of requests used back to the system shortly after the last one finishes.
+release: asyncio.TimerHandle | None = None
 
 
 @asynccontextmanager
@@ -72,14 +78,16 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     try:
+        flush_denormals()  # for work that runs on the event loop's own thread
         if settings.request_threads > 0:
             # asyncio is a huge bottleneck for performance, so we use a thread pool to run blocking code
-            thread_pool = ThreadPoolExecutor(settings.request_threads) if settings.request_threads > 0 else None
+            thread_pool = ThreadPoolExecutor(settings.request_threads, initializer=flush_denormals)
             log.info(f"Initialized request thread pool with {settings.request_threads} threads.")
         if settings.model_ttl > 0 and settings.model_ttl_poll_s > 0:
             asyncio.ensure_future(idle_shutdown_task())
         if settings.preload is not None:
             await preload_models(settings.preload)
+            allocator.release()
         yield
     finally:
         # IMPORTANT ordering for actual GPU memory release:
@@ -105,6 +113,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as error:
             log.warning(f"Failed to clear model cache during shutdown: {error}")
         gc.collect()
+        allocator.release()
         # If torch is present, also drop any cached CUDA allocator state.
         try:
             import torch
@@ -173,14 +182,19 @@ async def preload_models(preload: PreloadModelData) -> None:
         )
 
 
-def update_state() -> Iterator[None]:
-    global active_requests, last_called
+async def update_state() -> AsyncGenerator[None, None]:
+    global active_requests, last_called, release
     active_requests += 1
     last_called = time.time()
+    if release is not None:
+        release.cancel()
+        release = None
     try:
         yield
     finally:
         active_requests -= 1
+        if not active_requests:
+            release = asyncio.get_running_loop().call_later(5, allocator.release)
 
 
 def get_entries(entries: str = Form()) -> InferenceEntries:
@@ -345,7 +359,8 @@ def hardware() -> ORJSONResponse:
     torch_cuda_available, cuda_device_count = _torch_cuda_info()
     preferred_acceleration = ImageDescriptionAcceleration.AUTO
 
-    if torch_cuda_available or "CUDAExecutionProvider" in providers:
+    # The CUDA provider is compiled into the -cuda image whether or not a GPU was passed in.
+    if torch_cuda_available:
         preferred_acceleration = ImageDescriptionAcceleration.CUDA
     elif "OpenVINOExecutionProvider" in providers and openvino_device_ids:
         preferred_acceleration = ImageDescriptionAcceleration.OPENVINO
@@ -487,6 +502,67 @@ async def transcribe(
                 items.close()
             except ValueError:
                 # Still decoding in the thread pool after a disconnect; it is never advanced again.
+                pass
+            active_requests -= 1
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+# Audio bytes per `audio` line of a music answer, before base64.
+MUSIC_CHUNK_BYTES = 512 * 1024
+
+
+@app.post("/music")
+async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingResponse:
+    """Make a movie (FL-561): new music from a prompt with MusicGen small.
+
+    The request names one entry, `{"music": {"audio": {"modelName": "frameleaf-music", "options": {"prompt",
+    "duration", "seed"?}}}}`. Problems found before any work starts are HTTP errors (422 bad options, 503
+    no model). Otherwise the answer is newline-delimited JSON: `progress` lines (`done` of `total` decoder
+    steps), then `info` (sample rate, seconds), the 16-bit mono WAV as base64 `audio` lines in order, then
+    `done` (or `error`). Closing the connection stops the work at the next decoder step.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.MUSIC:
+        raise HTTPException(400, "A music request names exactly one music entry")
+    entry = without_deps[0]
+    options = dict(entry["options"])
+    model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
+    model = await load(model)
+    assert isinstance(model, MusicGenModel)
+    items = model.stream(**options)
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global active_requests, last_called
+        # Counted here, as for /transcribe: the stream outlives the handler.
+        active_requests += 1
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await run(next, items, None)
+                except Exception as error:
+                    log.error(f"Music generation failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Music generation failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                if item["type"] != "audio":
+                    yield orjson.dumps(item) + b"\n"
+                    continue
+                wav: bytes = item["wav"]
+                yield (
+                    orjson.dumps({"type": "info", "sampleRate": item["sampleRate"], "seconds": item["seconds"]}) + b"\n"
+                )
+                for start in range(0, len(wav), MUSIC_CHUNK_BYTES):
+                    chunk = base64.b64encode(wav[start : start + MUSIC_CHUNK_BYTES]).decode("ascii")
+                    yield orjson.dumps({"type": "audio", "data": chunk}) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
+            try:
+                items.close()
+            except ValueError:
+                # Still writing in the thread pool after a disconnect; it is never advanced again.
                 pass
             active_requests -= 1
 

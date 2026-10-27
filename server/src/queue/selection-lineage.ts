@@ -1,7 +1,8 @@
-import { Kysely, Transaction, sql } from 'kysely';
+import { Kysely, type QueryExecutorProvider, sql } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { QUEUE_BATCH, QueueIntent } from 'src/queue/types.js';
 
-type Executor = Kysely<any> | Transaction<any>;
+type Executor = Kysely<DB>;
 export type LineageItemIdentity = { runId: string; itemKey: string; stage: string };
 
 /** Retire one unexecuted request, not the active predecessor. Keep its old origin cancelled even
@@ -49,7 +50,7 @@ export async function supersedeSelectionLineage(
 /** A late copy may precede a deferred child's execution assignment. Mirror its retained owner,
  * including terminal outcomes without a job, instead of relying on publication-time membership lists. */
 export async function mirrorSelectionLineage(
-  tx: Executor,
+  tx: QueryExecutorProvider,
   source: { jobIds: string[] } | { items: LineageItemIdentity[] },
 ) {
   if (('jobIds' in source ? source.jobIds : source.items).length === 0) return [];

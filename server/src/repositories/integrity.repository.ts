@@ -178,6 +178,79 @@ export class IntegrityRepository {
       number
     >;
   }
+  /**
+   * FL-520: one count per kind of problem across the two checkers that report them: the file checks
+   * (`integrity_report`) and Library care's missing/damaged scanner (`asset_health`). A photo both
+   * report is counted once. `rawToMatch` is how many of the missing photos are RAW originals, which a
+   * search for missing files matches against copies on the drive.
+   */
+  async getFindingsOverview(rawExtensions: readonly string[]) {
+    const raw = rawExtensions.length > 0 ? rawExtensions.map((extension) => `%${extension.toLowerCase()}`) : ['%.\0'];
+    const { rows } = await sql<{ missing: number; damaged: number; stray: number; rawToMatch: number }>`
+      WITH missing AS (
+        SELECT coalesce(r."assetId"::text, 'file:' || r."fileAssetId"::text, 'path:' || r.path) AS key, r."assetId"
+        FROM public.integrity_report r
+        WHERE r.type = ${IntegrityReport.MissingFile}
+        UNION
+        SELECT h."assetId"::text AS key, h."assetId"
+        FROM public.asset_health h JOIN public.asset a ON a.id = h."assetId"
+        WHERE h.category = 'missing' AND h.status IN ('missing', 'candidate', 'found') AND a."deletedAt" IS NULL
+      ),
+      damaged AS (
+        SELECT coalesce(r."assetId"::text, 'path:' || r.path) AS key
+        FROM public.integrity_report r
+        WHERE r.type = ${IntegrityReport.ChecksumFail}
+        UNION
+        SELECT h."assetId"::text AS key
+        FROM public.asset_health h JOIN public.asset a ON a.id = h."assetId"
+        WHERE h.category = 'corrupt' AND h.status IN ('corrupt_confirmed', 'corrupt_suspect', 'trash_queued')
+          AND a."deletedAt" IS NULL
+      )
+      SELECT
+        (SELECT count(*)::int FROM missing) AS missing,
+        (SELECT count(*)::int FROM damaged) AS damaged,
+        (SELECT count(*)::int FROM public.integrity_report WHERE type = ${IntegrityReport.UntrackedFile}) AS stray,
+        (SELECT count(DISTINCT m."assetId")::int FROM missing m JOIN public.asset a ON a.id = m."assetId"
+          WHERE lower(a."originalFileName") LIKE ANY (${raw}::text[])) AS "rawToMatch"`.execute(this.db);
+    return rows[0];
+  }
+
+  /** FL-520: missing-file findings under each folder (a folder path ending in `/`). */
+  async countMissingUnder(folders: readonly string[]): Promise<number[]> {
+    if (folders.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ folder: string; count: number }>`
+      SELECT f.folder, count(r.id)::int AS count
+      FROM unnest(${[...folders]}::text[]) AS f(folder)
+      LEFT JOIN public.integrity_report r
+        ON r.type = ${IntegrityReport.MissingFile} AND starts_with(r.path, f.folder)
+      GROUP BY f.folder`.execute(this.db);
+    const byFolder = new Map(rows.map((row) => [row.folder, row.count]));
+    return folders.map((folder) => byFolder.get(folder) ?? 0);
+  }
+
+  /**
+   * FL-520: the photos behind the missing or damaged findings of both checkers, for "Restore from a
+   * backup". Only photos still in the library; at most `limit`.
+   */
+  async getFindingAssetIds(kind: 'missing' | 'damaged', limit: number): Promise<string[]> {
+    const type = kind === 'missing' ? IntegrityReport.MissingFile : IntegrityReport.ChecksumFail;
+    const statuses =
+      kind === 'missing' ? ['missing', 'candidate', 'found'] : ['corrupt_confirmed', 'corrupt_suspect', 'trash_queued'];
+    const { rows } = await sql<{ assetId: string }>`
+      SELECT DISTINCT ids."assetId" FROM (
+        SELECT r."assetId" FROM public.integrity_report r WHERE r.type = ${type} AND r."assetId" IS NOT NULL
+        UNION
+        SELECT h."assetId" FROM public.asset_health h WHERE h.category = ${kind === 'missing' ? 'missing' : 'corrupt'}
+          AND h.status = ANY (${statuses}::text[])
+      ) ids JOIN public.asset a ON a.id = ids."assetId"
+      WHERE a."deletedAt" IS NULL
+      ORDER BY ids."assetId"
+      LIMIT ${limit}`.execute(this.db);
+    return rows.map((row) => row.assetId);
+  }
+
   @GenerateSql({ params: [{ cursor: DummyValue.NUMBER, limit: 100 }, DummyValue.STRING] })
   async getIntegrityReport(pagination: ReportPaginationOptions, type: IntegrityReport) {
     const items = await this.db

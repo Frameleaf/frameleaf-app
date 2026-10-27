@@ -1334,7 +1334,7 @@ describe(AssetDevelopService.name, () => {
       ownerId: asset.ownerId,
       originalPath: '/motion.mov',
       checksum: Buffer.alloc(20, 4),
-      format: { duration: 2.5 },
+      format: { duration: 2500 },
       videoStream: { index: 0 },
     };
     const prepareKeyframe = () => {

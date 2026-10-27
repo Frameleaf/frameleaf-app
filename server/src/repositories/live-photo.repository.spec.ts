@@ -2,6 +2,7 @@ import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { tryPromise } from 'src/utils/promise.js';
 
 describe('Live Photo relink transaction', () => {
   let db: Kysely<DB>;
@@ -25,7 +26,7 @@ describe('Live Photo relink transaction', () => {
       acquireConnection() {
         return Promise.resolve({
           executeQuery: (query: { sql: string; parameters: readonly unknown[] }) =>
-            Promise.try(() => {
+            tryPromise(() => {
               queries.push(query.sql);
               parameters = [...parameters, [...query.parameters]];
               if (failure && query.sql.includes(`from "${failure}"`))

@@ -12,6 +12,7 @@
   import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
+  import MakeMovieSheet from '$lib/components/frameleaf/MakeMovieSheet.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import RuleChips from '$lib/components/frameleaf/RuleChips.svelte';
@@ -72,6 +73,7 @@
     mdiLogoutVariant,
     mdiMapOutline,
     mdiPencilOutline,
+    mdiMovieOpenPlayOutline,
     mdiPlayCircleOutline,
     mdiPlus,
     mdiRefresh,
@@ -171,6 +173,8 @@
   const compact = $derived(phone.current);
 
   let iconOpen = $state(false);
+  /** Make a movie (FL-561): beside Slideshow, in the "…" menu on phones. */
+  let movieOpen = $state(false);
   let shareOpen = $state(false);
   let shareSection = $state<'people' | 'links'>('people');
   const openShare = (section: 'people' | 'links' = 'people') => {
@@ -573,6 +577,11 @@
         <span>{$t('slideshow')}</span>
       </button>
 
+      <button type="button" class="action" disabled={assetCount === 0} onclick={() => (movieOpen = true)}>
+        <Icon icon={mdiMovieOpenPlayOutline} size="18" />
+        <span>{$t('frameleaf_movie_make')}</span>
+      </button>
+
       <button type="button" class="action" disabled={assetCount === 0} onclick={() => void handleDownloadAlbum(album)}>
         <Icon icon={mdiDownloadOutline} size="18" />
         <span>{$t('download')}</span>
@@ -619,6 +628,10 @@
         <MenuItem disabled={assetCount === 0} onSelect={() => onSlideshow?.()}>
           <Icon icon={mdiPlayCircleOutline} size="18" />
           {$t('slideshow')}
+        </MenuItem>
+        <MenuItem disabled={assetCount === 0} onSelect={() => (movieOpen = true)}>
+          <Icon icon={mdiMovieOpenPlayOutline} size="18" />
+          {$t('frameleaf_movie_make')}
         </MenuItem>
         <MenuItem disabled={assetCount === 0} onSelect={() => void handleDownloadAlbum(album)}>
           <Icon icon={mdiDownloadOutline} size="18" />
@@ -716,6 +729,17 @@
     </section>
   {/if}
 </header>
+
+<MakeMovieSheet
+  bind:open={movieOpen}
+  source={{
+    kind: 'album',
+    albumId: album.id,
+    name,
+    itemCount: assetCount,
+    previewIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
+  }}
+/>
 
 <AlbumShareDialog
   {album}

@@ -63,6 +63,7 @@ const connection = (overrides: Partial<ICloudConnectionResponseDto> = {}): IClou
     includeHidden: false,
     recoverExternalAsManaged: false,
     intervalHours: 24,
+    automatic: true,
     concurrency: 1,
     stagingBytes: 20 * GB,
   },

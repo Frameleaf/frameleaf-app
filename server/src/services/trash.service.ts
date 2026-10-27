@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { DateTime } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DuplicateUndoClaim } from 'src/repositories/duplicate-undo-authority.js';
 import type { DuplicateUndoEffects } from 'src/repositories/duplicate-undo-completion.js';
@@ -7,6 +8,8 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   TrashApplyDto,
+  TrashEveryoneQueryDto,
+  TrashEveryoneResponseDto,
   TrashItemSort,
   TrashItemsDto,
   TrashItemsResponseDto,
@@ -52,8 +55,71 @@ export class TrashService extends BaseService {
     };
   }
 
+  /**
+   * FL-539: also when the next item goes for good (the oldest one, `trash.days` after it was
+   * deleted; tonight with the Trash off), and the space emptying the Trash frees: the originals no
+   * other item still uses, as the review of "Empty Trash" counts them.
+   */
   async getSummary(auth: AuthDto): Promise<TrashSummaryResponseDto> {
-    return this.trashRepository.getSummary(auth.user.id, this.scopeOf(auth));
+    const scope = this.scopeOf(auth);
+    const { oldestDeletedAt, ...summary } = await this.trashRepository.getSummary(auth.user.id, scope);
+    const { trash } = await this.getConfig({ withCache: true });
+    let nextGoesAt: string | null = null;
+    if (oldestDeletedAt) {
+      nextGoesAt = trash.enabled
+        ? new Date(oldestDeletedAt.getTime() + trash.days * 86_400_000).toISOString()
+        : DateTime.now().endOf('day').toJSDate().toISOString();
+    }
+    let freesBytes = 0;
+    if (summary.count > 0) {
+      const rows = await this.trashRepository.getReviewRows(auth.user.id, TrashReviewAction.Empty, undefined, scope);
+      const reviewed = summarizeTrashReview(rows);
+      freesBytes = Math.max(0, reviewed.bytes - reviewed.retainedBytes);
+    }
+    return { ...summary, nextGoesAt, freesBytes };
+  }
+
+  /**
+   * FL-365: Deleted items, for an administrator: what waits in every account's trash and how much a
+   * keep time of `days` (default the saved one) would remove at the next overnight tidy-up.
+   */
+  async getEveryone(dto: TrashEveryoneQueryDto): Promise<TrashEveryoneResponseDto> {
+    const config = await this.getConfig({ withCache: false });
+    const days = dto.days ?? (config.trash.enabled ? config.trash.days : 0);
+    const before = DateTime.now().minus({ days }).toJSDate();
+    const rows = await this.trashRepository.getEveryone(before);
+    const accounts = rows.map((row) => ({
+      userId: row.userId,
+      name: row.name,
+      count: Number(row.count),
+      bytes: toByteCount(row.bytes),
+      oldestDeletedAt: row.oldestDeletedAt ? new Date(row.oldestDeletedAt).toISOString() : null,
+    }));
+    return {
+      count: accounts.reduce((sum, account) => sum + account.count, 0),
+      bytes: accounts.reduce((sum, account) => sum + account.bytes, 0),
+      days,
+      removedTonight: rows.reduce((sum, row) => sum + Number(row.older), 0),
+      trashEnabled: config.trash.enabled,
+      tidyUpOn: config.nightlyTasks.databaseCleanup,
+      accounts,
+    };
+  }
+
+  /**
+   * FL-519: the cut-off for "going within N days". An item is removed for good `trash.days` after it
+   * was deleted, so it goes within N days when it was deleted at or before now + N - days. With the
+   * trash off, everything goes tonight, so there is no cut-off.
+   */
+  private async goingBy(withinDays: number | undefined): Promise<Date | undefined> {
+    if (withinDays === undefined) {
+      return undefined;
+    }
+    const { trash } = await this.getConfig({ withCache: true });
+    if (!trash.enabled) {
+      return undefined;
+    }
+    return new Date(Date.now() + (withinDays - trash.days) * 86_400_000);
   }
 
   async getItems(auth: AuthDto, dto: TrashItemsDto): Promise<TrashItemsResponseDto> {
@@ -63,6 +129,7 @@ export class TrashService extends BaseService {
       ...this.scopeOf(auth),
       terms: trashSearchTerms(dto.query),
       type: dto.type,
+      deletedBefore: await this.goingBy(dto.goingWithinDays),
       order: dto.sort ?? TrashItemSort.Recent,
       page,
       size,

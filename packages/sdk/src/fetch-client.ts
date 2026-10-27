@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.1.7
+ * 1.1.12
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -112,8 +112,34 @@ export type AttentionResponseDto = {
     checkedAt: string;
     /** How each kind of check came out, in a fixed order */
     checks: AttentionCheckDto[];
+    /** Overview items an administrator dismissed (FL-363); they stop counting as needing attention */
+    dismissed: string[];
     /** What needs attention, the most urgent first */
     items: AttentionItemDto[];
+};
+export type AttentionDismissDto = {
+    /** True dismisses it; false brings it back */
+    dismissed: boolean;
+    /** The item to dismiss or bring back */
+    id: string;
+};
+export type OAuthCheckDto = {
+    /** Allow a provider without a valid certificate */
+    allowInsecureRequests?: boolean;
+    /** Client ID given by the provider */
+    clientId: string;
+    /** Client secret; empty to use the saved one */
+    clientSecret?: string;
+    /** The provider address (issuer URL) */
+    issuerUrl: string;
+};
+export type OAuthCheckResponseDto = {
+    /** Why the check failed, when it did */
+    error: string | null;
+    /** The issuer the provider names, when it answered */
+    issuer: string | null;
+    /** Whether the provider answered */
+    ok: boolean;
 };
 export type BackupDeviceDto = {
     appVersion: string;
@@ -135,7 +161,6 @@ export type BackupDeviceListDto = {
 };
 export type BuddyStatusDto = {
     availableBytes: number | null;
-    canConfirm?: boolean;
     capacityUpdatedAt: string | null;
     configured: boolean;
     connection: string | null;
@@ -1230,6 +1255,24 @@ export type CloudSignInUpdateDto = {
     /** Offer Sign in with Frameleaf on the login page at home */
     showOnLocalLogin?: boolean;
 };
+export type CloudSignInPersonDto = {
+    /** Sign-in email here */
+    email: string;
+    /** The Frameleaf account email it is linked with */
+    frameleafEmail: string | null;
+    /** Account ID */
+    id: string;
+    /** Linked to a Frameleaf account, so they can sign in away from home */
+    linked: boolean;
+    /** Account name */
+    name: string;
+};
+export type CloudSignInPeopleResponseDto = {
+    /** Email is set up and the server has a public address, so reminders can be sent */
+    canRemind: boolean;
+    /** Every account here, those not linked first */
+    people: CloudSignInPersonDto[];
+};
 export type CloudTourResponseDto = {
     /** Cloud backup is set up */
     backupConfigured: boolean;
@@ -1747,19 +1790,35 @@ export type AdminConfigNewVersionCheckDto = {
     enabled: boolean;
     frequency?: VersionCheckFrequency;
 };
+export type AdminConfigOvernightStepsDto = {
+    cleanup?: OvernightStepTiming;
+    fileChecks?: OvernightStepTiming;
+    folders?: OvernightStepTiming;
+    icloud?: OvernightStepTiming;
+};
 export type AdminConfigNightlyTasksDto = {
     /** Cluster new faces */
     clusterNewFaces: boolean;
     /** Database cleanup */
     databaseCleanup: boolean;
+    /** Days of the week the night’s work starts on, Sunday 0 to Saturday 6 */
+    days?: number[];
+    /** The tidy-up step empties Trash and removes deleted accounts; off leaves Trash alone */
+    emptyTrash?: boolean;
     /** Generate memories */
     generateMemories: boolean;
     /** Missing thumbnails */
     missingThumbnails: boolean;
     /** Start time (HH:MM) */
     startTime: string;
+    /** When each step runs: every night, once a week, or only when started */
+    steps?: AdminConfigOvernightStepsDto;
+    /** No step starts after this time (HH:MM); empty runs every step to the end */
+    stopTime?: "" | string;
     /** Sync quota usage */
     syncQuotaUsage: boolean;
+    /** The day a step set to run once a week runs on, Sunday 0 to Saturday 6 */
+    weeklyDay?: number;
 };
 export type AdminConfigSmtpTransportDto = {
     /** SMTP server hostname */
@@ -1900,6 +1959,10 @@ export type AdminConfigStorageTemplateDto = {
     /** Template */
     template: string;
 };
+export type AdminConfigStorageWarningDto = {
+    /** Warn when the drive the library is on is this full, in per cent; 0 turns the warning off */
+    percent: number;
+};
 export type AdminConfigTemplateEmailsDto = {
     /** Album invite template */
     albumInviteTemplate: string;
@@ -1930,6 +1993,8 @@ export type AdminConfigTrashDto = {
 export type AdminConfigUserDto = {
     /** Delete delay */
     deleteDelay: number;
+    /** Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit */
+    newUserStorageQuota?: number | null;
 };
 export type AdminConfigDto = {
     analytics?: AdminConfigAnalyticsDto;
@@ -1957,6 +2022,7 @@ export type AdminConfigDto = {
     server: AdminConfigServerDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
+    storageWarning?: AdminConfigStorageWarningDto;
     templates: AdminConfigTemplatesDto;
     theme: AdminConfigThemeDto;
     trash: AdminConfigTrashDto;
@@ -2078,6 +2144,26 @@ export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
 };
+export type DuplicateEstimateChoiceDto = {
+    /** About how many look-alike groups this choice makes in this library */
+    groups: number;
+    maxDistance: number;
+};
+export type DuplicateEstimateResponseDto = {
+    /** An estimate for each distance asked for */
+    choices: DuplicateEstimateChoiceDto[];
+    /** Photos and videos that are compared */
+    comparable: number;
+    /** Look-alike groups found so far */
+    groups: number;
+    /** How many photos the estimate is based on */
+    sampled: number;
+    /** About how long comparing every photo again takes */
+    seconds: number;
+};
+export type DuplicateRecompareDto = {
+    when: DuplicateRecompareWhen;
+};
 export type FileTrashItemResponseDto = {
     /** Hex-encoded SHA-256 checksum of the file */
     checksum: string;
@@ -2102,6 +2188,14 @@ export type FileTrashResponseDto = {
     total: number;
     /** Disk space the file trash holds, in bytes */
     totalBytes: number;
+};
+export type FileTrashEmptyResponseDto = {
+    /** Space that came back, in bytes */
+    bytes: number;
+    /** Files deleted from the drive for good */
+    files: number;
+    /** Files that could not be deleted and are still waiting */
+    kept: number;
 };
 export type FileTrashRestoreResponseDto = {
     /** The new asset the file was restored as, in its last owner’s library */
@@ -2180,6 +2274,8 @@ export type HardwareContainerCheckDto = {
     /** Driver and runtime, or what the driver reported instead */
     driver: string | null;
     gpu: HardwareGpuFactsDto;
+    /** The GPU is an integrated one sharing the computer's memory; null when not known */
+    integrated: boolean | null;
     model: string | null;
     /** The container answered the check */
     reachable: boolean;
@@ -2216,6 +2312,148 @@ export type HardwareCheckResponseDto = {
     /** Render and restoration workers, from their reported evidence */
     workers: HardwareWorkerCheckDto[];
 };
+export type IdenticalFilesCountsDto = {
+    /** Bytes moved to Unused files */
+    bytesMovedToUnused: number;
+    /** Damaged orphans moved to Unused files */
+    damaged: number;
+    /** Extra copies moved to Unused files */
+    filesMovedToUnused: number;
+    /** Photos pointed at another person’s identical file */
+    linked: number;
+    /** Orphans whose content the owner already had */
+    orphanDuplicates: number;
+    /** Media files nothing pointed at */
+    orphansFound: number;
+    /** Identical photos in one library sent to the Trash by a merge */
+    photosMerged: number;
+    /** Orphans brought back as photos */
+    photosRecovered: number;
+    /** Problems found, including those past the listed ones */
+    problems: number;
+    /** Originals given a storage record */
+    registered: number;
+    /** Originals read from disk */
+    scanned: number;
+    /** SHA-1 records upgraded to SHA-256 */
+    upgraded: number;
+};
+export type IdenticalFilesProblemDto = {
+    /** The photo concerned, when there is one */
+    assetId: string | null;
+    /** More about it, such as the reason a merge was held back */
+    detail: string | null;
+    kind: IdenticalFilesProblemKind;
+    /** An orphaned file, relative to the media location */
+    path: string | null;
+};
+export type IdenticalFilesStatusDto = {
+    counts: IdenticalFilesCountsDto;
+    finishedAt: string | null;
+    /** The first problems found (at most 200) */
+    problems: IdenticalFilesProblemDto[];
+    /** Photos recovered per owner */
+    recovered: {
+        /** The owner’s Recovered Media album */
+        albumId: string | null;
+        ownerId: string;
+        photos: number;
+    }[];
+    stage: (IdenticalFilesStage) | null;
+    startedAt: string | null;
+    status: IdenticalFilesRunStatus;
+    /** Managed originals when the run started (scan progress total) */
+    totalOriginals: number;
+    trigger: (IdenticalFilesTrigger) | null;
+};
+export type IdenticalFilesChangeDto = {
+    createdAt: string;
+    /** Change id */
+    id: string;
+    /** The photo whose file was kept */
+    keptAssetId: string | null;
+    kind: IdenticalFilesChangeKind;
+    /** The photo’s own file waits in Unused files and can be restored */
+    restorable: boolean;
+    undoneAt: string | null;
+};
+export type IdenticalFilesRecentChangeDto = {
+    /** The photo that now shares another person’s identical file */
+    assetId: string;
+    createdAt: string;
+    /** Change id */
+    id: string;
+    /** The photo whose file was kept */
+    keptAssetId: string | null;
+    /** Whose photo that is, while it exists */
+    keptOwnerName: string | null;
+    /** The photo’s file name */
+    originalFileName: string;
+    /** Whose photo it is */
+    ownerId: string;
+    /** Their name */
+    ownerName: string;
+    /** The photo’s own file waits in Unused files and can be restored */
+    restorable: boolean;
+    /** Space the link saved */
+    sizeInBytes: number;
+    undoneAt: string | null;
+};
+export type IdenticalFilesExtraCopiesDto = {
+    /** Space the extra files take */
+    bytes: number;
+    /** Photos and videos those extra files are copies of */
+    contents: number;
+    /** Extra files on the drive that hold the same content as another */
+    files: number;
+};
+export type IntegrityFindingAssetsResponseDto = {
+    /** Photos behind the findings, at most 10,000 */
+    assetIds: string[];
+};
+export type IntegrityCheckHistoryEntryDto = {
+    /** Files it looked at, when counted */
+    checked: number | null;
+    finishedAt: string;
+    /** Findings in its list when it ended */
+    found: number;
+    outcome: IntegrityCheckOutcome;
+    startedAt: string;
+    "type": IntegrityReport;
+};
+export type IntegrityCheckProgressDto = {
+    /** Parts finished: batches of files, or files read by the damage check */
+    done: number;
+    startedAt: string;
+    /** Parts in this run; null until they are all counted */
+    total: number | null;
+    "type": IntegrityReport;
+};
+export type IntegrityUnreachableFolderDto = {
+    kind: IntegrityUnreachableFolderKind;
+    /** Missing-file findings inside this folder */
+    missing: number;
+    /** The external library’s name; empty for Frameleaf’s own folders */
+    name: string;
+    /** The folder on the server */
+    path: string;
+};
+export type IntegrityOverviewResponseDto = {
+    /** Damaged files, each counted once across both checkers */
+    damaged: number;
+    /** The most recent checks, newest first */
+    history: IntegrityCheckHistoryEntryDto[];
+    /** Missing files, each counted once across both checkers */
+    missing: number;
+    /** Missing photos whose original is a RAW file */
+    rawToMatch: number;
+    /** Checks in progress */
+    running: IntegrityCheckProgressDto[];
+    /** Files on the drive that are in no library */
+    stray: number;
+    /** Folders of originals that cannot be reached */
+    unreachable: IntegrityUnreachableFolderDto[];
+};
 export type IntegrityReportResponseDto = {
     items: {
         /** Integrity report item id */
@@ -2243,6 +2481,34 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type LibraryFolderEntryDto = {
+    name: string;
+    path: string;
+};
+export type LibraryFolderBrowseResponseDto = {
+    /** What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like */
+    defaultExclusionPatterns: string[];
+    /** Its folders, sorted by name; hidden, system and NAS folders are left out */
+    folders: LibraryFolderEntryDto[];
+    /** The folder above it; null at the top */
+    parent: string | null;
+    /** The folder that was listed */
+    path: string;
+    /** Whether the folder could be read */
+    readable: boolean;
+    /** Whether there were more folders than listed */
+    truncated: boolean;
+};
+export type LibraryFolderEstimateResponseDto = {
+    /** Their combined size, in bytes */
+    bytes: number;
+    /** False when the count stopped early (a very large or slow folder), so it is a lower bound */
+    complete: boolean;
+    /** Photos and videos found */
+    count: number;
+    /** Whether the folder could be read */
+    readable: boolean;
+};
 export type LibraryMovePauseStatusDto = {
     /** Background jobs still running */
     activeJobs: number;
@@ -2260,6 +2526,72 @@ export type LibraryMovePauseStatusDto = {
     pausedAt: string | null;
     /** Write requests still being answered */
     writesInFlight: number;
+};
+export type LibraryFeatureProgressDto = {
+    /** Photos and videos this feature has read */
+    done: number;
+    feature: LibraryProgressFeature;
+    /** Photos read an hour lately, or null until it has been measured */
+    perHour: number | null;
+    /** About how long the rest takes at that rate, or null when not known */
+    secondsLeft: number | null;
+    /** Photos and videos this feature reads */
+    total: number;
+};
+export type LibraryProgressResponseDto = {
+    features: LibraryFeatureProgressDto[];
+    /** The start of the period the rate is measured over */
+    measuredSince: string | null;
+};
+export type VideoCardTestDto = {
+    /** When it was tested */
+    at: string;
+    /** The encoder tested, or null when no graphics card was found */
+    encoder: string | null;
+    /** Why the card failed, as the converter said it */
+    error: string | null;
+    /** The card made the test video */
+    ok: boolean;
+    /** Seconds of test video the processor made a second, for comparison */
+    softwareSpeed: number | null;
+    /** Seconds of test video the card made a second, or null when it failed */
+    speed: number | null;
+};
+export type VideoCardDto = {
+    /** When the graphics card stopped helping (copies made on the processor), or null while it works */
+    failedAt: string | null;
+    lastTest: (VideoCardTestDto) | null;
+    /** About how many times slower the processor makes copies than the card, from the last test that measured both */
+    slowdown: number | null;
+};
+export type MediaCopiesResponseDto = {
+    /** FL-537: the length of the videos with a playback copy, in minutes */
+    copyMinutes: number;
+    /** When the space was last measured */
+    measuredAt: string | null;
+    photos: number;
+    /** Space playback copies take, when measured */
+    playbackBytes: number | null;
+    /** Space thumbnails and previews take, when measured */
+    previewsBytes: number | null;
+    /** Work waiting for the next overnight run */
+    tonight: LibraryRedoQueue[];
+    videoCard: VideoCardDto;
+    /** FL-537: the length of every video, in minutes */
+    videoMinutes: number;
+    videos: number;
+    /** Videos with a playback copy */
+    withCopy: number;
+    /** Photos and videos without a preview yet */
+    withoutPreview: number;
+};
+export type LibraryRedoDto = {
+    queue: LibraryRedoQueue;
+    when: LibraryRedoWhen;
+};
+export type LibraryRedoResponseDto = {
+    /** Work waiting for the next overnight run */
+    tonight: LibraryRedoQueue[];
 };
 export type LicenseEntitlementsDto = {
     cloudBackup: boolean;
@@ -2321,6 +2653,17 @@ export type LicenseActivateDto = {
 export type LicenseCertificateDto = {
     /** The contents of a licence file: the signed certificate, or a JSON file holding it */
     certificate: string;
+};
+export type LicenseCheckoutDto = {
+    licence: Licence;
+    plan: Plan;
+};
+export type LicenseCheckoutResponseDto = {
+    checkoutId: string;
+    /** When the page stops working unless payment has started, about 30 minutes */
+    expiresAt: string;
+    /** The Frameleaf store page to open; the buyer signs into the account that owns this server */
+    url: string;
 };
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
@@ -2451,6 +2794,49 @@ export type TemplateResponseDto = {
 export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
+};
+export type OvernightResultsDto = {
+    cleanup?: OvernightStepResult;
+    fileChecks?: OvernightStepResult;
+    folders?: OvernightStepResult;
+    icloud?: OvernightStepResult;
+};
+export type OvernightNightDto = {
+    finishedAt: string;
+    manual: boolean;
+    /** Photos and videos that came in during the run; null or absent when not measured */
+    newFiles?: number | null;
+    /** Items that left Trash for good during the run; null or absent when not measured */
+    removedFromTrash?: number | null;
+    results: OvernightResultsDto;
+    startedAt: string;
+};
+export type OvernightRunDto = {
+    /** Started with Run now */
+    manual: boolean;
+    results: OvernightResultsDto;
+    startedAt: string;
+    step: OvernightStep;
+    /** FL-540: the step uses the disk or the internet and waits for a running backup, since then */
+    waitingForBackupSince: string | null;
+};
+export type OvernightStepStatusDto = {
+    id: OvernightStep;
+    /** Whether the step is set up and switched on */
+    on: boolean;
+    timing: OvernightStepTiming;
+};
+export type OvernightResponseDto = {
+    /** When the next run starts */
+    nextRunAt: string | null;
+    /** The most recent runs, newest first */
+    nights: OvernightNightDto[];
+    /** The run in progress */
+    run: (OvernightRunDto) | null;
+    /** The steps, in the order a night runs them */
+    steps: OvernightStepStatusDto[];
+    /** The server time zone the schedule runs in */
+    timezone: string;
 };
 export type PhysicalDeduplicationRestoreRequestDto = {
     /** A copy of the applied plan whose own file is still on disk */
@@ -2980,6 +3366,45 @@ export type RenderWorkerUpdateDto = {
     maxWallClockMs?: string | null;
     name?: string;
 };
+export type SmartAlbumOverviewItemDto = {
+    /** Photos held across the household, each counted once */
+    count: number;
+    /** People who hid it from their library */
+    hiddenBy: number;
+    kind: string;
+    /** People whose album holds at least one photo */
+    people: number;
+    /** A few of the newest from the administrator’s own album */
+    samples: string[];
+};
+export type SmartAlbumOverviewResponseDto = {
+    albums: SmartAlbumOverviewItemDto[];
+    /** People on this server */
+    people: number;
+};
+export type SmartAlbumPreviewDto = {
+    /** Phrases: a photo that looks like one joins */
+    clipQueries: string[];
+    kind: string;
+    /** Words: a photo whose tags include one joins */
+    tagTriggers: string[];
+    /** How alike a photo must look */
+    threshold: number;
+};
+export type SmartAlbumPreviewResponseDto = {
+    addSamples: string[];
+    /** Photos the change would add */
+    adds: number;
+    /** Photos in your album now */
+    current: number;
+    /** False when the phrases could not be compared (Visual search off or not answering): only words were used */
+    looksChecked: boolean;
+    /** Photos in your library the rule would hold */
+    matched: number;
+    removeSamples: string[];
+    /** Photos the change would take out */
+    removes: number;
+};
 export type QueueStatisticsDto = {
     /** Number of active jobs */
     active: number;
@@ -2995,6 +3420,8 @@ export type QueueStatisticsDto = {
     waiting: number;
 };
 export type StorageMigrationStatusResponseDto = {
+    /** Uploaded originals a re-file checks; those already in place are not moved (FL-365) */
+    candidates: number;
     /** Whether the storage template is turned on; a run moves nothing while it is off */
     enabled: boolean;
     /** Whether durable work remains, including delayed, paused and unadmitted work */
@@ -3006,6 +3433,34 @@ export type StorageMigrationStatusResponseDto = {
     statistics: QueueStatisticsDto;
     /** The storage template originals are moved to */
     template: string;
+};
+export type TrashEveryoneAccountDto = {
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items waiting in this account’s trash */
+    count: number;
+    /** Account name */
+    name: string;
+    /** When the item that has waited longest was deleted */
+    oldestDeletedAt: string | null;
+    /** Account ID */
+    userId: string;
+};
+export type TrashEveryoneResponseDto = {
+    /** Each account with something waiting, most first */
+    accounts: TrashEveryoneAccountDto[];
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items waiting in every account’s trash */
+    count: number;
+    /** The keep time removedTonight was counted for */
+    days: number;
+    /** Items already older than days, removed for good the next time the overnight tidy-up runs */
+    removedTonight: number;
+    /** Whether the overnight tidy-up empties the trash; while it is off nothing is removed */
+    tidyUpOn: boolean;
+    /** Whether the trash is on */
+    trashEnabled: boolean;
 };
 export type UserLicense = {
     /** Activation date */
@@ -3049,6 +3504,8 @@ export type UserAdminResponseDto = {
     storageLabel: string | null;
     /** Last update date */
     updatedAt: string;
+    /** New uploads are paused for this person */
+    uploadsPaused: boolean;
 };
 export type UserAdminCreateDto = {
     avatarColor?: (UserAvatarColor) | null;
@@ -3062,6 +3519,8 @@ export type UserAdminCreateDto = {
     notify?: boolean;
     /** User password */
     password: string;
+    /** Email the person a single-use link to choose their own password instead of setting one (needs email to be set up and a public address) */
+    passwordLink?: boolean;
     /** PIN code */
     pinCode?: string | null;
     /** Storage quota in bytes */
@@ -3095,6 +3554,8 @@ export type UserAdminUpdateDto = {
     shouldChangePassword?: boolean;
     /** Storage label */
     storageLabel?: string | null;
+    /** Pause new uploads: what the person has stays, and nothing new can be added until this is turned off */
+    uploadsPaused?: boolean;
 };
 export type CalendarHeatmapResponseDto = {
     /** Start date in UTC */
@@ -3167,6 +3628,10 @@ export type FoldersResponse = {
     enabled: boolean;
     /** Whether folders appear in web sidebar */
     sidebarWeb: boolean;
+};
+export type LockedPinResponse = {
+    /** How long Locked photos stay open after the PIN unlocks them, in minutes */
+    relockMinutes: number;
 };
 export type MemoriesResponse = {
     /** Memory duration in seconds */
@@ -3243,6 +3708,7 @@ export type UserPreferencesResponseDto = {
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
+    lockedPin?: LockedPinResponse;
     /** Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67) */
     lockedRulesRevealed: boolean;
     memories: MemoriesResponse;
@@ -3299,6 +3765,10 @@ export type FoldersUpdate = {
     enabled?: boolean;
     /** Whether folders appear in web sidebar */
     sidebarWeb?: boolean;
+};
+export type LockedPinUpdate = {
+    /** How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes */
+    relockMinutes?: number;
 };
 export type MemoriesUpdate = {
     /** Memory duration in seconds */
@@ -3370,6 +3840,7 @@ export type UserPreferencesUpdateDto = {
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
     expectedRevision?: string;
     folders?: FoldersUpdate;
+    lockedPin?: LockedPinUpdate;
     memories?: MemoriesUpdate;
     /** Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision. */
     notifications?: {
@@ -3659,6 +4130,8 @@ export type AlbumResponseDto = {
     origin?: PartnerOriginDto;
     /** Collection this album belongs to (null = top-level) */
     parentId: string | null;
+    /** True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}. */
+    recovered?: boolean;
     /** Is shared album */
     shared: boolean;
     /** Built-in smart album kind behind this album, when it is a built-in smart album */
@@ -4146,6 +4619,8 @@ export type ApiKeyResponseDto = {
     createdAt: string;
     /** API key ID */
     id: string;
+    /** When the key was last used to reach the server; null when it never has been */
+    lastUsedAt: string | null;
     /** API key name */
     name: string;
     /** List of permissions */
@@ -4165,6 +4640,8 @@ export type ApiKeyCreateResponseDto = {
     createdAt: string;
     /** API key ID */
     id: string;
+    /** When the key was last used to reach the server; null when it never has been */
+    lastUsedAt: string | null;
     /** API key name */
     name: string;
     /** List of permissions */
@@ -5451,6 +5928,22 @@ export type LogoutResponseDto = {
     /** Logout successful */
     successful: boolean;
 };
+export type PasswordLinkRedeemDto = {
+    /** The password they chose (min 8 characters) */
+    newPassword: string;
+    /** The token from the emailed link */
+    token: string;
+};
+export type PasswordLinkCheckDto = {
+    /** The token from the emailed link */
+    token: string;
+};
+export type PasswordLinkCheckResponseDto = {
+    /** The email address they sign in with */
+    email: string;
+    /** Name of the person the link is for */
+    name: string;
+};
 export type PinCodeResetDto = {
     /** User password (required if PIN code is not provided) */
     password?: string;
@@ -5867,6 +6360,8 @@ export type CloudMlJobRefusalDto = {
     /** insufficient-credits, daily-cap or budget-exceeded; nothing is sent and the model is never changed */
     code: string;
     message: string;
+    /** FL-544: where to add AI credit in the Frameleaf account, when the cloud named a page; null otherwise */
+    topUpUrl: string | null;
 };
 export type CloudMlJobUpscaleDto = {
     /** The factor Frameleaf Cloud will really use and prices: lower when the 64 MP output cap needs it */
@@ -6638,6 +7133,8 @@ export type DuplicateDecisionGroupDto = {
     undone: boolean;
 };
 export type DuplicateDecisionBatchDto = {
+    /** Frameleaf made this job itself, merging identical files in one library (FL-416 "Merged for you") */
+    automatic: boolean;
     createdAt: string;
     groups: DuplicateDecisionGroupDto[];
     /** The durable job that applied these decisions */
@@ -6662,12 +7159,19 @@ export type DuplicateResolveDto = {
     /** List of duplicate groups to resolve */
     groups: DuplicateResolveGroupDto[];
 };
+export type DuplicateReviewAlbumsDto = {
+    assetId: string;
+    /** Albums of the viewer that hold this photo */
+    names: string[];
+};
 export type DuplicateReviewQualityDto = {
     assetId: string;
     /** Evidence for or against keeping this copy */
     reasons: DuplicateQualityReason[];
 };
 export type DuplicateReviewGroupDto = {
+    /** Per photo, the albums the viewer can see it in (FL-558): what is lost with a copy */
+    albums: DuplicateReviewAlbumsDto[];
     /** The photos of the group this session may see */
     assets: AssetResponseDto[];
     blockedReason: (DuplicateGroupBlock) | null;
@@ -6678,6 +7182,8 @@ export type DuplicateReviewGroupDto = {
     /** Photos of the group this session does not see */
     hiddenMemberCount: number;
     kind: DuplicateGroupKind;
+    /** Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558) */
+    lookAlike: boolean;
     /** Display names of the other accounts owning photos of a group blocked by another owner */
     otherOwnerNames?: string[];
     qualities: DuplicateReviewQualityDto[];
@@ -7142,6 +7648,7 @@ export type ICloudConnectionResponseDto = {
     authenticated: boolean;
     config: {
         albums: string[];
+        automatic: boolean;
         concurrency: number;
         includeEdits: boolean;
         includeHidden: boolean;
@@ -7176,6 +7683,7 @@ export type ICloudConnectionsResponseDto = {
 export type ICloudConnectionCreateDto = {
     config?: {
         albums?: string[];
+        automatic?: boolean;
         concurrency?: number;
         includeEdits?: boolean;
         includeHidden?: boolean;
@@ -7189,6 +7697,7 @@ export type ICloudConnectionCreateDto = {
 export type ICloudConnectionUpdateDto = {
     config?: {
         albums?: string[];
+        automatic?: boolean;
         concurrency?: number;
         includeEdits?: boolean;
         includeHidden?: boolean;
@@ -8656,6 +9165,8 @@ export type StudioRenderCandidateDto = {
     maxBitDepth: number;
     /** Output formats whose exact writer and container this session verified */
     outputFormats: StudioExportFormat[];
+    /** This session renders vertical and square exports of its SDR video formats (FL-563) */
+    reframe?: boolean;
     /** Output formats whose versioned paired SRT profile this same session verified */
     sidecarOutputFormats?: StudioExportFormat[];
 };
@@ -8677,6 +9188,8 @@ export type StudioRenderEvidenceDto = {
     sessions: number;
 };
 export type StudioCapabilitiesDto = {
+    /** This server or a home-network worker can make music for a movie right now (FL-561) */
+    generationWorker?: boolean;
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
     gpuWorker: boolean;
     /** A qualified local session can stream Studio previews */
@@ -8730,9 +9243,40 @@ export type MlCapabilitiesResponseDto = {
     studio: StudioCapabilitiesDto;
     workloads: MlWorkloadCapabilityDto[];
 };
+export type MlProcessingSourceStatusDto = {
+    /** How many computers of this kind can take work now */
+    ready: number;
+    source: MlProcessingSource;
+    state: MlProcessingSourceState;
+    /** How many computers of this kind are set up */
+    total: number;
+};
+export type MlWorkloadProcessingOrderDto = {
+    /** The workload's own list, first to last; empty keeps the workload off */
+    sources: MlProcessingSource[];
+    workload: MlWorkload;
+};
+export type MlProcessingOrderResponseDto = {
+    /** The places processing tries, first to last, for every workload without a list of its own */
+    order: MlProcessingSource[];
+    /** Whether each place can take work now */
+    sources: MlProcessingSourceStatusDto[];
+    /** Workloads with a list of their own */
+    workloads: MlWorkloadProcessingOrderDto[];
+};
+export type MlProcessingOrderUpdateDto = {
+    /** The places to try, first to last; each of this server, your computers and Frameleaf Cloud once */
+    order: MlProcessingSource[];
+};
+export type MlWorkloadProcessingOrderUpdateDto = {
+    /** The workload's own list, first to last; empty keeps it off; null makes it follow the main order again */
+    sources: MlProcessingSource[] | null;
+};
 export type MlWorkloadRouteDto = {
-    /** Destination the workload is routed to, or null when unrouted */
+    /** Where the workload's jobs go now: the first available place in its processing order (FL-456), else the first place in it; null when its order names nowhere it could run */
     destinationId: string | null;
+    /** FL-456: true when the workload follows the main processing order, false when it has its own list */
+    followsOrder?: boolean;
     /** Recorded route intent; null means no route or recorded intent. Missing on older servers means unknown. */
     origin?: (MlRouteOrigin) | null;
     /** Recorded intent incarnation, or null when intent is unknown */
@@ -8986,6 +9530,8 @@ export type FrameleafLinkResponseDto = {
     storageLabel: string | null;
     /** Last update date */
     updatedAt: string;
+    /** New uploads are paused for this person */
+    uploadsPaused: boolean;
 };
 export type FrameleafLinkConfirmDto = {
     /** The token a preview returned */
@@ -13392,6 +13938,8 @@ export type ServerConfigDto = {
     oauthAccountManagementUrl?: string;
     /** OAuth button text */
     oauthButtonText: string;
+    /** Whether place names and landmarks are being put back after a restore or a first start, so they can look missing for a few minutes */
+    placesRestoring: boolean;
     /** Whether public user registration is enabled */
     publicUsers: boolean;
     /** Server name set by an administrator; empty when none is set */
@@ -14024,6 +14572,47 @@ export type SharedSpacePersonLinkDto = {
     /** A person of the caller's own to publish into the shared space */
     personId: string;
 };
+export type MySmartAlbumDto = {
+    albumId: string;
+    /** Photos and videos in it that this person can see */
+    count: number;
+    /** This person hid it from their library; it keeps filling */
+    hidden: boolean;
+    /** The built-in album: pets, food, travel and so on */
+    kind: string;
+    name: string;
+    /** A few of the newest, to show as small pictures */
+    samples: string[];
+};
+export type MySmartAlbumsResponseDto = {
+    albums: MySmartAlbumDto[];
+    /** Smart albums are on for this server */
+    enabled: boolean;
+};
+export type SmartAlbumHiddenDto = {
+    /** Hide the album from your own library, or show it again */
+    hidden: boolean;
+};
+export type SourceGrantRequestDto = {
+    deviceId: string;
+    requestId: string;
+    scopeFingerprint: string;
+    signature: string;
+    sourceId: string;
+    timestamp: number;
+};
+export type SourceGrantDto = {
+    authorizationEpoch: number;
+    deviceId: string;
+    expiresAt: string;
+    grantId: string;
+    ownerId: string;
+    scopeFingerprint: string;
+    scopes: SourceResourceScope[];
+    serverId: string;
+    sourceId: string;
+    sourceToken: string;
+};
 export type StackResponseDto = {
     assets: AssetResponseDto[];
     /** Stack ID */
@@ -14202,6 +14791,8 @@ export type StudioExportSettingsDto = {
     /** Absent renders the whole main timeline */
     range?: StudioExportRangeDto;
     resolution: StudioExportResolution;
+    /** Absent on exports in the project’s own shape */
+    shape?: StudioExportShape;
     /** Absent uses the native `burn` default */
     subtitleMode?: StudioExportSubtitleMode;
 };
@@ -14285,6 +14876,78 @@ export type StudioFontFamilyDto = {
 export type StudioFontCatalogDto = {
     /** The title font families bundled with this server */
     families: StudioFontFamilyDto[];
+};
+export type StudioMovieCreateDto = {
+    /** Make the movie from this album */
+    albumId?: string;
+    /** Make the movie from these photos and videos */
+    assetIds?: string[];
+    /** 30, 60 or 180 seconds; a song shorter than this sets the length */
+    lengthSeconds: 30 | 60 | 180;
+    /** Make the movie from this memory */
+    memoryId?: string;
+    /** For `generated` music */
+    mood?: StudioMovieMood;
+    music: StudioMovieMusicKind;
+    /** Try another version: the earlier job. Its project gets the new cut as a new revision, so the current one stays in its history. */
+    previousId?: string;
+    /** For `song`: an audio file, or a video whose soundtrack is used */
+    songAssetId?: string;
+    /** What the movie is made from, as the person sees it (the album or memory name) */
+    sourceName?: string;
+    /** The title at the start; defaults to the source name */
+    title?: string;
+};
+export type StudioMovieQueuedDto = {
+    /** The job id; it also shows in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioMovieSongDto = {
+    durationSeconds: number;
+    id: string;
+    kind: StudioMovieSongKind;
+    name: string;
+};
+export type StudioMovieShot = {
+    assetId: string;
+    end: number;
+    /** Seconds into the movie */
+    start: number;
+};
+export type StudioMovieResultDto = {
+    /** Bar starts, in seconds */
+    bars: number[];
+    /** Every beat, in seconds */
+    beats: number[];
+    bpm: number;
+    /** Which of the first four beats starts a bar */
+    downbeat: number;
+    lengthSeconds: number;
+    mood: (StudioMovieMood) | null;
+    music: StudioMovieMusicKind;
+    /** The music, kept with the project */
+    musicImportId: string;
+    /** The song name, or empty for music made for the movie */
+    musicName: string;
+    musicSeconds: number;
+    /** The Studio project the movie is saved in */
+    projectId: string;
+    /** The project revision this version is */
+    revision: number;
+    shots: StudioMovieShot[];
+    sourceName: string;
+    title: string;
+    version: number;
+};
+export type StudioMovieDto = {
+    error: string | null;
+    id: string;
+    progress: number;
+    /** Present once the job has completed */
+    result: (StudioMovieResultDto) | null;
+    status: MediaOperationStatus;
+    step: StudioMovieStep;
 };
 export type StudioPreviewStreamOpenDto = {
     /** Studio project to play */
@@ -14579,6 +15242,18 @@ export type StudioExportListResponseDto = {
     /** Matching versions, before paging */
     total: number;
 };
+export type StudioReframePointDto = {
+    /** Progress through the shot, 0 to 1 */
+    t: number;
+    /** Centre of the crop (or of the subject) as a share of the project frame width, 0 left to 1 right */
+    x: number;
+};
+export type StudioExportFramingDto = {
+    /** A video or still on the main timeline */
+    clipId: string;
+    /** Where the crop centre is through the shot, in order of progress */
+    path: StudioReframePointDto[];
+};
 export type StudioExportSmoothMotionDto = {
     /** Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately */
     destinationId: string;
@@ -14596,6 +15271,8 @@ export type StudioExportCreateDto = {
     /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
     expectedRevision?: number;
     format: StudioExportFormat;
+    /** For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored */
+    framing?: StudioExportFramingDto[];
     /** Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults */
     mastering?: StudioExportMastering;
     /** Defaults to `high` */
@@ -14605,6 +15282,8 @@ export type StudioExportCreateDto = {
     /** Idempotency key; a repeated submit answers with the first export */
     requestKey?: string;
     resolution: StudioExportResolution;
+    /** Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed */
+    shape?: StudioExportShape;
     smoothMotion?: StudioExportSmoothMotionDto;
     /** Defaults to `burn` */
     subtitleMode?: StudioExportSubtitleMode;
@@ -14613,6 +15292,30 @@ export type StudioExportCreateResponseDto = {
     /** The render job; follow it in Activity */
     operation: MediaOperationDto;
     version: StudioExportVersionDto;
+};
+export type StudioReframeShotDto = {
+    /** The library asset it shows, when this session may read it */
+    assetId: string | null;
+    /** The video or still on the main timeline */
+    clipId: string;
+    /** Length of the shot in frames */
+    durationInFrames: number;
+    /** First frame of the shot on the main timeline */
+    "from": number;
+    /** Where the subject is through the shot, as a share of the project frame width */
+    path: StudioReframePointDto[];
+    subject: StudioReframeSubject;
+    "type": StudioReframeShotType;
+};
+export type StudioReframeResponseDto = {
+    /** Project frame height in pixels */
+    height: number;
+    /** The stored revision the framing was worked out for */
+    revision: number;
+    /** Every shot of the main timeline, in the order they start */
+    shots: StudioReframeShotDto[];
+    /** Project frame width in pixels */
+    width: number;
 };
 export type RetainedProcessingProvenance = {
     evidence: "client-reported";
@@ -15636,6 +16339,10 @@ export type TrashSummaryResponseDto = {
     bytes: number;
     /** Items in your trash this session can see */
     count: number;
+    /** FL-539: the space emptying the Trash frees: originals no other item still uses, in bytes */
+    freesBytes: number;
+    /** FL-539: when the next item is removed for good, or null with an empty trash */
+    nextGoesAt: string | null;
     /** Of those, external-library originals that went missing; the library scan manages them */
     offline: number;
     /** Items already permanently deleted whose files are still being removed from storage */
@@ -15678,6 +16385,8 @@ export type UserMeResponseDto = {
     storageLabel: string | null;
     /** Last update date */
     updatedAt: string;
+    /** New uploads are paused for this person */
+    uploadsPaused: boolean;
 };
 export type UserUpdateMeDto = {
     avatarColor?: (UserAvatarColor) | null;
@@ -15909,6 +16618,20 @@ export type UserPreferenceHistoryResponseDto = {
     /** The newest preference changes first */
     entries: UserPreferenceHistoryEntryDto[];
 };
+export type LockedRulesDraftDto = {
+    /** Person IDs the draft locks */
+    personIds: string[];
+    /** Pet IDs the draft locks */
+    petIds: string[];
+    /** Tag IDs the draft locks */
+    tagIds: string[];
+};
+export type LockedRulesCountResponseDto = {
+    /** Your photos the draft would keep Locked */
+    photos: number;
+    /** Your videos the draft would keep Locked */
+    videos: number;
+};
 export type CreateProfileImageDto = {
     /** ID of the photo the image was copied from, if any. A Locked photo is refused. */
     assetId?: string;
@@ -15924,6 +16647,20 @@ export type CreateProfileImageResponseDto = {
     profileImagePath: string;
     /** User ID */
     userId: string;
+};
+export type UtilitiesSummaryResponseDto = {
+    /** Photos whose original file is damaged, across the server; null unless an administrator asks */
+    damagedFiles: number | null;
+    /** Groups of look-alike photos waiting for a decision */
+    duplicateGroups: number;
+    /** Photos whose original file is missing, across the server; null unless an administrator asks */
+    missingFiles: number | null;
+    /** Combined size of those unused originals, in bytes; null unless the server owner asks */
+    unusedBytes: number | null;
+    /** Originals no library uses any more (Unused files); null unless the server owner asks */
+    unusedFiles: number | null;
+    /** Photos and videos on the timeline with no place */
+    withoutPlace: number;
 };
 export type FolderSummaryResponseDto = {
     /** Originals directly in this folder */
@@ -16313,6 +17050,10 @@ export type DocumentSearchDto = {
     query?: string;
     size?: number;
 };
+export type DuplicateEstimateQueryDto = {
+    /** The distances to estimate groups for, from 0.001 (nearly identical) to 0.1 */
+    maxDistances: number[];
+};
 export type FaceSearchDto = {
     /** Face ID */
     id: string;
@@ -16604,6 +17345,13 @@ export type HdrAssetDevelopRecipeV6 = {
 export type ICloudEditEvidenceQueryDto = {
     assetId: string;
 };
+export type IdenticalFilesRecentChangesQueryDto = {
+    /** How many to list */
+    limit?: number;
+};
+export type IntegrityFindingAssetsDto = {
+    kind: IntegrityFindingKind;
+};
 export type IntegrityGetReportDto = {
     /** Cursor for pagination */
     cursor?: string;
@@ -16742,6 +17490,16 @@ export type LargeAssetSearchDto = {
     withDeleted?: boolean;
     /** Include EXIF data in response */
     withExif?: boolean;
+};
+export type LibraryFolderBrowseDto = {
+    /** An absolute folder; defaults to the top of the disk */
+    path?: string;
+};
+export type LibraryFolderEstimateDto = {
+    /** What the folder would skip */
+    exclusionPatterns?: string | string[];
+    /** An absolute folder */
+    path: string;
 };
 export type LibrarySearchDto = {
     /** Include libraries whose removal is still in progress */
@@ -16985,6 +17743,9 @@ export type SharedLinkSearchDto = {
     albumId?: string;
     /** Filter by shared link ID */
     id?: string;
+};
+export type SmartAlbumKindParamDto = {
+    kind: string;
 };
 export type StackSearchDto = {
     /** Filter by primary asset ID */
@@ -17902,7 +18663,13 @@ export type TimelineOrderedDto = {
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
     withStacked?: boolean;
 };
+export type TrashEveryoneQueryDto = {
+    /** A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value */
+    days?: number;
+};
 export type TrashItemsDto = {
+    /** Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight */
+    goingWithinDays?: number;
     /** Page number, from 1 */
     page?: number;
     /** Words that must all appear in the file name */
@@ -18015,6 +18782,36 @@ export function getAttention(opts?: Oazapfts.RequestOpts) {
     }>("/admin/attention", {
         ...opts
     }));
+}
+/**
+ * Dismiss an attention item
+ */
+export function setAttentionDismissed({ attentionDismissDto }: {
+    attentionDismissDto: AttentionDismissDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AttentionResponseDto;
+    }>("/admin/attention/dismissed", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: attentionDismissDto
+    })));
+}
+/**
+ * Check a sign-in provider
+ */
+export function checkOAuthProvider({ oAuthCheckDto }: {
+    oAuthCheckDto: OAuthCheckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthCheckResponseDto;
+    }>("/admin/auth/oauth-check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthCheckDto
+    })));
 }
 /**
  * Unlink all OAuth accounts
@@ -18983,6 +19780,28 @@ export function updateCloudSignIn({ cloudSignInUpdateDto }: {
     })));
 }
 /**
+ * List who has linked a Frameleaf account
+ */
+export function getCloudSignInPeople(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudSignInPeopleResponseDto;
+    }>("/admin/cloud/sign-in/people", {
+        ...opts
+    }));
+}
+/**
+ * Remind someone to link their Frameleaf account
+ */
+export function remindCloudSignIn({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/cloud/sign-in/people/${encodeURIComponent(id)}/remind`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get the Frameleaf Cloud link status
  */
 export function getCloudStatus(opts?: Oazapfts.RequestOpts) {
@@ -19231,6 +20050,33 @@ export function downloadDatabaseBackup({ filename }: {
     }));
 }
 /**
+ * Estimate look-alike groups
+ */
+export function getDuplicateEstimate({ maxDistances }: {
+    maxDistances: number[];
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DuplicateEstimateResponseDto;
+    }>(`/admin/duplicates/estimate${QS.query(QS.explode({
+        maxDistances
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Compare look-alike photos again
+ */
+export function recompareDuplicates({ duplicateRecompareDto }: {
+    duplicateRecompareDto: DuplicateRecompareDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/duplicates/recompare", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: duplicateRecompareDto
+    })));
+}
+/**
  * List the file trash
  */
 export function getFileTrash({ page, size }: {
@@ -19245,6 +20091,18 @@ export function getFileTrash({ page, size }: {
         size
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * Empty the file trash
+ */
+export function emptyFileTrash(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileTrashEmptyResponseDto;
+    }>("/admin/file-trash/empty", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -19305,6 +20163,108 @@ export function runHardwareCheck(opts?: Oazapfts.RequestOpts) {
     }>("/admin/hardware/check", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get the identical files status
+ */
+export function getIdenticalFilesStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesStatusDto;
+    }>("/admin/identical-files", {
+        ...opts
+    }));
+}
+/**
+ * List a photo’s identical-file changes
+ */
+export function getIdenticalFileChanges({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesChangeDto[];
+    }>(`/admin/identical-files/assets/${encodeURIComponent(id)}/changes`, {
+        ...opts
+    }));
+}
+/**
+ * List recent identical-file changes
+ */
+export function getRecentIdenticalFileChanges({ limit }: {
+    limit?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesRecentChangeDto[];
+    }>(`/admin/identical-files/changes${QS.query(QS.explode({
+        limit
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Restore a photo’s own file
+ */
+export function undoIdenticalFileChange({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesChangeDto;
+    }>(`/admin/identical-files/changes/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Check identical files again
+ */
+export function checkIdenticalFiles(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesStatusDto;
+    }>("/admin/identical-files/check", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Count extra copies on the drive
+ */
+export function getIdenticalFilesExtraCopies(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IdenticalFilesExtraCopiesDto;
+    }>("/admin/identical-files/extra-copies", {
+        ...opts
+    }));
+}
+/**
+ * Get the photos behind missing or damaged findings
+ */
+export function getIntegrityFindingAssets({ kind }: {
+    kind: IntegrityFindingKind;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityFindingAssetsResponseDto;
+    }>(`/admin/integrity/assets${QS.query(QS.explode({
+        kind
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get the file checks overview
+ */
+export function getIntegrityOverview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityOverviewResponseDto;
+    }>("/admin/integrity/overview", {
+        ...opts
     }));
 }
 /**
@@ -19400,6 +20360,18 @@ export function getIntegrityCheckRuns(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Stop the file checks
+ */
+export function stopIntegrityChecks(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityOverviewResponseDto;
+    }>("/admin/integrity/stop", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get integrity report summary
  */
 export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
@@ -19407,6 +20379,38 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: IntegrityReportSummaryResponseDto;
     }>("/admin/integrity/summary", {
+        ...opts
+    }));
+}
+/**
+ * Browse folders on the server
+ */
+export function browseLibraryFolders({ path }: {
+    path?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryFolderBrowseResponseDto;
+    }>(`/admin/libraries/folders${QS.query(QS.explode({
+        path
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Count the photos in a folder
+ */
+export function estimateLibraryFolder({ exclusionPatterns, path }: {
+    exclusionPatterns?: string | string[];
+    path: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryFolderEstimateResponseDto;
+    }>(`/admin/libraries/folders/estimate${QS.query(QS.explode({
+        exclusionPatterns,
+        path
+    }))}`, {
         ...opts
     }));
 }
@@ -19432,6 +20436,55 @@ export function resumeLibraryMovePause(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Get the reading progress
+ */
+export function getLibraryProgress(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryProgressResponseDto;
+    }>("/admin/library-progress", {
+        ...opts
+    }));
+}
+/**
+ * Get the previews and playback copies
+ */
+export function getMediaCopies(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaCopiesResponseDto;
+    }>("/admin/library-progress/media-copies", {
+        ...opts
+    }));
+}
+/**
+ * Test the graphics card for video
+ */
+export function testVideoCard(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoCardDto;
+    }>("/admin/library-progress/media-copies/video-card/test", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Start a feature again over every photo
+ */
+export function redoLibraryWork({ libraryRedoDto }: {
+    libraryRedoDto: LibraryRedoDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryRedoResponseDto;
+    }>("/admin/library-progress/redo", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryRedoDto
+    })));
 }
 /**
  * Remove the licence key
@@ -19484,6 +20537,21 @@ export function installLicenseCertificate({ licenseCertificateDto }: {
         ...opts,
         method: "PUT",
         body: licenseCertificateDto
+    })));
+}
+/**
+ * Start a Frameleaf Cloud purchase
+ */
+export function startLicenseCheckout({ licenseCheckoutDto }: {
+    licenseCheckoutDto: LicenseCheckoutDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseCheckoutResponseDto;
+    }>("/admin/license/checkout", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: licenseCheckoutDto
     })));
 }
 /**
@@ -19654,6 +20722,41 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         method: "POST",
         body: adminConfigSmtpDto
     })));
+}
+/**
+ * Get the overnight schedule
+ */
+export function getOvernight(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OvernightResponseDto;
+    }>("/admin/overnight", {
+        ...opts
+    }));
+}
+/**
+ * Run the overnight work now
+ */
+export function runOvernight(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OvernightResponseDto;
+    }>("/admin/overnight/run", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Stop the overnight work
+ */
+export function stopOvernight(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OvernightResponseDto;
+    }>("/admin/overnight/stop", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Restore a copy of an applied physical deduplication plan
@@ -19870,6 +20973,32 @@ export function updateRenderWorker({ id, renderWorkerUpdateDto }: {
     })));
 }
 /**
+ * Get the smart albums across the household
+ */
+export function getSmartAlbumOverview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SmartAlbumOverviewResponseDto;
+    }>("/admin/smart-albums", {
+        ...opts
+    }));
+}
+/**
+ * Preview a smart album rule
+ */
+export function previewSmartAlbumRule({ smartAlbumPreviewDto }: {
+    smartAlbumPreviewDto: SmartAlbumPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SmartAlbumPreviewResponseDto;
+    }>("/admin/smart-albums/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: smartAlbumPreviewDto
+    })));
+}
+/**
  * Get storage migration status
  */
 export function getStorageMigrationStatus(opts?: Oazapfts.RequestOpts) {
@@ -19890,6 +21019,21 @@ export function runStorageMigrationInBackground(opts?: Oazapfts.RequestOpts) {
     }>("/admin/storage-migration", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get what waits in every trash
+ */
+export function getTrashEveryone({ days }: {
+    days?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashEveryoneResponseDto;
+    }>(`/admin/trash/everyone${QS.query(QS.explode({
+        days
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -20005,6 +21149,17 @@ export function getUserHistoryAdmin({ before, id, take }: {
         take
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * Email a link to choose a password
+ */
+export function sendUserPasswordLinkAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/password-link`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -21972,6 +23127,33 @@ export function logout(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Choose a password with a link
+ */
+export function redeemPasswordLink({ passwordLinkRedeemDto }: {
+    passwordLinkRedeemDto: PasswordLinkRedeemDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/auth/password-link", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passwordLinkRedeemDto
+    })));
+}
+/**
+ * Check a choose-a-password link
+ */
+export function checkPasswordLink({ passwordLinkCheckDto }: {
+    passwordLinkCheckDto: PasswordLinkCheckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PasswordLinkCheckResponseDto;
+    }>("/auth/password-link/check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: passwordLinkCheckDto
+    })));
+}
+/**
  * Reset pin code
  */
 export function resetPinCode({ pinCodeResetDto }: {
@@ -23836,6 +25018,17 @@ export function scanLibrary({ id }: {
     }));
 }
 /**
+ * Check every file of a library again
+ */
+export function scanLibraryEveryFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan/every-file`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve library statistics
  */
 export function getLibraryStatistics({ id }: {
@@ -24656,6 +25849,48 @@ export function getMlCapabilities(opts?: Oazapfts.RequestOpts) {
     }>("/ml-destinations/capabilities", {
         ...opts
     }));
+}
+/**
+ * Get the processing order
+ */
+export function getMlProcessingOrder(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlProcessingOrderResponseDto;
+    }>("/ml-destinations/processing-order", {
+        ...opts
+    }));
+}
+/**
+ * Set the processing order
+ */
+export function setMlProcessingOrder({ mlProcessingOrderUpdateDto }: {
+    mlProcessingOrderUpdateDto: MlProcessingOrderUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlProcessingOrderResponseDto;
+    }>("/ml-destinations/processing-order", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mlProcessingOrderUpdateDto
+    })));
+}
+/**
+ * Set the processing order of one workload
+ */
+export function setMlWorkloadProcessingOrder({ workload, mlWorkloadProcessingOrderUpdateDto }: {
+    workload: MlWorkload;
+    mlWorkloadProcessingOrderUpdateDto: MlWorkloadProcessingOrderUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlProcessingOrderResponseDto;
+    }>(`/ml-destinations/processing-order/${encodeURIComponent(workload)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mlWorkloadProcessingOrderUpdateDto
+    })));
 }
 /**
  * List workload routes
@@ -28580,6 +29815,48 @@ export function markSharedSpaceVisited({ id }: {
     }));
 }
 /**
+ * List your smart albums
+ */
+export function getMySmartAlbums(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MySmartAlbumsResponseDto;
+    }>("/smart-albums/mine", {
+        ...opts
+    }));
+}
+/**
+ * Hide or show one of your smart albums
+ */
+export function setMySmartAlbumHidden({ kind, smartAlbumHiddenDto }: {
+    kind: string;
+    smartAlbumHiddenDto: SmartAlbumHiddenDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MySmartAlbumsResponseDto;
+    }>(`/smart-albums/mine/${encodeURIComponent(kind)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: smartAlbumHiddenDto
+    })));
+}
+/**
+ * Issue a source-only credential for an approved desktop reference source
+ */
+export function createSourceResourceGrant({ sourceGrantRequestDto }: {
+    sourceGrantRequestDto: SourceGrantRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SourceGrantDto;
+    }>("/source-resources/grants", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sourceGrantRequestDto
+    })));
+}
+/**
  * Delete stacks
  */
 export function deleteStacks({ bulkIdsDto }: {
@@ -28826,6 +30103,49 @@ export function getStudioFontFile({ sha256 }: {
         status: 200;
         data: Blob;
     }>(`/studio/fonts/${encodeURIComponent(sha256)}`, {
+        ...opts
+    }));
+}
+/**
+ * Make a movie
+ */
+export function createStudioMovie({ studioMovieCreateDto }: {
+    studioMovieCreateDto: StudioMovieCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioMovieQueuedDto;
+    }>("/studio/movies", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioMovieCreateDto
+    })));
+}
+/**
+ * List songs for a movie
+ */
+export function getStudioMovieSongs({ query }: {
+    query?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioMovieSongDto[];
+    }>(`/studio/movies/songs${QS.query(QS.explode({
+        query
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get a movie
+ */
+export function getStudioMovie({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioMovieDto;
+    }>(`/studio/movies/${encodeURIComponent(id)}`, {
         ...opts
     }));
 }
@@ -29188,6 +30508,19 @@ export function createStudioExport({ id, studioExportCreateDto }: {
         method: "POST",
         body: studioExportCreateDto
     })));
+}
+/**
+ * Get the automatic framing of a Studio project’s shots
+ */
+export function getStudioFraming({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioReframeResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/framing`, {
+        ...opts
+    }));
 }
 /**
  * List the files imported into a Studio project
@@ -30583,7 +31916,8 @@ export function emptyTrash(opts?: Oazapfts.RequestOpts) {
 /**
  * List trash items
  */
-export function getTrashItems({ page, query, size, sort, $type }: {
+export function getTrashItems({ goingWithinDays, page, query, size, sort, $type }: {
+    goingWithinDays?: number;
     page?: number;
     query?: string;
     size?: number;
@@ -30594,6 +31928,7 @@ export function getTrashItems({ page, query, size, sort, $type }: {
         status: 200;
         data: TrashItemsResponseDto;
     }>(`/trash/items${QS.query(QS.explode({
+        goingWithinDays,
         page,
         query,
         size,
@@ -31141,6 +32476,21 @@ export function getMyPreferenceHistory(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Count what a draft of my Locked rules keeps Locked
+ */
+export function countLockedRules({ lockedRulesDraftDto }: {
+    lockedRulesDraftDto: LockedRulesDraftDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LockedRulesCountResponseDto;
+    }>("/users/me/preferences/locked-rules/count", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedRulesDraftDto
+    })));
+}
+/**
  * Delete user profile image
  */
 export function deleteProfileImage(opts?: Oazapfts.RequestOpts) {
@@ -31187,6 +32537,17 @@ export function getProfileImage({ id }: {
         status: 200;
         data: Blob;
     }>(`/users/${encodeURIComponent(id)}/profile-image`, {
+        ...opts
+    }));
+}
+/**
+ * Get what each utility has waiting
+ */
+export function getUtilitiesSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UtilitiesSummaryResponseDto;
+    }>("/utilities/summary", {
         ...opts
     }));
 }
@@ -31908,6 +33269,11 @@ export enum VersionCheckFrequency {
     Daily = "daily",
     Weekly = "weekly"
 }
+export enum OvernightStepTiming {
+    Nightly = "nightly",
+    Weekly = "weekly",
+    Manual = "manual"
+}
 export enum MailTransportType {
     Smtp = "smtp",
     Gmail = "gmail",
@@ -31947,6 +33313,10 @@ export enum BackupSequencePlace {
     Local = "local",
     Buddy = "buddy",
     Cloud = "cloud"
+}
+export enum DuplicateRecompareWhen {
+    Now = "now",
+    Tonight = "tonight"
 }
 export enum HardwareRunsOn {
     Gpu = "gpu",
@@ -31995,10 +33365,71 @@ export enum HardwareWorkerKind {
     Render = "render",
     Restoration = "restoration"
 }
+export enum IdenticalFilesProblemKind {
+    Missing = "missing",
+    Unreadable = "unreadable",
+    Changed = "changed",
+    Undone = "undone",
+    CheckBeforeMerging = "check-before-merging",
+    KeptForNow = "kept-for-now",
+    Damaged = "damaged",
+    OverQuota = "over-quota",
+    NeedsALook = "needs-a-look",
+    Failed = "failed"
+}
+export enum IdenticalFilesStage {
+    Scan = "scan",
+    Link = "link",
+    Merge = "merge",
+    Orphans = "orphans",
+    Done = "done"
+}
+export enum IdenticalFilesRunStatus {
+    NeverRun = "never-run",
+    Running = "running",
+    Completed = "completed"
+}
+export enum IdenticalFilesTrigger {
+    Manual = "manual",
+    ImmichImport = "immich-import"
+}
+export enum IdenticalFilesChangeKind {
+    Link = "link"
+}
+export enum IntegrityFindingKind {
+    Missing = "missing",
+    Damaged = "damaged"
+}
+export enum IntegrityCheckOutcome {
+    Completed = "completed",
+    Paused = "paused",
+    Stopped = "stopped"
+}
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
     MissingFile = "missing_file",
     ChecksumMismatch = "checksum_mismatch"
+}
+export enum IntegrityUnreachableFolderKind {
+    Storage = "storage",
+    Library = "library"
+}
+export enum LibraryProgressFeature {
+    Search = "search",
+    Faces = "faces",
+    Text = "text",
+    Captions = "captions",
+    Locked = "locked"
+}
+export enum LibraryRedoQueue {
+    SmartSearch = "smartSearch",
+    FacialRecognition = "facialRecognition",
+    ThumbnailGeneration = "thumbnailGeneration",
+    VideoConversion = "videoConversion"
+}
+export enum LibraryRedoWhen {
+    Now = "now",
+    Tonight = "tonight"
 }
 export enum LicenseKind {
     Server = "server",
@@ -32016,6 +33447,14 @@ export enum LicenseState {
     Grace = "grace",
     Expired = "expired",
     Invalid = "invalid"
+}
+export enum Licence {
+    SupporterServer = "supporter-server",
+    SupporterIndividual = "supporter-individual"
+}
+export enum Plan {
+    CloudMonthly = "cloud-monthly",
+    CloudAnnual = "cloud-annual"
 }
 export enum MaintenanceAction {
     Start = "start",
@@ -32069,6 +33508,20 @@ export enum MailSignInUnavailableReason {
     NotConfigured = "not-configured",
     NotLinked = "not-linked",
     CloudUnreachable = "cloud-unreachable"
+}
+export enum OvernightStepResult {
+    Done = "done",
+    Off = "off",
+    Skipped = "skipped",
+    Stopped = "stopped",
+    Failed = "failed",
+    Unfinished = "unfinished"
+}
+export enum OvernightStep {
+    Cleanup = "cleanup",
+    Folders = "folders",
+    Icloud = "icloud",
+    FileChecks = "fileChecks"
 }
 export enum PhysicalDeduplicationCopyFile {
     Removed = "removed",
@@ -32149,6 +33602,7 @@ export enum MediaOperationKind {
     StudioPreview = "studio_preview",
     StudioReverseConform = "studio_reverse_conform",
     StudioTranscription = "studio_transcription",
+    StudioMovie = "studio_movie",
     StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
@@ -33244,6 +34698,7 @@ export enum ManualJobName {
     BestPhotosBackfill = "best-photos-backfill",
     PhysicalDeduplicationDryRun = "physical-deduplication-dry-run",
     PhysicalDeduplicationApply = "physical-deduplication-apply",
+    IdenticalFilesCheck = "identical-files-check",
     IntegrityMissingFiles = "integrity-missing-files",
     IntegrityUntrackedFiles = "integrity-untracked-files",
     IntegrityChecksumMismatch = "integrity-checksum-mismatch",
@@ -33528,6 +34983,18 @@ export enum StudioExportFormat {
     AudioMp3 = "audio-mp3",
     AudioAac = "audio-aac",
     AudioWav = "audio-wav"
+}
+export enum MlProcessingSource {
+    Local = "local",
+    Desktops = "desktops",
+    Cloud = "cloud"
+}
+export enum MlProcessingSourceState {
+    Ready = "ready",
+    NotAnswering = "not-answering",
+    TurnedOff = "turned-off",
+    NeedsPermission = "needs-permission",
+    NotSetUp = "not-set-up"
 }
 export enum MlRouteOrigin {
     Default = "default",
@@ -34368,6 +35835,7 @@ export enum JobName {
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",
     PhysicalDeduplicationMigrationDryRun = "PhysicalDeduplicationMigrationDryRun",
     PhysicalDeduplicationMigrationApply = "PhysicalDeduplicationMigrationApply",
+    IdenticalFilesCheck = "IdenticalFilesCheck",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
     FrameleafHeartbeat = "FrameleafHeartbeat",
@@ -34376,6 +35844,7 @@ export enum JobName {
     CloudMlLibraryBatch = "CloudMlLibraryBatch",
     CloudBackupSchedule = "CloudBackupSchedule",
     BackupSequence = "BackupSequence",
+    OvernightSequence = "OvernightSequence",
     CloudBackupVerify = "CloudBackupVerify",
     PushDeliver = "PushDeliver",
     PushBackupStaleCheck = "PushBackupStaleCheck",
@@ -34460,7 +35929,8 @@ export enum SearchFacetField {
     LensModel = "lensModel",
     Rating = "rating",
     IsFavorite = "isFavorite",
-    Tags = "tags"
+    Tags = "tags",
+    Pets = "pets"
 }
 export enum SearchHistogramGranularity {
     Day = "day",
@@ -34537,6 +36007,9 @@ export enum SharedSpaceEventType {
     Reply = "Reply",
     Like = "Like"
 }
+export enum SourceResourceScope {
+    SourceOriginalRead = "source-original-read"
+}
 export enum StudioMediaColorTransfer {
     Sdr = "sdr",
     Pq = "pq",
@@ -34578,6 +36051,11 @@ export enum StudioExportQuality {
     High = "high",
     Ultra = "ultra"
 }
+export enum StudioExportShape {
+    Original = "original",
+    Vertical = "vertical",
+    Square = "square"
+}
 export enum StudioExportSubtitleMode {
     Burn = "burn",
     Off = "off",
@@ -34601,6 +36079,27 @@ export enum StudioFontFormat {
 export enum StudioFontStyle {
     Normal = "normal",
     Italic = "italic"
+}
+export enum StudioMovieMood {
+    Calm = "calm",
+    Warm = "warm",
+    Upbeat = "upbeat",
+    Big = "big"
+}
+export enum StudioMovieMusicKind {
+    Generated = "generated",
+    Song = "song"
+}
+export enum StudioMovieSongKind {
+    Audio = "audio",
+    Video = "video"
+}
+export enum StudioMovieStep {
+    Moments = "moments",
+    Music = "music",
+    Cuts = "cuts",
+    Title = "title",
+    Done = "done"
 }
 export enum StudioPreviewQuality {
     Draft = "draft",
@@ -34641,6 +36140,14 @@ export enum StudioProjectSort {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum StudioReframeSubject {
+    Face = "face",
+    None = "none"
+}
+export enum StudioReframeShotType {
+    Video = "video",
+    Image = "image"
 }
 export enum StudioProjectImportKind {
     Audio = "audio",
@@ -35061,6 +36568,7 @@ export enum TrashReviewAction {
     Empty = "empty"
 }
 export enum TrashItemSort {
+    Soonest = "soonest",
     Recent = "recent",
     Size = "size",
     Name = "name"

@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -40,7 +41,7 @@ from frameleaf_ml.models.ocr.detection import TextDetector
 from frameleaf_ml.models.ocr.recognition import TextRecognizer
 from frameleaf_ml.schemas import FaceDetectionOutput, ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
 from frameleaf_ml.sessions.ann import AnnSession
-from frameleaf_ml.sessions.ort import OrtSession
+from frameleaf_ml.sessions.ort import OrtSession, flush_denormals
 from frameleaf_ml.sessions.rknn import RknnSession, run_inference
 
 
@@ -336,6 +337,50 @@ class TestBase:
 
         snapshot_download.assert_called_once()
         ort_session.assert_not_called()
+
+    def test_unload_drops_the_session_and_load_takes_it_back(
+        self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        detector = FaceDetector("buffalo_s", cache_dir=path)
+
+        detector.load()
+        detector.unload()
+
+        assert not detector.loaded
+        assert not hasattr(detector, "session")
+
+        detector.load()
+
+        assert detector.loaded
+        assert ort_session.call_count == 2
+
+    def test_load_serializes_requests_for_a_model_neither_has_loaded(
+        self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        detector = FaceDetector("buffalo_s", cache_dir=path)
+        started = threading.Barrier(2)
+
+        def slow_session(*args: Any, **kwargs: Any) -> mock.Mock:
+            time.sleep(0.05)
+            return mock.Mock()
+
+        ort_session.side_effect = slow_session
+
+        def worker() -> None:
+            started.wait()
+            detector.load()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert detector.loaded
+        assert detector.load_attempts == 1
+        ort_session.assert_called_once()
 
 
 class TestImageDescriptionModel:
@@ -981,6 +1026,7 @@ class TestOrtSession:
     OV_EP = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
     CUDA_EP_OUT_OF_ORDER = ["CPUExecutionProvider", "CUDAExecutionProvider"]
     TRT_EP = ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
+    TRT_RTX_EP = ["nv_tensorrt_rtx", "CUDAExecutionProvider", "CPUExecutionProvider"]
     ROCM_EP = ["MIGraphXExecutionProvider", "CPUExecutionProvider"]
     COREML_EP = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
 
@@ -1014,6 +1060,12 @@ class TestOrtSession:
         session = OrtSession("ViT-B-32__openai")
 
         assert session.providers == self.CUDA_EP
+
+    @pytest.mark.providers(TRT_RTX_EP)
+    def test_leaves_cuda_out_beside_tensorrt_rtx(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == ["nv_tensorrt_rtx", "CPUExecutionProvider"]
 
     @pytest.mark.providers(ROCM_EP)
     def test_uses_rocm(self, providers: list[str]) -> None:
@@ -1148,6 +1200,35 @@ class TestOrtSession:
 
         assert session.provider_options == [{"arena_extend_strategy": "kSameAsRequested", "device_id": "1"}]
 
+    def test_sets_provider_options_for_tensorrt_rtx(self, mocker: MockerFixture) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+        os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
+        mkdir = mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+
+        session = OrtSession(model_path, providers=["nv_tensorrt_rtx", "CPUExecutionProvider"])
+
+        assert session.provider_options == [
+            {"device_id": "1", "nv_runtime_cache_path": "/cache/ViT-B-32__openai/textual/trt-rtx"},
+            {"arena_extend_strategy": "kSameAsRequested"},
+        ]
+        mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_serializes_tensorrt_rtx_sessions_and_runs(self, mocker: MockerFixture) -> None:
+        lock = FakeLock()
+        mocker.patch("frameleaf_ml.sessions.ort._trt_rtx_lock", lock)
+        mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+        input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
+
+        session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["nv_tensorrt_rtx"])
+        assert lock.enter.call_count == 1  # opening a session records too
+
+        session.run(None, input_feed)
+        session.run(None, input_feed)
+
+        assert lock.enter.call_count == 3
+        assert lock.exit.call_count == 3
+        session.session.run.assert_has_calls([mock.call(None, input_feed, None), mock.call(None, input_feed, None)])
+
     def test_sets_provider_options_for_rocm(self, mocker: MockerFixture) -> None:
         model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
         os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
@@ -1196,6 +1277,47 @@ class TestOrtSession:
         assert session.sess_options.execution_mode == ort.ExecutionMode.ORT_SEQUENTIAL
         assert session.sess_options.inter_op_num_threads == 1
         assert session.sess_options.intra_op_num_threads == 2
+
+    def test_runs_a_model_on_the_threads_it_asks_for(self) -> None:
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"], threads=4)
+
+        assert session.sess_options.intra_op_num_threads == 4
+
+    def test_flushes_denormals_in_the_session(self) -> None:
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"])
+
+        assert session.sess_options.get_session_config_entry("session.set_denormal_as_zero") == "1"
+
+    @pytest.mark.parametrize(
+        ("machine", "providers", "disabled"),
+        [
+            ("x86_64", ["CPUExecutionProvider"], []),
+            ("aarch64", ["CPUExecutionProvider"], ["ConvAddActivationFusion"]),
+            ("x86_64", ["CUDAExecutionProvider", "CPUExecutionProvider"], ["MatMulAddFusion"]),
+            (
+                "arm64",
+                ["CoreMLExecutionProvider", "CPUExecutionProvider"],
+                ["ConvAddActivationFusion", "MatMulAddFusion"],
+            ),
+        ],
+    )
+    def test_disables_the_optimizers_that_slow_a_provider(
+        self, ort_session: mock.Mock, mocker: MockerFixture, machine: str, providers: list[str], disabled: list[str]
+    ) -> None:
+        mocker.patch("frameleaf_ml.sessions.ort.platform.machine", return_value=machine)
+
+        session = OrtSession("ViT-B-32__openai", providers=providers)
+
+        assert session.disabled_optimizers == disabled
+        assert ort_session.call_args.kwargs["disabled_optimizers"] == disabled
+
+    def test_flush_denormals_only_touches_linux_x86_64(self, mocker: MockerFixture) -> None:
+        mocker.patch("frameleaf_ml.sessions.ort.sys.platform", "darwin")
+        cdll = mocker.patch("frameleaf_ml.sessions.ort.ctypes.CDLL")
+
+        flush_denormals()
+
+        cdll.assert_not_called()
 
     @pytest.mark.ov_device_ids(["CPU"])
     def test_sets_default_sess_options_if_openvino_cpu(self, ov_device_ids: list[str]) -> None:
@@ -2076,6 +2198,8 @@ class TestOcr:
             (TextDetector, "LATIN__PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
             (TextRecognizer, "LATIN__PP-OCRv5_mobile", "frameleaf/LATIN__PP-OCRv5_mobile"),
             (TextRecognizer, "KOREAN__PP-OCRv5_mobile", "frameleaf/KOREAN__PP-OCRv5_mobile"),
+            (TextDetector, "PP-OCRv6_tiny", "frameleaf/PP-OCRv6_tiny"),
+            (TextRecognizer, "PP-OCRv6_medium", "frameleaf/PP-OCRv6_medium"),
         ],
     )
     def test_download_goes_to_model_source(
@@ -2139,9 +2263,16 @@ class TestOcr:
             assert get_model_source(model_name) == ModelSource.PADDLE
             for model_type in (ModelType.DETECTION, ModelType.RECOGNITION):
                 source = get_ocr_model_file(model_name, model_type)
-                assert source.repo.endswith("PP-OCRv5_mobile") or source.repo.endswith("PP-OCRv5_server")
+                assert re.fullmatch(r"([A-Z]+__)?PP-OCRv5_(mobile|server)|PP-OCRv6_(tiny|small|medium)", source.repo)
                 assert len(source.sha256) == 64
                 int(source.sha256, 16)
+
+    def test_ppocr_v6_pins_a_detector_and_recognizer_per_size(self) -> None:
+        for size in ("tiny", "small", "medium"):
+            detection = get_ocr_model_file(f"PP-OCRv6_{size}", ModelType.DETECTION)
+            recognition = get_ocr_model_file(f"PP-OCRv6_{size}", ModelType.RECOGNITION)
+            assert detection.repo == recognition.repo == f"PP-OCRv6_{size}"
+            assert detection.sha256 != recognition.sha256
 
     def test_det_min_score_is_per_request(self, path: mock.Mock) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
@@ -2157,6 +2288,22 @@ class TestOcr:
         assert len(text_detector._predict(image, minScore=0.9)["boxes"]) == 0
         # the default must be unaffected by the request that just ran
         assert len(text_detector._predict(image)["boxes"]) == 1
+
+    @pytest.mark.parametrize(("max_resolution", "short_side"), [(736, 736), (1000, 1024), (1080, 1088), (1088, 1088)])
+    def test_det_rounds_the_resolution_up_to_a_multiple_of_32(
+        self, path: mock.Mock, max_resolution: int, short_side: int
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        text_detector = TextDetector("PP-OCRv5_mobile", cache_dir="test_cache")
+        text_detector.session = mock.Mock()
+        text_detector.session.get_inputs.return_value = [SimpleNamespace(name="input.1", shape=(1, 3, -1, -1))]
+        text_detector.session.run.return_value = [np.zeros((1, 1, short_side, 2 * short_side), dtype=np.float32)]
+        image = Image.new("RGB", (4000, 2000))
+
+        text_detector._predict(image, maxResolution=max_resolution)
+
+        fed = text_detector.session.run.call_args.args[1]["input.1"]
+        assert fed.shape == (1, 3, short_side, 2 * short_side)  # the short side is never below what was asked
 
     def test_rec_min_score_is_per_request(self, path: mock.Mock, mocker: MockerFixture) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
@@ -2503,6 +2650,41 @@ class TestCache:
             ],
             any_order=True,
         )
+
+
+@pytest.mark.asyncio
+class TestRequestState:
+    async def test_releases_memory_shortly_after_the_last_request(self, mocker: MockerFixture) -> None:
+        from frameleaf_ml import main
+
+        release = mocker.patch("frameleaf_ml.main.allocator.release")
+        mocker.patch.object(main, "release", None)
+        mocker.patch.object(main, "active_requests", 0)
+        first, second = main.update_state(), main.update_state()
+
+        await first.__anext__()
+        await second.__anext__()
+        assert main.active_requests == 2
+        with pytest.raises(StopAsyncIteration):
+            await first.__anext__()
+        assert main.release is None  # one request is still running
+
+        with pytest.raises(StopAsyncIteration):
+            await second.__anext__()
+
+        assert main.active_requests == 0
+        timer = main.release
+        assert timer is not None
+        assert timer.when() - asyncio.get_running_loop().time() == pytest.approx(5, abs=0.5)
+        release.assert_not_called()
+
+        third = main.update_state()
+        await third.__anext__()
+        assert main.release is None  # a new request keeps the memory
+        assert timer.cancelled()
+        with pytest.raises(StopAsyncIteration):
+            await third.__anext__()
+        main.release.cancel()
 
 
 @pytest.mark.asyncio
@@ -3098,6 +3280,77 @@ def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
     assert set(report["host"]) == {"kernel", "gpus", "dxg", "groups", "root"}
 
 
+def test_hardware_report_names_the_amd_gpus_migraphx_uses_without_torch(monkeypatch: MonkeyPatch) -> None:
+    from frameleaf_ml import hardware_report
+
+    monkeypatch.setattr(hardware_report, "_torch_gpus", lambda: ([], None, None))
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setattr(
+        hardware_report,
+        "_rocm_smi",
+        lambda: [{"name": "Navi 31 [Radeon RX 7900 XTX]", "vendor": "AMD", "memoryTotalBytes": 24 * 1024**3}],
+    )
+    monkeypatch.setenv("DEVICE", "rocm")
+
+    report = hardware_report.container_report(["MIGraphXExecutionProvider", "CPUExecutionProvider"], [])
+
+    assert report["backend"] == "ROCm"
+    assert report["gpus"] == [
+        {"name": "Navi 31 [Radeon RX 7900 XTX]", "vendor": "AMD", "memoryTotalBytes": 24 * 1024**3}
+    ]
+    assert report["rocm"] is not None
+
+
+def test_hardware_report_reads_rocm_smi_json(monkeypatch: MonkeyPatch) -> None:
+    from frameleaf_ml import hardware_report
+
+    cards = {
+        "card1": {"Card Series": "Radeon RX 6800 XT", "VRAM Total Memory (B)": "17163091968"},
+        "card0": {"Device Name": "AMD Radeon Graphics", "VRAM Total Memory (B)": "536870912"},
+        "system": {"Driver version": "6.12.12"},
+    }
+    monkeypatch.setattr(hardware_report.shutil, "which", lambda name: "/opt/rocm/bin/rocm-smi")
+    monkeypatch.setattr(
+        hardware_report.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=json.dumps(cards), stderr=""),
+    )
+
+    assert hardware_report._rocm_smi() == [
+        {"name": "AMD Radeon Graphics", "vendor": "AMD", "memoryTotalBytes": 536870912},
+        {"name": "Radeon RX 6800 XT", "vendor": "AMD", "memoryTotalBytes": 17163091968},
+    ]
+
+    monkeypatch.setattr(hardware_report.shutil, "which", lambda name: None)
+    assert hardware_report._rocm_smi() == []
+
+
+def test_hardware_report_names_amd_render_nodes_when_rocm_smi_is_missing(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    from frameleaf_ml import hardware_report
+
+    sys_drm = tmp_path / "drm"
+    (sys_drm / "renderD129" / "device").mkdir(parents=True)
+    (sys_drm / "renderD129" / "device" / "product_name").write_text("Radeon RX 7600\n")
+    (sys_drm / "renderD130" / "device").mkdir(parents=True)
+    nodes = [
+        {"node": "renderD128", "vendor": "Intel", "accessible": True, "memoryTotalBytes": None},
+        {"node": "renderD129", "vendor": "AMD", "accessible": True, "memoryTotalBytes": 8 * 1024**3},
+        {"node": "renderD130", "vendor": "AMD", "accessible": True, "memoryTotalBytes": None},
+    ]
+    monkeypatch.setattr(hardware_report, "_rocm_smi", lambda: [])
+    monkeypatch.setattr(
+        hardware_report, "rocm_facts", lambda: {"gfxTargets": ["gfx1102", "gfx1036"], "hsaOverride": None}
+    )
+
+    assert hardware_report._amd_gpus(nodes, sys_drm) == [
+        {"name": "Radeon RX 7600", "vendor": "AMD", "memoryTotalBytes": 8 * 1024**3},
+        {"name": "AMD gfx1036", "vendor": "AMD", "memoryTotalBytes": None},
+    ]
+
+
 def test_hardware_report_lists_the_host_gpus_from_the_pci_list(tmp_path: Path) -> None:
     from frameleaf_ml import hardware_report
 
@@ -3171,3 +3424,25 @@ def test_hardware_report_reads_the_compute_capability_for_cuda(monkeypatch: Monk
 
     assert report["computeCapability"] == "7.5"
     assert report["rocm"] is None
+
+
+def test_hardware_endpoint_needs_a_cuda_device_not_just_the_provider(
+    deployed_app: TestClient, monkeypatch: MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "frameleaf_ml.main.ort.get_available_providers",
+        lambda: ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr("frameleaf_ml.main._torch_cuda_info", lambda: (False, 0))
+
+    response = deployed_app.get("http://localhost:3003/hardware")
+
+    assert response.status_code == 200
+    assert response.json()["preferredAcceleration"] == "auto"
+
+
+def test_semantic_mask_requests_leave_the_device_to_the_worker_setting() -> None:
+    from frameleaf_ml.schemas import ModelTask, ModelType, validate_options
+
+    assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"target": "sky"}) == {"target": "sky"}
+    assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"device": "cuda"})["device"] == "cuda"

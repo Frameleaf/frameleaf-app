@@ -336,6 +336,120 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/attention/dismissed": {
+      "put": {
+        "description": "Dismisses an Overview item so it no longer counts as needing attention, or brings it back. It stays in the list of what was checked.",
+        "operationId": "setAttentionDismissed",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttentionDismissDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss an attention item",
+        "tags": [
+          "Attention (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.statistics",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/auth/oauth-check": {
+      "post": {
+        "description": "Asks the provider at the issuer URL for its sign-in details and says whether it answered. Nothing is saved.",
+        "operationId": "checkOAuthProvider",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCheckDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a sign-in provider",
+        "tags": [
+          "Authentication (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/auth/unlink-all": {
       "post": {
         "description": "Unlinks all OAuth accounts associated with user accounts in the system.",
@@ -4127,6 +4241,104 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/sign-in/people": {
+      "get": {
+        "description": "Every account here and whether it is linked to a Frameleaf account, so it can sign in away from home. Those not linked come first. Reads local state only.",
+        "operationId": "getCloudSignInPeople",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudSignInPeopleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List who has linked a Frameleaf account",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/sign-in/people/{id}/remind": {
+      "post": {
+        "description": "Emails the person a link to their own sign-in settings, where they link their Frameleaf account. Needs email and a public address. Nothing is linked for them.",
+        "operationId": "remindCloudSignIn",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remind someone to link their Frameleaf account",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/status": {
       "get": {
         "description": "Whether Frameleaf Cloud is configured, and whether this server is unlinked, waiting for approval, linked or revoked. Reads local state only; nothing is contacted.",
@@ -5127,9 +5339,124 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/duplicates/estimate": {
+      "get": {
+        "description": "About how many look-alike groups each distance would make in this library, and how long comparing every photo again takes, from a sample of photos. Nothing is changed.",
+        "operationId": "getDuplicateEstimate",
+        "parameters": [
+          {
+            "name": "maxDistances",
+            "required": true,
+            "in": "query",
+            "description": "The distances to estimate groups for, from 0.001 (nearly identical) to 0.1",
+            "schema": {
+              "minItems": 1,
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0.001,
+                "maximum": 0.1,
+                "format": "double"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate look-alike groups",
+        "tags": [
+          "Duplicates"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/duplicates/recompare": {
+      "post": {
+        "description": "Compare every photo again with the saved \"How alike\" setting: now, or in the next overnight run. Groups already dealt with stay dealt with.",
+        "operationId": "recompareDuplicates",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateRecompareDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Compare look-alike photos again",
+        "tags": [
+          "Duplicates"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/file-trash": {
       "get": {
-        "description": "Originals no library references any more, newest first, with the total disk space the file trash holds. Nothing here is deleted automatically.",
+        "description": "Unused files: originals no library references any more, newest first, with the total disk space they hold. Nothing here is deleted automatically. Only the server owner (the first administrator) may read it.",
         "operationId": "getFileTrash",
         "parameters": [
           {
@@ -5199,9 +5526,56 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/file-trash/empty": {
+      "post": {
+        "description": "Empty Unused files: delete every file in it from disk for good and answer how many went and the space that came back. This cannot be undone. Only the server owner (the first administrator) may empty it.",
+        "operationId": "emptyFileTrash",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTrashEmptyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Empty the file trash",
+        "tags": [
+          "File trash (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/file-trash/{id}": {
       "delete": {
-        "description": "Delete the file from disk for good. This cannot be undone.",
+        "description": "Delete the file from disk for good. This cannot be undone. Only the server owner may delete.",
         "operationId": "deleteFileTrashItem",
         "parameters": [
           {
@@ -5252,7 +5626,7 @@
     },
     "/admin/file-trash/{id}/restore": {
       "post": {
-        "description": "Re-import the file as a new asset in the library it was last in, reading its metadata again. Answers 400 when that account is unknown or gone and 409 when its library already holds the file.",
+        "description": "Re-import the file as a new asset in the library it was last in, reading its metadata again. Answers 400 when that account is unknown or gone and 409 when its library already holds the file. Only the server owner may restore.",
         "operationId": "restoreFileTrashItem",
         "parameters": [
           {
@@ -5446,6 +5820,432 @@
           }
         ],
         "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files": {
+      "get": {
+        "description": "Where the latest identical-files run stands: its stage, what started it, the counts (files read, files stored once, photos merged, orphans recovered per owner, space moved to Unused files) and the first problems found.",
+        "operationId": "getIdenticalFilesStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdenticalFilesStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the identical files status",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/assets/{id}/changes": {
+      "get": {
+        "description": "The links the identical-files run made for one photo, newest first, and whether each can be undone.",
+        "operationId": "getIdenticalFileChanges",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IdenticalFilesChangeDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List a photo’s identical-file changes",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/changes": {
+      "get": {
+        "description": "The newest links the identical-files run made across the server, for the \"Merged for you\" history: each photo, whose it is, whose identical file it now shares, the space saved and whether it can be undone.",
+        "operationId": "getRecentIdenticalFileChanges",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "How many to list",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IdenticalFilesRecentChangeDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List recent identical-file changes",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/changes/{id}/undo": {
+      "post": {
+        "description": "Undo one link: the photo’s own file comes back out of Unused files to where it was, is checked to hold the same bytes, and the photo uses it again. The photo is never linked again automatically. Answers 409 when the file is no longer in Unused files or another file now sits at its place.",
+        "operationId": "undoIdenticalFileChange",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdenticalFilesChangeDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a photo’s own file",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/check": {
+      "post": {
+        "description": "Queue a full identical-files run: every managed original is read again, identical files across people share the oldest, identical photos in one library are merged into the oldest, and orphaned files are recovered into each owner’s Recovered Media album. A run already in progress carries on instead of starting again.",
+        "operationId": "checkIdenticalFiles",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdenticalFilesStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check identical files again",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/identical-files/extra-copies": {
+      "get": {
+        "description": "How many extra files on the drive hold the same content as another, of how many photos and videos, and the space they take, from what the last run recorded. Reads no file.",
+        "operationId": "getIdenticalFilesExtraCopies",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdenticalFilesExtraCopiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count extra copies on the drive",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/integrity/assets": {
+      "get": {
+        "description": "The photos still in the library whose files are missing or damaged, from both checkers, at most 10,000: what \"Restore from a backup\" restores.",
+        "operationId": "getIntegrityFindingAssets",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/IntegrityFindingKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityFindingAssetsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the photos behind missing or damaged findings",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/integrity/overview": {
+      "get": {
+        "description": "One count per kind of problem across the file checks and the Library care scanner (a photo both report is counted once), the folders of originals that cannot be reached, the checks running now and the most recent checks.",
+        "operationId": "getIntegrityOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityOverviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the file checks overview",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
         "x-immich-state": "Alpha"
       }
     },
@@ -5848,6 +6648,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/integrity/stop": {
+      "post": {
+        "description": "Stop the file checks in progress and take waiting ones off the queue. Findings so far are kept; the damage check carries on from where it stopped at the next overnight run.",
+        "operationId": "stopIntegrityChecks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityOverviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop the file checks",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/integrity/summary": {
       "get": {
         "description": "Get a count of the items flagged in each integrity report",
@@ -5892,6 +6739,142 @@
           }
         ],
         "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/libraries/folders": {
+      "get": {
+        "description": "For an administrator choosing a folder of photos to add: the folders under a path the server can see (names only; hidden, system and NAS folders are left out), and what a new folder skips by default.",
+        "operationId": "browseLibraryFolders",
+        "parameters": [
+          {
+            "name": "path",
+            "required": false,
+            "in": "query",
+            "description": "An absolute folder; defaults to the top of the disk",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderBrowseResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Browse folders on the server",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/libraries/folders/estimate": {
+      "get": {
+        "description": "For an administrator adding a folder of photos: about how many photos and videos it holds and their size, skipping what the folder would skip. Stops early on a very large or slow folder and says so.",
+        "operationId": "estimateLibraryFolder",
+        "parameters": [
+          {
+            "name": "exclusionPatterns",
+            "required": false,
+            "in": "query",
+            "description": "What the folder would skip",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "path",
+            "required": true,
+            "in": "query",
+            "description": "An absolute folder",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 4096,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryFolderEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count the photos in a folder",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.create",
         "x-immich-state": "Alpha"
       }
     },
@@ -5982,6 +6965,204 @@
             "state": "Alpha"
           }
         ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-progress": {
+      "get": {
+        "description": "For Visual search, Faces, Text in photos, Descriptions and Locked detection: how many photos and videos are read of how many, how many an hour lately, and about how long the rest takes.",
+        "operationId": "getLibraryProgress",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryProgressResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the reading progress",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-progress/media-copies": {
+      "get": {
+        "description": "How many photos have no preview yet, how many videos have a playback copy, the space previews and playback copies take (as last measured), and what waits for tonight.",
+        "operationId": "getMediaCopies",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaCopiesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the previews and playback copies",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-progress/media-copies/video-card/test": {
+      "post": {
+        "description": "Makes a short test video on the graphics card the video converter uses, and on the processor for comparison, and keeps the result.",
+        "operationId": "testVideoCard",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoCardDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Test the graphics card for video",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-progress/redo": {
+      "post": {
+        "description": "Read every photo again for Visual search, group faces again, rebuild previews or remake playback copies: now, or in the next overnight run.",
+        "operationId": "redoLibraryWork",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryRedoDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryRedoResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a feature again over every photo",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
         "x-immich-state": "Alpha"
       }
     },
@@ -6184,6 +7365,63 @@
           },
           {
             "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "serverLicense.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/license/checkout": {
+      "post": {
+        "description": "Starts the combined licence-and-plan purchase for this linked server with Frameleaf Cloud and returns the store page to open. Payment happens in the Frameleaf store, never on this server; the plan and licence arrive on the next licence refresh.",
+        "operationId": "startLicenseCheckout",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenseCheckoutDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseCheckoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a Frameleaf Cloud purchase",
+        "tags": [
+          "Frameleaf licence"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
             "state": "Alpha"
           }
         ],
@@ -6841,8 +8079,150 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/overnight": {
+      "get": {
+        "description": "When the night’s work starts next, which steps are on, the run in progress and what the last few nights did",
+        "operationId": "getOvernight",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OvernightResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the overnight schedule",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/overnight/run": {
+      "post": {
+        "description": "Starts every step that is on, one after another, including steps that run only when started",
+        "operationId": "runOvernight",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OvernightResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run the overnight work now",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/overnight/stop": {
+      "post": {
+        "description": "Ends the run in progress; the steps it did not reach run on the next night",
+        "operationId": "stopOvernight",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OvernightResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop the overnight work",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/physical-deduplication/applies/{id}/restore": {
       "post": {
+        "deprecated": true,
         "description": "Point one copy back at its own former file, only while that file is still on disk with the reviewed checksum and size, and answer with the plan verified again. A copy whose own file was removed cannot be restored.",
         "operationId": "restorePhysicalDeduplicationCopy",
         "parameters": [
@@ -6892,7 +8272,8 @@
         ],
         "summary": "Restore a copy of an applied physical deduplication plan",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -6903,14 +8284,20 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.create",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/physical-deduplication/applies/{id}/verify": {
       "post": {
+        "deprecated": true,
         "description": "Hash every retained original the applied plan shares again and check that every copy it changed still resolves to one. Reports, per copy, whether its own former file is gone (which cannot be undone) or still on disk (which can be restored). Nothing is written.",
         "operationId": "verifyPhysicalDeduplicationApply",
         "parameters": [
@@ -6950,7 +8337,8 @@
         ],
         "summary": "Verify an applied physical deduplication plan",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -6961,14 +8349,20 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.read",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/physical-deduplication/plan/apply": {
       "post": {
+        "deprecated": true,
         "description": "Queue exactly the reviewed copies as a durable, pausable job. Requires the review token and the typed confirmation. Answers 409 when another plan is being applied or anything changed since the review.",
         "operationId": "applyPhysicalDeduplicationPlan",
         "parameters": [],
@@ -7007,7 +8401,8 @@
         ],
         "summary": "Apply a reviewed physical deduplication plan",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7018,14 +8413,20 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.create",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/physical-deduplication/plan/review": {
       "post": {
+        "deprecated": true,
         "description": "Check the plan on screen against the library again and bind the per-group decisions to it. Answers 409 when a newer preview replaced the plan, it was applied, or any checksum, ownership, path or reference evidence changed. Nothing is written.",
         "operationId": "reviewPhysicalDeduplicationPlan",
         "parameters": [],
@@ -7064,7 +8465,8 @@
         ],
         "summary": "Review a physical deduplication plan",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7075,14 +8477,20 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.create",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/physical-deduplication/preview": {
       "get": {
+        "deprecated": true,
         "description": "Return the latest physical deduplication plan with per-copy evidence, and the plans being applied or applied recently. Thumbnail visibility is the asset access of the requesting administrator, evaluated on every read.",
         "operationId": "getPhysicalDeduplicationPreview",
         "parameters": [],
@@ -7111,7 +8519,8 @@
         ],
         "summary": "Get physical deduplication preview",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7122,12 +8531,18 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.read",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       },
       "post": {
+        "deprecated": true,
         "description": "Queue a dry run that may retain originals in an account chosen for the preview and may review the copies of one account. Applying needs a reviewed plan and the saved master account.",
         "operationId": "requestPhysicalDeduplicationPreview",
         "parameters": [],
@@ -7159,7 +8574,8 @@
         ],
         "summary": "Request physical deduplication preview",
         "tags": [
-          "Maintenance (admin)"
+          "Maintenance (admin)",
+          "Deprecated"
         ],
         "x-immich-admin-only": true,
         "x-immich-history": [
@@ -7170,10 +8586,15 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Deprecated",
+            "replacementId": "getIdenticalFilesStatus"
           }
         ],
         "x-immich-permission": "job.create",
-        "x-immich-state": "Alpha"
+        "x-immich-state": "Deprecated"
       }
     },
     "/admin/render-workers": {
@@ -7716,6 +9137,110 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/smart-albums": {
+      "get": {
+        "description": "For each smart album: photos held across the household, how many people have it with photos in it, how many hid it, and a few pictures from your own album.",
+        "operationId": "getSmartAlbumOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartAlbumOverviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the smart albums across the household",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/smart-albums/preview": {
+      "post": {
+        "description": "What a rule would add to and take out of your own album before it is saved, with a few pictures of each. Nothing is changed.",
+        "operationId": "previewSmartAlbumRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartAlbumPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartAlbumPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a smart album rule",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/storage-migration": {
       "get": {
         "description": "Whether the storage template is on, which template originals are moved to, and where the storage template migration queue stands: running, paused, unfinished work and job counts.",
@@ -7805,6 +9330,65 @@
           }
         ],
         "x-immich-permission": "queue.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/trash/everyone": {
+      "get": {
+        "description": "For an administrator: how many items wait in each account’s trash and their size (never the items), and how many a keep time of `days` would remove at the next overnight tidy-up.",
+        "operationId": "getTrashEveryone",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "description": "A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value",
+            "schema": {
+              "minimum": 0,
+              "maximum": 36500,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashEveryoneResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what waits in every trash",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.statistics",
         "x-immich-state": "Alpha"
       }
     },
@@ -8320,6 +9904,52 @@
         ],
         "x-immich-permission": "adminUser.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/admin/users/{id}/password-link": {
+      "post": {
+        "description": "Email the person a single-use link (valid 7 days) to choose their own password. The administrator never sees it. Needs email to be set up and a public address.",
+        "operationId": "sendUserPasswordLinkAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Email a link to choose a password",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "adminUser.update"
       }
     },
     "/admin/users/{id}/pin-code": {
@@ -16812,6 +18442,77 @@
         "x-immich-state": "Stable"
       }
     },
+    "/auth/password-link": {
+      "post": {
+        "description": "Set the password with an emailed single-use link. The link stops working once used, and every session of the account is signed out.",
+        "operationId": "redeemPasswordLink",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordLinkRedeemDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Choose a password with a link",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/auth/password-link/check": {
+      "post": {
+        "description": "Who an emailed single-use link to choose a password is for, while it can still be used.",
+        "operationId": "checkPasswordLink",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordLinkCheckDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordLinkCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Check a choose-a-password link",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          }
+        ]
+      }
+    },
     "/auth/pin-code": {
       "delete": {
         "description": "Reset the pin code for the current user by providing the account password",
@@ -24390,6 +26091,57 @@
         "x-immich-state": "Stable"
       }
     },
+    "/libraries/{id}/scan/every-file": {
+      "post": {
+        "description": "Queue a scan that reads every file in the folder again (its date, place and details), not only the new and changed ones.",
+        "operationId": "scanLibraryEveryFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check every file of a library again",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/libraries/{id}/statistics": {
       "get": {
         "description": "Retrieve statistics for a specific external library, including number of videos, images, and storage usage.",
@@ -27750,6 +29502,174 @@
             "state": "Alpha"
           }
         ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/processing-order": {
+      "get": {
+        "description": "The order processing tries its places in (this server, your computers, Frameleaf Cloud), the workloads with a list of their own, and whether each place can take work now. A job runs on the first available place in its list and waits when none is.",
+        "operationId": "getMlProcessingOrder",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlProcessingOrderResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the processing order",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Save the order every workload without a list of its own tries its places in.",
+        "operationId": "setMlProcessingOrder",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlProcessingOrderUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlProcessingOrderResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set the processing order",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/processing-order/{workload}": {
+      "put": {
+        "description": "Give a workload a list of its own (an empty list keeps it off), or send null to make it follow the main order again.",
+        "operationId": "setMlWorkloadProcessingOrder",
+        "parameters": [
+          {
+            "name": "workload",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/MlWorkload"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlWorkloadProcessingOrderUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlProcessingOrderResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set the processing order of one workload",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
         "x-immich-state": "Alpha"
       }
     },
@@ -43547,6 +45467,174 @@
         "x-immich-permission": "album.read"
       }
     },
+    "/smart-albums/mine": {
+      "get": {
+        "description": "The smart albums offered on this server, each with how many of your photos it holds as you see them, a few of the newest, and whether you hid it.",
+        "operationId": "getMySmartAlbums",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MySmartAlbumsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your smart albums",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/smart-albums/mine/{kind}": {
+      "put": {
+        "description": "Hide a smart album from your own library, or show it again. It keeps filling while hidden, and nobody else is affected.",
+        "operationId": "setMySmartAlbumHidden",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartAlbumHiddenDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MySmartAlbumsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Hide or show one of your smart albums",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/source-resources/grants": {
+      "post": {
+        "operationId": "createSourceResourceGrant",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceGrantRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceGrantDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Issue a source-only credential for an approved desktop reference source",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/stacks": {
       "delete": {
         "description": "Delete multiple stacks by providing a list of stack IDs.",
@@ -44624,6 +46712,176 @@
           },
           {
             "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/movies": {
+      "post": {
+        "description": "Queues a movie made from one album, memory or set of photos and videos you can read: the best moments, cut on the bars of music made for it (a mood) or of a song from your library (an audio file, or a video whose soundtrack is used), with a title at the start. It is saved as a Studio project; nothing reaches the library until it is exported. With `previousId` the new cut is saved as the next revision of the earlier version’s project, so the earlier cut stays in its history. Follow the job here or in Activity (`/media-operations/{id}`).",
+        "operationId": "createStudioMovie",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioMovieCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioMovieQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Make a movie",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/movies/songs": {
+      "get": {
+        "description": "Your audio files, then your videos long enough to lend their soundtrack, newest first, optionally filtered by part of the file name.",
+        "operationId": "getStudioMovieSongs",
+        "parameters": [
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "Part of the file name",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudioMovieSongDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List songs for a movie",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/movies/{id}": {
+      "get": {
+        "description": "Owner only. The job status, step and progress, and once it has completed the movie: its project, length, shots, beats and music.",
+        "operationId": "getStudioMovie",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioMovieDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a movie",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
             "state": "Alpha"
           }
         ],
@@ -46102,6 +48360,62 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/framing": {
+      "get": {
+        "description": "Owner only. For a vertical (9:16) or square (1:1) export of the head revision: where the subject is through each video and still on the main timeline, from the faces found in the source and in a few frames sampled through each video clip on this server or a computer on your home network. Shots without a face are centred. Nothing is stored and the project is not changed; send the framing back with `POST /studio/projects/{id}/exports`.",
+        "operationId": "getStudioFraming",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioReframeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the automatic framing of a Studio project’s shots",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
             "state": "Alpha"
           }
         ],
@@ -52183,6 +54497,17 @@
         "operationId": "getTrashItems",
         "parameters": [
           {
+            "name": "goingWithinDays",
+            "required": false,
+            "in": "query",
+            "description": "Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight",
+            "schema": {
+              "minimum": 0,
+              "maximum": 36500,
+              "type": "integer"
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -54439,6 +56764,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/users/me/preferences/locked-rules/count": {
+      "post": {
+        "description": "How many of your own photos and videos (timeline or archive) the people, pets and tags in a draft of your Locked rules match, before it is saved. Needs an unlocked session.",
+        "operationId": "countLockedRules",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockedRulesDraftDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedRulesCountResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count what a draft of my Locked rules keeps Locked",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/profile-image": {
       "delete": {
         "description": "Delete the profile image of the current user.",
@@ -54680,6 +57061,52 @@
         ],
         "x-immich-permission": "userProfileImage.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/utilities/summary": {
+      "get": {
+        "description": "Counts for the Utilities directory: look-alike groups and photos with no place for your library, and for an administrator the missing, damaged and unused files across the server.",
+        "operationId": "getUtilitiesSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UtilitiesSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what each utility has waiting",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/view/folder": {
@@ -55409,7 +57836,7 @@
   "info": {
     "title": "Frameleaf",
     "description": "Frameleaf API",
-    "version": "1.1.7",
+    "version": "1.1.12",
     "contact": {}
   },
   "tags": [
@@ -56236,6 +58663,12 @@
           },
           "storageTemplate": {
             "$ref": "#/components/schemas/AdminConfigStorageTemplateDto"
+          },
+          "storageWarning": {
+            "$ref": "#/components/schemas/AdminConfigStorageWarningDto",
+            "default": {
+              "percent": 90
+            }
           },
           "templates": {
             "$ref": "#/components/schemas/AdminConfigTemplatesDto"
@@ -57897,6 +60330,29 @@
             "description": "Database cleanup",
             "type": "boolean"
           },
+          "days": {
+            "default": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "description": "Days of the week the night’s work starts on, Sunday 0 to Saturday 6",
+            "items": {
+              "maximum": 6,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "emptyTrash": {
+            "description": "The tidy-up step empties Trash and removes deleted accounts; off leaves Trash alone",
+            "type": "boolean"
+          },
           "generateMemories": {
             "description": "Generate memories",
             "type": "boolean"
@@ -57910,9 +60366,42 @@
             "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
             "type": "string"
           },
+          "steps": {
+            "$ref": "#/components/schemas/AdminConfigOvernightStepsDto",
+            "default": {
+              "cleanup": "nightly",
+              "fileChecks": "nightly",
+              "folders": "nightly",
+              "icloud": "nightly"
+            },
+            "description": "When each step runs: every night, once a week, or only when started"
+          },
+          "stopTime": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+              }
+            ],
+            "default": "06:00",
+            "description": "No step starts after this time (HH:MM); empty runs every step to the end"
+          },
           "syncQuotaUsage": {
             "description": "Sync quota usage",
             "type": "boolean"
+          },
+          "weeklyDay": {
+            "default": 0,
+            "description": "The day a step set to run once a week runs on, Sunday 0 to Saturday 6",
+            "maximum": 6,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -58139,6 +60628,27 @@
           "minRecognitionScore",
           "modelName"
         ],
+        "type": "object"
+      },
+      "AdminConfigOvernightStepsDto": {
+        "properties": {
+          "cleanup": {
+            "$ref": "#/components/schemas/OvernightStepTiming",
+            "default": "nightly"
+          },
+          "fileChecks": {
+            "$ref": "#/components/schemas/OvernightStepTiming",
+            "default": "nightly"
+          },
+          "folders": {
+            "$ref": "#/components/schemas/OvernightStepTiming",
+            "default": "nightly"
+          },
+          "icloud": {
+            "$ref": "#/components/schemas/OvernightStepTiming",
+            "default": "nightly"
+          }
+        },
         "type": "object"
       },
       "AdminConfigPasswordLoginDto": {
@@ -58446,6 +60956,20 @@
         ],
         "type": "object"
       },
+      "AdminConfigStorageWarningDto": {
+        "properties": {
+          "percent": {
+            "description": "Warn when the drive the library is on is this full, in per cent; 0 turns the warning off",
+            "maximum": 99,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "percent"
+        ],
+        "type": "object"
+      },
       "AdminConfigTemplateEmailsDto": {
         "properties": {
           "albumInviteTemplate": {
@@ -58532,6 +61056,13 @@
             "description": "Delete delay",
             "maximum": 9007199254740991,
             "minimum": 1,
+            "type": "integer"
+          },
+          "newUserStorageQuota": {
+            "description": "Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit",
+            "maximum": 1000000,
+            "minimum": 0,
+            "nullable": true,
             "type": "integer"
           }
         },
@@ -58866,6 +61397,10 @@
             "description": "Collection this album belongs to (null = top-level)",
             "nullable": true,
             "type": "string"
+          },
+          "recovered": {
+            "description": "True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}.",
+            "type": "boolean"
           },
           "shared": {
             "description": "Is shared album",
@@ -60926,6 +63461,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "lastUsedAt": {
+            "description": "When the key was last used to reach the server; null when it never has been",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "name": {
             "description": "API key name",
             "type": "string"
@@ -60953,6 +63494,7 @@
           "apiKey",
           "createdAt",
           "id",
+          "lastUsedAt",
           "name",
           "permissions",
           "secret",
@@ -60973,6 +63515,12 @@
             "description": "API key ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "description": "When the key was last used to reach the server; null when it never has been",
+            "format": "date-time",
+            "nullable": true,
             "type": "string"
           },
           "name": {
@@ -60997,6 +63545,7 @@
         "required": [
           "createdAt",
           "id",
+          "lastUsedAt",
           "name",
           "permissions",
           "updatedAt"
@@ -66573,6 +69122,26 @@
         ],
         "type": "string"
       },
+      "AttentionDismissDto": {
+        "properties": {
+          "dismissed": {
+            "description": "True dismisses it; false brings it back",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The item to dismiss or bring back",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9:-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dismissed",
+          "id"
+        ],
+        "type": "object"
+      },
       "AttentionItemDto": {
         "properties": {
           "backup": {
@@ -66690,6 +69259,13 @@
             },
             "type": "array"
           },
+          "dismissed": {
+            "description": "Overview items an administrator dismissed (FL-363); they stop counting as needing attention",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "items": {
             "description": "What needs attention, the most urgent first",
             "items": {
@@ -66701,6 +69277,7 @@
         "required": [
           "checkedAt",
           "checks",
+          "dismissed",
           "items"
         ],
         "type": "object"
@@ -68564,9 +71141,6 @@
             "minimum": 0,
             "nullable": true,
             "type": "integer"
-          },
-          "canConfirm": {
-            "type": "boolean"
           },
           "capacityUpdatedAt": {
             "nullable": true,
@@ -72969,11 +75543,17 @@
           },
           "message": {
             "type": "string"
+          },
+          "topUpUrl": {
+            "description": "FL-544: where to add AI credit in the Frameleaf account, when the cloud named a page; null otherwise",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
           "code",
-          "message"
+          "message",
+          "topUpUrl"
         ],
         "type": "object"
       },
@@ -73482,6 +76062,61 @@
           "cloud"
         ],
         "type": "string"
+      },
+      "CloudSignInPeopleResponseDto": {
+        "properties": {
+          "canRemind": {
+            "description": "Email is set up and the server has a public address, so reminders can be sent",
+            "type": "boolean"
+          },
+          "people": {
+            "description": "Every account here, those not linked first",
+            "items": {
+              "$ref": "#/components/schemas/CloudSignInPersonDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "canRemind",
+          "people"
+        ],
+        "type": "object"
+      },
+      "CloudSignInPersonDto": {
+        "properties": {
+          "email": {
+            "description": "Sign-in email here",
+            "type": "string"
+          },
+          "frameleafEmail": {
+            "description": "The Frameleaf account email it is linked with",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Account ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "linked": {
+            "description": "Linked to a Frameleaf account, so they can sign in away from home",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Account name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "frameleafEmail",
+          "id",
+          "linked",
+          "name"
+        ],
+        "type": "object"
       },
       "CloudSignInUpdateDto": {
         "properties": {
@@ -76747,6 +79382,10 @@
       },
       "DuplicateDecisionBatchDto": {
         "properties": {
+          "automatic": {
+            "description": "Frameleaf made this job itself, merging identical files in one library (FL-416 \"Merged for you\")",
+            "type": "boolean"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -76769,6 +79408,7 @@
           }
         },
         "required": [
+          "automatic",
           "createdAt",
           "groups",
           "operationId",
@@ -76871,6 +79511,88 @@
         ],
         "type": "string"
       },
+      "DuplicateEstimateChoiceDto": {
+        "properties": {
+          "groups": {
+            "description": "About how many look-alike groups this choice makes in this library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxDistance": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "groups",
+          "maxDistance"
+        ],
+        "type": "object"
+      },
+      "DuplicateEstimateQueryDto": {
+        "properties": {
+          "maxDistances": {
+            "description": "The distances to estimate groups for, from 0.001 (nearly identical) to 0.1",
+            "items": {
+              "format": "double",
+              "maximum": 0.1,
+              "minimum": 0.001,
+              "type": "number"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "maxDistances"
+        ],
+        "type": "object"
+      },
+      "DuplicateEstimateResponseDto": {
+        "properties": {
+          "choices": {
+            "description": "An estimate for each distance asked for",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateEstimateChoiceDto"
+            },
+            "type": "array"
+          },
+          "comparable": {
+            "description": "Photos and videos that are compared",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groups": {
+            "description": "Look-alike groups found so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sampled": {
+            "description": "How many photos the estimate is based on",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seconds": {
+            "description": "About how long comparing every photo again takes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "choices",
+          "comparable",
+          "groups",
+          "sampled",
+          "seconds"
+        ],
+        "type": "object"
+      },
       "DuplicateGroupBlock": {
         "description": "Why a duplicate group cannot be decided from this session",
         "enum": [
@@ -76896,6 +79618,25 @@
           "most-metadata",
           "compressed-copy",
           "lower-resolution"
+        ],
+        "type": "string"
+      },
+      "DuplicateRecompareDto": {
+        "properties": {
+          "when": {
+            "$ref": "#/components/schemas/DuplicateRecompareWhen"
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "type": "object"
+      },
+      "DuplicateRecompareWhen": {
+        "description": "now: start comparing every photo again; tonight: in the next overnight run",
+        "enum": [
+          "now",
+          "tonight"
         ],
         "type": "string"
       },
@@ -76987,8 +79728,36 @@
         ],
         "type": "object"
       },
+      "DuplicateReviewAlbumsDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "names": {
+            "description": "Albums of the viewer that hold this photo",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "names"
+        ],
+        "type": "object"
+      },
       "DuplicateReviewGroupDto": {
         "properties": {
+          "albums": {
+            "description": "Per photo, the albums the viewer can see it in (FL-558): what is lost with a copy",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateReviewAlbumsDto"
+            },
+            "type": "array"
+          },
           "assets": {
             "description": "The photos of the group this session may see",
             "items": {
@@ -77022,6 +79791,10 @@
           },
           "kind": {
             "$ref": "#/components/schemas/DuplicateGroupKind"
+          },
+          "lookAlike": {
+            "description": "Photos taken at distinct moments further apart than a burst: retakes, reviewed as look-alikes and never suggested for the trash. Their kind stays duplicates (FL-558)",
+            "type": "boolean"
           },
           "otherOwnerNames": {
             "description": "Display names of the other accounts owning photos of a group blocked by another owner",
@@ -77060,12 +79833,14 @@
           }
         },
         "required": [
+          "albums",
           "assets",
           "blockedReason",
           "duplicateId",
           "editable",
           "hiddenMemberCount",
           "kind",
+          "lookAlike",
           "qualities",
           "suggestedKeepAssetIds",
           "totalBytes"
@@ -78107,6 +80882,34 @@
         ],
         "type": "object"
       },
+      "FileTrashEmptyResponseDto": {
+        "properties": {
+          "bytes": {
+            "description": "Space that came back, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "files": {
+            "description": "Files deleted from the drive for good",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kept": {
+            "description": "Files that could not be deleted and are still waiting",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "files",
+          "kept"
+        ],
+        "type": "object"
+      },
       "FileTrashItemResponseDto": {
         "properties": {
           "checksum": {
@@ -78569,6 +81372,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "uploadsPaused": {
+            "description": "New uploads are paused for this person",
+            "type": "boolean"
           }
         },
         "required": [
@@ -78593,7 +81400,8 @@
           "shouldChangePassword",
           "status",
           "storageLabel",
-          "updatedAt"
+          "updatedAt",
+          "uploadsPaused"
         ],
         "type": "object"
       },
@@ -79335,6 +82143,11 @@
           "gpu": {
             "$ref": "#/components/schemas/HardwareGpuFactsDto"
           },
+          "integrated": {
+            "description": "The GPU is an integrated one sharing the computer's memory; null when not known",
+            "nullable": true,
+            "type": "boolean"
+          },
           "model": {
             "nullable": true,
             "type": "string"
@@ -79365,6 +82178,7 @@
           "backend",
           "driver",
           "gpu",
+          "integrated",
           "model",
           "reachable",
           "test",
@@ -81456,6 +84270,7 @@
             "additionalProperties": false,
             "default": {
               "albums": [],
+              "automatic": true,
               "concurrency": 1,
               "includeEdits": true,
               "includeHidden": false,
@@ -81474,6 +84289,10 @@
                 },
                 "maxItems": 10000,
                 "type": "array"
+              },
+              "automatic": {
+                "default": true,
+                "type": "boolean"
               },
               "concurrency": {
                 "default": 1,
@@ -81558,6 +84377,9 @@
                 "maxItems": 10000,
                 "type": "array"
               },
+              "automatic": {
+                "type": "boolean"
+              },
               "concurrency": {
                 "maximum": 4,
                 "minimum": 1,
@@ -81599,6 +84421,7 @@
               "includeHidden",
               "recoverExternalAsManaged",
               "intervalHours",
+              "automatic",
               "concurrency",
               "stagingBytes"
             ],
@@ -81699,6 +84522,9 @@
                 },
                 "maxItems": 10000,
                 "type": "array"
+              },
+              "automatic": {
+                "type": "boolean"
               },
               "concurrency": {
                 "maximum": 4,
@@ -83154,6 +85980,410 @@
         },
         "type": "object"
       },
+      "IdenticalFilesChangeDto": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Change id",
+            "type": "string"
+          },
+          "keptAssetId": {
+            "description": "The photo whose file was kept",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IdenticalFilesChangeKind"
+          },
+          "restorable": {
+            "description": "The photo’s own file waits in Unused files and can be restored",
+            "type": "boolean"
+          },
+          "undoneAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "keptAssetId",
+          "kind",
+          "restorable",
+          "undoneAt"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesChangeKind": {
+        "description": "`link`: the photo was pointed at another person’s identical file",
+        "enum": [
+          "link"
+        ],
+        "type": "string"
+      },
+      "IdenticalFilesCountsDto": {
+        "properties": {
+          "bytesMovedToUnused": {
+            "description": "Bytes moved to Unused files",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "damaged": {
+            "description": "Damaged orphans moved to Unused files",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "filesMovedToUnused": {
+            "description": "Extra copies moved to Unused files",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "linked": {
+            "description": "Photos pointed at another person’s identical file",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orphanDuplicates": {
+            "description": "Orphans whose content the owner already had",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orphansFound": {
+            "description": "Media files nothing pointed at",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "photosMerged": {
+            "description": "Identical photos in one library sent to the Trash by a merge",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "photosRecovered": {
+            "description": "Orphans brought back as photos",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "problems": {
+            "description": "Problems found, including those past the listed ones",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "registered": {
+            "description": "Originals given a storage record",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scanned": {
+            "description": "Originals read from disk",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "upgraded": {
+            "description": "SHA-1 records upgraded to SHA-256",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytesMovedToUnused",
+          "damaged",
+          "filesMovedToUnused",
+          "linked",
+          "orphanDuplicates",
+          "orphansFound",
+          "photosMerged",
+          "photosRecovered",
+          "problems",
+          "registered",
+          "scanned",
+          "upgraded"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesExtraCopiesDto": {
+        "properties": {
+          "bytes": {
+            "description": "Space the extra files take",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "contents": {
+            "description": "Photos and videos those extra files are copies of",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "files": {
+            "description": "Extra files on the drive that hold the same content as another",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "contents",
+          "files"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesProblemDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo concerned, when there is one",
+            "nullable": true,
+            "type": "string"
+          },
+          "detail": {
+            "description": "More about it, such as the reason a merge was held back",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IdenticalFilesProblemKind"
+          },
+          "path": {
+            "description": "An orphaned file, relative to the media location",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "detail",
+          "kind",
+          "path"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesProblemKind": {
+        "description": "What went wrong",
+        "enum": [
+          "missing",
+          "unreadable",
+          "changed",
+          "undone",
+          "check-before-merging",
+          "kept-for-now",
+          "damaged",
+          "over-quota",
+          "needs-a-look",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "IdenticalFilesRecentChangeDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo that now shares another person’s identical file",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Change id",
+            "type": "string"
+          },
+          "keptAssetId": {
+            "description": "The photo whose file was kept",
+            "nullable": true,
+            "type": "string"
+          },
+          "keptOwnerName": {
+            "description": "Whose photo that is, while it exists",
+            "nullable": true,
+            "type": "string"
+          },
+          "originalFileName": {
+            "description": "The photo’s file name",
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Whose photo it is",
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "Their name",
+            "type": "string"
+          },
+          "restorable": {
+            "description": "The photo’s own file waits in Unused files and can be restored",
+            "type": "boolean"
+          },
+          "sizeInBytes": {
+            "description": "Space the link saved",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "undoneAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "createdAt",
+          "id",
+          "keptAssetId",
+          "keptOwnerName",
+          "originalFileName",
+          "ownerId",
+          "ownerName",
+          "restorable",
+          "sizeInBytes",
+          "undoneAt"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesRecentChangesQueryDto": {
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "How many to list",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "IdenticalFilesRunStatus": {
+        "description": "Where the latest run stands",
+        "enum": [
+          "never-run",
+          "running",
+          "completed"
+        ],
+        "type": "string"
+      },
+      "IdenticalFilesStage": {
+        "description": "The stage the latest run is in or ended in",
+        "enum": [
+          "scan",
+          "link",
+          "merge",
+          "orphans",
+          "done"
+        ],
+        "type": "string"
+      },
+      "IdenticalFilesStatusDto": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/IdenticalFilesCountsDto"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "problems": {
+            "description": "The first problems found (at most 200)",
+            "items": {
+              "$ref": "#/components/schemas/IdenticalFilesProblemDto"
+            },
+            "type": "array"
+          },
+          "recovered": {
+            "description": "Photos recovered per owner",
+            "items": {
+              "properties": {
+                "albumId": {
+                  "description": "The owner’s Recovered Media album",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "ownerId": {
+                  "type": "string"
+                },
+                "photos": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "ownerId",
+                "photos",
+                "albumId"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "stage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IdenticalFilesStage"
+              }
+            ],
+            "nullable": true
+          },
+          "startedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IdenticalFilesRunStatus"
+          },
+          "totalOriginals": {
+            "description": "Managed originals when the run started (scan progress total)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trigger": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/IdenticalFilesTrigger"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "counts",
+          "finishedAt",
+          "problems",
+          "recovered",
+          "stage",
+          "startedAt",
+          "status",
+          "totalOriginals",
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "IdenticalFilesTrigger": {
+        "description": "What started the latest run",
+        "enum": [
+          "manual",
+          "immich-import"
+        ],
+        "type": "string"
+      },
       "IdsFilter": {
         "properties": {
           "all": {
@@ -83590,6 +86820,86 @@
         ],
         "type": "string"
       },
+      "IntegrityCheckHistoryEntryDto": {
+        "properties": {
+          "checked": {
+            "description": "Files it looked at, when counted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "found": {
+            "description": "Findings in its list when it ended",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/IntegrityCheckOutcome"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/IntegrityReport"
+          }
+        },
+        "required": [
+          "checked",
+          "finishedAt",
+          "found",
+          "outcome",
+          "startedAt",
+          "type"
+        ],
+        "type": "object"
+      },
+      "IntegrityCheckOutcome": {
+        "description": "completed: it looked at everything; paused: the damage check reached its nightly limit and carries on next night; stopped: an administrator stopped it",
+        "enum": [
+          "completed",
+          "paused",
+          "stopped"
+        ],
+        "type": "string"
+      },
+      "IntegrityCheckProgressDto": {
+        "properties": {
+          "done": {
+            "description": "Parts finished: batches of files, or files read by the damage check",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "total": {
+            "description": "Parts in this run; null until they are all counted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/IntegrityReport"
+          }
+        },
+        "required": [
+          "done",
+          "startedAt",
+          "total",
+          "type"
+        ],
+        "type": "object"
+      },
       "IntegrityCheckRunsResponseDto": {
         "properties": {
           "checksum_mismatch": {
@@ -83618,6 +86928,42 @@
         ],
         "type": "object"
       },
+      "IntegrityFindingAssetsDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/IntegrityFindingKind"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "IntegrityFindingAssetsResponseDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Photos behind the findings, at most 10,000",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "IntegrityFindingKind": {
+        "description": "Which findings",
+        "enum": [
+          "missing",
+          "damaged"
+        ],
+        "type": "string"
+      },
       "IntegrityGetReportDto": {
         "properties": {
           "cursor": {
@@ -83638,6 +86984,65 @@
         },
         "required": [
           "type"
+        ],
+        "type": "object"
+      },
+      "IntegrityOverviewResponseDto": {
+        "properties": {
+          "damaged": {
+            "description": "Damaged files, each counted once across both checkers",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "history": {
+            "description": "The most recent checks, newest first",
+            "items": {
+              "$ref": "#/components/schemas/IntegrityCheckHistoryEntryDto"
+            },
+            "type": "array"
+          },
+          "missing": {
+            "description": "Missing files, each counted once across both checkers",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rawToMatch": {
+            "description": "Missing photos whose original is a RAW file",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "running": {
+            "description": "Checks in progress",
+            "items": {
+              "$ref": "#/components/schemas/IntegrityCheckProgressDto"
+            },
+            "type": "array"
+          },
+          "stray": {
+            "description": "Files on the drive that are in no library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unreachable": {
+            "description": "Folders of originals that cannot be reached",
+            "items": {
+              "$ref": "#/components/schemas/IntegrityUnreachableFolderDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "damaged",
+          "history",
+          "missing",
+          "rawToMatch",
+          "running",
+          "stray",
+          "unreachable"
         ],
         "type": "object"
       },
@@ -83736,6 +87141,42 @@
           "untracked_file"
         ],
         "type": "object"
+      },
+      "IntegrityUnreachableFolderDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/IntegrityUnreachableFolderKind"
+          },
+          "missing": {
+            "description": "Missing-file findings inside this folder",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "The external library’s name; empty for Frameleaf’s own folders",
+            "type": "string"
+          },
+          "path": {
+            "description": "The folder on the server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "missing",
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "IntegrityUnreachableFolderKind": {
+        "description": "storage: Frameleaf's own folders; library: an external library's folder",
+        "enum": [
+          "storage",
+          "library"
+        ],
+        "type": "string"
       },
       "ItemShareChangeDto": {
         "properties": {
@@ -83995,6 +87436,7 @@
           "StorageTemplateMigrationSingle",
           "PhysicalDeduplicationMigrationDryRun",
           "PhysicalDeduplicationMigrationApply",
+          "IdenticalFilesCheck",
           "TagCleanup",
           "VersionCheck",
           "FrameleafHeartbeat",
@@ -84003,6 +87445,7 @@
           "CloudMlLibraryBatch",
           "CloudBackupSchedule",
           "BackupSequence",
+          "OvernightSequence",
           "CloudBackupVerify",
           "PushDeliver",
           "PushBackupStaleCheck",
@@ -85460,6 +88903,174 @@
         },
         "type": "object"
       },
+      "LibraryFeatureProgressDto": {
+        "properties": {
+          "done": {
+            "description": "Photos and videos this feature has read",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "feature": {
+            "$ref": "#/components/schemas/LibraryProgressFeature"
+          },
+          "perHour": {
+            "description": "Photos read an hour lately, or null until it has been measured",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "secondsLeft": {
+            "description": "About how long the rest takes at that rate, or null when not known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Photos and videos this feature reads",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "feature",
+          "perHour",
+          "secondsLeft",
+          "total"
+        ],
+        "type": "object"
+      },
+      "LibraryFolderBrowseDto": {
+        "properties": {
+          "path": {
+            "description": "An absolute folder; defaults to the top of the disk",
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LibraryFolderBrowseResponseDto": {
+        "properties": {
+          "defaultExclusionPatterns": {
+            "description": "What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "folders": {
+            "description": "Its folders, sorted by name; hidden, system and NAS folders are left out",
+            "items": {
+              "$ref": "#/components/schemas/LibraryFolderEntryDto"
+            },
+            "type": "array"
+          },
+          "parent": {
+            "description": "The folder above it; null at the top",
+            "nullable": true,
+            "type": "string"
+          },
+          "path": {
+            "description": "The folder that was listed",
+            "type": "string"
+          },
+          "readable": {
+            "description": "Whether the folder could be read",
+            "type": "boolean"
+          },
+          "truncated": {
+            "description": "Whether there were more folders than listed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "defaultExclusionPatterns",
+          "folders",
+          "parent",
+          "path",
+          "readable",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "LibraryFolderEntryDto": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "LibraryFolderEstimateDto": {
+        "properties": {
+          "exclusionPatterns": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "What the folder would skip"
+          },
+          "path": {
+            "description": "An absolute folder",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "LibraryFolderEstimateResponseDto": {
+        "properties": {
+          "bytes": {
+            "description": "Their combined size, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "complete": {
+            "description": "False when the count stopped early (a very large or slow folder), so it is a lower bound",
+            "type": "boolean"
+          },
+          "count": {
+            "description": "Photos and videos found",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "readable": {
+            "description": "Whether the folder could be read",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bytes",
+          "complete",
+          "count",
+          "readable"
+        ],
+        "type": "object"
+      },
       "LibraryImportPathReason": {
         "description": "Why an import folder was accepted or refused",
         "enum": [
@@ -85563,6 +89174,86 @@
           "operationId"
         ],
         "type": "object"
+      },
+      "LibraryProgressFeature": {
+        "description": "search: Visual search; faces: Faces; text: Text in photos; captions: Descriptions; locked: Locked detection",
+        "enum": [
+          "search",
+          "faces",
+          "text",
+          "captions",
+          "locked"
+        ],
+        "type": "string"
+      },
+      "LibraryProgressResponseDto": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryFeatureProgressDto"
+            },
+            "type": "array"
+          },
+          "measuredSince": {
+            "description": "The start of the period the rate is measured over",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "features",
+          "measuredSince"
+        ],
+        "type": "object"
+      },
+      "LibraryRedoDto": {
+        "properties": {
+          "queue": {
+            "$ref": "#/components/schemas/LibraryRedoQueue"
+          },
+          "when": {
+            "$ref": "#/components/schemas/LibraryRedoWhen"
+          }
+        },
+        "required": [
+          "queue",
+          "when"
+        ],
+        "type": "object"
+      },
+      "LibraryRedoQueue": {
+        "description": "smartSearch: read again for Visual search; facialRecognition: group faces again; thumbnailGeneration: rebuild previews; videoConversion: remake playback copies",
+        "enum": [
+          "smartSearch",
+          "facialRecognition",
+          "thumbnailGeneration",
+          "videoConversion"
+        ],
+        "type": "string"
+      },
+      "LibraryRedoResponseDto": {
+        "properties": {
+          "tonight": {
+            "description": "Work waiting for the next overnight run",
+            "items": {
+              "$ref": "#/components/schemas/LibraryRedoQueue"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tonight"
+        ],
+        "type": "object"
+      },
+      "LibraryRedoWhen": {
+        "description": "now: start over every photo now; tonight: in the next overnight run",
+        "enum": [
+          "now",
+          "tonight"
+        ],
+        "type": "string"
       },
       "LibraryRemovalDto": {
         "properties": {
@@ -86153,6 +89844,50 @@
         ],
         "type": "object"
       },
+      "LicenseCheckoutDto": {
+        "properties": {
+          "licence": {
+            "enum": [
+              "supporter-server",
+              "supporter-individual"
+            ],
+            "type": "string"
+          },
+          "plan": {
+            "enum": [
+              "cloud-monthly",
+              "cloud-annual"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "licence",
+          "plan"
+        ],
+        "type": "object"
+      },
+      "LicenseCheckoutResponseDto": {
+        "properties": {
+          "checkoutId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When the page stops working unless payment has started, about 30 minutes",
+            "type": "string"
+          },
+          "url": {
+            "description": "The Frameleaf store page to open; the buyer signs into the account that owns this server",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkoutId",
+          "expiresAt",
+          "url"
+        ],
+        "type": "object"
+      },
       "LicenseEntitlementsDto": {
         "properties": {
           "cloudBackup": {
@@ -86708,6 +90443,93 @@
         "required": [
           "still",
           "video"
+        ],
+        "type": "object"
+      },
+      "LockedPinResponse": {
+        "properties": {
+          "relockMinutes": {
+            "description": "How long Locked photos stay open after the PIN unlocks them, in minutes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "relockMinutes"
+        ],
+        "type": "object"
+      },
+      "LockedPinUpdate": {
+        "description": "Locked PIN preferences (FL-517). Only the account itself can change them",
+        "properties": {
+          "relockMinutes": {
+            "description": "How long Locked photos stay open after the PIN unlocks them: 5, 15 or 60 minutes",
+            "maximum": 60,
+            "minimum": 5,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LockedRulesCountResponseDto": {
+        "properties": {
+          "photos": {
+            "description": "Your photos the draft would keep Locked",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "videos": {
+            "description": "Your videos the draft would keep Locked",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "photos",
+          "videos"
+        ],
+        "type": "object"
+      },
+      "LockedRulesDraftDto": {
+        "properties": {
+          "personIds": {
+            "description": "Person IDs the draft locks",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "petIds": {
+            "description": "Pet IDs the draft locks",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "tagIds": {
+            "description": "Tag IDs the draft locks",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "personIds",
+          "petIds",
+          "tagIds"
         ],
         "type": "object"
       },
@@ -87271,6 +91093,7 @@
           "best-photos-backfill",
           "physical-deduplication-dry-run",
           "physical-deduplication-apply",
+          "identical-files-check",
           "integrity-missing-files",
           "integrity-untracked-files",
           "integrity-checksum-mismatch",
@@ -87445,6 +91268,88 @@
           "archived",
           "partner",
           "unlocated"
+        ],
+        "type": "object"
+      },
+      "MediaCopiesResponseDto": {
+        "properties": {
+          "copyMinutes": {
+            "description": "FL-537: the length of the videos with a playback copy, in minutes",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "measuredAt": {
+            "description": "When the space was last measured",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "photos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "playbackBytes": {
+            "description": "Space playback copies take, when measured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "previewsBytes": {
+            "description": "Space thumbnails and previews take, when measured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "tonight": {
+            "description": "Work waiting for the next overnight run",
+            "items": {
+              "$ref": "#/components/schemas/LibraryRedoQueue"
+            },
+            "type": "array"
+          },
+          "videoCard": {
+            "$ref": "#/components/schemas/VideoCardDto"
+          },
+          "videoMinutes": {
+            "description": "FL-537: the length of every video, in minutes",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "videos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "withCopy": {
+            "description": "Videos with a playback copy",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "withoutPreview": {
+            "description": "Photos and videos without a preview yet",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "copyMinutes",
+          "measuredAt",
+          "photos",
+          "playbackBytes",
+          "previewsBytes",
+          "tonight",
+          "videoCard",
+          "videoMinutes",
+          "videos",
+          "withCopy",
+          "withoutPreview"
         ],
         "type": "object"
       },
@@ -89403,6 +93308,7 @@
           "studio_preview",
           "studio_reverse_conform",
           "studio_transcription",
+          "studio_movie",
           "studio_preview_stream",
           "restoration",
           "restoration_preview",
@@ -91910,6 +95816,103 @@
         },
         "type": "object"
       },
+      "MlProcessingOrderResponseDto": {
+        "properties": {
+          "order": {
+            "description": "The places processing tries, first to last, for every workload without a list of its own",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSource"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "sources": {
+            "description": "Whether each place can take work now",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSourceStatusDto"
+            },
+            "type": "array"
+          },
+          "workloads": {
+            "description": "Workloads with a list of their own",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkloadProcessingOrderDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "order",
+          "sources",
+          "workloads"
+        ],
+        "type": "object"
+      },
+      "MlProcessingOrderUpdateDto": {
+        "properties": {
+          "order": {
+            "description": "The places to try, first to last; each of this server, your computers and Frameleaf Cloud once",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSource"
+            },
+            "maxItems": 3,
+            "type": "array"
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "type": "object"
+      },
+      "MlProcessingSource": {
+        "description": "Where processing can run",
+        "enum": [
+          "local",
+          "desktops",
+          "cloud"
+        ],
+        "type": "string"
+      },
+      "MlProcessingSourceState": {
+        "description": "Whether a place in the processing order can take work now",
+        "enum": [
+          "ready",
+          "not-answering",
+          "turned-off",
+          "needs-permission",
+          "not-set-up"
+        ],
+        "type": "string"
+      },
+      "MlProcessingSourceStatusDto": {
+        "properties": {
+          "ready": {
+            "description": "How many computers of this kind can take work now",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MlProcessingSource"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MlProcessingSourceState"
+          },
+          "total": {
+            "description": "How many computers of this kind are set up",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ready",
+          "source",
+          "state",
+          "total"
+        ],
+        "type": "object"
+      },
       "MlRestorationModelsResponseDto": {
         "properties": {
           "checkedAt": {
@@ -92094,14 +96097,55 @@
         ],
         "type": "object"
       },
+      "MlWorkloadProcessingOrderDto": {
+        "properties": {
+          "sources": {
+            "description": "The workload's own list, first to last; empty keeps the workload off",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSource"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "sources",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "MlWorkloadProcessingOrderUpdateDto": {
+        "properties": {
+          "sources": {
+            "description": "The workload's own list, first to last; empty keeps it off; null makes it follow the main order again",
+            "items": {
+              "$ref": "#/components/schemas/MlProcessingSource"
+            },
+            "maxItems": 3,
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "type": "object"
+      },
       "MlWorkloadRouteDto": {
         "properties": {
           "destinationId": {
-            "description": "Destination the workload is routed to, or null when unrouted",
+            "description": "Where the workload's jobs go now: the first available place in its processing order (FL-456), else the first place in it; null when its order names nowhere it could run",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "followsOrder": {
+            "description": "FL-456: true when the workload follows the main processing order, false when it has its own list",
+            "type": "boolean"
           },
           "origin": {
             "allOf": [
@@ -92177,6 +96221,69 @@
         },
         "required": [
           "collectionId"
+        ],
+        "type": "object"
+      },
+      "MySmartAlbumDto": {
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "count": {
+            "description": "Photos and videos in it that this person can see",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hidden": {
+            "description": "This person hid it from their library; it keeps filling",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "The built-in album: pets, food, travel and so on",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "samples": {
+            "description": "A few of the newest, to show as small pictures",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albumId",
+          "count",
+          "hidden",
+          "kind",
+          "name",
+          "samples"
+        ],
+        "type": "object"
+      },
+      "MySmartAlbumsResponseDto": {
+        "properties": {
+          "albums": {
+            "items": {
+              "$ref": "#/components/schemas/MySmartAlbumDto"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "description": "Smart albums are on for this server",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "albums",
+          "enabled"
         ],
         "type": "object"
       },
@@ -92569,6 +96676,57 @@
         ],
         "type": "object"
       },
+      "OAuthCheckDto": {
+        "properties": {
+          "allowInsecureRequests": {
+            "description": "Allow a provider without a valid certificate",
+            "type": "boolean"
+          },
+          "clientId": {
+            "description": "Client ID given by the provider",
+            "minLength": 1,
+            "type": "string"
+          },
+          "clientSecret": {
+            "description": "Client secret; empty to use the saved one",
+            "type": "string"
+          },
+          "issuerUrl": {
+            "description": "The provider address (issuer URL)",
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientId",
+          "issuerUrl"
+        ],
+        "type": "object"
+      },
+      "OAuthCheckResponseDto": {
+        "properties": {
+          "error": {
+            "description": "Why the check failed, when it did",
+            "nullable": true,
+            "type": "string"
+          },
+          "issuer": {
+            "description": "The issuer the provider names, when it answered",
+            "nullable": true,
+            "type": "string"
+          },
+          "ok": {
+            "description": "Whether the provider answered",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "error",
+          "issuer",
+          "ok"
+        ],
+        "type": "object"
+      },
       "OAuthConfigDto": {
         "properties": {
           "codeChallenge": {
@@ -92634,6 +96792,190 @@
           "isOnboarded"
         ],
         "type": "object"
+      },
+      "OvernightNightDto": {
+        "properties": {
+          "finishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "manual": {
+            "type": "boolean"
+          },
+          "newFiles": {
+            "description": "Photos and videos that came in during the run; null or absent when not measured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "removedFromTrash": {
+            "description": "Items that left Trash for good during the run; null or absent when not measured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "results": {
+            "$ref": "#/components/schemas/OvernightResultsDto"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "finishedAt",
+          "manual",
+          "results",
+          "startedAt"
+        ],
+        "type": "object"
+      },
+      "OvernightResponseDto": {
+        "properties": {
+          "nextRunAt": {
+            "description": "When the next run starts",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "nights": {
+            "description": "The most recent runs, newest first",
+            "items": {
+              "$ref": "#/components/schemas/OvernightNightDto"
+            },
+            "type": "array"
+          },
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OvernightRunDto"
+              }
+            ],
+            "description": "The run in progress",
+            "nullable": true
+          },
+          "steps": {
+            "description": "The steps, in the order a night runs them",
+            "items": {
+              "$ref": "#/components/schemas/OvernightStepStatusDto"
+            },
+            "type": "array"
+          },
+          "timezone": {
+            "description": "The server time zone the schedule runs in",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nextRunAt",
+          "nights",
+          "run",
+          "steps",
+          "timezone"
+        ],
+        "type": "object"
+      },
+      "OvernightResultsDto": {
+        "properties": {
+          "cleanup": {
+            "$ref": "#/components/schemas/OvernightStepResult"
+          },
+          "fileChecks": {
+            "$ref": "#/components/schemas/OvernightStepResult"
+          },
+          "folders": {
+            "$ref": "#/components/schemas/OvernightStepResult"
+          },
+          "icloud": {
+            "$ref": "#/components/schemas/OvernightStepResult"
+          }
+        },
+        "type": "object"
+      },
+      "OvernightRunDto": {
+        "properties": {
+          "manual": {
+            "description": "Started with Run now",
+            "type": "boolean"
+          },
+          "results": {
+            "$ref": "#/components/schemas/OvernightResultsDto"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "step": {
+            "$ref": "#/components/schemas/OvernightStep"
+          },
+          "waitingForBackupSince": {
+            "description": "FL-540: the step uses the disk or the internet and waits for a running backup, since then",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "manual",
+          "results",
+          "startedAt",
+          "step",
+          "waitingForBackupSince"
+        ],
+        "type": "object"
+      },
+      "OvernightStep": {
+        "description": "A step of the overnight schedule",
+        "enum": [
+          "cleanup",
+          "folders",
+          "icloud",
+          "fileChecks"
+        ],
+        "type": "string"
+      },
+      "OvernightStepResult": {
+        "description": "What a step did: done; off (switched off or not set up); skipped (not its night); stopped (the stop time came first); failed (it did not start); unfinished (still running when the run moved on)",
+        "enum": [
+          "done",
+          "off",
+          "skipped",
+          "stopped",
+          "failed",
+          "unfinished"
+        ],
+        "type": "string"
+      },
+      "OvernightStepStatusDto": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/OvernightStep"
+          },
+          "on": {
+            "description": "Whether the step is set up and switched on",
+            "type": "boolean"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/OvernightStepTiming"
+          }
+        },
+        "required": [
+          "id",
+          "on",
+          "timing"
+        ],
+        "type": "object"
+      },
+      "OvernightStepTiming": {
+        "description": "When the step runs",
+        "enum": [
+          "nightly",
+          "weekly",
+          "manual"
+        ],
+        "type": "string"
       },
       "OwnerBackupDeletionDateState": {
         "enum": [
@@ -93087,6 +97429,58 @@
       },
       "PartnerUpdateDto": {
         "properties": {},
+        "type": "object"
+      },
+      "PasswordLinkCheckDto": {
+        "properties": {
+          "token": {
+            "description": "The token from the emailed link",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "PasswordLinkCheckResponseDto": {
+        "properties": {
+          "email": {
+            "description": "The email address they sign in with",
+            "type": "string"
+          },
+          "name": {
+            "description": "Name of the person the link is for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PasswordLinkRedeemDto": {
+        "properties": {
+          "newPassword": {
+            "description": "The password they chose (min 8 characters)",
+            "example": "password",
+            "minLength": 8,
+            "type": "string"
+          },
+          "token": {
+            "description": "The token from the emailed link",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "newPassword",
+          "token"
+        ],
         "type": "object"
       },
       "PeopleListItemDto": {
@@ -117384,7 +121778,8 @@
           "lensModel",
           "rating",
           "isFavorite",
-          "tags"
+          "tags",
+          "pets"
         ],
         "type": "string"
       },
@@ -117563,7 +121958,7 @@
             "items": {
               "$ref": "#/components/schemas/SearchFacetField"
             },
-            "maxItems": 10,
+            "maxItems": 11,
             "minItems": 1,
             "type": "array"
           },
@@ -119565,6 +123960,10 @@
             "description": "OAuth button text",
             "type": "string"
           },
+          "placesRestoring": {
+            "description": "Whether place names and landmarks are being put back after a restore or a first start, so they can look missing for a few minutes",
+            "type": "boolean"
+          },
           "publicUsers": {
             "description": "Whether public user registration is enabled",
             "type": "boolean"
@@ -119599,6 +123998,7 @@
           "mapLightStyleUrl",
           "minFaces",
           "oauthButtonText",
+          "placesRestoring",
           "publicUsers",
           "serverName",
           "trashDays",
@@ -121321,6 +125721,193 @@
         ],
         "type": "string"
       },
+      "SmartAlbumHiddenDto": {
+        "properties": {
+          "hidden": {
+            "description": "Hide the album from your own library, or show it again",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumKindParamDto": {
+        "properties": {
+          "kind": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumOverviewItemDto": {
+        "properties": {
+          "count": {
+            "description": "Photos held across the household, each counted once",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hiddenBy": {
+            "description": "People who hid it from their library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "people": {
+            "description": "People whose album holds at least one photo",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "samples": {
+            "description": "A few of the newest from the administrator’s own album",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "hiddenBy",
+          "kind",
+          "people",
+          "samples"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumOverviewResponseDto": {
+        "properties": {
+          "albums": {
+            "items": {
+              "$ref": "#/components/schemas/SmartAlbumOverviewItemDto"
+            },
+            "type": "array"
+          },
+          "people": {
+            "description": "People on this server",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "albums",
+          "people"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumPreviewDto": {
+        "properties": {
+          "clipQueries": {
+            "description": "Phrases: a photo that looks like one joins",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "kind": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tagTriggers": {
+            "description": "Words: a photo whose tags include one joins",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "threshold": {
+            "description": "How alike a photo must look",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "clipQueries",
+          "kind",
+          "tagTriggers",
+          "threshold"
+        ],
+        "type": "object"
+      },
+      "SmartAlbumPreviewResponseDto": {
+        "properties": {
+          "addSamples": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "adds": {
+            "description": "Photos the change would add",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "current": {
+            "description": "Photos in your album now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "looksChecked": {
+            "description": "False when the phrases could not be compared (Visual search off or not answering): only words were used",
+            "type": "boolean"
+          },
+          "matched": {
+            "description": "Photos in your library the rule would hold",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removeSamples": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removes": {
+            "description": "Photos the change would take out",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "addSamples",
+          "adds",
+          "current",
+          "looksChecked",
+          "matched",
+          "removeSamples",
+          "removes"
+        ],
+        "type": "object"
+      },
       "SmartAlbumReevaluateEstimateDto": {
         "properties": {
           "totalAssets": {
@@ -122095,6 +126682,127 @@
           "total"
         ],
         "type": "object"
+      },
+      "SourceGrantDto": {
+        "properties": {
+          "authorizationEpoch": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "deviceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "grantId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "scopeFingerprint": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/SourceResourceScope"
+            },
+            "maxItems": 1,
+            "minItems": 1,
+            "type": "array"
+          },
+          "serverId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sourceToken": {
+            "maxLength": 71,
+            "minLength": 71,
+            "pattern": "^flsrc1_[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorizationEpoch",
+          "deviceId",
+          "expiresAt",
+          "grantId",
+          "ownerId",
+          "scopeFingerprint",
+          "scopes",
+          "serverId",
+          "sourceId",
+          "sourceToken"
+        ],
+        "type": "object"
+      },
+      "SourceGrantRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "scopeFingerprint": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 88,
+            "minLength": 88,
+            "type": "string"
+          },
+          "sourceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "timestamp": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deviceId",
+          "requestId",
+          "scopeFingerprint",
+          "signature",
+          "sourceId",
+          "timestamp"
+        ],
+        "type": "object"
+      },
+      "SourceResourceScope": {
+        "enum": [
+          "source-original-read"
+        ],
+        "type": "string"
       },
       "SourceType": {
         "description": "Face detection source type",
@@ -122891,6 +127599,12 @@
       },
       "StorageMigrationStatusResponseDto": {
         "properties": {
+          "candidates": {
+            "description": "Uploaded originals a re-file checks; those already in place are not moved (FL-365)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "enabled": {
             "description": "Whether the storage template is turned on; a run moves nothing while it is off",
             "type": "boolean"
@@ -122916,6 +127630,7 @@
           }
         },
         "required": [
+          "candidates",
           "enabled",
           "hasUnfinishedWork",
           "isActive",
@@ -123466,6 +128181,10 @@
       },
       "StudioCapabilitiesDto": {
         "properties": {
+          "generationWorker": {
+            "description": "This server or a home-network worker can make music for a movie right now (FL-561)",
+            "type": "boolean"
+          },
           "gpuWorker": {
             "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
             "type": "boolean"
@@ -123739,6 +128458,14 @@
           "format": {
             "$ref": "#/components/schemas/StudioExportFormat"
           },
+          "framing": {
+            "description": "For a vertical or square export: the crop path of each shot as shown in the export dialog (`GET /studio/projects/{id}/framing` and your moves). A shot left out is centred on its picture; a clip no longer in the version is ignored",
+            "items": {
+              "$ref": "#/components/schemas/StudioExportFramingDto"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          },
           "mastering": {
             "$ref": "#/components/schemas/StudioExportMastering",
             "description": "Explicit mastering display used for PQ output; required for HDR10 or preserved PQ. Never inferred from source metadata or preview defaults"
@@ -123758,6 +128485,10 @@
           },
           "resolution": {
             "$ref": "#/components/schemas/StudioExportResolution"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/StudioExportShape",
+            "description": "Defaults to `original`. Vertical and square exports are SDR video at 720p to 2160p; the project is not changed"
           },
           "smoothMotion": {
             "$ref": "#/components/schemas/StudioExportSmoothMotionDto"
@@ -123819,6 +128550,31 @@
           "audio-wav"
         ],
         "type": "string"
+      },
+      "StudioExportFramingDto": {
+        "additionalProperties": false,
+        "properties": {
+          "clipId": {
+            "description": "A video or still on the main timeline",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "description": "Where the crop centre is through the shot, in order of progress",
+            "items": {
+              "$ref": "#/components/schemas/StudioReframePointDto"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "clipId",
+          "path"
+        ],
+        "type": "object"
       },
       "StudioExportListResponseDto": {
         "properties": {
@@ -123977,6 +128733,10 @@
           "resolution": {
             "$ref": "#/components/schemas/StudioExportResolution"
           },
+          "shape": {
+            "$ref": "#/components/schemas/StudioExportShape",
+            "description": "Absent on exports in the project’s own shape"
+          },
           "subtitleMode": {
             "$ref": "#/components/schemas/StudioExportSubtitleMode",
             "description": "Absent uses the native `burn` default"
@@ -123988,6 +128748,15 @@
           "resolution"
         ],
         "type": "object"
+      },
+      "StudioExportShape": {
+        "description": "Shape of the picture: the project’s own, vertical 9:16 or square 1:1 (FL-563)",
+        "enum": [
+          "original",
+          "vertical",
+          "square"
+        ],
+        "type": "string"
       },
       "StudioExportSmoothMotionDto": {
         "description": "Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
@@ -124644,6 +129413,351 @@
         "enum": [
           "probe",
           "stored"
+        ],
+        "type": "string"
+      },
+      "StudioMovieCreateDto": {
+        "properties": {
+          "albumId": {
+            "description": "Make the movie from this album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "assetIds": {
+            "description": "Make the movie from these photos and videos",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "lengthSeconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  30
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  180
+                ]
+              }
+            ],
+            "description": "30, 60 or 180 seconds; a song shorter than this sets the length"
+          },
+          "memoryId": {
+            "description": "Make the movie from this memory",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "mood": {
+            "$ref": "#/components/schemas/StudioMovieMood",
+            "description": "For `generated` music"
+          },
+          "music": {
+            "$ref": "#/components/schemas/StudioMovieMusicKind"
+          },
+          "previousId": {
+            "description": "Try another version: the earlier job. Its project gets the new cut as a new revision, so the current one stays in its history.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "songAssetId": {
+            "description": "For `song`: an audio file, or a video whose soundtrack is used",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sourceName": {
+            "description": "What the movie is made from, as the person sees it (the album or memory name)",
+            "maxLength": 120,
+            "type": "string"
+          },
+          "title": {
+            "description": "The title at the start; defaults to the source name",
+            "maxLength": 80,
+            "type": "string"
+          }
+        },
+        "required": [
+          "lengthSeconds",
+          "music"
+        ],
+        "type": "object"
+      },
+      "StudioMovieDto": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioMovieResultDto"
+              }
+            ],
+            "description": "Present once the job has completed",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "step": {
+            "$ref": "#/components/schemas/StudioMovieStep"
+          }
+        },
+        "required": [
+          "error",
+          "id",
+          "progress",
+          "result",
+          "status",
+          "step"
+        ],
+        "type": "object"
+      },
+      "StudioMovieMood": {
+        "description": "The mood of music made for the movie: Calm, Warm, Upbeat or Big moments",
+        "enum": [
+          "calm",
+          "warm",
+          "upbeat",
+          "big"
+        ],
+        "type": "string"
+      },
+      "StudioMovieMusicKind": {
+        "description": "`generated`: new music made for the movie; `song`: a song from the library",
+        "enum": [
+          "generated",
+          "song"
+        ],
+        "type": "string"
+      },
+      "StudioMovieQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; it also shows in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioMovieResultDto": {
+        "properties": {
+          "bars": {
+            "description": "Bar starts, in seconds",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "beats": {
+            "description": "Every beat, in seconds",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "bpm": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "downbeat": {
+            "description": "Which of the first four beats starts a bar",
+            "maximum": 3,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lengthSeconds": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "mood": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioMovieMood"
+              }
+            ],
+            "nullable": true
+          },
+          "music": {
+            "$ref": "#/components/schemas/StudioMovieMusicKind"
+          },
+          "musicImportId": {
+            "description": "The music, kept with the project",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "musicName": {
+            "description": "The song name, or empty for music made for the movie",
+            "type": "string"
+          },
+          "musicSeconds": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "description": "The Studio project the movie is saved in",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The project revision this version is",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/StudioMovieShot"
+            },
+            "type": "array"
+          },
+          "sourceName": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bars",
+          "beats",
+          "bpm",
+          "downbeat",
+          "lengthSeconds",
+          "mood",
+          "music",
+          "musicImportId",
+          "musicName",
+          "musicSeconds",
+          "projectId",
+          "revision",
+          "shots",
+          "sourceName",
+          "title",
+          "version"
+        ],
+        "type": "object"
+      },
+      "StudioMovieShot": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "end": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "start": {
+            "description": "Seconds into the movie",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "assetId",
+          "end",
+          "start"
+        ],
+        "type": "object"
+      },
+      "StudioMovieSongDto": {
+        "properties": {
+          "durationSeconds": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioMovieSongKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "durationSeconds",
+          "id",
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StudioMovieSongKind": {
+        "description": "An audio file, or a video whose soundtrack is used",
+        "enum": [
+          "audio",
+          "video"
+        ],
+        "type": "string"
+      },
+      "StudioMovieStep": {
+        "description": "What the job is doing: choosing moments, making or reading the music, cutting, adding the title",
+        "enum": [
+          "moments",
+          "music",
+          "cuts",
+          "title",
+          "done"
         ],
         "type": "string"
       },
@@ -126296,6 +131410,131 @@
         ],
         "type": "object"
       },
+      "StudioReframePointDto": {
+        "additionalProperties": false,
+        "properties": {
+          "t": {
+            "description": "Progress through the shot, 0 to 1",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "x": {
+            "description": "Centre of the crop (or of the subject) as a share of the project frame width, 0 left to 1 right",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "t",
+          "x"
+        ],
+        "type": "object"
+      },
+      "StudioReframeResponseDto": {
+        "properties": {
+          "height": {
+            "description": "Project frame height in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "revision": {
+            "description": "The stored revision the framing was worked out for",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "shots": {
+            "description": "Every shot of the main timeline, in the order they start",
+            "items": {
+              "$ref": "#/components/schemas/StudioReframeShotDto"
+            },
+            "type": "array"
+          },
+          "width": {
+            "description": "Project frame width in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "height",
+          "revision",
+          "shots",
+          "width"
+        ],
+        "type": "object"
+      },
+      "StudioReframeShotDto": {
+        "properties": {
+          "assetId": {
+            "description": "The library asset it shows, when this session may read it",
+            "nullable": true,
+            "type": "string"
+          },
+          "clipId": {
+            "description": "The video or still on the main timeline",
+            "type": "string"
+          },
+          "durationInFrames": {
+            "description": "Length of the shot in frames",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "from": {
+            "description": "First frame of the shot on the main timeline",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Where the subject is through the shot, as a share of the project frame width",
+            "items": {
+              "$ref": "#/components/schemas/StudioReframePointDto"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/StudioReframeSubject"
+          },
+          "type": {
+            "$ref": "#/components/schemas/StudioReframeShotType"
+          }
+        },
+        "required": [
+          "assetId",
+          "clipId",
+          "durationInFrames",
+          "from",
+          "path",
+          "subject",
+          "type"
+        ],
+        "type": "object"
+      },
+      "StudioReframeShotType": {
+        "description": "A video clip or a still",
+        "enum": [
+          "video",
+          "image"
+        ],
+        "type": "string"
+      },
+      "StudioReframeSubject": {
+        "description": "What the framing follows: faces found in the shot, or nothing found (centred)",
+        "enum": [
+          "face",
+          "none"
+        ],
+        "type": "string"
+      },
       "StudioRenderCandidateDto": {
         "properties": {
           "dolbyVision": {
@@ -126327,6 +131566,10 @@
               "$ref": "#/components/schemas/StudioExportFormat"
             },
             "type": "array"
+          },
+          "reframe": {
+            "description": "This session renders vertical and square exports of its SDR video formats (FL-563)",
+            "type": "boolean"
           },
           "sidecarOutputFormats": {
             "description": "Output formats whose versioned paired SRT profile this same session verified",
@@ -132668,6 +137911,110 @@
         ],
         "type": "object"
       },
+      "TrashEveryoneAccountDto": {
+        "properties": {
+          "bytes": {
+            "description": "Combined size of their originals, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "count": {
+            "description": "Items waiting in this account’s trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Account name",
+            "type": "string"
+          },
+          "oldestDeletedAt": {
+            "description": "When the item that has waited longest was deleted",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "description": "Account ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bytes",
+          "count",
+          "name",
+          "oldestDeletedAt",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "TrashEveryoneQueryDto": {
+        "properties": {
+          "days": {
+            "description": "A proposed keep time in days; removedTonight counts what it would remove. Defaults to the saved value",
+            "maximum": 36500,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "TrashEveryoneResponseDto": {
+        "properties": {
+          "accounts": {
+            "description": "Each account with something waiting, most first",
+            "items": {
+              "$ref": "#/components/schemas/TrashEveryoneAccountDto"
+            },
+            "type": "array"
+          },
+          "bytes": {
+            "description": "Combined size of their originals, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "count": {
+            "description": "Items waiting in every account’s trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "days": {
+            "description": "The keep time removedTonight was counted for",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removedTonight": {
+            "description": "Items already older than days, removed for good the next time the overnight tidy-up runs",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tidyUpOn": {
+            "description": "Whether the overnight tidy-up empties the trash; while it is off nothing is removed",
+            "type": "boolean"
+          },
+          "trashEnabled": {
+            "description": "Whether the trash is on",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accounts",
+          "bytes",
+          "count",
+          "days",
+          "removedTonight",
+          "tidyUpOn",
+          "trashEnabled"
+        ],
+        "type": "object"
+      },
       "TrashItemResponseDto": {
         "properties": {
           "fileSizeInByte": {
@@ -132717,8 +138064,9 @@
         "type": "object"
       },
       "TrashItemSort": {
-        "description": "Trash order: most recently deleted, largest original, or file name",
+        "description": "Trash order: going soonest, most recently deleted, largest original, or file name",
         "enum": [
+          "soonest",
           "recent",
           "size",
           "name"
@@ -132727,6 +138075,12 @@
       },
       "TrashItemsDto": {
         "properties": {
+          "goingWithinDays": {
+            "description": "Only items removed for good within this many days (FL-519). With the trash off, every item goes tonight",
+            "maximum": 36500,
+            "minimum": 0,
+            "type": "integer"
+          },
           "page": {
             "default": 1,
             "description": "Page number, from 1",
@@ -132894,6 +138248,18 @@
             "minimum": 0,
             "type": "integer"
           },
+          "freesBytes": {
+            "description": "FL-539: the space emptying the Trash frees: originals no other item still uses, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "nextGoesAt": {
+            "description": "FL-539: when the next item is removed for good, or null with an empty trash",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "offline": {
             "description": "Of those, external-library originals that went missing; the library scan manages them",
             "maximum": 9007199254740991,
@@ -132910,6 +138276,8 @@
         "required": [
           "bytes",
           "count",
+          "freesBytes",
+          "nextGoesAt",
           "offline",
           "pendingDeletion"
         ],
@@ -133217,6 +138585,10 @@
             "description": "User password",
             "type": "string"
           },
+          "passwordLink": {
+            "description": "Email the person a single-use link to choose their own password instead of setting one (needs email to be set up and a public address)",
+            "type": "boolean"
+          },
           "pinCode": {
             "description": "PIN code",
             "example": "123456",
@@ -133462,6 +138834,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "uploadsPaused": {
+            "description": "New uploads are paused for this person",
+            "type": "boolean"
           }
         },
         "required": [
@@ -133482,7 +138858,8 @@
           "shouldChangePassword",
           "status",
           "storageLabel",
-          "updatedAt"
+          "updatedAt",
+          "uploadsPaused"
         ],
         "type": "object"
       },
@@ -133551,6 +138928,10 @@
             "description": "Storage label",
             "nullable": true,
             "type": "string"
+          },
+          "uploadsPaused": {
+            "description": "Pause new uploads: what the person has stays, and nothing new can be added until this is turned off",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -134190,6 +139571,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "uploadsPaused": {
+            "description": "New uploads are paused for this person",
+            "type": "boolean"
           }
         },
         "required": [
@@ -134212,7 +139597,8 @@
           "shouldChangePassword",
           "status",
           "storageLabel",
-          "updatedAt"
+          "updatedAt",
+          "uploadsPaused"
         ],
         "type": "object"
       },
@@ -134327,6 +139713,9 @@
           },
           "folders": {
             "$ref": "#/components/schemas/FoldersResponse"
+          },
+          "lockedPin": {
+            "$ref": "#/components/schemas/LockedPinResponse"
           },
           "lockedRulesRevealed": {
             "description": "Whether privacy.suppression names the account's Locked people, pets and tags. False when they were blanked (a session that is not unlocked, or an administrator); such rules must never be edited and saved back (FL-67)",
@@ -134451,6 +139840,9 @@
           },
           "folders": {
             "$ref": "#/components/schemas/FoldersUpdate"
+          },
+          "lockedPin": {
+            "$ref": "#/components/schemas/LockedPinUpdate"
           },
           "memories": {
             "$ref": "#/components/schemas/MemoriesUpdate"
@@ -134604,6 +139996,59 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UtilitiesSummaryResponseDto": {
+        "properties": {
+          "damagedFiles": {
+            "description": "Photos whose original file is damaged, across the server; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "duplicateGroups": {
+            "description": "Groups of look-alike photos waiting for a decision",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missingFiles": {
+            "description": "Photos whose original file is missing, across the server; null unless an administrator asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "unusedBytes": {
+            "description": "Combined size of those unused originals, in bytes; null unless the server owner asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "unusedFiles": {
+            "description": "Originals no library uses any more (Unused files); null unless the server owner asks",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "withoutPlace": {
+            "description": "Photos and videos on the timeline with no place",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "damagedFiles",
+          "duplicateGroups",
+          "missingFiles",
+          "unusedBytes",
+          "unusedFiles",
+          "withoutPlace"
+        ],
         "type": "object"
       },
       "UtilityActivityAction": {
@@ -134830,6 +140275,80 @@
           "develop"
         ],
         "type": "string"
+      },
+      "VideoCardDto": {
+        "properties": {
+          "failedAt": {
+            "description": "When the graphics card stopped helping (copies made on the processor), or null while it works",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastTest": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VideoCardTestDto"
+              }
+            ],
+            "nullable": true
+          },
+          "slowdown": {
+            "description": "About how many times slower the processor makes copies than the card, from the last test that measured both",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "failedAt",
+          "lastTest",
+          "slowdown"
+        ],
+        "type": "object"
+      },
+      "VideoCardTestDto": {
+        "properties": {
+          "at": {
+            "description": "When it was tested",
+            "format": "date-time",
+            "type": "string"
+          },
+          "encoder": {
+            "description": "The encoder tested, or null when no graphics card was found",
+            "nullable": true,
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the card failed, as the converter said it",
+            "nullable": true,
+            "type": "string"
+          },
+          "ok": {
+            "description": "The card made the test video",
+            "type": "boolean"
+          },
+          "softwareSpeed": {
+            "description": "Seconds of test video the processor made a second, for comparison",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "speed": {
+            "description": "Seconds of test video the card made a second, or null when it failed",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "at",
+          "encoder",
+          "error",
+          "ok",
+          "softwareSpeed",
+          "speed"
+        ],
+        "type": "object"
       },
       "VideoCodec": {
         "description": "Target video codec",

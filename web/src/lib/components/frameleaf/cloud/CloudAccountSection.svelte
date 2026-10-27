@@ -18,11 +18,13 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import CloudPendingCode from '$lib/components/frameleaf/cloud/CloudPendingCode.svelte';
   import CloudToggleRow from '$lib/components/frameleaf/cloud/CloudToggleRow.svelte';
   import { dataRegionKey, displayHost, linkRefusalKeys, shortFingerprint } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { CloudLinkRefusal, type CloudHeartbeatField, type CloudPermissionsDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -315,11 +317,6 @@
         >{$t('frameleaf_cloud_relink_body')}</CloudBanner
       >
     {/if}
-    {#if status.cloneSuspected}
-      <CloudBanner tone="warning" title={$t('frameleaf_cloud_clone_title')}
-        >{$t('frameleaf_cloud_clone_body')}</CloudBanner
-      >
-    {/if}
     {#if status.heartbeatFailures > 0 && status.lastError}
       <CloudBanner
         tone="warning"
@@ -328,6 +325,28 @@
         {status.lastError}
       </CloudBanner>
     {/if}
+    <!-- FL-541: the link said in one sentence first (the prototype's Account & link hero) -->
+    <Hero
+      label={$t('frameleaf_cloud_account_status')}
+      tone={status.cloneSuspected ? 'warn' : 'good'}
+      icon={mdiCloudCheckOutline}
+      title={status.cloneSuspected
+        ? $t('frameleaf_cloud_clone_title')
+        : $t('frameleaf_cloud_hero_linked', { values: { account: status.account?.label ?? status.cloudHost } })}
+      body={status.cloneSuspected
+        ? $t('frameleaf_cloud_clone_body')
+        : [
+            $t('frameleaf_cloud_hero_since', { values: { date: formatWhen(status.linkedAt) } }),
+            status.lastContactAt
+              ? $t('frameleaf_cloud_hero_heard', { values: { when: formatWhen(status.lastContactAt) } })
+              : '',
+            status.dataRegion
+              ? $t('frameleaf_cloud_hero_region', { values: { region: regionLabel(status.dataRegion) } })
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+    />
     <CloudCard
       icon={mdiCloudCheckOutline}
       title={$t('frameleaf_cloud_linked_title')}
@@ -342,15 +361,20 @@
         <dd>{formatWhen(status.linkedAt)}</dd>
         <dt>{$t('frameleaf_cloud_last_contact')}</dt>
         <dd>{formatWhen(status.lastContactAt)}</dd>
-        <dt>{$t('frameleaf_cloud_instance_id')}</dt>
-        <dd><code>{status.instanceId}</code></dd>
-        <dt>{$t('frameleaf_cloud_key_fingerprint')}</dt>
-        <dd><code title={status.keyFingerprint ?? ''}>{shortFingerprint(status.keyFingerprint)}</code></dd>
         {#if status.dataRegion}
           <dt>{$t('frameleaf_cloud_data_region')}</dt>
           <dd>{regionLabel(status.dataRegion)}</dd>
         {/if}
       </dl>
+      <details class="fc-disclosure">
+        <summary>{$t('frameleaf_cloud_details')}</summary>
+        <dl class="fc-facts">
+          <dt>{$t('frameleaf_cloud_instance_id')}</dt>
+          <dd><code>{status.instanceId}</code></dd>
+          <dt>{$t('frameleaf_cloud_key_fingerprint')}</dt>
+          <dd><code title={status.keyFingerprint ?? ''}>{shortFingerprint(status.keyFingerprint)}</code></dd>
+        </dl>
+      </details>
       <p class="fc-muted">{$t('frameleaf_cloud_signin_role_notice')}</p>
       <div class="fc-actions">
         <Button
@@ -448,10 +472,11 @@
     </CloudCard>
     <p class="fc-muted">
       {$t('frameleaf_cloud_next')}
-      <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-plan')}>{$t('frameleaf_cloud_next_plan')}</a>
-      ·
-      <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-license')}>{$t('frameleaf_cloud_next_license')}</a>
-      ·
+      {#if !cloudManager.license?.plan}
+        <button type="button" class="fc-link" onclick={() => getCloudManager.open()}>{$t('frameleaf_get_cloud')}</button
+        >
+        ·
+      {/if}
       <a class="fc-link" href={commandCenterUrl('cloud', 'cloud-remote')}>{$t('frameleaf_cloud_next_remote')}</a>
     </p>
   {/if}

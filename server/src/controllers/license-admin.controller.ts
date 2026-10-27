@@ -5,6 +5,8 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   LicenseActivateDto,
   LicenseCertificateDto,
+  LicenseCheckoutDto,
+  LicenseCheckoutResponseDto,
   LicenseLinkCodeDto,
   LicenseLinkCodeResponseDto,
   LicenseProductsResponseDto,
@@ -102,6 +104,21 @@ export class LicenseAdminController {
   })
   refresh(): Promise<LicenseStatusResponseDto> {
     return this.service.refreshNow();
+  }
+
+  @Post('checkout')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.ServerLicenseUpdate, admin: true })
+  @RateLimited(RATE_LIMITS.licenseActivation)
+  @Endpoint({
+    operationId: 'startLicenseCheckout',
+    summary: 'Start a Frameleaf Cloud purchase',
+    description:
+      'Starts the combined licence-and-plan purchase for this linked server with Frameleaf Cloud and returns the store page to open. Payment happens in the Frameleaf store, never on this server; the plan and licence arrive on the next licence refresh.',
+    history: new HistoryBuilder().added('v3.3.0').alpha('v3.3.0'),
+  })
+  startCheckout(@Auth() auth: AuthDto, @Body() dto: LicenseCheckoutDto): Promise<LicenseCheckoutResponseDto> {
+    return this.service.startCheckout(auth, dto);
   }
 }
 

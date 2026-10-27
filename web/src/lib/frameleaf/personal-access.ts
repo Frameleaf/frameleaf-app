@@ -80,6 +80,42 @@ export const normalizeKeyPermissions = (selected: Permission[]): Permission[] =>
   return unique;
 };
 
+/**
+ * FL-367: what a new key is for, in place of choosing from every permission. Each purpose is a
+ * fixed list of existing permissions; "View only" does not download originals (defaulted on FL-367,
+ * the owner's question is open), and "View and upload" may not change albums.
+ */
+export type KeyPurpose = 'view' | 'upload' | 'view-upload' | 'everything';
+export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'view-upload', 'everything'];
+const VIEW_PERMISSIONS: readonly Permission[] = [
+  Permission.AssetRead,
+  Permission.AssetView,
+  Permission.AlbumRead,
+  Permission.TimelineRead,
+  Permission.MemoryRead,
+  Permission.PersonRead,
+  Permission.TagRead,
+  Permission.StackRead,
+  Permission.MapRead,
+];
+export const PURPOSE_PERMISSIONS: Readonly<Record<KeyPurpose, readonly Permission[]>> = {
+  view: VIEW_PERMISSIONS,
+  upload: [Permission.AssetUpload],
+  'view-upload': [...VIEW_PERMISSIONS, Permission.AssetUpload],
+  everything: [Permission.All],
+};
+
+/** The purpose a set of permissions matches exactly, or `custom` for anything else. */
+export const keyPurpose = (permissions: readonly Permission[]): KeyPurpose | 'custom' => {
+  const chosen = new Set(permissions);
+  return (
+    KEY_PURPOSES.find((purpose) => {
+      const wanted = PURPOSE_PERMISSIONS[purpose];
+      return wanted.length === chosen.size && wanted.every((permission) => chosen.has(permission));
+    }) ?? 'custom'
+  );
+};
+
 /** The permissions a key can grant that remove things, which the editor warns about. */
 export const keyCanDelete = (permissions: Permission[]) =>
   permissions.some((permission) => permission === Permission.All || permission.endsWith('.delete'));

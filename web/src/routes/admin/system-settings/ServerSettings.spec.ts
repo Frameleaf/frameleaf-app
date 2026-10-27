@@ -19,7 +19,7 @@ vi.mock('$lib/frameleaf/system-config-draft.svelte', async (original) => ({
 }));
 // The cleaning itself is tested with a browser-like DOM in welcome-message.spec.ts; here it stands in.
 vi.mock('$lib/frameleaf/welcome-message', () => ({
-  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script[\s\S]*?<\/script>/gi, ''),
+  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script\b[\s\S]*?<\/script\s*>/gi, ''),
 }));
 const config = (lanDiscovery: boolean, server: Partial<AdminConfigDto['server']> = {}) =>
   ({

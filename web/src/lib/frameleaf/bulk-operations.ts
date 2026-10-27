@@ -2,7 +2,6 @@ import {
   addAssetsToAlbum,
   AssetJobName,
   AssetVisibility,
-  bulkTagAssets,
   createBulkMediaOperation,
   createSharedLink,
   createStack,
@@ -22,11 +21,13 @@ import {
   searchSmart,
   SharedLinkType,
   unlockAssets,
+  tagAssets,
   untagAssets,
   updateAlbumInfo,
   updateAsset,
   updateAssets,
   upsertTags,
+  BulkIdErrorReason,
   type BulkIdResponseDto,
   type MediaOperationBulkPayloadDto,
   type MediaOperationDetailDto,
@@ -112,6 +113,8 @@ export type BulkPayload = {
   sharedLinkId?: string;
   tagIds?: string[];
   newTagNames?: string[];
+  /** For the undo of a tag: per tag, only the items it was newly added to (FL-529). */
+  untagIdsByTag?: Record<string, string[]>;
   /** 'set' writes the same instant to every item; 'shift' moves each item by `minutes`. */
   dateMode?: 'set' | 'shift';
   dateTimeOriginal?: string;
@@ -154,6 +157,11 @@ export type BulkRunContext = {
   currentUserId?: string;
   /** Owners of the selected assets, when the caller has them loaded. */
   ownerById?: Record<string, string>;
+  /**
+   * What each loaded item had before the action (FL-529). Undo reverses favorite and archive only on
+   * items known to have changed; an item missing here is never touched by the undo.
+   */
+  stateById?: Record<string, { isFavorite?: boolean; isArchived?: boolean }>;
   /** The view the action runs from, for what leaves it afterwards (FL-34). */
   view?: BulkView;
 };
@@ -199,7 +207,7 @@ export type BulkGateway = {
   restoreAssets: typeof restoreAssets;
   createStack: typeof createStack;
   deleteStacks: typeof deleteStacks;
-  bulkTagAssets: typeof bulkTagAssets;
+  tagAssets: typeof tagAssets;
   untagAssets: typeof untagAssets;
   upsertTags: typeof upsertTags;
   runAssetJobs: typeof runAssetJobs;
@@ -229,7 +237,7 @@ export const createBulkGateway = (downloadArchive: BulkGateway['downloadArchive'
   restoreAssets,
   createStack,
   deleteStacks,
-  bulkTagAssets,
+  tagAssets,
   untagAssets,
   upsertTags,
   runAssetJobs,
@@ -289,6 +297,26 @@ const fromBulkIdResponses = (responses: readonly BulkIdResponseDto[]): BulkOutco
           message: response.errorMessage,
         },
   );
+
+/** `stateById` for the loaded items among `ids` (FL-529). */
+export const bulkStateById = (
+  ids: readonly string[],
+  find: (id: string) => { isFavorite: boolean; visibility: AssetVisibility } | null | undefined,
+): NonNullable<BulkRunContext['stateById']> =>
+  Object.fromEntries(
+    ids.flatMap((id) => {
+      const asset = find(id);
+      return asset
+        ? [[id, { isFavorite: asset.isFavorite, isArchived: asset.visibility === AssetVisibility.Archive }]]
+        : [];
+    }),
+  );
+
+/** An undo over the items that really changed, or none when nothing did (FL-529). */
+const changedUndo = (action: BulkActionId, succeeded: string[], changed: (id: string) => boolean) => {
+  const ids = succeeded.filter((id) => changed(id));
+  return ids.length > 0 ? { action, ids } : undefined;
+};
 
 const summarize = (
   action: BulkActionId,
@@ -634,7 +662,11 @@ export const runBulkAction = async (
       const isFavorite = action === 'favorite';
       return finish(
         await runInChunks(runner, (batch) => gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, isFavorite } })),
-        (succeeded) => ({ action: isFavorite ? 'unfavorite' : 'favorite', ids: succeeded }),
+        (succeeded) =>
+          changedUndo(isFavorite ? 'unfavorite' : 'favorite', succeeded, (id) => {
+            const before = context?.stateById?.[id]?.isFavorite;
+            return before !== undefined && before !== isFavorite;
+          }),
       );
     }
     case 'archive':
@@ -642,7 +674,11 @@ export const runBulkAction = async (
       const visibility = action === 'archive' ? AssetVisibility.Archive : AssetVisibility.Timeline;
       return finish(
         await runInChunks(runner, (batch) => gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, visibility } })),
-        (succeeded) => ({ action: action === 'archive' ? 'unarchive' : 'archive', ids: succeeded }),
+        (succeeded) =>
+          changedUndo(action === 'archive' ? 'unarchive' : 'archive', succeeded, (id) => {
+            const before = context?.stateById?.[id]?.isArchived;
+            return before !== undefined && before !== (action === 'archive');
+          }),
       );
     }
     case 'change-date': {
@@ -842,8 +878,8 @@ export const runBulkAction = async (
     }
 
     /*
-     * POST /assets/lock and /assets/unlock — Mark Sensitive is the lock (FL-34): a lock record, never a
-     * visibility or an album change. Only Unmark is undone here: undoing a mark would need the PIN.
+     * POST /assets/lock and /assets/unlock — Lock (FL-34) writes a lock record, never a
+     * visibility or an album change. Only Unlock is undone here: undoing a lock would need the PIN.
      */
     case 'mark-sensitive': {
       return finish(await runInChunks(runner, (batch) => gateway.lockAssets({ bulkIdsDto: { ids: batch } })));
@@ -861,11 +897,33 @@ export const runBulkAction = async (
       if (tagIds.length === 0) {
         throw new Error('Missing tagIds for this action');
       }
+      // One call per tag: its per-item answer says which items already had the tag ('duplicate'),
+      // so the undo removes the tag only where this run added it (FL-529).
+      const added: Record<string, string[]> = {};
       return finish(
         await runInChunks(runner, async (batch) => {
-          await gateway.bulkTagAssets({ tagBulkAssetsDto: { assetIds: batch, tagIds } });
+          const failures = new Map<string, BulkOutcome>();
+          for (const tagId of tagIds) {
+            const responses = await gateway.tagAssets({ id: tagId, bulkIdsDto: { ids: batch } });
+            for (const response of responses) {
+              if (response.success) {
+                (added[tagId] ??= []).push(response.id);
+              } else if (response.error !== BulkIdErrorReason.Duplicate && !failures.has(response.id)) {
+                failures.set(response.id, fromBulkIdResponses([response])[0]);
+              }
+            }
+          }
+          return batch.map((id) => failures.get(id) ?? ok(id));
         }),
-        (succeeded) => ({ action: 'untag', ids: succeeded, payload: { tagIds } }),
+        () => {
+          const untagIdsByTag = Object.fromEntries(
+            Object.entries(added).map(([tagId, ids]) => [tagId, distinct(ids)] as const),
+          );
+          const ids = distinct(Object.values(untagIdsByTag).flat());
+          return ids.length > 0
+            ? { action: 'untag', ids, payload: { tagIds: Object.keys(untagIdsByTag), untagIdsByTag } }
+            : undefined;
+        },
       );
     }
     case 'untag': {
@@ -876,7 +934,11 @@ export const runBulkAction = async (
       return finish(
         await runInChunks(runner, async (batch) => {
           for (const tagId of tagIds) {
-            await gateway.untagAssets({ id: tagId, bulkIdsDto: { ids: batch } });
+            const only = payload?.untagIdsByTag?.[tagId];
+            const ids = only ? batch.filter((id) => only.includes(id)) : batch;
+            if (ids.length > 0) {
+              await gateway.untagAssets({ id: tagId, bulkIdsDto: { ids } });
+            }
           }
         }),
       );

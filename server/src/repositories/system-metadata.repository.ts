@@ -146,6 +146,21 @@ export class SystemMetadataRepository {
     return Number(result.numUpdatedRows) > 0;
   }
 
+  /**
+   * FL-520: the run in progress ends without completing (stopped, or paused by its limits): it stops
+   * being current and the last completed run is kept. Only the run named by `runId` is cleared.
+   */
+  async clearIntegrityRun(type: IntegrityReport, runId: string): Promise<boolean> {
+    const current = sql`(("value" -> ${type}::text) -> 'current')`;
+    const result = await this.db
+      .updateTable('system_metadata')
+      .set({ value: sql`jsonb_set("value", ARRAY[${type}::text], ("value" -> ${type}::text) - 'current')` } as never)
+      .where('key', '=', SystemMetadataKey.IntegrityCheckRuns)
+      .where(sql<boolean>`${current} ->> 'runId' = ${runId}`)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
+
   @GenerateSql({ params: ['metadata_key'] })
   async delete<T extends keyof SystemMetadata>(key: T): Promise<void> {
     if (

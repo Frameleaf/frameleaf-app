@@ -4,6 +4,7 @@ import {
   accountToolProgress,
   applySetupChoices,
   createSetup,
+  defaultTier,
   firstInvalidStep,
   flowSteps,
   goToStep,
@@ -14,6 +15,7 @@ import {
   needsReindex,
   parseSetup,
   processingOptions,
+  recommendedTier,
   resumeSetup,
   saveAccountTool,
   saveLocalSetup,
@@ -23,6 +25,8 @@ import {
   themeAfterSetup,
   toProgress,
   validateStep,
+  withDefaultTier,
+  type TierHardware,
 } from '$lib/frameleaf/first-run-setup';
 
 const memory = () => {
@@ -136,7 +140,7 @@ describe('first-run setup state (FL-176)', () => {
 
   it('drops the choices that need Frameleaf when unlinking', () => {
     let state = setLinked(createSetup('existing'), true);
-    expect(processingOptions(state)).toEqual(['local', 'cloud', 'later']);
+    expect(processingOptions(state)).toEqual(['local', 'later']);
     state = { ...state, choices: { ...state.choices, processing: 'cloud', restore: 'restore' } };
     const unlinked = setLinked(state, false);
     expect(unlinked.choices).toMatchObject({ processing: 'local', restore: null });
@@ -190,7 +194,10 @@ describe('first-run setup state (FL-176)', () => {
   describe('applying choices', () => {
     const config = {
       storageTemplate: { enabled: false, template: '{{y}}/{{filename}}', hashVerificationEnabled: true },
-      machineLearning: { clip: { enabled: true, modelName: 'ViT-B-32__openai' } },
+      machineLearning: {
+        clip: { enabled: true, modelName: 'ViT-B-32__openai' },
+        facialRecognition: { enabled: true, modelName: 'antelopev2' },
+      },
       backup: { database: { enabled: false, cronExpression: '0 02 * * *', keepLastAmount: 14 } },
       newVersionCheck: { enabled: false },
       map: { enabled: true, lightStyle: '', darkStyle: '' },
@@ -201,6 +208,7 @@ describe('first-run setup state (FL-176)', () => {
       const next = applySetupChoices(config, { ...state, choices: { ...state.choices, map: false } });
       expect(next.storageTemplate).toMatchObject({ enabled: true, template: '{{y}}/{{MM}}/{{filename}}' });
       expect(next.machineLearning.clip.modelName).toBe('ViT-B-16-SigLIP-384__webli');
+      expect(next.machineLearning.facialRecognition.modelName).toBe('buffalo_l');
       expect(next.backup.database.enabled).toBe(true);
       expect(next.newVersionCheck.enabled).toBe(true);
       expect(next.map.enabled).toBe(false);
@@ -215,6 +223,109 @@ describe('first-run setup state (FL-176)', () => {
       expect(applySetupChoices(config, later).machineLearning.clip.modelName).toBe('ViT-B-32__openai');
       expect(needsReindex(config, later)).toBe(false);
       expect(needsReindex(config, createSetup('new'))).toBe(false);
+    });
+
+    it("moves an existing library's face model only with its tier, never on its own (A2)", () => {
+      // the library's tier (light) chosen again: both models stay, nothing re-embeds
+      const light = {
+        ...createSetup('existing'),
+        choices: { ...createSetup('existing').choices, model: 'light' as const },
+      };
+      expect(applySetupChoices(config, light).machineLearning).toMatchObject({
+        clip: { modelName: 'ViT-B-32__openai' },
+        facialRecognition: { modelName: 'antelopev2' },
+      });
+      expect(needsReindex(config, light)).toBe(false);
+      // another tier chosen: search and faces move together, and the library re-indexes
+      const best = { ...light, choices: { ...light.choices, model: 'best' as const } };
+      expect(applySetupChoices(config, best).machineLearning).toMatchObject({
+        clip: { modelName: 'ViT-SO400M-16-SigLIP2-384__webli' },
+        facialRecognition: { modelName: 'antelopev2' },
+      });
+      expect(needsReindex(config, best)).toBe(true);
+      const balanced = { ...light, choices: { ...light.choices, model: 'balanced' as const } };
+      expect(applySetupChoices(config, balanced).machineLearning.facialRecognition.modelName).toBe('buffalo_l');
+      // a face-only change counts as a re-index too
+      const sameSearch = {
+        ...config,
+        machineLearning: {
+          ...config.machineLearning,
+          clip: { ...config.machineLearning.clip, modelName: 'ViT-SO400M-16-SigLIP2-384__webli' },
+        },
+      };
+      expect(needsReindex(sameSearch, balanced)).toBe(true);
+      // a library on a search model outside the tiers keeps its face model whatever tier is chosen
+      const custom = {
+        ...config,
+        machineLearning: {
+          ...config.machineLearning,
+          clip: { ...config.machineLearning.clip, modelName: 'custom-model' },
+        },
+      };
+      expect(applySetupChoices(custom, best).machineLearning).toMatchObject({
+        clip: { modelName: 'ViT-SO400M-16-SigLIP2-384__webli' },
+        facialRecognition: { modelName: 'antelopev2' },
+      });
+      expect(applySetupChoices(custom, balanced).machineLearning.facialRecognition.modelName).toBe('antelopev2');
+    });
+  });
+
+  describe('the hardware-driven tier (A2)', () => {
+    const ml = (patch: Partial<TierHardware['ml']>): TierHardware => ({
+      ml: { reachable: true, backend: 'CUDA', vramGb: 24, integrated: false, ...patch },
+    });
+
+    it('recommends light on a processor or an integrated GPU, balanced from 6 GB and best from 12 GB', () => {
+      expect(recommendedTier(ml({ backend: 'CPU', vramGb: null }))).toBe('light');
+      expect(recommendedTier(ml({ backend: 'OpenVINO', vramGb: null, integrated: true }))).toBe('light');
+      expect(recommendedTier(ml({ backend: 'ROCm', vramGb: 16, integrated: true }))).toBe('light');
+      expect(recommendedTier(ml({ vramGb: 4 }))).toBe('light');
+      expect(recommendedTier(ml({ vramGb: 6 }))).toBe('balanced');
+      expect(recommendedTier(ml({ vramGb: 11.5 }))).toBe('balanced');
+      expect(recommendedTier(ml({ vramGb: 12 }))).toBe('best');
+      expect(recommendedTier(ml({ backend: 'ROCm', vramGb: 24 }))).toBe('best');
+      // unknown hardware or memory keeps the server's own default
+      expect(recommendedTier(null)).toBe('balanced');
+      expect(recommendedTier(ml({ reachable: false, backend: 'CPU', vramGb: null }))).toBe('balanced');
+      expect(recommendedTier(ml({ vramGb: null, integrated: null }))).toBe('balanced');
+    });
+
+    it('starts a new server at the recommended tier and an existing library at its own', () => {
+      const gpu = ml({ vramGb: 24 });
+      expect(defaultTier('new', { hardware: gpu })).toBe('best');
+      expect(defaultTier('new', { hardware: null })).toBe('balanced');
+      expect(defaultTier('existing', { hardware: gpu, currentModel: 'ViT-B-32__openai' })).toBe('light');
+      expect(defaultTier('existing', { hardware: gpu, currentModel: 'ViT-SO400M-16-SigLIP2-384__webli' })).toBe('best');
+      expect(defaultTier('existing', { hardware: gpu, currentModel: 'custom-model' })).toBe('balanced');
+      expect(defaultTier('existing', { hardware: gpu })).toBe('balanced');
+
+      const fresh = withDefaultTier(createSetup('new'), { hardware: gpu });
+      expect(fresh.choices.model).toBe('best');
+      expect(
+        withDefaultTier(createSetup('new'), { hardware: ml({ backend: 'CPU', vramGb: null }) }).choices.model,
+      ).toBe('light');
+      const existing = withDefaultTier(createSetup('existing'), { hardware: gpu, currentModel: 'ViT-B-32__openai' });
+      expect(existing.choices.model).toBe('light');
+      // no change, no new state
+      const same = createSetup('new');
+      expect(withDefaultTier(same, { hardware: ml({ vramGb: 8 }) })).toBe(same);
+    });
+
+    it("keeps the administrator's tier once the tier step was reached", () => {
+      const steps = flowSteps('new');
+      const tierStep = steps.findIndex((entry) => entry.id === 'processing');
+      const chosen = {
+        ...createSetup('new'),
+        step: tierStep,
+        reached: tierStep,
+        choices: { ...createSetup('new').choices, model: 'light' as const },
+      };
+      expect(withDefaultTier(chosen, { hardware: ml({ vramGb: 24 }) })).toBe(chosen);
+      const passed = { ...createSetup('new'), step: tierStep + 1, reached: tierStep + 1 };
+      expect(withDefaultTier(passed, { hardware: ml({ vramGb: 24 }) }).choices.model).toBe('balanced');
+      // before it, the recommendation still lands
+      const before = { ...createSetup('new'), step: tierStep - 1, reached: tierStep - 1 };
+      expect(withDefaultTier(before, { hardware: ml({ vramGb: 24 }) }).choices.model).toBe('best');
     });
   });
 

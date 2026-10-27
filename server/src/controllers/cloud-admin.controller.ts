@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudPermissionsUpdateDto,
   CloudRemoteAccessUpdateDto,
+  CloudSignInPeopleResponseDto,
   CloudSignInUpdateDto,
   CloudStatusResponseDto,
   CloudTourResponseDto,
@@ -22,6 +23,7 @@ import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
+import { UUIDParamDto } from 'src/validation.js';
 
 /**
  * Linking this server to a Frameleaf account (FL-154 status, FL-155 link lifecycle). Nothing is
@@ -165,6 +167,33 @@ export class CloudAdminController {
   })
   updateSignIn(@Auth() auth: AuthDto, @Body() dto: CloudSignInUpdateDto): Promise<CloudStatusResponseDto> {
     return this.service.updateSignIn(auth, dto);
+  }
+
+  @Get('sign-in/people')
+  @Authenticated({ permission: Permission.AdminCloudRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudSignInPeople',
+    summary: 'List who has linked a Frameleaf account',
+    description:
+      'Every account here and whether it is linked to a Frameleaf account, so it can sign in away from home. Those not linked come first. Reads local state only.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getSignInPeople(): Promise<CloudSignInPeopleResponseDto> {
+    return this.service.getSignInPeople();
+  }
+
+  @Post('sign-in/people/:id/remind')
+  @Authenticated({ permission: Permission.AdminCloudUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    operationId: 'remindCloudSignIn',
+    summary: 'Remind someone to link their Frameleaf account',
+    description:
+      'Emails the person a link to their own sign-in settings, where they link their Frameleaf account. Needs email and a public address. Nothing is linked for them.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  remindSignIn(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.remindSignIn(auth, id);
   }
 
   @Put('remote-access')

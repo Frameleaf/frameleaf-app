@@ -5,6 +5,7 @@ import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
 import PasswordDialog from '$lib/components/frameleaf/access/PasswordDialog.svelte';
 import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
 import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
+import { PURPOSE_PERMISSIONS } from '$lib/frameleaf/personal-access';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
@@ -106,7 +107,8 @@ describe('ApiKeyDialog (FL-67)', () => {
 
     await waitFor(() =>
       expect(sdkMock.createApiKey).toHaveBeenCalledWith({
-        apiKeyCreateDto: { name: 'Importer', permissions: [Permission.AssetRead] },
+        // FL-367: a new key starts as View only
+        apiKeyCreateDto: { name: 'Importer', permissions: [...PURPOSE_PERMISSIONS.view] },
       }),
     );
     expect(await screen.findByText('shown-once')).toBeInTheDocument();

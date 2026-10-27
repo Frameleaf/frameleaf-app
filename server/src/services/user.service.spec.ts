@@ -46,6 +46,30 @@ describe(UserService.name, () => {
     );
   });
 
+  describe('countLockedRules (FL-541)', () => {
+    const draft = { tagIds: [], personIds: ['00000000-0000-4000-8000-000000000001'], petIds: [] };
+
+    it('needs an unlocked session, as editing the rules does', async () => {
+      await expect(sut.countLockedRules(authStub.admin, draft)).rejects.toThrow(ForbiddenException);
+      expect(mocks.asset.countLockedRuleMatches).not.toHaveBeenCalled();
+    });
+
+    it('counts your own photos and videos the draft matches, and nothing for an empty draft', async () => {
+      mocks.asset.countLockedRuleMatches.mockResolvedValue({ photos: 12, videos: 3 });
+      await expect(sut.countLockedRules(authStub.adminWithElevatedPermission, draft)).resolves.toEqual({
+        photos: 12,
+        videos: 3,
+      });
+      expect(mocks.asset.countLockedRuleMatches).toHaveBeenCalledWith({ userId: authStub.admin.user.id, ...draft });
+
+      mocks.asset.countLockedRuleMatches.mockClear();
+      await expect(
+        sut.countLockedRules(authStub.adminWithElevatedPermission, { tagIds: [], personIds: [], petIds: [] }),
+      ).resolves.toEqual({ photos: 0, videos: 0 });
+      expect(mocks.asset.countLockedRuleMatches).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateMe', () => {
     it.each([false, true])('rejects a conflicting email before writing, deleted=%s', async (deleted) => {
       const existing = UserFactory.create({ email: 'used@example.com', deletedAt: deleted ? new Date() : null });

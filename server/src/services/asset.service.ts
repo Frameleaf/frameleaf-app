@@ -601,6 +601,18 @@ export class AssetService extends BaseService {
    * Push assets whose visibility a transactional archive changed outside `updateAll` (FL-32), with
    * their stack siblings, to the owner's open sessions, the same real-time update `updateAll` sends.
    */
+  /**
+   * A visibility change written outside `updateAll` (the transactional archive and its undo, FL-32):
+   * the same FL-326 bookkeeping — the visibility is the owner's on partner copies, copies that follow
+   * these items receive it — then the real-time update.
+   */
+  async recordVisibilityEdit(ids: string[], ownerId: string): Promise<void> {
+    await recordAssetEdit({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, ownerId, ids, [
+      AssetOriginField.Visibility,
+    ]);
+    await this.notifyVisibilityChanged(ids, ownerId);
+  }
+
   async notifyVisibilityChanged(ids: string[], ownerId: string): Promise<void> {
     const siblingIds = (await this.assetRepository.getStackSiblingIds(ids)) ?? [];
     await this.notifyAssetsUpdated([...new Set([...ids, ...siblingIds])], ownerId);
@@ -740,13 +752,27 @@ export class AssetService extends BaseService {
 
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
-    for (const { id, from } of items) {
-      const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
-      if (updated) {
-        await this.assetRepository.update({ id, ...getAssetDateTimeUpdates(updated.dateTimeOriginal?.toISOString()) });
+    const fields = [AssetOriginField.DateTimeOriginal];
+    await this.partnerOriginRepository.withOriginEdit('asset', ids, [], async () => {
+      for (const { id, from } of items) {
+        const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
+        if (updated) {
+          await this.assetRepository.update({
+            id,
+            ...getAssetDateTimeUpdates(updated.dateTimeOriginal?.toISOString()),
+          });
+        }
       }
-    }
+      await this.partnerOriginRepository.markOverridden('asset', ids, fields, auth.user.id);
+    });
 
+    // FL-326: as `updateAll` does, the shifted date is the owner's on partner copies, and copies follow it
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      ids,
+      fields,
+    );
     await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
   }
 

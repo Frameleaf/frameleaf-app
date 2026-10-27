@@ -134,6 +134,7 @@ import {
 import { syncAncestors } from 'src/utils/studio-import-durability.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+import { StudioReframeError, StudioReframeSeal, isReframeShape, sealStudioReframe } from 'src/utils/studio-reframe.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
 import {
   STUDIO_DOLBY_TOOLS_ID,
@@ -366,6 +367,7 @@ export class StudioExportService {
       });
     }
 
+    const reframe = this.sealReframe(dto, authorized.envelope.graph);
     const settings = {
       format: dto.format,
       color: dto.color,
@@ -375,6 +377,8 @@ export class StudioExportService {
       ...(dto.range && { range: dto.range }),
       audio: dto.audio ?? 'preserve',
       ...(dto.mastering !== undefined && { mastering: structuredClone(dto.mastering) }),
+      // FL-563: a derived export setting; the render worker reframes, the project is never edited.
+      ...(reframe && { shape: reframe.shape, reframe }),
     };
     if (isStudioPhotoFormat(dto.format)) {
       if (dto.subtitleMode !== undefined || (dto.audio !== undefined && dto.audio !== 'preserve'))
@@ -403,13 +407,23 @@ export class StudioExportService {
       authorized.manifest.entries,
       settings,
     );
+    if (reframe && contract.video.transfer !== null) {
+      throw new BadRequestException(
+        'Vertical and square exports are SDR video; this project keeps an HDR picture. Export it in its original shape',
+      );
+    }
     const audioProblem = studioExportAudioProblem(dto.format, contract.audio);
     if (audioProblem) {
       throw new ConflictException({ code: 'studio_export_audio_unsupported', message: audioProblem });
     }
-    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8)) {
-      // The sources keep an HDR picture: only a worker that verified that precision can take it.
-      await this.requireRenderableOutput(dto.destination, { ...settings, minBitDepth: contract.video.minBitDepth });
+    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8) || contract.video.transfer) {
+      // The sources keep (or the colour asks for) an HDR picture: only a worker that verified that
+      // precision, and for HLG that exact HLG master (FL-107), can take it.
+      await this.requireRenderableOutput(dto.destination, {
+        ...settings,
+        minBitDepth: contract.video.minBitDepth,
+        transfer: contract.video.transfer,
+      });
     }
     const pairedCaptions = dto.subtitleMode === 'sidecar' || dto.subtitleMode === 'embedded';
     if (
@@ -521,6 +535,37 @@ export class StudioExportService {
 
     this.logger.log(`Studio export ${version.id} queued as render ${operation.id} for project ${projectId}`);
     return { version: this.map(version, auth), operation: mapOperation(operation) };
+  }
+
+  /**
+   * FL-563: the framing a vertical or square export seals for its render, or null for the project's
+   * own shape. Shaped exports are SDR video at 720p to 2160p; the crop paths are what the person saw
+   * in the export dialog, clamped to the frame. Nothing is written to the project.
+   */
+  private sealReframe(dto: StudioExportCreateDto, graph: unknown): StudioReframeSeal | null {
+    const shape = dto.shape ?? 'original';
+    if (!isReframeShape(shape)) {
+      if (dto.framing !== undefined) {
+        throw new BadRequestException('A framing needs a vertical or square shape');
+      }
+      return null;
+    }
+    if (
+      !isStudioVideoFormat(dto.format) ||
+      studioExportFormatSpec(dto.format)?.bitDepth !== 8 ||
+      dto.color !== 'preserve' ||
+      dto.mastering !== undefined
+    ) {
+      throw new BadRequestException('Vertical and square exports are SDR video: choose an 8-bit video format');
+    }
+    try {
+      return sealStudioReframe(graph, shape, dto.resolution, dto.framing ?? []);
+    } catch (error) {
+      if (error instanceof StudioReframeError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -662,11 +707,14 @@ export class StudioExportService {
       sources.filter((source) => source.ownerId !== auth.user.id).map((source) => source.assetId!),
     );
     // FL-326: partners hold their own copies, so another owner's source is reached only through an album
-    const [ownedOk, album] = await Promise.all([
+    // Owner access does not look at the trash or offline state, so availability is checked apart.
+    const [ownedOk, album, available] = await Promise.all([
       this.access.asset.checkOwnerAccess(auth.user.id, owned, !!getLockedOwnerId(auth)),
       this.access.asset.checkAlbumAccess(auth.user.id, shared),
+      this.repository.getAvailableSourceIds(sources.map((source) => source.assetId!)),
     ]);
-    const reachable = (assetId: string) => (owned.has(assetId) ? ownedOk.has(assetId) : album.has(assetId));
+    const reachable = (assetId: string) =>
+      available.has(assetId) && (owned.has(assetId) ? ownedOk.has(assetId) : album.has(assetId));
     if (sources.some((source) => !reachable(source.assetId!))) {
       throw new NotFoundException('Studio export not found');
     }
@@ -1121,6 +1169,9 @@ export class StudioExportService {
         userIds: [version.ownerId],
         title: 'Rendering',
         body: `${name} · ${percent}%`,
+        systemTemplate: operation.label?.trim()
+          ? { version: 1, key: 'studio-render-progress-named', args: { label: name, percent } }
+          : { version: 1, key: 'studio-render-progress', args: { percent } },
         // native apps: `kind` names the payload, `progress` is 0..1, `job` is the render's media operation
         data: {
           kind: 'render',
@@ -2024,16 +2075,27 @@ export class StudioExportService {
             : status === 'cancelled'
               ? `${name} was cancelled`
               : `${name} could not be finished`,
-        systemTemplate:
-          status === 'cancelled'
-            ? undefined
-            : label?.trim()
-              ? {
-                  version: 1,
-                  key: status === 'published' ? 'studio-export-ready-named' : 'studio-export-failed-named',
-                  args: { label: name },
-                }
-              : { version: 1, key: status === 'published' ? 'studio-export-ready' : 'studio-export-failed', args: {} },
+        systemTemplate: label?.trim()
+          ? {
+              version: 1,
+              key:
+                status === 'published'
+                  ? 'studio-export-ready-named'
+                  : status === 'cancelled'
+                    ? 'studio-export-cancelled-named'
+                    : 'studio-export-failed-named',
+              args: { label: name },
+            }
+          : {
+              version: 1,
+              key:
+                status === 'published'
+                  ? 'studio-export-ready'
+                  : status === 'cancelled'
+                    ? 'studio-export-cancelled'
+                    : 'studio-export-failed',
+              args: {},
+            },
         // Studio operations cannot use generic Retry; reopen this project/version for a new export.
         data: {
           versionId: version.id,
@@ -2263,6 +2325,8 @@ export class StudioExportService {
     const {
       subtitleSeal: _privateSubtitleSeal,
       embeddedSubtitleSeal: _privateEmbeddedSubtitleSeal,
+      // FL-563: the sealed crop paths are the render's; the version shows only its shape.
+      reframe: _sealedReframe,
       ...publicSettings
     } = version.settings;
     const settings = publicSettings as StudioExportVersionDto['settings'];

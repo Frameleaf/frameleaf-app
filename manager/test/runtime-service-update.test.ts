@@ -75,3 +75,19 @@ test('starting pulls only the pinned images this host is missing, so a resumed s
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('a tagged, digest-pinned image already on the host is not pulled again', async () => {
+  const digest = `sha256:${'d'.repeat(64)}`;
+  const directory = await stack({ database: { image: `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@${digest}` } });
+  const calls: string[][] = [];
+  const docker = new Docker((_binary, args) => {
+    calls.push(args);
+    return Promise.resolve(args[1] === 'ls' ? `ghcr.io/frameleaf/frameleaf-postgres@${digest}\n` : '');
+  });
+  try {
+    await docker.compose(directory, project, 'up');
+    assert.deepEqual(calls.filter((a) => a[0] === 'pull'), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

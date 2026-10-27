@@ -7,6 +7,7 @@ import { publicationDatabase, publicationTransaction } from 'src/queue/transacti
 
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
+import { isInOwnerFolder, ownLibraryPath } from 'src/utils/library-path.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
 /** What kind of copy an origin row describes (FL-326, spec §4.2). */
 export type OriginKind = 'asset' | 'album';
@@ -698,6 +699,7 @@ export class PartnerOriginRepository {
           ...columns,
           ownerId: input.ownerId,
           originalPath: input.original.path,
+          libraryPath: null,
           physicalOriginalFileId: input.original.id,
           libraryId: null,
           isExternal: false,
@@ -711,6 +713,29 @@ export class PartnerOriginRepository {
         })
         .returning('id')
         .executeTakeFirstOrThrow();
+      // FL-417: the copy shows a path in its owner's own folder, never the partner's
+      const recipient = await trx
+        .selectFrom('user')
+        .select(['id', 'storageLabel'])
+        .where('id', '=', input.ownerId)
+        .executeTakeFirstOrThrow();
+      if (!isInOwnerFolder(input.original.path, recipient)) {
+        await trx
+          .updateTable('asset')
+          .set({
+            libraryPath: ownLibraryPath(
+              {
+                id: copy.id,
+                originalPath: input.original.path,
+                originalFileName: source.originalFileName,
+                localDateTime: source.localDateTime as unknown as Date,
+              },
+              recipient,
+            ),
+          })
+          .where('id', '=', copy.id)
+          .execute();
+      }
       if (input.lockReason) {
         // a brand-new row with no stack or Live Photo pairing yet: the lock record alone locks it
         await trx

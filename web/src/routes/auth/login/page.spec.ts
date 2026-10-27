@@ -50,7 +50,7 @@ vi.mock('$lib/managers/event-manager.svelte', () => ({
 }));
 // FL-426: the cleaning itself is tested with a browser-like DOM in welcome-message.spec.ts.
 vi.mock('$lib/frameleaf/welcome-message', () => ({
-  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script[\s\S]*?<\/script>/gi, ''),
+  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script\b[\s\S]*?<\/script\s*>/gi, ''),
 }));
 
 const frameleafOff = {

@@ -61,7 +61,7 @@ describe('AssetDevelopService native API gaps', () => {
       ownerId: still.ownerId,
       originalPath: '/library/IMG_0001.mov',
       videoStream: { index: 0, codecName: 'hevc', colorTransfer: 'bt709' },
-      format: { duration: 2.5 },
+      format: { duration: 2500 },
     } as never);
     mocks.systemMetadata.get.mockResolvedValue({});
     mocks.media.decodeImage.mockResolvedValue({
@@ -135,11 +135,11 @@ describe('AssetDevelopService native API gaps', () => {
       },
     );
 
-    it('does not round fractional duration up to admit an offset after the last frame', async () => {
+    it('reads the stored duration in milliseconds', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({
         id: motionId,
         ownerId: still.ownerId,
-        format: { duration: 2.5004 },
+        format: { duration: 2501 },
       } as never);
       await expect(sut['requireMotionClip'](still, 2501)).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'develop_key_frame_out_of_range' }),
@@ -157,7 +157,7 @@ describe('AssetDevelopService native API gaps', () => {
     it("refuses another owner's clip and a time past the end", async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValueOnce({
         ownerId: 'someone-else',
-        format: { duration: 2.5 },
+        format: { duration: 2500 },
       } as never);
       await expect(sut['requireMotionClip'](still, 0)).rejects.toBeInstanceOf(BadRequestException);
       await expect(sut['requireMotionClip'](still, 2600)).rejects.toMatchObject({

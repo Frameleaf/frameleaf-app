@@ -15,6 +15,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { getConfig } from 'src/utils/config.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 // A live photo's still and motion video are written within the same capture
 // instant, so a tight window keeps the filename fallback conservative.
@@ -58,7 +59,15 @@ export class LivePhotoService {
     // Cap the pairs before the bulk relational load, so a large library cannot
     // pull every matched asset (with all relations) into memory just to discard
     // most of them while mapping.
-    const pairs = this.dedupeCandidates(byContentId, byFilename).slice(0, MAX_CANDIDATES);
+    // Items the session hides (its Locked rules, sensitive content) answer as if they did not exist.
+    const deduped = this.dedupeCandidates(byContentId, byFilename);
+    const hidden = await this.assetRepository.getHiddenContentAssetIds(
+      [...new Set(deduped.flatMap(({ photoId, videoId }) => [photoId, videoId]))],
+      getHiddenContentQueryOptions(auth),
+    );
+    const pairs = deduped
+      .filter(({ photoId, videoId }) => !hidden.has(photoId) && !hidden.has(videoId))
+      .slice(0, MAX_CANDIDATES);
 
     const assetIds = [...new Set(pairs.flatMap(({ photoId, videoId }) => [photoId, videoId]))];
     const assets = await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds);

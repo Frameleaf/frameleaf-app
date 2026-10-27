@@ -489,7 +489,9 @@ export class PushService {
       return JobStatus.Failed;
     }
     if (!target) {
-      this.logger.debug(`Push ${notice.type} not delivered: no push gateway address (FRAMELEAF_PUSH_URL)`);
+      this.logger.debug(
+        `Push ${notice.type} not delivered: Frameleaf Cloud publishes no push gateway address and FRAMELEAF_PUSH_URL is unset`,
+      );
       return JobStatus.Skipped;
     }
 

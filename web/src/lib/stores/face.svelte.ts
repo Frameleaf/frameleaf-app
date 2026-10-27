@@ -102,11 +102,14 @@ class FaceManager {
     }
   }
 
-  clear() {
+  /** `keepShown` leaves the faces on screen until the next read replaces them (same asset, updated). */
+  clear(keepShown = false) {
     this.#generation++;
     this.#loading = undefined;
     assetCacheManager.clearFaceCache();
-    this.#data = [];
+    if (!keepShown) {
+      this.#data = [];
+    }
     this.#clearHidden();
   }
 

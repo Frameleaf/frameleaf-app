@@ -1393,6 +1393,11 @@ async function createBundle(
         /^FRAMELEAF_VERSION=latest$/m.test(body),
         "Version setting must be latest",
       );
+      // Name this bundle's exact tag for anyone who pins it.
+      body = body.replace(
+        /^FRAMELEAF_VERSION=latest$/m,
+        `# This release: FRAMELEAF_VERSION=${tag}\n$&`,
+      );
     } else if (name.startsWith("docker-compose")) {
       assert(
         body.includes("${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}"),

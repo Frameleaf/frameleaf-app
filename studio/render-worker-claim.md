@@ -213,6 +213,41 @@ Turning that declaration off omits the profile, and reopening clears it. The hos
 chosen profile through the existing export request; the server still decides whether the actual
 source transfer and qualified worker permit the export.
 
+## Vertical and square exports (FL-563)
+
+`shape: "vertical"` (9:16) or `"square"` (1:1) on `POST /studio/projects/{id}/exports` is a
+setting of that export; the project is never edited. The export dialog reads the automatic framing
+from `GET /studio/projects/{id}/framing` (faces in the library's preview of each source and in three
+frames sampled through each video shot, run on face detection at home, never Frameleaf Cloud),
+lets the person move a whole shot, and sends each shot's crop path as `framing`. The server clamps
+every centre so the crop stays in the frame and seals it in the claim settings:
+
+```json
+{
+  "shape": "vertical",
+  "reframe": {
+    "version": 1,
+    "shape": "vertical",
+    "output": { "width": 1080, "height": 1920 },
+    "shots": { "<video or image item id>": [{ "t": 0, "x": 0.42 }, { "t": 1, "x": 0.58 }] }
+  }
+}
+```
+
+`t` is progress through the shot and `x` the crop centre as a share of the project frame width.
+Shaped exports are SDR video (8-bit format, `color: "preserve"`, no PQ or HLG picture) at 720p to
+2160p; the output is the shape at that short side (2160p vertical is 2160 × 3840). Admission offers
+them only to a session whose formats evidence names `reframe-v1`.
+
+The bundled worker (`tools/bundled-worker-reframe.mjs`) renders a graph it derives from the claim's
+graph: the canvas becomes the crop (full project height, the shape's width), pictures keep their
+size and move so the crop centre lands mid-frame (a moving crop becomes eased `x` keyframes; a clip
+already animated sideways moves by its average framing), and titles and captions move into the
+shape's safe area and wrap to its width. The engine renders that canvas at the sealed output size
+and ffprobe must read the shaped size back. A clip that follows another clip or whose position is
+an expression is refused (`reframe_unsupported`) rather than placed wrongly. Sealed caption files
+and tracks are produced from the project graph, unchanged.
+
 The server copies the profile into the saved settings and immutable export contract handed to
 the worker. Its artifact input digest includes the profile. Publication independently probes the
 first decoded picture of the same selected video stream whose codec, depth and HDR tags were

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { normalizeBackupFolder } from 'src/utils/cloud-backup-selection.js';
 import {
   backupKeyFile,
   cloudBackupPersonSchema,
@@ -11,9 +12,21 @@ import {
   recoveryCode,
   s3SettingsProblem,
   signingRegion,
+  withoutTrailingSlashes,
 } from 'src/utils/cloud-backup.js';
 
 describe('cloud backup helpers (FL-160)', () => {
+  it('trims trailing slashes in linear time', () => {
+    expect(withoutTrailingSlashes('https://s3.example///')).toBe('https://s3.example');
+    expect(withoutTrailingSlashes('///')).toBe('');
+    expect(withoutTrailingSlashes('a/b')).toBe('a/b');
+    expect(normalizeBackupFolder('  /photos/2024// ')).toBe('/photos/2024');
+    const slashes = `${'/'.repeat(200_000)}x`;
+    const started = performance.now();
+    expect(withoutTrailingSlashes(slashes)).toBe(slashes);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it('reads a key from its key file, its base64 or its recovery code, and nothing else', () => {
     for (let i = 0; i < 50; i++) {
       const key = randomBytes(32);

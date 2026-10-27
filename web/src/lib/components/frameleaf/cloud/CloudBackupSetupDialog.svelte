@@ -81,6 +81,7 @@
   let storeOwnKey = $state(true);
   let ownKey = $state<BackupKey | null>(null);
   let generated = $state<CloudBackupGeneratedKeyDto | null>(null);
+  let clientRoot = $state<BackupKey | null>(null);
   let downloaded = $state(false);
   let savedKey = $state(false);
   let typed = $state('');
@@ -107,6 +108,19 @@
   );
   const escrowValid = $derived(!escrow || isEscrowPassphraseValid(passphrase.first, passphrase.second));
   const managed = $derived(target === 'managed');
+  const selectedKey = $derived(serverKey ? generated : ownKey);
+  const recoveryFile = $derived(
+    selectedKey
+      ? backupKeyFile({
+          key: selectedKey.key,
+          fingerprint: selectedKey.fingerprint,
+          instanceId,
+          bucket: bucketName,
+          mode: keyMode,
+          ...(managed && clientRoot && { clientRoot: clientRoot.key }),
+        })
+      : '',
+  );
   const stepLabels: Record<Step, string> = $derived({
     destination: $t('frameleaf_cloud_backup_step_destination'),
     key: $t('frameleaf_cloud_backup_step_key'),
@@ -136,14 +150,18 @@
 
   const kit = $derived(
     generated
-      ? recoveryKitText({
-          heading: $t('frameleaf_cloud_backup_kit_heading'),
-          instance: $t('frameleaf_cloud_backup_kit_instance', { values: { instanceId } }),
-          bucket: $t('frameleaf_cloud_backup_kit_bucket', { values: { bucket: bucketName } }),
-          fingerprint: $t('frameleaf_cloud_backup_kit_fingerprint', { values: { fingerprint: generated.fingerprint } }),
-          keep: $t('frameleaf_cloud_backup_kit_keep'),
-          code: $t('frameleaf_cloud_backup_kit_code', { values: { code: generated.recoveryCode } }),
-        })
+      ? managed
+        ? recoveryFile
+        : recoveryKitText({
+            heading: $t('frameleaf_cloud_backup_kit_heading'),
+            instance: $t('frameleaf_cloud_backup_kit_instance', { values: { instanceId } }),
+            bucket: $t('frameleaf_cloud_backup_kit_bucket', { values: { bucket: bucketName } }),
+            fingerprint: $t('frameleaf_cloud_backup_kit_fingerprint', {
+              values: { fingerprint: generated.fingerprint },
+            }),
+            keep: $t('frameleaf_cloud_backup_kit_keep'),
+            code: $t('frameleaf_cloud_backup_kit_code', { values: { code: generated.recoveryCode } }),
+          })
       : '',
   );
 
@@ -200,15 +218,20 @@
     if (!ownKey) {
       return;
     }
-    const file = backupKeyFile({ ...ownKey, instanceId, bucket: bucketName, mode: keyMode });
-    downloadBlob(new Blob([file], { type: 'application/json' }), keyFileName(ownKey.fingerprint));
+    downloadBlob(new Blob([recoveryFile], { type: 'application/json' }), keyFileName(ownKey.fingerprint));
     downloaded = true;
   };
 
   const next = async () => {
     failure = '';
     if (current === 'destination') {
+      downloaded = false;
+      savedKey = false;
+      kitSaved = false;
       ownKey ??= createBackupKey();
+      if (managed) {
+        clientRoot ??= createBackupKey();
+      }
     }
     if (current === 'key' && serverKey && !generated) {
       busy = true;
@@ -232,7 +255,7 @@
   };
 
   const claimBucket = async () => {
-    const key = serverKey ? generated?.key : ownKey?.key;
+    const key = managed ? recoveryFile : selectedKey?.key;
     if (!key) {
       return;
     }

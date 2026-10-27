@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto';
 import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertMediaPolicy, mapMediaPath, verifyMediaFile, verifyMediaRoots } from 'src/immich-import/media.js';
+import {
+  assertMediaPolicy,
+  lostOriginalPath,
+  lostOriginalReason,
+  mapMediaPath,
+  verifyMediaFile,
+  verifyMediaRoots,
+} from 'src/immich-import/media.js';
 
 describe('offline media verification', () => {
   let directory: string;
@@ -19,6 +26,40 @@ describe('offline media verification', () => {
     operationId: 'operation-1',
     deploymentId: 'deployment-1',
   };
+
+  it('keeps originals that are lost, changed or unmapped, but never an unmounted root or an uncopied file', async () => {
+    const source = join(directory, 'source');
+    const target = join(directory, 'target');
+    const roots = [{ source, target }];
+    const lost = join(source, 'upload', 'user', 'lost.jpg');
+    const failure = (path: string, checksum?: string, algorithm?: string) =>
+      verifyMediaFile(path, roots, checksum, algorithm).catch((error: unknown) => error);
+
+    // Empty roots look like a mount that never came up.
+    await expect(lostOriginalReason(await failure(lost), lost, roots)).resolves.toBeNull();
+
+    await writeFile(join(source, '.immich'), '');
+    await writeFile(join(target, '.immich'), '');
+    await expect(lostOriginalReason(await failure(lost), lost, roots)).resolves.toBe('missing');
+    expect(lostOriginalPath(lost, 'missing', roots)).toBe(join(target, 'upload', 'user', 'lost.jpg'));
+
+    // Present in Immich but not copied to the destination: the import must still stop.
+    const uncopied = join(source, 'kept.jpg');
+    await writeFile(uncopied, 'bytes');
+    await expect(lostOriginalReason(await failure(uncopied), uncopied, roots)).resolves.toBeNull();
+
+    // Bytes no longer match what Immich recorded.
+    await writeFile(join(target, 'kept.jpg'), 'bytes');
+    const changed = await failure(uncopied, 'ff'.repeat(20), 'sha1');
+    await expect(lostOriginalReason(changed, uncopied, roots)).resolves.toBe('changed');
+
+    const outside = join(directory, 'elsewhere', 'photo.jpg');
+    await expect(lostOriginalReason(await failure(outside), outside, roots)).resolves.toBe('unmapped');
+    expect(lostOriginalPath(outside, 'unmapped', roots)).toBe(outside);
+
+    const inPlace = [{ source, target: source }];
+    await expect(lostOriginalReason(await failure(lost), lost, inPlace, manager)).resolves.toBe('missing');
+  });
 
   it('validates empty independent roots and preserves same-path nested Manager mounts', async () => {
     const source = join(directory, 'source');
