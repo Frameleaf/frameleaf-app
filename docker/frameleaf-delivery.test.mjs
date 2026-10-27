@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -490,6 +491,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
     ];
     for (const filename of [
       ...files,
+      "docker-compose.ml-isolated.yml",
       "hwaccel.ml.yml",
       "hwaccel.transcoding.yml",
     ]) {
@@ -648,6 +650,40 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       run(["docker-compose.yml"]).volumes["model-cache"].name,
       "frameleaf_model-cache",
     );
+    // FL-566: the ML-isolated overlay resolves on both base files and keeps each one's cache.
+    const cacheOf = (config, service) =>
+      config.services[service].volumes.find(
+        (mount) => mount.target === "/cache",
+      );
+    for (const [filename, cacheLine, type, source] of [
+      ["docker-compose.yml", [], "volume", "model-cache"],
+      ["docker-compose.rootless.yml", [], "volume", "model-cache"],
+      [
+        "docker-compose.rootless.yml",
+        ["FRAMELEAF_ML_CACHE=./ml-model-cache"],
+        "bind",
+        resolve(realpathSync(directory), "ml-model-cache"),
+      ],
+    ]) {
+      writeFileSync(
+        resolve(directory, ".env"),
+        [env, "COMPOSE_PROFILES=model-staging", ...cacheLine].join("\n"),
+      );
+      const isolated = run([filename, "docker-compose.ml-isolated.yml"]);
+      const inference = cacheOf(isolated, "frameleaf-machine-learning");
+      assert.deepEqual(
+        [inference.type, inference.source, inference.read_only],
+        [type, source, true],
+        filename,
+      );
+      const staging = cacheOf(isolated, "frameleaf-model-staging");
+      assert.deepEqual([staging.type, staging.source], [type, source]);
+      // An unused default volume is dropped, so a bind-mounted cache leaves no empty volume behind.
+      assert.equal(
+        isolated.volumes?.["model-cache"]?.name,
+        type === "volume" ? "frameleaf_model-cache" : undefined,
+      );
+    }
     // Earlier stacks keep project "immich" (containers, network and volumes) and can move ports.
     writeFileSync(
       resolve(directory, ".env"),
