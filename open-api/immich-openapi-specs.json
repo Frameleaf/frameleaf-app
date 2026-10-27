@@ -60361,6 +60361,10 @@
             "description": "Missing thumbnails",
             "type": "boolean"
           },
+          "quietHours": {
+            "description": "Heavy background work (beyond thumbnails) waits for the overnight window",
+            "type": "boolean"
+          },
           "startTime": {
             "description": "Start time (HH:MM)",
             "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",

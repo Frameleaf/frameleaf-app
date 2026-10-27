@@ -504,6 +504,19 @@
             />
           </div>
         </Row>
+        <Row
+          label={$t('frameleaf_overnight_quiet')}
+          help={stopTime
+            ? $t('frameleaf_overnight_quiet_help', { values: { start: time(startTime), stop: time(stopTime) } })
+            : $t('frameleaf_overnight_quiet_help_no_stop', { values: { start: time(startTime) } })}
+        >
+          <Switch
+            label={$t('frameleaf_overnight_quiet')}
+            checked={nightly?.quietHours ?? true}
+            held={disabled}
+            onChange={(on) => nightly && (nightly.quietHours = on)}
+          />
+        </Row>
         <Advanced summary={$t('frameleaf_overnight_timing')}>
           {#each present as id (id)}
             <Row label={stepName(id)}>

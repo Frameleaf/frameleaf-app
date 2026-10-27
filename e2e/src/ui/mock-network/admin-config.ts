@@ -347,6 +347,7 @@ export const adminConfigDefaults = {
     stopTime: '06:00',
     days: [0, 1, 2, 3, 4, 5, 6],
     emptyTrash: true,
+    quietHours: true,
     weeklyDay: 0,
     steps: {
       cleanup: 'nightly',
