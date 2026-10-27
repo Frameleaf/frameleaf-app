@@ -93,6 +93,11 @@ const dashboard = {
   profile: null,
   onboardingFinished: false,
   appUrl: 'http://photos.example.test:2283',
+  suggestedPort: 2286,
+  installations: [
+    { name: 'Family library', current: true, appPort: 2283, running: true },
+    { name: 'Studio archive', current: false, managerUrl: 'https://photos.example.test:2284', appPort: 2285, running: true },
+  ],
   services: [
     { id: 'b'.repeat(64), service: 'frameleaf-server', running: true, health: 'unknown' },
     { id: 'c'.repeat(64), service: 'database', running: true, health: 'healthy' },
@@ -331,6 +336,20 @@ try {
     assert.equal(await page.getByRole('progressbar').count(), 1);
     await screenshot('storage');
   });
+  await check('installation switcher lists this server’s libraries and explains adding one', async () => {
+    assert.match(await page.title(), /^Family library · Frameleaf Manager/);
+    await button('Switch installation').click();
+    const menu = page.getByRole('menu', { name: 'Frameleaf installations' });
+    assert.equal(await menu.getByRole('menuitem').count(), 3);
+    assert.equal(await menu.getByRole('menuitem', { name: /Studio archive/ }).getAttribute('href'), 'https://photos.example.test:2284');
+    await screenshot('installation-switcher');
+    await menu.getByRole('menuitem', { name: /Add installation/ }).click();
+    await page.getByRole('heading', { name: 'Add another installation' }).waitFor();
+    assert.ok((await page.locator('dialog').innerText()).includes('For example 2286'));
+    await page.waitForTimeout(400); // dialog entrance animation
+    await screenshot('add-installation');
+    await button('Cancel').click();
+  });
   await check('library move requires review and backup acknowledgement, then stops safely', async () => {
     await page.getByLabel('New drive', { exact: true }).selectOption('/fixture/new-drive');
     await mainButton('Check this drive').click();
@@ -504,6 +523,13 @@ try {
       await page
         .locator('section.card', { has: page.getByRole('heading', { name: 'Processing' }) })
         .screenshot({ path: join(process.env.MANAGER_SCREENSHOTS, 'install-processing.png') });
+    // A second library on the same server starts on a free port and names the ports already in use.
+    assert.equal(await page.getByLabel('Frameleaf port').inputValue(), '2286');
+    await page.getByText('Studio archive uses port 2285.', { exact: false }).waitFor();
+    if (process.env.MANAGER_SCREENSHOTS)
+      await page
+        .locator('section.card', { has: page.getByRole('heading', { name: 'Storage & access' }) })
+        .screenshot({ path: join(process.env.MANAGER_SCREENSHOTS, 'install-port.png') });
     await page.getByRole('checkbox', { name: 'Docker or Unraid', exact: false }).check();
     await page.getByLabel('Frameleaf port').fill('12');
     const count = requests.filter((r) => r.path === 'review').length;

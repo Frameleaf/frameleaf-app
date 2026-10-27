@@ -33,7 +33,7 @@ import { Refusal, publicSource, redact, secretEnvironmentValues } from './contra
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
-import { ServiceOverrides, detectAcceleration } from './compose.js';
+import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
 import { sharePortWithRedirect } from './http-redirect.js';
 
 const directory = process.env.MANAGER_DATA;
@@ -159,8 +159,13 @@ class Api {
   }
   @Get('dashboard') async dashboard(@Req() request: Request) {
     const installation = operations.installation();
+    // Without an installation the switcher is optional; with one, an unreachable Docker still fails as before.
+    const inventory = await docker.inventory().catch((error) => {
+      if (installation) throw error;
+      return [];
+    });
     const containers = installation
-      ? (await docker.inventory()).filter((c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id)
+      ? inventory.filter((c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id)
       : [];
     const host = await docker.compatibility().catch(() => null);
     return {
@@ -196,6 +201,8 @@ class Api {
         .filter(Boolean),
       databaseStorage: await databaseDefaults(),
       onboardingFinished: !!store.get('onboarding-finished'),
+      installations: hostInstallations(inventory, installation?.id, security.requestOrigin(request)),
+      suggestedPort: suggestedPort(inventory, [Number(new URL(security.requestOrigin(request)).port || 443)]),
       appUrl: installation ? new URL(`http://${new URL(security.requestOrigin(request)).hostname}:${installation.port}`).origin : null,
       librarySetup: installation
         ? await operations.libraryStatus().catch(() => ({ phase: 'unavailable', canFinish: false }))

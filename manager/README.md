@@ -25,6 +25,17 @@ The launcher mounts `/proc/1/mountinfo` read only so Manager can compare the hos
 
 When machine learning is on, Manager picks the hardware variant on amd64 hosts: CUDA when Docker has the `nvidia` runtime, ROCm for an AMD render node with `/sys/class/kfd`, OpenVINO for an Intel render node, otherwise CPU. It reads the host's read-only sysfs, so Manager itself needs no `/dev` mappings; the device passthrough from `docker/hwaccel.ml.yml` goes on the machine learning container only. Set `MANAGER_ML_ACCELERATION` to `cpu`, `cuda`, `rocm` or `openvino` to override detection. The setup screen names the detected GPU and turns machine learning on by default when one is found.
 
+### Several installations on one host
+
+Each Frameleaf installation has its own Manager. To add another, run the launcher again with a different container name and Manager port, and with its own state, media and backup folders. The appdata folder can be shared, because each installation gets its own PostgreSQL directory inside it.
+
+```sh
+MANAGER_NAME=frameleaf-manager-family MANAGER_PORT=2284 sh launch.sh ghcr.io/frameleaf/frameleaf-manager:latest \
+  "$STATE_FOLDER_2" "$LIBRARY_FOLDER_2" "$DATABASE_BACKUP_FOLDER_2" "https://server.example:2284" auto "$LAN_ADDRESS"
+```
+
+The launcher refuses a state or backup folder that another container already uses. Manager refuses media folders that another installation writes to, and photo app ports that are already published. On Unraid, add the Manager template again with a new name, port and folders. On TrueNAS, install the YAML again as a separate app with its own port and folders.
+
 ## Advanced container settings
 
 Setup's **Advanced container settings** let a home-lab administrator add, per container (`frameleaf-server`, `frameleaf-machine-learning`, `database`), environment variables, extra bind-mounted folders (`/host:/container[:ro]`) and a memory or CPU limit. They are checked when the configuration is reviewed, written into the generated Compose stack, and stored with the application configuration so updates, restores and library moves keep them. Manager's own wiring stays out of reach: `DB_*`, `POSTGRES_*`, `FRAMELEAF_MANAGER_*`, `IMMICH_CONFIG_FILE` and `IMMICH_MEDIA_LOCATION` are refused, as is any folder under `/run/frameleaf`, `/var/lib/postgresql`, `/cache` or an existing media target. Extra folders are mounted with `create_host_path: false`; a missing host folder fails the install rather than being created somewhere unexpected. Settings for machine learning wait until it is turned on.

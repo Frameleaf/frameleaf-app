@@ -21,6 +21,7 @@
   let screen = $state('welcome'),
     menu = $state(false),
     accountMenu = $state(false),
+    installMenu = $state(false),
     dialog: HTMLDialogElement;
   let modal = $state(''),
     modalAction = $state(''),
@@ -132,6 +133,16 @@
     unavailable: 'Waiting for Frameleaf',
   };
   const installation = $derived(dashboard?.installation);
+  const otherInstallations = $derived((dashboard?.installations ?? []).filter((i: any) => !i.current));
+  // Manager and app ports sit in pairs (2282/2283); suggest the next free number after every known one.
+  const nextManagerPort = $derived(
+    Math.max(
+      Number(dashboard?.managerOrigin ? new URL(dashboard.managerOrigin).port || 0 : 0),
+      installation?.port ?? 0,
+      ...(dashboard?.installations ?? []).flatMap((i: any) => [i.appPort ?? 0, i.managerUrl ? Number(new URL(i.managerUrl).port || 0) : 0]),
+      2283,
+    ) + 1,
+  );
   const source = $derived(sources.find((item) => item.id === sourceId));
   const operation = $derived(
     dashboard?.operations?.find((item: any) => item.id === selectedOperation) ?? dashboard?.operations?.[0],
@@ -253,6 +264,7 @@
     screen = value;
     menu = false;
     accountMenu = false;
+    installMenu = false;
     error = '';
     await tick();
     page?.scrollTo({ top: 0 });
@@ -324,11 +336,14 @@
     recoveryKey = '';
     logs = '';
     accountMenu = false;
+    installMenu = false;
     bootstrapped = false;
     requests.clear();
   }
   async function choose(value: 'install' | 'import') {
     kind = value;
+    // An import keeps Immich's usual port (Immich stops first) unless another Frameleaf library already has it.
+    port = value === 'import' && !otherInstallations.some((i: any) => i.appPort === 2283) ? 2283 : (dashboard?.suggestedPort ?? 2283);
     step = 0;
     review = null;
     containers = emptyContainers();
@@ -585,7 +600,7 @@
   {#if !dashboard?.services?.length}<div class="card-body"><p class="muted">No managed containers are visible. Review service availability before starting the stack.</p></div>{/if}
 {/snippet}
 
-<svelte:head><title>Frameleaf Manager · {!signedIn ? 'Local administrator' : labels[screen]}</title><meta name="theme-color" content={theme === 'dark' ? '#101416' : '#f4f6f7'}/></svelte:head>
+<svelte:head><title>{installation?.name ? installation.name + ' · ' : ''}Frameleaf Manager · {!signedIn ? 'Local administrator' : labels[screen]}</title><meta name="theme-color" content={theme === 'dark' ? '#101416' : '#f4f6f7'}/></svelte:head>
 <a class="skip-link" href="#main">Skip to content</a>
 {#if setupMode}
 <div class="setup-shell" class:setup-stage={!signedIn || loading}>
@@ -617,7 +632,10 @@
     {#if accountMenu}<div class="account-menu"><button onclick={() => run(() => go('settings'))}>Manager settings</button><button onclick={() => run(signOut)}>Sign out</button></div>{/if}
   </header>
   <div class="workspace"><button class="mobile-shade" onclick={() => menu = false} aria-label="Close navigation"></button>
-    <aside class="sidebar"><div class="server-select"><Icon name="server"/><div><strong>{dashboard?.host?.name ?? 'This server'}</strong><small>{dashboard?.host?.platform ?? 'Local Docker'}</small></div></div>
+    <aside class="sidebar"><div class="install-switch"><button class="server-select" disabled={!signedIn} onclick={() => installMenu = !installMenu} aria-expanded={installMenu} aria-haspopup="menu" aria-label="Switch installation"><Icon name="server"/><div><strong>{installation?.name ?? dashboard?.host?.name ?? 'This server'}</strong><small>{installation ? `${dashboard?.host?.name ?? 'This server'} · ` : ''}{dashboard?.host?.platform ?? 'Local Docker'}</small></div><Icon name="chevron"/></button>
+      {#if installMenu}<div class="install-menu" role="menu" aria-label="Frameleaf installations"><p class="nav-caption">On {dashboard?.host?.name ?? 'this server'}</p>
+        {#each otherInstallations.length || installation ? [{ name: installation?.name ?? 'This Manager', current: true, appPort: installation?.port }, ...otherInstallations] : [] as item}{#if item.current}<span class="install-item current" role="menuitem" aria-current="true"><Icon name="check"/><span><strong>{item.name}</strong><small>This Manager</small></span></span>{:else}<a class="install-item" role="menuitem" href={item.managerUrl} target="_blank" rel="noopener"><Icon name="server"/><span><strong>{item.name}</strong><small>{item.running ? 'Running' : 'Stopped'}{item.appPort ? ` · port ${item.appPort}` : ''}</small></span><Icon name="arrow"/></a>{/if}{/each}
+        <button class="install-item" role="menuitem" onclick={() => { installMenu = false; void showModal('add-installation'); }}><Icon name="plus"/><span><strong>Add installation</strong><small>Its own Manager and library</small></span></button></div>{/if}</div>
       <nav aria-label="Manager">{#each navigation as group}<p class="nav-caption" class:separated={group.title !== 'Installation'}>{group.title}</p>{#each group.entries as [value, icon, label]}<button class="nav-item" class:active={activeSection === value} disabled={!signedIn || busy} aria-current={activeSection === value ? 'page' : undefined} onclick={() => run(() => go(value))}><Icon name={icon}/><span>{label}</span>{#if value === 'updates' && releasesLoaded && availableUpdates.length}<span class="nav-badge">{availableUpdates.length}</span>{/if}</button>{/each}{/each}</nav>
       <div class="sidebar-bottom"><button class="button quiet" onclick={() => showModal('help')}><Icon name="help"/>Manager guide</button><div class="server-foot"><span class="status-dot" class:offline={disconnected}></span>{dashboard?.host?.available === false ? 'Docker unavailable' : signedIn ? 'Local Manager connected' : 'Local management'}<p>Protected session · HTTPS</p></div></div>
     </aside>
@@ -781,7 +799,7 @@
   <section class="card"><div class="card-header"><h2>Storage & access</h2></div><div class="card-body"><div class="form-grid">
     <label class="field full"><span>Library name</span><input bind:value={libraryName} required maxlength="120"/></label>
     {#if kind === 'install'}<label class="field full"><span>Media location</span><select bind:value={mediaPath} required><option value="">Choose a mounted folder</option>{#each dashboard.storageRoots as root}<option value={root}>{root}</option>{/each}</select><small>Originals and generated media remain in this mounted location.</small></label>{/if}
-    <label class="field"><span>PostgreSQL appdata location</span><input bind:value={databaseRoot} list="database-roots" required autocomplete="off" spellcheck="false"/><small>New dedicated host-disk storage, outside Docker’s virtual disk.</small></label><label class="field"><span>Frameleaf port</span><input type="number" bind:value={port} min="1024" max="65535" required/><small>{kind === 'import' ? 'You can keep Immich’s port; Immich is stopped before Frameleaf starts. ' : ''}Manager remains on its own HTTPS port.</small></label>
+    <label class="field"><span>PostgreSQL appdata location</span><input bind:value={databaseRoot} list="database-roots" required autocomplete="off" spellcheck="false"/><small>New dedicated host-disk storage, outside Docker’s virtual disk.</small></label><label class="field"><span>Frameleaf port</span><input type="number" bind:value={port} min="1024" max="65535" required/><small>{kind === 'import' ? 'You can keep Immich’s port; Immich is stopped before Frameleaf starts. ' : ''}{#each otherInstallations.filter((i: any) => i.appPort) as other}{other.name} uses port {other.appPort}.{' '}{/each}Manager remains on its own HTTPS port.</small></label>
     <label class="field"><span>Frameleaf release</span><select bind:value={tag} required><option value="">Select a verified release</option>{#each releases as release}<option value={release.tag}>{release.tag}</option>{/each}</select>{#if !releases.length}<small>No eligible signed release was offered. Refresh releases or check distribution availability.</small>{/if}</label><label class="field"><span>Database backup destination</span><input value={dashboard.backupRoot} readonly/><small>Mounted encrypted database backups only.</small></label>
     {#if dashboard.databaseStorage.detectedPath}<p class="meta full">Detected Unraid appdata: <code>{dashboard.databaseStorage.detectedPath}</code>. To use another disk, mount its folder into Manager at the identical host path.</p>{/if}
   </div></div></section><section class="card mt16"><div class="card-header"><h2>Processing</h2></div><div class="list-row"><Icon name="cpu"/><div><strong>{processorName(dashboard.host?.acceleration)}</strong><p>{hasGpu(dashboard.host?.acceleration) ? 'Detected on this server. Machine learning will use it.' : 'No supported graphics card detected. Machine learning runs on the CPU.'}</p></div><span class="badge" class:good={hasGpu(dashboard.host?.acceleration)}>{hasGpu(dashboard.host?.acceleration) ? 'Detected' : 'Default'}</span></div><div class="list-row"><Icon name="image"/><div><strong>Machine learning</strong><p>Face recognition and smart search</p></div><label class="toggle"><input type="checkbox" bind:checked={ml}/><span class="toggle-track"></span><span>Enable</span></label></div></section>{@render advancedContainers()}<label class="check-row mt24"><input type="checkbox" bind:checked={lifecycle}/><span>Docker or Unraid manages startup. I have disabled any additional scheduler or service that recreates these containers.</span></label>
@@ -790,7 +808,7 @@
 <datalist id="database-roots">{#each dashboard?.databaseStorage?.roots ?? [] as root}<option value={root}></option>{/each}</datalist>
 <dialog bind:this={dialog} aria-labelledby="dialog-title" onclose={() => { password = ''; newPassword = ''; modal = ''; }}>
   <button class="button quiet icon-button modal-close" onclick={closeModal} aria-label="Close dialog"><Icon name="close"/></button>
-  <div class="modal-body"><h2 id="dialog-title">{({ control: modalAction === 'stop' ? 'Stop your photo library' : 'Restart your photo library', update: 'Update Frameleaf', recover: 'Recover the saved operation', administrator: 'Secure your Manager', export: 'Export configuration', 'backup-key': 'Export recovery key', recovery: 'Recover Manager', 'source-recovery': 'Returning to Immich', help: 'Frameleaf Manager guide' } as Record<string, string>)[modal]}</h2>
+  <div class="modal-body"><h2 id="dialog-title">{({ control: modalAction === 'stop' ? 'Stop your photo library' : 'Restart your photo library', update: 'Update Frameleaf', recover: 'Recover the saved operation', administrator: 'Secure your Manager', export: 'Export configuration', 'backup-key': 'Export recovery key', recovery: 'Recover Manager', 'source-recovery': 'Returning to Immich', 'add-installation': 'Add another installation', help: 'Frameleaf Manager guide' } as Record<string, string>)[modal]}</h2>
     {#if error}<p class="amber mt16" role="alert">{error}</p>{/if}
     {#if modal === 'control'}<p class="mt16">Photo access and background processing will pause. Manager stays available to manage the recorded operation.</p>
     {:else if modal === 'update'}<p class="mt16">Manager rechecks eligibility, downloads compatible images and creates a database recovery point before applying this release.</p><p class="meta mt16">{updateReview?.recovery}</p>
@@ -800,6 +818,7 @@
     </form>
     {:else if modal === 'recovery'}<ol class="timeline mt16">{#each [['Keep the existing state folder', 'Preserve the Manager journal, configuration and recovery keys.'], ['Stop and replace only Manager', 'Use a verified image with the same exact bind mappings, HTTPS origin and Docker socket.'], ['Sign in and review the journal', 'An unfinished operation appears as interrupted. Resume only after reviewing its saved step.'], ['Use the protected configuration export if necessary', 'Recover the photo stack with its recorded Compose project. Keep secrets private; media recovery is separate.']] as [title, detail], index}<li><span class="stage-icon">{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div></li>{/each}</ol>
     {:else if modal === 'source-recovery'}<p class="mt16">Your original Immich database is retained. After Frameleaf writes to shared media, restarting Immich requires a separate recovery review.</p><div class="mt16">{@render notice('Database recovery does not restore media', 'Keep both applications stopped while checking the matching database and media. Manager does not automatically restore files or restart the original source.', 'warning', 'warning')}</div>
+    {:else if modal === 'add-installation'}<p class="mt16">Each Frameleaf installation on this server has its own Manager, photo library and database backups. They don’t share accounts or photos.</p><ol class="timeline mt16">{#each [['Install Frameleaf Manager again', dashboard?.host?.platform === 'unraid' ? 'In Unraid Apps, install Frameleaf Manager again and give it a new name.' : 'Use the same installer as before, with a new container name.'], ['Choose a new Manager port', `For example ${nextManagerPort}. This Manager keeps its own port.`], ['Choose separate folders', 'Give it its own state, photo and backup folders. The appdata folder can be shared.'], ['Open the new Manager', 'Create its administrator, then set up or import its library.']] as [title, detail], index}<li><span class="stage-icon">{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div></li>{/each}</ol>
     {:else if modal === 'help'}<p class="mt16">Set up a new library, import a supported Immich installation, or restore an encrypted database recovery point. Review every configuration before starting.</p><ul class="checklist"><li><Icon name="server"/>Services: lifecycle controls and sanitized logs</li><li><Icon name="drive"/>Storage: mounted capacity and exact media mappings</li><li><Icon name="shield"/>Backups: database recovery points and key export</li><li><Icon name="update"/>Updates: verified eligibility and recovery checkpoint</li><li><Icon name="activity"/>Activity: saved journal, retry and recovery</li></ul>{/if}
   </div>
   <div class="modal-footer"><button class="button quiet" onclick={closeModal}>Cancel</button>{#if modal === 'control'}<button class="button danger" disabled={busy} onclick={() => run(() => control(modalAction))}>{modalAction === 'stop' ? 'Stop services' : 'Restart services'}</button>{:else if modal === 'update'}<button class="button primary" disabled={busy} onclick={() => run(() => start('update', { id: updateReview.id }))}>Update Frameleaf</button>{:else if modal === 'recover'}<button class="button danger" disabled={busy} onclick={() => run(async () => { await api('recover', { id: operation.id }); await refresh(); closeModal(); })}>Confirm recovery</button>{:else if ['administrator', 'export', 'backup-key'].includes(modal)}<button class="button primary" type="submit" form="credential-form" disabled={busy}>{modal === 'administrator' ? 'Save account' : 'Download'}</button>{:else}<button class="button primary" onclick={closeModal}>Done</button>{/if}</div>

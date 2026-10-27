@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { Refusal, imageDigest, type Installation, type Mount, type NasManifest, type Source } from './contracts.js';
 import type { VerifiedRelease } from './releases.js';
 import { atomicJson } from './files.js';
-import { command } from './docker.js';
+import { command, environment, type Container } from './docker.js';
 import { UNRAID_ICON } from './dockerman.js';
 
 export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
@@ -215,6 +215,51 @@ function composeMount(m: Mount, volumes: Record<string, unknown>, index: number)
   volumes[key] = { external: true, name: m.source };
   return { type: 'volume', source: key, target: m.target, read_only: m.readOnly, volume: { nocopy: true } };
 }
+export const LIBRARY_NAME_LABEL = 'app.frameleaf.library-name';
+export const MANAGER_DATA_LABEL = 'app.frameleaf.manager-data';
+const hostPort = (c: Container | undefined, port: number) => {
+  const value = Number(c?.HostConfig.PortBindings?.[`${port}/tcp`]?.[0]?.HostPort);
+  return value > 0 ? value : null;
+};
+/** Every Frameleaf library on this Docker host, with a link to its own Manager when its stack names one. */
+export function hostInstallations(containers: Container[], currentId: string | undefined, origin: string) {
+  const seen = new Set<string>();
+  return containers
+    .filter((c) => c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server')
+    .sort((a, b) => Number(b.State.Running) - Number(a.State.Running))
+    .flatMap((c) => {
+      const labels = c.Config.Labels,
+        id = labels['app.frameleaf.manager'];
+      if (!/^[a-f0-9]{12}$/.test(id ?? '') || seen.has(id)) return [];
+      seen.add(id);
+      const controller = labels[MANAGER_DATA_LABEL]
+        ? containers.find((m) => m.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
+            environment(m).MANAGER_DATA === labels[MANAGER_DATA_LABEL])
+        : undefined;
+      const managerPort = hostPort(controller, 9443),
+        url = new URL(origin);
+      if (managerPort) url.port = String(managerPort);
+      return [{
+        name: labels[LIBRARY_NAME_LABEL] || 'Frameleaf library',
+        current: id === currentId,
+        running: c.State.Running,
+        appPort: hostPort(c, 2283),
+        managerUrl: managerPort ? url.origin : null,
+      }];
+    });
+}
+/** First port from 2283 that no container on this host publishes and Manager itself does not use. */
+export function suggestedPort(containers: Container[], reserved: number[] = []): number {
+  const used = new Set([
+    ...reserved,
+    ...containers.flatMap((c) =>
+      Object.values(c.HostConfig.PortBindings ?? {}).flatMap((bindings) => (bindings ?? []).map((b) => Number(b.HostPort))),
+    ),
+  ]);
+  let port = 2283;
+  while (used.has(port)) port++;
+  return port;
+}
 export async function renderCompose(
   release: VerifiedRelease,
   installation: Installation,
@@ -236,7 +281,12 @@ export async function renderCompose(
   // FL-408: the server writes the bundled Studio worker's enrolment here; machine learning reads it.
   const volumes: Record<string, unknown> = { 'model-cache': {}, [STUDIO_WORKER_VOLUME]: {} };
   const media = installation.mounts.map((m, i) => composeMount(m, volumes, i));
-  const labels = { 'app.frameleaf.manager': installation.id };
+  const labels: Record<string, string> = {
+    'app.frameleaf.manager': installation.id,
+    // Lets Managers of other libraries on this host list this one and link to its Manager.
+    [MANAGER_DATA_LABEL]: process.env.MANAGER_DATA ?? '',
+    ...(installation.name ? { [LIBRARY_NAME_LABEL]: installation.name } : {}),
+  };
   const application = ApplicationConfig.parse(config ?? { environment: {}, settings: null });
   const environment: Record<string, string> = {
     ...application.environment,
