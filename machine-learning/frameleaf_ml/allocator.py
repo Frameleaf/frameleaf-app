@@ -1,6 +1,7 @@
 import ctypes
+import sys
 
-_process = ctypes.CDLL(None)
+_process = ctypes.CDLL(None) if sys.platform != "win32" else None
 
 
 def release() -> None:
