@@ -17,6 +17,7 @@ const {
   requireTestQualification,
   chooseTag,
   previousReleaseTag,
+  releaseNotesBody,
   deployTestImages,
   verifyImage,
   createBundle,
@@ -654,6 +655,28 @@ test("release notes compare from the previous app release, never a manager relea
   assert.throws(
     () => previousReleaseTag("manager-v0.2.3", releases),
     /Invalid/,
+  );
+});
+
+test("release notes lead with the user summary and the Jira issues, then build evidence", () => {
+  const body = releaseNotesBody({
+    summary: "\nDeleting a user now removes all of their files.\n",
+    messages: [
+      "FL-569 fix: purge every file a deleted user owned (#516)\n\nbody FL-1",
+      "FL-10, FC-2: share links (#515)",
+      "Merge branch 'main'",
+    ],
+    evidence: "Source: abc\n",
+  });
+  assert.equal(
+    body,
+    "## What's improved\n\nDeleting a user now removes all of their files.\n\n" +
+      "## Jira issues resolved\n\n- FL-569: fix: purge every file a deleted user owned (#516)\n- FL-10, FC-2: share links (#515)\n\n" +
+      "Source: abc",
+  );
+  assert.match(
+    releaseNotesBody({ summary: "x", messages: [], evidence: "e" }),
+    /resolved\n\nNone\n\ne$/,
   );
 });
 

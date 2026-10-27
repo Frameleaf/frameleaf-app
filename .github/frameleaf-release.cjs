@@ -473,6 +473,33 @@ function previousReleaseTag(tag, releases) {
       .sort(([, a], [, b]) => compare(b, a))[0]?.[0] ?? null
   );
 }
+// What users read first (Manager's update screen shows this body): the summary written for the
+// version in .github/release-notes/<version>.md, then every Jira key in the squash subjects since
+// the previous release. Build evidence and GitHub's generated notes follow.
+function releaseNotesBody({ summary, messages, evidence }) {
+  const key = /\b[A-Z][A-Z0-9]+-\d+\b/g;
+  const issues = messages.flatMap((message) => {
+    const subject = message.split("\n")[0];
+    const keys = subject.match(key);
+    if (!keys) return [];
+    const title = subject.replace(/^(?:[A-Z][A-Z0-9]+-\d+[\s,:]*)+/, "");
+    return [`- ${keys.join(", ")}: ${title.trim()}`];
+  });
+  return [
+    `## What's improved\n\n${summary.trim()}`,
+    `## Jira issues resolved\n\n${issues.length ? issues.join("\n") : "None"}`,
+    evidence.trim(),
+  ].join("\n\n");
+}
+async function releaseSummary(version) {
+  const file = `.github/release-notes/${version}.md`;
+  const summary = await fs.readFile(file, "utf8").catch(() => "");
+  assert(
+    summary.trim(),
+    `Missing ${file}: write a short user-facing summary of what improved in the version bump PR`,
+  );
+  return summary;
+}
 function chooseTag(version, releases, refs, sha) {
   assert(SHA.test(sha), "Invalid source SHA");
   assert(
@@ -1595,6 +1622,7 @@ async function release(env = process.env) {
   // never reserved, tagged or promoted.
   const dependencies = await verifyDependencyImages(registry, process.cwd());
   const version = JSON.parse(await fs.readFile("server/package.json")).version;
+  const summary = await releaseSummary(version);
   const releases = await listAll("releases");
   const refs = await github("git/matching-refs/tags/frameleaf-v");
   assert(Array.isArray(refs), "Invalid tag reference response");
@@ -1650,13 +1678,25 @@ async function release(env = process.env) {
           ...(previous ? { previous_tag_name: previous } : {}),
         }),
       });
+      // ponytail: one compare page (250 commits); paginate if a release ever ships more.
+      const range = previous
+        ? await github(`compare/${previous}...${env.SOURCE_SHA}?per_page=250`)
+        : { commits: [], total_commits: 0 };
+      assert(
+        range.commits.length === range.total_commits,
+        "Too many commits since the previous release to list its Jira issues",
+      );
       const body = {
         tag_name: tag,
         target_commitish: env.SOURCE_SHA,
         name: tag,
         draft: true,
         body: releaseFlagsBody(
-          `Source: ${env.SOURCE_SHA}\n\nBuild evidence: ${manifest.buildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>\n\n${notes.body ?? ""}`,
+          releaseNotesBody({
+            summary,
+            messages: range.commits.map((c) => c.commit.message),
+            evidence: `Source: ${env.SOURCE_SHA}\n\nBuild evidence: ${manifest.buildRun}\n\nUse the attached version-matched installation files and release-manifest.json. Verify an image with: cosign verify --key ${COSIGN_PUBLIC_KEY} <image>@<digest>\n\n${notes.body ?? ""}`,
+          }),
           { rolloutPercent },
         ),
       };
@@ -1747,6 +1787,7 @@ module.exports = {
   requireTestQualification,
   chooseTag,
   previousReleaseTag,
+  releaseNotesBody,
   verifyImage,
   createBundle,
   DEPENDENCY_IMAGES,
