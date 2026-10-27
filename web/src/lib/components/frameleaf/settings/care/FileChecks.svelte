@@ -392,11 +392,14 @@
   const historyTone = (entry: HistoryEntry): KitTone =>
     entry.outcome === IntegrityCheckOutcome.Stopped ? 'off' : entry.found > 0 ? 'warn' : 'good';
   const historyDetail = (entry: HistoryEntry) => {
-    const minutes = Math.max(
-      1,
-      Math.round((new Date(entry.finishedAt).getTime() - new Date(entry.startedAt).getTime()) / 60_000),
-    );
-    const took = $t('frameleaf_care_fc_history_took', { values: { minutes } });
+    const ms = new Date(entry.finishedAt).getTime() - new Date(entry.startedAt).getTime();
+    // a check of a few seconds reads in seconds, never rounded up to a minute
+    const took =
+      ms < 60_000
+        ? $t('frameleaf_care_fc_history_took_seconds', {
+            values: { seconds: Math.min(59, Math.max(1, Math.round(ms / 1000))) },
+          })
+        : $t('frameleaf_care_fc_history_took', { values: { minutes: Math.round(ms / 60_000) } });
     switch (entry.outcome) {
       case IntegrityCheckOutcome.Stopped: {
         return $t('frameleaf_care_fc_history_stopped');

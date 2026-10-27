@@ -267,6 +267,14 @@ describe('File checks (FL-366)', () => {
             found: 0,
             checked: null,
           },
+          {
+            type: IntegrityReport.MissingFile,
+            startedAt: '2026-10-14T08:40:00.000Z',
+            finishedAt: '2026-10-14T08:40:02.000Z',
+            outcome: IntegrityCheckOutcome.Completed,
+            found: 0,
+            checked: 1200,
+          },
         ],
       }),
     );
@@ -276,6 +284,8 @@ describe('File checks (FL-366)', () => {
     expect(await screen.findByText(/4,210 files read · took 18 minutes · carries on next night/)).toBeInTheDocument();
     expect(screen.getByText('1 found')).toBeInTheDocument();
     expect(screen.getByText('Stopped before it finished')).toBeInTheDocument();
+    // a two-second check reads in seconds, not "took 1 minute"
+    expect(screen.getByText('1,200 files read · took 2 seconds')).toBeInTheDocument();
   });
 
   it('one switch per check writes every setting that check is made of', async () => {
