@@ -8,18 +8,25 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset, mapAsset } from 'src/dtos/asset-response.dto.js';
-import { DuplicateResolveDto, DuplicateResolveGroupDto, DuplicateResponseDto } from 'src/dtos/duplicate.dto.js';
+import {
+  DuplicateEstimateQueryDto,
+  DuplicateEstimateResponseDto,
+  DuplicateRecompareDto,
+  DuplicateResolveDto,
+  DuplicateResolveGroupDto,
+  DuplicateResponseDto,
+} from 'src/dtos/duplicate.dto.js';
 import {
   AssetStatus,
   AssetType,
   AssetVisibility,
-  DuplicateGroupKind,
   JobName,
   JobStatus,
   MlWorkload,
   Permission,
   QueueName,
   StorageFolder,
+  SystemMetadataKey,
   TranscodeTarget,
 } from 'src/enum.js';
 import { attemptOutputPath, deferJobAdoption, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
@@ -27,7 +34,7 @@ import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { classifyDuplicateGroup, duplicateDisposalReasons } from 'src/utils/duplicate-review.js';
+import { duplicateDisposalReasons, reviewKindOf } from 'src/utils/duplicate-review.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
@@ -56,6 +63,8 @@ type ResolveRequest = {
 
 // Minimum number of sampled frame timestamps required before we attempt
 // enhanced video duplicate detection. (Used as a count threshold.)
+/** FL-520: photos sampled for the look-alike estimate on Library care › Duplicates. */
+export const DUPLICATE_ESTIMATE_SAMPLE = 200;
 const VIDEO_DUPLICATE_FRAME_MIN_COUNT = 2;
 // Minimum video duration in seconds for enhanced video duplicate detection to
 // be attempted. Coincidentally the same numeric value as the min count above,
@@ -139,9 +148,7 @@ export class DuplicateService extends BaseService {
       duplicates.map(async ({ duplicateId, assets }) => {
         const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
         const suggestedKeepAssetIds =
-          classifyDuplicateGroup(mappedAssets) === DuplicateGroupKind.Burst
-            ? []
-            : suggestDuplicateKeepAssetIds(mappedAssets);
+          reviewKindOf(mappedAssets) === 'copies' ? suggestDuplicateKeepAssetIds(mappedAssets) : [];
         let motionId: string | undefined;
         if (suggestedKeepAssetIds.length === 1 && assets.some((asset) => asset.livePhotoVideoId)) {
           try {
@@ -501,6 +508,50 @@ export class DuplicateService extends BaseService {
 
   private nsfwOptions(auth: AuthDto) {
     return getHiddenContentQueryOptions(auth);
+  }
+
+  /**
+   * FL-520: about how many look-alike groups each "How alike" choice makes, from a sample. For each
+   * sampled photo the nearest photo of the same kind in its library is found; the share whose nearest
+   * is within a distance, times the photos compared, is the photos that would be grouped, and the
+   * groups so far say how many photos a group holds (two when there are none yet). The time the sample
+   * took, per photo, times the photos compared is the time comparing again takes.
+   */
+  async estimateLookAlikes({ maxDistances }: DuplicateEstimateQueryDto): Promise<DuplicateEstimateResponseDto> {
+    const startedAt = Date.now();
+    const distances = await this.duplicateRepository.sampleNearestDistances(DUPLICATE_ESTIMATE_SAMPLE);
+    const elapsed = Date.now() - startedAt;
+    const { comparable, groups, grouped } = await this.duplicateRepository.countComparable();
+    const perGroup = groups > 0 && grouped > groups ? grouped / groups : 2;
+    const sampled = distances.length;
+    return {
+      comparable,
+      groups,
+      sampled,
+      seconds: sampled > 0 ? Math.ceil(((elapsed / sampled) * comparable) / 1000) : 0,
+      choices: maxDistances.map((maxDistance) => {
+        const close = distances.filter((distance) => distance <= maxDistance).length;
+        return {
+          maxDistance,
+          groups: sampled > 0 ? Math.round(((close / sampled) * comparable) / perGroup) : 0,
+        };
+      }),
+    };
+  }
+
+  /**
+   * FL-520: compare every photo again after "How alike" changed: now, or as part of the next overnight
+   * run (`OvernightService` reads the request at its tidy-up step).
+   */
+  async recompare({ when }: DuplicateRecompareDto): Promise<void> {
+    if (when === 'now') {
+      await this.jobRepository.queue({ name: JobName.AssetDetectDuplicatesQueueAll, data: { force: true } });
+      await this.systemMetadataRepository.delete(SystemMetadataKey.DuplicateRecompare);
+      return;
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.DuplicateRecompare, {
+      requestedAt: new Date().toISOString(),
+    });
   }
 
   @OnJob({ name: JobName.AssetDetectDuplicatesQueueAll, queue: QueueName.DuplicateDetection })

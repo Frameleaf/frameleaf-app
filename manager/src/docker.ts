@@ -336,11 +336,11 @@ export class Docker {
       )
     )
       throw new Refusal('invalid_managed_project');
+    const unraid = action === 'up' && process.env.MANAGER_PLATFORM === 'unraid';
+    // DockerMan templates are optional: catalog templates published before the mapping existed still start.
+    const dockerman = unraid && (await access(DOCKERMAN_TEMPLATES).then(() => true, () => false));
     if (action === 'up') {
-      if (process.env.MANAGER_PLATFORM === 'unraid') {
-        await access(DOCKERMAN_TEMPLATES).catch(() => { throw new Refusal('unraid_dockerman_templates_mount_required'); });
-        await configureUnraidCompose(directory);
-      }
+      if (unraid) await configureUnraidCompose(directory);
       await this.pullMissing(directory, services);
     }
     await this.execute(
@@ -357,7 +357,7 @@ export class Docker {
       ],
       { cwd: directory, timeout: 1_200_000 },
     );
-    if (action === 'up' && process.env.MANAGER_PLATFORM === 'unraid') {
+    if (dockerman) {
       const ids = (await this.execute('docker', ['ps', '--all', '--quiet', '--no-trunc',
         '--filter', `label=com.docker.compose.project=${project}`, '--filter', 'label=com.docker.compose.oneoff=False']))
         .trim().split(/\s+/).filter(Boolean);
@@ -380,8 +380,48 @@ export class Docker {
     const present = new Set(
       (await this.execute('docker', ['image', 'ls', '--digests', '--format', '{{.Repository}}@{{.Digest}}'])).split('\n'),
     );
+    // `image ls` prints no tag beside the digest, so `name:tag@sha256:…` is looked up as `name@sha256:…`.
     for (const image of new Set(wanted))
-      if (!present.has(image)) await this.execute('docker', ['pull', image], { timeout: 3_600_000 });
+      if (!present.has(image.replace(/:[^/@]+(?=@)/, ''))) await this.execute('docker', ['pull', image], { timeout: 3_600_000 });
+  }
+  /**
+   * FL-414: which of these media folders the Frameleaf server cannot write to, checked by the server
+   * image itself with the live Compose mounts and user, so a host path, a named volume and an NFS mount
+   * answer alike. An empty list means every one is writable. Nothing is written.
+   */
+  async unwritableMedia(directory: string, project: string, targets: string[]): Promise<string[]> {
+    if (
+      !/^frameleaf-[a-f0-9]{12}$/.test(project) ||
+      targets.some((target) => !target.startsWith('/') || /[\n\0]/.test(target))
+    )
+      throw new Refusal('invalid_media_check');
+    if (targets.length === 0) return [];
+    const output = await this.execute(
+      'docker',
+      [
+        'compose',
+        '--project-name',
+        project,
+        '--file',
+        'compose.json',
+        'run',
+        '--rm',
+        '--no-deps',
+        '-T',
+        '--entrypoint',
+        'sh',
+        'frameleaf-server',
+        '-c',
+        'for folder do [ -d "$folder" ] && [ -w "$folder" ] || printf "%s\\n" "$folder"; done',
+        'sh',
+        ...targets,
+      ],
+      { cwd: directory, timeout: 300_000 },
+    );
+    return output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => targets.includes(line));
   }
   /** Fixed offline command only; container identity survives a Manager restart. */
   async importCommand(

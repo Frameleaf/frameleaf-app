@@ -33,7 +33,7 @@ import { Refusal, publicSource, redact, secretEnvironmentValues } from './contra
 import { appdataDefaults } from './appdata.js';
 import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
-import { detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
+import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
 import { sharePortWithRedirect } from './http-redirect.js';
 
 const directory = process.env.MANAGER_DATA;
@@ -271,6 +271,13 @@ class Api {
       .strict()
       .parse(input);
     return { id: operations.control(value.action, value.key).id };
+  }
+  @Get('container-settings') containerSettings() {
+    return operations.containerSettings();
+  }
+  @Post('container-settings') saveContainerSettings(@Body() input: unknown) {
+    const { services, key } = z.object({ services: ServiceOverrides, key: RequestKey }).strict().parse(input);
+    return { id: operations.reconfigure(services, key).id };
   }
   @Post('recover') async recover(@Body() input: unknown) {
     const value = z.object({ id: z.string().uuid() }).strict().parse(input);

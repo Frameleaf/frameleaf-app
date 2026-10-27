@@ -1556,12 +1556,12 @@ describe(MediaOperationService.name, () => {
       expect(JSON.stringify(result.snapshot)).not.toContain('private.jpg');
     });
 
-    it('never copies a physical deduplication plan; a new reviewed plan is applied instead (FL-73)', async () => {
+    it('never copies a retired physical deduplication plan; identical files merge automatically (FL-413)', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(
         operationStub({ kind: MediaOperationKind.PhysicalDeduplication, status: MediaOperationStatus.Failed }),
       );
 
-      await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toThrow('Physical deduplication page');
+      await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toThrow('Check again in Library care');
       expect(repository.create).not.toHaveBeenCalled();
     });
 

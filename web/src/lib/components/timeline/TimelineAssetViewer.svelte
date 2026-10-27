@@ -19,7 +19,7 @@
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { type AlbumResponseDto, type AssetResponseDto, type PersonResponseDto, getAssetInfo } from '@frameleaf/sdk';
-  import { onDestroy, onMount, type Snippet } from 'svelte';
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -99,7 +99,10 @@
   $effect(() => {
     const asset = assetViewerManager.asset;
     if (asset) {
-      handlePromiseError(loadCloseAssets(asset));
+      // LIB-02: only opening another item re-runs this. The timeline reads inside the lookup made any
+      // change to it (an edited date moving the item to another month) run it again with the item as it
+      // was opened, replacing the saved one an update had just shown.
+      untrack(() => handlePromiseError(loadCloseAssets(asset)));
     }
   });
 
@@ -219,7 +222,7 @@
     switch (action.type) {
       case AssetAction.SET_VISIBILITY_LOCKED:
       case AssetAction.SET_VISIBILITY_TIMELINE: {
-        // FL-34: Mark and Unmark Sensitive only take the item out of a view it no longer belongs in
+        // FL-34: Lock and Unlock only take the item out of a view it no longer belongs in
         if (timelineManager.keepsAfterLockChange(action.type === AssetAction.SET_VISIBILITY_LOCKED)) {
           break;
         }

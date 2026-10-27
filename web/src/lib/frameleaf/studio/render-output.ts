@@ -13,6 +13,7 @@ import {
   StudioExportColor,
   StudioExportFormat,
   StudioExportResolution,
+  StudioExportShape,
   StudioExportSubtitleMode,
   StudioExportQuality,
   type StudioRenderCandidateDto,
@@ -29,6 +30,8 @@ export type StudioRenderSettings = {
   resolution: StudioExportResolution;
   subtitleMode?: StudioExportSubtitleMode;
   quality?: StudioExportQuality;
+  /** FL-563: vertical and square need SDR video and a session that reframes (`reframe-v1`). */
+  shape?: StudioExportShape;
 };
 
 export type StudioRenderVerdict = { supported: true } | { supported: false; refusal: StudioRenderRefusal };
@@ -135,9 +138,14 @@ export const evaluateStudioRender = (
   ) {
     return { supported: false, refusal: 'codec-unavailable' };
   }
+  const reshaped = settings.shape !== undefined && settings.shape !== StudioExportShape.Original;
+  if (reshaped && (!isSdrVideoFormat(settings.format) || settings.color !== StudioExportColor.Preserve)) {
+    return { supported: false, refusal: 'codec-unavailable' };
+  }
   const withOutput = withMemory.filter(
     (candidate) =>
       candidate.outputFormats.includes(settings.format) &&
+      (!reshaped || candidate.reframe === true) &&
       (!sidecar || candidate.sidecarOutputFormats?.includes(settings.format)) &&
       (!embedded || candidate.embeddedOutputFormats?.includes(settings.format)),
   );

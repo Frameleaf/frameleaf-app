@@ -113,6 +113,7 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   },
   'templates.email.showBranding': { label: 'frameleaf_notify_branding' },
   // FL-422: Editing & playback › Edited masters and AI restoration
+  'user.newUserStorageQuota': { label: 'frameleaf_userpage_space_for_new' },
   'editing.trimMode': {
     label: 'frameleaf_editing_masters_trim',
     values: { precise: 'frameleaf_editing_masters_trim_precise', fast: 'frameleaf_editing_masters_trim_fast' },
@@ -143,6 +144,10 @@ const toolWords = Object.fromEntries(
 export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   ...toolWords,
   'cast.gCastEnabled': { label: 'frameleaf_prefs_tools_cast' },
+  'lockedPin.relockMinutes': {
+    label: 'frameleaf_access_relock_label',
+    values: count('frameleaf_access_relock_minutes'),
+  },
   'memories.duration': {
     label: 'frameleaf_prefs_tools_memories_duration',
     values: count('frameleaf_prefs_tools_seconds'),
@@ -166,6 +171,8 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // ACCOUNT-P2, P3, P5: the account preferences added to Downloads, Look & playback and People & sharing.
   'download.includeSidecar': { label: 'frameleaf_prefs_downloads_details' },
   'search.includeArchived': { label: 'frameleaf_prefs_look_archived' },
+  // FL-556: Look & playback › Safety.
+  'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },

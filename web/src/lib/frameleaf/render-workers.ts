@@ -158,6 +158,7 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.BuddyRestore]: 'frameleaf_render_workers_kind_buddy_restore',
   [MediaOperationKind.StudioReverseConform]: 'frameleaf_render_workers_kind_studio_reverse_conform',
   [MediaOperationKind.StudioTranscription]: 'frameleaf_render_workers_kind_studio_transcription',
+  [MediaOperationKind.StudioMovie]: 'frameleaf_render_workers_kind_studio_movie',
   [MediaOperationKind.StudioExport]: 'frameleaf_render_workers_kind_studio_export',
   [MediaOperationKind.StudioPreview]: 'frameleaf_render_workers_kind_studio_preview',
   [MediaOperationKind.StudioPreviewStream]: 'frameleaf_render_workers_kind_studio_preview_stream',
@@ -293,6 +294,25 @@ const roundTo = (value: number, decimals: number) => {
   return Math.round(value * factor) / factor;
 };
 
+/**
+ * A stored value in a form's unit, as short as it can be while still saving back to exactly the
+ * stored value (FL-529): an edit that leaves a field alone must not move the ceiling it holds.
+ * Saving rounds `field × unit` to a whole number, as `minutesToMs` and friends do.
+ */
+const formUnits = (stored: string | number | null | undefined, unit: number): string => {
+  const value = asNumber(stored);
+  if (value === null) {
+    return '';
+  }
+  for (let decimals = 0; decimals <= 12; decimals++) {
+    const shown = roundTo(value / unit, decimals);
+    if (Math.round(shown * unit) === value) {
+      return String(shown);
+    }
+  }
+  return String(value / unit);
+};
+
 export const msToMinutes = (ms: string | number | null | undefined): number | null => {
   const value = asNumber(ms);
   return value === null ? null : roundTo(value / MS_PER_MINUTE, 1);
@@ -342,8 +362,8 @@ export type RenderLimitField = keyof RenderLimitForm;
 
 export const limitFormFrom = (limit: RenderLimitValues | null | undefined): RenderLimitForm => ({
   concurrency: limit ? String(limit.maxConcurrentOperations) : '',
-  wallClockMinutes: limit ? String(msToMinutes(limit.maxWallClockMs) ?? '') : '',
-  outputGB: limit ? String(bytesToGB(limit.maxOutputBytes) ?? '') : '',
+  wallClockMinutes: limit ? formUnits(limit.maxWallClockMs, MS_PER_MINUTE) : '',
+  outputGB: limit ? formUnits(limit.maxOutputBytes, BYTES_PER_GB) : '',
 });
 
 export type ParsedLimitForm = { ok: true; value: RenderLimitValues } | { ok: false; field: RenderLimitField };
@@ -434,8 +454,8 @@ export const workerFormFrom = (worker: RenderWorkerDto | null | undefined): Rend
     // A scope saved before RENDER_WORKER_KINDS existed keeps only its renders when edited (FL-73).
     kinds: worker.kinds.filter((kind) => isRenderWorkerKind(kind)),
     engineDigest: worker.engineDigest ?? '',
-    conformanceMaxAgeHours: String(msToHours(worker.conformanceMaxAgeMs) ?? ''),
-    gpuMemoryGiB: String(bytesToGiB(worker.gpuMemoryBytes) ?? ''),
+    conformanceMaxAgeHours: formUnits(worker.conformanceMaxAgeMs, MS_PER_HOUR),
+    gpuMemoryGiB: formUnits(worker.gpuMemoryBytes, BYTES_PER_GIB),
     ...limitFormFrom(worker),
   };
 };

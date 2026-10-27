@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import PlacesRestoringNotice from '$lib/components/frameleaf/PlacesRestoringNotice.svelte';
   import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
@@ -83,10 +84,18 @@
 
 {#if featureFlagsManager.value.map}
   <UserPageLayout>
-    <div class="size-full [&>.frameleaf]:size-full">
-      <Theme theme={appTheme}>
-        <MapScreen title={data.meta.title} albumId={data.album?.id} onOpenAsset={openAsset} onSearchArea={searchArea} />
-      </Theme>
+    <div class="flex size-full flex-col">
+      <PlacesRestoringNotice layout="map" />
+      <div class="min-h-0 flex-1 [&>.frameleaf]:size-full">
+        <Theme theme={appTheme}>
+          <MapScreen
+            title={data.meta.title}
+            albumId={data.album?.id}
+            onOpenAsset={openAsset}
+            onSearchArea={searchArea}
+          />
+        </Theme>
+      </div>
     </div>
   </UserPageLayout>
   <Portal target="body">

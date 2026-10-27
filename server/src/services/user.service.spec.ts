@@ -46,6 +46,30 @@ describe(UserService.name, () => {
     );
   });
 
+  describe('countLockedRules (FL-541)', () => {
+    const draft = { tagIds: [], personIds: ['00000000-0000-4000-8000-000000000001'], petIds: [] };
+
+    it('needs an unlocked session, as editing the rules does', async () => {
+      await expect(sut.countLockedRules(authStub.admin, draft)).rejects.toThrow(ForbiddenException);
+      expect(mocks.asset.countLockedRuleMatches).not.toHaveBeenCalled();
+    });
+
+    it('counts your own photos and videos the draft matches, and nothing for an empty draft', async () => {
+      mocks.asset.countLockedRuleMatches.mockResolvedValue({ photos: 12, videos: 3 });
+      await expect(sut.countLockedRules(authStub.adminWithElevatedPermission, draft)).resolves.toEqual({
+        photos: 12,
+        videos: 3,
+      });
+      expect(mocks.asset.countLockedRuleMatches).toHaveBeenCalledWith({ userId: authStub.admin.user.id, ...draft });
+
+      mocks.asset.countLockedRuleMatches.mockClear();
+      await expect(
+        sut.countLockedRules(authStub.adminWithElevatedPermission, { tagIds: [], personIds: [], petIds: [] }),
+      ).resolves.toEqual({ photos: 0, videos: 0 });
+      expect(mocks.asset.countLockedRuleMatches).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateMe', () => {
     it.each([false, true])('rejects a conflicting email before writing, deleted=%s', async (deleted) => {
       const existing = UserFactory.create({ email: 'used@example.com', deletedAt: deleted ? new Date() : null });
@@ -565,6 +589,35 @@ describe(UserService.name, () => {
       expect(mocks.asset.deleteAll.mock.invocationCallOrder[0]).toBeLessThan(
         mocks.user.delete.mock.invocationCallOrder[0]!,
       );
+    });
+
+    it('should sweep its folders only once the account rows are gone', async () => {
+      // A published Studio export or a media operation attempt names the account's files until the
+      // account row cascades; sweeping before that kept them on disk for good.
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.storage.walkFiles.mockImplementation((folder: string) =>
+        (async function* () {
+          yield* await Promise.resolve(folder.includes('/upload/') ? [`${folder}/01/a1/studio-video.mp4`] : []);
+        })(),
+      );
+      mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        expect.stringContaining('/upload/deleted-user/01/a1/studio-video.mp4'),
+        expect.any(Function),
+        expect.anything(),
+      );
+      const deleted = mocks.user.delete.mock.invocationCallOrder[0]!;
+      for (const order of [
+        ...mocks.storage.walkFiles.mock.invocationCallOrder,
+        ...mocks.physicalFile.deleteUnreferencedPath.mock.invocationCallOrder,
+        ...mocks.storage.removeEmptyDirs.mock.invocationCallOrder,
+      ]) {
+        expect(order).toBeGreaterThan(deleted);
+      }
     });
 
     it('should delete the library path for a storage label', async () => {

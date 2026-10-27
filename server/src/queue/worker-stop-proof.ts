@@ -1,5 +1,6 @@
-import { Pool, type PoolClient, type PoolConfig } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
+import { createDatabasePool } from 'src/utils/shared-service-pool.js';
 
 export type WorkerStoppedProof = { workerId: string; stoppedAt: number };
 export const WORKER_PROOF_TIMEOUT_MS = 500;
@@ -24,24 +25,8 @@ export class WorkerStopProofRecorder {
       diagnostic?: (message: string) => void;
     } = {},
   ) {
-    const connection = config.getEnv().database.config;
-    const params: PoolConfig =
-      connection.connectionType === 'url'
-        ? { connectionString: connection.url }
-        : {
-            host: connection.host,
-            port: connection.port,
-            user: connection.username,
-            password: connection.password,
-            database: connection.database,
-            ssl:
-              !connection.ssl || connection.ssl === 'disable'
-                ? false
-                : { rejectUnauthorized: connection.ssl === 'verify-full' },
-          };
     const timeoutMs = options.timeoutMs ?? WORKER_PROOF_TIMEOUT_MS;
-    this.pool = new Pool({
-      ...params,
+    this.pool = createDatabasePool(config.getEnv().database.config, {
       max: 1,
       application_name: 'frameleaf:worker-stop-proof',
       connectionTimeoutMillis: timeoutMs,

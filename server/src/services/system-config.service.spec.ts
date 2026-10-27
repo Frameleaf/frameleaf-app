@@ -16,6 +16,7 @@ import {
   MachineLearningHardwareAcceleration,
   MailTransportType,
   OAuthTokenEndpointAuthMethod,
+  OvernightStepTiming,
   QueueName,
   ReleaseChannel,
   SystemMetadataKey,
@@ -265,6 +266,16 @@ const updatedConfig = Object.freeze<SystemConfig>({
     missingThumbnails: true,
     generateMemories: true,
     syncQuotaUsage: true,
+    stopTime: '06:00',
+    days: [0, 1, 2, 3, 4, 5, 6],
+    emptyTrash: true,
+    weeklyDay: 0,
+    steps: {
+      cleanup: OvernightStepTiming.Nightly,
+      folders: OvernightStepTiming.Nightly,
+      icloud: OvernightStepTiming.Nightly,
+      fileChecks: OvernightStepTiming.Nightly,
+    },
   },
   reverseGeocoding: {
     enabled: true,
@@ -273,7 +284,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     accountManagementUrl: '',
     autoLaunch: true,
     autoRegister: true,
-    buttonText: 'Login with OAuth',
+    buttonText: 'Sign in with your provider',
     clientId: '',
     clientSecret: '',
     defaultStorageQuota: null,
@@ -335,6 +346,9 @@ const updatedConfig = Object.freeze<SystemConfig>({
     channel: ReleaseChannel.Stable,
     frequency: VersionCheckFrequency.Daily,
   },
+  storageWarning: {
+    percent: 90,
+  },
   trash: {
     enabled: true,
     days: 10,
@@ -354,6 +368,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   user: {
     deleteDelay: 15,
+    newUserStorageQuota: null,
   },
   notifications: {
     smtp: {

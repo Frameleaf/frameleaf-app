@@ -7,6 +7,10 @@
  * engine's key in the engine's current language, after each language change.
  */
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
+import {
+  TRANSCRIPT_ENGINE_STRINGS,
+  type TranscriptEngineString,
+} from '@frameleaf/host/transcript-strings'
 
 type EngineI18n = {
   readonly language?: string
@@ -17,6 +21,10 @@ type EngineI18n = {
 /** Host string → engine translation key. */
 export const HOST_ENGINE_STRINGS = {
   lockedTrackRefused: 'timeline.track.lockedTrackRefused',
+  // The transcript panel (FL-562).
+  ...(Object.fromEntries(
+    Object.entries(TRANSCRIPT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<TranscriptEngineString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {

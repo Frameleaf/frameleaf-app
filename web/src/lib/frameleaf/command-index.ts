@@ -47,7 +47,6 @@ import {
   mdiUpdate,
   mdiVideoOutline,
   mdiWrench,
-  mdiCertificateOutline,
   mdiCloudOutline,
   mdiCloudSyncOutline,
   mdiCloudUploadOutline,
@@ -325,12 +324,6 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     descriptionKey: 'frameleaf_cc_section_cloud_plan_description',
     icon: mdiCreditCardOutline,
   },
-  {
-    key: 'cloud-license',
-    titleKey: 'frameleaf_cc_section_cloud_license',
-    descriptionKey: 'frameleaf_cc_section_cloud_license_description',
-    icon: mdiCertificateOutline,
-  },
   // FL-161: Frameleaf Cloud → Remote access.
   {
     key: 'cloud-remote',
@@ -480,12 +473,6 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_retention',
     descriptionKey: 'frameleaf_cc_section_retention_description',
     icon: mdiTrashCanOutline,
-  },
-  {
-    key: 'user-settings',
-    titleKey: 'admin.user_settings',
-    descriptionKey: 'admin.user_settings_description',
-    icon: mdiAccountOutline,
   },
   {
     key: 'version-check',

@@ -48,6 +48,9 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
     hideBuyButtonUntil: '',
     showSupportBadge: false,
   },
+  trash: {
+    reuploadUntil: '',
+  },
   ratings: {
     enabled: false,
   },

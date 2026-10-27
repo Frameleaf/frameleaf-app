@@ -97,6 +97,7 @@ import {
   isTimelineVisible,
   lockReasonOf,
   lockedForReason,
+  visibilityIn,
   visibilityIs,
 } from 'src/utils/locked.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
@@ -1635,7 +1636,7 @@ export class AssetRepository {
     }
     const updateAndSelect = (db: Kysely<DB>) =>
       db
-        .with('asset', (qb) => qb.updateTable('asset').set(asset).where('id', '=', asUuid(asset.id)).returningAll())
+        .with('asset', (qb) => qb.updateTable('asset').set(value).where('id', '=', asUuid(asset.id)).returningAll())
         .selectFrom('asset')
         .selectAll('asset')
         .$call(withExif)
@@ -2179,7 +2180,7 @@ export class AssetRepository {
   getByChecksums(userId: string, checksums: Buffer[], options: AssetChecksumOptions = {}) {
     return this.db
       .selectFrom('asset')
-      .select(['id', 'checksum', 'deletedAt'])
+      .select(['id', 'checksum', 'deletedAt', 'status', 'originalPath', 'libraryId', 'isExternal'])
       .where('ownerId', '=', asUuid(userId))
       .where('checksum', 'in', checksums)
       .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
@@ -2204,6 +2205,16 @@ export class AssetRepository {
       .executeTakeFirst();
     return asset?.id;
   }
+  /** FL-365: the uploaded originals a re-file into the folder layout checks (not in an added folder, not deleted). */
+  async countUploadedOriginals(): Promise<number> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('libraryId', 'is', null)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
   findLivePhotoMatch(options: LivePhotoSearchOptions) {
     const { ownerId, otherAssetId, livePhotoCID, type } = options;
     return this.db
@@ -2216,6 +2227,27 @@ export class AssetRepository {
       .where('asset_exif.livePhotoCID', '=', livePhotoCID)
       .limit(1)
       .executeTakeFirst();
+  }
+  /**
+   * FL-541: how many of the owner's own photos and videos (timeline or archive, not in Trash) a draft
+   * of their Locked rules matches, as the Locked view matches them (`lockedRuleMatches`).
+   * ponytail: the owner's own media only; a "visible" scope also hides shared items, not counted here.
+   */
+  @GenerateSql({ params: [{ userId: DummyValue.UUID, tagIds: [], personIds: [DummyValue.UUID], petIds: [] }] })
+  async countLockedRuleMatches(
+    filter: Pick<HiddenContentFilter, 'userId' | 'tagIds' | 'personIds' | 'petIds'>,
+  ): Promise<{ photos: number; videos: number }> {
+    const rules: HiddenContentFilter = { ...filter, includeNsfw: false, scope: 'owned' };
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<string>().filterWhere('type', '=', AssetType.Image).as('photos'))
+      .select((eb) => eb.fn.countAll<string>().filterWhere('type', '=', AssetType.Video).as('videos'))
+      .where('ownerId', '=', asUuid(filter.userId))
+      .where('deletedAt', 'is', null)
+      .where(visibilityIn([AssetVisibility.Timeline, AssetVisibility.Archive]))
+      .where(hiddenContentAssetIdExists(sql.ref('asset.id'), rules))
+      .executeTakeFirstOrThrow();
+    return { photos: Number(row.photos), videos: Number(row.videos) };
   }
   getStatistics(ownerId: string, options: AssetStatsOptions): Promise<AssetStats> {
     const { visibility, isFavorite, isTrashed } = options;
@@ -3260,7 +3292,7 @@ export class AssetRepository {
   async getForMetadataExtractionTags(id: string) {
     return this.db
       .selectFrom('asset_exif')
-      .select(['asset_exif.tags', 'asset_exif.updateId'])
+      .select(['asset_exif.tags', 'asset_exif.updateId', 'asset_exif.timeZone'])
       .where('asset_exif.assetId', '=', id)
       .executeTakeFirst();
   }

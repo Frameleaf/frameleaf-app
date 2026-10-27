@@ -111,6 +111,20 @@ describe('PetTagger', () => {
     );
   });
 
+  it('accepts any position a drawn box rounds to, so the browser never blocks Save (LIB-11)', async () => {
+    await setup();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_pet_tagger_place }));
+    // a dragged box rounds to 0.1 %, e.g. 33.3
+    await fireEvent.change(screen.getByRole('spinbutton', { name: en.frameleaf_pet_tagger_x }), {
+      target: { value: '33.3' },
+    });
+
+    for (const input of screen.getAllByRole('spinbutton')) {
+      expect((input as HTMLInputElement).validity.stepMismatch).toBe(false);
+    }
+  });
+
   it('keeps the dialog open and explains a photo that changed meanwhile', async () => {
     sdkMock.isHttpError.mockReturnValue(true);
     sdkMock.createPetObservation.mockRejectedValue({ status: 409 });

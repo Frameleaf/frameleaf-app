@@ -563,6 +563,7 @@ export enum SearchFacetField {
   Rating = 'rating',
   IsFavorite = 'isFavorite',
   Tags = 'tags',
+  Pets = 'pets',
 }
 
 export const SearchFacetFieldSchema = z.enum(SearchFacetField).meta({ id: 'SearchFacetField' });

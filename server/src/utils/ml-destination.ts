@@ -163,12 +163,19 @@ export type MlSelectionRequest = {
   studioFeature?: StudioAiCloudFeature | null;
   /** FL-455: work that never leaves this network (search text): a Frameleaf Cloud destination is refused. */
   homeOnly?: boolean;
+  /**
+   * FL-456: whether the Frameleaf Desktop helpers may take this request through the destination's desktop
+   * assistance pool. `skip`: never (the processing order reached this server itself); `only`: only they
+   * may, and the request is refused when none is ready (the order reached the person's computers).
+   * Unset: as before FL-456, the pool takes it whenever the owner's desktop assistance allows.
+   */
+  desktopPool?: 'skip' | 'only';
 };
 
 export type MlSelectionDeps = {
   mlDestinationRepository: MlDestinationRepository;
   machineLearningRepository: MachineLearningRepository;
-  selectBackgroundPool?: (selection: MlSelection) => Promise<MlSelection>;
+  selectBackgroundPool?: (selection: MlSelection, options?: { requireReady?: boolean }) => Promise<MlSelection>;
   /**
    * FL-163 review P1: the saved Frameleaf Cloud processing settings, read at admission. When given, a
    * Frameleaf Cloud destination is refused while processing is turned off or while the workload's kind
@@ -970,24 +977,36 @@ export const selectMlDestination = async (
         // Accounting must never fail the inference that already happened.
       });
   };
-  if (
-    selectBackgroundPool &&
+  const poolEligible =
+    !!selectBackgroundPool &&
     [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(request.workload) &&
-    [MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind)
-  ) {
+    [MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind);
+  if (poolEligible && request.desktopPool !== 'skip') {
     // Desktop capacity is admitted by its own qualification; NAS backend health is irrelevant to it.
-    const pool = await selectBackgroundPool({
-      destinationId: destination.id,
-      kind: destination.kind,
-      workload: request.workload,
-      endpoint: endpoint as MlEndpoint,
-      cloudModelId: null,
-      record,
-    });
+    const pool = await selectBackgroundPool!(
+      {
+        destinationId: destination.id,
+        kind: destination.kind,
+        workload: request.workload,
+        endpoint: endpoint as MlEndpoint,
+        cloudModelId: null,
+        record,
+      },
+      { requireReady: request.desktopPool === 'only' },
+    );
     if (pool.desktopClip || pool.desktopOcr || pool.desktopFace) {
       await assertAuthority();
       return pool;
     }
+  }
+  if (request.desktopPool === 'only') {
+    // FL-456: the order reached the person's computers and none of them can take this job now.
+    throw new MlDestinationRefusedError(
+      MlAdmissionRefusal.DestinationUnhealthy,
+      request.workload,
+      destination.id,
+      'no Frameleaf Desktop helper is ready for this work',
+    );
   }
 
   // Cloud consent can change during an admitted upload; a cached required version cannot authorize

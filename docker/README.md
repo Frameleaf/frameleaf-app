@@ -10,11 +10,15 @@ ML-specific environment settings now belong in the optional `.env.ml` beside `.e
 | Machine learning | `ghcr.io/frameleaf/frameleaf-machine-learning` |
 | Database         | `ghcr.io/frameleaf/frameleaf-postgres`         |
 
-Compose and release bundles use the `latest` tag, which follows stable releases; `edge` follows development builds. Hardware variants append `-cuda`, `-openvino`, `-armnn`, `-rknn` or `-rocm` to the selected ML tag. For example, the stable CUDA image is `ghcr.io/frameleaf/frameleaf-machine-learning:latest-cuda`. Select the matching hardware configuration and platform; a tag does not prove a particular GPU or model is supported.
+Compose and release bundles use the `latest` tag, which follows stable releases; `edge` follows development builds. Exact release tags are `frameleaf-vX.Y.Z` (there is no plain `X.Y.Z` tag), and each bundle's `example.env` names its own, for example `# This release: FRAMELEAF_VERSION=frameleaf-v1.1.12`. Hardware variants append `-cuda`, `-openvino`, `-armnn`, `-rknn` or `-rocm` to the selected ML tag. For example, the stable CUDA image is `ghcr.io/frameleaf/frameleaf-machine-learning:latest-cuda`. Select the matching hardware configuration and platform; a tag does not prove a particular GPU or model is supported.
 
 The release includes `docker-compose.yml`, `docker-compose.rootless.yml`, `example.env`, `hwaccel.ml.yml` and `hwaccel.transcoding.yml`. Use the regular **or** rootless Compose file. Copy `example.env` to `.env` only for a new installation. Read the [installation steps](../docs/docs/install/docker-compose.mdx) and review the release notes before starting or upgrading.
 
+The server publishes host ports 2283 and 2443. To use others, set `FRAMELEAF_HOST_PORT` and `FRAMELEAF_HOST_HTTPS_PORT` in `.env`; if you change the HTTPS port, set the same port in the app's Remote access settings. Put other local changes in a `docker-compose.override.yml` beside the bundle, which Compose merges automatically. The container names stay `frameleaf_server`, `frameleaf_machine_learning` and `frameleaf_postgres`, so only one bundle stack can run per Docker host.
+
 ## Existing installations
+
+The Compose project is named `frameleaf`. Stacks created by Frameleaf 1.1.12 or earlier run as project `immich`: before replacing the Compose file, add `COMPOSE_PROJECT_NAME=immich` to `.env` so Compose keeps the same containers, network and volumes (`immich_model-cache`, `immich_studio-worker`). Without it, `docker compose up` stops with a container-name conflict and changes nothing. Media and the database are host folders and do not depend on the project name.
 
 For an existing canonical Frameleaf installation, changing application images does not require moving media or recreating the database. An Immich database requires a separate offline import into a fresh destination. Preserve the existing Compose project name, `.env`, upload/database paths, volume names, external-library mounts and database settings. Keep the existing stack directory: relative host paths are resolved from the Compose files. Do not start a second stack against the same PostgreSQL directory, and do not use `docker compose down --volumes` during this migration.
 

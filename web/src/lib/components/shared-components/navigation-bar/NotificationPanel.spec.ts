@@ -5,6 +5,7 @@ import { addMessages } from 'svelte-i18n';
 import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { Route } from '$lib/route';
 import { notificationManager } from '$lib/stores/notification-manager.svelte';
 import { handleError } from '$lib/utils/handle-error';
 import { deferredPromise } from '@test-data/deferred';
@@ -82,6 +83,22 @@ describe('NotificationPanel', () => {
 
     await waitFor(() => expect(onNavigate).toHaveBeenCalledOnce());
     expect(sdkMock.updateNotification).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
+  });
+
+  it('opens Missing media from the Immich import report of lost originals', async () => {
+    sdkMock.updateNotification.mockResolvedValue(undefined as never);
+    notificationManager.notifications = [
+      {
+        ...notification('lost', '2 imported originals need attention'),
+        level: NotificationLevel.Warning,
+        data: { kind: 'immich-import-lost-originals', total: 2, items: [] },
+      },
+    ];
+    render(NotificationPanel, { onNavigate: vi.fn() });
+
+    await fireEvent.click(screen.getByText('2 imported originals need attention'));
+
+    await waitFor(() => expect(goto).toHaveBeenCalledWith(Route.missingMediaUtility()));
   });
 
   it('brings a notification back when the server refuses to dismiss it', async () => {

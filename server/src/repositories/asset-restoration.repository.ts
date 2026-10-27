@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
-import { MediaOperationStatus } from 'src/enum.js';
+import { MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { EXPIRING_RESULT_STATUSES, canDiscardRestoration } from 'src/utils/restoration.js';
@@ -356,7 +356,17 @@ export class AssetRestorationRepository {
             .selectFrom('media_operation')
             .select('media_operation.id')
             .whereRef('media_operation.id', '=', 'asset_restoration.fullOperationId')
-            .where('media_operation.status', 'in', [MediaOperationStatus.Cancelled, MediaOperationStatus.Failed]),
+            .where((op) =>
+              op.or([
+                op('media_operation.status', '=', MediaOperationStatus.Failed),
+                // A cancelled Frameleaf Cloud full render is reconciled by CloudMlJobService, which puts the
+                // paid, reviewed preview back up for review instead of cancelling it.
+                op.and([
+                  op('media_operation.status', '=', MediaOperationStatus.Cancelled),
+                  op('media_operation.kind', '!=', MediaOperationKind.CloudMlJob),
+                ]),
+              ]),
+            ),
         ),
       )
       .executeTakeFirst();

@@ -135,6 +135,25 @@ const CloudSignInUpdateSchema = z
 
 export class CloudSignInUpdateDto extends createZodDto(CloudSignInUpdateSchema) {}
 
+const CloudSignInPersonSchema = z
+  .object({
+    id: z.uuidv4().describe('Account ID'),
+    name: z.string().describe('Account name'),
+    email: z.string().describe('Sign-in email here'),
+    linked: z.boolean().describe('Linked to a Frameleaf account, so they can sign in away from home'),
+    frameleafEmail: z.string().nullable().describe('The Frameleaf account email it is linked with'),
+  })
+  .meta({ id: 'CloudSignInPersonDto' });
+
+const CloudSignInPeopleResponseSchema = z
+  .object({
+    people: z.array(CloudSignInPersonSchema).describe('Every account here, those not linked first'),
+    canRemind: z.boolean().describe('Email is set up and the server has a public address, so reminders can be sent'),
+  })
+  .meta({ id: 'CloudSignInPeopleResponseDto' });
+
+export class CloudSignInPeopleResponseDto extends createZodDto(CloudSignInPeopleResponseSchema) {}
+
 const CloudRemoteAccessUpdateSchema = z
   .object({
     allowOriginalsOverRelay: z

@@ -22,6 +22,7 @@
     type BulkAsset,
   } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { MODAL_SELECTOR } from '$lib/frameleaf/library-key-actions';
   import { isTypingTarget } from '$lib/frameleaf/library-shortcuts';
   import { selectionForPreservation } from '$lib/frameleaf/preservation';
@@ -218,10 +219,24 @@
     menuLeaving = true;
     cancelMenuLeave = leave(node, 'pop', () => (menuLeaving = false));
   });
+  /** The server's trash flag; unknown (flags not loaded) counts as on, the server default. */
+  const trashEnabled = () => {
+    try {
+      return featureFlagsManager.value.trash;
+    } catch {
+      return true;
+    }
+  };
   let trash = $derived(!!context.trash);
   let locked = $derived(!!context.locked);
   let actions = $derived(
-    bulkActions({ canSendCopy: canSendCopies() && sendCopyPermitted(), ...context, assets, count }),
+    bulkActions({
+      canSendCopy: canSendCopies() && sendCopyPermitted(),
+      trashEnabled: trashEnabled(),
+      ...context,
+      assets,
+      count,
+    }),
   );
   let byId = $derived(bulkActionById(actions));
   let primary = $derived(primaryBulkActions(actions, trash, locked));
@@ -242,7 +257,9 @@
    * Actions that need a payload open their dialog; everything else is dispatched straight away.
    * Stack order and the Live Photo pair are derived here because only the bar knows the selection.
    */
-  const perform = (id: BulkActionId) => {
+  const perform = (requested: BulkActionId) => {
+    // With trash off, Delete is the confirmed permanent delete, from the button, a key or a tile.
+    const id = requested === 'delete' && !byId.delete?.available ? 'delete-permanently' : requested;
     const action: BulkAction | undefined = byId[id];
     if (!action?.available) {
       return;

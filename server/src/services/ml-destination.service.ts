@@ -12,7 +12,10 @@ import {
   MlDestinationHealthStateDto,
   MlDestinationResponseDto,
   MlDestinationUpdateDto,
+  MlProcessingOrderResponseDto,
+  MlProcessingOrderUpdateDto,
   MlWorkloadCapabilityDto,
+  MlWorkloadProcessingOrderUpdateDto,
   MlWorkloadRouteUpdateDto,
   MlWorkloadRoutesResponseDto,
 } from 'src/dtos/ml-destination.dto.js';
@@ -63,9 +66,17 @@ import {
   unresolvedEndpointSummary,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
+import {
+  KIND_SOURCE,
+  ML_PROCESSING_ORDER_DEFAULT_SCOPE,
+  followsMainOrder,
+  processingSourceStatuses,
+  sourcesFor,
+} from 'src/utils/ml-processing-order.js';
 import { SDR_ONLY, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
 import { STUDIO_EXPORT_FORMATS } from 'src/utils/studio-export.js';
 import { supportsLocalRenderKind } from 'src/utils/studio-preview-worker.js';
+import { REFRAME_PROFILE } from 'src/utils/studio-reframe.js';
 
 /**
  * The check summary a local destination carries while it is off because its URL left the
@@ -105,8 +116,10 @@ const termsChanged = (requiredVersion: string) =>
  *
  * Bootstrap creates a local destination for each configured ML URL and routes the library
  * workloads to the first one when they have no route; that is the only implicit creation,
- * and it is local. The Frameleaf Cloud destination is created only by an administrator (FL-159),
- * needs a separate versioned consent, and is never routed automatically.
+ * and it is local. The Frameleaf Cloud destination is created only by an administrator (FL-159)
+ * and needs a separate versioned consent. FL-456: where work goes is the processing order (this
+ * server, the person's computers, Frameleaf Cloud, in the order they chose); a job runs on the first
+ * place that is available and allowed to do it, and Frameleaf Cloud only once consent is recorded.
  */
 @Injectable()
 export class MlDestinationService extends BaseService {
@@ -114,11 +127,13 @@ export class MlDestinationService extends BaseService {
 
   @OnEvent({ name: 'ConfigInit', priority: BootstrapEventPriority.SystemConfig + 2 })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    this.mlDestinationRepository.setCloudMlSettings(newConfig.frameleafCloud.cloudMl);
     await this.reconcile(newConfig.machineLearning);
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true })
   async onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
+    this.mlDestinationRepository.setCloudMlSettings(newConfig.frameleafCloud.cloudMl);
     await this.reconcile(newConfig.machineLearning);
   }
 
@@ -170,7 +185,13 @@ export class MlDestinationService extends BaseService {
     if (await this.mlDestinationRepository.recoveryRegistry()) return;
     let first: MlDestinationRow | undefined;
     for (const url of urls) {
-      let row = await this.mlDestinationRepository.getByUrl(MlDestinationKind.Local, url);
+      // The same endpoint spelled differently (a trailing slash, an upper-case host) is the same row,
+      // as the sweep below that turns rows off decides.
+      let row =
+        (await this.mlDestinationRepository.getByUrl(MlDestinationKind.Local, url)) ??
+        (await this.mlDestinationRepository.getAll()).find(
+          (local) => local.kind === MlDestinationKind.Local && local.url !== null && sameEndpointUrl(url, local.url),
+        );
       if (row && !row.enabled && row.lastProbeSummary === ML_URL_REMOVED_SUMMARY) {
         row = await this.mlDestinationRepository.update(row.id, { enabled: true });
         await this.mlDestinationRepository.recordProbe(row.id, {
@@ -225,7 +246,7 @@ export class MlDestinationService extends BaseService {
 
     const recorded = new Set((await this.mlDestinationRepository.getRouteStates()).map((row) => row.workload));
     for (const workload of LIBRARY_ML_WORKLOADS) {
-      const route = await this.mlDestinationRepository.getRoute(workload);
+      const route = await this.mlDestinationRepository.getStoredRoute(workload);
       if (route || recorded.has(workload)) {
         continue;
       }
@@ -320,9 +341,9 @@ export class MlDestinationService extends BaseService {
 
   async delete(id: string): Promise<void> {
     await this.require(id);
-    // Routes cascade with the row, so the workloads that pointed here become unrouted and
-    // their jobs are refused until an administrator routes them again. That is the point:
-    // a removed destination never redirects work elsewhere.
+    // Routes cascade with the row. FL-456: its work goes to the next place in each workload's
+    // processing order; a workload whose own list named only this kind of place waits until one
+    // is added back. Work never goes to a place outside the list.
     await this.mlDestinationRepository.delete(id);
   }
 
@@ -593,22 +614,39 @@ export class MlDestinationService extends BaseService {
     }
   }
 
+  /**
+   * FL-456: for each workload, where its jobs go now (the first available place in its processing order),
+   * whether it follows the main order, and the route this server recorded (its intent and revision).
+   */
   async getRoutes(): Promise<MlWorkloadRoutesResponseDto> {
-    const routes = await this.mlDestinationRepository.getRouteStates();
-    const byWorkload = new Map(routes.map((route) => [route.workload, route]));
+    const [stored, effective, order] = await Promise.all([
+      this.mlDestinationRepository.getRouteStates(),
+      this.mlDestinationRepository.getRoutes(),
+      this.mlDestinationRepository.getProcessingOrder(),
+    ]);
+    const byWorkload = new Map(stored.map((route) => [route.workload, route]));
+    const goesTo = new Map(effective.map((route) => [route.workload, route.destinationId]));
     return {
       routes: Object.values(MlWorkload).map((workload) => ({
         workload,
-        destinationId: byWorkload.get(workload)?.destinationId ?? null,
+        destinationId: goesTo.get(workload) ?? null,
+        followsOrder: followsMainOrder(order, workload, byWorkload.get(workload)),
         origin: byWorkload.get(workload)?.origin ?? null,
         revisionId: byWorkload.get(workload)?.revisionId ?? null,
       })),
     };
   }
 
+  /**
+   * Run a workload in exactly one place, or nowhere with a null destination. FL-456: this is the
+   * workload's own processing order holding that one place (this server, the person's computers or
+   * Frameleaf Cloud), so it never moves elsewhere; `setWorkloadProcessingOrder` with null makes it follow
+   * the main order again.
+   */
   async setRoute(workload: MlWorkload, dto: MlWorkloadRouteUpdateDto): Promise<MlWorkloadRoutesResponseDto> {
     if (dto.destinationId === null) {
       await this.mlDestinationRepository.clearRoute(workload);
+      await this.mlDestinationRepository.setProcessingOrder(workload, []);
       return this.getRoutes();
     }
     const destination = await this.require(dto.destinationId);
@@ -635,7 +673,51 @@ export class MlDestinationService extends BaseService {
     // FL-186: the Frameleaf Cloud model is chosen per model group (`ml_cloud_model_choice`), not on the
     // route, so moving a route never changes it.
     await this.mlDestinationRepository.setRoute(workload, destination.id);
+    await this.mlDestinationRepository.setProcessingOrder(workload, [KIND_SOURCE[destination.kind]]);
     return this.getRoutes();
+  }
+
+  /** FL-456: the processing order, the workloads with a list of their own, and what each place can do now. */
+  async getProcessingOrder(): Promise<MlProcessingOrderResponseDto> {
+    const [order, rows, stored, desktops, config] = await Promise.all([
+      this.mlDestinationRepository.getProcessingOrder(),
+      this.mlDestinationRepository.getAll(),
+      this.mlDestinationRepository.getRouteStates(),
+      this.mlDestinationRepository.getDesktopCounts(),
+      this.getConfig({ withCache: true }),
+    ]);
+    return {
+      order: order.order,
+      workloads: Object.values(MlWorkload).flatMap((workload) => {
+        const storedRoute = stored.find((route) => route.workload === workload);
+        return followsMainOrder(order, workload, storedRoute)
+          ? []
+          : [{ workload, sources: sourcesFor(order, workload, { storedRoute, destinations: rows }) }];
+      }),
+      sources: processingSourceStatuses(rows, desktops, config.frameleafCloud.cloudMl.enabled),
+    };
+  }
+
+  /** FL-456: save the main processing order. Every workload without a list of its own follows it. */
+  async setProcessingOrder(dto: MlProcessingOrderUpdateDto): Promise<MlProcessingOrderResponseDto> {
+    await this.mlDestinationRepository.setProcessingOrder(ML_PROCESSING_ORDER_DEFAULT_SCOPE, dto.order);
+    return this.getProcessingOrder();
+  }
+
+  /**
+   * FL-456: give a workload a list of its own (empty keeps it off), or with null let it follow the main
+   * order again. Following the main order brings back the route this server makes on its own, which the
+   * Frameleaf Desktop helpers take work through.
+   */
+  async setWorkloadProcessingOrder(
+    workload: MlWorkload,
+    dto: MlWorkloadProcessingOrderUpdateDto,
+  ): Promise<MlProcessingOrderResponseDto> {
+    await this.mlDestinationRepository.setProcessingOrder(workload, dto.sources);
+    if (dto.sources === null) {
+      await this.mlDestinationRepository.restoreDefaultRoute(workload);
+    }
+    return this.getProcessingOrder();
   }
 
   /**
@@ -817,6 +899,8 @@ export class MlDestinationService extends BaseService {
               ),
               ...(sidecar.length > 0 && { sidecarOutputFormats: sidecar }),
               ...(embedded.length > 0 && { embeddedOutputFormats: embedded }),
+              // FL-563: the session derives and renders vertical and square exports.
+              ...(capabilities?.formats.includes(REFRAME_PROFILE) && { reframe: true }),
               ...(session.colorPrecision ?? SDR_ONLY),
             };
           }),
@@ -834,6 +918,12 @@ export class MlDestinationService extends BaseService {
         ),
         restorationWorker: available(MlWorkload.RestorationFaithful) || available(MlWorkload.RestorationCreative),
         transcriptionWorker: available(MlWorkload.StudioAi),
+        // FL-561: music for Make a movie runs on this server or a home-network worker that serves
+        // Studio AI. Frameleaf Cloud has no music workload yet (FL-181), so it never counts here.
+        generationWorker:
+          workloads
+            .find((entry) => entry.workload === MlWorkload.StudioAi)
+            ?.destinations.some((destination) => destination.available && !destination.leavesNetwork) ?? false,
         render,
       },
       probedAt: new Date().toISOString(),

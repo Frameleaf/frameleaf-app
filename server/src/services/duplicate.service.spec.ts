@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vitest } from 'vitest';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
+import { AssetType, AssetVisibility, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -1222,6 +1222,58 @@ describe(DuplicateService.name, () => {
       expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({
         assetId: hasDupe.id,
         duplicatesDetectedAt: expect.any(Date),
+      });
+    });
+  });
+
+  describe('look-alike estimate and comparing again (FL-520)', () => {
+    it('estimates the groups each choice makes and how long comparing again takes, from a sample', async () => {
+      mocks.duplicateRepository.sampleNearestDistances.mockResolvedValue([0.002, 0.008, 0.02, 0.05, Infinity]);
+      mocks.duplicateRepository.countComparable.mockResolvedValue({ comparable: 1000, groups: 10, grouped: 30 });
+
+      const estimate = await sut.estimateLookAlikes({ maxDistances: [0.004, 0.01, 0.03] });
+
+      // 1, 2 and 3 of 5 sampled photos have a look-alike; groups so far hold three photos each.
+      expect(estimate).toEqual(
+        expect.objectContaining({
+          comparable: 1000,
+          groups: 10,
+          sampled: 5,
+          choices: [
+            { maxDistance: 0.004, groups: 67 },
+            { maxDistance: 0.01, groups: 133 },
+            { maxDistance: 0.03, groups: 200 },
+          ],
+        }),
+      );
+      expect(estimate.seconds).toBeGreaterThanOrEqual(0);
+    });
+
+    it('says nothing is grouped when nothing can be compared', async () => {
+      mocks.duplicateRepository.sampleNearestDistances.mockResolvedValue([]);
+      mocks.duplicateRepository.countComparable.mockResolvedValue({ comparable: 0, groups: 0, grouped: 0 });
+
+      await expect(sut.estimateLookAlikes({ maxDistances: [0.01] })).resolves.toEqual({
+        comparable: 0,
+        groups: 0,
+        sampled: 0,
+        seconds: 0,
+        choices: [{ maxDistance: 0.01, groups: 0 }],
+      });
+    });
+
+    it('compares every photo again now, or leaves the request for the overnight run', async () => {
+      await sut.recompare({ when: 'now' });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetDetectDuplicatesQueueAll,
+        data: { force: true },
+      });
+
+      mocks.job.queue.mockClear();
+      await sut.recompare({ when: 'tonight' });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.DuplicateRecompare, {
+        requestedAt: expect.any(String),
       });
     });
   });

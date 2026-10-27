@@ -55,7 +55,9 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
     );
   });
 
-  test('opens for the administrator who links this server from Settings', async ({ page }) => {
+  test('is not offered by itself after linking from Settings: the Get Frameleaf Cloud sheet takes over (FL-544)', async ({
+    page,
+  }) => {
     mock.state = 'unlinked';
     await page.goto(accountPage);
     await page.getByRole('button', { name: 'Link to Frameleaf' }).click();
@@ -63,25 +65,20 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
     await expect(tourDialog(page)).toHaveCount(0);
 
     mock.state = 'linked';
-    const dialog = tourDialog(page);
-    await expect(dialog).toBeVisible({ timeout: 10_000 });
-    await expect(dialog).toContainText('1 of 6');
-    await expect(dialog).toContainText('This server is linked to owner@example.test');
-    await expect(dialog.getByTestId('cloud-tour-status')).toHaveText('Needs a plan');
-    await expect(dialog.getByRole('button', { name: 'Next' })).toBeFocused();
+    await expect(page.getByText('Linked to Frameleaf')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Get Frameleaf Cloud' }).first()).toBeVisible();
+    await expect(tourDialog(page)).toHaveCount(0);
   });
 
-  test('opens once for another administrator on their next visit to Settings, and Done records it', async ({
-    page,
-  }) => {
-    await page.goto(planPage);
+  test('opens from its address, steps through, and Done records it', async ({ page }) => {
+    await page.goto(`${planPage}&tour=cloud`);
     const dialog = await openedTour(page);
 
     for (const [heading, status] of [
-      ['An address of your own', 'Needs a plan'],
+      ['An address of your own', 'Part of Frameleaf Cloud'],
       ['Sign in with Frameleaf', 'Available'],
       ['Cloud AI when you choose it', 'Off · $12.50 AI credit'],
-      ['Encrypted off-site backup', 'Needs a plan'],
+      ['Encrypted off-site backup', 'Part of Frameleaf Cloud'],
       ['Your plan, and where it all lives', 'No plan'],
     ]) {
       await dialog.getByRole('button', { name: 'Next' }).click();
@@ -97,7 +94,9 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
     await expect(page.getByText('Take the tour again any time')).toHaveCount(0);
 
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Your Frameleaf Cloud', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(tourDialog(page)).toHaveCount(0);
   });
 
@@ -110,7 +109,9 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
     mock.tour = { seen: false };
     mock.state = 'unlinked';
     await page.goto(planPage);
-    await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Your Frameleaf Cloud', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
@@ -146,7 +147,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
   });
 
   test('Skip tour records it and leaves the notice to take it again', async ({ page }) => {
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     const tour = await openedTour(page);
     await tour.getByRole('button', { name: 'Skip tour' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -157,7 +158,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
   });
 
   test('Escape skips it too', async ({ page }) => {
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     await openedTour(page);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -166,7 +167,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
   });
 
   test('an "Open …" link closes the tour and opens its settings page', async ({ page }) => {
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     const dialog = await openedTour(page);
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowRight');
@@ -208,7 +209,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
           .map((animation) => JSON.stringify((animation.effect as KeyframeEffect).getKeyframes())),
       );
 
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     const dialog = await openedTour(page);
     await dialog.getByRole('button', { name: 'Next' }).click();
     await expect.poll(keyframes).toEqual([expect.stringContaining('translateX(28px)')]);
@@ -221,7 +222,7 @@ test.describe('Frameleaf Cloud linked-server tour', () => {
 
   test('is a bottom sheet with 44pt controls on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(planPage);
+    await page.goto(`${planPage}&tour=cloud`);
     const dialog = await openedTour(page);
     // the sheet rises into place: measure it once its entrance has finished, not part way up
     await dialog.evaluate((sheet) =>

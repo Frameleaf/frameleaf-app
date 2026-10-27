@@ -11,6 +11,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { writeAssetUploadPart } from 'src/utils/asset-upload-resource.js';
@@ -84,9 +85,22 @@ describe('resumable asset byte commit boundaries', () => {
         row = { ...row, state: 'published', ingested: true };
         return Promise.resolve(row);
       }),
+      publishRestored: vi.fn((_tx: unknown, _resource: unknown, assetId: string, visible: boolean) => {
+        row = {
+          ...row,
+          state: 'published',
+          ingested: true,
+          resultAssetId: assetId,
+          resultStatus: visible ? AssetMediaStatus.CREATED : AssetMediaStatus.DUPLICATE,
+        };
+        return Promise.resolve(row);
+      }),
     };
     const media = {
       prepareUploadAsset: vi.fn(() => Promise.resolve({})),
+      restoreLostOriginal: vi.fn((): Promise<{ id: string; visible: boolean } | undefined> =>
+        Promise.resolve(undefined),
+      ),
       getUploadAssetIdByChecksum: vi.fn(() => Promise.resolve({ id: 'asset' })),
     };
     const storage = {
@@ -182,6 +196,30 @@ describe('resumable asset byte commit boundaries', () => {
     expect(read).toBe(false);
     expect(harness.inserts).toHaveLength(0);
   });
+  it('restores a lost original from a verified upload instead of publishing a new asset', async () => {
+    const harness = setup();
+    const finalPath = join(folder, 'verified.jpg');
+    harness.mutate({
+      state: 'verified',
+      offset: 4,
+      finalPath,
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+    });
+    harness.media.restoreLostOriginal.mockResolvedValue({ id: 'lost-asset', visible: true });
+    harness.media.getUploadAssetIdByChecksum.mockResolvedValue({ id: 'lost-asset' });
+    await expect(harness.service.result(auth, harness.row().id)).resolves.toMatchObject({
+      result: { id: 'lost-asset', status: AssetMediaStatus.CREATED },
+    });
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+    expect(harness.uploads.claimIngestion).not.toHaveBeenCalled();
+    expect(harness.media.restoreLostOriginal).toHaveBeenCalledWith(
+      auth,
+      expect.anything(),
+      expect.objectContaining({ originalPath: finalPath }),
+    );
+  });
+
   it('rechecks source authority inside publication after media preparation', async () => {
     const harness = setup();
     bindFolder(harness);
@@ -710,6 +748,7 @@ describe('Live Photo required postcommit ingestion', () => {
     };
     const media = {
       prepareUploadAsset: vi.fn(() => Promise.resolve({})),
+      restoreLostOriginal: vi.fn(() => Promise.resolve(undefined)),
       finishUploadAsset: vi
         .fn()
         .mockResolvedValueOnce(undefined)

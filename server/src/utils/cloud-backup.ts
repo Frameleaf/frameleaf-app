@@ -52,8 +52,17 @@ export const compactIso = (date: Date) =>
 
 export const manifestKey = (date: Date) => `${CLOUD_BACKUP_MANIFEST_PREFIX}${compactIso(date)}.json.gz`;
 
+/** The value without trailing slashes; a loop, since `/\/+$/` backtracks on long runs of slashes. */
+export const withoutTrailingSlashes = (value: string) => {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') {
+    end--;
+  }
+  return value.slice(0, end);
+};
+
 /** The claimed bucket's address, the index key in `cloud_backup_object`. */
-export const bucketRef = (endpoint: string, bucket: string) => `${endpoint.replace(/\/+$/, '')}/${bucket}`;
+export const bucketRef = (endpoint: string, bucket: string) => `${withoutTrailingSlashes(endpoint)}/${bucket}`;
 
 /**
  * Short display fingerprint of a key (FNV-1a over its bytes, `ABCD-1234`), the same function the

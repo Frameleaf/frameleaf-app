@@ -119,6 +119,31 @@ it.each(['current', 'replace', 'return', 'session'])(
   },
 );
 
+// LIB-02: the Captured row kept the old date after a save until another edit or a reload
+it.each(['current', 'replace', 'session'])('shows the saved date and time at once: %s', async (change) => {
+  const asset = owned();
+  const saved = { ...asset, exifInfo: { ...asset.exifInfo, timeZone: 'America/Edmonton' } };
+  const pending = deferredPromise<boolean>();
+  vi.spyOn(modalManager, 'show').mockImplementationOnce((() => pending.promise) as typeof modalManager.show);
+  sdkMock.getAssetInfo.mockResolvedValue(saved);
+  const onAssetRefresh = vi.fn();
+  const view = render(DetailPanelDate, { asset, onAssetRefresh });
+  await fireEvent.click(view.getByTestId('detail-panel-edit-date-button'));
+  if (change === 'replace') {
+    await view.rerender({ asset: owned() });
+  } else if (change === 'session') {
+    authManager.reset();
+  }
+  pending.resolve(true);
+  await settle();
+  if (change === 'current') {
+    expect(sdkMock.getAssetInfo).toHaveBeenCalledWith({ id: asset.id });
+    expect(onAssetRefresh).toHaveBeenCalledExactlyOnceWith(saved);
+  } else {
+    expect(onAssetRefresh).not.toHaveBeenCalled();
+  }
+});
+
 it.each(['current', 'replace', 'session'])('keeps description reload with its view: %s', async (change) => {
   const asset = owned();
   const pending = deferredPromise<typeof asset>();

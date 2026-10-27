@@ -601,6 +601,18 @@ export class AssetService extends BaseService {
    * Push assets whose visibility a transactional archive changed outside `updateAll` (FL-32), with
    * their stack siblings, to the owner's open sessions, the same real-time update `updateAll` sends.
    */
+  /**
+   * A visibility change written outside `updateAll` (the transactional archive and its undo, FL-32):
+   * the same FL-326 bookkeeping — the visibility is the owner's on partner copies, copies that follow
+   * these items receive it — then the real-time update.
+   */
+  async recordVisibilityEdit(ids: string[], ownerId: string): Promise<void> {
+    await recordAssetEdit({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, ownerId, ids, [
+      AssetOriginField.Visibility,
+    ]);
+    await this.notifyVisibilityChanged(ids, ownerId);
+  }
+
   async notifyVisibilityChanged(ids: string[], ownerId: string): Promise<void> {
     const siblingIds = (await this.assetRepository.getStackSiblingIds(ids)) ?? [];
     await this.notifyAssetsUpdated([...new Set([...ids, ...siblingIds])], ownerId);
@@ -740,13 +752,27 @@ export class AssetService extends BaseService {
 
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
-    for (const { id, from } of items) {
-      const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
-      if (updated) {
-        await this.assetRepository.update({ id, ...getAssetDateTimeUpdates(updated.dateTimeOriginal?.toISOString()) });
+    const fields = [AssetOriginField.DateTimeOriginal];
+    await this.partnerOriginRepository.withOriginEdit('asset', ids, [], async () => {
+      for (const { id, from } of items) {
+        const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
+        if (updated) {
+          await this.assetRepository.update({
+            id,
+            ...getAssetDateTimeUpdates(updated.dateTimeOriginal?.toISOString()),
+          });
+        }
       }
-    }
+      await this.partnerOriginRepository.markOverridden('asset', ids, fields, auth.user.id);
+    });
 
+    // FL-326: as `updateAll` does, the shifted date is the owner's on partner copies, and copies follow it
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      ids,
+      fields,
+    );
     await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
   }
 
@@ -914,8 +940,11 @@ export class AssetService extends BaseService {
 
     const asset = await this.assetJobRepository.getForAssetDeletion(id);
 
+    // Already removed, e.g. by its account's purge racing a library deletion: whoever removed it
+    // released its files, so there is nothing left to do or to retry.
     if (!asset) {
-      return JobStatus.Failed;
+      this.logger.debug(`Skipped deleting asset ${id}: it is already gone`);
+      return JobStatus.Skipped;
     }
 
     // FL-71: a failed deletion can be retried long after it was queued. Only an asset that is still in
@@ -1009,7 +1038,8 @@ export class AssetService extends BaseService {
         }),
     });
     if (!removedAsset) {
-      return JobStatus.Failed;
+      this.logger.debug(`Skipped deleting asset ${id}: it was removed meanwhile`);
+      return JobStatus.Skipped;
     }
 
     // FL-169: the row is gone from here on, so a retry could not repeat or repair any of the steps

@@ -46,6 +46,9 @@ export type OAuthConfig = {
 };
 export type OAuthProfile = UserInfoResponse;
 
+/** FL-367: the provider wait, set in milliseconds, as openid-client's whole seconds (at least one). */
+export const oauthTimeoutSeconds = (timeoutMs: number) => Math.max(1, Math.ceil(timeoutMs / 1000));
+
 /**
  * FL-230: why a provider-minted token was refused: the provider could not be reached (`unavailable`),
  * it expired or is too old (`expired`), it names another audience (`audience`), or anything else
@@ -307,6 +310,15 @@ export class OAuthRepository {
     }
   }
 
+  /**
+   * FL-367: the "Check" button on Sign-in methods. Reads the provider's discovery document with
+   * the details typed so far and says what it found; nothing is saved and nobody is signed in.
+   */
+  async check(config: OAuthConfig): Promise<{ issuer: string }> {
+    const client = await this.getClient(config);
+    return { issuer: client.serverMetadata().issuer };
+  }
+
   private async getClient({
     issuerUrl,
     clientId,
@@ -332,7 +344,8 @@ export class OAuthRepository {
         clientAuth ?? this.getTokenAuthMethod(tokenEndpointAuthMethod, clientSecret),
         {
           execute: allowInsecureRequests ? [allowInsecureRequestsExecute] : [],
-          timeout,
+          // FL-367: the setting is in milliseconds; openid-client counts seconds
+          timeout: oauthTimeoutSeconds(timeout),
         },
       );
     } catch (error: any | AggregateError) {

@@ -797,10 +797,16 @@ test("install bundle keeps :latest in Compose and env and preserves data configu
     assert.deepEqual(nas.platforms, ["linux/amd64", "linux/arm64"]);
     for (const [name, original] of originals) {
       const bundled = await fs.readFile(path.join(dir, name), "utf8");
-      // Never pinned to the release (owner 2026-10-18): bundles ship sources unchanged.
+      // Never pinned to the release (owner 2026-10-18): bundles ship sources unchanged, except a
+      // comment naming the exact tag above FRAMELEAF_VERSION=latest.
       assert.equal(
         bundled,
-        original,
+        name === "example.env"
+          ? original.replace(
+              /^FRAMELEAF_VERSION=latest$/m,
+              `# This release: FRAMELEAF_VERSION=${tag}\n$&`,
+            )
+          : original,
         `${name}: bundle must not pin the release`,
       );
       assert.equal(

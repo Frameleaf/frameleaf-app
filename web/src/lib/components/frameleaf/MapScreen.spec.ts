@@ -117,7 +117,8 @@ describe('MapScreen (FL-193)', () => {
       getBounds: () => ({
         getWest: () => west,
         getEast: () => east,
-        contains: ([lon]: [number, number]) => lon >= west && lon <= east,
+        getSouth: () => -90,
+        getNorth: () => 90,
       }),
       getZoom: () => 3,
       fitBounds: vi.fn(),
@@ -150,7 +151,7 @@ describe('MapScreen (FL-193)', () => {
     ]);
     const fitBounds = vi.fn();
     setMapLibreStubMap({
-      getBounds: () => ({ getWest: () => -10, getEast: () => 10, contains: () => true }),
+      getBounds: () => ({ getWest: () => -180, getEast: () => 180, getSouth: () => -90, getNorth: () => 90 }),
       getZoom: () => 3,
       fitBounds,
       setStyle: vi.fn(),
@@ -164,6 +165,34 @@ describe('MapScreen (FL-193)', () => {
       expect.objectContaining({ padding: { top: 64, bottom: 156, left: 32, right: 32 } }),
     );
     vi.unstubAllGlobals();
+  });
+
+  it('lists and searches the items of a view across the date line', async () => {
+    sdkMock.getMapMarkers.mockResolvedValue(
+      [170, -170, 0].map((lon, index) => ({
+        id: `a0000000-0000-4000-8000-00000000000${index}`,
+        lat: 0,
+        lon,
+        city: 'Here',
+        state: null,
+        country: null,
+      })),
+    );
+    // MapLibre does not wrap its bounds: a view centred on the date line reads 145..205.
+    setMapLibreStubMap({
+      getBounds: () => ({ getWest: () => 145, getEast: () => 205, getSouth: () => -10, getNorth: () => 10 }),
+      getZoom: () => 3,
+      fitBounds: vi.fn(),
+      setStyle: vi.fn(),
+    });
+    const onSearchArea = vi.fn();
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn(), onSearchArea });
+    await waitFor(() => expect(sdkMock.getMapMarkers).toHaveBeenCalled());
+    getMapLibreStubProps().onmoveend?.({ originalEvent: {} });
+
+    await waitFor(() => expect(screen.getByText('2 items in view')).toBeInTheDocument());
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_map_search_this_area }));
+    expect(onSearchArea).toHaveBeenCalledWith({ west: 145, south: -10, east: -155, north: 10 });
   });
 
   it('draws the In view list a page at a time for a large library (FL-139)', async () => {
@@ -186,7 +215,7 @@ describe('MapScreen (FL-193)', () => {
       })),
     );
     setMapLibreStubMap({
-      getBounds: () => ({ getWest: () => -10, getEast: () => 10, contains: () => true }),
+      getBounds: () => ({ getWest: () => -10, getEast: () => 10, getSouth: () => -90, getNorth: () => 90 }),
       getZoom: () => 3,
       fitBounds: vi.fn(),
       setStyle: vi.fn(),
@@ -208,7 +237,7 @@ describe('MapScreen (FL-193)', () => {
   it('keeps the markers source and the layers its bubbles are read through when the theme swaps the style', () => {
     const setStyle = vi.fn();
     setMapLibreStubMap({
-      getBounds: () => ({ getWest: () => -10, getEast: () => 10, contains: () => true }),
+      getBounds: () => ({ getWest: () => -10, getEast: () => 10, getSouth: () => -90, getNorth: () => 90 }),
       getZoom: () => 3,
       fitBounds: vi.fn(),
       setStyle,

@@ -142,6 +142,7 @@ describe('large-library query plans (FL-139)', () => {
         limit: 10,
         suppressedPersonIds: [],
         suppressedTagIds: [],
+        suppressedPetIds: [],
         covers: true,
       },
     );

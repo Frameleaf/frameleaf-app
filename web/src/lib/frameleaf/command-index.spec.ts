@@ -108,18 +108,10 @@ describe('settings areas', () => {
   it('registers every Frameleaf Cloud section and opens each from its deep link (FL-168)', () => {
     const commands = buildSettingsCommands($t, context({ isAdmin: true }));
     const hrefOf = (id: string) => commands.find((command) => command.id === id)?.href;
-    for (const key of [
-      'cloud-account',
-      'cloud-plan',
-      'cloud-license',
-      'cloud-remote',
-      'cloud-processing',
-      'cloud-backup',
-    ]) {
+    for (const key of ['cloud-account', 'cloud-plan', 'cloud-remote', 'cloud-processing', 'cloud-backup']) {
       expect(hrefOf(`admin:${key}`), key).toBe(`/user-settings?area=cloud&section=${key}`);
     }
     // Plan and Licence are separate pages
-    expect(hrefOf('admin:cloud-plan')).not.toBe(hrefOf('admin:cloud-license'));
     expect(hrefOf('user:frameleaf-account')).toBe('/user-settings?isOpen=frameleaf-account');
     for (const area of ADMIN_SETTINGS_AREAS) {
       expect(area.icon, area.key).toBeTruthy();

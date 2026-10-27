@@ -4,7 +4,7 @@
   import MoveLibrary from './MoveLibrary.svelte';
   import { encodeQr, qrPath } from './qr.mjs';
   import { regenerationPresentation } from './regeneration';
-  import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection } from './presentation';
+  import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides, containerText } from './presentation';
 
   let csrf = '',
     claimed = $state(false),
@@ -47,7 +47,10 @@
     mediaPath = $state(''),
     databaseRoot = $state(''),
     port = $state(2283),
-    ml = $state(false);
+    ml = $state(false),
+    containers = $state(emptyContainers()),
+    containersOpen = $state(false),
+    containersSaved = $state<Record<string, unknown>>({});
   let lifecycle = $state(false),
     mappingsAccepted = $state(false),
     cutoverAccepted = $state(false),
@@ -203,6 +206,14 @@
   const availableUpdates = $derived(newerReleases(releases, installation?.release));
   const activeSection = $derived(navSection(screen, !!installation, operation?.kind));
   const latestBackup = $derived(snapshots[0]);
+  // Setup follows the machine learning toggle; an installed server follows what it was installed with.
+  const containersMl = $derived(installation ? !!installation.ml : ml);
+  const containerRows = $derived(
+    CONTAINERS.filter((container) => containersMl || container.id !== 'frameleaf-machine-learning')
+      .map((container) => ({ ...container, ...parseContainerSettings(containers[container.id]) }))
+      .map((parsed) => ({ ...parsed, summary: containerSummary(parsed) }))
+      .filter((parsed) => parsed.summary || parsed.errors.length),
+  );
 
   function qrSvg(url: string) {
     const code = encodeQr(url);
@@ -260,6 +271,7 @@
     document.querySelector<HTMLElement>('#main h1')?.focus();
     if (value === 'welcome' && !installation) await loadSources();
     if (value === 'backups') await loadBackups();
+    if (value === 'services' && installation) await loadContainerSettings();
     if (value === 'updates') await loadReleases();
     if (['storage', 'overview', 'welcome'].includes(value)) {
       storage = await api('storage');
@@ -334,6 +346,8 @@
     port = value === 'import' && !otherInstallations.some((i: any) => i.appPort === 2283) ? 2283 : (dashboard?.suggestedPort ?? 2283);
     step = 0;
     review = null;
+    containers = emptyContainers();
+    containersOpen = false;
     sourceReview = null;
     mappingsAccepted = false;
     lifecycle = false;
@@ -373,6 +387,11 @@
   }
   async function prepare() {
     if (!document.querySelector<HTMLFormElement>('#configuration-form')?.reportValidity()) return;
+    const overrides = containerOverrides(containers, containersMl);
+    if (overrides.invalid) {
+      containersOpen = true;
+      throw new Error('container_settings_invalid');
+    }
     checking = true;
     try {
       review = await api('review', {
@@ -384,6 +403,7 @@
         port,
         ml,
         lifecycle: 'docker-only',
+        ...(Object.keys(overrides.services).length ? { services: overrides.services } : {}),
       });
     } finally {
       checking = false;
@@ -407,6 +427,21 @@
   }
   async function control(action: string) {
     await start('control', { action });
+  }
+  async function loadContainerSettings() {
+    containersSaved = (await api('container-settings')).services ?? {};
+    containers = containerText(containersSaved);
+    containersOpen = false;
+  }
+  async function saveContainerSettings() {
+    const overrides = containerOverrides(containers, containersMl);
+    if (overrides.invalid) {
+      containersOpen = true;
+      throw new Error('container_settings_invalid');
+    }
+    // Machine learning off hides its settings; saving must not discard what was stored for it.
+    const kept = !containersMl && containersSaved['frameleaf-machine-learning'] ? { 'frameleaf-machine-learning': containersSaved['frameleaf-machine-learning'] } : {};
+    await start('container-settings', { services: { ...kept, ...overrides.services } });
   }
   async function saveProfile() {
     await api('profile', { firstName, lastName, email, account });
@@ -672,7 +707,7 @@
               <button class="button primary mt16" disabled={busy || !lifecycle || !tag} aria-busy={checking} onclick={() => run(prepare)}>{#if checking}<span class="spinner" aria-hidden="true"></span>Checking…{:else}Check and review cutover{/if}</button>{#if checking}<p class="muted checking-note" role="status">Checking the server. This can take up to a minute.</p>{/if}
             {:else}
               {#if review.backup.action === 'reuse'}{@render notice('Existing Immich backup reused · Backup step skipped', 'Manager rechecks the backup’s age and usability at cutover.')}{/if}
-              <section class="card mt16"><div class="card-header"><h2>The cutover plan</h2><span class="badge good">Preflight passed</span></div><div class="card-body"><ol class="timeline">{#each ['Recheck this installation and its backup', 'Stop Immich and disable automatic restart', ...(review.backup.action === 'create' ? ['Create and verify a database backup'] : []), 'Copy the current database into separate Frameleaf PostgreSQL storage', 'Import, start Frameleaf and verify the library'] as item, index}<li><span class="stage-icon">{index + 1}</span><div><strong>{item}</strong></div></li>{/each}</ol><p class="meta mt16">PostgreSQL root: <code>{review.databaseStorage.root}</code></p></div></section>
+              <section class="card mt16"><div class="card-header"><h2>The cutover plan</h2><span class="badge good">Preflight passed</span></div><div class="card-body"><ol class="timeline">{#each ['Recheck this installation and its backup', 'Stop Immich and disable automatic restart', ...(review.backup.action === 'create' ? ['Create and verify a database backup'] : []), 'Copy the current database into separate Frameleaf PostgreSQL storage', 'Import, start Frameleaf and verify the library'] as item, index}<li><span class="stage-icon">{index + 1}</span><div><strong>{item}</strong></div></li>{/each}</ol><p class="meta mt16">PostgreSQL root: <code>{review.databaseStorage.root}</code></p></div></section>{@render containerReview()}
               <div class="mt16">{@render notice('Only Frameleaf will write to these media locations', review.recovery, 'warning', 'lock')}</div><label class="check-row mt24"><input type="checkbox" bind:checked={cutoverAccepted}/><span>I understand Immich will stay stopped and this backup covers only the database.</span></label><button class="button primary mt16" disabled={busy || !cutoverAccepted || !!activeOperation} onclick={() => run(() => start('install', { reviewId: review.id }))}>Start import</button>
             {/if}
             <div class="wizard-footer"><button class="button quiet" onclick={() => { review = null; step = lastImportStep - 1; }}>Back</button></div>
@@ -681,7 +716,7 @@
           {@render steps(['Storage', 'Checks', 'Install'], step)}
           {#if step === 0}{@render heading('Give your library a home', 'Choose the server locations and connection settings for this installation.')}{@render configuration()}<div class="wizard-footer"><button class="button quiet" onclick={() => run(() => go('welcome'))}>Back</button>{#if checking}<p class="muted checking-note" role="status">Checking the server. This can take up to a minute.</p>{/if}<button class="button primary" disabled={busy || !mediaPath || !tag || !lifecycle} aria-busy={checking} onclick={() => run(prepare)}>{#if checking}<span class="spinner" aria-hidden="true"></span>Checking…{:else}Check this configuration{/if}</button></div>
           {:else if step === 1}{@render heading('This server is ready', 'Manager checked storage, compatibility, and the complete signed release bundle.')}<section class="card"><div class="card-header"><h2>Preflight checks</h2></div>{#each [['folder', 'Storage permissions and free space', formatBytes(review.requiredBytes) + ' required; selected mounted locations validated'], ['network', 'Frameleaf port', String(port) + ' checked against Docker and Manager ports'], ['server', 'Docker compatibility', dashboard.host?.platform ?? 'Host compatibility checked'], ['shield', 'Release signature and eligibility', review.tag + ' · Verified release bundle'], ['database', 'PostgreSQL host storage', review.databaseStorage.root]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p>{detail}</p></div><span class="badge good">Passed</span></div>{/each}</section><p class="meta mt16">Docker’s final port bind remains authoritative for other host processes.</p><div class="wizard-footer"><button class="button quiet" onclick={() => { step = 0; review = null; }}>Back</button><button class="button primary" onclick={() => step = 2}>Review installation</button></div>
-          {:else}{@render heading('Ready to set up Frameleaf', 'Manager will prepare the services and take you into Frameleaf when your server is ready.')}<section class="card"><div class="card-header"><h2>New installation</h2><span class="badge good">{review.tag}</span></div>{#each [['folder', 'Photo library', mediaPath], ['database', 'New PostgreSQL database', databaseRoot], ['shield', 'Encrypted database backups', dashboard.backupRoot], ['network', 'Application port', String(port)], ['cpu', 'Processing', `${processorName(dashboard.host?.acceleration)} · Machine learning ${ml ? 'on' : 'off'}`]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p><code>{detail}</code></p></div></div>{/each}</section><div class="mt16">{@render notice('Managed independently', 'Your photo library keeps running when Manager is unavailable. Keep a protected configuration export for manual recovery.')}</div><div class="wizard-footer"><button class="button quiet" onclick={() => step = 1}>Back</button><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(() => start('install', { reviewId: review.id }))}>Install Frameleaf</button></div>{/if}
+          {:else}{@render heading('Ready to set up Frameleaf', 'Manager will prepare the services and take you into Frameleaf when your server is ready.')}<section class="card"><div class="card-header"><h2>New installation</h2><span class="badge good">{review.tag}</span></div>{#each [['folder', 'Photo library', mediaPath], ['database', 'New PostgreSQL database', databaseRoot], ['shield', 'Encrypted database backups', dashboard.backupRoot], ['network', 'Application port', String(port)], ['cpu', 'Processing', `${processorName(dashboard.host?.acceleration)} · Machine learning ${ml ? 'on' : 'off'}`]] as [icon, title, detail]}<div class="list-row"><Icon name={icon}/><div><strong>{title}</strong><p><code>{detail}</code></p></div></div>{/each}</section>{@render containerReview()}<div class="mt16">{@render notice('Managed independently', 'Your photo library keeps running when Manager is unavailable. Keep a protected configuration export for manual recovery.')}</div><div class="wizard-footer"><button class="button quiet" onclick={() => step = 1}>Back</button><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(() => start('install', { reviewId: review.id }))}>Install Frameleaf</button></div>{/if}
         {:else if screen === 'progress'}
           {#if operation && timeline}{@render heading(operationNames[operation.kind] ?? 'Manager operation', operation.state === 'running' ? 'You can close this page. Manager records every completed step.' : operation.state === 'complete' && !operation.error ? 'The recorded operation completed successfully.' : 'Review the saved step before continuing.')}
             <section class="card"><div class="card-body">{#if setupMode}<div class="progress-hero"><div class="progress-ring" class:done={timeline.successful} style="--p: {timeline.percent}" role="progressbar" aria-label="Operation progress" aria-valuenow={timeline.percent} aria-valuemin="0" aria-valuemax="100">{#if timeline.successful}<Icon name="check"/>{:else}<strong>{timeline.percent}%</strong>{/if}</div><div><strong>{timeline.successful ? 'All done' : readable(operation.step ?? operation.state)}</strong><p class="meta">{operation.state === 'running' ? 'This usually takes a few minutes.' : readable(operation.state)}</p></div></div>{:else}<div class="spread progress-label"><span>{readable(operation.step ?? operation.state)}</span><strong>{timeline.percent}%</strong></div><progress class="progress" aria-label="Operation progress" value={timeline.percent} max="100"></progress>{/if}<ol class="timeline mt16">{#each timeline.steps as item, index}<li class:done={item.state === 'complete'} class:running={item.state === 'running'}><span class="stage-icon">{#if item.state === 'complete'}<Icon name="check"/>{:else if item.state === 'running'}<Icon name="loader" class="spin"/>{:else}{index + 1}{/if}</span><div><strong>{item.label}</strong></div><span class="stage-time">{readable(item.state)}</span></li>{/each}</ol>{#if operation.error}<div class="notice warning mt16" role="alert"><Icon name="warning"/><div><strong>{readable(operation.error, operation.detail)}</strong><p>Completed journal steps are retained. Resume runs the next safe step.</p></div></div>{/if}</div><div class="card-footer"><span class="safety-note"><Icon name="shield"/>Completed steps are recorded</span><span class="badge" class:good={timeline.successful}>{readable(operation.state)}</span></div></section>
@@ -709,7 +744,7 @@
           <div class="metric-grid mt16"><section class="card metric"><span class="label"><Icon name="image"/>Photos & videos</span><strong>{dashboard.summary?.assets?.toLocaleString() ?? 'Unavailable'}</strong><small>{dashboard.summary ? plural(dashboard.summary.albums, 'album') + ' · ' + plural(dashboard.summary.users, 'account') : 'Library counts require the database'}</small></section><section class="card metric"><span class="label"><Icon name="drive"/>Storage available</span><strong>{formatBytes(storage.find(item => item.availableBytes != null)?.availableBytes)}</strong><small>Mounted library storage</small></section><section class="card metric"><span class="label"><Icon name="shield"/>Latest backup</span><strong>{latestBackup ? new Date(latestBackup.time).toLocaleDateString() : 'None'}</strong><small>{latestBackup ? 'Encrypted database recovery point' : 'Create a database backup'}</small></section></div>
           <section class="card mt24"><div class="card-header"><h2>Services</h2><button class="button quiet" onclick={() => run(() => go('services'))}>Manage</button></div>{@render services()}</section><div class="two-cols mt16"><section class="card"><div class="card-body"><div class="row mb16"><Icon name="shield"/><h2>Database recovery points</h2></div><p class="muted">Encrypted database dumps. Media is excluded.</p><div class="spread mt16"><span class="meta">{snapshots.length} snapshots</span><button class="text-button" onclick={() => run(() => go('backups'))}>View backups</button></div></div></section><section class="card"><div class="card-body"><div class="row mb16"><Icon name="update"/><h2>{releasesLoaded ? availableUpdates.length ? 'Updates available' : 'Up to date' : 'Choose when to update'}</h2></div><p class="muted">Running {installation.release}. Review eligibility and recovery before applying a release.</p><button class="text-button mt16" onclick={() => run(() => go('updates'))}>Review updates</button></div></section></div>{@render regeneration()}
         {:else if screen === 'services'}
-          {@render heading('Services', 'Manager owns this stack. Your library runs independently of the Manager container.')}<div class="actions mb16"><button class="button" class:primary={!running} disabled={busy || !!activeOperation} onclick={() => running ? showModal('control', 'stop') : run(() => control('start'))}><Icon name={running ? 'stop' : 'play'}/>{running ? 'Stop stack' : 'Start stack'}</button><button class="button quiet" disabled={busy || !!activeOperation} onclick={() => showModal('control', 'restart')}><Icon name="update"/>Restart stack</button></div><section class="card"><div class="card-header"><h2>Frameleaf · {installation.project}</h2></div>{@render services()}</section>
+          {@render heading('Services', 'Manager owns this stack. Your library runs independently of the Manager container.')}<div class="actions mb16"><button class="button" class:primary={!running} disabled={busy || !!activeOperation} onclick={() => running ? showModal('control', 'stop') : run(() => control('start'))}><Icon name={running ? 'stop' : 'play'}/>{running ? 'Stop stack' : 'Start stack'}</button><button class="button quiet" disabled={busy || !!activeOperation} onclick={() => showModal('control', 'restart')}><Icon name="update"/>Restart stack</button></div><section class="card"><div class="card-header"><h2>Frameleaf · {installation.project}</h2></div>{@render services()}</section>{@render advancedContainers()}
           <section class="card mt16"><div class="card-header"><h2>Recent server logs</h2><div class="actions"><button class="button quiet" disabled={busy || !logService} onclick={() => run(() => showLogs(logService))}>Refresh logs</button><button class="button quiet" disabled={!logs} onclick={downloadLogs}><Icon name="document"/>Download logs</button></div></div><div class="card-body">{#if logs}<pre class="log" {@attach (node) => { void logs; node.scrollTop = node.scrollHeight; }}>{logs}</pre>{:else}<p class="muted">Choose Logs on a managed service to load its sanitized output.</p>{/if}</div></section><p class="quiet-note"><Icon name="lock"/>Logs are sanitized before they reach this browser.</p>
         {:else if screen === 'storage'}
           {@render heading('Storage', 'The exact paths your library uses, and available space on mounted storage.')}<div class="stack">{#each storage as disk}<section class="card"><div class="card-header"><h2><code>{disk.path}</code></h2><span class="badge" class:warning={disk.availableBytes == null}>{disk.availableBytes == null ? 'Unavailable' : 'Mounted'}</span></div><div class="card-body">{#if disk.totalBytes != null}<div class="spread"><strong>{formatBytes(disk.totalBytes - disk.freeBytes)} used of {formatBytes(disk.totalBytes)}</strong><span class="muted">{formatBytes(disk.availableBytes)} available</span></div><progress class="meter mt16" aria-label={disk.path + ' storage used'} value={disk.totalBytes - disk.freeBytes} max={disk.totalBytes}></progress>{:else}<p class="muted">Manager cannot read capacity for this mounted location.</p>{/if}</div></section>{/each}</div><section class="card mt16"><div class="card-header"><h2>Media mappings</h2><span class="badge">Exact access modes</span></div>{@render mappings(installation.mounts)}</section><section class="card mt16"><div class="card-header"><h2>Separate Frameleaf database</h2></div><div class="card-body"><code>{installation.databasePath}</code><p class="meta mt16">PostgreSQL uses a dedicated folder on the host disk. The source database and earlier recovery folders are retained.</p></div></section>
@@ -737,6 +772,28 @@
         {/if}
         {/if}
 {/snippet}
+{#snippet advancedContainers()}
+  <details class="card mt16 containers" bind:open={containersOpen}>
+    <summary class="card-header"><div><h2>Advanced container settings</h2><p class="meta">{containerRows.length ? containerRows.map((row) => `${row.label}: ${row.summary || 'needs attention'}`).join(' · ') : 'Environment variables, extra folders and limits for each container. Optional.'}</p></div><Icon name="chevron"/></summary>
+    {#each CONTAINERS.filter((container) => containersMl || container.id !== 'frameleaf-machine-learning') as container (container.id)}
+      {@const parsed = parseContainerSettings(containers[container.id])}
+      <section class="card-body container" aria-labelledby={`container-${container.id}`}>
+        <h3 id={`container-${container.id}`}>{container.label} <code>{container.id}</code></h3><p class="meta">{container.about}</p>
+        <div class="form-grid mt16">
+          <label class="field"><span>Environment variables</span><textarea class="settings-editor short" rows="3" spellcheck="false" placeholder={'TZ=America/Toronto\nIMMICH_LOG_LEVEL=verbose'} bind:value={containers[container.id].environment}></textarea></label>
+          <label class="field"><span>Extra folders</span><textarea class="settings-editor short" rows="3" spellcheck="false" placeholder="/mnt/user/archive:/archive:ro" bind:value={containers[container.id].mounts}></textarea></label>
+          <label class="field"><span>Memory limit</span><input placeholder="No limit · e.g. 4g" bind:value={containers[container.id].memory}/></label>
+          <label class="field"><span>CPU limit</span><input inputmode="decimal" placeholder="No limit · e.g. 2" bind:value={containers[container.id].cpus}/></label>
+        </div>
+        {#if parsed.errors.length}<ul class="field-error container-errors" role="alert">{#each parsed.errors as message}<li>{message}</li>{/each}</ul>{/if}
+      </section>
+    {/each}
+    <div class="disclosure"><p>One entry per line. Manager keeps these settings when it updates Frameleaf. The database connection, ports and library folders come from {installation ? 'the installation' : 'this setup'}; passwords and tokens never go here.</p>{#if installation}<p>Saving rewrites the stack and restarts the containers whose settings changed. Photo access pauses for about a minute; Manager records each step.</p><div class="actions mt16"><button class="button primary" disabled={busy || !!activeOperation} onclick={() => run(saveContainerSettings)}>Save and restart Frameleaf</button><button class="button quiet" disabled={busy} onclick={() => run(loadContainerSettings)}>Discard changes</button></div>{/if}</div>
+  </details>
+{/snippet}
+{#snippet containerReview()}
+  {#if containerRows.length}<section class="card mt16"><div class="card-header"><h2>Advanced container settings</h2></div>{#each containerRows as row (row.id)}<div class="list-row"><Icon name="settings"/><div><strong>{row.label}</strong><p>{row.summary}</p></div></div>{/each}</section>{/if}
+{/snippet}
 {#snippet configuration()}
   <form id="configuration-form" onsubmit={(event) => { event.preventDefault(); void run(prepare); }}>
   <section class="card"><div class="card-header"><h2>Storage & access</h2></div><div class="card-body"><div class="form-grid">
@@ -745,7 +802,7 @@
     <label class="field"><span>PostgreSQL appdata location</span><input bind:value={databaseRoot} list="database-roots" required autocomplete="off" spellcheck="false"/><small>New dedicated host-disk storage, outside Docker’s virtual disk.</small></label><label class="field"><span>Frameleaf port</span><input type="number" bind:value={port} min="1024" max="65535" required/><small>{kind === 'import' ? 'You can keep Immich’s port; Immich is stopped before Frameleaf starts. ' : ''}{#each otherInstallations.filter((i: any) => i.appPort) as other}{other.name} uses port {other.appPort}.{' '}{/each}Manager remains on its own HTTPS port.</small></label>
     <label class="field"><span>Frameleaf release</span><select bind:value={tag} required><option value="">Select a verified release</option>{#each releases as release}<option value={release.tag}>{release.tag}</option>{/each}</select>{#if !releases.length}<small>No eligible signed release was offered. Refresh releases or check distribution availability.</small>{/if}</label><label class="field"><span>Database backup destination</span><input value={dashboard.backupRoot} readonly/><small>Mounted encrypted database backups only.</small></label>
     {#if dashboard.databaseStorage.detectedPath}<p class="meta full">Detected Unraid appdata: <code>{dashboard.databaseStorage.detectedPath}</code>. To use another disk, mount its folder into Manager at the identical host path.</p>{/if}
-  </div></div></section><section class="card mt16"><div class="card-header"><h2>Processing</h2></div><div class="list-row"><Icon name="cpu"/><div><strong>{processorName(dashboard.host?.acceleration)}</strong><p>{hasGpu(dashboard.host?.acceleration) ? 'Detected on this server. Machine learning will use it.' : 'No supported graphics card detected. Machine learning runs on the CPU.'}</p></div><span class="badge" class:good={hasGpu(dashboard.host?.acceleration)}>{hasGpu(dashboard.host?.acceleration) ? 'Detected' : 'Default'}</span></div><div class="list-row"><Icon name="image"/><div><strong>Machine learning</strong><p>Face recognition and smart search</p></div><label class="toggle"><input type="checkbox" bind:checked={ml}/><span class="toggle-track"></span><span>Enable</span></label></div></section><label class="check-row mt24"><input type="checkbox" bind:checked={lifecycle}/><span>Docker or Unraid manages startup. I have disabled any additional scheduler or service that recreates these containers.</span></label>
+  </div></div></section><section class="card mt16"><div class="card-header"><h2>Processing</h2></div><div class="list-row"><Icon name="cpu"/><div><strong>{processorName(dashboard.host?.acceleration)}</strong><p>{hasGpu(dashboard.host?.acceleration) ? 'Detected on this server. Machine learning will use it.' : 'No supported graphics card detected. Machine learning runs on the CPU.'}</p></div><span class="badge" class:good={hasGpu(dashboard.host?.acceleration)}>{hasGpu(dashboard.host?.acceleration) ? 'Detected' : 'Default'}</span></div><div class="list-row"><Icon name="image"/><div><strong>Machine learning</strong><p>Face recognition and smart search</p></div><label class="toggle"><input type="checkbox" bind:checked={ml}/><span class="toggle-track"></span><span>Enable</span></label></div></section>{@render advancedContainers()}<label class="check-row mt24"><input type="checkbox" bind:checked={lifecycle}/><span>Docker or Unraid manages startup. I have disabled any additional scheduler or service that recreates these containers.</span></label>
   </form>
 {/snippet}
 <datalist id="database-roots">{#each dashboard?.databaseStorage?.roots ?? [] as root}<option value={root}></option>{/each}</datalist>
