@@ -6711,6 +6711,101 @@ export type DesktopAcceptedQualificationDto = {
     runtimeFingerprint: string;
     sessionId: string;
 };
+export type DevelopBatchSummaryDto = {
+    createdAt: string;
+    id: string;
+    includeSidecars: boolean;
+    itemCount: number;
+    status: DevelopBatchStatus;
+};
+export type DevelopBatchListResponseDto = {
+    items: DevelopBatchSummaryDto[];
+    nextCursor: string | null;
+};
+export type DevelopBatchCreateDto = {
+    assetIds: string[];
+    includeSidecars?: boolean;
+};
+export type DevelopBatchReturnResponseDto = {
+    checksum: string;
+    confirmationId: string;
+    error: string | null;
+    errorCode: string | null;
+    expectedCurrentRevisionId: string | null;
+    id: string;
+    progress: number;
+    revisionId: string | null;
+    status: DevelopBatchReturnStatus;
+};
+export type DevelopBatchItemResponseDto = {
+    assetId: string | null;
+    available: boolean;
+    error: string | null;
+    errorCode: string | null;
+    exportId: string | null;
+    exportName: string | null;
+    fileName: string | null;
+    hasSidecar: boolean;
+    id: string;
+    preparationStatus: DevelopBatchPreparationStatus;
+    returns: DevelopBatchReturnResponseDto[];
+    sourceChecksum: string | null;
+};
+export type DevelopBatchResponseDto = {
+    createdAt: string;
+    id: string;
+    includeSidecars: boolean;
+    items: DevelopBatchItemResponseDto[];
+    status: DevelopBatchStatus;
+};
+export type DevelopBatchCapabilitiesDto = {
+    version: DevelopBatchProtocolVersion;
+};
+export type DevelopBatchConfirmDto = {
+    files: {
+        checksum: string;
+        fileName: string;
+        itemId: string;
+        skip?: boolean;
+    }[];
+};
+export type DevelopBatchImportDto = {
+    confirmationId: string;
+    file?: Blob;
+    renditionChecksum: string;
+};
+export type DevelopBatchManifestDto = {
+    batchId: string;
+    items: {
+        assetId: string | null;
+        exportId: string | null;
+        exportName: string | null;
+        fileName: string | null;
+        hasSidecar: boolean;
+        id: string;
+        sourceChecksum: string | null;
+    }[];
+    skipped: {
+        itemId: string;
+        reason: string;
+    }[];
+    version: DevelopBatchProtocolVersion;
+};
+export type DevelopBatchMatchDto = {
+    files: {
+        checksum: string;
+        fileName: string;
+        itemId?: string;
+        skip?: boolean;
+    }[];
+};
+export type DevelopBatchMatchResponseDto = {
+    checksum: string;
+    fileName: string;
+    index: number;
+    itemId: string | null;
+    status: DevelopBatchMatchStatus;
+};
 export type AssetDevelopMaskAdjustments = {
     /** Black point inside the mask */
     blacks?: number;
@@ -24043,6 +24138,164 @@ export function renewDesktopWorkerSession({ xFrameleafDesktopProof, desktopWorke
     })));
 }
 /**
+ * List your external editor batches
+ */
+export function getDevelopBatches({ cursor }: {
+    cursor?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopBatchListResponseDto;
+    }>(`/develop-batches${QS.query(QS.explode({
+        cursor
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Create an external editor batch
+ */
+export function createDevelopBatch({ developBatchCreateDto }: {
+    developBatchCreateDto: DevelopBatchCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchResponseDto;
+    }>("/develop-batches", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developBatchCreateDto
+    })));
+}
+/**
+ * Get batch external editor capabilities
+ */
+export function getDevelopBatchCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopBatchCapabilitiesDto;
+    }>("/develop-batches/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * Get resumable external editor batch status
+ */
+export function getDevelopBatch({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopBatchResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel unfinished batch work and retain completed versions
+ */
+export function cancelDevelopBatch({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Confirm mappings and capture working versions for safe activation
+ */
+export function confirmDevelopBatchReturns({ id, developBatchConfirmDto }: {
+    id: string;
+    developBatchConfirmDto: DevelopBatchConfirmDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/confirm`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developBatchConfirmDto
+    })));
+}
+/**
+ * Stream a ZIP of batch originals and associated sidecars
+ */
+export function downloadDevelopBatch({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/develop-batches/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
+ * Import or resume one confirmed returned file idempotently
+ */
+export function importDevelopBatchReturn({ id, itemId, developBatchImportDto }: {
+    id: string;
+    itemId: string;
+    developBatchImportDto: DevelopBatchImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchItemResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/import`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: developBatchImportDto
+    })));
+}
+/**
+ * Prepare or resume one original for a durable editing batch
+ */
+export function prepareDevelopBatchItem({ id, itemId }: {
+    id: string;
+    itemId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchItemResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/prepare`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Get the versioned external editor manifest
+ */
+export function getDevelopBatchManifest({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopBatchManifestDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/manifest`, {
+        ...opts
+    }));
+}
+/**
+ * Review returned file matches without importing
+ */
+export function matchDevelopBatchReturns({ id, developBatchMatchDto }: {
+    id: string;
+    developBatchMatchDto: DevelopBatchMatchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchMatchResponseDto[];
+    }>(`/develop-batches/${encodeURIComponent(id)}/match`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developBatchMatchDto
+    })));
+}
+/**
  * List develop presets
  */
 export function getDevelopPresets(opts?: Oazapfts.RequestOpts) {
@@ -34654,6 +34907,34 @@ export enum DesktopLibraryWorkload {
     Ocr = "ocr",
     Face = "face",
     Enrichment = "enrichment"
+}
+export enum DevelopBatchStatus {
+    Open = "open",
+    Completed = "completed",
+    Cancelled = "cancelled"
+}
+export enum DevelopBatchPreparationStatus {
+    Pending = "pending",
+    Prepared = "prepared",
+    Failed = "failed",
+    Unavailable = "unavailable"
+}
+export enum DevelopBatchReturnStatus {
+    Confirmed = "confirmed",
+    Imported = "imported",
+    Completed = "completed",
+    Conflict = "conflict",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum DevelopBatchProtocolVersion {
+    $1 = 1
+}
+export enum DevelopBatchMatchStatus {
+    Matched = "matched",
+    Ambiguous = "ambiguous",
+    Unmatched = "unmatched",
+    Skipped = "skipped"
 }
 export enum DevelopPresetMaskKind {
     Radial = "radial",

@@ -142,6 +142,7 @@ const SHARED_LINK_ROUTES = new Set([
  */
 const ORIGINAL_TRANSFER_ROUTES = new Set([
   'GET assets/:id/original',
+  'GET develop-batches/:id/download',
   'POST download/archive',
   'GET admin/database-backups/:filename',
   'GET preservation/packages/:id/download',
