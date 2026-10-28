@@ -91,3 +91,24 @@ export const openCapturePreview = (id: string) =>
   chrome.tabs.create({
     url: chrome.runtime.getURL(`capture.html?id=${encodeURIComponent(id)}`),
   });
+
+function mediaPermissionPattern(origin: string) {
+  const url = new URL(origin);
+  if (
+    url.origin !== origin ||
+    !['https:', 'http:'].includes(url.protocol) ||
+    url.username ||
+    url.password
+  )
+    throw new Error('Choose a valid image origin.');
+  return `${url.protocol}//${url.hostname}/*`;
+}
+export const hasMediaAccess = (origin: string) =>
+  chrome.permissions.contains({ origins: [mediaPermissionPattern(origin)] });
+export const requestMediaAccess = (origin: string) =>
+  chrome.permissions.request({ origins: [mediaPermissionPattern(origin)] });
+
+export function watchMediaAccess(removed: () => void) {
+  chrome.permissions.onRemoved.addListener(removed);
+  return () => chrome.permissions.onRemoved.removeListener(removed);
+}

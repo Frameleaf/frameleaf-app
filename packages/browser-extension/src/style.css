@@ -214,3 +214,53 @@ fieldset {
     grid-row: 1;
   }
 }
+
+.candidate-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem;
+}
+.candidate-list li {
+  border: 1px solid var(--fl-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  min-width: 0;
+}
+.candidate {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+  border: 0;
+  padding: 0;
+}
+.candidate-thumbnail,
+.candidate-placeholder {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: var(--fl-panel);
+  border-radius: 0.25rem;
+}
+.candidate-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--fl-muted);
+  font-weight: 400;
+}
+.candidate-description {
+  grid-column: 2;
+  grid-row: 1;
+}
+.preview-button {
+  margin-top: 0.75rem;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

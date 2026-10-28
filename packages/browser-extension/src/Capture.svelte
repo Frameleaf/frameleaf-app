@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { filterCandidates, discoveryLimits } from "./candidates";
+  import { acquireCandidate, mediaOrigin, MediaFailure } from "./acquisition";
+  import { requestMediaAccess, watchMediaAccess } from "./platform";
+  import {
+    filterCandidates,
+    discoveryLimits,
+    type CaptureCandidate,
+  } from "./candidates";
   import { sanitizeSourceUrl } from "./source-url";
   import { sendRequest, watchConnection } from "./platform";
   import type { CapturePreview } from "./preview";
@@ -15,6 +21,74 @@
   let albumId = $state("");
   let tagIds = $state<string[]>([]);
   let note = $state("");
+  const imageBytes = new Map<string, Blob>();
+  const approvedOrigins = new Set<string>();
+  let thumbnails = $state<Record<string, string>>({});
+  let previewErrors = $state<Record<string, string>>({});
+  let downloading = $state<string | null>(null);
+  let download: AbortController | undefined;
+  function clearImages() {
+    download?.abort();
+    for (const url of Object.values(thumbnails)) URL.revokeObjectURL(url);
+    imageBytes.clear();
+    thumbnails = {};
+    previewErrors = {};
+    approvedOrigins.clear();
+  }
+  async function previewImage(candidate: CaptureCandidate) {
+    if (!preview || downloading) return;
+    const currentPreview = preview.id;
+    const controller = new AbortController();
+    download = controller;
+    downloading = candidate.id;
+    previewErrors[candidate.id] = "";
+    try {
+      const origin = mediaOrigin(candidate.url);
+      if (origin && !approvedOrigins.has(origin)) {
+        if (!(await requestMediaAccess(origin)))
+          throw new MediaFailure(
+            "Image access was not granted. You can try again or choose a bookmark or screenshot.",
+          );
+        approvedOrigins.add(origin);
+      }
+      const blob = await acquireCandidate(
+        candidate,
+        approvedOrigins,
+        controller.signal,
+      );
+      if (controller.signal.aborted || preview?.id !== currentPreview) return;
+      const used = [...imageBytes.values()].reduce(
+        (total, value) => total + value.size,
+        0,
+      );
+      if (used + blob.size > 512 * 1024 * 1024)
+        throw new MediaFailure(
+          "Loaded previews have reached 512 MiB. Clear previews to continue.",
+        );
+      const thumbnail = URL.createObjectURL(blob);
+      imageBytes.set(candidate.id, blob);
+      thumbnails[candidate.id] = thumbnail;
+    } catch (reason) {
+      if (!controller.signal.aborted && preview?.id === currentPreview)
+        previewErrors[candidate.id] =
+          reason instanceof MediaFailure
+            ? reason.message
+            : "Could not preview this image. Try again or choose a bookmark or screenshot.";
+    } finally {
+      if (download === controller) {
+        download = undefined;
+        downloading = null;
+      }
+    }
+  }
+  function previewFailed(id: string, url: string) {
+    if (thumbnails[id] !== url) return;
+    if (thumbnails[id]) URL.revokeObjectURL(thumbnails[id]);
+    delete thumbnails[id];
+    imageBytes.delete(id);
+    previewErrors[id] =
+      "This image cannot be displayed by your browser. Choose a bookmark or screenshot instead.";
+  }
   const visible = $derived(
     filterCandidates(preview?.discovery.candidates ?? [], {
       minWidth,
@@ -28,7 +102,9 @@
         id: new URL(location.href).searchParams.get("id") ?? "",
       });
       connection = reply.connection ?? null;
-      preview = reply.ok ? (reply.preview ?? null) : null;
+      const nextPreview = reply.ok ? (reply.preview ?? null) : null;
+      if (preview?.id !== nextPreview?.id) clearImages();
+      preview = nextPreview;
       error = reply.ok ? "" : reply.error;
       if (!preview) {
         selected = [];
@@ -37,6 +113,7 @@
         note = "";
       }
     } catch {
+      clearImages();
       preview = null;
       selected = [];
       error =
@@ -55,7 +132,13 @@
   });
   onMount(() => {
     void load();
-    return watchConnection(() => void load());
+    const stopConnection = watchConnection(() => void load());
+    const stopMedia = watchMediaAccess(clearImages);
+    return () => {
+      stopConnection();
+      stopMedia();
+      clearImages();
+    };
   });
   function toggle(id: string, checked: boolean) {
     selected = checked
@@ -132,6 +215,22 @@
         {#if !visible.length}<p>
             No matching images are available on this page.
           </p>{/if}
+        <p class="hint">
+          Previews download anonymously from the origin shown on each button.
+          Permission is requested when needed. Redirected and protected images
+          may need a bookmark or screenshot.
+        </p>
+        <div class="preview-actions">
+          <button
+            type="button"
+            disabled={!Object.keys(thumbnails).length}
+            onclick={clearImages}>Clear loaded previews</button
+          >
+          {#if downloading}<button
+              type="button"
+              onclick={() => download?.abort()}>Cancel download</button
+            >{/if}
+        </div>
         <ul class="candidate-list">
           {#each visible as candidate (candidate.id)}
             <li>
@@ -143,7 +242,19 @@
                     !selected.includes(candidate.id)}
                   onchange={(event) =>
                     toggle(candidate.id, event.currentTarget.checked)}
-                /><span class="candidate-description"
+                />{#if thumbnails[candidate.id]}<img
+                    class="candidate-thumbnail"
+                    src={thumbnails[candidate.id]}
+                    alt=""
+                    onerror={(event) =>
+                      previewFailed(
+                        candidate.id,
+                        event.currentTarget.getAttribute("src") ?? "",
+                      )}
+                  />{:else}<span
+                    class="candidate-placeholder"
+                    aria-hidden="true">Image</span
+                  >{/if}<span class="candidate-description"
                   ><span class="address">{label(candidate.url)}</span><span
                     class="muted"
                     >{candidate.width
@@ -154,6 +265,20 @@
                   ></span
                 ></label
               >
+              <button
+                type="button"
+                class="preview-button"
+                disabled={!!downloading || !!thumbnails[candidate.id]}
+                onclick={() => void previewImage(candidate)}
+                >{downloading === candidate.id
+                  ? "Loading preview…"
+                  : thumbnails[candidate.id]
+                    ? "Preview loaded"
+                    : `Preview from ${mediaOrigin(candidate.url) ?? "this page"}`}</button
+              >
+              {#if previewErrors[candidate.id]}<p class="error" role="alert">
+                  {previewErrors[candidate.id]}
+                </p>{/if}
             </li>
           {/each}
         </ul>

@@ -9,19 +9,36 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
   let revoked = false;
   let redirectTargetHits = 0;
   let mediaHits = 0;
+  const mediaRequests: {
+    cookie?: string;
+    authorization?: string;
+    key?: string;
+    referrer?: string;
+  }[] = [];
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"><rect width="64" height="48" fill="#2ab06f"/></svg>';
   const requests: string[] = [];
   const fixtureKey = 'synthetic-capture-key';
   const server = createServer((req, res) => {
     if (req.url === '/page') {
       res.setHeader('Content-Type', 'text/html');
       res.end(
-        `<title>Synthetic collection page</title><p>Web content</p><img src="/images/small.png" srcset="/images/large.jpg?transient=private 2000w"><div style="background-image:url('/images/background.webp')"></div>${Array.from({ length: 105 }, (_, index) => `<img src="/images/${index}.png?transient=private">`).join('')}`,
+        `<title>Synthetic collection page</title><p>Web content</p><img src="${'data:image/svg+xml,' + encodeURIComponent(svg)}"><img src="/images/small.png" srcset="/images/large.png?transient=private 2000w"><div style="background-image:url('/images/background.webp')"></div>${Array.from({ length: 105 }, (_, index) => `<img src="/images/${index}.png?transient=private">`).join('')}`,
       );
       return;
     }
     if (req.url?.startsWith('/images/')) {
       mediaHits++;
-      res.writeHead(404).end();
+      mediaRequests.push({
+        cookie: req.headers.cookie,
+        authorization: req.headers.authorization,
+        key: req.headers['x-api-key'] as string | undefined,
+        referrer: req.headers.referer,
+      });
+      if (req.url.startsWith('/images/104.png')) res.writeHead(403).end();
+      else if (req.url.startsWith('/images/103.png'))
+        res.writeHead(302, { Location: '/must-not-follow' }).end();
+      else res.writeHead(200, { 'Content-Type': 'image/svg+xml' }).end(svg);
       return;
     }
     if (req.url === '/redirect/api/capture/capabilities') {
@@ -166,6 +183,7 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     await expect(popup.getByText('Connected', { exact: true })).toBeVisible();
     await content.waitForLoadState('networkidle');
     const beforeCollection = mediaHits;
+    const initialRedirectHits = redirectTargetHits;
     await content.bringToFront();
     const collectionOpened = context.waitForEvent('page', { timeout: 5000 });
     const discovered = await popup.evaluate(async () =>
@@ -196,7 +214,7 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       '0 of 100 selected',
     );
     await collection.getByLabel('Minimum width').fill('1500');
-    await collection.getByLabel('Format', { exact: true }).selectOption('jpeg');
+    await collection.getByLabel('Format', { exact: true }).selectOption('png');
     await expect(images).toHaveCount(1);
     await collection
       .getByLabel('Album', { exact: true })
@@ -214,6 +232,44 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       ),
     ).toBeVisible();
     expect(mediaHits).toBe(beforeCollection);
+    await context.addCookies([
+      {
+        name: 'private-browser-cookie',
+        value: 'must-not-forward',
+        url: origin,
+        httpOnly: true,
+      },
+    ]);
+    await collection
+      .getByRole('button', { name: `Preview from ${origin}`, exact: true })
+      .click();
+    await expect(collection.locator('.candidate-thumbnail')).toBeVisible();
+    await expect
+      .poll(() =>
+        collection
+          .locator('.candidate-thumbnail')
+          .evaluate(
+            (image: HTMLImageElement) =>
+              image.complete && image.naturalWidth > 0,
+          ),
+      )
+      .toBe(true);
+    expect(mediaHits).toBe(beforeCollection + 1);
+    expect(mediaRequests.at(-1)).toEqual({
+      cookie: undefined,
+      authorization: undefined,
+      key: undefined,
+      referrer: undefined,
+    });
+    await collection
+      .getByRole('button', { name: 'Clear loaded previews', exact: true })
+      .click();
+    await expect(collection.locator('.candidate-thumbnail')).toHaveCount(0);
+    await collection
+      .getByRole('button', { name: `Preview from ${origin}`, exact: true })
+      .click();
+    await expect(collection.locator('.candidate-thumbnail')).toBeVisible();
+
     await collection.screenshot({
       path: testInfo.outputPath('collection.png'),
       fullPage: true,
@@ -228,6 +284,45 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       path: testInfo.outputPath('collection-narrow.png'),
       fullPage: true,
     });
+    await collection.getByLabel('Minimum width').fill('0');
+    await collection.getByLabel('Format', { exact: true }).selectOption('');
+    const embedded = collection
+      .locator('.candidate-list li')
+      .filter({ hasText: 'Embedded image' });
+    await embedded
+      .getByRole('button', { name: 'Preview from this page', exact: true })
+      .click();
+    await expect(embedded.locator('.candidate-thumbnail')).toBeVisible();
+    await expect
+      .poll(() =>
+        embedded
+          .locator('.candidate-thumbnail')
+          .evaluate(
+            (image: HTMLImageElement) =>
+              image.complete && image.naturalWidth > 0,
+          ),
+      )
+      .toBe(true);
+    const protectedImage = collection
+      .locator('.candidate-list li')
+      .filter({ hasText: '/images/104.png' });
+    await protectedImage
+      .getByRole('button', { name: `Preview from ${origin}`, exact: true })
+      .click();
+    await expect(protectedImage.getByRole('alert')).toContainText(
+      'requires access',
+    );
+    const redirectedImage = collection
+      .locator('.candidate-list li')
+      .filter({ hasText: '/images/103.png' });
+    await redirectedImage
+      .getByRole('button', { name: `Preview from ${origin}`, exact: true })
+      .click();
+    await expect(redirectedImage.getByRole('alert')).toContainText('Redirects');
+    expect(redirectTargetHits).toBe(initialRedirectHits);
+    const loadedObjectUrl = await embedded
+      .locator('.candidate-thumbnail')
+      .getAttribute('src');
     revoked = true;
     await popup.reload();
     await expect(
@@ -237,6 +332,16 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       options.getByText('1 writable album available.'),
     ).not.toBeVisible();
     await expect(collection.getByRole('alert')).toContainText('expired');
+    expect(
+      await collection.evaluate(
+        async (url) =>
+          fetch(url!).then(
+            () => false,
+            () => true,
+          ),
+        loadedObjectUrl,
+      ),
+    ).toBe(true);
     await expect(
       collection.getByLabel('Note', { exact: true }),
     ).not.toBeVisible();
@@ -266,7 +371,7 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     await expect(options.getByRole('alert')).toContainText(
       'Redirects are not followed',
     );
-    expect(redirectTargetHits).toBe(0);
+    expect(redirectTargetHits).toBe(initialRedirectHits);
     await options
       .getByRole('button', { name: 'Disconnect', exact: true })
       .click();
