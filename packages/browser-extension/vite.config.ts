@@ -30,6 +30,13 @@ export default defineConfig({
           fileName: 'licenses/AGPL.txt',
           source: readFileSync(resolve(import.meta.dirname, '../../LICENSE')),
         });
+        this.emitFile({
+          type: 'asset',
+          fileName: 'licenses/srcset.txt',
+          source: readFileSync(
+            resolve(import.meta.dirname, 'node_modules/srcset/license'),
+          ),
+        });
         for (const size of [16, 48])
           this.emitFile({
             type: 'asset',

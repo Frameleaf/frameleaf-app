@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@frameleaf/sdk": "workspace:*",
-    "svelte": "5.57.2"
+    "svelte": "5.57.2",
+    "srcset": "4.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
@@ -22,6 +23,7 @@
     "svelte-check": "^4.7.6",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.4",
+    "happy-dom": "^21.0.1"
   }
 }
