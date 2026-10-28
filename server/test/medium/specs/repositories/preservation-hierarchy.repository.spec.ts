@@ -156,6 +156,27 @@ it('freezes only selected owned eligible bookmarks and does not add links create
     100,
   );
   expect(created!.package.scope).toMatchObject({ bookmarkIds: [mine.id] });
+  expect(created).toMatchObject({ items: 1, bookmarkItems: 1 });
+  expect(await sut.previewSelection(user.id, { filter: { libraryScope: LibraryScope.Design } })).toMatchObject({
+    items: 2,
+    lockedItems: 1,
+  });
+  expect(await sut.previewSelection(user.id, { filter: { libraryScope: LibraryScope.Design } }, false)).toMatchObject({
+    items: 1,
+    lockedItems: 0,
+  });
+  expect(await sut.previewSelection(user.id, { assetIds: [], bookmarkIds: [mine.id] })).toMatchObject({
+    items: 1,
+    lockedItems: 0,
+  });
+  const onlyLinks = await sut.createExport(
+    input,
+    (id) => `/synthetic/${id}`,
+    { assetIds: [], bookmarkIds: [mine.id] },
+    false,
+    100,
+  );
+  expect(onlyLinks).toMatchObject({ items: 0, bookmarkItems: 1 });
   await links.create(user.id, { url: 'https://example.com/later', title: 'Later', libraryScope: LibraryScope.Design });
   expect((await sut.getPackageById(created!.package.id))!.scope).toMatchObject({ bookmarkIds: [mine.id] });
   const originals = await sut.createExport(input, (id) => `/synthetic/${id}`, { assetIds: [asset.id] }, false, 100);

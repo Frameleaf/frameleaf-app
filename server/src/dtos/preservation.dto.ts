@@ -88,15 +88,26 @@ const PreservationScopeSchema = z
       .min(1)
       .max(PRESERVATION_MAX_ITEMS)
       .optional()
-      .describe('Exactly these items of yours, instead of a filter'),
+      .describe('Exactly these originals of yours, instead of a filter'),
+    bookmarkIds: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(PRESERVATION_MAX_ITEMS)
+      .optional()
+      .describe('Exactly these saved links of yours; requires metadata'),
   })
-  .refine((scope) => !(scope.filter && scope.assetIds), 'Choose a filter or items, not both')
+  .refine((scope) => !(scope.filter && (scope.assetIds || scope.bookmarkIds)), 'Choose a filter or items, not both')
+  .refine(
+    (scope) => (scope.assetIds?.length ?? 0) + (scope.bookmarkIds?.length ?? 0) <= PRESERVATION_MAX_ITEMS,
+    'Too many selected items',
+  )
   .describe('What to preserve. Only your own items are ever included: never a partner’s or a shared album’s.')
   .meta({ id: 'PreservationScopeDto' });
 
 const PreservationPreviewSchema = z
   .object({
     scope: PreservationScopeSchema.optional(),
+    includeMetadata: z.boolean().optional().describe('Include saved links and metadata; defaults to true'),
     includeLocked: z.boolean().optional().describe('Count Locked items as included; needs an unlocked session'),
   })
   .meta({ id: 'PreservationPreviewDto' });

@@ -41,6 +41,7 @@ import {
   PreservationEntrySchema,
   PreservationManifestSchema,
   PreservationSidecarSchema,
+  PreservationTagsSchema,
 } from 'src/utils/preservation.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -358,6 +359,40 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
       );
     } finally {
       await source.close();
+    }
+    const linkOnly = await repo.createExport(
+      {
+        ownerId: owner.id,
+        origin: 'export',
+        name: 'Links',
+        format: 'directory',
+        includeLocked: false,
+        includeMetadata: true,
+        scope: {},
+      },
+      (id) => join(folder, 'package', id),
+      { assetIds: [], bookmarkIds: [bookmark.id] },
+      false,
+      100,
+    );
+    expect(linkOnly).toMatchObject({ items: 0, bookmarkItems: 1 });
+    await worker['publishPackage'](linkOnly!.package, commit);
+    const linkSource = await files.openPackage('directory', linkOnly!.package.path);
+    try {
+      const manifest = PreservationManifestSchema.parse(
+        JSON.parse((await readFile(join(linkOnly!.package.path, 'manifest.json'))).toString()),
+      );
+      expect(manifest.counts).toMatchObject({ selected: 0, exported: 0, bookmarks: 1 });
+      const albums = PreservationAlbumsSchema.parse(
+        JSON.parse((await readFile(join(linkOnly!.package.path, 'albums.json'))).toString()),
+      );
+      const tags = PreservationTagsSchema.parse(
+        JSON.parse((await readFile(join(linkOnly!.package.path, 'tags.json'))).toString()),
+      );
+      const links = await worker['readBookmarks'](linkSource, manifest, albums, tags);
+      expect(links).toEqual([expect.objectContaining({ id: bookmark.id, previewAssetId: null })]);
+    } finally {
+      await linkSource.close();
     }
   } finally {
     await rm(folder, { recursive: true, force: true });

@@ -146,7 +146,11 @@ export class PreservationService {
   async preview(auth: AuthDto, dto: PreservationPreviewDto): Promise<PreservationPreviewResponseDto> {
     this.requireAccount(auth);
     const unlocked = this.isUnlocked(auth);
-    const counts = await this.repository.previewSelection(auth.user.id, this.selectionOf(dto.scope));
+    const counts = await this.repository.previewSelection(
+      auth.user.id,
+      this.selectionOf(dto.scope),
+      dto.includeMetadata ?? true,
+    );
     const includeLocked = dto.includeLocked === true && unlocked;
     const includedItems = counts.items + (includeLocked ? counts.lockedItems : 0);
     const includedBytes = counts.bytes + (includeLocked ? counts.lockedBytes : 0);
@@ -170,7 +174,7 @@ export class PreservationService {
       withinLimit: includedItems <= PRESERVATION_MAX_ITEMS,
       lockedAllowed: unlocked,
       freeBytes,
-      support: preservationSupportFor(true),
+      support: preservationSupportFor(dto.includeMetadata ?? true),
     };
   }
 
@@ -217,7 +221,7 @@ export class PreservationService {
         includeMetadata,
         scope: {
           description: describePreservationScope(selection),
-          itemCount: selection.assetIds?.length ?? null,
+          itemCount: selection.assetIds ? selection.assetIds.length + (selection.bookmarkIds?.length ?? 0) : null,
           filter: selection.filter ?? null,
         },
       },
@@ -231,7 +235,8 @@ export class PreservationService {
         `One package holds up to ${PRESERVATION_MAX_ITEMS} items; narrow the selection, for example by year or album`,
       );
     }
-    if (created.items === 0) {
+    const itemCount = created.items + (created.bookmarkItems ?? 0);
+    if (itemCount === 0) {
       await this.repository.updatePackage(created.package.id, { status: 'removed', removedAt: new Date() });
       throw new BadRequestException('Nothing of yours matches this selection');
     }
@@ -255,10 +260,10 @@ export class PreservationService {
       },
       settings: { includeMetadata, includeLocked },
       estimate: null,
-      totalUnits: String(created.items),
+      totalUnits: String(itemCount),
     });
 
-    this.logger.log(`Preservation package ${created.package.id} queued with ${created.items} items`);
+    this.logger.log(`Preservation package ${created.package.id} queued with ${itemCount} items`);
     return this.mapPackage(auth, created.package);
   }
 
@@ -799,8 +804,11 @@ export class PreservationService {
   }
 
   private selectionOf(scope: PreservationExportCreateDto['scope']): PreservationSelection {
-    if (scope?.assetIds) {
-      return { assetIds: [...new Set(scope.assetIds)] };
+    if (scope?.assetIds || scope?.bookmarkIds) {
+      return {
+        assetIds: scope.assetIds ? [...new Set(scope.assetIds)] : [],
+        ...(scope.bookmarkIds ? { bookmarkIds: [...new Set(scope.bookmarkIds)] } : {}),
+      };
     }
     return { filter: scope?.filter ?? {} };
   }

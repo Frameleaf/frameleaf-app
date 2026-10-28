@@ -12877,8 +12877,10 @@ export type PreservationPackageDto = {
     verification: (PreservationVerificationDto) | null;
 };
 export type PreservationScopeDto = {
-    /** Exactly these items of yours, instead of a filter */
+    /** Exactly these originals of yours, instead of a filter */
     assetIds?: string[];
+    /** Exactly these saved links of yours; requires metadata */
+    bookmarkIds?: string[];
     /** Your items matching these conditions; the whole library when empty */
     filter?: SearchFilter;
 };
@@ -12912,6 +12914,8 @@ export type PreservationItemsResponseDto = {
 export type PreservationPreviewDto = {
     /** Count Locked items as included; needs an unlocked session */
     includeLocked?: boolean;
+    /** Include saved links and metadata; defaults to true */
+    includeMetadata?: boolean;
     scope?: PreservationScopeDto;
 };
 export type PreservationPreviewResponseDto = {

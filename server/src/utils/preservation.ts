@@ -715,10 +715,11 @@ export const restoredAlbumParent = (
  */
 export const describePreservationScope = (scope: {
   assetIds?: readonly string[];
+  bookmarkIds?: readonly string[];
   filter?: Record<string, unknown>;
 }): string => {
   if (scope.assetIds) {
-    return `${scope.assetIds.length} chosen items`;
+    return `${scope.assetIds.length + (scope.bookmarkIds?.length ?? 0)} chosen items`;
   }
   const keys = Object.keys(scope.filter ?? {}).filter(
     (key) => (scope.filter as Record<string, unknown>)[key] !== undefined,

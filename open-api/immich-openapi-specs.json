@@ -119260,6 +119260,10 @@
             "description": "Count Locked items as included; needs an unlocked session",
             "type": "boolean"
           },
+          "includeMetadata": {
+            "description": "Include saved links and metadata; defaults to true",
+            "type": "boolean"
+          },
           "scope": {
             "$ref": "#/components/schemas/PreservationScopeDto"
           }
@@ -119699,7 +119703,18 @@
         "description": "What to preserve. Only your own items are ever included: never a partner’s or a shared album’s.",
         "properties": {
           "assetIds": {
-            "description": "Exactly these items of yours, instead of a filter",
+            "description": "Exactly these originals of yours, instead of a filter",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "bookmarkIds": {
+            "description": "Exactly these saved links of yours; requires metadata",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",

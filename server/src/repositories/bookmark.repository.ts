@@ -314,6 +314,21 @@ export class BookmarkRepository {
       .execute();
   }
 
+  async countPreservationBookmarks(auth: AuthDto, filter: LibraryItemSearchDto['filter'], ids?: string[]) {
+    const queryFor = (libraryScope: LibraryScope.Personal | LibraryScope.Design) =>
+      this.libraryBookmarks(auth, { mode: 'text', query: '', limit: 200, filter: { ...filter, libraryScope } })
+        .where('bookmark.ownerId', '=', auth.user.id)
+        .$if(ids !== undefined, (qb) => qb.where('bookmark.id', '=', anyUuid(ids!)))
+        .select('bookmark.id');
+    const selected = queryFor(filter.libraryScope ?? LibraryScope.Personal);
+    const all = filter.libraryScope ? selected : selected.union(queryFor(LibraryScope.Design));
+    const row = await this.db
+      .selectFrom(all.as('selected'))
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
+
   getPreservationDetails(auth: AuthDto, query: LibraryItemSearchDto, ids: string[], packageId: string) {
     return this.libraryBookmarks(auth, query)
       .where('bookmark.ownerId', '=', auth.user.id)

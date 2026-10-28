@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { PreservationExportCreateDto } from 'src/dtos/preservation.dto.js';
 import { MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import {
@@ -184,7 +185,27 @@ describe(PreservationService.name, () => {
     );
   });
 
+  it('validates mixed explicit selections without accepting a filter alongside ids', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    expect(PreservationExportCreateDto.schema.safeParse({ name: 'Links', scope: { bookmarkIds: [id] } }).success).toBe(
+      true,
+    );
+    expect(
+      PreservationExportCreateDto.schema.safeParse({ name: 'Mixed', scope: { assetIds: [id], bookmarkIds: [id] } })
+        .success,
+    ).toBe(true);
+    expect(
+      PreservationExportCreateDto.schema.safeParse({ name: 'Ambiguous', scope: { filter: {}, bookmarkIds: [id] } })
+        .success,
+    ).toBe(false);
+  });
+
   describe('preview', () => {
+    it('previews metadata using the same choice as export', async () => {
+      await sut.preview(owner, { includeMetadata: false });
+      expect(repository.previewSelection).toHaveBeenCalledWith(owner.user.id, { filter: {} }, false);
+    });
+
     it('never tells an ordinary session how much of its library is Locked', async () => {
       const preview = await sut.preview(owner, { includeLocked: true });
       expect(preview).toMatchObject({
@@ -204,6 +225,15 @@ describe(PreservationService.name, () => {
   });
 
   describe('createExport', () => {
+    it('queues a saved-link-only selection without adding unselected originals', async () => {
+      const id = '11111111-1111-4111-8111-111111111111';
+      repository.createExport.mockResolvedValue({ package: packageOf(), items: 0, bookmarkItems: 1 });
+      await sut.createExport(owner, { name: 'Links', scope: { bookmarkIds: [id, id] } });
+      expect(repository.createExport.mock.calls[0][2]).toEqual({ assetIds: [], bookmarkIds: [id] });
+      expect(operations.create).toHaveBeenCalledWith(expect.objectContaining({ totalUnits: '1' }));
+      expect(repository.updatePackage).not.toHaveBeenCalled();
+    });
+
     it('refuses Locked items from a session that has not unlocked', async () => {
       await expect(sut.createExport(owner, { name: 'All', includeLocked: true })).rejects.toBeInstanceOf(
         ForbiddenException,

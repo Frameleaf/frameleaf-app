@@ -163,7 +163,11 @@ export class PreservationRepository {
       .$if(!includeLocked, (qb) => qb.where(isNotLocked('asset')));
   }
   /** How many items a selection holds and how large they are, split by whether they are Locked. */
-  async previewSelection(ownerId: string, selection: PreservationSelection): Promise<PreservationPreviewCounts> {
+  async previewSelection(
+    ownerId: string,
+    selection: PreservationSelection,
+    includeMetadata = true,
+  ): Promise<PreservationPreviewCounts> {
     const matched = this.selection(this.db, ownerId, selection, true).select([
       'asset.id',
       isLocked('asset').as('locked'),
@@ -178,24 +182,29 @@ export class PreservationRepository {
         sql<string>`coalesce(sum(matched.bytes) filter (where matched.locked), 0)`.as('lockedBytes'),
       ])
       .executeTakeFirst();
+    let bookmarks = 0;
+    let allBookmarks = 0;
+    if (includeMetadata && (!selection.assetIds || selection.bookmarkIds !== undefined)) {
+      const repository = new BookmarkRepository(this.db);
+      const auth = await this.bookmarkAuth(this.db, ownerId, false);
+      bookmarks = await repository.countPreservationBookmarks(auth, selection.filter ?? {}, selection.bookmarkIds);
+      allBookmarks = await repository.countPreservationBookmarks(
+        { ...auth, session: { ...auth.session!, hasElevatedPermission: true } },
+        selection.filter ?? {},
+        selection.bookmarkIds,
+      );
+    }
     return {
-      items: toNumber(row?.items),
+      items: toNumber(row?.items) + bookmarks,
       bytes: toNumber(row?.bytes),
-      lockedItems: toNumber(row?.lockedItems),
+      lockedItems: toNumber(row?.lockedItems) + Math.max(0, allBookmarks - bookmarks),
       lockedBytes: toNumber(row?.lockedBytes),
     };
   }
-  private async bookmarkSelection(
-    db: Kysely<DB>,
-    ownerId: string,
-    selection: PreservationSelection,
-    includeLocked: boolean,
-    limit: number,
-  ) {
-    if (selection.assetIds && selection.bookmarkIds === undefined) return [];
+  private async bookmarkAuth(db: Kysely<DB>, ownerId: string, includeLocked: boolean): Promise<AuthDto> {
     const user = await new UserRepository(db).get(ownerId, { withDeleted: false });
     if (!user) throw new PreservationPackageError('owner_unavailable', 'The package owner is unavailable');
-    const auth: AuthDto = {
+    return {
       user: {
         id: user.id,
         isAdmin: user.isAdmin,
@@ -206,6 +215,16 @@ export class PreservationRepository {
       },
       session: { id: randomUUID(), hasElevatedPermission: includeLocked },
     };
+  }
+  private async bookmarkSelection(
+    db: Kysely<DB>,
+    ownerId: string,
+    selection: PreservationSelection,
+    includeLocked: boolean,
+    limit: number,
+  ) {
+    if (selection.assetIds && selection.bookmarkIds === undefined) return [];
+    const auth = await this.bookmarkAuth(db, ownerId, includeLocked);
     const bookmarks = new BookmarkRepository(db);
     const view = selection.filter?.libraryScope;
     const ids = new Set<string>();
@@ -236,6 +255,7 @@ export class PreservationRepository {
   ): Promise<{
     package: PreservationPackage;
     items: number;
+    bookmarkItems: number;
   } | null> {
     return this.db
       .transaction()
@@ -291,7 +311,7 @@ export class PreservationRepository {
           // Rolls the package and its items back.
           throw new SelectionTooLargeError(items);
         }
-        return { package: created, items };
+        return { package: created, items, bookmarkItems: bookmarkIds.length };
       })
       .catch((error) => {
         if (error instanceof SelectionTooLargeError) {
