@@ -236,7 +236,7 @@ export class BuddyBackupPeerService {
             }),
           );
         });
-        throw error;
+        throw error instanceof FrameleafCloudError ? new ForbiddenException('Buddy capability was revoked') : error;
       }
     }
     if (grant.exp * 1000 <= Date.now()) throw new UnauthorizedException('Buddy capability expired');
