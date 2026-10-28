@@ -70,9 +70,18 @@ from
   inner join "asset" on "asset"."id" = "asset_face"."assetId"
   inner join "user" on "user"."id" = "asset"."ownerId"
 where
-  "asset_face"."personGroupId" is null
-  and "asset_face"."sourceType" = $1
-  and "user"."clusterGroupId" = $2
+  exists (
+    select
+      "scope_asset"."id"
+    from
+      "asset" as "scope_asset"
+    where
+      "scope_asset"."id" = "asset_face"."assetId"
+      and "scope_asset"."libraryScope" in ($1, $2)
+  )
+  and "asset_face"."personGroupId" is null
+  and "asset_face"."sourceType" = $3
+  and "user"."clusterGroupId" = $4
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
 
@@ -112,15 +121,16 @@ from
   and "asset"."deletedAt" is null
 where
   "person"."ownerId" = $1
+  and "asset"."libraryScope" in ($2, $3)
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
-  and "person"."isHidden" = $2
+  and "person"."isHidden" = $4
 group by
   "person"."ownerId",
   "person"."personGroupId"
 having
   (
-    "person"."name" != $3
+    "person"."name" != $5
     or count("asset_face"."assetId") >= COALESCE(
       (
         SELECT
@@ -128,7 +138,7 @@ having
         FROM
           user_metadata
         WHERE
-          "userId" = $4
+          "userId" = $6
           AND key = 'preferences'
       ),
       '3'
@@ -142,9 +152,9 @@ order by
   NULLIF(person.name, '') asc nulls last,
   "person"."createdAt"
 limit
-  $5
+  $7
 offset
-  $6
+  $8
 
 -- PersonRepository.getAllWithoutFaces
 select
@@ -266,7 +276,16 @@ select
 from
   "asset_face"
 where
-  "asset_face"."id" = $1
+  exists (
+    select
+      "scope_asset"."id"
+    from
+      "asset" as "scope_asset"
+    where
+      "scope_asset"."id" = "asset_face"."assetId"
+      and "scope_asset"."libraryScope" in ($1, $2)
+  )
+  and "asset_face"."id" = $3
   and "asset_face"."deletedAt" is null
 
 -- PersonRepository.getDataForThumbnailGenerationJob
@@ -297,11 +316,12 @@ from
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
   left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
-  "person"."ownerId" = $1
-  and "person"."personGroupId" = $2
+  "asset"."libraryScope" in ($1, $2)
+  and "person"."ownerId" = $3
+  and "person"."personGroupId" = $4
   and "asset_face"."deletedAt" is null
   and "asset_face"."personGroupId" = "person"."personGroupId"
-  and "asset_face"."isVisible" = $3
+  and "asset_face"."isVisible" = $5
   and not exists (
     select
       1
@@ -360,14 +380,15 @@ where
       )
       and "asset"."deletedAt" is null
     where
-      "asset_face"."personGroupId" = "person"."personGroupId"
+      "asset"."libraryScope" in ($3, $4)
+      and "asset_face"."personGroupId" = "person"."personGroupId"
       and "asset_face"."deletedAt" is null
       and "asset_face"."isVisible" is true
   )
 order by
-  f_unaccent ("person"."name") <->>> f_unaccent ($3)
+  f_unaccent ("person"."name") <->>> f_unaccent ($5)
 limit
-  $4
+  $6
 
 -- PersonRepository.getDistinctNames
 select distinct
@@ -714,7 +735,8 @@ from
       asset_lock."assetId" = "asset"."id"
   )
 where
-  "asset_face"."personGroupId" = $1
+  "asset"."libraryScope" in ($1, $2)
+  and "asset_face"."personGroupId" = $3
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
 order by
@@ -831,10 +853,11 @@ from
   "asset_face"
   inner join "asset" on "asset"."id" = "asset_face"."assetId"
 where
-  "asset_face"."id" = $1
+  "asset"."libraryScope" in ($1, $2)
+  and "asset_face"."id" = $3
   and "asset_face"."deletedAt" is null
-  and "asset_face"."isVisible" = $2
-  and "asset"."ownerId" = $3
+  and "asset_face"."isVisible" = $4
+  and "asset"."ownerId" = $5
 
 -- PersonRepository.getForMergePerson
 select
