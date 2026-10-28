@@ -19973,300 +19973,6 @@
       "synchronize": true
     },
     {
-      "name": "classification_rule",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "albumId",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "enabled",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "true",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "personIds",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "'[]'::jsonb",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "tagIds",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "'[]'::jsonb",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "takenAfter",
-          "tableName": "classification_rule",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "takenBefore",
-          "tableName": "classification_rule",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "mediaType",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "'any'::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "visualQueries",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "'[]'::jsonb",
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "threshold",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 53,
-          "default": "0.25",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "action",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "'review'::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "tagId",
-          "tableName": "classification_rule",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "archive",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "archiveConsentAt",
-          "tableName": "classification_rule",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "classification_rule",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastAppliedAt",
-          "tableName": "classification_rule",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "classification_rule_ownerId_idx",
-          "definition": "CREATE INDEX \"classification_rule_ownerId_idx\" ON public.classification_rule USING btree (\"ownerId\")",
-          "tableName": "classification_rule",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "classification_rule_tagId_idx",
-          "definition": "CREATE INDEX \"classification_rule_tagId_idx\" ON public.classification_rule USING btree (\"tagId\")",
-          "tableName": "classification_rule",
-          "columnNames": [
-            "tagId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "classification_rule_albumId_idx",
-          "definition": "CREATE INDEX \"classification_rule_albumId_idx\" ON public.classification_rule USING btree (\"albumId\")",
-          "tableName": "classification_rule",
-          "columnNames": [
-            "albumId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "classification_rule_archive_consent_chk",
-          "definition": "CHECK (((NOT archive) OR (\"archiveConsentAt\" IS NOT NULL)))",
-          "tableName": "classification_rule",
-          "expression": "(((NOT archive) OR (\"archiveConsentAt\" IS NOT NULL)))",
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "classification_rule_albumId_uq",
-          "definition": "UNIQUE (\"albumId\")",
-          "tableName": "classification_rule",
-          "columnNames": [
-            "albumId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "classification_rule_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "classification_rule",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "classification_rule_albumId_fkey",
-          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "classification_rule",
-          "columnNames": [
-            "albumId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "classification_rule_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "classification_rule",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "classification_rule_tagId_fkey",
-          "definition": "FOREIGN KEY (\"tagId\") REFERENCES tag(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "classification_rule",
-          "columnNames": [
-            "tagId"
-          ],
-          "referenceTableName": "tag",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "cloud_backup_manifest",
       "columns": [
         {
@@ -34964,6 +34670,309 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "classification_rule",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "enabled",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "personIds",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "tagIds",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "takenAfter",
+          "tableName": "classification_rule",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "takenBefore",
+          "tableName": "classification_rule",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "mediaType",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "'any'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "visualQueries",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "threshold",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 53,
+          "default": "0.25",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "action",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "'review'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "tagId",
+          "tableName": "classification_rule",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "archive",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "archiveConsentAt",
+          "tableName": "classification_rule",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "classification_rule",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastAppliedAt",
+          "tableName": "classification_rule",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "filter",
+          "tableName": "classification_rule",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "classification_rule_ownerId_idx",
+          "definition": "CREATE INDEX \"classification_rule_ownerId_idx\" ON public.classification_rule USING btree (\"ownerId\")",
+          "tableName": "classification_rule",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "classification_rule_tagId_idx",
+          "definition": "CREATE INDEX \"classification_rule_tagId_idx\" ON public.classification_rule USING btree (\"tagId\")",
+          "tableName": "classification_rule",
+          "columnNames": [
+            "tagId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "classification_rule_albumId_idx",
+          "definition": "CREATE INDEX \"classification_rule_albumId_idx\" ON public.classification_rule USING btree (\"albumId\")",
+          "tableName": "classification_rule",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "classification_rule_archive_consent_chk",
+          "definition": "CHECK (((NOT archive) OR (\"archiveConsentAt\" IS NOT NULL)))",
+          "tableName": "classification_rule",
+          "expression": "(((NOT archive) OR (\"archiveConsentAt\" IS NOT NULL)))",
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "classification_rule_albumId_uq",
+          "definition": "UNIQUE (\"albumId\")",
+          "tableName": "classification_rule",
+          "columnNames": [
+            "albumId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "classification_rule_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "classification_rule",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "classification_rule_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "classification_rule",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "classification_rule_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "classification_rule",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "classification_rule_tagId_fkey",
+          "definition": "FOREIGN KEY (\"tagId\") REFERENCES tag(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "classification_rule",
+          "columnNames": [
+            "tagId"
+          ],
+          "referenceTableName": "tag",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],

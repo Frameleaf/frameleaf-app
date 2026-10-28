@@ -1,4 +1,11 @@
-import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, SearchFacetField } from '@frameleaf/sdk';
+import {
+  AssetTypeEnum,
+  AssetVisibility,
+  ImageEnrichmentFilter,
+  SearchFacetField,
+  LibraryViewScope,
+  ColorTolerance,
+} from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, isDiscoveryFilter, type DiscoveryQuery } from '$lib/components/discovery/query';
 import { emptyFilterPanelOptions } from '$lib/frameleaf/search-options';
@@ -570,56 +577,48 @@ describe('typed chips from a query (FL-48 round trip)', () => {
 });
 
 describe('saving as a smart album', () => {
-  it('turns people, tags, media type, dates and smart text into an FL-60 rule', () => {
-    const query = compilePaletteQuery(
-      emptyDiscoveryQuery(),
-      parseSearchInput('person:Jamie tag:water type:video month:2026-08 sunset', catalog),
-      'smart',
-    )!;
-    expect(smartAlbumCriteria(query)).toEqual({
+  it('keeps the shared design/color/subtree/dimension predicates and semantic phrases', () => {
+    const filter = {
+      libraryScope: LibraryViewScope.Design,
+      color: { hex: '#609060', tolerance: ColorTolerance.Normal, minWeight: 0.05 },
+      albumSubtreeIds: { any: [JAMIE] },
+      width: { gte: 1920 },
+      tagIds: { all: [WATER] },
+    };
+    expect(smartAlbumCriteria({ ...emptyDiscoveryQuery(), mode: 'smart', text: 'packaging', filter })).toEqual({
       ok: true,
       criteria: {
-        personIds: [JAMIE],
-        tagIds: [WATER],
-        mediaType: 'video',
-        takenAfter: '2026-08-01',
-        takenBefore: '2026-08-31',
-        visualQueries: ['sunset'],
+        visualQueries: ['packaging'],
+        filter: { ...filter, visibility: { eq: AssetVisibility.Timeline }, trashedAt: { eq: null } },
       },
     });
   });
-
-  it('reads the local capture days from every bound, without one overwriting another', () => {
-    const rule = (localDateTime: Record<string, string>) =>
-      smartAlbumCriteria({ ...emptyDiscoveryQuery(), filter: { localDateTime } as never });
-    expect(rule({ lt: '2026-09-01T00:00:00.000Z' })).toEqual({ ok: true, criteria: { takenBefore: '2026-08-31' } });
-    expect(rule({ gte: '2026-08-01', lte: '2026-08-31' })).toEqual({
+  it('keeps exclusions, exact date bounds and text fields in the shared rule filter', () => {
+    const query = {
+      ...emptyDiscoveryQuery(),
+      text: 'reference',
+      filter: { personIds: { none: [JAMIE] }, localDateTime: { gte: '2026-08-01T10:00:00.000Z' } },
+    };
+    expect(smartAlbumCriteria(query)).toEqual({
       ok: true,
-      criteria: { takenAfter: '2026-08-01', takenBefore: '2026-08-31' },
-    });
-    // The narrower of a strict and a non-strict bound wins
-    expect(rule({ gt: '2026-08-01', gte: '2026-07-01', lte: '2026-08-31', lt: '2026-08-20T00:00:00.000Z' })).toEqual({
-      ok: true,
-      criteria: { takenAfter: '2026-08-02', takenBefore: '2026-08-19' },
-    });
-    expect(rule({ gte: '2026-08-01T10:00:00.000Z' })).toEqual({ ok: false, fields: ['localDateTime'] });
-    // takenAt is the UTC date, not the local day a rule compares
-    expect(smartAlbumCriteria({ ...emptyDiscoveryQuery(), filter: { takenAt: { gte: '2026-08-01' } } })).toEqual({
-      ok: false,
-      fields: ['takenAt'],
+      criteria: {
+        filter: {
+          ...query.filter,
+          originalFileName: { like: 'reference' },
+          visibility: { eq: AssetVisibility.Timeline },
+          trashedAt: { eq: null },
+        },
+      },
     });
   });
-
-  it('refuses a search a rule cannot say, naming what stops it', () => {
-    const query = compilePaletteQuery(
-      emptyDiscoveryQuery(),
-      parseSearchInput('-person:Jamie place:Banff', catalog),
-      'originalFileName',
-    )!;
-    expect(smartAlbumCriteria({ ...query, text: 'IMG' })).toEqual({
+  it('refuses unsupported non-filter context and an empty rule', () => {
+    expect(smartAlbumCriteria({ ...emptyDiscoveryQuery(), queryAssetId: JAMIE })).toEqual({
       ok: false,
-      fields: ['personIds', 'city', 'text'],
+      fields: ['queryAssetId'],
     });
+    expect(
+      smartAlbumCriteria({ ...emptyDiscoveryQuery(), imageEnrichment: ImageEnrichmentFilter.MissingImageDescription }),
+    ).toEqual({ ok: false, fields: ['imageEnrichment'] });
     expect(smartAlbumCriteria(emptyDiscoveryQuery())).toEqual({ ok: false, fields: [] });
   });
 });

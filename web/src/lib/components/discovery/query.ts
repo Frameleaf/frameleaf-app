@@ -200,6 +200,14 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   hasTags: { eq: (value) => typeof value === 'boolean' },
   isPanorama: { eq: (value) => typeof value === 'boolean' },
   isScreenshot: { eq: (value) => typeof value === 'boolean' },
+  hasTransparency: { eq: (value) => typeof value === 'boolean' },
+  source: { contains: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 500 },
+  color: {
+    hex: (value) => typeof value === 'string' && /^#[a-fA-F0-9]{6}$/.test(value),
+    tolerance: (value) => ['tight', 'normal', 'broad'].includes(String(value)),
+    minWeight: (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1,
+  },
+  albumSubtreeIds: { any: list(idValue), all: list(idValue), none: list(idValue) },
   city: stringNullableOperators,
   state: stringNullableOperators,
   country: stringNullableOperators,
@@ -217,6 +225,12 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
     ]),
   ),
   ocr: { matches: nonEmptyString },
+  ...Object.fromEntries(
+    ['width', 'height', 'aspectRatio', 'durationMs'].map((field) => [
+      field,
+      { eq: nullable(finite), ne: nullable(finite), ...numberRangeOperators },
+    ]),
+  ),
   rating: { eq: nullable(finite), ne: nullable(finite), ...numberRangeOperators },
   fileSizeInBytes: { eq: finite, ne: finite, ...numberRangeOperators },
   takenAt: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
@@ -245,6 +259,7 @@ const BOOLEAN_FIELDS = new Set([
   'hasTags',
   'isPanorama',
   'isScreenshot',
+  'hasTransparency',
 ]);
 
 /**
@@ -261,6 +276,12 @@ export const isDiscoveryFilter = (value: unknown, branch = false): value is Sear
     return false;
   }
   return entries.every(([field, condition]) => {
+    if (field === 'libraryScope') {
+      return !branch && (condition === 'personal' || condition === 'design');
+    }
+    if (field === 'color' && (!isRecord(condition) || typeof condition.hex !== 'string')) {
+      return false;
+    }
     if (field === 'or') {
       return (
         !branch &&
@@ -1056,7 +1077,10 @@ export const discoveryChipFields = (query: DiscoveryQuery, destination?: Discove
 
 /** Clear every structured filter while keeping the text query, grouping and view. */
 export const withoutDiscoveryFilters = (query: DiscoveryQuery): DiscoveryQuery => {
-  const result = { ...structuredClone(query), filter: {} };
+  const result = {
+    ...structuredClone(query),
+    filter: query.filter.libraryScope ? { libraryScope: query.filter.libraryScope } : {},
+  };
   delete result.imageEnrichment;
   return result;
 };
