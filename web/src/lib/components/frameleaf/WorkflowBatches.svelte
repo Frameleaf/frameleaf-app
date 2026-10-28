@@ -8,6 +8,7 @@
     type WorkflowResponseDto,
   } from '@frameleaf/sdk';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
+  import { locale } from '$lib/stores/preferences.store';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
   let { workflow, dirty }: { workflow: WorkflowResponseDto; dirty: boolean } = $props();
@@ -50,7 +51,7 @@
     {#each batches as batch (batch.id)}
       <li>
         <span
-          >{new Date(batch.createdAt).toLocaleString()} · {$t(
+          >{new Date(batch.createdAt).toLocaleString($locale)} · {$t(
             `frameleaf_workflows.batch_${batch.status}` as Translations,
           )}</span
         >
