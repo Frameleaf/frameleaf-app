@@ -11,6 +11,13 @@ import { assetPaletteRevision } from 'src/utils/asset-palette-query.js';
 export class AssetPaletteRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  async currentDevelopAssetId(revisionId: string): Promise<string | undefined> {
+    const { rows } = await sql<{ assetId: string }>`
+      SELECT "assetId" FROM asset_develop_revision WHERE id = ${revisionId}::uuid AND "isCurrent"
+    `.execute(this.db);
+    return rows[0]?.assetId;
+  }
+
   source(id: string, db = this.db) {
     return db
       .selectFrom('asset')

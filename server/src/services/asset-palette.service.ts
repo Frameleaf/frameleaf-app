@@ -56,9 +56,13 @@ export class AssetPaletteService {
     switch (job.name) {
       case JobName.AssetGenerateThumbnails:
       case JobName.AssetEditThumbnailGeneration:
-      case JobName.AssetVideoEditGeneration:
-      case JobName.AssetDevelopRender: {
+      case JobName.AssetVideoEditGeneration: {
         await this.enqueue(job.data.id);
+        break;
+      }
+      case JobName.AssetDevelopRender: {
+        const assetId = await this.palettes.currentDevelopAssetId(job.data.id);
+        if (assetId) await this.enqueue(assetId);
         break;
       }
       default: {

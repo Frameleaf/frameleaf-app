@@ -1,13 +1,16 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetPaletteDto } from 'src/dtos/asset-palette.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetFileType } from 'src/enum.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetPaletteRepository } from 'src/repositories/asset-palette.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { rgbToOklab } from 'src/utils/asset-palette.js';
+import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
@@ -102,4 +105,27 @@ describe('current palette SQL persistence', () => {
       [],
     );
   });
+});
+
+it('resolves only the currently selected develop revision for palette refresh', async () => {
+  const { repo, asset } = await setup();
+  const revisions = new AssetDevelopRepository(db);
+  const create = () =>
+    revisions.create({
+      assetId: asset.id,
+      ownerId: asset.ownerId,
+      recipe: defaultDevelopRecipe(),
+      recipeVersion: 1,
+      label: null,
+      status: AssetDevelopRevisionStatus.Rendered,
+    });
+  const first = await create();
+  const second = await create();
+  expect(await repo.currentDevelopAssetId(first.id)).toBeUndefined();
+  await revisions.setCurrent(asset.id, first.id);
+  expect(await repo.currentDevelopAssetId(first.id)).toBe(asset.id);
+  expect(await repo.currentDevelopAssetId(second.id)).toBeUndefined();
+  await revisions.setCurrent(asset.id, second.id);
+  expect(await repo.currentDevelopAssetId(first.id)).toBeUndefined();
+  expect(await repo.currentDevelopAssetId(second.id)).toBe(asset.id);
 });

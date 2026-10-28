@@ -22,6 +22,7 @@ const ready = { swatches: [{ hex: '#ff0000', weight: 1, oklab: rgbToOklab(1, 0, 
 const setup = () => {
   const palettes = {
     source: vi.fn().mockResolvedValue(source),
+    currentDevelopAssetId: vi.fn().mockResolvedValue(undefined),
     get: vi.fn().mockResolvedValue(undefined),
     publish: vi.fn().mockResolvedValue(true),
     page: vi.fn().mockResolvedValue([]),
@@ -227,4 +228,29 @@ describe('palette indexing lifecycle', () => {
       data: { afterId: 'asset-99', force: undefined },
     });
   });
+});
+
+it('resolves an active rendered revision before refreshing its asset palette', async () => {
+  const { service, palettes, jobs } = setup();
+  palettes.currentDevelopAssetId.mockResolvedValue('asset');
+  await service.onJobSuccess({
+    job: { name: JobName.AssetDevelopRender, data: { id: 'revision' } },
+    response: JobStatus.Success,
+  } as never);
+  expect(palettes.currentDevelopAssetId).toHaveBeenCalledWith('revision');
+  expect(palettes.source).toHaveBeenCalledWith('asset');
+  expect(jobs.queue).toHaveBeenCalledWith({
+    name: JobName.AssetPaletteExtract,
+    data: { id: 'asset', sourceRevision: 'rev' },
+  });
+});
+it('leaves the active palette alone when a batch render was retained inactive', async () => {
+  const { service, palettes, jobs } = setup();
+  await service.onJobSuccess({
+    job: { name: JobName.AssetDevelopRender, data: { id: 'inactive-revision' } },
+    response: JobStatus.Success,
+  } as never);
+  expect(palettes.currentDevelopAssetId).toHaveBeenCalledWith('inactive-revision');
+  expect(palettes.source).not.toHaveBeenCalled();
+  expect(jobs.queue).not.toHaveBeenCalled();
 });
