@@ -95,6 +95,11 @@ import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/des
 import { DesktopWorkerChallengeTable } from 'src/schema/tables/desktop-worker-challenge.table.js';
 import { DesktopWorkerQualificationTable } from 'src/schema/tables/desktop-worker-qualification.table.js';
 import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
+import {
+  DevelopBatchItemTable,
+  DevelopBatchReturnTable,
+  DevelopBatchTable,
+} from 'src/schema/tables/develop-batch.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
@@ -431,6 +436,9 @@ export class ImmichDatabase {
     WorkflowLogTable,
     WorkflowLogDetailTable,
     WorkflowRunStepTable,
+    DevelopBatchTable,
+    DevelopBatchItemTable,
+    DevelopBatchReturnTable,
     WorkflowBatchTable,
     WorkflowBatchItemTable,
     WorkflowScheduleTable,
@@ -657,6 +665,9 @@ export interface DB extends QueueDatabase {
   takeout_source: TakeoutSourceTable;
 
   develop_export: DevelopExportTable;
+  develop_batch: DevelopBatchTable;
+  develop_batch_item: DevelopBatchItemTable;
+  develop_batch_return: DevelopBatchReturnTable;
   develop_preset: DevelopPresetTable;
 
   tag: TagTable;

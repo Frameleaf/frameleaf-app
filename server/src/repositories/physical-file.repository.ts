@@ -92,6 +92,7 @@ export const countPathReferences = async (
 
     UNION ALL SELECT 1 FROM public.asset_develop_revision r
     WHERE r."masterPath"=${path} OR r."previewPath"=${path} OR r."hdrMasterPath"=${path} OR r."hdrPreviewPath"=${path}
+    UNION ALL SELECT 1 FROM public.develop_batch_return returned WHERE returned."pendingMasterPath"=${path}
     UNION ALL SELECT 1 FROM public.asset_file f
     WHERE f."isEdited" AND f.type='encoded_video' AND f.path || '.lineage.json'=${path}
   ) retained`.execute(trx);

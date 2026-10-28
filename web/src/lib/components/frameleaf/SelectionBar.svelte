@@ -1,5 +1,7 @@
 <script lang="ts">
   import { shortcuts } from '$lib/actions/shortcut';
+  import DevelopBatchPanel from '$lib/components/frameleaf/DevelopBatchPanel.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import BulkAlbumDialog from '$lib/components/frameleaf/BulkAlbumDialog.svelte';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import BulkDateDialog from '$lib/components/frameleaf/BulkDateDialog.svelte';
@@ -176,6 +178,7 @@
   } = $props();
 
   let menuOpen = $state(false);
+  let batchOpen = $state(false);
   let dialog = $state<BulkActionId | null>(null);
   /** Bound to the open dialog, so closing it from inside clears the parent's choice too. */
   let dialogOpen = $state(false);
@@ -431,7 +434,7 @@
 </script>
 
 <svelte:window
-  use:shortcuts={open && !dialog
+  use:shortcuts={open && !dialog && !batchOpen
     ? [
         { shortcut: { key: 'Escape' }, onShortcut: guardShortcut(handleEscape), preventDefault: false },
         { shortcut: { key: 'D', ctrl: true }, onShortcut: guardShortcut(onClear), preventDefault: false },
@@ -563,6 +566,17 @@
               aria-label={$t('frameleaf_selection_more_actions')}
               onkeydown={menuKeydown}
             >
+              {#if !context.sharedLinkId && !context.readOnly && !context.trash && !context.snapshot}
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabindex="-1"
+                  onclick={() => {
+                    menuOpen = false;
+                    batchOpen = true;
+                  }}>{$t('frameleaf_batch.title')}</button
+                >
+              {/if}
               {#each menuGroups as group (group.id)}
                 <div role="group" aria-labelledby={`${menuId}-${group.id}`}>
                   <p class="menu-title" id={`${menuId}-${group.id}`}>{$t(group.titleKey)}</p>
@@ -641,6 +655,11 @@
     {/each}
   </div>
 {/if}
+
+<Dialog bind:open={batchOpen} title={$t('frameleaf_batch.title')} closeLabel={$t('close')} size="wide">
+  {#if batchOpen}<DevelopBatchPanel assetIds={[...selectedIds]} />{/if}
+  <p><a href="/develop-batches">{$t('frameleaf_batch.manage')}</a></p>
+</Dialog>
 
 {#if dialog === 'change-date'}
   <BulkDateDialog

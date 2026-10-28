@@ -1,12 +1,13 @@
 import { BadRequestException, ConflictException, HttpStatus, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { BatchReturnAdmission } from 'src/repositories/develop-batch.repository.js';
 import {
   type AssetDevelopRecipe,
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
-import { publicationDatabase } from 'src/queue/transaction.js';
+import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { assertRenderableDevelopRecipe, developEnvelope, preserveDevelopEnvelope } from 'src/utils/develop-envelope.js';
@@ -41,6 +42,7 @@ export type AssetDevelopRevision = {
   fileName: string | null;
   software: string | null;
   attempts: number;
+  batchChargedBytes?: number;
   createdAt: Date;
   updatedAt: Date;
   renderedAt: Date | null;
@@ -67,6 +69,7 @@ export type AssetDevelopRevisionUpdate = Partial<
     | 'attempts'
   >
 >;
+export class BatchDevelopCancelled extends Error {}
 const TABLE = sql`public.asset_develop_revision`;
 const ARTIFACTS = sql`public.asset_develop_artifact`;
 /** FL-233: the artifact ids a recipe's masks and Clean Up name (whether or not they render). */
@@ -161,22 +164,55 @@ export class AssetDevelopRepository {
     fileName?: string | null;
     software?: string | null;
     masterPath?: string | null;
+    batchReturn?: BatchReturnAdmission;
   }): Promise<AssetDevelopRevision> {
     // Serialised per asset: two saves racing for the same next number would otherwise collide on
     // the (assetId, revision) unique key and one of them would fail.
     return this.db.transaction().execute(async (trx) => {
+      if (input.batchReturn) {
+        const b = input.batchReturn;
+        const batch = await trx
+          .selectFrom('develop_batch')
+          .selectAll()
+          .where('id', '=', b.batchId)
+          .where('ownerId', '=', input.ownerId)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!batch || batch.status === 'cancelled')
+          throw new ConflictException('This editing batch is unavailable or cancelled');
+        const { rows } = await sql<{
+          revisionId: string | null;
+          pendingMasterPath: string | null;
+        }>`SELECT returned."revisionId",returned."pendingMasterPath" FROM develop_batch_return returned JOIN develop_batch_item item ON item.id=returned."itemId" JOIN develop_export exported ON exported.id=item."exportId"
+          WHERE item.id=${b.itemId}::uuid AND item."batchId"=${b.batchId}::uuid AND item."assetId"=${input.assetId}::uuid AND item."exportId"=${input.exportId}::uuid
+          AND exported."ownerId"=${input.ownerId}::uuid AND exported."sourceChecksum"=${input.sourceChecksum}
+          AND returned."confirmationId"=${b.confirmationId}::uuid AND returned.checksum=${b.checksum} AND returned.status<>'cancelled'`.execute(
+          trx,
+        );
+        if (!rows[0]) throw new ConflictException('Review and confirm this returned file before importing');
+        if (rows[0].revisionId) {
+          const existing =
+            await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE} WHERE id=${rows[0].revisionId}::uuid`.execute(trx);
+          if (!existing.rows[0]) throw new ConflictException('The previously imported version is unavailable');
+          return existing.rows[0];
+        }
+        if (rows[0].pendingMasterPath !== input.masterPath)
+          throw new ConflictException('This pending upload was cancelled; review and retry');
+      }
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${input.assetId}`}, 0))`.execute(
         trx,
       );
       const asset = await trx
         .selectFrom('asset')
-        .select('id')
+        .select(['id', 'checksum'])
         .where('id', '=', input.assetId)
         .where('ownerId', '=', input.ownerId)
         .where('deletedAt', 'is', null)
         .forShare()
         .executeTakeFirst();
       if (!asset) throw new BadRequestException('Develop source asset is no longer available');
+      if (input.batchReturn?.sourceIdentity && !Buffer.from(asset.checksum).equals(input.batchReturn.sourceIdentity))
+        throw new ConflictException({ message: 'The original changed during import', code: 'source_changed' });
       if (input.expectedCurrentRevisionId !== undefined) {
         // FL-431: read under the per-asset lock above, in the inserting transaction, so the
         // precondition and the new row are one decision. Saving never moves `isCurrent`, so a
@@ -231,6 +267,7 @@ export class AssetDevelopRepository {
           });
         }
       }
+      if (input.batchReturn && input.masterPath) await lockFilePath(trx, input.masterPath);
       const { rows } = await sql<AssetDevelopRevision>`
         INSERT INTO ${TABLE} (
           "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
@@ -254,6 +291,21 @@ export class AssetDevelopRepository {
         )
         RETURNING *
       `.execute(trx);
+      if (input.batchReturn) {
+        const b = input.batchReturn;
+        const charged = await trx
+          .updateTable('user')
+          .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${b.bytes}` })
+          .where('id', '=', input.ownerId)
+          .where(sql<boolean>`"quotaSizeInBytes" IS NULL OR "quotaUsageInBytes" + ${b.bytes} <= "quotaSizeInBytes"`)
+          .returning('id')
+          .executeTakeFirst();
+        if (!charged) throw new BadRequestException({ message: 'Your storage is full', code: 'develop_batch_quota' });
+        await sql`UPDATE ${TABLE} SET "batchChargedBytes"=${b.bytes} WHERE id=${rows[0].id}::uuid`.execute(trx);
+        await sql`UPDATE develop_batch_return SET "revisionId"=${rows[0].id}::uuid,"sourceIdentity"=${b.sourceIdentity ?? null},"pendingMasterPath"=NULL,"stagedAt"=NULL,status='imported',error=NULL,"errorCode"=NULL WHERE "itemId"=${b.itemId}::uuid AND checksum=${b.checksum}`.execute(
+          trx,
+        );
+      }
       return rows[0];
     });
   }
@@ -314,6 +366,11 @@ export class AssetDevelopRepository {
    */
   async setCurrent(assetId: string, revisionId: string | null): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${assetId}`},0))`.execute(trx);
+      const current = await sql<{
+        id: string;
+      }>`SELECT id FROM ${TABLE} WHERE "assetId"=${assetId}::uuid AND "isCurrent"`.execute(trx);
+      if ((current.rows[0]?.id ?? null) !== revisionId) await this.invalidateBatchConfirmations(trx, assetId);
       await sql`
         UPDATE ${TABLE} SET "isCurrent" = false, "updatedAt" = now()
         WHERE "assetId" = ${assetId}::uuid AND "isCurrent"
@@ -325,6 +382,212 @@ export class AssetDevelopRepository {
         `.execute(trx);
       }
     });
+  }
+  private async invalidateBatchConfirmations(tx: Kysely<DB>, assetId: string, except?: string) {
+    await sql`UPDATE develop_batch_return r SET "activationInvalidated"=true FROM develop_batch_item item WHERE item.id=r."itemId" AND item."assetId"=${assetId}::uuid AND r.status IN ('confirmed','imported','failed') ${except ? sql`AND r.id<>${except}::uuid` : sql``}`.execute(
+      tx,
+    );
+  }
+  /** A moved master remains discoverable even if the process dies before inserting its version. */
+  async reserveBatchMaster(ownerId: string, admission: BatchReturnAdmission, candidate: string): Promise<string> {
+    return this.db.transaction().execute(async (tx) => {
+      const batch = await tx
+        .selectFrom('develop_batch')
+        .select('status')
+        .where('id', '=', admission.batchId)
+        .where('ownerId', '=', ownerId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!batch || batch.status === 'cancelled')
+        throw new ConflictException({ message: 'This batch was cancelled', code: 'batch_cancelled' });
+      const returned = await tx
+        .selectFrom('develop_batch_return as returned')
+        .innerJoin('develop_batch_item as item', 'item.id', 'returned.itemId')
+        .select(['returned.id', 'returned.revisionId', 'returned.pendingMasterPath'])
+        .where('item.batchId', '=', admission.batchId)
+        .where('item.id', '=', admission.itemId)
+        .where('returned.confirmationId', '=', admission.confirmationId)
+        .where('returned.checksum', '=', admission.checksum)
+        .forUpdate('returned')
+        .executeTakeFirst();
+      if (!returned) throw new ConflictException('Review this returned file before importing');
+      if (returned.revisionId) {
+        const revision = await sql<{
+          masterPath: string | null;
+        }>`SELECT "masterPath" FROM ${TABLE} WHERE id=${returned.revisionId}::uuid`.execute(tx);
+        if (!revision.rows[0]?.masterPath)
+          throw new ConflictException({ message: 'The stored master is no longer available', code: 'source_changed' });
+        return revision.rows[0].masterPath;
+      }
+      const target = returned.pendingMasterPath ?? candidate;
+      await lockFilePath(tx, target);
+      await tx
+        .updateTable('develop_batch_return')
+        .set({ pendingMasterPath: target, stagedAt: new Date() })
+        .where('id', '=', returned.id)
+        .execute();
+      return target;
+    });
+  }
+  async abandonBatchMaster(ownerId: string, admission: BatchReturnAdmission): Promise<string | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom('develop_batch')
+        .select('id')
+        .where('id', '=', admission.batchId)
+        .where('ownerId', '=', ownerId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      const { rows } = await sql<{
+        pendingMasterPath: string | null;
+      }>`WITH pending AS (SELECT r.id,r."pendingMasterPath" FROM develop_batch_return r JOIN develop_batch_item item ON item.id=r."itemId" WHERE item.id=${admission.itemId}::uuid AND item."batchId"=${admission.batchId}::uuid AND r.checksum=${admission.checksum} AND r."confirmationId"=${admission.confirmationId}::uuid AND r."revisionId" IS NULL FOR UPDATE OF r) UPDATE develop_batch_return r SET "pendingMasterPath"=NULL,"stagedAt"=NULL FROM pending WHERE r.id=pending.id RETURNING pending."pendingMasterPath"`.execute(
+        tx,
+      );
+      return rows[0]?.pendingMasterPath ?? undefined;
+    });
+  }
+  async failBatchRender(id: string, code: string) {
+    await sql`UPDATE develop_batch_return SET "errorCode"=${code},error=CASE WHEN ${code}='source_changed' THEN 'The original or returned master changed' ELSE 'Preview rendering failed' END WHERE "revisionId"=${id}::uuid AND status NOT IN ('completed','conflict','cancelled')`.execute(
+      this.db,
+    );
+  }
+  async recoverBatchImports() {
+    const { rows } = await sql<{
+      id: string;
+    }>`UPDATE ${TABLE} revision SET status='queued' FROM develop_batch_return r JOIN develop_batch_item item ON item.id=r."itemId" JOIN develop_batch batch ON batch.id=item."batchId" WHERE r."revisionId"=revision.id AND revision.status='saved' AND NOT revision."cancelRequested" AND batch.status='open' RETURNING revision.id`.execute(
+      this.db,
+    );
+    return rows;
+  }
+  async queueBatchRevision(id: string) {
+    const { rows } = await sql<{
+      id: string;
+    }>`UPDATE ${TABLE} SET status='queued' WHERE id=${id}::uuid AND status='saved' RETURNING id`.execute(this.db);
+    return rows.length > 0;
+  }
+  async releaseBatchMaster(id: string): Promise<string | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql<{
+        ownerId: string;
+        batchChargedBytes: number;
+        masterPath: string | null;
+      }>`SELECT "ownerId","batchChargedBytes","masterPath" FROM ${TABLE} WHERE id=${id}::uuid FOR UPDATE`.execute(tx);
+      const revision = rows[0];
+      if (!revision || !revision.masterPath || Number(revision.batchChargedBytes) === 0) return;
+      await tx
+        .updateTable('user')
+        .set({ quotaUsageInBytes: sql`GREATEST("quotaUsageInBytes"-${revision.batchChargedBytes},0)` })
+        .where('id', '=', revision.ownerId)
+        .execute();
+      await sql`UPDATE ${TABLE} SET "batchChargedBytes"=0,"masterPath"=NULL WHERE id=${id}::uuid`.execute(tx);
+      return revision.masterPath;
+    });
+  }
+  /** Batch previews publish under the same locks as confirmation/import/cancellation and current-version changes. */
+  async publishBatchRendered(revision: AssetDevelopRevision, patch: AssetDevelopRevisionUpdate): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) =>
+      publicationTransaction.run(tx, async () => {
+        const found = await sql<{
+          batchId: string;
+          returnId: string;
+        }>`SELECT item."batchId",r.id AS "returnId" FROM develop_batch_return r JOIN develop_batch_item item ON item.id=r."itemId" WHERE r."revisionId"=${revision.id}::uuid`.execute(
+          tx,
+        );
+        const batchReturn = found.rows[0];
+        if (!batchReturn) return false;
+        const batch = await tx
+          .selectFrom('develop_batch')
+          .selectAll()
+          .where('id', '=', batchReturn.batchId)
+          .forUpdate()
+          .executeTakeFirstOrThrow();
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${revision.assetId}`},0))`.execute(
+          tx,
+        );
+        const returned = await tx
+          .selectFrom('develop_batch_return')
+          .selectAll()
+          .where('id', '=', batchReturn.returnId)
+          .forUpdate()
+          .executeTakeFirstOrThrow();
+        if (batch.status === 'cancelled' || returned.status === 'cancelled')
+          throw new BatchDevelopCancelled('Batch cancelled');
+        const asset = await tx
+          .selectFrom('asset')
+          .select(['id', 'ownerId', 'deletedAt', 'isOffline', 'visibility', 'checksum'])
+          .where('id', '=', revision.assetId)
+          .forShare()
+          .executeTakeFirst();
+        const locked = await tx
+          .selectFrom('asset_lock')
+          .select('assetId')
+          .where('assetId', '=', revision.assetId)
+          .executeTakeFirst();
+        const grant =
+          returned.locked && returned.sessionId
+            ? await tx
+                .selectFrom('session')
+                .select('id')
+                .where('id', '=', returned.sessionId)
+                .where('userId', '=', revision.ownerId)
+                .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+                .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+                .executeTakeFirst()
+            : undefined;
+        const current = await sql<{
+          id: string;
+        }>`SELECT id FROM ${TABLE} WHERE "assetId"=${revision.assetId}::uuid AND "isCurrent"`.execute(tx);
+        const error =
+          batch.status === 'cancelled' || returned.status === 'cancelled'
+            ? 'Batch cancelled'
+            : !asset ||
+                asset.ownerId !== revision.ownerId ||
+                !returned.sourceIdentity ||
+                !Buffer.from(asset.checksum).equals(returned.sourceIdentity) ||
+                asset.deletedAt ||
+                asset.isOffline ||
+                asset.visibility === 'hidden' ||
+                !!locked !== returned.locked ||
+                (returned.locked && !grant)
+              ? 'The original is no longer available for this confirmed edit'
+              : returned.activationInvalidated || (current.rows[0]?.id ?? null) !== returned.expectedCurrentRevisionId
+                ? 'A newer working version was selected after confirmation; this returned version was kept inactive'
+                : null;
+        await this.update(revision.id, patch);
+        if (!error) {
+          if ((current.rows[0]?.id ?? null) !== revision.id)
+            await this.invalidateBatchConfirmations(tx, revision.assetId, returned.id);
+          await sql`UPDATE ${TABLE} SET "isCurrent"=false,"updatedAt"=now() WHERE "assetId"=${revision.assetId}::uuid AND "isCurrent"`.execute(
+            tx,
+          );
+          await sql`UPDATE ${TABLE} SET "isCurrent"=true,"updatedAt"=now() WHERE id=${revision.id}::uuid`.execute(tx);
+        }
+        await tx
+          .updateTable('develop_batch_return')
+          .set({
+            status: error ? 'conflict' : 'completed',
+            error,
+            errorCode: error
+              ? batch.status === 'cancelled' || returned.status === 'cancelled'
+                ? 'batch_cancelled'
+                : !asset ||
+                    asset.ownerId !== revision.ownerId ||
+                    !returned.sourceIdentity ||
+                    !Buffer.from(asset.checksum).equals(returned.sourceIdentity) ||
+                    asset.deletedAt ||
+                    asset.isOffline ||
+                    asset.visibility === 'hidden' ||
+                    !!locked !== returned.locked ||
+                    (returned.locked && !grant)
+                  ? 'source_unavailable'
+                  : 'current_revision_changed'
+              : null,
+          })
+          .where('id', '=', returned.id)
+          .execute();
+        return true;
+      }),
+    );
   }
   /** Marks a revision as wanting to stop; the renderer checks the flag between stages. */
   async requestCancel(id: string): Promise<void> {
@@ -352,6 +615,8 @@ export class AssetDevelopRepository {
   async releaseRemovedAssetRevisions(queue: (files: string[]) => Promise<void>, assetId?: string): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
       const { rows } = await sql<{
+        ownerId: string;
+        batchChargedBytes: number;
         masterPath: string | null;
         previewPath: string | null;
         hdrMasterPath: string | null;
@@ -360,8 +625,15 @@ export class AssetDevelopRepository {
         DELETE FROM ${TABLE} revision
         WHERE NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = revision."assetId")
         ${assetId ? sql`AND revision."assetId" = ${assetId}::uuid` : sql``}
-        RETURNING revision."masterPath", revision."previewPath", revision."hdrMasterPath", revision."hdrPreviewPath"
+        RETURNING revision."masterPath", revision."previewPath", revision."hdrMasterPath", revision."hdrPreviewPath",revision."ownerId",revision."batchChargedBytes"
       `.execute(tx);
+      for (const row of rows)
+        if (Number(row.batchChargedBytes) > 0)
+          await tx
+            .updateTable('user')
+            .set({ quotaUsageInBytes: sql`GREATEST("quotaUsageInBytes"-${row.batchChargedBytes},0)` })
+            .where('id', '=', row.ownerId)
+            .execute();
       const files = [
         ...new Set(
           rows
@@ -513,6 +785,14 @@ export class AssetDevelopRepository {
    */
   async syncUsage(id?: string): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom('user')
+        .select('id')
+        .where('deletedAt', 'is', null)
+        .$if(id !== undefined, (q) => q.where('id', '=', id!))
+        .orderBy('id')
+        .forUpdate()
+        .execute();
       await sql`
         UPDATE public."user" AS "user"
         SET
@@ -523,6 +803,8 @@ export class AssetDevelopRepository {
             WHERE asset."libraryId" IS NULL AND asset."ownerId" = "user".id
           ) + (
             SELECT COALESCE(sum(artifact.bytes), 0) FROM ${ARTIFACTS} artifact WHERE artifact."ownerId" = "user".id
+          ) + (
+            SELECT COALESCE(sum(revision."batchChargedBytes"),0) FROM ${TABLE} revision WHERE revision."ownerId"="user".id
           ),
           "updatedAt" = now()
         WHERE "user"."deletedAt" IS NULL

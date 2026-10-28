@@ -32,6 +32,7 @@ describe(PhotoToolsService.name, () => {
       updatePreset: vi.fn(),
       deletePreset: vi.fn(),
       createExport: vi.fn(),
+      createReservedExport: vi.fn(),
       listExports: vi.fn(),
       getExport: vi.fn(),
     };

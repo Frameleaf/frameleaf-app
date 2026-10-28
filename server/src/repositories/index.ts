@@ -35,6 +35,7 @@ import { DesktopDeviceRepository } from 'src/repositories/desktop-device.reposit
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
+import { DevelopBatchRepository } from 'src/repositories/develop-batch.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
@@ -133,6 +134,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  DevelopBatchRepository,
   DesktopClipIndexRepository,
   DesktopDeviceRepository,
   PhotoSourceRepository,
