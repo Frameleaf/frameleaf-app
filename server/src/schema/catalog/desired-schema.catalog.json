@@ -34098,241 +34098,6 @@
       "synchronize": true
     },
     {
-      "name": "bookmark",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "url",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "title",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "note",
-          "tableName": "bookmark",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "previewAssetId",
-          "tableName": "bookmark",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "enum",
-          "primary": false,
-          "name": "libraryScope",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "default": "'design'::library_scope_enum",
-          "synchronize": true,
-          "enumName": "library_scope_enum"
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isArchived",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isLocked",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "bookmark",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "bookmark",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "source",
-          "tableName": "bookmark",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "bookmark_previewAssetId_idx",
-          "definition": "CREATE INDEX \"bookmark_previewAssetId_idx\" ON public.bookmark USING btree (\"previewAssetId\")",
-          "tableName": "bookmark",
-          "columnNames": [
-            "previewAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "bookmark_ownerId_libraryScope_idx",
-          "definition": "CREATE INDEX \"bookmark_ownerId_libraryScope_idx\" ON public.bookmark USING btree (\"ownerId\", \"libraryScope\")",
-          "tableName": "bookmark",
-          "columnNames": [
-            "ownerId",
-            "libraryScope"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "bookmark_updateId_idx",
-          "definition": "CREATE INDEX \"bookmark_updateId_idx\" ON public.bookmark USING btree (\"updateId\")",
-          "tableName": "bookmark",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "bookmark_updatedAt",
-          "definition": "CREATE TRIGGER \"bookmark_updatedAt\" BEFORE UPDATE ON public.bookmark FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "bookmark",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "bookmark_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "bookmark",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "bookmark_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "bookmark",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "bookmark_previewAssetId_fkey",
-          "definition": "FOREIGN KEY (\"previewAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "bookmark",
-          "columnNames": [
-            "previewAssetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "capture_receipt",
       "columns": [
         {
@@ -34973,6 +34738,260 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "bookmark",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "url",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "title",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "note",
+          "tableName": "bookmark",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "previewAssetId",
+          "tableName": "bookmark",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "enum",
+          "primary": false,
+          "name": "libraryScope",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "default": "'design'::library_scope_enum",
+          "synchronize": true,
+          "enumName": "library_scope_enum"
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isArchived",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isLocked",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "bookmark",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "bookmark",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "source",
+          "tableName": "bookmark",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "rating",
+          "tableName": "bookmark",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "bookmark_previewAssetId_idx",
+          "definition": "CREATE INDEX \"bookmark_previewAssetId_idx\" ON public.bookmark USING btree (\"previewAssetId\")",
+          "tableName": "bookmark",
+          "columnNames": [
+            "previewAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "bookmark_ownerId_libraryScope_idx",
+          "definition": "CREATE INDEX \"bookmark_ownerId_libraryScope_idx\" ON public.bookmark USING btree (\"ownerId\", \"libraryScope\")",
+          "tableName": "bookmark",
+          "columnNames": [
+            "ownerId",
+            "libraryScope"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "bookmark_updateId_idx",
+          "definition": "CREATE INDEX \"bookmark_updateId_idx\" ON public.bookmark USING btree (\"updateId\")",
+          "tableName": "bookmark",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "bookmark_updatedAt",
+          "definition": "CREATE TRIGGER \"bookmark_updatedAt\" BEFORE UPDATE ON public.bookmark FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "bookmark",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "bookmark_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "bookmark",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "bookmark_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "bookmark",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "bookmark_previewAssetId_fkey",
+          "definition": "FOREIGN KEY (\"previewAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "bookmark",
+          "columnNames": [
+            "previewAssetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "bookmark_rating_check",
+          "definition": "CHECK (((rating IS NULL) OR (rating = '-1'::integer) OR ((rating >= 1) AND (rating <= 5))))",
+          "tableName": "bookmark",
+          "expression": "(((rating IS NULL) OR (rating = '-1'::integer) OR ((rating >= 1) AND (rating <= 5))))",
           "synchronize": true
         }
       ],
@@ -38501,10 +38520,10 @@
       ],
       "indexes": [
         {
-          "name": "render_worker_session_budget_measurement_key",
-          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_measurement_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)))",
+          "name": "render_worker_session_budget_receipt_key",
+          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_receipt_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)))",
           "tableName": "render_worker_session",
-          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)",
+          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)",
           "using": "btree",
           "unique": true,
           "synchronize": true
@@ -38533,10 +38552,10 @@
           "synchronize": true
         },
         {
-          "name": "render_worker_session_budget_receipt_key",
-          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_receipt_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)))",
+          "name": "render_worker_session_budget_measurement_key",
+          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_measurement_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)))",
           "tableName": "render_worker_session",
-          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)",
+          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)",
           "using": "btree",
           "unique": true,
           "synchronize": true
@@ -38690,22 +38709,6 @@
       "triggers": [],
       "constraints": [
         {
-          "type": "check",
-          "name": "cloud_backup_selection_destination_check",
-          "definition": "CHECK ((destination = 'cloud'::text))",
-          "tableName": "cloud_backup_selection",
-          "expression": "((destination = 'cloud'::text))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "cloud_backup_selection_dateRanges_check",
-          "definition": "CHECK ((jsonb_typeof(\"dateRanges\") = 'array'::text))",
-          "tableName": "cloud_backup_selection",
-          "expression": "((jsonb_typeof(\"dateRanges\") = 'array'::text))",
-          "synchronize": true
-        },
-        {
           "type": "primary-key",
           "name": "cloud_backup_selection_pkey",
           "definition": "PRIMARY KEY (\"userId\", destination)",
@@ -38730,6 +38733,22 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "cloud_backup_selection_destination_check",
+          "definition": "CHECK ((destination = 'cloud'::text))",
+          "tableName": "cloud_backup_selection",
+          "expression": "((destination = 'cloud'::text))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "cloud_backup_selection_dateRanges_check",
+          "definition": "CHECK ((jsonb_typeof(\"dateRanges\") = 'array'::text))",
+          "tableName": "cloud_backup_selection",
+          "expression": "((jsonb_typeof(\"dateRanges\") = 'array'::text))",
           "synchronize": true
         }
       ],
@@ -39560,6 +39579,18 @@
       ],
       "indexes": [
         {
+          "name": "desktop_worker_challenge_deviceId_expiresAt_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_expiresAt_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\", \"expiresAt\")",
+          "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "deviceId",
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "desktop_worker_challenge_deviceId_idx",
           "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\")",
           "tableName": "desktop_worker_challenge",
@@ -39576,18 +39607,6 @@
           "tableName": "desktop_worker_challenge",
           "columnNames": [
             "sessionId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "desktop_worker_challenge_deviceId_expiresAt_idx",
-          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_expiresAt_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\", \"expiresAt\")",
-          "tableName": "desktop_worker_challenge",
-          "columnNames": [
-            "deviceId",
-            "expiresAt"
           ],
           "using": "btree",
           "unique": false,
@@ -40312,14 +40331,6 @@
           "synchronize": true
         },
         {
-          "type": "check",
-          "name": "smart_search_description_producer_key_check",
-          "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
-          "tableName": "smart_search_description",
-          "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
-          "synchronize": true
-        },
-        {
           "type": "foreign-key",
           "name": "smart_search_description_producerAdmissionKey_fkey",
           "definition": "FOREIGN KEY (\"producerAdmissionKey\") REFERENCES desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT",
@@ -40333,6 +40344,14 @@
           ],
           "onUpdate": "RESTRICT",
           "onDelete": "RESTRICT",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "smart_search_description_producer_key_check",
+          "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "tableName": "smart_search_description",
+          "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "synchronize": true
         }
       ],
@@ -41013,18 +41032,18 @@
       "constraints": [
         {
           "type": "check",
-          "name": "desktop_ml_task_kind_check",
-          "definition": "CHECK (((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
-          "tableName": "desktop_ml_task",
-          "expression": "(((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
           "name": "desktop_ml_task_input_size_check",
           "definition": "CHECK ((octet_length(input) <= 16777216))",
           "tableName": "desktop_ml_task",
           "expression": "((octet_length(input) <= 16777216))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_ml_task_kind_check",
+          "definition": "CHECK (((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
+          "tableName": "desktop_ml_task",
+          "expression": "(((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
           "synchronize": true
         },
         {
@@ -41162,22 +41181,22 @@
       ],
       "indexes": [
         {
-          "name": "photo_source_deviceid_idx",
-          "definition": "CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree (\"deviceId\")",
+          "name": "photo_source_ownerid_idx",
+          "definition": "CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree (\"ownerId\")",
           "tableName": "photo_source",
           "columnNames": [
-            "deviceId"
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "photo_source_ownerid_idx",
-          "definition": "CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree (\"ownerId\")",
+          "name": "photo_source_deviceid_idx",
+          "definition": "CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree (\"deviceId\")",
           "tableName": "photo_source",
           "columnNames": [
-            "ownerId"
+            "deviceId"
           ],
           "using": "btree",
           "unique": false,
@@ -41629,6 +41648,17 @@
       ],
       "indexes": [
         {
+          "name": "desktop_worker_qualification_deviceId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "deviceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "desktop_worker_qualification_sessionId_idx",
           "definition": "CREATE INDEX \"desktop_worker_qualification_sessionId_idx\" ON public.desktop_worker_qualification USING btree (\"sessionId\")",
           "tableName": "desktop_worker_qualification",
@@ -41646,17 +41676,6 @@
           "columnNames": [
             "deviceId",
             "expiresAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "desktop_worker_qualification_deviceId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\")",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "deviceId"
           ],
           "using": "btree",
           "unique": false,
@@ -42406,6 +42425,32 @@
       ],
       "indexes": [
         {
+          "name": "source_resource_read_active_uq",
+          "definition": "CREATE UNIQUE INDEX source_resource_read_active_uq ON public.source_resource_read USING btree (\"assetId\", \"resourceId\", \"scopeFingerprint\", \"authorizationEpoch\") WHERE ((state)::text = ANY ((ARRAY['pending'::character varying, 'claimed'::character varying, 'delivering'::character varying])::text[]))",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "assetId",
+            "resourceId",
+            "scopeFingerprint",
+            "authorizationEpoch"
+          ],
+          "using": "btree",
+          "where": "((state)::text = ANY ((ARRAY['pending'::character varying, 'claimed'::character varying, 'delivering'::character varying])::text[]))",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "source_resource_read_resourceId_idx",
+          "definition": "CREATE INDEX \"source_resource_read_resourceId_idx\" ON public.source_resource_read USING btree (\"resourceId\")",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "resourceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "source_resource_read_claimed_source_uq",
           "definition": "CREATE UNIQUE INDEX source_resource_read_claimed_source_uq ON public.source_resource_read USING btree (\"sourceId\") WHERE ((state)::text = ANY ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[]))",
           "tableName": "source_resource_read",
@@ -42442,21 +42487,6 @@
           "synchronize": true
         },
         {
-          "name": "source_resource_read_active_uq",
-          "definition": "CREATE UNIQUE INDEX source_resource_read_active_uq ON public.source_resource_read USING btree (\"assetId\", \"resourceId\", \"scopeFingerprint\", \"authorizationEpoch\") WHERE ((state)::text = ANY ((ARRAY['pending'::character varying, 'claimed'::character varying, 'delivering'::character varying])::text[]))",
-          "tableName": "source_resource_read",
-          "columnNames": [
-            "assetId",
-            "resourceId",
-            "scopeFingerprint",
-            "authorizationEpoch"
-          ],
-          "using": "btree",
-          "where": "((state)::text = ANY ((ARRAY['pending'::character varying, 'claimed'::character varying, 'delivering'::character varying])::text[]))",
-          "unique": true,
-          "synchronize": true
-        },
-        {
           "name": "source_resource_read_deviceId_idx",
           "definition": "CREATE INDEX \"source_resource_read_deviceId_idx\" ON public.source_resource_read USING btree (\"deviceId\")",
           "tableName": "source_resource_read",
@@ -42473,17 +42503,6 @@
           "tableName": "source_resource_read",
           "columnNames": [
             "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "source_resource_read_resourceId_idx",
-          "definition": "CREATE INDEX \"source_resource_read_resourceId_idx\" ON public.source_resource_read USING btree (\"resourceId\")",
-          "tableName": "source_resource_read",
-          "columnNames": [
-            "resourceId"
           ],
           "using": "btree",
           "unique": false,
@@ -43499,22 +43518,22 @@
           "synchronize": true
         },
         {
-          "name": "identical_file_change_runId_idx",
-          "definition": "CREATE INDEX \"identical_file_change_runId_idx\" ON public.identical_file_change USING btree (\"runId\")",
+          "name": "identical_file_change_keptAssetId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_keptAssetId_idx\" ON public.identical_file_change USING btree (\"keptAssetId\")",
           "tableName": "identical_file_change",
           "columnNames": [
-            "runId"
+            "keptAssetId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "identical_file_change_keptAssetId_idx",
-          "definition": "CREATE INDEX \"identical_file_change_keptAssetId_idx\" ON public.identical_file_change USING btree (\"keptAssetId\")",
+          "name": "identical_file_change_runId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_runId_idx\" ON public.identical_file_change USING btree (\"runId\")",
           "tableName": "identical_file_change",
           "columnNames": [
-            "keptAssetId"
+            "runId"
           ],
           "using": "btree",
           "unique": false,
@@ -44217,11 +44236,6 @@
       "synchronize": true
     },
     {
-      "name": "asset_exif_landmark_match",
-      "expression": "CREATE OR REPLACE FUNCTION public.asset_exif_landmark_match()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_OP = 'UPDATE' AND OLD.latitude IS NOT DISTINCT FROM NEW.latitude\n        AND OLD.longitude IS NOT DISTINCT FROM NEW.longitude THEN\n        RETURN NULL;\n      END IF;\n      DELETE FROM public.asset_landmark WHERE \"assetId\" = NEW.\"assetId\";\n      IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN\n        INSERT INTO public.asset_landmark (\"assetId\", \"landmarkId\")\n        SELECT NEW.\"assetId\", l.id\n        FROM public.landmark l\n        WHERE public.earth_box(public.ll_to_earth_public(NEW.latitude, NEW.longitude), 200000)\n            OPERATOR(public.@>) public.ll_to_earth_public(l.latitude, l.longitude)\n          AND public.earth_distance(\n            public.ll_to_earth_public(NEW.latitude, NEW.longitude),\n            public.ll_to_earth_public(l.latitude, l.longitude)) <= l.\"radiusM\"\n          AND (NOT EXISTS (SELECT FROM public.landmark_area a WHERE a.\"landmarkId\" = l.id)\n            OR EXISTS (SELECT FROM public.landmark_area a\n              WHERE a.\"landmarkId\" = l.id AND a.area @> point(NEW.longitude, NEW.latitude)))\n        ON CONFLICT DO NOTHING;\n      END IF;\n      RETURN NULL;\n    EXCEPTION WHEN OTHERS THEN\n      RAISE WARNING 'asset_exif_landmark_match: %', SQLERRM;\n      RETURN NULL;\n    END\n  $function$\n",
-      "synchronize": true
-    },
-    {
       "name": "pet_observation_update_id",
       "expression": "CREATE OR REPLACE FUNCTION public.pet_observation_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$\n",
       "synchronize": true
@@ -44242,6 +44256,11 @@
       "synchronize": true
     },
     {
+      "name": "asset_exif_landmark_match",
+      "expression": "CREATE OR REPLACE FUNCTION public.asset_exif_landmark_match()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_OP = 'UPDATE' AND OLD.latitude IS NOT DISTINCT FROM NEW.latitude\n        AND OLD.longitude IS NOT DISTINCT FROM NEW.longitude THEN\n        RETURN NULL;\n      END IF;\n      DELETE FROM public.asset_landmark WHERE \"assetId\" = NEW.\"assetId\";\n      IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN\n        INSERT INTO public.asset_landmark (\"assetId\", \"landmarkId\")\n        SELECT NEW.\"assetId\", l.id\n        FROM public.landmark l\n        WHERE public.earth_box(public.ll_to_earth_public(NEW.latitude, NEW.longitude), 200000)\n            OPERATOR(public.@>) public.ll_to_earth_public(l.latitude, l.longitude)\n          AND public.earth_distance(\n            public.ll_to_earth_public(NEW.latitude, NEW.longitude),\n            public.ll_to_earth_public(l.latitude, l.longitude)) <= l.\"radiusM\"\n          AND (NOT EXISTS (SELECT FROM public.landmark_area a WHERE a.\"landmarkId\" = l.id)\n            OR EXISTS (SELECT FROM public.landmark_area a\n              WHERE a.\"landmarkId\" = l.id AND a.area @> point(NEW.longitude, NEW.latitude)))\n        ON CONFLICT DO NOTHING;\n      END IF;\n      RETURN NULL;\n    EXCEPTION WHEN OTHERS THEN\n      RAISE WARNING 'asset_exif_landmark_match: %', SQLERRM;\n      RETURN NULL;\n    END\n  $function$\n",
+      "synchronize": true
+    },
+    {
       "name": "freeze_icloud_weekly_bindings",
       "expression": "CREATE OR REPLACE FUNCTION public.freeze_icloud_weekly_bindings()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_TABLE_NAME='icloud_weekly_cohort' THEN\n        IF (to_jsonb(NEW)-ARRAY['performedCount','matchCount','mismatchCount','unavailableCount','cancelledCount','nextBatch','status'])\n          IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['performedCount','matchCount','mismatchCount','unavailableCount','cancelledCount','nextBatch','status'])\n          THEN RAISE EXCEPTION 'icloud_weekly_cohort_frozen'; END IF;\n      ELSE\n        IF (to_jsonb(NEW)-ARRAY['outcome','auditRequestId']) IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['outcome','auditRequestId'])\n          THEN RAISE EXCEPTION 'icloud_weekly_member_frozen'; END IF;\n        IF OLD.outcome<>'pending' AND NEW.outcome IS DISTINCT FROM OLD.outcome\n          THEN RAISE EXCEPTION 'icloud_weekly_outcome_frozen'; END IF;\n        IF OLD.\"auditRequestId\" IS NOT NULL AND NEW.\"auditRequestId\" IS DISTINCT FROM OLD.\"auditRequestId\"\n          THEN RAISE EXCEPTION 'icloud_weekly_audit_binding_frozen'; END IF;\n      END IF;\n      RETURN NEW;\n    END $function$\n",
       "synchronize": true
@@ -44259,6 +44278,11 @@
     {
       "name": "retire_icloud_weekly_authority",
       "expression": "CREATE OR REPLACE FUNCTION public.retire_icloud_weekly_authority()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE old_row jsonb; new_row jsonb; owner_id uuid; connection_id uuid; changed boolean;\n    BEGIN\n      old_row := CASE WHEN TG_OP='INSERT' THEN '{}'::jsonb ELSE to_jsonb(OLD) END;\n      new_row := CASE WHEN TG_OP='DELETE' THEN '{}'::jsonb ELSE to_jsonb(NEW) END;\n      IF TG_TABLE_NAME='icloud_connection' THEN\n        owner_id := (new_row->>'ownerId')::uuid; connection_id := (new_row->>'id')::uuid;\n        changed := old_row->'config' IS DISTINCT FROM new_row->'config'\n          OR (old_row->'encryptedSession' IS DISTINCT FROM new_row->'encryptedSession'\n            AND new_row->>'encryptedSession' IS NULL)\n          OR (new_row->>'lastError'='owner_removed' AND old_row->>'lastError' IS DISTINCT FROM 'owner_removed')\n          OR (old_row->>'state' IS DISTINCT FROM new_row->>'state' AND new_row->>'state'<>'connected');\n      ELSIF TG_TABLE_NAME='user' THEN\n        owner_id := coalesce(new_row->>'id',old_row->>'id')::uuid;\n        changed := TG_OP='DELETE' OR old_row->'pinCode' IS DISTINCT FROM new_row->'pinCode'\n          OR old_row->'deletedAt' IS DISTINCT FROM new_row->'deletedAt';\n      ELSE\n        owner_id := coalesce(new_row->>'userId',old_row->>'userId')::uuid;\n        changed := coalesce(new_row->>'key',old_row->>'key')='preferences'\n          AND old_row->'value'->'privacy' IS DISTINCT FROM new_row->'value'->'privacy';\n      END IF;\n      IF changed THEN\n        UPDATE public.icloud_weekly_grant SET enabled=false,\"includeProtected\"=false,\n          \"pinBinding\"=NULL,generation=generation+1,\"revokedAt\"=clock_timestamp()\n          WHERE \"ownerId\"=owner_id AND (connection_id IS NULL OR \"connectionId\"=connection_id) AND enabled;\n      END IF;\n      RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;\n    END $function$\n",
+      "synchronize": true
+    },
+    {
+      "name": "desktop_clip_producer_guard",
+      "expression": "CREATE OR REPLACE FUNCTION public.desktop_clip_producer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE role text;\n    BEGIN\n      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';\n      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';\n      ELSE RAISE EXCEPTION 'unsupported_clip_store';\n      END IF;\n      NEW.\"producerAdmissionKey\" := CASE WHEN NEW.\"producerModelKey\" IS NULL THEN 'legacy' ELSE role || ':' || NEW.\"producerModelKey\" END;\n      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW.\"producerAdmissionKey\") ON CONFLICT DO NOTHING;\n      RETURN NEW;\n    END$function$\n",
       "synchronize": true
     },
     {
@@ -44379,11 +44403,6 @@
     {
       "name": "album_user_after_insert",
       "expression": "CREATE OR REPLACE FUNCTION public.album_user_after_insert()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      UPDATE album SET \"updatedAt\" = clock_timestamp(), \"updateId\" = immich_uuid_v7(clock_timestamp())\n      WHERE \"id\" IN (SELECT \"albumId\" FROM inserted_rows)\n        AND NOT EXISTS (SELECT FROM inserted_rows WHERE role = 'owner');\n      RETURN NULL;\n    END\n  $function$\n",
-      "synchronize": true
-    },
-    {
-      "name": "desktop_clip_producer_guard",
-      "expression": "CREATE OR REPLACE FUNCTION public.desktop_clip_producer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE role text;\n    BEGIN\n      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';\n      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';\n      ELSE RAISE EXCEPTION 'unsupported_clip_store';\n      END IF;\n      NEW.\"producerAdmissionKey\" := CASE WHEN NEW.\"producerModelKey\" IS NULL THEN 'legacy' ELSE role || ':' || NEW.\"producerModelKey\" END;\n      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW.\"producerAdmissionKey\") ON CONFLICT DO NOTHING;\n      RETURN NEW;\n    END$function$\n",
       "synchronize": true
     },
     {
