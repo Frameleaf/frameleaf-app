@@ -862,22 +862,22 @@
       ],
       "indexes": [
         {
-          "name": "asset_develop_artifact_owner_idx",
-          "definition": "CREATE INDEX asset_develop_artifact_owner_idx ON public.asset_develop_artifact USING btree (\"ownerId\")",
+          "name": "asset_develop_artifact_path_idx",
+          "definition": "CREATE INDEX asset_develop_artifact_path_idx ON public.asset_develop_artifact USING btree (path)",
           "tableName": "asset_develop_artifact",
           "columnNames": [
-            "ownerId"
+            "path"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "asset_develop_artifact_path_idx",
-          "definition": "CREATE INDEX asset_develop_artifact_path_idx ON public.asset_develop_artifact USING btree (path)",
+          "name": "asset_develop_artifact_owner_idx",
+          "definition": "CREATE INDEX asset_develop_artifact_owner_idx ON public.asset_develop_artifact USING btree (\"ownerId\")",
           "tableName": "asset_develop_artifact",
           "columnNames": [
-            "path"
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
@@ -3147,20 +3147,20 @@
       ],
       "indexes": [
         {
-          "name": "idx_geodata_places_admin2_name",
-          "definition": "CREATE INDEX idx_geodata_places_admin2_name ON public.geodata_places USING gin (f_unaccent((\"admin2Name\")::text) gin_trgm_ops)",
-          "tableName": "geodata_places",
-          "expression": "f_unaccent((\"admin2Name\")::text)",
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "IDX_geodata_gist_earthcoord",
           "definition": "CREATE INDEX \"IDX_geodata_gist_earthcoord\" ON public.geodata_places USING gist (ll_to_earth_public(latitude, longitude))",
           "tableName": "geodata_places",
           "expression": "ll_to_earth_public(latitude, longitude)",
           "using": "gist",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "idx_geodata_places_admin2_name",
+          "definition": "CREATE INDEX idx_geodata_places_admin2_name ON public.geodata_places USING gin (f_unaccent((\"admin2Name\")::text) gin_trgm_ops)",
+          "tableName": "geodata_places",
+          "expression": "f_unaccent((\"admin2Name\")::text)",
+          "using": "gin",
           "unique": false,
           "synchronize": true
         },
@@ -34737,6 +34737,239 @@
       "synchronize": true
     },
     {
+      "name": "asset_palette",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "version",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "sourceRevision",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "ownerOnly",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "swatches",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "hasTransparency",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "representative",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "asset_palette",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_palette_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_palette",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_palette_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_palette",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_palette_swatch",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_palette_swatch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "position",
+          "tableName": "asset_palette_swatch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "l",
+          "tableName": "asset_palette_swatch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "a",
+          "tableName": "asset_palette_swatch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "b",
+          "tableName": "asset_palette_swatch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "weight",
+          "tableName": "asset_palette_swatch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_palette_swatch_color_idx",
+          "definition": "CREATE INDEX asset_palette_swatch_color_idx ON public.asset_palette_swatch USING btree (l, a, b, weight)",
+          "tableName": "asset_palette_swatch",
+          "columnNames": [
+            "l",
+            "a",
+            "b",
+            "weight"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_palette_swatch_pkey",
+          "definition": "PRIMARY KEY (\"assetId\", \"position\")",
+          "tableName": "asset_palette_swatch",
+          "columnNames": [
+            "assetId",
+            "position"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_palette_swatch_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_palette_swatch",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
       "name": "icloud_edit_authority",
       "columns": [
         {
@@ -38259,10 +38492,10 @@
       ],
       "indexes": [
         {
-          "name": "render_worker_session_budget_receipt_key",
-          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_receipt_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)))",
+          "name": "render_worker_session_budget_measurement_key",
+          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_measurement_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)))",
           "tableName": "render_worker_session",
-          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)",
+          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)",
           "using": "btree",
           "unique": true,
           "synchronize": true
@@ -38291,6 +38524,15 @@
           "synchronize": true
         },
         {
+          "name": "render_worker_session_budget_receipt_key",
+          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_receipt_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)))",
+          "tableName": "render_worker_session",
+          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)",
+          "using": "btree",
+          "unique": true,
+          "synchronize": true
+        },
+        {
           "name": "render_worker_session_token_idx",
           "definition": "CREATE INDEX render_worker_session_token_idx ON public.render_worker_session USING btree (token)",
           "tableName": "render_worker_session",
@@ -38299,15 +38541,6 @@
           ],
           "using": "btree",
           "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "render_worker_session_budget_measurement_key",
-          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_measurement_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)))",
-          "tableName": "render_worker_session",
-          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)",
-          "using": "btree",
-          "unique": true,
           "synchronize": true
         }
       ],
@@ -39318,22 +39551,22 @@
       ],
       "indexes": [
         {
-          "name": "desktop_worker_challenge_sessionId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_challenge_sessionId_idx\" ON public.desktop_worker_challenge USING btree (\"sessionId\")",
+          "name": "desktop_worker_challenge_deviceId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\")",
           "tableName": "desktop_worker_challenge",
           "columnNames": [
-            "sessionId"
+            "deviceId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "desktop_worker_challenge_deviceId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\")",
+          "name": "desktop_worker_challenge_sessionId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_sessionId_idx\" ON public.desktop_worker_challenge USING btree (\"sessionId\")",
           "tableName": "desktop_worker_challenge",
           "columnNames": [
-            "deviceId"
+            "sessionId"
           ],
           "using": "btree",
           "unique": false,
@@ -39536,24 +39769,24 @@
       ],
       "indexes": [
         {
-          "name": "desktop_ml_attempt_taskid_createdat_idx",
-          "definition": "CREATE INDEX desktop_ml_attempt_taskid_createdat_idx ON public.desktop_ml_attempt USING btree (\"taskId\", \"createdAt\")",
-          "tableName": "desktop_ml_attempt",
-          "columnNames": [
-            "taskId",
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "desktop_ml_attempt_deviceid_expiresat_idx",
           "definition": "CREATE INDEX desktop_ml_attempt_deviceid_expiresat_idx ON public.desktop_ml_attempt USING btree (\"deviceId\", \"expiresAt\")",
           "tableName": "desktop_ml_attempt",
           "columnNames": [
             "deviceId",
             "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_ml_attempt_taskid_createdat_idx",
+          "definition": "CREATE INDEX desktop_ml_attempt_taskid_createdat_idx ON public.desktop_ml_attempt USING btree (\"taskId\", \"createdAt\")",
+          "tableName": "desktop_ml_attempt",
+          "columnNames": [
+            "taskId",
+            "createdAt"
           ],
           "using": "btree",
           "unique": false,
@@ -40920,22 +41153,22 @@
       ],
       "indexes": [
         {
-          "name": "photo_source_ownerid_idx",
-          "definition": "CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree (\"ownerId\")",
+          "name": "photo_source_deviceid_idx",
+          "definition": "CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree (\"deviceId\")",
           "tableName": "photo_source",
           "columnNames": [
-            "ownerId"
+            "deviceId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "photo_source_deviceid_idx",
-          "definition": "CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree (\"deviceId\")",
+          "name": "photo_source_ownerid_idx",
+          "definition": "CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree (\"ownerId\")",
           "tableName": "photo_source",
           "columnNames": [
-            "deviceId"
+            "ownerId"
           ],
           "using": "btree",
           "unique": false,
@@ -41398,23 +41631,23 @@
           "synchronize": true
         },
         {
-          "name": "desktop_worker_qualification_deviceId_idx",
-          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\")",
-          "tableName": "desktop_worker_qualification",
-          "columnNames": [
-            "deviceId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "desktop_worker_qualification_deviceId_expiresAt_idx",
           "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_expiresAt_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\", \"expiresAt\")",
           "tableName": "desktop_worker_qualification",
           "columnNames": [
             "deviceId",
             "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_worker_qualification_deviceId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "deviceId"
           ],
           "using": "btree",
           "unique": false,
@@ -42164,11 +42397,36 @@
       ],
       "indexes": [
         {
+          "name": "source_resource_read_claimed_source_uq",
+          "definition": "CREATE UNIQUE INDEX source_resource_read_claimed_source_uq ON public.source_resource_read USING btree (\"sourceId\") WHERE ((state)::text = ANY ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[]))",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "sourceId"
+          ],
+          "using": "btree",
+          "where": "((state)::text = ANY ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[]))",
+          "unique": true,
+          "synchronize": true
+        },
+        {
           "name": "source_resource_read_ownerId_idx",
           "definition": "CREATE INDEX \"source_resource_read_ownerId_idx\" ON public.source_resource_read USING btree (\"ownerId\")",
           "tableName": "source_resource_read",
           "columnNames": [
             "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "source_resource_read_sourceId_state_createdAt_idx",
+          "definition": "CREATE INDEX \"source_resource_read_sourceId_state_createdAt_idx\" ON public.source_resource_read USING btree (\"sourceId\", state, \"createdAt\")",
+          "tableName": "source_resource_read",
+          "columnNames": [
+            "sourceId",
+            "state",
+            "createdAt"
           ],
           "using": "btree",
           "unique": false,
@@ -42190,17 +42448,6 @@
           "synchronize": true
         },
         {
-          "name": "source_resource_read_assetId_idx",
-          "definition": "CREATE INDEX \"source_resource_read_assetId_idx\" ON public.source_resource_read USING btree (\"assetId\")",
-          "tableName": "source_resource_read",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "source_resource_read_deviceId_idx",
           "definition": "CREATE INDEX \"source_resource_read_deviceId_idx\" ON public.source_resource_read USING btree (\"deviceId\")",
           "tableName": "source_resource_read",
@@ -42212,13 +42459,11 @@
           "synchronize": true
         },
         {
-          "name": "source_resource_read_sourceId_state_createdAt_idx",
-          "definition": "CREATE INDEX \"source_resource_read_sourceId_state_createdAt_idx\" ON public.source_resource_read USING btree (\"sourceId\", state, \"createdAt\")",
+          "name": "source_resource_read_assetId_idx",
+          "definition": "CREATE INDEX \"source_resource_read_assetId_idx\" ON public.source_resource_read USING btree (\"assetId\")",
           "tableName": "source_resource_read",
           "columnNames": [
-            "sourceId",
-            "state",
-            "createdAt"
+            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -42233,18 +42478,6 @@
           ],
           "using": "btree",
           "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "source_resource_read_claimed_source_uq",
-          "definition": "CREATE UNIQUE INDEX source_resource_read_claimed_source_uq ON public.source_resource_read USING btree (\"sourceId\") WHERE ((state)::text = ANY ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[]))",
-          "tableName": "source_resource_read",
-          "columnNames": [
-            "sourceId"
-          ],
-          "using": "btree",
-          "where": "((state)::text = ANY ((ARRAY['claimed'::character varying, 'delivering'::character varying])::text[]))",
-          "unique": true,
           "synchronize": true
         }
       ],
@@ -43257,22 +43490,22 @@
           "synchronize": true
         },
         {
-          "name": "identical_file_change_keptAssetId_idx",
-          "definition": "CREATE INDEX \"identical_file_change_keptAssetId_idx\" ON public.identical_file_change USING btree (\"keptAssetId\")",
+          "name": "identical_file_change_runId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_runId_idx\" ON public.identical_file_change USING btree (\"runId\")",
           "tableName": "identical_file_change",
           "columnNames": [
-            "keptAssetId"
+            "runId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "identical_file_change_runId_idx",
-          "definition": "CREATE INDEX \"identical_file_change_runId_idx\" ON public.identical_file_change USING btree (\"runId\")",
+          "name": "identical_file_change_keptAssetId_idx",
+          "definition": "CREATE INDEX \"identical_file_change_keptAssetId_idx\" ON public.identical_file_change USING btree (\"keptAssetId\")",
           "tableName": "identical_file_change",
           "columnNames": [
-            "runId"
+            "keptAssetId"
           ],
           "using": "btree",
           "unique": false,
@@ -44050,11 +44283,6 @@
       "synchronize": true
     },
     {
-      "name": "desktop_clip_producer_guard",
-      "expression": "CREATE OR REPLACE FUNCTION public.desktop_clip_producer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE role text;\n    BEGIN\n      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';\n      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';\n      ELSE RAISE EXCEPTION 'unsupported_clip_store';\n      END IF;\n      NEW.\"producerAdmissionKey\" := CASE WHEN NEW.\"producerModelKey\" IS NULL THEN 'legacy' ELSE role || ':' || NEW.\"producerModelKey\" END;\n      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW.\"producerAdmissionKey\") ON CONFLICT DO NOTHING;\n      RETURN NEW;\n    END$function$\n",
-      "synchronize": true
-    },
-    {
       "name": "asset_edit_delete",
       "expression": "CREATE OR REPLACE FUNCTION public.asset_edit_delete()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      UPDATE asset\n      SET \"isEdited\" = false\n      FROM deleted_edit\n      WHERE asset.id = deleted_edit.\"assetId\" AND asset.\"isEdited\"\n        AND NOT EXISTS (SELECT FROM asset_edit edit WHERE edit.\"assetId\" = asset.id);\n      RETURN NULL;\n    END\n  $function$\n",
       "synchronize": true
@@ -44142,6 +44370,11 @@
     {
       "name": "album_user_after_insert",
       "expression": "CREATE OR REPLACE FUNCTION public.album_user_after_insert()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      UPDATE album SET \"updatedAt\" = clock_timestamp(), \"updateId\" = immich_uuid_v7(clock_timestamp())\n      WHERE \"id\" IN (SELECT \"albumId\" FROM inserted_rows)\n        AND NOT EXISTS (SELECT FROM inserted_rows WHERE role = 'owner');\n      RETURN NULL;\n    END\n  $function$\n",
+      "synchronize": true
+    },
+    {
+      "name": "desktop_clip_producer_guard",
+      "expression": "CREATE OR REPLACE FUNCTION public.desktop_clip_producer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE role text;\n    BEGIN\n      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';\n      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';\n      ELSE RAISE EXCEPTION 'unsupported_clip_store';\n      END IF;\n      NEW.\"producerAdmissionKey\" := CASE WHEN NEW.\"producerModelKey\" IS NULL THEN 'legacy' ELSE role || ':' || NEW.\"producerModelKey\" END;\n      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW.\"producerAdmissionKey\") ON CONFLICT DO NOTHING;\n      RETURN NEW;\n    END$function$\n",
       "synchronize": true
     },
     {
