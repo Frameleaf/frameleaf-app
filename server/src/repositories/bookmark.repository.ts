@@ -34,6 +34,7 @@ const bookmarkFields = new Set([
   'visibility',
   'hasAlbums',
   'hasTags',
+  'rating',
   'createdAt',
   'updatedAt',
   'trashedAt',
@@ -131,6 +132,9 @@ export class BookmarkRepository {
       ...comparisonPredicates(eb, 'bookmark.createdAt', branch.createdAt),
       ...comparisonPredicates(eb, 'bookmark.updatedAt', branch.updatedAt),
       ...comparisonPredicates(eb, 'bookmark.deletedAt', branch.trashedAt),
+      ...(branch.rating
+        ? [eb('bookmark.ownerId', '=', auth.user.id), ...comparisonPredicates(eb, 'bookmark.rating', branch.rating)]
+        : []),
     ];
     const tags = (ids: string[]) =>
       eb

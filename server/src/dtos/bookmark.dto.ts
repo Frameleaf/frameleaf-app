@@ -13,7 +13,16 @@ const referenceUrl = z
     return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
   }, 'Expected an HTTP(S) URL without credentials');
 
+const bookmarkRating = z
+  .int()
+  .min(-1)
+  .max(5)
+  .refine((value) => value !== 0, 'Use -1 for rejected, 1–5 stars, or null for unrated')
+  .nullable()
+  .optional();
+
 const bookmarkFields = z.object({
+  rating: bookmarkRating,
   url: referenceUrl,
   title: z.string().max(2000),
   note: z.string().max(20_000).nullable().optional(),
@@ -37,6 +46,7 @@ export const BookmarkResponseSchema = z
     url: z.string(),
     title: z.string(),
     note: z.string().nullable(),
+    rating: bookmarkRating,
     previewAssetId: z.uuidv4().nullable(),
     libraryScope: LibraryScopeSchema,
     isArchived: z.boolean(),

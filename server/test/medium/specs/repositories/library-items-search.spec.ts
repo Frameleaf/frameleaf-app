@@ -185,6 +185,46 @@ describe('mixed library search universe', () => {
       ).candidates.every(({ kind }) => kind === 'asset'),
     ).toBe(true);
   });
+  it('persists bookmark stars while excluding private preferences from shared filter counts', async () => {
+    const ctx = setup();
+    const owner = await ctx.newUser();
+    const viewer = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    const starred = await repo.create(owner.user.id, {
+      url: 'https://example.org/starred',
+      title: 'Starred',
+      libraryScope: LibraryScope.Design,
+      rating: 4,
+    });
+    const unrated = await repo.create(owner.user.id, {
+      url: 'https://example.org/unrated',
+      title: 'Unrated',
+      libraryScope: LibraryScope.Design,
+    });
+    expect(unrated.rating).toBeNull();
+    const { album } = await ctx.newAlbum({ ownerId: owner.user.id });
+    await db
+      .insertInto('album_user')
+      .values({ albumId: album.id, userId: viewer.user.id, role: AlbumUserRole.Viewer })
+      .execute();
+    await repo.addToAlbum({ user: owner.user }, album.id, [starred.id]);
+    const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design', rating: { eq: 4 } } });
+    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), true)).count).toBe(1);
+    expect(
+      (
+        await repo.searchLibrary(
+          { user: viewer.user },
+          { ...request, filter: { ...request.filter, albumIds: { any: [album.id] } } },
+          scope(viewer.user.id),
+          true,
+        )
+      ).count,
+    ).toBe(0);
+    expect((await repo.update({ user: owner.user }, starred.id, { rating: -1 })).rating).toBe(-1);
+    await expect(db.updateTable('bookmark').set({ rating: 0 }).where('id', '=', starred.id).execute()).rejects.toThrow(
+      'bookmark_rating_check',
+    );
+  });
   it('does not count bookmark rows when the current key lacks BookmarkRead', async () => {
     const ctx = setup();
     const { user } = await ctx.newUser();

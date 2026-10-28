@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -17,6 +18,7 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('bookmark')
+@Check({ name: 'bookmark_rating_check', expression: 'rating IS NULL OR rating = -1 OR rating BETWEEN 1 AND 5' })
 @UpdatedAtTrigger('bookmark_updatedAt')
 @Index({ columns: ['ownerId', 'libraryScope'] })
 export class BookmarkTable {
@@ -32,6 +34,9 @@ export class BookmarkTable {
 
   @Column({ type: 'text' })
   title!: string;
+
+  @Column({ type: 'integer', nullable: true })
+  rating!: number | null;
 
   @Column({ type: 'text', nullable: true })
   note!: string | null;

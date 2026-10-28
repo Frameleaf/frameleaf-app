@@ -101,6 +101,7 @@ export class BookmarkService {
       isArchived: bookmark.isArchived,
       isLocked: bookmark.isLocked,
       updateId: bookmark.updateId,
+      rating: !auth.sharedLink && bookmark.ownerId === auth.user.id ? bookmark.rating : null,
       note: !auth.sharedLink && bookmark.ownerId === auth.user.id ? bookmark.note : null,
       previewAssetId: previewAssetId && visible.has(previewAssetId) ? previewAssetId : null,
       createdAt: asDateTimeString(bookmark.createdAt),

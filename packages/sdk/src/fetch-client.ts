@@ -4534,6 +4534,7 @@ export type BookmarkResponseDto = {
     note: string | null;
     ownerId: string;
     previewAssetId: string | null;
+    rating?: number | null;
     title: string;
     updateId: string;
     updatedAt: string;
@@ -6208,6 +6209,7 @@ export type BookmarkCreateDto = {
     libraryScope?: LibraryScope;
     note?: string | null;
     previewAssetId?: string | null;
+    rating?: number | null;
     title: string;
     url: string;
 };
@@ -6217,6 +6219,7 @@ export type BookmarkUpdateDto = {
     libraryScope?: LibraryScope;
     note?: string | null;
     previewAssetId?: string | null;
+    rating?: number | null;
     title?: string;
     url?: string;
 };

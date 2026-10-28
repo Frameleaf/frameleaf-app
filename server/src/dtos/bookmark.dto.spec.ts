@@ -23,6 +23,14 @@ describe('designer bookmark input', () => {
     });
   });
 
+  it('uses the existing rejected/stars/unrated meanings for bookmark ratings', () => {
+    expect(
+      BookmarkCreateDto.schema.parse({ url: 'https://example.org', title: 'Reference', rating: 4 }),
+    ).toHaveProperty('rating', 4);
+    expect(BookmarkUpdateDto.schema.parse({ rating: null })).toEqual({ rating: null });
+    for (const rating of [-2, 0, 1.5, 6]) expect(BookmarkUpdateDto.schema.safeParse({ rating }).success).toBe(false);
+  });
+
   it('does not reset omitted fields on an update', () => {
     expect(BookmarkUpdateDto.schema.parse({ title: 'Updated' })).toEqual({ title: 'Updated' });
   });

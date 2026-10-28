@@ -12,6 +12,7 @@ const row = {
   url: 'https://example.org',
   title: 'Reference',
   note: 'Private note',
+  rating: 4,
   source: null,
   previewAssetId: 'preview',
   libraryScope: LibraryScope.Design,
@@ -27,6 +28,11 @@ describe(BookmarkService.name, () => {
   const bookmarks = automock(BookmarkRepository, { args: [{}] });
   const mocks = getMocks();
   const service = new BookmarkService(bookmarks, mocks.access as unknown as AccessRepository);
+  it('keeps bookmark ratings private when returning shared album items', async () => {
+    bookmarks.getForAlbum.mockResolvedValue([row]);
+    expect((await service.getForAlbum(authStub.user1, 'album'))[0].rating).toBe(4);
+    expect((await service.getForAlbum(authStub.admin, 'album'))[0].rating).toBeNull();
+  });
   beforeEach(() => {
     bookmarks.resetAllMocks();
     bookmarks.getOwned.mockResolvedValue(row);
