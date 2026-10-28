@@ -3,10 +3,13 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { WorkflowBatch, WorkflowRepository, WorkflowStepUpsert } from 'src/repositories/workflow.repository.js';
 import type { WorkflowDefinitionDocument } from 'src/schema/tables/workflow-definition.table.js';
+import { mapTemplate } from 'src/dtos/plugin.dto.js';
 import {
+  LegacyWorkflowTriggerResponseDto,
   WorkflowBatchResponseDto,
   WorkflowCapabilitiesDto,
   WorkflowCreateDto,
+  WorkflowDiscoveryResponseDto,
   WorkflowGetLogsDto,
   WorkflowLogEntryDto,
   WorkflowPreviewDto,
@@ -14,12 +17,11 @@ import {
   WorkflowResponseDto,
   WorkflowSearchDto,
   WorkflowShareResponseDto,
-  WorkflowTriggerResponseDto,
   WorkflowUpdateDto,
   mapWorkflow,
   mapWorkflowShare,
 } from 'src/dtos/workflow.dto.js';
-import { JobName, Permission, WorkflowRunErrorCode } from 'src/enum.js';
+import { JobName, LegacyWorkflowTriggerSchema, Permission, WorkflowRunErrorCode } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail, isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -194,8 +196,19 @@ export class WorkflowService extends BaseService {
     };
   }
 
-  getTriggers(): WorkflowTriggerResponseDto[] {
-    return getWorkflowTriggers();
+  getTriggers(): LegacyWorkflowTriggerResponseDto[] {
+    return getWorkflowTriggers().filter(
+      (entry): entry is LegacyWorkflowTriggerResponseDto =>
+        LegacyWorkflowTriggerSchema.safeParse(entry.trigger).success,
+    );
+  }
+
+  async discovery(): Promise<WorkflowDiscoveryResponseDto> {
+    const plugins = await this.pluginRepository.search({ enabled: true });
+    return {
+      triggers: getWorkflowTriggers(),
+      templates: plugins.flatMap((plugin) => plugin.templates.map((template) => mapTemplate(plugin, template))),
+    };
   }
 
   async search(auth: AuthDto, dto: WorkflowSearchDto): Promise<WorkflowResponseDto[]> {

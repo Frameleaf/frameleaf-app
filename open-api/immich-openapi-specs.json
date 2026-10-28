@@ -36846,7 +36846,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/PluginTemplateResponseDto"
+                    "$ref": "#/components/schemas/LegacyPluginTemplateResponseDto"
                   },
                   "type": "array"
                 }
@@ -57455,6 +57455,47 @@
         ]
       }
     },
+    "/workflows/discovery": {
+      "get": {
+        "description": "Includes change-driven and scheduled automation. Legacy discovery endpoints retain their original trigger values.",
+        "operationId": "getWorkflowDiscovery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDiscoveryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discover all workflow triggers and plugin templates",
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "plugin.read"
+      }
+    },
     "/workflows/preview": {
       "post": {
         "operationId": "previewWorkflow",
@@ -57509,7 +57550,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/WorkflowTriggerResponseDto"
+                    "$ref": "#/components/schemas/LegacyWorkflowTriggerResponseDto"
                   },
                   "type": "array"
                 }
@@ -89177,6 +89218,77 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "LegacyPluginTemplateResponseDto": {
+        "properties": {
+          "description": {
+            "description": "Template description",
+            "type": "string"
+          },
+          "key": {
+            "description": "Template key (unique across all templates)",
+            "type": "string"
+          },
+          "steps": {
+            "description": "Workflow steps",
+            "items": {
+              "$ref": "#/components/schemas/PluginTemplateStepResponseDto"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "Template title",
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "AssetCreate",
+              "AssetMetadataExtraction",
+              "AssetTagged"
+            ],
+            "type": "string"
+          },
+          "uiHints": {
+            "description": "Ui hints, for example \"smart-album\"",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "description",
+          "key",
+          "steps",
+          "title",
+          "trigger",
+          "uiHints"
+        ],
+        "type": "object"
+      },
+      "LegacyWorkflowTriggerResponseDto": {
+        "properties": {
+          "trigger": {
+            "enum": [
+              "AssetCreate",
+              "AssetMetadataExtraction",
+              "AssetTagged"
+            ],
+            "type": "string"
+          },
+          "types": {
+            "description": "Workflow types",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowType"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "trigger",
+          "types"
+        ],
         "type": "object"
       },
       "LibraryFeatureProgressDto": {
@@ -141771,6 +141883,27 @@
         ],
         "type": "object"
       },
+      "WorkflowDiscoveryResponseDto": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/PluginTemplateResponseDto"
+            },
+            "type": "array"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTriggerResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "templates",
+          "triggers"
+        ],
+        "type": "object"
+      },
       "WorkflowIssueCode": {
         "description": "Why a workflow definition cannot run",
         "enum": [
@@ -142097,6 +142230,7 @@
         "additionalProperties": false,
         "properties": {
           "cron": {
+            "maxLength": 160,
             "type": "string"
           }
         },

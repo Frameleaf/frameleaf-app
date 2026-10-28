@@ -2,7 +2,9 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { WorkflowDefinitionDocument } from 'src/schema/tables/workflow-definition.table.js';
 import type { WorkflowIssue } from 'src/utils/workflow-definition.js';
+import { PluginTemplateResponseSchema } from 'src/dtos/plugin.dto.js';
 import {
+  LegacyWorkflowTriggerSchema,
   WorkflowIssueCodeSchema,
   WorkflowResultSchema,
   WorkflowRunErrorCodeSchema,
@@ -181,6 +183,19 @@ const WorkflowRunParamsSchema = z.object({
 });
 
 export class WorkflowTriggerResponseDto extends createZodDto(WorkflowTriggerResponseSchema) {}
+export class LegacyWorkflowTriggerResponseDto extends createZodDto(
+  WorkflowTriggerResponseSchema.extend({ trigger: LegacyWorkflowTriggerSchema }).meta({
+    id: 'LegacyWorkflowTriggerResponseDto',
+  }),
+) {}
+export class WorkflowDiscoveryResponseDto extends createZodDto(
+  z
+    .object({
+      triggers: z.array(WorkflowTriggerResponseSchema),
+      templates: z.array(PluginTemplateResponseSchema),
+    })
+    .meta({ id: 'WorkflowDiscoveryResponseDto' }),
+) {}
 export class WorkflowSearchDto extends createZodDto(WorkflowSearchSchema) {}
 export class WorkflowStepDto extends createZodDto(WorkflowStepSchema) {}
 export class WorkflowCreateDto extends createZodDto(WorkflowCreateSchema) {}

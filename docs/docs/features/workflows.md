@@ -23,3 +23,5 @@ External actions can have side effects. Review their conditions and retry behavi
 ## Compatibility
 
 Imported workflows start paused. Unknown imported fields and unavailable plugin steps are retained. A schedule import needs valid conditions and scheduling configuration before it can be enabled. Exports omit credentials. Older servers retain their existing workflow controls; update the server to use schedules, rule previews, and batch runs.
+
+Clients discover all triggers and installed plugin templates through `GET /workflows/discovery`, which requires plugin-read permission. The original trigger and template discovery endpoints retain their original trigger values for older clients. Current web clients fall back to those endpoints when discovery is unavailable (HTTP 404 or 405); authorization and operational errors remain visible.

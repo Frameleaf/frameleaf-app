@@ -1,6 +1,11 @@
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
+import { Reflector } from '@nestjs/core';
 import request from 'supertest';
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
+import { LegacyPluginTemplateResponseDto } from 'src/dtos/plugin.dto.js';
+import { LegacyWorkflowTriggerResponseDto } from 'src/dtos/workflow.dto.js';
+import { Permission } from 'src/enum.js';
+import { getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
 import { errorDto } from 'test/medium/responses.js';
@@ -126,4 +131,24 @@ describe(WorkflowController.name, () => {
       expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
     });
   });
+});
+
+it('requires plugin-read permission for discovery containing plugin templates', () => {
+  expect(getAuthenticatedOptions(new Reflector(), WorkflowController.prototype.getWorkflowDiscovery)).toMatchObject({
+    permission: Permission.PluginRead,
+  });
+});
+
+it.each(['AssetChanged', 'Schedule'])('retains closed legacy response schemas for %s', (trigger) => {
+  expect(LegacyWorkflowTriggerResponseDto.schema.safeParse({ trigger, types: ['AssetV1'] }).success).toBe(false);
+  expect(
+    LegacyPluginTemplateResponseDto.schema.safeParse({
+      key: 'sample#rule',
+      title: 'Rule',
+      description: '',
+      trigger,
+      steps: [],
+      uiHints: [],
+    }).success,
+  ).toBe(false);
 });

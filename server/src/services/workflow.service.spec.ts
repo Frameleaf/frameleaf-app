@@ -66,6 +66,33 @@ describe(WorkflowService.name, () => {
   });
 
   describe('import and export', () => {
+    it('discovers every trigger and installed automation template on the new endpoint', async () => {
+      mocks.plugin.search.mockResolvedValue([
+        {
+          name: 'sample',
+          templates: [
+            { name: 'scheduled', title: 'Scheduled', description: '', trigger: WorkflowTrigger.Schedule, steps: [] },
+          ],
+        },
+      ] as never);
+      const discovery = await sut.discovery();
+      expect(discovery.triggers.map(({ trigger }) => trigger)).toEqual(
+        expect.arrayContaining([WorkflowTrigger.AssetChanged, WorkflowTrigger.Schedule, WorkflowTrigger.AssetCreate]),
+      );
+      expect(discovery.templates).toEqual([
+        expect.objectContaining({ key: 'sample#scheduled', trigger: WorkflowTrigger.Schedule }),
+      ]);
+      expect(mocks.plugin.search).toHaveBeenCalledWith({ enabled: true });
+    });
+
+    it('keeps legacy trigger discovery within the original closed enum', () => {
+      expect(sut.getTriggers().map(({ trigger }) => trigger)).toEqual([
+        WorkflowTrigger.AssetCreate,
+        WorkflowTrigger.AssetMetadataExtraction,
+        WorkflowTrigger.AssetTagged,
+      ]);
+    });
+
     const imported = {
       trigger: WorkflowTrigger.AssetCreate,
       name: 'Imported',

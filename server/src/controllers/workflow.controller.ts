@@ -3,10 +3,12 @@ import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  LegacyWorkflowTriggerResponseDto,
   WorkflowBatchParamsDto,
   WorkflowBatchResponseDto,
   WorkflowCapabilitiesDto,
   WorkflowCreateDto,
+  WorkflowDiscoveryResponseDto,
   WorkflowGetLogsDto,
   WorkflowLogEntryDto,
   WorkflowPreviewDto,
@@ -15,7 +17,6 @@ import {
   WorkflowRunParamsDto,
   WorkflowSearchDto,
   WorkflowShareResponseDto,
-  WorkflowTriggerResponseDto,
   WorkflowUpdateDto,
 } from 'src/dtos/workflow.dto.js';
 import { Permission } from 'src/enum.js';
@@ -57,8 +58,20 @@ export class WorkflowController {
     description: 'Retrieve a list of all available workflow triggers.',
     history: HistoryBuilder.v3(),
   })
-  getWorkflowTriggers(): WorkflowTriggerResponseDto[] {
+  getWorkflowTriggers(): LegacyWorkflowTriggerResponseDto[] {
     return this.service.getTriggers();
+  }
+
+  @Get('discovery')
+  @Authenticated({ permission: Permission.PluginRead })
+  @Endpoint({
+    summary: 'Discover all workflow triggers and plugin templates',
+    description:
+      'Includes change-driven and scheduled automation. Legacy discovery endpoints retain their original trigger values.',
+    history: HistoryBuilder.v3(),
+  })
+  getWorkflowDiscovery(): Promise<WorkflowDiscoveryResponseDto> {
+    return this.service.discovery();
   }
 
   @Get('capabilities')

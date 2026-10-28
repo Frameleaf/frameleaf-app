@@ -12275,7 +12275,7 @@ export type PluginTemplateStepResponseDto = {
     /** Step plugin method */
     method: string;
 };
-export type PluginTemplateResponseDto = {
+export type LegacyPluginTemplateResponseDto = {
     /** Template description */
     description: string;
     /** Template key (unique across all templates) */
@@ -12284,8 +12284,7 @@ export type PluginTemplateResponseDto = {
     steps: PluginTemplateStepResponseDto[];
     /** Template title */
     title: string;
-    /** Workflow trigger */
-    trigger: WorkflowTrigger;
+    trigger: Trigger;
     /** Ui hints, for example "smart-album" */
     uiHints: string[];
 };
@@ -16803,6 +16802,30 @@ export type WorkflowCapabilitiesDto = {
     timezone: string;
     version: number;
 };
+export type PluginTemplateResponseDto = {
+    /** Template description */
+    description: string;
+    /** Template key (unique across all templates) */
+    key: string;
+    /** Workflow steps */
+    steps: PluginTemplateStepResponseDto[];
+    /** Template title */
+    title: string;
+    /** Workflow trigger */
+    trigger: WorkflowTrigger;
+    /** Ui hints, for example "smart-album" */
+    uiHints: string[];
+};
+export type WorkflowTriggerResponseDto = {
+    /** Trigger type */
+    trigger: WorkflowTrigger;
+    /** Workflow types */
+    types: WorkflowType[];
+};
+export type WorkflowDiscoveryResponseDto = {
+    templates: PluginTemplateResponseDto[];
+    triggers: WorkflowTriggerResponseDto[];
+};
 export type WorkflowPreviewDto = {
     /** Workflow description */
     description?: string | null;
@@ -16830,9 +16853,8 @@ export type WorkflowPreviewResponseDto = {
     exampleAssetIds: string[];
     issues: WorkflowIssueDto[];
 };
-export type WorkflowTriggerResponseDto = {
-    /** Trigger type */
-    trigger: WorkflowTrigger;
+export type LegacyWorkflowTriggerResponseDto = {
+    trigger: Trigger;
     /** Workflow types */
     types: WorkflowType[];
 };
@@ -27833,7 +27855,7 @@ export function searchPluginMethods({ description, enabled, id, name, pluginName
 export function searchPluginTemplates(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: PluginTemplateResponseDto[];
+        data: LegacyPluginTemplateResponseDto[];
     }>("/plugins/templates", {
         ...opts
     }));
@@ -32726,6 +32748,17 @@ export function getWorkflowCapabilities(opts?: Oazapfts.RequestOpts) {
         ...opts
     }));
 }
+/**
+ * Discover all workflow triggers and plugin templates
+ */
+export function getWorkflowDiscovery(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowDiscoveryResponseDto;
+    }>("/workflows/discovery", {
+        ...opts
+    }));
+}
 export function previewWorkflow({ workflowPreviewDto }: {
     workflowPreviewDto: WorkflowPreviewDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -32744,7 +32777,7 @@ export function previewWorkflow({ workflowPreviewDto }: {
 export function getWorkflowTriggers(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: WorkflowTriggerResponseDto[];
+        data: LegacyWorkflowTriggerResponseDto[];
     }>("/workflows/triggers", {
         ...opts
     }));
@@ -35766,6 +35799,11 @@ export enum WorkflowTrigger {
     AssetCreate = "AssetCreate",
     AssetChanged = "AssetChanged",
     Schedule = "Schedule",
+    AssetMetadataExtraction = "AssetMetadataExtraction",
+    AssetTagged = "AssetTagged"
+}
+export enum Trigger {
+    AssetCreate = "AssetCreate",
     AssetMetadataExtraction = "AssetMetadataExtraction",
     AssetTagged = "AssetTagged"
 }
