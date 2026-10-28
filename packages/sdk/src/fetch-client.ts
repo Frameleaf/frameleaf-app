@@ -4494,6 +4494,36 @@ export type AssetResponseDto = {
     /** Asset width */
     width: number | null;
 };
+export type SanitizedAssetResponseDto = {
+    /** Video/gif duration in milliseconds (null for static images) */
+    duration: number | null;
+    /** Whether asset has metadata */
+    hasMetadata: boolean;
+    /** Asset height */
+    height: number | null;
+    /** Asset ID */
+    id: string;
+    /** Source image color encoding; unprocessed or unavailable evidence remains unknown */
+    imageEncoding?: ImageEncodingInfo;
+    /** Available current still renditions; omitted when file evidence was not loaded */
+    imageRenditions?: {
+        hdrFullsize: boolean;
+        hdrPreview: boolean;
+        sdrFullsize: boolean;
+        sdrPreview: boolean;
+    };
+    /** Live photo video ID */
+    livePhotoVideoId?: string | null;
+    /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
+    localDateTime: string;
+    /** Original MIME type */
+    originalMimeType?: string;
+    /** Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting. */
+    thumbhash: string | null;
+    "type": AssetTypeEnum;
+    /** Asset width */
+    width: number | null;
+};
 export type BookmarkResponseDto = {
     createdAt: string;
     deletedAt: string | null;
@@ -4511,7 +4541,7 @@ export type BookmarkResponseDto = {
 };
 export type LibraryItemDto = {
     kind: LibraryAssetItemKind;
-    asset: AssetResponseDto;
+    asset: AssetResponseDto | SanitizedAssetResponseDto;
 } | {
     kind: LibraryBookmarkItemKind;
     bookmark: BookmarkResponseDto;
@@ -6179,6 +6209,62 @@ export type BookmarkUpdateDto = {
 };
 export type BookmarkTagsDto = {
     ids: string[];
+};
+export type CaptureAlbumCreateDto = {
+    libraryScope: CaptureAlbumScope;
+    name: string;
+    parentId?: string;
+};
+export type CaptureCapabilitiesDto = {
+    captureSupported: true;
+    maxFileBytes: number;
+    serverId: string;
+    userId: string;
+    version: CaptureProtocolVersion;
+};
+export type CaptureAlbumChoice = {
+    /** Album name */
+    albumName: string;
+    /** Album ID */
+    id: string;
+    /** Parent album or collection (null = top-level) */
+    parentId: string | null;
+};
+export type CaptureCatalogDto = {
+    albums: CaptureAlbumChoice[];
+    tags: TagResponseDto[];
+};
+export type CaptureCommitDto = {
+    albumId: string;
+    bookmark?: {
+        title: string;
+        url: string;
+    };
+    captureId: string;
+    note?: string;
+    /** Required for file captures; the complete uploaded file SHA-256 */
+    sha256?: string;
+    source: {
+        capturedAt: string;
+        creator?: string | null;
+        licenseUrl?: string | null;
+        mediaUrl?: string | null;
+        pageUrl: string;
+        title: string;
+    };
+    tagIds?: string[];
+    uploadResourceId?: string;
+};
+export type CaptureResponseDto = {
+    captureId: string;
+    item: LibraryItemDto;
+    status: CaptureStatus;
+};
+export type CaptureUploadStateDto = {
+    expiresAt: string;
+    id: string;
+    offset: number;
+    ready: boolean;
 };
 export type ClassificationTagDto = {
     id: string;
@@ -23564,6 +23650,124 @@ export function setBookmarkTags({ id, bookmarkTagsDto }: {
     })));
 }
 /**
+ * Create an ordinary design album for capture
+ */
+export function createCaptureAlbum({ captureAlbumCreateDto }: {
+    captureAlbumCreateDto: CaptureAlbumCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AlbumResponseDto;
+    }>("/capture/albums", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: captureAlbumCreateDto
+    })));
+}
+/**
+ * Discover versioned design capture support and account binding
+ */
+export function getCaptureCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CaptureCapabilitiesDto;
+    }>("/capture/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * List writable designer album hierarchy and permitted existing tags
+ */
+export function getCaptureCatalog(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CaptureCatalogDto;
+    }>("/capture/catalog", {
+        ...opts
+    }));
+}
+/**
+ * Commit a capture and its provenance, tags, album membership and receipt atomically
+ */
+export function commitCapture({ captureCommitDto }: {
+    captureCommitDto: CaptureCommitDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CaptureResponseDto;
+    }>("/capture/commit", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: captureCommitDto
+    })));
+}
+/**
+ * Stage a private resumable file using its persisted capture UUID
+ */
+export function createCaptureUpload({ body }: {
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: CaptureUploadStateDto;
+    }>("/capture/uploads", {
+        ...opts,
+        method: "POST",
+        body
+    }));
+}
+/**
+ * Cancel an unpublished capture resource
+ */
+export function cancelCaptureUpload({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/capture/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Recover capture byte verification state without returning media metadata
+ */
+export function getCaptureUpload({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CaptureUploadStateDto;
+    }>(`/capture/uploads/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Read the durable acknowledged capture upload offset
+ */
+export function getCaptureUploadOffset({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/capture/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "HEAD"
+    }));
+}
+/**
+ * Append acknowledged capture bytes without publishing an asset
+ */
+export function appendCaptureUpload({ id, body }: {
+    id: string;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CaptureUploadStateDto;
+    }>(`/capture/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "PATCH",
+        body
+    }));
+}
+/**
  * Read Cast media
  */
 export function readCastMedia({ token }: {
@@ -34289,6 +34493,8 @@ export enum Permission {
     BookmarkRead = "bookmark.read",
     BookmarkUpdate = "bookmark.update",
     BookmarkDelete = "bookmark.delete",
+    CaptureCreate = "capture.create",
+    CaptureCatalogRead = "capture.catalog.read",
     ActivityCreate = "activity.create",
     ActivityRead = "activity.read",
     ActivityUpdate = "activity.update",
@@ -34737,6 +34943,16 @@ export enum AssetMediaSize {
 export enum AssetWaveformChannelMode {
     Mono = "mono",
     All = "all"
+}
+export enum CaptureAlbumScope {
+    Design = "design"
+}
+export enum CaptureProtocolVersion {
+    $1 = 1
+}
+export enum CaptureStatus {
+    Created = "created",
+    Duplicate = "duplicate"
 }
 export enum ClassificationMatchDecision {
     Matched = "matched",

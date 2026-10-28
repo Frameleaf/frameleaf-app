@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { LibraryScope } from 'src/enum.js';
 import { library_scope_enum } from 'src/schema/enums.js';
@@ -34,6 +35,9 @@ export class BookmarkTable {
 
   @Column({ type: 'text', nullable: true })
   note!: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  source!: CaptureSourceDto | null;
 
   @ForeignKeyColumn(() => AssetTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
   previewAssetId!: string | null;

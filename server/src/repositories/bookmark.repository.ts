@@ -8,7 +8,7 @@ import { BookmarkCreateDto, BookmarkUpdateDto } from 'src/dtos/bookmark.dto.js';
 import { AlbumUserRole, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { BookmarkTable } from 'src/schema/tables/bookmark.table.js';
-import { searchAssetBuilder, tagIsSuppressed } from 'src/utils/database.js';
+import { hiddenContentBookmarkIdExists, searchAssetBuilder, tagIsSuppressed } from 'src/utils/database.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, isLocked } from 'src/utils/locked.js';
 
@@ -17,12 +17,7 @@ export type Bookmark = Selectable<BookmarkTable>;
 // Apply the same session boundary to the final write, so a concurrent lock cannot be edited while locked.
 const visible = (auth: AuthDto) => sql<boolean>`
   (bookmark."isLocked" = false or bookmark."ownerId" = ${getLockedOwnerId(auth) ?? null}::uuid)
-  and not exists (
-    select 1 from bookmark_tag
-    join tag_closure on tag_closure.id_descendant = bookmark_tag."tagId"
-    where bookmark_tag."bookmarkId" = bookmark.id
-      and tag_closure.id_ancestor = any(${auth.hiddenContent?.tagIds ?? []}::uuid[])
-  )
+  and not ${auth.hiddenContent ? hiddenContentBookmarkIdExists(sql.ref('bookmark.id'), auth.hiddenContent) : sql`false`}
   and (bookmark."ownerId" = ${getLockedOwnerId(auth) ?? null}::uuid or not exists (
     select 1 from user_metadata as owner_rules
     where owner_rules."userId" = bookmark."ownerId" and owner_rules.key = ${UserMetadataKey.Preferences}

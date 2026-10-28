@@ -70,14 +70,21 @@ export class BookmarkService {
   }
 
   private async map(auth: AuthDto, bookmark: Bookmark, readable?: Set<string>): Promise<BookmarkResponseDto> {
-    const { previewAssetId, ...fields } = bookmark;
+    const { previewAssetId } = bookmark;
     const visible =
       readable ??
       (previewAssetId
         ? await checkAccess(this.access, { auth, permission: Permission.AssetRead, ids: [previewAssetId] })
         : new Set());
     return {
-      ...fields,
+      id: bookmark.id,
+      ownerId: bookmark.ownerId,
+      url: bookmark.url,
+      title: bookmark.title,
+      libraryScope: bookmark.libraryScope,
+      isArchived: bookmark.isArchived,
+      isLocked: bookmark.isLocked,
+      updateId: bookmark.updateId,
       note: !auth.sharedLink && bookmark.ownerId === auth.user.id ? bookmark.note : null,
       previewAssetId: previewAssetId && visible.has(previewAssetId) ? previewAssetId : null,
       createdAt: asDateTimeString(bookmark.createdAt),

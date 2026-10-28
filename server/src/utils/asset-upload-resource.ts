@@ -7,6 +7,7 @@ import z from 'zod';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
 import { AssetMediaCreateDto } from 'src/dtos/asset-media.dto.js';
+import { LibraryScope } from 'src/enum.js';
 
 /**
  * FL-296: the iCloud item an upload is, so the server can record its source identity once the digest
@@ -40,7 +41,10 @@ export const UploadSourceIdentitySchema = z.discriminatedUnion('kind', [
 ]);
 export type UploadSourceIdentity = z.infer<typeof UploadSourceIdentitySchema>;
 export type AssetUploadMetadata = AssetMediaCreateDto & {
-  publication?: 'live-photo';
+  publication?: 'live-photo' | 'capture';
+  /** Server-bound actor, never accepted from the Asset-Metadata header. */
+  captureActor?: string;
+  captureId?: string;
   sourceIdentity?: UploadSourceIdentity;
 };
 
@@ -90,6 +94,7 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
     const decoded: unknown = JSON.parse(text);
     const allowed = new Set([
       'publication',
+      'captureId',
       'filename',
       'fileCreatedAt',
       'fileModifiedAt',
@@ -121,15 +126,35 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
     if (typeof value.isFavorite === 'boolean') {
       value.isFavorite = String(value.isFavorite);
     }
-    if (value.publication !== undefined && value.publication !== 'live-photo') {
+    if (value.publication !== undefined && !['live-photo', 'capture'].includes(value.publication as string)) {
       throw new Error('Unsupported publication');
+    }
+    if (value.publication === 'capture') {
+      const captureFields = new Set([
+        'publication',
+        'captureId',
+        'libraryScope',
+        'filename',
+        'fileCreatedAt',
+        'fileModifiedAt',
+        'duration',
+      ]);
+      if (value.libraryScope !== LibraryScope.Design || Object.keys(value).some((key) => !captureFields.has(key))) {
+        throw new Error('Unsupported capture metadata');
+      }
+      z.uuidv4().parse(value.captureId);
+    } else if (value.captureId !== undefined) {
+      throw new Error('Capture UUID requires capture publication');
     }
     const sourceIdentity =
       value.sourceIdentity === undefined ? undefined : UploadSourceIdentitySchema.parse(value.sourceIdentity);
     delete value.sourceIdentity;
     metadata = {
       ...AssetMediaCreateDto.schema.parse(value),
-      ...(value.publication === 'live-photo' && { publication: 'live-photo' as const }),
+      ...((value.publication === 'live-photo' || value.publication === 'capture') && {
+        publication: value.publication,
+      }),
+      ...(value.publication === 'capture' && { captureId: value.captureId as string }),
       ...(sourceIdentity && { sourceIdentity }),
     };
     if (!metadata.filename) {

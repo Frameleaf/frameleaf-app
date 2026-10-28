@@ -1,13 +1,16 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
+import { AssetResponseSchema, SanitizedAssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { BookmarkResponseSchema } from 'src/dtos/bookmark.dto.js';
 
 const itemKind = z.enum(['asset', 'bookmark']).meta({ id: 'LibraryItemKind' });
 const cursor = z.object({ kind: itemKind, id: z.uuidv4() });
 export const LibraryItemSchema = z
   .discriminatedUnion('kind', [
-    z.object({ kind: z.literal('asset').meta({ id: 'LibraryAssetItemKind' }), asset: AssetResponseSchema }),
+    z.object({
+      kind: z.literal('asset').meta({ id: 'LibraryAssetItemKind' }),
+      asset: z.union([AssetResponseSchema, SanitizedAssetResponseDto.schema]),
+    }),
     z.object({ kind: z.literal('bookmark').meta({ id: 'LibraryBookmarkItemKind' }), bookmark: BookmarkResponseSchema }),
   ])
   .meta({ id: 'LibraryItemDto' });

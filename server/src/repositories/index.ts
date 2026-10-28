@@ -21,6 +21,7 @@ import { BackupDeviceRepository } from 'src/repositories/backup-device.repositor
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
@@ -135,6 +136,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  CaptureRepository,
   AssetSourceRepository,
   BookmarkRepository,
   DesktopClipIndexRepository,

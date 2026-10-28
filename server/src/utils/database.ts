@@ -1577,6 +1577,20 @@ const hiddenAssetIdExistsWhere = (assetId: Expression<unknown>, predicate: RawBu
   )`;
 export const hiddenContentAssetIdExists = (assetId: Expression<unknown>, filter: HiddenContentFilter) =>
   hiddenAssetIdExistsWhere(assetId, hiddenContentAssetExists(filter, 'hidden_content_asset'));
+export const hiddenContentBookmarkIdExists = (bookmarkId: Expression<unknown>, filter: HiddenContentFilter) =>
+  filter.tagIds.length === 0
+    ? sql<boolean>`false`
+    : sql<boolean>`exists (
+        select 1 from bookmark as hidden_content_bookmark
+        where hidden_content_bookmark.id = ${bookmarkId}
+          and ${scopedToOwner(filter, 'hidden_content_bookmark')}
+          and exists (
+            select 1 from bookmark_tag
+            inner join tag_closure on tag_closure.id_descendant = bookmark_tag."tagId"
+            where bookmark_tag."bookmarkId" = hidden_content_bookmark.id
+              and tag_closure.id_ancestor = ${anyUuid(filter.tagIds)}
+          )
+      )`;
 /** The ids one of the owner's Locked rules (`privacy.suppression.<key>`) names, read from `owner_rules`. */
 const ownerRuleIds = (key: 'tagIds' | 'personIds' | 'petIds') =>
   sql`(select (jsonb_path_query(owner_rules.value, ${sql.lit(`$.privacy.suppression.${key}[*]`)}) #>> '{}')::uuid)`;
@@ -1782,6 +1796,23 @@ const nonHiddenTaggedAssetExists = (
         ${filter ? sql`and not ${hiddenContentAssetIdExists(sql.ref('tag_asset.assetId'), filter)}` : sql``}
         ${hideLocked ? sql`and not ${lockedAssetIdExists(sql.ref('tag_asset.assetId'))}` : sql``}
     )`;
+const taggedBookmarkExists = (tagId: Expression<unknown>) => sql<boolean>`exists (
+      select 1 from tag_closure
+      inner join bookmark_tag on bookmark_tag."tagId" = tag_closure.id_descendant
+      where tag_closure.id_ancestor = ${tagId}
+    )`;
+const nonHiddenTaggedBookmarkExists = (
+  tagId: Expression<unknown>,
+  filter: HiddenContentFilter | undefined,
+  hideLocked: boolean,
+) => sql<boolean>`exists (
+      select 1 from tag_closure
+      inner join bookmark_tag on bookmark_tag."tagId" = tag_closure.id_descendant
+      inner join bookmark on bookmark.id = bookmark_tag."bookmarkId"
+      where tag_closure.id_ancestor = ${tagId}
+        ${filter ? sql`and not ${hiddenContentBookmarkIdExists(sql.ref('bookmark.id'), filter)}` : sql``}
+        ${hideLocked ? sql`and bookmark."isLocked" = false` : sql``}
+    )`;
 /**
  * FL-46 / FL-34 (owner decision, September 27, 2026): a tag the session may see. A tag without items
  * always shows; otherwise it, or a tag under it, must carry an item the session sees: not hidden by
@@ -1799,7 +1830,11 @@ export const tagHasVisibleAssetOrNoAssets = (
   } = {},
 ) =>
   filter || hideLocked
-    ? sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter, hideLocked)})`
+    ? sql<boolean>`(
+        not (${taggedAssetExists(tagId)} or ${taggedBookmarkExists(tagId)})
+        or ${nonHiddenTaggedAssetExists(tagId, filter, hideLocked)}
+        or ${nonHiddenTaggedBookmarkExists(tagId, filter, hideLocked)}
+      )`
     : sql<boolean>`true`;
 /**
  * FL-46: the tag is one of the suppressed tags or nested under one. Suppressing a tag hides the

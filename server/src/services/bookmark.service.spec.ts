@@ -12,6 +12,7 @@ const row = {
   url: 'https://example.org',
   title: 'Reference',
   note: 'Private note',
+  source: null,
   previewAssetId: 'preview',
   libraryScope: LibraryScope.Design,
   isArchived: false,
@@ -48,6 +49,14 @@ describe(BookmarkService.name, () => {
         expect.objectContaining({ note: null, previewAssetId: null }),
       ]);
     }
+  });
+
+  it('never includes private capture provenance in an album bookmark projection', async () => {
+    bookmarks.getForAlbum.mockResolvedValue([
+      { ...row, source: { pageUrl: 'https://private.example.org', note: 'Private provenance' } } as never,
+    ]);
+    const [result] = await service.getForAlbum(authStub.admin, 'album');
+    expect(result).not.toHaveProperty('source');
   });
 
   it('never grants preview media access from bookmark membership', async () => {

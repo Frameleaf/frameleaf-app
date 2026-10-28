@@ -10,6 +10,34 @@ import {
 } from 'src/utils/asset-upload-resource.js';
 
 describe('durable upload bytes', () => {
+  it('only admits a design capture marker with a narrow upload metadata shape', () => {
+    const metadata = {
+      filename: 'capture.jpg',
+      fileCreatedAt: '2026-10-28T12:00:00Z',
+      fileModifiedAt: '2026-10-28T12:00:00Z',
+      publication: 'capture',
+      captureId: '10000000-0000-4000-8000-000000000001',
+      libraryScope: 'design',
+    };
+    const headers = (extra: Record<string, unknown>) => ({
+      'upload-draft-interop-version': '9',
+      'upload-complete': '?0',
+      'content-type': 'image/jpeg',
+      'repr-digest': `sha-256=:${Buffer.alloc(32).toString('base64')}:`,
+      'asset-metadata': Buffer.from(JSON.stringify({ ...metadata, ...extra })).toString('base64url'),
+    });
+    expect(parseAssetUploadHeaders(headers({})).metadata.publication).toBe('capture');
+    for (const extra of [
+      { libraryScope: 'personal' },
+      { libraryScope: 'both' },
+      { isFavorite: true },
+      { visibility: 'locked' },
+      { metadata: [] },
+      { captureActor: 'key:other' },
+    ]) {
+      expect(() => parseAssetUploadHeaders(headers(extra))).toThrow('Invalid Asset-Metadata');
+    }
+  });
   let folder: string;
   beforeEach(async () => {
     folder = await mkdtemp(join(tmpdir(), 'fl225-'));

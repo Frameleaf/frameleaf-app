@@ -21,6 +21,7 @@ import { BestPhotosController } from 'src/controllers/best-photos.controller.js'
 import { BookmarkController } from 'src/controllers/bookmark.controller.js';
 import { BuddyBackupPeerController } from 'src/controllers/buddy-backup-peer.controller.js';
 import { BuddyBackupAdminController, BuddyBackupOwnerController } from 'src/controllers/buddy-backup.controller.js';
+import { CaptureController } from 'src/controllers/capture.controller.js';
 import { CastController } from 'src/controllers/cast.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
@@ -126,6 +127,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  CaptureController,
   AlbumItemsController,
   AssetSourceController,
   BookmarkController,

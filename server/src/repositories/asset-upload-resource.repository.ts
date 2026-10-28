@@ -18,6 +18,7 @@ import { hasEditConfiguration, withICloudPublicationTransaction } from 'src/repo
 import { DB } from 'src/schema/index.js';
 import { AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 export type AssetUploadResource = Selectable<AssetUploadResourceTable>;
 @Injectable()
@@ -63,6 +64,34 @@ export class AssetUploadResourceRepository {
       if (!owner) {
         throw new NotFoundException('Owner unavailable');
       }
+      if (input.metadata.publication === 'capture') {
+        const existing = await tx
+          .selectFrom('asset_upload_resource')
+          .selectAll()
+          .where('id', '=', id)
+          .where('ownerId', '=', ownerId)
+          .executeTakeFirst();
+        if (existing) {
+          if (
+            existing.metadata.publication !== 'capture' ||
+            existing.metadata.captureActor !== input.metadata.captureActor
+          ) {
+            throw new NotFoundException('Capture unavailable');
+          }
+          if (
+            !existing.expectedChecksum.equals(input.checksum) ||
+            existing.contentType !== input.contentType ||
+            (input.size !== undefined && existing.expectedSize !== input.size) ||
+            canonicalJson(existing.metadata) !== canonicalJson(JSON.parse(JSON.stringify(input.metadata)))
+          ) {
+            throw new ConflictException('Capture upload changed');
+          }
+          if (existing.expiresAt <= new Date() || ['cancelled', 'rejected'].includes(existing.state)) {
+            throw new ConflictException('Capture upload unavailable');
+          }
+          return existing;
+        }
+      }
       const count = await tx
         .selectFrom('asset_upload_resource')
         .select((eb) => eb.fn.countAll<number>().as('count'))
@@ -74,7 +103,7 @@ export class AssetUploadResourceRepository {
       if (Number(count.count) >= ASSET_UPLOAD_LIMITS.maxActive) {
         throw new HttpException('Too many incomplete uploads', 429);
       }
-      return tx
+      const created = await tx
         .insertInto('asset_upload_resource')
         .values({
           id,
@@ -88,8 +117,11 @@ export class AssetUploadResourceRepository {
           maxAppendSize: Math.min(ASSET_UPLOAD_LIMITS.maxAppendSize, input.maxSize ?? ASSET_UPLOAD_LIMITS.maxSize),
           expiresAt: new Date(Date.now() + ASSET_UPLOAD_LIMITS.maxAge * 1000),
         })
+        .$if(input.metadata.publication === 'capture', (qb) => qb.onConflict((oc) => oc.column('id').doNothing()))
         .returningAll()
-        .executeTakeFirstOrThrow();
+        .executeTakeFirst();
+      if (!created) throw new ConflictException('Capture upload UUID unavailable');
+      return created;
     });
   }
   async get(id: string, ownerId: string) {

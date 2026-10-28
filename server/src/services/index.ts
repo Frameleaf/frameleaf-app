@@ -28,6 +28,7 @@ import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.ser
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { BundledRenderWorkerService } from 'src/services/bundled-render-worker.service.js';
+import { CaptureService } from 'src/services/capture.service.js';
 import { CastService } from 'src/services/cast.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
@@ -178,6 +179,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  CaptureService,
   AlbumItemsService,
   AssetSourceService,
   BookmarkService,

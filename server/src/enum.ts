@@ -259,6 +259,9 @@ export enum Permission {
   BookmarkUpdate = 'bookmark.update',
   BookmarkDelete = 'bookmark.delete',
 
+  CaptureCreate = 'capture.create',
+  CaptureCatalogRead = 'capture.catalog.read',
+
   ActivityCreate = 'activity.create',
   ActivityRead = 'activity.read',
   ActivityUpdate = 'activity.update',
@@ -3252,6 +3255,7 @@ export enum ConfigVisibility {
 }
 
 export enum ApiTag {
+  Capture = 'Capture',
   Bookmarks = 'Bookmarks',
   Activities = 'Activities',
   Albums = 'Albums',
