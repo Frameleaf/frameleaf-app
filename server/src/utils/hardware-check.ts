@@ -548,19 +548,28 @@ export type WorkerCheck = {
  * shows the GPU visible and usable; the worker never reports its host, so a GPU there is known only
  * through that. Without a live session nothing is known.
  */
+/**
+ * A render worker answers when it has an admitted session and checked in recently: a session lasts
+ * hours, so it alone outlives a worker that stopped. The Studio worker bundled with this server
+ * (`local`) is admitted to render on the processor, so its session says nothing about a GPU.
+ */
 export const renderWorkerCheckFrom = (
-  worker: { id: string; name: string },
+  worker: { id: string; name: string; destination?: string },
   session: { valid: true; qualifiedBytes: string } | null,
-): WorkerCheck => ({
-  id: worker.id,
-  name: worker.name,
-  kind: 'render',
-  reachable: !!session,
-  model: null,
-  // A measured working budget is not dedicated physical VRAM.
-  vramGb: null,
-  gpu: session ? { present: true, visible: true, usable: true } : UNKNOWN_FACTS,
-});
+  answering = true,
+): WorkerCheck => {
+  const reachable = !!session && answering;
+  return {
+    id: worker.id,
+    name: worker.name,
+    kind: 'render',
+    reachable,
+    model: null,
+    // A measured working budget is not dedicated physical VRAM.
+    vramGb: null,
+    gpu: reachable && worker.destination !== 'local' ? { present: true, visible: true, usable: true } : UNKNOWN_FACTS,
+  };
+};
 
 type RestorationReport = {
   gpus: Array<{ name: string; memoryTotalBytes: number }>;

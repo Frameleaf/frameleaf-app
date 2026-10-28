@@ -281,6 +281,17 @@ describe('hardware check (FL-159)', () => {
       });
     });
 
+    it('a lasting session is no answer from a worker that stopped, and the bundled worker claims no GPU', () => {
+      const session = { valid: true as const, qualifiedBytes: String(2 * GB) };
+      expect(renderWorkerCheckFrom({ id: 'w1', name: 'Studio PC' }, session, false)).toMatchObject({
+        reachable: false,
+        gpu: { present: null, visible: null, usable: null },
+      });
+      expect(
+        renderWorkerCheckFrom({ id: 'w2', name: 'Studio worker (machine learning)', destination: 'local' }, session),
+      ).toMatchObject({ reachable: true, gpu: { present: null, visible: null, usable: null } });
+    });
+
     it('shows a restoration worker from its report, "not reported" when the driver lists no GPU', () => {
       const report = {
         gpus: [{ name: 'NVIDIA GeForce RTX 4090', memoryTotalBytes: 24 * GB }],

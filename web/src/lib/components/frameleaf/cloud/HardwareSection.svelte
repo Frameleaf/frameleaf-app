@@ -459,10 +459,9 @@
   const modelName = (value: string) => LOCAL_DESCRIPTION_MODELS.find((model) => model.value === value)?.name ?? value;
   const throughputText = (row: HardwareWorkloadBenchmarkDto) => {
     if (row.unavailable) {
+      // The worker's own error (a request body, a destination id) is for the server log, not this page.
       if (row.unavailable === 'failed') {
-        return row.error
-          ? $t('frameleaf_hardware_throughput_failed', { values: { error: row.error } })
-          : $t('frameleaf_hardware_throughput_failed_unknown');
+        return $t('frameleaf_hardware_throughput_failed_unknown');
       }
       return $t(`frameleaf_hardware_throughput_${row.unavailable.replaceAll('-', '_')}` as Translations);
     }

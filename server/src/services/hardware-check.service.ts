@@ -6,6 +6,7 @@ import { HardwareCheck, HardwareCheckResponseDto } from 'src/dtos/hardware-check
 import { MlDestinationKind, MlWorkerRole, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
 import { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { RENDER_WORKER_STALE_MS } from 'src/services/worker-inventory.service.js';
 import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import {
   ContainerTest,
@@ -214,7 +215,9 @@ export class HardwareCheckService extends BaseService {
       .filter((worker) => worker.status === RenderWorkerStatus.Active)
       .map((worker) => {
         const qualified = evaluated.find((entry) => entry.worker.id === worker.id && entry.budget.valid);
-        return renderWorkerCheckFrom(worker, qualified?.budget.valid ? qualified.budget : null);
+        const seenAt = worker.lastSeenAt ? new Date(worker.lastSeenAt).getTime() : null;
+        const answering = seenAt !== null && Date.now() - seenAt <= RENDER_WORKER_STALE_MS;
+        return renderWorkerCheckFrom(worker, qualified?.budget.valid ? qualified.budget : null, answering);
       });
     const restoration = await Promise.all(
       this.restorationDestinations(destinations).map(async (row) =>
