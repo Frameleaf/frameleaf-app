@@ -52,7 +52,7 @@ export default defineConfig({
     },
   ],
   build: {
-    target: 'chrome114',
+    target: 'chrome116',
     sourcemap: false,
     rolldownOptions: {
       input: {

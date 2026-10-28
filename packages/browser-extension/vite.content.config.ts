@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 export default defineConfig({
   build: {
-    target: 'chrome114',
+    target: 'chrome116',
     emptyOutDir: false,
     sourcemap: false,
     lib: {

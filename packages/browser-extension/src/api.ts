@@ -107,7 +107,7 @@ async function boundedResponse(response: Response): Promise<Response> {
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new Response(body, {
+  return new Response([204, 205, 304].includes(response.status) ? null : body, {
     status: response.status,
     headers: response.headers,
   });
@@ -214,7 +214,7 @@ export async function connectServer(
     credentialId: crypto.randomUUID(),
   };
 }
-async function boundOptions(
+export async function boundOptions(
   binding: ServerBinding,
   token: string,
   fetch: typeof globalThis.fetch,
