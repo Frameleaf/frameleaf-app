@@ -1,3 +1,4 @@
+import type { CapturePreview } from './preview';
 import type { ConnectionStatus } from './settings';
 import {
   CaptureFailure,
@@ -6,7 +7,8 @@ import {
 } from './api';
 
 export type ExtensionRequest =
-  | { type: 'status' | 'refresh' | 'disconnect' }
+  | { type: 'status' | 'refresh' | 'disconnect' | 'discover' }
+  | { type: 'preview'; id: string }
   | {
       type: 'connect';
       address: string;
@@ -14,17 +16,20 @@ export type ExtensionRequest =
       allowLocalhost?: boolean;
     };
 export type ExtensionReply =
-  | { ok: true; connection: ConnectionStatus | null }
+  | { ok: true; connection: ConnectionStatus | null; preview?: CapturePreview }
   | { ok: false; error: string; connection?: ConnectionStatus | null };
 export const trustedStorage = () => chrome.storage.local;
-export function trustedSender(sender: chrome.runtime.MessageSender): boolean {
+export function trustedSender(
+  sender: chrome.runtime.MessageSender,
+  pages = ['/options.html', '/popup.html'],
+): boolean {
   try {
     const url = new URL(sender.url ?? '');
     return (
       sender.id === chrome.runtime.id &&
       url.protocol === 'chrome-extension:' &&
       url.hostname === chrome.runtime.id &&
-      ['/options.html', '/popup.html'].includes(url.pathname)
+      pages.includes(url.pathname)
     );
   } catch {
     return false;
@@ -81,3 +86,8 @@ export function watchConnection(changed: () => void) {
   chrome.storage.onChanged.addListener(listener);
   return () => chrome.storage.onChanged.removeListener(listener);
 }
+
+export const openCapturePreview = (id: string) =>
+  chrome.tabs.create({
+    url: chrome.runtime.getURL(`capture.html?id=${encodeURIComponent(id)}`),
+  });

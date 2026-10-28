@@ -1,3 +1,6 @@
+import { DiscoveryFailure, discoverActivePage } from './discovery';
+import { clearPreview, createPreview, readPreview } from './preview';
+import { sameBinding } from './api';
 import {
   CaptureFailure,
   connectServer,
@@ -6,6 +9,7 @@ import {
 } from './api';
 import {
   hasServerAccess,
+  openCapturePreview,
   registerBackground,
   trustedSender,
   type ExtensionReply,
@@ -30,6 +34,7 @@ async function refresh() {
   const current = await connectionStatus();
   if (!current || current.status !== 'connected') return;
   if (!(await hasServerAccess(current.binding.origin))) {
+    clearPreview();
     await pauseConnection(current.binding);
     throw new CaptureFailure('permission');
   }
@@ -42,8 +47,10 @@ async function refresh() {
     if (
       error instanceof CaptureFailure &&
       ['authorization', 'identity', 'unsupported'].includes(error.code)
-    )
+    ) {
+      clearPreview();
       await pauseConnection(current.binding);
+    }
     throw error;
   }
 }
@@ -51,7 +58,19 @@ export function handleMessage(
   message: unknown,
   sender: chrome.runtime.MessageSender,
 ): Promise<ExtensionReply> {
-  if (!trustedSender(sender))
+  const settingsPage = trustedSender(sender);
+  const capturePage = trustedSender(sender, ['/capture.html']);
+  if (
+    !settingsPage &&
+    !(
+      capturePage &&
+      message &&
+      typeof message === 'object' &&
+      'type' in message &&
+      typeof message.type === 'string' &&
+      ['preview', 'status', 'refresh'].includes(message.type)
+    )
+  )
     return Promise.resolve({
       ok: false,
       error: 'Open the Frameleaf extension to change its connection.',
@@ -89,7 +108,48 @@ export function handleMessage(
         case 'refresh':
           await refresh();
           break;
+        case 'discover': {
+          if (!trustedSender(sender, ['/popup.html'])) throw new Error();
+          const current = await connectionStatus();
+          if (!current || current.status !== 'connected')
+            throw new CaptureFailure('credential');
+          const discovery = await discoverActivePage();
+          const latest = await connectionStatus();
+          if (
+            !latest ||
+            latest.status !== 'connected' ||
+            !sameBinding(current.binding, latest.binding)
+          )
+            throw new CaptureFailure('credential');
+          const preview = createPreview(current.binding, discovery);
+          await openCapturePreview(preview.id);
+          break;
+        }
+        case 'preview': {
+          if (
+            !capturePage ||
+            !('id' in message) ||
+            typeof message.id !== 'string'
+          )
+            throw new Error();
+          const current = await connectionStatus();
+          const preview =
+            current?.status === 'connected'
+              ? readPreview(message.id, current.binding)
+              : null;
+          if (!preview) {
+            if (current?.status !== 'connected') clearPreview();
+            return {
+              ok: false,
+              error:
+                'This collection preview has expired. Return to the webpage and find its images again.',
+              connection: current,
+            };
+          }
+          return { ok: true, connection: current, preview };
+        }
         case 'disconnect':
+          clearPreview();
           await disconnect();
           break;
         case 'status':
@@ -100,7 +160,7 @@ export function handleMessage(
       return { ok: true, connection: await connectionStatus() };
     } catch (error) {
       const reason =
-        error instanceof CaptureFailure
+        error instanceof CaptureFailure || error instanceof DiscoveryFailure
           ? error.message
           : 'Could not read the connection. Reopen the extension and try again.';
       try {
@@ -118,7 +178,9 @@ export function handleMessage(
 registerBackground(handleMessage, initializeStorage, () =>
   serialize(async () => {
     const current = await connectionStatus();
-    if (current && !(await hasServerAccess(current.binding.origin)))
+    if (current && !(await hasServerAccess(current.binding.origin))) {
+      clearPreview();
       await pauseConnection(current.binding);
+    }
   }),
 );

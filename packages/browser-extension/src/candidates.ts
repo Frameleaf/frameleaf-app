@@ -18,16 +18,20 @@ export const discoveryLimits = {
   inlineCharacters: 256 * 1024,
 };
 
-function acquisitionUrl(raw: string, document: Document): string | null {
+export function candidateUrl(
+  raw: string,
+  baseUrl: string,
+  pageUrl: string,
+): string | null {
   if (!raw.trim() || raw.length > discoveryLimits.inlineCharacters) return null;
   try {
-    const url = new URL(raw, document.baseURI);
+    const url = new URL(raw, baseUrl);
     if (url.username || url.password) return null;
     if (url.protocol === 'data:') {
       if (!/^data:image\/(?:png|jpeg|gif|webp|avif|svg\+xml)[;,]/i.test(raw))
         return null;
     } else if (url.protocol === 'blob:') {
-      if (url.origin === 'null' || url.origin !== new URL(document.URL).origin)
+      if (url.origin === 'null' || url.origin !== new URL(pageUrl).origin)
         return null;
     } else if (url.protocol !== 'https:' && url.protocol !== 'http:')
       return null;
@@ -49,7 +53,7 @@ export function collectCandidates(document: Document): CaptureCandidate[] {
   const title = document.title.slice(0, 4096);
   let urlCharacters = 0;
   const add = (raw: string, width?: number, height?: number) => {
-    const url = acquisitionUrl(raw, document);
+    const url = candidateUrl(raw, document.baseURI, document.URL);
     if (!url) return;
     const previous = candidates.get(url);
     if (previous) {

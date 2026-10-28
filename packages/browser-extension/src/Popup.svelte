@@ -5,6 +5,20 @@
   let connection = $state<ConnectionStatus | null>(null);
   let loading = $state(true);
   let error = $state("");
+  let discovering = $state(false);
+  async function discover() {
+    discovering = true;
+    error = "";
+    try {
+      const reply = await sendRequest({ type: "discover" });
+      if (!reply.ok) error = reply.error;
+    } catch {
+      error =
+        "Could not inspect this page. Return to the webpage and try again.";
+    } finally {
+      discovering = false;
+    }
+  }
   onMount(() => {
     const stop = watchConnection(() => {
       void sendRequest({ type: "status" })
@@ -55,6 +69,13 @@
       </p>{/if}
   </div>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if connection?.status === "connected"}<button
+      class="primary"
+      type="button"
+      disabled={discovering || loading}
+      onclick={() => void discover()}
+      >{discovering ? "Finding images…" : "Find images on this page"}</button
+    >{/if}
   <button
     type="button"
     class:primary={!connection}

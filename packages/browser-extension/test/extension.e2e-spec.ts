@@ -8,12 +8,20 @@ import { join, resolve } from 'node:path';
 test('packaged connection UI pins requests, restricts key storage and clears revoked destinations across pages', async ({}, testInfo) => {
   let revoked = false;
   let redirectTargetHits = 0;
+  let mediaHits = 0;
   const requests: string[] = [];
   const fixtureKey = 'synthetic-capture-key';
   const server = createServer((req, res) => {
     if (req.url === '/page') {
       res.setHeader('Content-Type', 'text/html');
-      res.end('<title>Synthetic collection page</title><p>Web content</p>');
+      res.end(
+        `<title>Synthetic collection page</title><p>Web content</p><img src="/images/small.png" srcset="/images/large.jpg?transient=private 2000w"><div style="background-image:url('/images/background.webp')"></div>${Array.from({ length: 105 }, (_, index) => `<img src="/images/${index}.png?transient=private">`).join('')}`,
+      );
+      return;
+    }
+    if (req.url?.startsWith('/images/')) {
+      mediaHits++;
+      res.writeHead(404).end();
       return;
     }
     if (req.url === '/redirect/api/capture/capabilities') {
@@ -76,7 +84,6 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     );
     // Pregrant only the synthetic server; native permission prompts are a separate browser gate.
     manifest.host_permissions = ['http://127.0.0.1/*'];
-    manifest.permissions.push('scripting');
     await writeFile(
       join(extensionPath, 'manifest.json'),
       JSON.stringify(manifest),
@@ -157,6 +164,70 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(popup.getByText('Connected', { exact: true })).toBeVisible();
+    await content.waitForLoadState('networkidle');
+    const beforeCollection = mediaHits;
+    await content.bringToFront();
+    const collectionOpened = context.waitForEvent('page', { timeout: 5000 });
+    const discovered = await popup.evaluate(async () =>
+      chrome.runtime.sendMessage({ type: 'discover' }),
+    );
+    expect(discovered).toMatchObject({ ok: true });
+    const collection = await collectionOpened;
+    await expect(
+      collection.getByRole('heading', { name: 'Collect images', exact: true }),
+    ).toBeVisible();
+    await expect(
+      collection.getByText('Synthetic collection page', { exact: true }),
+    ).toBeVisible();
+    const images = collection
+      .getByRole('region', { name: 'Discovered images' })
+      .getByRole('checkbox');
+    expect(await images.count()).toBeGreaterThan(100);
+    await images.first().focus();
+    await images.first().press('Space');
+    await expect(images.first()).toBeChecked();
+    for (let index = 1; index < 100; index++) await images.nth(index).check();
+    await expect(collection.getByRole('status')).toContainText(
+      '100 of 100 selected',
+    );
+    await expect(images.nth(100)).toBeDisabled();
+    await collection.getByRole('button', { name: 'Clear selection' }).click();
+    await expect(collection.getByRole('status')).toContainText(
+      '0 of 100 selected',
+    );
+    await collection.getByLabel('Minimum width').fill('1500');
+    await collection.getByLabel('Format', { exact: true }).selectOption('jpeg');
+    await expect(images).toHaveCount(1);
+    await collection
+      .getByLabel('Album', { exact: true })
+      .selectOption('22222222-2222-4222-8222-222222222222');
+    await collection
+      .getByLabel('Note', { exact: true })
+      .fill('Synthetic reference');
+    await expect(collection.locator('body')).not.toContainText(
+      'transient=private',
+    );
+    await expect(
+      collection.getByText(
+        'This is a collection preview. Selected images have not been saved.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    expect(mediaHits).toBe(beforeCollection);
+    await collection.screenshot({
+      path: testInfo.outputPath('collection.png'),
+      fullPage: true,
+    });
+    await collection.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await collection.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await collection.screenshot({
+      path: testInfo.outputPath('collection-narrow.png'),
+      fullPage: true,
+    });
     revoked = true;
     await popup.reload();
     await expect(
@@ -164,6 +235,10 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     ).toBeVisible();
     await expect(
       options.getByText('1 writable album available.'),
+    ).not.toBeVisible();
+    await expect(collection.getByRole('alert')).toContainText('expired');
+    await expect(
+      collection.getByLabel('Note', { exact: true }),
     ).not.toBeVisible();
     expect(
       await options.evaluate(
@@ -207,8 +282,13 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     try {
       await context?.close();
     } finally {
-      if (server.listening)
-        await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (server.listening) {
+        const closed = new Promise<void>((resolve) =>
+          server.close(() => resolve()),
+        );
+        server.closeAllConnections();
+        await closed;
+      }
       await rm(temp, { recursive: true, force: true });
     }
   }
