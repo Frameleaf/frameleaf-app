@@ -5,9 +5,44 @@ import assert from "node:assert/strict";
 import {
   cancelPlan,
   issueKeys,
+  jiraClient,
   syncRelease,
   validateReceipt,
 } from "./jira-release.mjs";
+
+test("Jira accepts empty successful property writes and keeps JSON readback strict", async (t) => {
+  let response;
+  t.mock.method(globalThis, "fetch", async () => response);
+  const request = jiraClient({
+    JIRA_EMAIL: "test@example.invalid",
+    JIRA_API_TOKEN: "synthetic-test-token",
+  });
+  const path = "/rest/api/3/issue/FC-1/properties/frameleaf.shipment.10";
+  for (const status of [201, 200, 204]) {
+    response = new Response(null, { status });
+    assert.equal(
+      await request(path, "PUT", { sourceSha: "a".repeat(40) }),
+      null,
+    );
+  }
+  response = new Response('{"value":{"sourceSha":"verified"}}');
+  assert.deepEqual(await request(path), { value: { sourceSha: "verified" } });
+  for (const [method, body] of [
+    ["GET", ""],
+    ["PUT", "{"],
+    ["POST", ""],
+  ]) {
+    response = new Response(body, { status: method === "POST" ? 201 : 200 });
+    await assert.rejects(request(path, method), SyntaxError);
+  }
+  response = new Response("private response content", { status: 403 });
+  await assert.rejects(
+    request(path, "PUT"),
+    (error) =>
+      error.status === 403 &&
+      !error.message.includes("private response content"),
+  );
+});
 
 const receipt = {
   mode: "shipped",
