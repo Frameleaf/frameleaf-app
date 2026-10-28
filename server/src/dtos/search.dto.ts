@@ -308,6 +308,7 @@ export const ColorFilterSchema = z
 export type ColorFilter = z.infer<typeof ColorFilterSchema>;
 
 const searchFilterBranchShape = {
+  text: z.strictObject({ contains: z.string().trim().min(1).max(4096) }).meta({ id: 'LibraryTextFilter' }),
   source: z.strictObject({ contains: z.string().trim().min(1).max(500) }).meta({ id: 'SourceFilter' }),
   color: ColorFilterSchema,
   hasTransparency: BoolFilterSchema,

@@ -6379,6 +6379,9 @@ export type StringSimilarityFilter = {
 export type SourceFilter = {
     contains: string;
 };
+export type LibraryTextFilter = {
+    contains: string;
+};
 export type DateFilterNullable = {
     eq?: string | null;
     gt?: string;
@@ -6443,6 +6446,7 @@ export type SearchFilterBranch = {
     state?: StringFilterNullable;
     tagIds?: IdsFilter;
     takenAt?: DateFilter;
+    text?: LibraryTextFilter;
     trashedAt?: DateFilterNullable;
     "type"?: EnumFilterAssetType;
     updatedAt?: DateFilter;
@@ -6496,6 +6500,7 @@ export type SearchFilter = {
     state?: StringFilterNullable;
     tagIds?: IdsFilter;
     takenAt?: DateFilter;
+    text?: LibraryTextFilter;
     trashedAt?: DateFilterNullable;
     "type"?: EnumFilterAssetType;
     updatedAt?: DateFilter;

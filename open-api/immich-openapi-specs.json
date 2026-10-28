@@ -92150,6 +92150,20 @@
         ],
         "type": "object"
       },
+      "LibraryTextFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "contains": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "contains"
+        ],
+        "type": "object"
+      },
       "LibraryViewScope": {
         "enum": [
           "personal",
@@ -125153,6 +125167,9 @@
           "takenAt": {
             "$ref": "#/components/schemas/DateFilter"
           },
+          "text": {
+            "$ref": "#/components/schemas/LibraryTextFilter"
+          },
           "trashedAt": {
             "$ref": "#/components/schemas/DateFilterNullable"
           },
@@ -125297,6 +125314,9 @@
           },
           "takenAt": {
             "$ref": "#/components/schemas/DateFilter"
+          },
+          "text": {
+            "$ref": "#/components/schemas/LibraryTextFilter"
           },
           "trashedAt": {
             "$ref": "#/components/schemas/DateFilterNullable"

@@ -78,3 +78,9 @@ it('preserves dimension, aspect ratio and millisecond duration predicates in the
   };
   expect(MetadataSearchDto.schema.parse({ filter }).filter).toEqual(filter);
 });
+
+it('accepts a shared mixed-item text predicate without converting bookmark searches into filename searches', () => {
+  expect(MetadataSearchDto.schema.parse({ filter: { text: { contains: 'packaging' } } }).filter).toEqual({
+    text: { contains: 'packaging' },
+  });
+});

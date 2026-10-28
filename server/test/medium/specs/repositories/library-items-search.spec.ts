@@ -225,6 +225,34 @@ describe('mixed library search universe', () => {
       'bookmark_rating_check',
     );
   });
+  it('uses one structured text predicate for media and bookmark titles/owner notes', async () => {
+    const ctx = setup();
+    const owner = await ctx.newUser();
+    const viewer = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    const { asset } = await ctx.newAsset({
+      ownerId: owner.user.id,
+      libraryScope: LibraryScope.Design,
+      originalFileName: 'packaging.png',
+    });
+    const bookmark = await repo.create(owner.user.id, {
+      url: 'https://example.org/reference',
+      title: 'Reference',
+      note: 'packaging',
+      libraryScope: LibraryScope.Design,
+    });
+    const { album } = await ctx.newAlbum({ ownerId: owner.user.id }, [asset.id]);
+    await repo.addToAlbum({ user: owner.user }, album.id, [bookmark.id]);
+    await db
+      .insertInto('album_user')
+      .values({ albumId: album.id, userId: viewer.user.id, role: AlbumUserRole.Viewer })
+      .execute();
+    const request = LibraryItemSearchDto.schema.parse({
+      filter: { libraryScope: 'design', text: { contains: 'packaging' }, albumIds: { any: [album.id] } },
+    });
+    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), true)).count).toBe(2);
+    expect((await repo.searchLibrary({ user: viewer.user }, request, scope(viewer.user.id), true)).count).toBe(1);
+  });
   it('does not count bookmark rows when the current key lacks BookmarkRead', async () => {
     const ctx = setup();
     const { user } = await ctx.newUser();

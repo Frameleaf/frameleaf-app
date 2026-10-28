@@ -42,11 +42,16 @@ const bookmarkFields = new Set([
   'albumIds',
   'albumSubtreeIds',
   'source',
+  'text',
   'color',
   'hasTransparency',
   'or',
   'libraryScope',
 ]);
+
+const bookmarkTextPredicate = (text: string, viewerId: string) =>
+  sql<SqlBool>`strpos(lower(f_unaccent(concat_ws(' ', bookmark.title, bookmark.url,
+    case when bookmark."ownerId" = ${viewerId}::uuid then bookmark.note else null end))), lower(f_unaccent(${text}))) > 0`;
 
 // Apply the same session boundary to the final write, so a concurrent lock cannot be edited while locked.
 const visible = (auth: AuthDto) => sql<boolean>`
@@ -127,6 +132,7 @@ export class BookmarkRepository {
       return [eb.lit(false)];
     const state = sql<AssetVisibility>`case when bookmark."isLocked" then 'locked' when bookmark."isArchived" then 'archive' else 'timeline' end`;
     const predicates: Expression<SqlBool>[] = [
+      ...(branch.text ? [bookmarkTextPredicate(branch.text.contains, auth.user.id)] : []),
       ...comparisonPredicates(eb, 'bookmark.id', branch.id),
       ...comparisonPredicates(eb, state, branch.visibility),
       ...comparisonPredicates(eb, 'bookmark.createdAt', branch.createdAt),
@@ -233,10 +239,7 @@ export class BookmarkRepository {
             : []),
         ]),
       )
-      .$if(!!query.query, (qb) =>
-        qb.where(sql<boolean>`strpos(lower(f_unaccent(concat_ws(' ', bookmark.title, bookmark.url,
-        case when bookmark."ownerId" = ${auth.user.id}::uuid then bookmark.note else null end))), lower(f_unaccent(${query.query}))) > 0`),
-      );
+      .$if(!!query.query, (qb) => qb.where(bookmarkTextPredicate(query.query, auth.user.id)));
   }
 
   async searchLibrary(

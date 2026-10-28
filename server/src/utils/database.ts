@@ -1095,9 +1095,23 @@ function branchPredicates(
   revealOwnerId?: string,
   privateViewerId: string | null | undefined = viewerId,
   paletteViewerId: string | null | undefined = privateViewerId,
-) {
+): Expression<SqlBool>[] {
   const { encodedVideoPath } = branch;
   return [
+    ...(branch.text
+      ? [
+          eb.or(
+            [
+              { originalFileName: { like: branch.text.contains } },
+              { description: { like: branch.text.contains } },
+              { originalPath: { like: branch.text.contains } },
+              { ocr: { matches: branch.text.contains } },
+            ].flatMap((condition) =>
+              branchPredicates(eb, condition, viewerId, revealOwnerId, privateViewerId, paletteViewerId),
+            ),
+          ),
+        ]
+      : []),
     ...comparisonPredicates(eb, 'asset.id', branch.id),
     ...comparisonPredicates(eb, 'asset.libraryId', branch.libraryId),
     ...comparisonPredicates(eb, 'asset.type', branch.type),
