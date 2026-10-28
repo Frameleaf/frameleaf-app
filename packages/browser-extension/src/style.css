@@ -1,0 +1,120 @@
+@import "../../../web/src/lib/frameleaf/tokens.css";
+:root {
+  color-scheme: dark;
+}
+body {
+  margin: 0;
+  background: var(--fl-canvas);
+  color: var(--fl-text);
+  font-family: -apple-system, BlinkMacSystemFont, Inter, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+main {
+  max-width: 38rem;
+  margin: 3rem auto;
+  padding: 0 1.5rem 2rem;
+}
+header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+header h1 {
+  font-size: 1.5rem;
+}
+h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+section {
+  border-block: 1px solid var(--fl-border);
+  padding: 1.25rem 0;
+  margin: 1.5rem 0;
+}
+form {
+  display: grid;
+  gap: 0.75rem;
+}
+label {
+  font-weight: 600;
+}
+input:not([type="checkbox"]) {
+  width: 100%;
+  border: 1px solid var(--fl-border-strong);
+  border-radius: 0.5rem;
+  background: var(--fl-panel);
+  color: var(--fl-text);
+  padding: 0.75rem;
+  min-height: 44px;
+}
+button {
+  min-height: 44px;
+  border: 1px solid var(--fl-border-strong);
+  border-radius: 0.5rem;
+  padding: 0.625rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+button.primary {
+  background: var(--fl-accent);
+  color: var(--fl-accent-text);
+  border-color: var(--fl-accent);
+}
+button.quiet {
+  border: 0;
+  padding-inline: 0;
+  color: var(--fl-danger);
+}
+button:disabled {
+  cursor: default;
+}
+:focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 3px;
+}
+a {
+  color: var(--fl-blue);
+}
+.muted,
+.hint,
+.address {
+  color: var(--fl-muted);
+}
+.hint {
+  margin: -0.35rem 0 0.5rem;
+  font-size: 0.875rem;
+}
+.address {
+  overflow-wrap: anywhere;
+}
+.error {
+  color: var(--fl-danger);
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  font-weight: 400;
+}
+summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding-block: 0.5rem;
+}
+.popup {
+  width: 360px;
+}
+.popup main {
+  margin: 0;
+  padding: 1.25rem;
+}
+.popup h1 {
+  font-size: 1.2rem;
+}
+@media (max-width: 440px) {
+  main {
+    margin-block: 1.5rem;
+  }
+}
