@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     # Studio captions: the Whisper model `frameleaf-transcribe` stands for. Unset picks
     # whisper-large-v3-turbo on a CUDA GPU and whisper-small otherwise (models/constants.py).
     transcription_model: str | None = None
+    # PCM plus normalized samples; one four-hour clip needs 1,382,400,000 bytes, excluding model/runtime memory.
+    transcription_max_memory_mb: int = Field(default=1536, gt=0)
     openvino_precision: ModelPrecision = ModelPrecision.FP32
     rocm_precision: ModelPrecision = ModelPrecision.FP32
 

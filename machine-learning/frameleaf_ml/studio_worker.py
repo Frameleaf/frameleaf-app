@@ -6,6 +6,7 @@ server through the private trust volume and renders Studio exports. It is on by 
 in either leaves the other running, and the worker is restarted with a growing back-off.
 """
 
+import errno
 import os
 import subprocess
 import threading
@@ -78,7 +79,12 @@ class StudioWorkerSupervisor:
                 self.process = self.popen(self.command, env=worker_env(os.environ))
             except OSError as error:
                 log.warning(f"Studio worker could not start: {error}")
-                return
+                if error.errno not in {errno.EAGAIN, errno.ENOMEM, errno.EINTR, errno.EMFILE, errno.ENFILE}:
+                    return
+                backoff = next_backoff(backoff, 0)
+                log.warning(f"Retrying Studio worker startup in {backoff:.0f} s")
+                self.stopping.wait(backoff)
+                continue
             # stop() may have run before this process was recorded, when it had nothing to terminate.
             if self.stopping.is_set():
                 self.process.terminate()

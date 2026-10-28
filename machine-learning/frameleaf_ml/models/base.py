@@ -59,6 +59,7 @@ class InferenceModel(ABC):
     ) -> None:
         self.loaded = session is not None
         self.load_attempts = 0
+        self.load_retry_at: float | None = None
         self._load_lock = Lock()
         self.model_name = clean_name(model_name)
         self.cache_dir = Path(cache_dir) if cache_dir is not None else self._cache_dir_default
@@ -101,6 +102,8 @@ class InferenceModel(ABC):
             if self.loaded:
                 del self.session
                 self.loaded = False
+                self.load_attempts = 0
+                self.load_retry_at = None
 
     def predict(self, *inputs: Any, **model_kwargs: Any) -> Any:
         self.load()

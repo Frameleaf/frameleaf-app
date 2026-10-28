@@ -526,7 +526,11 @@ export class MachineLearningRepository implements RestorationInference {
   private desktopPoolSelector: DesktopPoolSelector | null = null;
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
-  private probeCache = new Map<string, { authToken?: string; authorityIdentity?: string; probe: MlEndpointProbe }>();
+  private probeCache = new Map<
+    string,
+    { authToken?: string; authorityIdentity?: string; hardwareChecked: boolean; probe: MlEndpointProbe }
+  >();
+  private probesInFlight = new Map<string, Promise<MlEndpointProbe>>();
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -741,7 +745,8 @@ export class MachineLearningRepository implements RestorationInference {
         signal,
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
         // no such route (404), an older worker that does not know the task (422), no runtime or model (503)
         if ([404, 422, 501, 503].includes(response.status)) {
           throw new TranscriptionUnavailableError(`The worker cannot transcribe (${response.status})`);
@@ -856,7 +861,8 @@ export class MachineLearningRepository implements RestorationInference {
         signal,
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
         // no such route (404), an older worker that does not know the task (422), no model (503)
         if ([404, 422, 501, 503].includes(response.status)) {
           throw new MusicUnavailableError(`The worker cannot make music (${response.status})`);
@@ -935,6 +941,16 @@ export class MachineLearningRepository implements RestorationInference {
     this.cloudProber = prober;
   }
 
+  private refuseBusyWorker() {
+    deferJobUntilDependency('destination-capacity');
+    throw new ServiceUnavailableException('Machine learning worker is busy; try again shortly');
+  }
+
+  private async checkWorkerCapacity(response: Response) {
+    const body = await this.readDiagnosticJson(response).catch(() => null);
+    if (z.object({ detail: z.literal('ml_worker_busy') }).safeParse(body).success) this.refuseBusyWorker();
+  }
+
   private authHeaders(endpoint: MlEndpoint): Record<string, string> {
     return endpoint.authToken ? { Authorization: `Bearer ${endpoint.authToken}` } : {};
   }
@@ -948,7 +964,10 @@ export class MachineLearningRepository implements RestorationInference {
    * serves and `/hardware` for its acceleration. A result younger than `maxAgeMs` is
    * reused so a burst of jobs does not turn into a burst of probes.
    */
-  async probe(endpoint: MlEndpoint, { maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<MlEndpointProbe> {
+  async probe(
+    endpoint: MlEndpoint,
+    { maxAgeMs = 0, includeHardware = true }: { maxAgeMs?: number; includeHardware?: boolean } = {},
+  ): Promise<MlEndpointProbe> {
     const authorityIdentity = await this.authorize(endpoint);
     if (endpoint.cloud) {
       if (!this.cloudProber) {
@@ -970,6 +989,7 @@ export class MachineLearningRepository implements RestorationInference {
     const cached = this.probeCache.get(endpoint.url);
     if (
       cached &&
+      (!includeHardware || cached.hardwareChecked) &&
       cached.authToken === endpoint.authToken &&
       cached.authorityIdentity === authorityIdentity &&
       maxAgeMs > 0 &&
@@ -978,13 +998,39 @@ export class MachineLearningRepository implements RestorationInference {
       return cached.probe;
     }
 
+    const key = JSON.stringify([endpoint.url, endpoint.authToken, authorityIdentity, includeHardware]);
+    let operation = this.probesInFlight.get(key);
+    if (!operation) {
+      operation = this.probeLocal(endpoint, authorityIdentity, includeHardware);
+      this.probesInFlight.set(key, operation);
+    }
+    try {
+      const result = await operation;
+      // Sharing a network observation never shares another caller's permission to use it.
+      if ((await this.authorize(endpoint)) !== authorityIdentity) throw recoveryMlRefusal();
+      return result;
+    } finally {
+      if (this.probesInFlight.get(key) === operation) this.probesInFlight.delete(key);
+    }
+  }
+
+  private async probeLocal(
+    endpoint: MlEndpoint,
+    authorityIdentity: string | undefined,
+    includeHardware: boolean,
+  ): Promise<MlEndpointProbe> {
     const timeout = Math.min(5000, Math.max(250, this.timeout()));
     const started = Date.now();
     const probedAt = new Date(started);
     const finish = async (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): Promise<MlEndpointProbe> => {
       if ((await this.authorize(endpoint)) !== authorityIdentity) throw recoveryMlRefusal();
       const result = { ...probe, latencyMs: Date.now() - started, probedAt };
-      this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, authorityIdentity, probe: result });
+      this.probeCache.set(endpoint.url, {
+        authToken: endpoint.authToken,
+        authorityIdentity,
+        hardwareChecked: includeHardware,
+        probe: result,
+      });
       return result;
     };
     const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -1032,20 +1078,22 @@ export class MachineLearningRepository implements RestorationInference {
     }
 
     let hardware: MachineLearningHardwareResponse | null = null;
-    try {
-      await this.authorize(endpoint);
-      const response = await fetch(new URL('hardware', endpoint.url), {
-        headers: this.authHeaders(endpoint),
-        signal: AbortSignal.timeout(timeout),
-        redirect: 'error',
-      });
-      if (response.ok) {
-        hardware = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
-      } else {
-        await response.body?.cancel();
+    if (includeHardware) {
+      try {
+        await this.authorize(endpoint);
+        const response = await fetch(new URL('hardware', endpoint.url), {
+          headers: this.authHeaders(endpoint),
+          signal: AbortSignal.timeout(timeout),
+          redirect: 'error',
+        });
+        if (response.ok) {
+          hardware = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
+        } else {
+          await response.body?.cancel();
+        }
+      } catch {
+        // Hardware is informational; a worker without the route is still admissible.
       }
-    } catch {
-      // Hardware is informational; a worker without the route is still admissible.
     }
 
     // FL-42: a worker's own `/capabilities` list is a diagnostic claim, not admission proof. A
@@ -1162,6 +1210,8 @@ export class MachineLearningRepository implements RestorationInference {
           body: formData,
           redirect: 'error',
         },
+        undefined,
+        bound ? 4 * 1024 * 1024 : undefined,
       ));
       await this.authorize(selection.endpoint);
     } catch (error: Error | unknown) {
@@ -1182,10 +1232,7 @@ export class MachineLearningRepository implements RestorationInference {
         } catch {
           // Unknown errors retain the ordinary failure path.
         }
-        if (detail === 'ml_worker_busy') {
-          deferJobUntilDependency('destination-unavailable');
-          throw new ServiceUnavailableException('Machine learning worker is busy; try again shortly');
-        }
+        if (detail === 'ml_worker_busy') this.refuseBusyWorker();
       }
       throw new Error(
         `Machine learning request '${this.redact(config)}' to ${target} failed with status ${response.status}: ${response.statusText}`,

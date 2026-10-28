@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import struct
 import wave
 from collections.abc import Generator
 from pathlib import Path
@@ -40,10 +41,12 @@ class AudioFormatError(ValueError):
     """The upload is not 16 kHz mono 16-bit PCM WAV, or is empty or too long."""
 
 
-def read_wav(file: BinaryIO | bytes) -> NDArray[np.float32]:
-    """Samples in -1..1 from a 16 kHz mono 16-bit PCM WAV; anything else is refused, never resampled."""
+def wav_memory_bytes(file: BinaryIO | bytes) -> int:
+    """Validate without reading PCM; size PCM plus one float buffer and restore the caller's offset."""
+    stream = io.BytesIO(file) if isinstance(file, bytes) else file
+    start = stream.tell()
     try:
-        with wave.open(io.BytesIO(file) if isinstance(file, bytes) else file, "rb") as reader:
+        with wave.open(stream, "rb") as reader:
             if reader.getnchannels() != 1 or reader.getsampwidth() != 2 or reader.getframerate() != SAMPLE_RATE:
                 raise AudioFormatError("Audio must be 16 kHz mono 16-bit PCM WAV")
             frames = reader.getnframes()
@@ -51,13 +54,51 @@ def read_wav(file: BinaryIO | bytes) -> NDArray[np.float32]:
                 raise AudioFormatError("The audio is empty")
             if frames > MAX_SECONDS * SAMPLE_RATE:
                 raise AudioFormatError(f"The audio is longer than {MAX_SECONDS // 3600} hours")
-            data = reader.readframes(frames)
-    except (wave.Error, EOFError) as error:
+        stream.seek(0, io.SEEK_END)
+        physical_end = stream.tell()
+        stream.seek(start)
+        riff, size, kind = struct.unpack("<4sI4s", stream.read(12))
+        riff_end = start + 8 + size
+        if riff != b"RIFF" or kind != b"WAVE" or riff_end > physical_end:
+            raise AudioFormatError("The WAV is truncated")
+        data_bytes: int | None = None
+        while stream.tell() < riff_end:
+            if riff_end - stream.tell() < 8:
+                raise AudioFormatError("The WAV chunk header is truncated")
+            chunk, length = struct.unpack("<4sI", stream.read(8))
+            chunk_end = stream.tell() + length
+            if chunk_end + (length % 2) > riff_end:
+                raise AudioFormatError("The WAV chunk is truncated")
+            if chunk == b"fmt ":
+                if length < 16:
+                    raise AudioFormatError("The WAV format is truncated")
+                _, _, _, byte_rate, alignment, bits = struct.unpack("<HHIIHH", stream.read(16))
+                if byte_rate != SAMPLE_RATE * 2 or alignment != 2 or bits != 16:
+                    raise AudioFormatError("Audio must be 16 kHz mono 16-bit PCM WAV")
+            elif chunk == b"data":
+                if data_bytes is not None or length != frames * 2:
+                    raise AudioFormatError("The WAV has invalid PCM frames")
+                data_bytes = length
+            stream.seek(chunk_end + (length % 2))
+        if data_bytes is None:
+            raise AudioFormatError("The WAV has no PCM frames")
+        return data_bytes * 3
+    except (wave.Error, EOFError, struct.error, RuntimeError) as error:
         raise AudioFormatError("Audio must be 16 kHz mono 16-bit PCM WAV") from error
-    samples = np.frombuffer(data, dtype="<i2")
-    if samples.size == 0:
-        raise AudioFormatError("The audio is empty")
-    return samples.astype(np.float32) / 32768.0
+    finally:
+        stream.seek(start)
+
+
+def read_wav(file: BinaryIO | bytes) -> NDArray[np.float32]:
+    """Samples in -1..1 from validated 16 kHz mono 16-bit PCM WAV, never resampled."""
+    frames = wav_memory_bytes(file) // 6
+    with wave.open(io.BytesIO(file) if isinstance(file, bytes) else file, "rb") as reader:
+        data = reader.readframes(frames)
+    if len(data) != frames * 2:
+        raise AudioFormatError("The WAV is truncated")
+    samples = np.frombuffer(data, dtype="<i2").astype(np.float32)
+    samples /= 32768.0
+    return samples
 
 
 def cuda_device_count() -> int:

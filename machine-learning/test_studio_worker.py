@@ -1,5 +1,6 @@
 """FL-408: the bundled Studio render worker starts by default, can be turned off, and is supervised."""
 
+import errno
 import subprocess
 from pathlib import Path
 from unittest import mock
@@ -112,3 +113,48 @@ class TestSupervisor:
         supervisor.popen = mock.Mock(side_effect=stopped_while_spawning)
         supervisor.run()
         process.terminate.assert_called_once()
+
+
+@pytest.mark.parametrize("code", [errno.EAGAIN, errno.ENOMEM, errno.EINTR, errno.EMFILE, errno.ENFILE])
+def test_transient_spawn_error_retries_after_backoff(code: int) -> None:
+    process = mock.Mock(wait=mock.Mock(return_value=0))
+    supervisor = StudioWorkerSupervisor(
+        ["node", "worker.mjs"], popen=mock.Mock(side_effect=[OSError(code, "resource exhausted"), process])
+    )
+    with mock.patch.object(supervisor.stopping, "wait") as wait:
+        supervisor.run()
+    assert supervisor.process is process
+    wait.assert_called_once_with(10.0)
+
+
+@pytest.mark.parametrize("code", [errno.ENOENT, errno.EACCES, errno.ENOEXEC, errno.EINVAL])
+def test_permanent_spawn_error_stops_without_retry(code: int) -> None:
+    supervisor = StudioWorkerSupervisor(
+        ["missing", "worker.mjs"], popen=mock.Mock(side_effect=OSError(code, "bad config"))
+    )
+    with mock.patch.object(supervisor.stopping, "wait") as wait:
+        supervisor.run()
+    assert supervisor.process is None
+    wait.assert_not_called()
+
+
+def test_transient_spawn_failures_use_capped_backoff() -> None:
+    process = mock.Mock(wait=mock.Mock(return_value=0))
+    supervisor = StudioWorkerSupervisor(
+        ["node", "worker.mjs"],
+        popen=mock.Mock(side_effect=[OSError(errno.EAGAIN, "busy")] * 7 + [process]),
+    )
+    with mock.patch.object(supervisor.stopping, "wait") as wait:
+        supervisor.run()
+    assert supervisor.process is process
+    assert wait.call_args_list == [mock.call(delay) for delay in (10, 20, 40, 80, 160, 300, 300)]
+
+
+def test_stop_during_spawn_backoff_prevents_another_worker() -> None:
+    supervisor = StudioWorkerSupervisor(
+        ["node", "worker.mjs"], popen=mock.Mock(side_effect=OSError(errno.EAGAIN, "busy"))
+    )
+    with mock.patch.object(supervisor.stopping, "wait", side_effect=lambda _: supervisor.stop()):
+        supervisor.run()
+    assert supervisor.stopping.is_set()
+    assert supervisor.popen.call_count == 1
