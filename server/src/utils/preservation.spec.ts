@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { MediaOperationKind } from 'src/enum.js';
+import { LibraryScope, MediaOperationKind } from 'src/enum.js';
 import {
   PRESERVATION_FORMAT,
   PRESERVATION_INDEX_ENTRY,
@@ -40,6 +40,8 @@ const sha256 = 'b'.repeat(64);
 
 const sidecarOf = (overrides: Partial<PreservationSidecar> = {}): PreservationSidecar => ({
   schemaVersion: PRESERVATION_SCHEMA_VERSION,
+  libraryScope: LibraryScope.Personal,
+  sources: [],
   sourceAssetId: sourceId,
   originalFileName: 'lake.jpg',
   type: 'IMAGE',
@@ -210,6 +212,21 @@ describe('index entries', () => {
 });
 
 describe('sidecars', () => {
+  it('reads legacy sidecars and manifests while preserving explicit v2 workspace metadata', () => {
+    const legacy = { ...sidecarOf(), schemaVersion: 1 } as Record<string, unknown>;
+    delete legacy.libraryScope;
+    delete legacy.sources;
+    expect(PreservationSidecarSchema.safeParse(legacy).success).toBe(true);
+    expect(PreservationManifestSchema.safeParse(manifestOf({ schemaVersion: 1 })).success).toBe(true);
+    expect(PreservationManifestSchema.safeParse(manifestOf({ schemaVersion: 2 })).success).toBe(true);
+    expect(PreservationManifestSchema.safeParse(manifestOf({ schemaVersion: 3 })).success).toBe(false);
+    const current = { ...legacy, schemaVersion: 2, libraryScope: LibraryScope.Design, sources: [] };
+    expect(PreservationSidecarSchema.parse(current)).toMatchObject({ libraryScope: LibraryScope.Design, sources: [] });
+    expect(PreservationSidecarSchema.safeParse({ ...legacy, schemaVersion: 2 }).success).toBe(false);
+    expect(PreservationSidecarSchema.safeParse({ ...current, schemaVersion: 1 }).success).toBe(false);
+    expect(PreservationSidecarSchema.safeParse({ ...current, libraryScope: 'unknown' }).success).toBe(false);
+  });
+
   it('round-trips through the written form', () => {
     const sidecar = sidecarOf({ tags: ['Travel/Italy'], lock: { reason: 'marked', lockedAt: null } });
     const parsed = PreservationSidecarSchema.parse(JSON.parse(preservationJson(sidecar).toString('utf8')));

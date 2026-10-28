@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto';
 import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetVisibility, ChecksumAlgorithm, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  AssetVisibility,
+  ChecksumAlgorithm,
+  LibraryScope,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import {
   PreservationItem,
@@ -20,6 +26,7 @@ import { libraryAssetFromFile } from 'src/utils/library-scan.js';
 import {
   PRESERVATION_FORMAT,
   PRESERVATION_SCHEMA_VERSION,
+  PreservationAlbumsSchema,
   PreservationEntry,
   PreservationPackageError,
   PreservationSidecar,
@@ -70,6 +77,8 @@ describe(PreservationWorkerService.name, () => {
 
   const sidecarOf = (sourceAssetId: string, overrides: Partial<PreservationSidecar> = {}): PreservationSidecar => ({
     schemaVersion: PRESERVATION_SCHEMA_VERSION,
+    libraryScope: LibraryScope.Personal,
+    sources: [],
     sourceAssetId,
     originalFileName: 'lake.jpg',
     type: 'IMAGE',
@@ -162,6 +171,8 @@ describe(PreservationWorkerService.name, () => {
       beginItemAttempt: vi.fn(),
       finishItem: vi.fn(),
       getExportAsset: vi.fn(),
+      getAssetSources: vi.fn().mockResolvedValue([]),
+      appendRestoredSources: vi.fn(),
       findByChecksum: vi.fn().mockResolvedValue([]),
       updateRestoreItem: vi.fn(),
       getLibraryState: vi.fn().mockResolvedValue(library()),
@@ -471,6 +482,24 @@ describe(PreservationWorkerService.name, () => {
         // Only the owner's own decisions travel: no recognized-text lines, boxes or scores.
         expect(sidecar).not.toHaveProperty('ocr');
         expect(written).not.toMatch(/"(boxScore|textScore|ocr)"/);
+      });
+
+      it('exports workspace and credential-free capture attribution', async () => {
+        repository.getAssetSources.mockResolvedValue([
+          {
+            captureId: newUuid(),
+            pageUrl: 'https://example.com/art?token=private#fragment',
+            title: 'Artwork',
+            capturedAt: new Date('2026-01-01'),
+          },
+        ]);
+        const sidecar = (await worker().buildSidecar(ownerId, exportAsset({ libraryScope: 'design' }), {
+          sha1,
+          sha256,
+        })) as PreservationSidecar;
+        expect(sidecar.libraryScope).toBe('design');
+        expect(sidecar.sources).toEqual([expect.objectContaining({ pageUrl: 'https://example.com/art' })]);
+        expect(JSON.stringify(sidecar)).not.toContain('token=');
       });
 
       it('keeps every located decision out when a crop meets unknown image geometry', async () => {
@@ -1010,6 +1039,55 @@ describe(PreservationWorkerService.name, () => {
     });
   });
 
+  describe('Pro workspace metadata', () => {
+    it('uploads a Design original in its workspace before publication', async () => {
+      const created = newUuid();
+      const item = restoreItemOf();
+      item.sidecar = { ...item.sidecar, schemaVersion: 2, libraryScope: 'design', sources: [] };
+      assetMedia.uploadAsset.mockResolvedValue({ id: created, status: AssetMediaStatus.CREATED });
+      await worker().restoreItem(contextOf(), item);
+      expect(assetMedia.uploadAsset).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ libraryScope: 'design' }),
+        expect.anything(),
+      );
+    });
+
+    it('appends source records through the owner-checked repository on restore', async () => {
+      const item = restoreItemOf();
+      const assetId = newUuid();
+      const source = {
+        captureId: newUuid(),
+        pageUrl: 'https://example.com/art',
+        title: 'Artwork',
+        capturedAt: '2026-01-01T00:00:00.000Z',
+      };
+      await worker().applyMetadata(contextOf(), item, assetId, false, {
+        ...sidecarOf(item.sourceAssetId),
+        sources: [source],
+      });
+      expect(repository.appendRestoredSources).toHaveBeenCalledWith(ownerId, assetId, [source]);
+    });
+
+    it('keeps an existing workspace by default and restores it only when replacement was chosen', async () => {
+      const item = restoreItemOf();
+      const sidecar = { ...sidecarOf(item.sourceAssetId), schemaVersion: 2, libraryScope: 'design', sources: [] };
+      repository.getLibraryState.mockResolvedValue(library({ libraryScope: 'personal' }));
+      await worker().applyMetadata(contextOf(), item, newUuid(), false, sidecar);
+      expect(assets.update).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ libraryScope: 'design' }),
+      );
+      await worker().applyMetadata(contextOf({ conflictDefault: 'replace' }), item, newUuid(), false, sidecar);
+      expect(assets.update).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ libraryScope: 'design' }),
+      );
+    });
+  });
+
   describe('restore relationships', () => {
     it('creates nested albums and collections under the mapped parent, in parent-first order', async () => {
       const root = newUuid();
@@ -1230,6 +1308,32 @@ describe(PreservationWorkerService.name, () => {
       entries.set('manifest.json', preservationJson(manifest));
       return { entries, index, manifest };
     };
+
+    it('requires album workspace metadata to agree with the package version', async () => {
+      const album = {
+        id: newUuid(),
+        name: 'Design',
+        description: '',
+        kind: 'album',
+        parentId: null,
+        icon: null,
+        order: null,
+      };
+      const read = (schemaVersion: number, scope?: string) => {
+        const bytes = preservationJson([{ ...album, ...(scope ? { libraryScope: scope } : {}) }]);
+        const source = memorySource(new Map([['albums.json', bytes]]));
+        const manifest = {
+          ...buildPackage(0).manifest,
+          schemaVersion,
+          files: { 'albums.json': { sha256: hash(bytes).sha256, bytes: bytes.length } },
+        };
+        return worker().readCollection(source, manifest, 'albums.json', PreservationAlbumsSchema);
+      };
+      await expect(read(1)).resolves.toHaveLength(1);
+      await expect(read(2, 'design')).resolves.toHaveLength(1);
+      await expect(read(2)).rejects.toThrow('version');
+      await expect(read(1, 'design')).rejects.toThrow('version');
+    });
 
     const operationOf = (kind: MediaOperationKind, snapshot: Record<string, unknown>, owner = ownerId) =>
       ({

@@ -1,7 +1,7 @@
 /**
  * Preservation packages (FL-74, `IMP-006`): the portable format and the rules around it.
  *
- * Pure functions only: no database, no Nest, no file system. A package is a directory — or a ZIP of
+ * Validation and pure functions only: no database or file-system access. A package is a directory — or a ZIP of
  * one — with this layout and nothing else:
  *
  *   manifest.json            format, package id, counts, restoration support and a SHA-256 for
@@ -35,7 +35,8 @@
 
 import { createHash } from 'node:crypto';
 import z from 'zod';
-import { MediaOperationDestination, MediaOperationKind } from 'src/enum.js';
+import { CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
+import { LibraryScopeSchema, MediaOperationDestination, MediaOperationKind } from 'src/enum.js';
 import { ZipReadLimits, zipEntryNameProblem } from 'src/utils/studio-bundle.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
@@ -45,7 +46,7 @@ import { canonicalJson } from 'src/utils/studio-project.js';
 
 export const PRESERVATION_FORMAT = 'frameleaf-preservation-package';
 /** The manifest and sidecar shape version. Bumping it is a migration, never a reinterpretation. */
-export const PRESERVATION_SCHEMA_VERSION = 1;
+export const PRESERVATION_SCHEMA_VERSION = 2;
 
 export const PRESERVATION_MANIFEST_ENTRY = 'manifest.json';
 export const PRESERVATION_INDEX_ENTRY = 'assets.jsonl';
@@ -295,7 +296,7 @@ export const PRESERVATION_SUPPORT: Readonly<Record<PreservationSupportCategory, 
 export const PreservationManifestSchema = z
   .object({
     format: z.literal(PRESERVATION_FORMAT),
-    schemaVersion: z.literal(PRESERVATION_SCHEMA_VERSION),
+    schemaVersion: z.union([z.literal(1), z.literal(PRESERVATION_SCHEMA_VERSION)]),
     /** The package's own identity. Albums and people restored from it derive their ids from it. */
     packageId: z.uuid(),
     /** What the owner called it. */
@@ -370,6 +371,7 @@ export const PreservationAlbumSchema = z
     name: z.string().max(1024),
     description: z.string().max(65_536),
     kind: z.enum(['album', 'collection']),
+    libraryScope: LibraryScopeSchema.optional(),
     parentId: z.uuid().nullable(),
     icon: z.string().max(256).nullable(),
     order: z.enum(['asc', 'desc']).nullable(),
@@ -413,7 +415,9 @@ const RegionSchema = z
 /** The per-original sidecar, `metadata/<id>.json`. */
 export const PreservationSidecarSchema = z
   .object({
-    schemaVersion: z.literal(PRESERVATION_SCHEMA_VERSION),
+    schemaVersion: z.union([z.literal(1), z.literal(PRESERVATION_SCHEMA_VERSION)]),
+    libraryScope: LibraryScopeSchema.optional(),
+    sources: z.array(CaptureSourceDto.schema.strict()).max(1000).optional(),
     sourceAssetId: z.uuid(),
     originalFileName: z.string().min(1).max(1024),
     type: AssetTypeLiteral,
@@ -530,7 +534,16 @@ export const PreservationSidecarSchema = z
     /** Generated-metadata provenance: what produced what, kept as a record only. */
     provenance: z.record(z.string(), z.unknown()),
   })
-  .strict();
+  .strict()
+  .superRefine((sidecar, context) => {
+    const hasWork = sidecar.libraryScope !== undefined && sidecar.sources !== undefined;
+    if (
+      (sidecar.schemaVersion === 2 && !hasWork) ||
+      (sidecar.schemaVersion === 1 && (sidecar.libraryScope !== undefined || sidecar.sources !== undefined))
+    ) {
+      context.addIssue({ code: 'custom', message: 'Workspace metadata must match the sidecar version' });
+    }
+  });
 export type PreservationSidecar = z.infer<typeof PreservationSidecarSchema>;
 
 export type PreservationDocumentCheck<T> = { ok: true; value: T } | { ok: false; detail: string };

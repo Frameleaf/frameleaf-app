@@ -1,6 +1,6 @@
 # Preservation packages
 
-A **preservation package** is an independent copy of your original files together with what your library knows about them: dates, places, your descriptions, ratings, favourites, archive, Locked records, albums and collections, tags, named people, edit recipes, Live Photo and stack links, document corrections and moment notes. Every file in it is checked when it is written and can be checked again at any time. A package can be restored into your library, on this server or another one.
+A **preservation package** is an independent copy of your original files together with what your library knows about them: dates, places, your descriptions, ratings, favourites, archive, Locked records, workspace membership, capture attribution, albums and collections, tags, named people, edit recipes, Live Photo and stack links, document corrections and moment notes. Every file in it is checked when it is written and can be checked again at any time. A package can be restored into your library, on this server or another one. New exports use format version 2; version 1 packages remain readable. Version 1 has no workspace or capture-attribution records, so newly restored originals from those packages enter Personal.
 
 Find it under **Settings → Import & protection → Originals & preservation**.
 
@@ -55,6 +55,8 @@ The rules a restore keeps:
 | Document corrections, moment notes and transcripts                                                                                                                                            | Restored where your library has none of its own |
 | Generated descriptions, generated moment captions, model and enrichment details, camera details                                                                                               | Kept as provenance only                         |
 | Sharing and shared spaces, pets, memories, Studio projects                                                                                                                                    | Not included                                    |
+
+Workspace membership is set before a new original is published. For an original already in your library, its existing workspace stays unless you choose to replace library values. Capture attribution is added without overwriting an existing source record; browser credentials, query strings and URL fragments are omitted when a package is written.
 
 **Generated metadata is never restored as yours.** A description a model generated is recorded with the restored item as provenance, not written as your description; the same goes for generated moment captions. Camera details come back from the original file itself when it is read.
 

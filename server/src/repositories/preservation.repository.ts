@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import {
   AlbumKind,
   AlbumUserRole,
   AssetStatus,
+  LibraryScope,
   MediaOperationKind,
   MediaOperationStatus,
   SourceType,
@@ -24,6 +26,7 @@ import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
 import { assertExecutionActive } from 'src/utils/execution-signal.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
+import { PreservationPackageError, preservationDerivedId } from 'src/utils/preservation.js';
 
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
@@ -128,15 +131,25 @@ export class PreservationRepository {
    * space's, never one in the trash, and Locked ones only when `includeLocked` says so.
    */
   private selection(db: Kysely<DB>, ownerId: string, selection: PreservationSelection, includeLocked: boolean) {
-    return searchAssetBuilder(
-      db,
-      { filter: selection.assetIds ? {} : (selection.filter ?? {}), userIds: [ownerId] },
-      {
-        userIds: [ownerId],
-        lockedOwnerId: includeLocked ? ownerId : '',
-        lockedMotion: { lockedOwnerId: includeLocked ? ownerId : undefined },
-      },
-    )
+    const queryFor = (libraryScope: NonNullable<SearchFilter['libraryScope']>) =>
+      searchAssetBuilder(
+        db,
+        { filter: selection.assetIds ? {} : (selection.filter ?? {}), libraryScope, userIds: [ownerId] },
+        {
+          userIds: [ownerId],
+          lockedOwnerId: includeLocked ? ownerId : '',
+          lockedMotion: { lockedOwnerId: includeLocked ? ownerId : undefined },
+        },
+      )
+        .clearSelect()
+        .select('asset.id');
+    const view = selection.filter?.libraryScope;
+    const personal = queryFor(view ?? LibraryScope.Personal);
+    const ids = view ? personal : personal.union(queryFor(LibraryScope.Design));
+    return db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .where('asset.id', 'in', ids)
       .$if(!!selection.assetIds, (qb) => qb.where('asset.id', '=', anyUuid(selection.assetIds!)))
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
@@ -697,6 +710,7 @@ export class PreservationRepository {
       .select([
         'asset.id',
         'asset.ownerId',
+        'asset.libraryScope',
         'asset.type',
         'asset.originalPath',
         'asset.originalFileName',
@@ -836,6 +850,63 @@ export class PreservationRepository {
       .where('key', '=', 'ml-enrichment')
       .executeTakeFirst();
   }
+  getAssetSources(assetId: string, ownerId: string) {
+    return this.db
+      .selectFrom('asset_source')
+      .innerJoin('asset', 'asset.id', 'asset_source.assetId')
+      .selectAll('asset_source')
+      .where('asset.id', '=', assetId)
+      .where('asset.ownerId', '=', ownerId)
+      .orderBy('asset_source.id')
+      .execute();
+  }
+
+  /** Replays add attribution without replacing any source already bound to an original. */
+  appendRestoredSources(ownerId: string, assetId: string, sources: readonly CaptureSourceDto[]) {
+    return this.write(async (db) => {
+      const asset = await db
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', assetId)
+        .where('ownerId', '=', ownerId)
+        .where('deletedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!asset) throw new PreservationPackageError('asset_unavailable', 'The restored original is unavailable');
+      for (const source of sources) {
+        const original = await db
+          .selectFrom('asset_source')
+          .select('assetId')
+          .where('captureId', '=', source.captureId)
+          .executeTakeFirst();
+        if (original?.assetId === assetId) continue;
+        const captureId = preservationDerivedId(`${ownerId}:source:${assetId}:${source.captureId}`);
+        await db
+          .insertInto('asset_source')
+          .values({
+            assetId,
+            captureId,
+            pageUrl: source.pageUrl,
+            mediaUrl: source.mediaUrl ?? null,
+            title: source.title,
+            capturedAt: source.capturedAt,
+            note: source.note ?? null,
+            creator: source.creator ?? null,
+            licenseUrl: source.licenseUrl ?? null,
+          })
+          .onConflict((oc) => oc.column('captureId').doNothing())
+          .execute();
+        const saved = await db
+          .selectFrom('asset_source')
+          .select('assetId')
+          .where('captureId', '=', captureId)
+          .executeTakeFirst();
+        if (saved?.assetId !== assetId)
+          throw new PreservationPackageError('source_unavailable', 'Capture attribution is unavailable');
+      }
+    });
+  }
+
   /** The owner's albums the copied items belong to, with every owned ancestor. */
   async getPackageAlbums(packageId: string, ownerId: string) {
     const { rows } = await sql<{
@@ -843,12 +914,13 @@ export class PreservationRepository {
       albumName: string;
       description: string | null;
       kind: string;
+      libraryScope: LibraryScope;
       parentId: string | null;
       icon: string | null;
       order: string | null;
     }>`
       with owned as (
-        select album.id, album."albumName", album.description, album.kind, album."parentId", album.icon, album."order"
+        select album.id, album."albumName", album.description, album.kind, album."libraryScope", album."parentId", album.icon, album."order"
         from album
         inner join album_user on album_user."albumId" = album.id
           and album_user."userId" = ${ownerId}::uuid and album_user.role = ${AlbumUserRole.Owner}
@@ -1291,6 +1363,7 @@ export class PreservationRepository {
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select([
         'asset.isFavorite',
+        'asset.libraryScope',
         'asset.visibility',
         'asset_exif.dateTimeOriginal',
         'asset_exif.description',
@@ -1306,6 +1379,7 @@ export class PreservationRepository {
     }
     const editRecipe = await this.getEditRecipe(assetId);
     return {
+      libraryScope: row.libraryScope,
       dateTimeOriginal: row.dateTimeOriginal ? new Date(row.dateTimeOriginal as unknown as string).toISOString() : null,
       description: row.description ?? null,
       latitude: row.latitude ?? null,

@@ -17,6 +17,7 @@ import {
   AssetVisibility,
   ChecksumAlgorithm,
   FrameleafWorker,
+  LibraryScope,
   MediaOperationKind,
   MediaOperationStatus,
   StorageFolder,
@@ -49,6 +50,7 @@ import {
   executionSignal,
   settleOperationExecution,
 } from 'src/utils/execution-signal.js';
+import { portableCaptureSource } from 'src/utils/library-manifest.js';
 import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import {
   GENERATED_DESCRIPTION_MARK,
@@ -590,7 +592,7 @@ export class PreservationWorkerService {
     asset: NonNullable<Awaited<ReturnType<PreservationRepository['getExportAsset']>>>,
     digests: { sha1: string; sha256: string },
   ): Promise<PreservationSidecar> {
-    const [lock, tags, albums, faces, recipe, documents, moments, stack, enrichment] = await Promise.all([
+    const [lock, tags, albums, faces, recipe, documents, moments, stack, enrichment, sources] = await Promise.all([
       asset.isLocked ? this.repository.getLock(asset.id) : Promise.resolve(undefined),
       this.repository.getTagValues(asset.id, ownerId),
       this.repository.getOwnedAlbumIds(asset.id, ownerId),
@@ -600,6 +602,7 @@ export class PreservationWorkerService {
       this.repository.getMoments(asset.id),
       asset.stackId ? this.repository.getStackPrimary(asset.stackId) : Promise.resolve(undefined),
       this.enrichmentProvenance(asset.id, asset.description ?? null),
+      this.repository.getAssetSources(asset.id, ownerId),
     ]);
 
     const crop = cropBoxOf(recipe as unknown as AssetEditActionItem[]);
@@ -616,6 +619,8 @@ export class PreservationWorkerService {
 
     const sidecar: PreservationSidecar = {
       schemaVersion: PRESERVATION_SCHEMA_VERSION,
+      libraryScope: asset.libraryScope ?? LibraryScope.Personal,
+      sources: sources.map((source) => portableCaptureSource(source)),
       sourceAssetId: asset.id,
       originalFileName: asset.originalFileName,
       type: asset.type as PreservationSidecar['type'],
@@ -758,6 +763,7 @@ export class PreservationWorkerService {
         name: row.albumName.slice(0, 1024),
         description: (row.description ?? '').slice(0, 65_536),
         kind: row.kind === 'collection' ? 'collection' : 'album',
+        libraryScope: row.libraryScope,
         parentId: row.parentId && albumIds.has(row.parentId) ? row.parentId : null,
         icon: row.icon?.slice(0, 256) ?? null,
         order: row.order === 'asc' || row.order === 'desc' ? row.order : null,
@@ -935,6 +941,15 @@ export class PreservationWorkerService {
     const checked = checkPreservationJson(schema, bytes);
     if (!checked.ok) {
       throw new PreservationPackageError('package_documents_invalid', `${name} is not valid: ${checked.detail}`);
+    }
+    if (name === PRESERVATION_ALBUMS_ENTRY) {
+      const albums = checked.value as PreservationAlbum[];
+      if (albums.some((album) => (album.libraryScope !== undefined) !== (manifest.schemaVersion === 2))) {
+        throw new PreservationPackageError(
+          'package_documents_invalid',
+          'Album workspace metadata does not match the package version',
+        );
+      }
     }
     return checked.value;
   }
@@ -1557,6 +1572,7 @@ export class PreservationWorkerService {
             fileCreatedAt: new Date(sidecar?.dates.fileCreatedAt ?? Date.now()),
             fileModifiedAt: new Date(sidecar?.dates.fileModifiedAt ?? Date.now()),
             isFavorite: sidecar?.isFavorite ?? false,
+            libraryScope: sidecar?.libraryScope ?? LibraryScope.Personal,
             // Locked from the first moment it exists: never listed unlocked, not even for an instant.
             visibility: locked
               ? AssetVisibility.Locked
@@ -1635,6 +1651,13 @@ export class PreservationWorkerService {
     });
 
     const patch: UpdateAssetDto = {};
+    if (
+      sidecar.libraryScope !== undefined &&
+      sidecar.libraryScope !== (library.libraryScope ?? LibraryScope.Personal)
+    ) {
+      if (created || context.conflictDefault === 'replace') patch.libraryScope = sidecar.libraryScope;
+      else findings.push('library_workspace_kept');
+    }
     if (fields.has('date') && sidecar.dates.dateTimeOriginal) {
       patch.dateTimeOriginal = sidecar.dates.dateTimeOriginal;
     }
@@ -1697,6 +1720,10 @@ export class PreservationWorkerService {
     if (sidecar.tags.length > 0) {
       const tags = await upsertTags(this.tagRepository, { userId: context.ownerId, tags: sidecar.tags });
       await this.tagRepository.upsertAssetIds(tags.map((tag) => ({ tagId: tag.id, assetId })));
+    }
+
+    if (sidecar.sources?.length) {
+      await this.repository.appendRestoredSources(context.ownerId, assetId, sidecar.sources);
     }
 
     if (sidecar.faces.length > 0) {
@@ -1994,6 +2021,7 @@ export class PreservationWorkerService {
           albumName: album.name || 'Untitled',
           description: album.description,
           kind: album.kind === 'collection' ? AlbumKind.Collection : AlbumKind.Album,
+          libraryScope: album.libraryScope ?? LibraryScope.Personal,
           parentId,
           icon: album.icon,
           ...(album.order && { order: album.order === 'asc' ? AssetOrder.Asc : AssetOrder.Desc }),
