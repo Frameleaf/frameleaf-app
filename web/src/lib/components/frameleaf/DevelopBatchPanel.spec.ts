@@ -14,6 +14,7 @@ import {
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { locale } from '$lib/stores/preferences.store';
 import DevelopBatchPanel from './DevelopBatchPanel.svelte';
 
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
@@ -211,6 +212,19 @@ describe('batch external editor review', () => {
     await screen.findByText(
       'The session or API key used to confirm this edit is no longer authorized. This version was kept inactive in Versions.',
     );
+  });
+  it('formats batch dates in the chosen locale and updates when it changes', async () => {
+    locale.set('de-DE');
+    try {
+      mount();
+      const select = await screen.findByLabelText('Resume a batch');
+      const option = select.querySelector('option[value="batch-1"]')!;
+      expect(option).toHaveTextContent(new Date(batch().createdAt).toLocaleString('de-DE'));
+      locale.set('en-US');
+      await waitFor(() => expect(option).toHaveTextContent(new Date(batch().createdAt).toLocaleString('en-US')));
+    } finally {
+      locale.set('default');
+    }
   });
   it('resumes the batch selected from the list', async () => {
     vi.mocked(getDevelopBatches).mockResolvedValue({

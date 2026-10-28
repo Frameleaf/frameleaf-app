@@ -17,6 +17,7 @@
   } from '@frameleaf/sdk';
   import { hasDevelopBatches, batchErrorCode, batchReason } from '$lib/frameleaf/develop-batches';
   import { hashFile } from '$lib/workers/hash-file';
+  import { locale } from '$lib/stores/preferences.store';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
   let { assetIds = [], initialBatchId }: { assetIds?: string[]; initialBatchId?: string } = $props();
@@ -278,7 +279,7 @@
       >
         <option value="">{$t('frameleaf_batch.choose')}</option>
         {#each batches as entry (entry.id)}<option value={entry.id}
-            >{new Date(entry.createdAt).toLocaleString()} · {entry.itemCount} · {$t(
+            >{new Date(entry.createdAt).toLocaleString($locale)} · {entry.itemCount} · {$t(
               `frameleaf_batch.${entry.status}` as Translations,
             )}</option
           >{/each}
