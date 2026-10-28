@@ -35,7 +35,7 @@
 
 import { createHash } from 'node:crypto';
 import z from 'zod';
-import { CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
+import { BookmarkCreateDto, CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
 import { LibraryScopeSchema, MediaOperationDestination, MediaOperationKind } from 'src/enum.js';
 import { ZipReadLimits, zipEntryNameProblem } from 'src/utils/studio-bundle.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
@@ -53,6 +53,7 @@ export const PRESERVATION_INDEX_ENTRY = 'assets.jsonl';
 export const PRESERVATION_ALBUMS_ENTRY = 'albums.json';
 export const PRESERVATION_PEOPLE_ENTRY = 'people.json';
 export const PRESERVATION_TAGS_ENTRY = 'tags.json';
+export const PRESERVATION_BOOKMARKS_ENTRY = 'bookmarks.json';
 export const PRESERVATION_ORIGINALS_PREFIX = 'originals/';
 export const PRESERVATION_METADATA_PREFIX = 'metadata/';
 
@@ -62,6 +63,7 @@ export const PRESERVATION_DOCUMENTS = [
   PRESERVATION_ALBUMS_ENTRY,
   PRESERVATION_PEOPLE_ENTRY,
   PRESERVATION_TAGS_ENTRY,
+  PRESERVATION_BOOKMARKS_ENTRY,
 ] as const;
 export type PreservationDocument = (typeof PRESERVATION_DOCUMENTS)[number];
 
@@ -104,6 +106,7 @@ const COLLECTION_DOCUMENTS: ReadonlySet<string> = new Set([
   PRESERVATION_ALBUMS_ENTRY,
   PRESERVATION_PEOPLE_ENTRY,
   PRESERVATION_TAGS_ENTRY,
+  PRESERVATION_BOOKMARKS_ENTRY,
 ]);
 
 /** How large a document entry may be, or null for entries that are only streamed. */
@@ -312,6 +315,8 @@ export const PreservationManifestSchema = z
       .strict(),
     counts: z
       .object({
+        bookmarks: z.int().nonnegative().optional(),
+        bookmarkSkipped: z.int().nonnegative().optional(),
         selected: z.int().nonnegative(),
         exported: z.int().nonnegative(),
         failed: z.int().nonnegative(),
@@ -325,8 +330,20 @@ export const PreservationManifestSchema = z
     support: z.partialRecord(z.enum(PRESERVATION_SUPPORT_CATEGORIES), z.enum(PRESERVATION_SUPPORT_LEVELS)),
   })
   .strict()
+  .refine(
+    (manifest) =>
+      manifest.schemaVersion === 2 ||
+      (!(PRESERVATION_BOOKMARKS_ENTRY in manifest.files) &&
+        manifest.counts.bookmarks === undefined &&
+        manifest.counts.bookmarkSkipped === undefined),
+    'Bookmarks require preservation version 2',
+  )
   .refine((manifest) => PRESERVATION_INDEX_ENTRY in manifest.files, 'the index must be digested')
   .refine((manifest) => manifest.counts.exported <= PRESERVATION_MAX_ITEMS, 'too many originals for one package')
+  .refine(
+    (manifest) => manifest.counts.exported + (manifest.counts.bookmarks ?? 0) <= PRESERVATION_MAX_ITEMS,
+    'too many items for one package',
+  )
   .refine(
     (manifest) =>
       manifest.counts.selected === manifest.counts.exported + manifest.counts.failed + manifest.counts.skipped,
@@ -337,7 +354,9 @@ export const PreservationManifestSchema = z
   // purpose is not — so an incomplete package with no failures must at least have skipped something.
   .refine(
     (manifest) =>
-      manifest.complete ? manifest.counts.failed === 0 : manifest.counts.failed > 0 || manifest.counts.skipped > 0,
+      manifest.complete
+        ? manifest.counts.failed === 0 && !manifest.counts.bookmarkSkipped
+        : manifest.counts.failed > 0 || manifest.counts.skipped > 0 || (manifest.counts.bookmarkSkipped ?? 0) > 0,
     'completeness does not match the counts',
   );
 export type PreservationManifest = z.infer<typeof PreservationManifestSchema>;
@@ -398,6 +417,31 @@ export const PreservationTagSchema = z
   .strict();
 export type PreservationTag = z.infer<typeof PreservationTagSchema>;
 export const PreservationTagsSchema = z.array(PreservationTagSchema).max(100_000);
+
+/** Portable links have logical memberships; they are never original-file entries. */
+export const PreservationBookmarkSchema = BookmarkCreateDto.schema
+  .extend({
+    id: z.uuidv4().transform((id) => id.toLowerCase()),
+    libraryScope: LibraryScopeSchema,
+    isArchived: z.boolean(),
+    isLocked: z.boolean(),
+    note: BookmarkCreateDto.schema.shape.note.nonoptional(),
+    rating: BookmarkCreateDto.schema.shape.rating.nonoptional(),
+    previewAssetId: z.uuidv4().nullable(),
+    albumIds: z.array(z.uuid()).max(10_000),
+    tags: z.array(z.string().min(1).max(1024)).max(1000),
+    source: CaptureSourceDto.schema.strict().nullable(),
+    createdAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+export type PreservationBookmark = z.infer<typeof PreservationBookmarkSchema>;
+export const PreservationBookmarksSchema = z
+  .array(PreservationBookmarkSchema)
+  .max(PRESERVATION_MAX_ITEMS)
+  .refine(
+    (bookmarks) => new Set(bookmarks.map((bookmark) => bookmark.id)).size === bookmarks.length,
+    'Duplicate bookmark identity',
+  );
 
 const RegionSchema = z
   .object({

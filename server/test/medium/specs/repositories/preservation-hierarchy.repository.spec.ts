@@ -1,9 +1,12 @@
 import { Kysely } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import { AlbumKind, LibraryScope } from 'src/enum.js';
+import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { PreservationBookmarkSchema, preservationDerivedId } from 'src/utils/preservation.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
@@ -111,4 +114,113 @@ it('preserves every workspace for whole-library or explicit-id selections and ho
     .execute();
   expect(items).toHaveLength(3);
   expect(items.map((item) => item.assetId)).toEqual(expect.arrayContaining([personal.id, design.id, both.id]));
+});
+
+it('freezes only selected owned eligible bookmarks and does not add links created later', async () => {
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const { user: other } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+  const links = new BookmarkRepository(db);
+  const mine = await links.create(user.id, {
+    url: 'https://example.com/art',
+    title: 'Mine',
+    libraryScope: LibraryScope.Design,
+  });
+  await links.create(other.id, {
+    url: 'https://example.com/foreign',
+    title: 'Foreign',
+    libraryScope: LibraryScope.Design,
+  });
+  await links.create(user.id, {
+    url: 'https://example.com/locked',
+    title: 'Locked',
+    isLocked: true,
+    libraryScope: LibraryScope.Design,
+  });
+  const sut = new PreservationRepository(db);
+  const input = {
+    ownerId: user.id,
+    origin: 'export',
+    name: 'Design',
+    format: 'directory',
+    includeLocked: false,
+    includeMetadata: true,
+    scope: { description: 'Design' },
+  };
+  const created = await sut.createExport(
+    input,
+    (id) => `/synthetic/${id}`,
+    { filter: { libraryScope: LibraryScope.Design } },
+    false,
+    100,
+  );
+  expect(created!.package.scope).toMatchObject({ bookmarkIds: [mine.id] });
+  await links.create(user.id, { url: 'https://example.com/later', title: 'Later', libraryScope: LibraryScope.Design });
+  expect((await sut.getPackageById(created!.package.id))!.scope).toMatchObject({ bookmarkIds: [mine.id] });
+  const originals = await sut.createExport(input, (id) => `/synthetic/${id}`, { assetIds: [asset.id] }, false, 100);
+  expect(originals!.package.scope).toMatchObject({ bookmarkIds: [] });
+});
+
+it('refuses foreign bookmark bindings, occupied derived ids and trash without partial writes', async () => {
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const { user: other } = await ctx.newUser();
+  const { album } = await ctx.newAlbum({ ownerId: other.id });
+  const { tag } = await ctx.newTag({ userId: other.id, value: 'Private' });
+  const { asset } = await ctx.newAsset({ ownerId: other.id });
+  const repo = new PreservationRepository(db);
+  const identity = randomUUID();
+  const makeRestore = () =>
+    repo.createRestore({ ownerId: user.id, packageId: null, packageIdentity: identity, name: 'Import', options: {} });
+  const source = PreservationBookmarkSchema.parse({
+    id: randomUUID(),
+    url: 'https://example.com/reference',
+    title: 'Reference',
+    note: 'Original note',
+    rating: null,
+    libraryScope: LibraryScope.Design,
+    isLocked: false,
+    isArchived: false,
+    previewAssetId: null,
+    albumIds: [],
+    tags: [],
+    source: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+  const restore = await makeRestore();
+  const empty = { albumIds: [] as string[], tagIds: [] as string[], previewAssetId: null as string | null };
+  for (const bindings of [
+    { ...empty, albumIds: [album.id] },
+    { ...empty, tagIds: [tag.id] },
+    { ...empty, previewAssetId: asset.id },
+  ]) {
+    await expect(repo.restoreBookmark(user.id, restore.id, identity, source, bindings, false)).rejects.toThrow(
+      'organization',
+    );
+  }
+  expect(await db.selectFrom('bookmark').select('id').where('ownerId', '=', user.id).execute()).toEqual([]);
+  expect(await repo.isBookmarkApplied(user.id, restore.id, source.id)).toBe(false);
+  const derived = preservationDerivedId(`${user.id}:bookmark:${identity}:${source.id}`);
+  await db
+    .insertInto('bookmark')
+    .values({ id: derived, ownerId: other.id, title: 'Private', url: 'https://example.com/other' })
+    .execute();
+  await expect(repo.restoreBookmark(user.id, restore.id, identity, source, empty, true)).rejects.toThrow('unavailable');
+  expect(await db.selectFrom('bookmark').select('title').where('id', '=', derived).executeTakeFirstOrThrow()).toEqual({
+    title: 'Private',
+  });
+  await db.deleteFrom('bookmark').where('id', '=', derived).execute();
+  await repo.restoreBookmark(user.id, restore.id, identity, source, empty, false);
+  const lockedRestore = await makeRestore();
+  await repo.restoreBookmark(user.id, lockedRestore.id, identity, { ...source, isLocked: true }, empty, false);
+  const replaceRestore = await makeRestore();
+  await repo.restoreBookmark(user.id, replaceRestore.id, identity, source, empty, true);
+  expect(
+    await db.selectFrom('bookmark').select('isLocked').where('id', '=', derived).executeTakeFirstOrThrow(),
+  ).toEqual({ isLocked: true });
+  await db.updateTable('bookmark').set({ deletedAt: new Date() }).where('id', '=', derived).execute();
+  const trashRestore = await makeRestore();
+  await expect(repo.restoreBookmark(user.id, trashRestore.id, identity, source, empty, true)).rejects.toThrow('trash');
+  expect(await repo.isBookmarkApplied(user.id, trashRestore.id, source.id)).toBe(false);
 });

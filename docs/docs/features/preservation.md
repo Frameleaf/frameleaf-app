@@ -4,6 +4,8 @@ A **preservation package** is an independent copy of your original files togethe
 
 Find it under **Settings → Import & protection → Originals & preservation**.
 
+Metadata in a media export also carries matching owned saved links: their notes, ratings, workspaces, album and tag memberships, and preview references to included originals. Selecting individual originals exports those originals. A repeated restore reuses the links it restored before; resuming a stopped restore preserves edits to links already completed.
+
 A package is not a backup of the server. It does not contain accounts, sharing, shared spaces, server settings, pets, memories or Studio projects (Studio projects travel as project bundles). Keep your database backups and a separate copy of your originals as well.
 
 ## Export
@@ -75,6 +77,7 @@ The inventory is not a preservation package or a server backup, and cannot be su
 | `manifest.json`                           | Format and version, package id and name, what was selected, counts, completeness, restoration support, and a SHA-256 for every index document |
 | `assets.jsonl`                            | One line per original: its paths, byte count, SHA-1 and SHA-256, and the digest of its sidecar                                                |
 | `albums.json`, `people.json`, `tags.json` | The albums and collections, named people and tags the originals belong to                                                                     |
+| `bookmarks.json` (version 2)              | Saved links, their private metadata, logical memberships and included-original preview references                                             |
 | `originals/<id>.<ext>`                    | The original bytes                                                                                                                            |
 | `metadata/<id>.json`                      | One sidecar per original                                                                                                                      |
 

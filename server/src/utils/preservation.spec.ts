@@ -6,6 +6,7 @@ import {
   PRESERVATION_SCHEMA_VERSION,
   PRESERVATION_SUPPORT,
   PreservationAlbum,
+  PreservationBookmarksSchema,
   PreservationEntrySchema,
   PreservationLibraryState,
   PreservationManifestSchema,
@@ -484,5 +485,57 @@ describe('small rules', () => {
     expect(describePreservationScope({ filter: { isFavorite: { eq: true }, takenAt: { gte: 'x' } } })).toBe(
       'Library items matching: isFavorite, takenAt',
     );
+  });
+});
+
+describe('portable preservation bookmarks', () => {
+  it('bounds originals and links together before reading package contents', () => {
+    const make = (exported: number) =>
+      manifestOf({
+        complete: true,
+        counts: { selected: exported, exported, failed: 0, skipped: 0, locked: 0, bytes: 1, bookmarks: 1 },
+        files: { 'assets.jsonl': { sha256, bytes: 1 }, 'bookmarks.json': { sha256, bytes: 1 } },
+      });
+    expect(PreservationManifestSchema.safeParse(make(99_999)).success).toBe(true);
+    expect(PreservationManifestSchema.safeParse(make(100_000)).success).toBe(false);
+  });
+
+  const bookmark = () => ({
+    id: sourceId,
+    url: 'https://example.com/watch?v=123',
+    title: 'Inspiration',
+    note: 'My private note',
+    libraryScope: LibraryScope.Design,
+    isArchived: false,
+    isLocked: true,
+    rating: 4,
+    previewAssetId: null,
+    albumIds: [],
+    tags: ['Material/Paper'],
+    source: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+  it('keeps references discriminated from originals and retains private organization', () => {
+    const input = [bookmark()];
+    expect(PreservationBookmarksSchema.parse(JSON.parse(preservationJson(input).toString()))).toEqual(input);
+  });
+  it.each(['javascript:alert(1)', 'file:///private/source', 'https://user:secret@example.com/'])(
+    'refuses unsafe URL %s',
+    (url) => {
+      expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), url }]).success).toBe(false);
+    },
+  );
+  it('refuses duplicate identities, unknown workspace and unreviewed server or owner fields', () => {
+    expect(PreservationBookmarksSchema.safeParse([bookmark(), bookmark()]).success).toBe(false);
+    expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), libraryScope: 'invalid' }]).success).toBe(false);
+    expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), ownerId: sourceId }]).success).toBe(false);
+    expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), originalPath: '/private/original' }]).success).toBe(
+      false,
+    );
+  });
+  it('requires explicit workspace membership and validates every logical album reference', () => {
+    const { libraryScope: _scope, ...withoutScope } = bookmark();
+    expect(PreservationBookmarksSchema.safeParse([withoutScope]).success).toBe(false);
+    expect(PreservationBookmarksSchema.safeParse([{ ...bookmark(), albumIds: ['not-an-id'] }]).success).toBe(false);
   });
 });

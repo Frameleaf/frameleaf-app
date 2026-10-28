@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import {
@@ -11,10 +13,13 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   SourceType,
+  UserMetadataKey,
   VideoMomentSource,
 } from 'src/enum.js';
 
+import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   PreservationItemTable,
@@ -26,7 +31,7 @@ import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
 import { assertExecutionActive } from 'src/utils/execution-signal.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
-import { PreservationPackageError, preservationDerivedId } from 'src/utils/preservation.js';
+import { PreservationBookmark, PreservationPackageError, preservationDerivedId } from 'src/utils/preservation.js';
 
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
@@ -36,6 +41,7 @@ export type PreservationRestoreItem = Selectable<PreservationRestoreItemTable>;
 export type PreservationSelection = {
   filter?: SearchFilter;
   assetIds?: string[];
+  bookmarkIds?: string[];
 };
 /** A package's items by state, how many are Locked, and the bytes of what was copied. */
 export type PreservationItemCounts = {
@@ -179,6 +185,43 @@ export class PreservationRepository {
       lockedBytes: toNumber(row?.lockedBytes),
     };
   }
+  private async bookmarkSelection(
+    db: Kysely<DB>,
+    ownerId: string,
+    selection: PreservationSelection,
+    includeLocked: boolean,
+    limit: number,
+  ) {
+    if (selection.assetIds && selection.bookmarkIds === undefined) return [];
+    const user = await new UserRepository(db).get(ownerId, { withDeleted: false });
+    if (!user) throw new PreservationPackageError('owner_unavailable', 'The package owner is unavailable');
+    const auth: AuthDto = {
+      user: {
+        id: user.id,
+        isAdmin: user.isAdmin,
+        name: user.name,
+        email: user.email,
+        quotaUsageInBytes: user.quotaUsageInBytes,
+        quotaSizeInBytes: user.quotaSizeInBytes,
+      },
+      session: { id: randomUUID(), hasElevatedPermission: includeLocked },
+    };
+    const bookmarks = new BookmarkRepository(db);
+    const view = selection.filter?.libraryScope;
+    const ids = new Set<string>();
+    for (const libraryScope of view ? [view] : ([LibraryScope.Personal, LibraryScope.Design] as const)) {
+      const rows = await bookmarks.selectPreservationBookmarks(
+        auth,
+        { mode: 'text', query: '', limit: 200, filter: { ...selection.filter, libraryScope } },
+        selection.bookmarkIds,
+        limit + 1,
+      );
+      for (const row of rows) ids.add(row.id);
+      if (ids.size > limit) throw new SelectionTooLargeError(ids.size);
+    }
+    return ids.values().toArray().sort();
+  }
+
   /**
    * Create an export package and freeze its selection as items, in one transaction. The Live Photo
    * video of every selected still comes with it. Returns null, and writes nothing, when the
@@ -197,9 +240,13 @@ export class PreservationRepository {
     return this.db
       .transaction()
       .execute(async (tx) => {
+        const bookmarkIds =
+          input.includeMetadata !== false
+            ? await this.bookmarkSelection(tx, input.ownerId, selection, includeLocked, maxItems)
+            : [];
         const inserted = await tx
           .insertInto('preservation_package')
-          .values({ ...input, path: '' })
+          .values({ ...input, scope: { ...input.scope, bookmarkIds }, path: '' })
           .returning('id')
           .executeTakeFirstOrThrow();
         // The folder is named after the package, whose id the database assigns.
@@ -240,7 +287,7 @@ export class PreservationRepository {
           .where('packageId', '=', created.id)
           .executeTakeFirstOrThrow();
         const items = Number(counted.count);
-        if (items > maxItems) {
+        if (items + bookmarkIds.length > maxItems) {
           // Rolls the package and its items back.
           throw new SelectionTooLargeError(items);
         }
@@ -679,7 +726,24 @@ export class PreservationRepository {
       )
       .limit(1)
       .executeTakeFirst();
-    return !!row;
+    if (row) return true;
+    const { rows } = await sql<{ locked: boolean }>`
+      select exists (
+        select 1 from preservation_package package
+        join bookmark on bookmark."ownerId" = package."ownerId"
+          and bookmark.id in (select value::uuid from jsonb_array_elements_text(coalesce(package.manifest->'bookmarkIds', '[]'::jsonb)))
+        where package.id = ${packageId}::uuid and (bookmark."isLocked" or exists (
+          select 1 from user_metadata preferences
+          where preferences."userId" = bookmark."ownerId" and preferences.key = ${UserMetadataKey.Preferences}
+            and exists (select 1 from bookmark_tag membership
+              join tag_closure closure on closure.id_descendant = membership."tagId"
+              where membership."bookmarkId" = bookmark.id and closure.id_ancestor in (
+                select (jsonb_path_query(preferences.value, '$.privacy.suppression.tagIds[*]') #>> '{}')::uuid
+              ))
+        ))
+      ) as locked
+    `.execute(this.db);
+    return rows[0].locked;
   }
   /** Which of these package items are Locked now or were when written: withheld from an ordinary session. */
   async lockedItemIds(items: Array<Pick<PreservationItem, 'id' | 'assetId' | 'locked'>>): Promise<Set<string>> {
@@ -850,6 +914,24 @@ export class PreservationRepository {
       .where('key', '=', 'ml-enrichment')
       .executeTakeFirst();
   }
+  async getPackageBookmarkDetails(auth: AuthDto, ids: string[], packageId: string) {
+    const bookmarks = new BookmarkRepository(this.db);
+    const rows = await Promise.all(
+      ([LibraryScope.Personal, LibraryScope.Design] as const).map((libraryScope) =>
+        bookmarks.getPreservationDetails(
+          auth,
+          { mode: 'text', query: '', limit: 200, filter: { libraryScope } },
+          ids,
+          packageId,
+        ),
+      ),
+    );
+    return new Map(rows.flat().map((row) => [row.id, row]))
+      .values()
+      .toArray()
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+
   getAssetSources(assetId: string, ownerId: string) {
     return this.db
       .selectFrom('asset_source')
@@ -908,7 +990,7 @@ export class PreservationRepository {
   }
 
   /** The owner's albums the copied items belong to, with every owned ancestor. */
-  async getPackageAlbums(packageId: string, ownerId: string) {
+  async getPackageAlbums(packageId: string, ownerId: string, bookmarkIds: string[] = []) {
     const { rows } = await sql<{
       id: string;
       albumName: string;
@@ -931,6 +1013,11 @@ export class PreservationRepository {
         inner join album_asset on album_asset."albumId" = owned.id
         inner join preservation_item item on item."assetId" = album_asset."assetId"
           and item."packageId" = ${packageId}::uuid and item.state = 'copied'
+        union
+        select owned.* from owned
+        inner join album_bookmark membership on membership."albumId" = owned.id
+        inner join bookmark on bookmark.id = membership."bookmarkId" and bookmark."ownerId" = ${ownerId}::uuid
+        where bookmark.id = ${anyUuid(bookmarkIds)}
       )
       select * from holding
       union
@@ -959,23 +1046,174 @@ export class PreservationRepository {
     return rows;
   }
   /** The owner's tags on copied items. */
-  async getPackageTags(packageId: string, ownerId: string) {
+  async getPackageTags(packageId: string, ownerId: string, bookmarkIds: string[] = []) {
     const { rows } = await sql<{
       value: string;
       color: string | null;
     }>`
       select distinct tag.value, tag.color
-      from preservation_item item
-      inner join tag_asset on tag_asset."assetId" = item."assetId"
-      inner join tag on tag.id = tag_asset."tagId" and tag."userId" = ${ownerId}::uuid
-      where item."packageId" = ${packageId}::uuid and item.state = 'copied'
-      order by tag.value
+      from tag
+      where tag."userId" = ${ownerId}::uuid and tag.id in (
+        select closure.id_ancestor from tag_closure closure where closure.id_descendant in (
+          select membership."tagId" from tag_asset membership
+          join preservation_item item on item."assetId" = membership."assetId"
+            and item."packageId" = ${packageId}::uuid and item.state = 'copied'
+          union
+          select membership."tagId" from bookmark_tag membership
+          join bookmark on bookmark.id = membership."bookmarkId" and bookmark."ownerId" = ${ownerId}::uuid
+          where bookmark.id = ${anyUuid(bookmarkIds)}
+        )
+      ) order by tag.value
     `.execute(this.db);
     return rows;
   }
   /* ---------------------------------------------------------------- */
   /* Restorations                                                      */
   /* ---------------------------------------------------------------- */
+  async isBookmarkApplied(ownerId: string, restoreId: string, sourceId: string): Promise<boolean> {
+    const restore = await this.db
+      .selectFrom('preservation_restore')
+      .select('summary')
+      .where('id', '=', restoreId)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst();
+    const after = restore?.summary?.bookmarkAfter;
+    return typeof after === 'string' && sourceId.toLowerCase().localeCompare(after) <= 0;
+  }
+
+  /** A link and its replay receipt commit together; a lost acknowledgement cannot replace later edits. */
+  restoreBookmark(
+    ownerId: string,
+    restoreId: string,
+    identity: string,
+    source: PreservationBookmark,
+    bindings: { albumIds: string[]; tagIds: string[]; previewAssetId: string | null },
+    replace: boolean,
+  ): Promise<void> {
+    return this.write(async (db) => {
+      assertExecutionActive();
+      const restore = await db
+        .selectFrom('preservation_restore')
+        .selectAll()
+        .where('id', '=', restoreId)
+        .where('ownerId', '=', ownerId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!restore) throw new PreservationPackageError('restore_unavailable', 'The restoration is unavailable');
+      const after = restore.summary?.bookmarkAfter;
+      if (typeof after === 'string' && source.id.toLowerCase().localeCompare(after) <= 0) return;
+      const albumIds = [...new Set(bindings.albumIds)];
+      const tagIds = [...new Set(bindings.tagIds)];
+      const albums = await db
+        .selectFrom('album')
+        .innerJoin('album_user', 'album_user.albumId', 'album.id')
+        .select('album.id')
+        .where('album.id', '=', anyUuid(albumIds))
+        .where('album.deletedAt', 'is', null)
+        .where('album.kind', 'in', [AlbumKind.Album, AlbumKind.Collection])
+        .where('album_user.userId', '=', ownerId)
+        .where('album_user.role', '=', AlbumUserRole.Owner)
+        .execute();
+      const tags = await db
+        .selectFrom('tag')
+        .select('id')
+        .where('id', '=', anyUuid(tagIds))
+        .where('userId', '=', ownerId)
+        .execute();
+      const preview = bindings.previewAssetId
+        ? await db
+            .selectFrom('asset')
+            .select('id')
+            .where('id', '=', bindings.previewAssetId)
+            .where('ownerId', '=', ownerId)
+            .where('deletedAt', 'is', null)
+            .executeTakeFirst()
+        : null;
+      if (albums.length !== albumIds.length || tags.length !== tagIds.length || (bindings.previewAssetId && !preview))
+        throw new PreservationPackageError('bookmark_bindings_unavailable', 'Bookmark organization is unavailable');
+      let existing = await db
+        .selectFrom('bookmark')
+        .selectAll()
+        .where('id', '=', source.id)
+        .where('ownerId', '=', ownerId)
+        .forUpdate()
+        .executeTakeFirst();
+      const id = existing?.id ?? preservationDerivedId(`${ownerId}:bookmark:${identity}:${source.id}`);
+      existing ??= await db
+        .selectFrom('bookmark')
+        .selectAll()
+        .where('id', '=', id)
+        .where('ownerId', '=', ownerId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (existing?.deletedAt)
+        throw new PreservationPackageError('bookmark_in_trash', 'Restore the existing link from the trash first');
+      const values = {
+        url: source.url,
+        title: source.title,
+        note: source.note,
+        rating: source.rating,
+        libraryScope: source.libraryScope,
+        isArchived: source.isArchived,
+        isLocked: source.isLocked,
+        previewAssetId: bindings.previewAssetId,
+        source: source.source ? jsonb(source.source) : null,
+      };
+      assertExecutionActive();
+      if (!existing) {
+        const occupied = await db.selectFrom('bookmark').select('id').where('id', '=', id).executeTakeFirst();
+        if (occupied) throw new PreservationPackageError('bookmark_unavailable', 'The restored link is unavailable');
+        await db
+          .insertInto('bookmark')
+          .values({ ...values, id, ownerId, createdAt: source.createdAt })
+          .onConflict((oc) => oc.column('id').doNothing())
+          .execute();
+        const saved = await db
+          .selectFrom('bookmark')
+          .select(['ownerId', 'deletedAt'])
+          .where('id', '=', id)
+          .executeTakeFirst();
+        if (saved?.ownerId !== ownerId || saved.deletedAt)
+          throw new PreservationPackageError('bookmark_unavailable', 'The restored link is unavailable');
+      } else if (replace || (source.isLocked && !existing.isLocked) || (source.source && !existing.source)) {
+        await db
+          .updateTable('bookmark')
+          .set({
+            ...(replace ? values : {}),
+            isLocked: existing.isLocked || source.isLocked,
+            ...(!replace && !existing.source && source.source ? { source: jsonb(source.source) } : {}),
+          })
+          .where('id', '=', id)
+          .where('ownerId', '=', ownerId)
+          .execute();
+      }
+      if (albumIds.length > 0)
+        await db
+          .insertInto('album_bookmark')
+          .values(albumIds.map((albumId) => ({ albumId, bookmarkId: id })))
+          .onConflict((oc) => oc.doNothing())
+          .execute();
+      if (tagIds.length > 0)
+        await db
+          .insertInto('bookmark_tag')
+          .values(tagIds.map((tagId) => ({ tagId, bookmarkId: id })))
+          .onConflict((oc) => oc.doNothing())
+          .execute();
+      assertExecutionActive();
+      await db
+        .updateTable('preservation_restore')
+        .set({
+          summary: jsonb({
+            ...restore.summary,
+            bookmarkAfter: source.id.toLowerCase(),
+            bookmarkApplied: Number(restore.summary?.bookmarkApplied ?? 0) + 1,
+          }),
+        })
+        .where('id', '=', restoreId)
+        .execute();
+    });
+  }
+
   createRestore(input: Insertable<PreservationRestoreTable>): Promise<PreservationRestore> {
     return this.write((db) =>
       db

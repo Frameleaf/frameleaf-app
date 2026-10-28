@@ -304,6 +304,38 @@ export class BookmarkRepository {
       .execute();
   }
 
+  selectPreservationBookmarks(auth: AuthDto, query: LibraryItemSearchDto, ids: string[] | undefined, limit: number) {
+    return this.libraryBookmarks(auth, query)
+      .where('bookmark.ownerId', '=', auth.user.id)
+      .$if(ids !== undefined, (qb) => qb.where('bookmark.id', '=', anyUuid(ids!)))
+      .select('bookmark.id')
+      .orderBy('bookmark.id')
+      .limit(limit)
+      .execute();
+  }
+
+  getPreservationDetails(auth: AuthDto, query: LibraryItemSearchDto, ids: string[], packageId: string) {
+    return this.libraryBookmarks(auth, query)
+      .where('bookmark.ownerId', '=', auth.user.id)
+      .where('bookmark.id', '=', anyUuid(ids))
+      .selectAll('bookmark')
+      .select([
+        sql<string[]>`array(select membership."albumId" from album_bookmark membership
+          join album on album.id = membership."albumId" and album."deletedAt" is null
+          join album_user member on member."albumId" = album.id and member."userId" = ${auth.user.id}::uuid and member.role = ${AlbumUserRole.Owner}
+          where membership."bookmarkId" = bookmark.id order by membership."albumId")`.as('albumIds'),
+        sql<string[]>`array(select tag.value from bookmark_tag membership
+          join tag on tag.id = membership."tagId" and tag."userId" = ${auth.user.id}::uuid
+          where membership."bookmarkId" = bookmark.id order by tag.value)`.as('tags'),
+        sql<string | null>`case when exists (select 1 from preservation_item item
+          join asset preview on preview.id = item."assetId" and preview."ownerId" = ${auth.user.id}::uuid
+          where item."packageId" = ${packageId}::uuid and item.state = 'copied' and item."assetId" = bookmark."previewAssetId")
+          then bookmark."previewAssetId" else null end`.as('packagedPreviewAssetId'),
+      ])
+      .orderBy('bookmark.id')
+      .execute();
+  }
+
   getLibraryBookmarks(auth: AuthDto, query: LibraryItemSearchDto, ids: string[]) {
     return this.libraryBookmarks(auth, query).where('bookmark.id', 'in', ids).selectAll('bookmark').execute();
   }

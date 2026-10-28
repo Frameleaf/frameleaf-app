@@ -173,6 +173,8 @@ describe(PreservationWorkerService.name, () => {
       getExportAsset: vi.fn(),
       getAssetSources: vi.fn().mockResolvedValue([]),
       appendRestoredSources: vi.fn(),
+      getRestoreById: vi.fn(),
+      restoreBookmark: vi.fn().mockResolvedValue(undefined),
       findByChecksum: vi.fn().mockResolvedValue([]),
       updateRestoreItem: vi.fn(),
       getLibraryState: vi.fn().mockResolvedValue(library()),
@@ -1088,6 +1090,41 @@ describe(PreservationWorkerService.name, () => {
     });
   });
 
+  describe('bookmark restoration checkpoints', () => {
+    it('checks the replay cursor once and stops at a bounded cancellation checkpoint', async () => {
+      const bookmarks = Array.from({ length: 51 }, () => ({
+        id: newUuid(),
+        url: 'https://example.com/art',
+        title: 'Art',
+        note: null,
+        rating: null,
+        libraryScope: LibraryScope.Design,
+        isArchived: false,
+        isLocked: false,
+        previewAssetId: null,
+        albumIds: [],
+        tags: [],
+        source: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      }));
+      repository.getRestoreById.mockResolvedValue({ ownerId, summary: null });
+      const checkpoint = vi.fn().mockResolvedValue(false);
+      const context = contextOf();
+      const identity = newUuid();
+      await expect(worker().restoreBookmarks(context, identity, bookmarks, checkpoint)).resolves.toBe(false);
+      expect(repository.restoreBookmark).toHaveBeenCalledTimes(50);
+      expect(repository.getRestoreById).toHaveBeenCalledTimes(1);
+      repository.restoreBookmark.mockClear();
+      checkpoint.mockResolvedValue(true);
+      repository.getRestoreById.mockResolvedValue({
+        ownerId,
+        summary: { bookmarkAfter: bookmarks.toSorted((a, b) => a.id.localeCompare(b.id))[49].id },
+      });
+      await expect(worker().restoreBookmarks(context, identity, bookmarks, checkpoint)).resolves.toBe(true);
+      expect(repository.restoreBookmark).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('restore relationships', () => {
     it('creates nested albums and collections under the mapped parent, in parent-first order', async () => {
       const root = newUuid();
@@ -1333,6 +1370,39 @@ describe(PreservationWorkerService.name, () => {
       await expect(read(2, 'design')).resolves.toHaveLength(1);
       await expect(read(2)).rejects.toThrow('version');
       await expect(read(1, 'design')).rejects.toThrow('version');
+    });
+
+    it('validates digested bookmark organization and lock declarations before restoration', async () => {
+      const bookmark = {
+        id: newUuid(),
+        url: 'https://example.com/art',
+        title: 'Reference',
+        note: null,
+        rating: null,
+        libraryScope: LibraryScope.Design,
+        isArchived: false,
+        isLocked: false,
+        previewAssetId: null,
+        albumIds: [],
+        tags: [],
+        source: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      };
+      const read = (overrides: Record<string, unknown> = {}, count = 1) => {
+        const bytes = preservationJson([{ ...bookmark, ...overrides }]);
+        const base = buildPackage(0).manifest;
+        const manifest = {
+          ...base,
+          counts: { ...base.counts, bookmarks: count },
+          files: { ...base.files, 'bookmarks.json': { sha256: hash(bytes).sha256, bytes: bytes.length } },
+        };
+        return worker().readBookmarks(memorySource(new Map([['bookmarks.json', bytes]])), manifest, [], []);
+      };
+      await expect(read()).resolves.toHaveLength(1);
+      await expect(read({ albumIds: [newUuid()] })).rejects.toThrow('album');
+      await expect(read({ tags: ['Unknown'] })).rejects.toThrow('tag');
+      await expect(read({ isLocked: true })).rejects.toThrow('Locked');
+      await expect(read({}, 2)).rejects.toThrow('count');
     });
 
     const operationOf = (kind: MediaOperationKind, snapshot: Record<string, unknown>, owner = ownerId) =>

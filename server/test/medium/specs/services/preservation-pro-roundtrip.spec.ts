@@ -4,11 +4,12 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AlbumKind, LibraryScope } from 'src/enum.js';
+import { AlbumKind, LibraryScope, UserMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -36,6 +37,7 @@ import { PreservationWorkerService } from 'src/services/preservation-worker.serv
 import { StackService } from 'src/services/stack.service.js';
 import {
   PreservationAlbumsSchema,
+  PreservationBookmarksSchema,
   PreservationEntrySchema,
   PreservationManifestSchema,
   PreservationSidecarSchema,
@@ -145,6 +147,20 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         note: 'My attribution note',
       })
       .execute();
+    const bookmark = await new BookmarkRepository(db).create(owner.id, {
+      url: 'https://example.com/watch?v=123',
+      title: 'Video reference',
+      note: 'Link note',
+      libraryScope: LibraryScope.Design,
+      previewAssetId: asset.id,
+    });
+    await db.insertInto('album_bookmark').values({ albumId: leaf.id, bookmarkId: bookmark.id }).execute();
+    await db.insertInto('bookmark_tag').values({ tagId: tag.id, bookmarkId: bookmark.id }).execute();
+    await new BookmarkRepository(db).create(owner.id, {
+      url: 'https://example.com/second',
+      title: 'Second',
+      libraryScope: LibraryScope.Design,
+    });
     const exported = await repo.createExport(
       {
         ownerId: owner.id,
@@ -156,7 +172,7 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         scope: { description: 'Design' },
       },
       (id) => join(folder, 'package', id),
-      { assetIds: [asset.id] },
+      { filter: { libraryScope: LibraryScope.Design } },
       false,
       100,
     );
@@ -174,6 +190,44 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         JSON.parse((await readFile(join(exported!.package.path, 'manifest.json'))).toString()),
       );
       expect(manifest.schemaVersion).toBe(2);
+      expect(await repo.hasLockedItems(exported!.package.id)).toBe(false);
+      await db.updateTable('bookmark').set({ isLocked: true }).where('id', '=', bookmark.id).execute();
+      expect(await repo.hasLockedItems(exported!.package.id)).toBe(true);
+      await db.updateTable('bookmark').set({ isLocked: false }).where('id', '=', bookmark.id).execute();
+
+      await db
+        .insertInto('user_metadata')
+        .values({
+          userId: owner.id,
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { tagIds: [parent.id] } } },
+        })
+        .onConflict((oc) =>
+          oc.columns(['userId', 'key']).doUpdateSet({ value: { privacy: { suppression: { tagIds: [parent.id] } } } }),
+        )
+        .execute();
+      expect(await repo.hasLockedItems(exported!.package.id)).toBe(true);
+      await db
+        .deleteFrom('user_metadata')
+        .where('userId', '=', owner.id)
+        .where('key', '=', UserMetadataKey.Preferences)
+        .execute();
+      const bookmarks = PreservationBookmarksSchema.parse(
+        JSON.parse((await readFile(join(exported!.package.path, 'bookmarks.json'))).toString()),
+      );
+      expect(bookmarks).toHaveLength(2);
+      expect(bookmarks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: bookmark.id,
+            note: 'Link note',
+            albumIds: [leaf.id],
+            tags: ['Material/Paper'],
+            previewAssetId: asset.id,
+          }),
+        ]),
+      );
+
       const albums = PreservationAlbumsSchema.parse(
         JSON.parse((await readFile(join(exported!.package.path, 'albums.json'))).toString()),
       );
@@ -227,6 +281,27 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         );
         const status = await repo.getRestoreItemBySource(restore.id, asset.id);
         expect(result, `${status?.reasonKey}: ${status?.error}`).toBe(attempt === 0 ? 'restored' : 'matched');
+        const context = {
+          auth: factory.auth({ user: { id: target.id } }),
+          ownerId: target.id,
+          restore,
+          source,
+          albums: mapped,
+          people: new Map<string, string>(),
+          restoreEditRecipes: true,
+          conflictDefault: 'keep' as const,
+        };
+        await worker['restoreBookmarks'](context, manifest.packageId, bookmarks.toReversed());
+        if (attempt === 0) {
+          const saved = await db
+            .selectFrom('bookmark')
+            .selectAll()
+            .where('ownerId', '=', target.id)
+            .where('url', '=', bookmark.url)
+            .executeTakeFirstOrThrow();
+          await db.updateTable('bookmark').set({ note: 'Edited after restore' }).where('id', '=', saved.id).execute();
+          await worker['restoreBookmarks']({ ...context, conflictDefault: 'replace' }, manifest.packageId, bookmarks);
+        }
       }
       const restored = await db.selectFrom('asset').selectAll().where('ownerId', '=', target.id).execute();
       expect(restored).toHaveLength(1);
@@ -249,6 +324,18 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         .execute();
       expect(restoredAlbums).toContainEqual({ id: mapped.get(leaf.id), parentId: mapped.get(middle.id) });
       expect(restoredAlbums).toContainEqual({ id: mapped.get(middle.id), parentId: mapped.get(root.id) });
+      const links = await db.selectFrom('bookmark').selectAll().where('ownerId', '=', target.id).execute();
+      expect(links).toHaveLength(2);
+      const restoredLink = links.find((link) => link.url === bookmark.url)!;
+      expect(restoredLink).toMatchObject({
+        url: bookmark.url,
+        note: 'Edited after restore',
+        libraryScope: LibraryScope.Design,
+        previewAssetId: restored[0].id,
+      });
+      expect(
+        await db.selectFrom('album_bookmark').select('albumId').where('bookmarkId', '=', restoredLink.id).execute(),
+      ).toEqual([{ albumId: mapped.get(leaf.id) }]);
       const restoredTags = await db
         .selectFrom('tag')
         .select(['value', 'parentId'])
