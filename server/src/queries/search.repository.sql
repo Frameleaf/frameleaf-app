@@ -303,18 +303,19 @@ with
           "user"."clusterGroupId" = $2
       )
       and "asset"."deletedAt" is null
+      and "asset"."libraryScope" in ($3, $4)
     order by
       "distance"
     limit
-      $3
+      $5
   )
 select
   *
 from
   "cte"
 where
-  "cte"."distance" <= $4
-rollback
+  "cte"."distance" <= $6
+commit
 
 -- SearchRepository.searchPlaces
 select

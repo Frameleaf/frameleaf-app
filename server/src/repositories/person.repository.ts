@@ -1260,6 +1260,7 @@ export class PersonRepository {
         .where('asset_face.deletedAt', 'is', null)
         .where('asset_face.isVisible', 'is', true)
         .where('asset.ownerId', '=', viewerId)
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .where('asset.deletedAt', 'is', null)
         .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Archive)])
         // FL-195: the viewer's own revealed locks qualify in an unlocked session, like any other item

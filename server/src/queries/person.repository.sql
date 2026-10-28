@@ -946,6 +946,7 @@ where
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
   and "asset"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and "asset"."deletedAt" is null
   and "asset"."visibility" in ('timeline', 'archive')
   and not exists (

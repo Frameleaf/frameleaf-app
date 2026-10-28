@@ -519,11 +519,11 @@ export class SearchRepository {
   @GenerateSql({
     params: [
       {
-        userIds: [DummyValue.UUID],
+        clusterGroupId: DummyValue.UUID,
         embedding: DummyValue.VECTOR,
         numResults: 10,
         maxDistance: 0.6,
-      },
+      } satisfies FaceEmbeddingSearch,
     ],
   })
   searchFaces({ clusterGroupId, embedding, numResults, maxDistance, hasPerson, minBirthDate }: FaceEmbeddingSearch) {
@@ -548,6 +548,7 @@ export class SearchRepository {
               eb.selectFrom('user').select('user.id').where('user.clusterGroupId', '=', clusterGroupId),
             )
             .where('asset.deletedAt', 'is', null)
+            .where(libraryScopePredicate(LibraryScope.Personal))
             .$if(!!hasPerson, (qb) => qb.where('asset_face.personGroupId', 'is not', null))
             .$if(!!minBirthDate, (qb) =>
               qb.where((eb) =>

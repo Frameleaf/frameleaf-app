@@ -549,6 +549,7 @@ export class PetRepository {
       ])
       .where('pet.ownerId', '=', ownerId)
       .where('asset.ownerId', '=', ownerId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .limit(limit)
@@ -585,6 +586,7 @@ export class PetRepository {
       .where('pet_candidate.id', '=', id)
       .where('pet.ownerId', '=', ownerId)
       .where('asset.ownerId', '=', ownerId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .executeTakeFirst()
       .then((row) => (row ? { ...row, score: Number(row.score ?? 0) } : undefined));

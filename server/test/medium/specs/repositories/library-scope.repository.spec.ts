@@ -53,6 +53,35 @@ describe('library scope persistence and personal defaults', () => {
     ]);
   });
 
+  it('preserves designer scope and album membership when source and metadata fields change', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+    await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
+    const assets = ctx.get(AssetRepository);
+    await assets.update({
+      id: asset.id,
+      originalPath: '/synthetic/designer-revision.png',
+      checksum: Buffer.alloc(32, 7),
+    });
+    await assets.upsertExif({
+      exif: { assetId: asset.id, description: 'Revised reference' },
+      lockedPropertiesBehavior: 'skip',
+    });
+    const updated = await assets.getById(asset.id);
+    expect(updated).toEqual(
+      expect.objectContaining({
+        id: asset.id,
+        libraryScope: LibraryScope.Design,
+        originalPath: '/synthetic/designer-revision.png',
+      }),
+    );
+    expect(
+      await db.selectFrom('album_asset').select(['albumId', 'assetId']).where('assetId', '=', asset.id).execute(),
+    ).toEqual([{ albumId: album.id, assetId: asset.id }]);
+  });
+
   it('shows both once in each view and all authorized explicit album members', async () => {
     const ctx = setup();
     const { user } = await ctx.newUser();
@@ -346,6 +375,61 @@ describe('library scope persistence and personal defaults', () => {
     const { asset: second } = await ctx.newAsset({ ownerId: user.id, livePhotoVideoId: motion.id });
     await assets.setLibraryScope([second.id], user.id, LibraryScope.Personal);
     expect((await assets.getById(motion.id))?.libraryScope).toBe(LibraryScope.Both);
+  });
+
+  it('excludes retained designer face vectors and merge reference faces from personal matching', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const expected: string[] = [];
+    const peopleIds: string[] = [];
+    const embedding = JSON.stringify(Array.from({ length: 512 }, () => 0.125));
+    for (const libraryScope of Object.values(LibraryScope)) {
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: libraryScope });
+      peopleIds.push(person.personGroupId);
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      await db.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+      await db.updateTable('asset').set({ libraryScope }).where('id', '=', asset.id).execute();
+      if (libraryScope !== LibraryScope.Design) expected.push(assetFace.id);
+    }
+    const matches = await ctx
+      .get(SearchRepository)
+      .searchFaces({ clusterGroupId: user.clusterGroupId, embedding, numResults: 10, maxDistance: 1 });
+    expect(matches.map((row) => row.id).sort()).toEqual(expected.sort());
+    expect(
+      (await ctx.get(PersonRepository).getReferenceFaces(user.id, peopleIds)).map((row) => row.faceId).sort(),
+    ).toEqual(expected.sort());
+  });
+
+  it('withholds old designer pet proposals from the personal review queue', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const expected: string[] = [];
+    let designer = '';
+    const pet = await db
+      .insertInto('pet')
+      .values({ ownerId: user.id, name: 'Milo' })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    for (const libraryScope of Object.values(LibraryScope)) {
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const detection = await db
+        .insertInto('pet_detection')
+        .values({ assetId: asset.id, modelName: 'fixture', modelRevision: '1' })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      const candidate = await db
+        .insertInto('pet_candidate')
+        .values({ detectionId: detection.id, petId: pet.id })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await db.updateTable('asset').set({ libraryScope }).where('id', '=', asset.id).execute();
+      if (libraryScope !== LibraryScope.Design) expected.push(candidate.id);
+      else designer = candidate.id;
+    }
+    const pets = new PetRepository(db, ctx.getMock(LoggingRepository));
+    expect((await pets.getCandidates(user.id, 20)).map((row) => row.id).sort()).toEqual(expected.sort());
+    expect(await pets.getCandidateById(user.id, designer)).toBeUndefined();
   });
 
   it('filters owned album scopes while keeping explicit incoming shared albums discoverable', async () => {
