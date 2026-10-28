@@ -1228,7 +1228,7 @@ export class PreservationWorkerService {
           const manifest = await this.readManifest(source);
           const albums =
             (await this.readCollection(source, manifest, PRESERVATION_ALBUMS_ENTRY, PreservationAlbumsSchema)) ?? [];
-          orderPreservationAlbums(albums);
+          orderPreservationAlbums(albums, 32);
           const people =
             (await this.readCollection(source, manifest, PRESERVATION_PEOPLE_ENTRY, PreservationPeopleSchema)) ?? [];
           const tags =
@@ -1964,8 +1964,9 @@ export class PreservationWorkerService {
   ): Promise<Map<string, string>> {
     const mapped = new Map<string, string>();
     const byId = new Map(albums.map((album) => [album.id, album]));
-    for (const album of orderPreservationAlbums(albums)) {
+    for (const album of orderPreservationAlbums(albums, 32)) {
       const sourceParent = restoredAlbumParent(album, byId);
+      if (sourceParent && !mapped.has(sourceParent)) continue;
       const parentId = sourceParent ? (mapped.get(sourceParent) ?? null) : null;
 
       const same = await this.repository.getOwnedAlbum(ownerId, album.id);

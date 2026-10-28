@@ -270,13 +270,23 @@ describe(orderPreservationAlbums.name, () => {
     },
   );
 
-  it('nests an album only in a top-level collection, one level deep', () => {
+  it('preflights the complete hierarchy against the restore depth limit', () => {
+    const chain = Array.from({ length: 33 }, (_, index) =>
+      album(String(index), { parentId: index === 0 ? null : String(index - 1) }),
+    );
+    expect(orderPreservationAlbums(chain.slice(0, 32), 32)).toHaveLength(32);
+    expect(() => orderPreservationAlbums(chain.toReversed(), 32)).toThrow('32 levels');
+  });
+
+  it('preserves nested album and collection parents', () => {
     const top = album(collection, { kind: 'collection' });
     const byId = new Map([[collection, top]]);
     expect(restoredAlbumParent(album(child, { parentId: collection }), byId)).toBe(collection);
-    expect(restoredAlbumParent(album(child, { kind: 'collection', parentId: collection }), byId)).toBeNull();
+    expect(restoredAlbumParent(album(child, { kind: 'collection', parentId: collection }), byId)).toBe(collection);
     const notACollection = new Map([[collection, album(collection)]]);
-    expect(restoredAlbumParent(album(child, { parentId: collection }), notACollection)).toBeNull();
+    expect(restoredAlbumParent(album(child, { parentId: collection }), notACollection)).toBe(collection);
+    const nested = new Map([[collection, album(collection, { parentId: 'ancestor' })]]);
+    expect(restoredAlbumParent(album(child, { parentId: collection }), nested)).toBe(collection);
   });
 });
 

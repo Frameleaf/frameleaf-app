@@ -591,7 +591,10 @@ export const preservationJson = (value: unknown): Buffer =>
  * Albums in an order that creates every parent before its children. Refuses duplicate ids, missing
  * parents and cycles: a package that lies about its hierarchy is refused, never half-applied.
  */
-export const orderPreservationAlbums = (albums: readonly PreservationAlbum[]): PreservationAlbum[] => {
+export const orderPreservationAlbums = (
+  albums: readonly PreservationAlbum[],
+  maxDepth = Infinity,
+): PreservationAlbum[] => {
   const byId = new Map(albums.map((album) => [album.id, album]));
   if (byId.size !== albums.length) {
     throw new PreservationPackageError('package_albums_invalid', 'The package lists an album twice');
@@ -628,24 +631,22 @@ export const orderPreservationAlbums = (albums: readonly PreservationAlbum[]): P
       ordered.push(ancestor);
     }
   }
+  const depths = new Map<string, number>();
+  for (const album of ordered) {
+    const depth = (album.parentId ? depths.get(album.parentId)! : 0) + 1;
+    if (depth > maxDepth) {
+      throw new PreservationPackageError('package_albums_invalid', `Albums may nest at most ${maxDepth} levels deep`);
+    }
+    depths.set(album.id, depth);
+  }
   return ordered;
 };
 
-/**
- * Where a restored album may hang: collections stay at the top level and an album nests only in a
- * collection, one level deep (the product's vocabulary). A parent that breaks the rule is dropped
- * and the album is restored at the top level rather than refused.
- */
+/** Keep any validated album or collection parent; restoration preflights the entire graph first. */
 export const restoredAlbumParent = (
   album: PreservationAlbum,
   byId: ReadonlyMap<string, PreservationAlbum>,
-): string | null => {
-  if (album.kind !== 'album' || !album.parentId) {
-    return null;
-  }
-  const parent = byId.get(album.parentId);
-  return parent && parent.kind === 'collection' && !parent.parentId ? parent.id : null;
-};
+): string | null => (album.parentId && byId.has(album.parentId) ? album.parentId : null);
 
 /* ------------------------------------------------------------------ */
 /* Scope                                                                */

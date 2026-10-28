@@ -836,7 +836,7 @@ export class PreservationRepository {
       .where('key', '=', 'ml-enrichment')
       .executeTakeFirst();
   }
-  /** The owner's albums the copied items belong to, with the collections that hold them. */
+  /** The owner's albums the copied items belong to, with every owned ancestor. */
   async getPackageAlbums(packageId: string, ownerId: string) {
     const { rows } = await sql<{
       id: string;
@@ -862,7 +862,9 @@ export class PreservationRepository {
       )
       select * from holding
       union
-      select owned.* from owned inner join holding on holding."parentId" = owned.id
+      select owned.* from owned
+      inner join album_closure on album_closure.id_ancestor = owned.id
+      inner join holding on holding.id = album_closure.id_descendant
     `.execute(this.db);
     return rows;
   }

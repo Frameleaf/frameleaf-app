@@ -43,7 +43,7 @@ The rules a restore keeps:
 - **Nothing is removed.** A favourite or a Locked record in the package is added; a restore never clears a favourite or unlocks anything. Items that were Locked are restored Locked, with the reason they were locked.
 - **Your choices are kept.** They apply to items not yet restored. A restore that stops — paused, cancelled, interrupted — carries on from the items it had not finished, and never touches an item it already restored, so anything you changed on it since stays as you left it.
 - **Nothing is created twice.** Albums, collections and people the package names are found again on a repeated restore of the same package: the original album when it is still yours, one an earlier restore created, or your only album with the same name in the same place. New ones are created only when none of those exists.
-- Collections stay at the top level and albums nest in a collection one level deep.
+- Albums and collections retain their nested parents, up to 32 levels deep. An invalid or overdeep package hierarchy is refused before albums are created. If a parent cannot be restored, its children are reported as missing rather than silently moved to the top level.
 
 **Download reconciliation report** saves every item of a restoration and what happened to it.
 

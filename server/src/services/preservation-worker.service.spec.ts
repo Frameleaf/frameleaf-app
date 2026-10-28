@@ -1011,6 +1011,58 @@ describe(PreservationWorkerService.name, () => {
   });
 
   describe('restore relationships', () => {
+    it('creates nested albums and collections under the mapped parent, in parent-first order', async () => {
+      const root = newUuid();
+      const middle = newUuid();
+      const leaf = newUuid();
+      const source = (id: string, parentId: string | null, kind: 'album' | 'collection') => ({
+        id,
+        parentId,
+        kind,
+        name: id,
+        description: '',
+        icon: null,
+        order: null,
+      });
+      const mapped = (await worker().ensureAlbums(ownerId, newUuidV7(), [
+        source(leaf, middle, 'collection'),
+        source(middle, root, 'album'),
+        source(root, null, 'collection'),
+      ])) as Map<string, string>;
+      expect(albumRepository.create.mock.calls.map(([album]) => [album.id, album.parentId])).toEqual([
+        [mapped.get(root), null],
+        [mapped.get(middle), mapped.get(root)],
+        [mapped.get(leaf), mapped.get(middle)],
+      ]);
+    });
+
+    it('does not flatten a child when its parent could not be restored', async () => {
+      const root = newUuid();
+      const child = newUuid();
+      repository.albumExists.mockResolvedValueOnce(true).mockResolvedValue(false);
+      const mapped = (await worker().ensureAlbums(ownerId, newUuidV7(), [
+        { id: root, parentId: null, kind: 'collection', name: 'Root', description: '', icon: null, order: null },
+        { id: child, parentId: root, kind: 'album', name: 'Child', description: '', icon: null, order: null },
+      ])) as Map<string, string>;
+      expect(mapped.size).toBe(0);
+      expect(albumRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an overdeep package before creating any albums', async () => {
+      const albums = Array.from({ length: 33 }, (_, index) => ({
+        id: String(index),
+        parentId: index === 0 ? null : String(index - 1),
+        kind: 'album',
+        name: String(index),
+        description: '',
+        icon: null,
+        order: null,
+      }));
+      await expect(worker().ensureAlbums(ownerId, newUuidV7(), albums)).rejects.toThrow('32 levels');
+      expect(repository.getOwnedAlbum).not.toHaveBeenCalled();
+      expect(albumRepository.create).not.toHaveBeenCalled();
+    });
+
     it('finds an album from an earlier restore of the same package instead of creating another', async () => {
       const albumId = newUuid();
       repository.getOwnedAlbum.mockImplementation((_owner: string, id: string) =>
