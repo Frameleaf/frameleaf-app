@@ -36926,454 +36926,6 @@
       "synchronize": true
     },
     {
-      "name": "asset_develop_revision",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "attempts",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "cancelRequested",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "error",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "exportId",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "fileName",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "height",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "gen_random_uuid()",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isCurrent",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "kind",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "'recipe'::text",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "label",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "masterPath",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "previewPath",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "progress",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "recipe",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "recipeVersion",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "1",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "renderedAt",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "rendererVersion",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "renditionChecksum",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "revision",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "software",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "sourceChecksum",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "status",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "'saved'::text",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "width",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "hdrMasterPath",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "hdrPreviewPath",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "hdrRenditionChecksum",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sourceAssetId",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_develop_revision_asset_idx",
-          "definition": "CREATE INDEX asset_develop_revision_asset_idx ON public.asset_develop_revision USING btree (\"assetId\", revision DESC)",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "assetId",
-            "revision"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_develop_revision_owner_idx",
-          "definition": "CREATE INDEX asset_develop_revision_owner_idx ON public.asset_develop_revision USING btree (\"ownerId\")",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_develop_revision_current_idx",
-          "definition": "CREATE UNIQUE INDEX asset_develop_revision_current_idx ON public.asset_develop_revision USING btree (\"assetId\") WHERE \"isCurrent\"",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "where": "\"isCurrent\"",
-          "unique": true,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "asset_develop_revision_attempts_check",
-          "definition": "CHECK ((attempts >= 0))",
-          "tableName": "asset_develop_revision",
-          "expression": "((attempts >= 0))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_fileName_check",
-          "definition": "CHECK (((\"fileName\" IS NULL) OR ((length(\"fileName\") >= 1) AND (length(\"fileName\") <= 255))))",
-          "tableName": "asset_develop_revision",
-          "expression": "(((\"fileName\" IS NULL) OR ((length(\"fileName\") >= 1) AND (length(\"fileName\") <= 255))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_kind_check",
-          "definition": "CHECK ((kind = ANY (ARRAY['recipe'::text, 'external'::text])))",
-          "tableName": "asset_develop_revision",
-          "expression": "((kind = ANY (ARRAY['recipe'::text, 'external'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_label_check",
-          "definition": "CHECK (((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120))))",
-          "tableName": "asset_develop_revision",
-          "expression": "(((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_progress_check",
-          "definition": "CHECK (((progress >= 0) AND (progress <= 100)))",
-          "tableName": "asset_develop_revision",
-          "expression": "(((progress >= 0) AND (progress <= 100)))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_recipe_check",
-          "definition": "CHECK ((jsonb_typeof(recipe) = 'object'::text))",
-          "tableName": "asset_develop_revision",
-          "expression": "((jsonb_typeof(recipe) = 'object'::text))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_revision_check",
-          "definition": "CHECK ((revision >= 1))",
-          "tableName": "asset_develop_revision",
-          "expression": "((revision >= 1))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_software_check",
-          "definition": "CHECK (((software IS NULL) OR ((length(software) >= 1) AND (length(software) <= 120))))",
-          "tableName": "asset_develop_revision",
-          "expression": "(((software IS NULL) OR ((length(software) >= 1) AND (length(software) <= 120))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_status_check",
-          "definition": "CHECK ((status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text])))",
-          "tableName": "asset_develop_revision",
-          "expression": "((status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "asset_develop_revision_assetId_revision_key",
-          "definition": "UNIQUE (\"assetId\", revision)",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "assetId",
-            "revision"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "asset_develop_revision_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_hdr_set_check",
-          "definition": "CHECK ((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
-          "tableName": "asset_develop_revision",
-          "expression": "((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "push_device_activity",
       "columns": [
         {
@@ -44116,6 +43668,1572 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "workflow_batch",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "workflowId",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "reason",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "definition",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "source",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "embedding",
+          "tableName": "workflow_batch",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "embeddingKey",
+          "tableName": "workflow_batch",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "definitionSha256",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "snapshotAt",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "finishedAt",
+          "tableName": "workflow_batch",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "total",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "completed",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "skipped",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "failed",
+          "tableName": "workflow_batch",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "error",
+          "tableName": "workflow_batch",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "workflow_batch_active",
+          "definition": "CREATE UNIQUE INDEX workflow_batch_active ON public.workflow_batch USING btree (\"workflowId\") WHERE (status = ANY (ARRAY['pending'::text, 'running'::text]))",
+          "tableName": "workflow_batch",
+          "columnNames": [
+            "workflowId"
+          ],
+          "using": "btree",
+          "where": "(status = ANY (ARRAY['pending'::text, 'running'::text]))",
+          "unique": true,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "workflow_batch_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'cancelled'::text, 'failed'::text])))",
+          "tableName": "workflow_batch",
+          "expression": "((status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'cancelled'::text, 'failed'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "workflow_batch_reason_check",
+          "definition": "CHECK ((reason = ANY (ARRAY['manual'::text, 'schedule'::text])))",
+          "tableName": "workflow_batch",
+          "expression": "((reason = ANY (ARRAY['manual'::text, 'schedule'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "workflow_batch_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "workflow_batch",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "workflow_batch_workflowId_fkey",
+          "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON DELETE CASCADE",
+          "tableName": "workflow_batch",
+          "columnNames": [
+            "workflowId"
+          ],
+          "referenceTableName": "workflow",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "workflow_batch_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "workflow_batch",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "workflow_batch_item",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "workflow_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "batchId",
+          "tableName": "workflow_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "workflow_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "attempt",
+          "tableName": "workflow_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "fromStepId",
+          "tableName": "workflow_batch_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "workflow_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::text",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "workflow_batch_item_pending",
+          "definition": "CREATE INDEX workflow_batch_item_pending ON public.workflow_batch_item USING btree (\"batchId\", id) WHERE (status = 'pending'::text)",
+          "tableName": "workflow_batch_item",
+          "columnNames": [
+            "batchId",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(status = 'pending'::text)",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "workflow_batch_item_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'skipped'::text, 'failed'::text])))",
+          "tableName": "workflow_batch_item",
+          "expression": "((status = ANY (ARRAY['pending'::text, 'completed'::text, 'skipped'::text, 'failed'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "workflow_batch_item_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "workflow_batch_item",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "workflow_batch_item_batchId_assetId_key",
+          "definition": "UNIQUE (\"batchId\", \"assetId\")",
+          "tableName": "workflow_batch_item",
+          "columnNames": [
+            "batchId",
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "workflow_batch_item_batchId_fkey",
+          "definition": "FOREIGN KEY (\"batchId\") REFERENCES workflow_batch(id) ON DELETE CASCADE",
+          "tableName": "workflow_batch_item",
+          "columnNames": [
+            "batchId"
+          ],
+          "referenceTableName": "workflow_batch",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "workflow_causation",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "chainId",
+          "tableName": "workflow_causation",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "workflowId",
+          "tableName": "workflow_causation",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "workflow_causation",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "workflow_causation",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "workflow_causation",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "workflow_causation_pkey",
+          "definition": "PRIMARY KEY (\"chainId\", \"workflowId\", \"assetId\")",
+          "tableName": "workflow_causation",
+          "columnNames": [
+            "chainId",
+            "workflowId",
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "workflow_causation_workflowId_fkey",
+          "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON DELETE CASCADE",
+          "tableName": "workflow_causation",
+          "columnNames": [
+            "workflowId"
+          ],
+          "referenceTableName": "workflow",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "workflow_schedule",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "workflowId",
+          "tableName": "workflow_schedule",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "definitionSha256",
+          "tableName": "workflow_schedule",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "nextAt",
+          "tableName": "workflow_schedule",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastAt",
+          "tableName": "workflow_schedule",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "workflow_schedule_pkey",
+          "definition": "PRIMARY KEY (\"workflowId\")",
+          "tableName": "workflow_schedule",
+          "columnNames": [
+            "workflowId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "workflow_schedule_workflowId_fkey",
+          "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON DELETE CASCADE",
+          "tableName": "workflow_schedule",
+          "columnNames": [
+            "workflowId"
+          ],
+          "referenceTableName": "workflow",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "develop_batch",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "develop_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "develop_batch",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "develop_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "'open'::text",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "includeSidecars",
+          "tableName": "develop_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "develop_batch",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "IDX_develop_batch_owner_cursor",
+          "definition": "CREATE INDEX \"IDX_develop_batch_owner_cursor\" ON public.develop_batch USING btree (\"ownerId\", \"createdAt\", id)",
+          "tableName": "develop_batch",
+          "columnNames": [
+            "ownerId",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "IDX_develop_batch_ownerId",
+          "definition": "CREATE INDEX \"IDX_develop_batch_ownerId\" ON public.develop_batch USING btree (\"ownerId\")",
+          "tableName": "develop_batch",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "develop_batch_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'cancelled'::text])))",
+          "tableName": "develop_batch",
+          "expression": "((status = ANY (ARRAY['open'::text, 'cancelled'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "develop_batch_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "develop_batch",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "develop_batch_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "develop_batch",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "develop_batch_item",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "develop_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "batchId",
+          "tableName": "develop_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "develop_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "exportId",
+          "tableName": "develop_batch_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "exportName",
+          "tableName": "develop_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "fileName",
+          "tableName": "develop_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "hasSidecar",
+          "tableName": "develop_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "error",
+          "tableName": "develop_batch_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "errorCode",
+          "tableName": "develop_batch_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "develop_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "develop_batch_item",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "IDX_develop_batch_item_exportId",
+          "definition": "CREATE INDEX \"IDX_develop_batch_item_exportId\" ON public.develop_batch_item USING btree (\"exportId\")",
+          "tableName": "develop_batch_item",
+          "columnNames": [
+            "exportId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "IDX_develop_batch_item_assetId",
+          "definition": "CREATE INDEX \"IDX_develop_batch_item_assetId\" ON public.develop_batch_item USING btree (\"assetId\")",
+          "tableName": "develop_batch_item",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "IDX_develop_batch_item_batchId_assetId",
+          "definition": "CREATE UNIQUE INDEX \"IDX_develop_batch_item_batchId_assetId\" ON public.develop_batch_item USING btree (\"batchId\", \"assetId\")",
+          "tableName": "develop_batch_item",
+          "columnNames": [
+            "batchId",
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": true,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "develop_batch_item_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'prepared'::text, 'failed'::text])))",
+          "tableName": "develop_batch_item",
+          "expression": "((status = ANY (ARRAY['pending'::text, 'prepared'::text, 'failed'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "develop_batch_item_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "develop_batch_item",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "develop_batch_item_batchId_fkey",
+          "definition": "FOREIGN KEY (\"batchId\") REFERENCES develop_batch(id) ON DELETE CASCADE",
+          "tableName": "develop_batch_item",
+          "columnNames": [
+            "batchId"
+          ],
+          "referenceTableName": "develop_batch",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "develop_batch_item_exportId_fkey",
+          "definition": "FOREIGN KEY (\"exportId\") REFERENCES develop_export(id) ON DELETE SET NULL",
+          "tableName": "develop_batch_item",
+          "columnNames": [
+            "exportId"
+          ],
+          "referenceTableName": "develop_export",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "develop_batch_return",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "develop_batch_return",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "itemId",
+          "tableName": "develop_batch_return",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "checksum",
+          "tableName": "develop_batch_return",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "confirmationId",
+          "tableName": "develop_batch_return",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "expectedCurrentRevisionId",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "activationInvalidated",
+          "tableName": "develop_batch_return",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "revisionId",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "sourceIdentity",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "pendingMasterPath",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "stagedAt",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "locked",
+          "tableName": "develop_batch_return",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "apiKeyId",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "develop_batch_return",
+          "nullable": false,
+          "isArray": false,
+          "default": "'confirmed'::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "error",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "errorCode",
+          "tableName": "develop_batch_return",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "develop_batch_return",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "IDX_develop_batch_return_revisionId",
+          "definition": "CREATE UNIQUE INDEX \"IDX_develop_batch_return_revisionId\" ON public.develop_batch_return USING btree (\"revisionId\")",
+          "tableName": "develop_batch_return",
+          "columnNames": [
+            "revisionId"
+          ],
+          "using": "btree",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "IDX_develop_batch_return_itemId_checksum",
+          "definition": "CREATE UNIQUE INDEX \"IDX_develop_batch_return_itemId_checksum\" ON public.develop_batch_return USING btree (\"itemId\", checksum)",
+          "tableName": "develop_batch_return",
+          "columnNames": [
+            "itemId",
+            "checksum"
+          ],
+          "using": "btree",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "IDX_develop_batch_return_pending",
+          "definition": "CREATE INDEX \"IDX_develop_batch_return_pending\" ON public.develop_batch_return USING btree (\"stagedAt\") WHERE ((\"pendingMasterPath\" IS NOT NULL) AND (\"revisionId\" IS NULL))",
+          "tableName": "develop_batch_return",
+          "columnNames": [
+            "stagedAt"
+          ],
+          "using": "btree",
+          "where": "((\"pendingMasterPath\" IS NOT NULL) AND (\"revisionId\" IS NULL))",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "develop_batch_return_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['confirmed'::text, 'imported'::text, 'completed'::text, 'conflict'::text, 'failed'::text, 'cancelled'::text])))",
+          "tableName": "develop_batch_return",
+          "expression": "((status = ANY (ARRAY['confirmed'::text, 'imported'::text, 'completed'::text, 'conflict'::text, 'failed'::text, 'cancelled'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "develop_batch_return_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "develop_batch_return",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "develop_batch_return_itemId_fkey",
+          "definition": "FOREIGN KEY (\"itemId\") REFERENCES develop_batch_item(id) ON DELETE CASCADE",
+          "tableName": "develop_batch_return",
+          "columnNames": [
+            "itemId"
+          ],
+          "referenceTableName": "develop_batch_item",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_develop_revision",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "attempts",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "cancelRequested",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "error",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "exportId",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "fileName",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "height",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isCurrent",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "kind",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "'recipe'::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "label",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "masterPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "previewPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "progress",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "recipe",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "recipeVersion",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "1",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "renderedAt",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "rendererVersion",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "renditionChecksum",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "revision",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "software",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "sourceChecksum",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "'saved'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "width",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "hdrMasterPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "hdrPreviewPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "hdrRenditionChecksum",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sourceAssetId",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "batchChargedBytes",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_develop_revision_asset_idx",
+          "definition": "CREATE INDEX asset_develop_revision_asset_idx ON public.asset_develop_revision USING btree (\"assetId\", revision DESC)",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "assetId",
+            "revision"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_develop_revision_owner_idx",
+          "definition": "CREATE INDEX asset_develop_revision_owner_idx ON public.asset_develop_revision USING btree (\"ownerId\")",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_develop_revision_current_idx",
+          "definition": "CREATE UNIQUE INDEX asset_develop_revision_current_idx ON public.asset_develop_revision USING btree (\"assetId\") WHERE \"isCurrent\"",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "where": "\"isCurrent\"",
+          "unique": true,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "asset_develop_revision_attempts_check",
+          "definition": "CHECK ((attempts >= 0))",
+          "tableName": "asset_develop_revision",
+          "expression": "((attempts >= 0))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_fileName_check",
+          "definition": "CHECK (((\"fileName\" IS NULL) OR ((length(\"fileName\") >= 1) AND (length(\"fileName\") <= 255))))",
+          "tableName": "asset_develop_revision",
+          "expression": "(((\"fileName\" IS NULL) OR ((length(\"fileName\") >= 1) AND (length(\"fileName\") <= 255))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_kind_check",
+          "definition": "CHECK ((kind = ANY (ARRAY['recipe'::text, 'external'::text])))",
+          "tableName": "asset_develop_revision",
+          "expression": "((kind = ANY (ARRAY['recipe'::text, 'external'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_label_check",
+          "definition": "CHECK (((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120))))",
+          "tableName": "asset_develop_revision",
+          "expression": "(((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_progress_check",
+          "definition": "CHECK (((progress >= 0) AND (progress <= 100)))",
+          "tableName": "asset_develop_revision",
+          "expression": "(((progress >= 0) AND (progress <= 100)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_recipe_check",
+          "definition": "CHECK ((jsonb_typeof(recipe) = 'object'::text))",
+          "tableName": "asset_develop_revision",
+          "expression": "((jsonb_typeof(recipe) = 'object'::text))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_revision_check",
+          "definition": "CHECK ((revision >= 1))",
+          "tableName": "asset_develop_revision",
+          "expression": "((revision >= 1))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_software_check",
+          "definition": "CHECK (((software IS NULL) OR ((length(software) >= 1) AND (length(software) <= 120))))",
+          "tableName": "asset_develop_revision",
+          "expression": "(((software IS NULL) OR ((length(software) >= 1) AND (length(software) <= 120))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text])))",
+          "tableName": "asset_develop_revision",
+          "expression": "((status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "asset_develop_revision_assetId_revision_key",
+          "definition": "UNIQUE (\"assetId\", revision)",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "assetId",
+            "revision"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "asset_develop_revision_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_hdr_set_check",
+          "definition": "CHECK ((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
+          "tableName": "asset_develop_revision",
+          "expression": "((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
           "synchronize": true
         }
       ],
