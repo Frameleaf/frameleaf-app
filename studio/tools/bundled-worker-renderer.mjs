@@ -138,13 +138,11 @@ export async function createEngineRenderer({
         args: launchArgs,
         ...(executablePath && { executablePath }),
         ...(native && { chromiumSandbox: true }),
-        ...(browserGuard && {
-          env: {
-            ...process.env,
-            FRAMELEAF_STUDIO_CHROMIUM: chromiumPath,
-            FRAMELEAF_STUDIO_OWNER_PID: String(process.pid),
-          },
-        }),
+        env: {
+          ...process.env,
+          ...(browserGuard && { FRAMELEAF_STUDIO_CHROMIUM: chromiumPath }),
+          FRAMELEAF_STUDIO_OWNER_PID: String(process.pid),
+        },
       });
       signal?.addEventListener('abort', abort, { once: true });
       // Stop during launch must join browser cleanup before creating pages or using scratch files.

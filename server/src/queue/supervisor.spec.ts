@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter, once } from 'node:events';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Worker } from 'node:worker_threads';
 import type { WorkerStoppedProof } from 'src/queue/worker-stop-proof.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
@@ -8,6 +9,55 @@ import { SupervisorStop } from 'src/utils/shutdown.js';
 
 /** Real worker threads and child processes; fake clocks cannot prove event-loop isolation. */
 describe('queue execution supervisor', () => {
+  it('bounds startup hangs before watchdog registration without inventing stop proof', async () => {
+    const worker = new Worker('while(true) {}', { eval: true });
+    const recordStopped = vi.fn();
+    const diagnostic = vi.fn();
+    const { stopped } = superviseQueueWorker(worker, 40, 20, { startupMs: 100, recordStopped, diagnostic });
+    const exit = once(worker, 'exit');
+    try {
+      expect(await Promise.race([exit.then(([code]) => code), delay(1000, 'still-running')])).toBe(1);
+      await stopped;
+      expect(recordStopped).not.toHaveBeenCalled();
+      expect(diagnostic).toHaveBeenCalledWith(expect.stringContaining('without a verified worker ID'));
+    } finally {
+      await worker.terminate();
+      await stopped;
+    }
+  });
+
+  it('allows startup longer than heartbeat silence and keeps a registered healthy worker alive', async () => {
+    const worker = new Worker(
+      `const {parentPort,MessageChannel}=require('node:worker_threads');
+      parentPort.on('message',()=>{
+        const {port1,port2}=new MessageChannel();
+        parentPort.postMessage({type:'queue-watchdog-port',port:port1},[port1]);
+        setInterval(()=>port2.postMessage({type:'alive'}),10);
+        parentPort.postMessage({type:'registered'});
+      });
+      parentPort.postMessage({type:'ready'});`,
+      { eval: true },
+    );
+    const { stopped } = superviseQueueWorker(worker, 100, 20, { startupMs: 1000 });
+    try {
+      await once(worker, 'message');
+      await delay(200);
+      expect(worker.threadId).not.toBe(-1);
+      const registered = new Promise<void>((resolve) =>
+        worker.on('message', (message) => {
+          if (message.type === 'registered') resolve();
+        }),
+      );
+      worker.postMessage('start');
+      await registered;
+      await delay(1100);
+      expect(worker.threadId).not.toBe(-1);
+    } finally {
+      await worker.terminate();
+      await stopped;
+    }
+  });
+
   it('writes stop proof only after the real executor and registered child are gone, then waits for persistence', async () => {
     const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
     await once(child, 'spawn');

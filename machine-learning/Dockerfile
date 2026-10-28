@@ -168,7 +168,8 @@ RUN MIMALLOC=$(case "$DEVICE:$(uname -m)" in cuda:*) echo "libmimalloc2.0";; cpu
 # FL-408: the Studio render worker's runtime: Node, a browser for the engine, ffmpeg to check and
 # align what it encoded, Vulkan for WebGPU (the GPU when the container has one, else software).
 COPY scripts/install-studio-runtime.sh /tmp/install-studio-runtime.sh
-RUN sh /tmp/install-studio-runtime.sh && rm /tmp/install-studio-runtime.sh
+COPY scripts/studio-browser-guard.py /tmp/studio-browser-guard.py
+RUN sh /tmp/install-studio-runtime.sh && rm /tmp/install-studio-runtime.sh /tmp/studio-browser-guard.py
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=studio-worker /opt/frameleaf-studio /opt/frameleaf-studio
 RUN mkdir -p /usr/share/fonts/truetype/frameleaf-studio && \

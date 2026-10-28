@@ -31,16 +31,20 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   // LISTEN owns its own bounded one-connection pool; it can never reserve a dispatch connection.
   const listener = createClient(1);
   const heartbeatClient = createClient(1);
+  const maintenanceClient = createClient(1);
   const db = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: client }) });
   const store = new SqlQueueStore(db);
   const heartbeatDb = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: heartbeatClient }) });
   const heartbeatStore = new SqlQueueStore(heartbeatDb);
+  const maintenanceDb = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: maintenanceClient }) });
+  const maintenanceStore = new SqlQueueStore(maintenanceDb);
   const watchdog = new QueueWatchdog();
   const active = new Map<string, QueueClaim>();
   let stopping = false;
   let ready = false;
   let lastHeartbeat = performance.now();
   let lastSweep = 0;
+  let maintenance: Promise<void> | undefined;
   let progressBusy = false;
   let nextQueue = 0;
   let reconciliationDue = true;
@@ -86,6 +90,22 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   });
   const heartbeat = setInterval(() => void beat(), QUEUE_TIMING.heartbeat);
 
+  // A recovery backlog must neither hold dispatch nor reserve one of its database sessions.
+  const sweep = () => {
+    if (stopping || maintenance || performance.now() - lastSweep < QUEUE_TIMING.sweep) return;
+    maintenance = (async () => {
+      try {
+        await maintenanceStore.recoverExpired();
+        if (!stopping) await pruneQueueHistory(maintenanceDb);
+      } catch {
+        if (!stopping) parentPort!.postMessage({ type: 'unavailable' });
+      } finally {
+        lastSweep = performance.now();
+        maintenance = undefined;
+      }
+    })();
+  };
+
   const tick = coalescedTask(async () => {
     const reconcile = reconciliationDue;
     reconciliationDue = false;
@@ -95,12 +115,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
         ready = true;
         await beat();
       }
-      const now = performance.now();
-      if (now - lastSweep >= QUEUE_TIMING.sweep) {
-        await store.recoverExpired();
-        await pruneQueueHistory(db);
-        lastSweep = now;
-      }
+      sweep();
       if (!progressBusy) {
         progressBusy = true;
         try {
@@ -156,12 +171,14 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
     void tick();
   }, QUEUE_TIMING.scan);
   parentPort!.on('close', () => {
+    stopping = true;
     stopWatchdog();
     clearInterval(scan);
     clearInterval(heartbeat);
     void notifications.close();
     void client.end({ timeout: 1 });
     void heartbeatClient.end({ timeout: 1 });
+    void maintenanceClient.end({ timeout: 1 });
   });
   await tick();
 }
