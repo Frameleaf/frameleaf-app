@@ -137,7 +137,10 @@ export function jiraClient(env = process.env) {
         error.status = response.status;
         throw error; // Never echo a response that might contain credentials or private issue content.
       }
-      return response.status === 204 ? null : response.json();
+      const text = await response.text();
+      return response.status === 204 || (method === "PUT" && text === "")
+        ? null
+        : JSON.parse(text);
     }
   };
 }
