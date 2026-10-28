@@ -6,6 +6,7 @@ import type { DevelopBatchResponseDto } from 'src/dtos/develop-batch.dto.js';
 import type { DB } from 'src/schema/index.js';
 import { Permission } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { anyUuid } from 'src/utils/database.js';
 import { liveBatchGrant } from 'src/utils/develop-batch-grant.js';
 
@@ -89,13 +90,42 @@ export class DevelopBatchRepository {
       .where('id', '=', itemId)
       .execute();
   }
-  async expiredPendingMasters() {
-    const { rows } = await sql<{
-      path: string;
-    }>`WITH expired AS (SELECT id,"pendingMasterPath" FROM develop_batch_return WHERE "revisionId" IS NULL AND "pendingMasterPath" IS NOT NULL AND "stagedAt"<now()-interval '24 hours' FOR UPDATE SKIP LOCKED) UPDATE develop_batch_return r SET "pendingMasterPath"=NULL,"stagedAt"=NULL FROM expired WHERE r.id=expired.id RETURNING expired."pendingMasterPath" AS path`.execute(
-      this.db,
-    );
-    return rows.map((row) => row.path);
+  async cleanupPendingMasters(remove: (path: string) => Promise<void>, batchId?: string) {
+    const { rows } = await sql<{ id: string; batchId: string }>`SELECT r.id,item."batchId" FROM develop_batch_return r
+      JOIN develop_batch_item item ON item.id=r."itemId" JOIN develop_batch batch ON batch.id=item."batchId"
+      WHERE r."revisionId" IS NULL AND r."pendingMasterPath" IS NOT NULL
+      AND (batch.status='cancelled' OR r."stagedAt"<clock_timestamp()-interval '24 hours')
+      ${batchId ? sql`AND batch.id=${batchId}::uuid` : sql``}`.execute(this.db);
+    for (const row of rows)
+      await this.db.transaction().execute(async (tx) => {
+        const batch = await tx
+          .selectFrom('develop_batch')
+          .select('status')
+          .where('id', '=', row.batchId)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!batch) return;
+        const pending = await tx
+          .selectFrom('develop_batch_return')
+          .select(['id', 'pendingMasterPath'])
+          .where('id', '=', row.id)
+          .where('revisionId', 'is', null)
+          .where('pendingMasterPath', 'is not', null)
+          .$if(batch.status !== 'cancelled', (query) =>
+            query.where('stagedAt', '<', sql<Date>`clock_timestamp()-interval '24 hours'`),
+          )
+          .forUpdate()
+          .executeTakeFirst();
+        if (!pending?.pendingMasterPath) return;
+        const target = pending.pendingMasterPath;
+        await lockFilePath(tx, target);
+        await tx
+          .updateTable('develop_batch_return')
+          .set({ pendingMasterPath: null, stagedAt: null })
+          .where('id', '=', row.id)
+          .execute();
+        if ((await countPathReferences(tx, target)) === 0) await remove(target);
+      });
   }
   async listOwners() {
     return this.db.selectFrom('user').select('id').execute();
@@ -284,11 +314,10 @@ export class DevelopBatchRepository {
       if (!batch) throw new NotFoundException('Editing batch not found');
       const { rows } = await sql<{
         revisionId: string | null;
-        pendingMasterPath: string | null;
-      }>`SELECT r."revisionId",r."pendingMasterPath" FROM develop_batch_return r JOIN develop_batch_item item ON item.id=r."itemId" WHERE item."batchId"=${id}::uuid AND r.status NOT IN ('completed','conflict') FOR UPDATE OF r`.execute(
+      }>`SELECT r."revisionId" FROM develop_batch_return r JOIN develop_batch_item item ON item.id=r."itemId" WHERE item."batchId"=${id}::uuid AND r.status NOT IN ('completed','conflict') FOR UPDATE OF r`.execute(
         tx,
       );
-      await sql`UPDATE develop_batch_return r SET status='cancelled',error='Batch cancelled',"errorCode"='batch_cancelled',"pendingMasterPath"=NULL,"stagedAt"=NULL FROM develop_batch_item item WHERE item.id=r."itemId" AND item."batchId"=${id}::uuid AND r.status NOT IN ('completed','conflict')`.execute(
+      await sql`UPDATE develop_batch_return r SET status='cancelled',error='Batch cancelled',"errorCode"='batch_cancelled' FROM develop_batch_item item WHERE item.id=r."itemId" AND item."batchId"=${id}::uuid AND r.status NOT IN ('completed','conflict')`.execute(
         tx,
       );
       await sql`UPDATE asset_develop_revision SET "cancelRequested"=true WHERE id IN (SELECT r."revisionId" FROM develop_batch_return r JOIN develop_batch_item item ON item.id=r."itemId" WHERE item."batchId"=${id}::uuid AND r.status='cancelled') AND status<>'rendered'`.execute(
@@ -296,7 +325,6 @@ export class DevelopBatchRepository {
       );
       return {
         revisionIds: rows.flatMap((r) => (r.revisionId ? [r.revisionId] : [])),
-        pendingPaths: rows.flatMap((r) => (r.pendingMasterPath ? [r.pendingMasterPath] : [])),
       };
     });
   }

@@ -340,8 +340,8 @@ export class DevelopBatchService {
   }
   async cancel(auth: AuthDto, id: string) {
     await this.repository.get(auth.user.id, id);
-    const { revisionIds, pendingPaths } = await this.repository.cancel(auth.user.id, id);
-    if (pendingPaths.length > 0) await this.jobs.queue({ name: JobName.FileDelete, data: { files: pendingPaths } });
+    const { revisionIds } = await this.repository.cancel(auth.user.id, id);
+    await this.repository.cleanupPendingMasters((target) => rm(target, { force: true }), id);
     for (const revisionId of revisionIds) {
       const revision = await this.revisions.get(revisionId);
       if (!revision || revision.status === AssetDevelopRevisionStatus.Rendered) continue;
@@ -376,8 +376,7 @@ export class DevelopBatchService {
   }
   @OnEvent({ name: 'NightlyDatabaseCleanup' })
   async cleanupStaging() {
-    const expired = await this.repository.expiredPendingMasters();
-    if (expired.length > 0) await this.jobs.queue({ name: JobName.FileDelete, data: { files: expired } });
+    await this.repository.cleanupPendingMasters((target) => rm(target, { force: true }));
     for (const { id } of await this.repository.listOwners()) {
       const root = path.join(developImportStagingFolder(id), 'batches');
       for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) {

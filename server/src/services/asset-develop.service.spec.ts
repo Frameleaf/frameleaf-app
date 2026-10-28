@@ -117,7 +117,7 @@ describe(AssetDevelopService.name, () => {
       recoverBatchImports: vi.fn(),
       failBatchRender: vi.fn(),
       reserveBatchMaster: vi.fn(),
-      abandonBatchMaster: vi.fn(),
+      moveBatchMaster: vi.fn(),
       queueBatchRevision: vi.fn(),
       releaseBatchMaster: vi.fn(),
       publishBatchRendered: vi.fn(),

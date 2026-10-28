@@ -872,8 +872,12 @@ export class AssetDevelopService {
         ? await this.assetDevelopRepository.reserveBatchMaster(asset.ownerId, batchReturn, candidate)
         : candidate;
       this.storageRepository.mkdirSync(path.dirname(master));
-      await this.storageRepository.rename(file.path, master);
-      kept = master;
+      const moved = batchReturn
+        ? await this.assetDevelopRepository.moveBatchMaster(asset.ownerId, batchReturn, master, () =>
+            this.storageRepository.rename(file.path, master),
+          )
+        : (await this.storageRepository.rename(file.path, master), true);
+      if (moved) kept = master;
 
       const revision = await this.assetDevelopRepository.create({
         assetId,
@@ -898,15 +902,7 @@ export class AssetDevelopService {
         return this.toRevisionDto(revision);
       return await this.queueRender(revision, asset.originalFileName);
     } finally {
-      // Whatever was not recorded is removed: the staged upload, or a kept copy with no row.
-      if (batchReturn && kept) {
-        let abandoned: string | undefined;
-        try {
-          abandoned = await this.assetDevelopRepository.abandonBatchMaster(auth.user.id, batchReturn);
-        } finally {
-          await this.queueFileDelete([...new Set([kept, ...(abandoned ? [abandoned] : [])])]);
-        }
-      }
+      // Batch masters stay reserved until adoption or transactional cleanup finishes.
       await this.discard([file.path, ...(!batchReturn && kept ? [kept] : [])]);
     }
   }

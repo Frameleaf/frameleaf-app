@@ -1,14 +1,14 @@
 import { Kysely, sql } from 'kysely';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import sharp from 'sharp';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
-import { AssetLockReason, AssetType, ChecksumAlgorithm, JobName, JobStatus, Permission } from 'src/enum.js';
+import { AssetLockReason, AssetType, ChecksumAlgorithm, JobStatus, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -555,9 +555,7 @@ it('tracks a moved master across a pre-adoption crash and only releases an expir
     .where('itemId', '=', f.item.id)
     .execute();
   await f.sut.cleanupStaging();
-  expect(f.jobs.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: [path] } });
-  await physical.deleteUnreferencedPath(path, unlink);
-  expect(unlink).toHaveBeenCalledOnce();
+  expect(unlink).not.toHaveBeenCalled();
   expect(await stat(path).catch(() => null)).toBeNull();
 });
 it('serializes cancellation, asset deletion and quota reconciliation without a stranded or double-refunded charge', async () => {
@@ -795,7 +793,7 @@ it.each(['pin expiry', 'session revocation'] as const)(
     await expect(stream.next()).rejects.toThrow();
   },
 );
-it('queues guarded deletion when cancellation deletes the reservation before the paused rename', async () => {
+it('serializes a live rename with cancellation and never leaves an uncharged master', async () => {
   const f = await prepare();
   let release!: () => void,
     entered!: () => void,
@@ -809,30 +807,27 @@ it('queues guarded deletion when cancellation deletes the reservation before the
     await barrier;
     return rename(from, to);
   });
-  const uploadPath = join(root, `${randomUUID()}-inflight.png`);
-  await writeFile(uploadPath, f.bytes);
-  const pending = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, {
-    path: uploadPath,
-    originalname: 'return.png',
-    size: f.bytes.length,
-  } as Express.Multer.File);
-  const failure = pending.catch((error) => error);
+  const upload = join(root, `${randomUUID()}-inflight.png`);
+  await writeFile(upload, f.bytes);
+  const pending = f.sut
+    .import(f.auth, f.batch.id, f.item.id, f.dto, {
+      path: upload,
+      originalname: 'return.png',
+      size: f.bytes.length,
+    } as Express.Multer.File)
+    .catch((error) => error);
   await reached;
-  await f.sut.cancel(f.auth, f.batch.id);
-  const files = new PhysicalFileRepository(db);
-  await files.deleteUnreferencedPath(target, async () => {
-    await rm(target, { force: true });
+  let finished = false;
+  const cancellation = f.sut.cancel(f.auth, f.batch.id).then(() => {
+    finished = true;
   });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(finished).toBe(false);
   release();
-  expect(await failure).toBeInstanceOf(Error);
-  expect(await readFile(target)).toEqual(f.bytes);
-  expect(
-    f.jobs.queue.mock.calls.some(([job]) => job.name === JobName.FileDelete && job.data.files.includes(target)),
-  ).toBe(true);
-  const cleanup = await files.deleteUnreferencedPath(target, async () => {
-    await rm(target, { force: true });
-  });
-  expect(cleanup.references).toBe(0);
+  await Promise.allSettled([pending, cancellation]);
+  expect(finished).toBe(true);
+  expect(await stat(target).catch(() => null)).toBeNull();
+  expect(await usage(f.user.id)).toBe(0);
   expect(
     (
       await db
@@ -842,9 +837,6 @@ it('queues guarded deletion when cancellation deletes the reservation before the
         .executeTakeFirstOrThrow()
     ).pendingMasterPath,
   ).toBeNull();
-  expect(await stat(target).catch(() => null)).toBeNull();
-  expect(await usage(f.user.id)).toBe(0);
-  expect(await f.revisions.listByAsset(f.asset.id)).toHaveLength(0);
 });
 it('confirms overlapping batches in reverse order without deadlock', async () => {
   const f = await prepare(),
@@ -943,4 +935,192 @@ it('activates a return when its confirming API key remains authorized', async ()
   const revisionId = imported.returns.find((r) => r.id === returned.id)!.revisionId!;
   expect(await f.develop.handleRender({ id: revisionId })).toBe(JobStatus.Success);
   expect((await f.revisions.getCurrent(f.asset.id))?.id).toBe(revisionId);
+});
+
+it('extracts long UTF-8 original and sidecar names under the filesystem byte limit', async () => {
+  const f = setup(),
+    { user } = await f.ctx.newUser(),
+    { session } = await f.ctx.newSession({ userId: user.id });
+  const auth = factory.auth({ user, session });
+  const a = await photo(f.ctx, user.id, `${'相'.repeat(71)}.jpg`),
+    b = await photo(f.ctx, user.id, `${'相'.repeat(71)}.jpg`);
+  const sidecar = join(root, `${randomUUID()}.xmp`);
+  await writeFile(sidecar, 'fixture sidecar');
+  await db
+    .insertInto('asset_file')
+    .values({ assetId: a.id, type: 'sidecar' as never, path: sidecar })
+    .execute();
+  const batch = await f.sut.create(auth, { assetIds: [a.id, b.id], includeSidecars: true });
+  for (const item of batch.items) await f.sut.prepare(auth, batch.id, item.id);
+  const chunks: Buffer[] = [];
+  for await (const chunk of await f.sut.download(auth, batch.id)) chunks.push(Buffer.from(chunk));
+  const zip = join(root, `${randomUUID()}.zip`),
+    output = join(root, randomUUID());
+  await mkdir(output);
+  await writeFile(zip, Buffer.concat(chunks));
+  execFileSync('unzip', ['-q', zip, '-d', output]);
+  const names = await readdir(output);
+  expect(names).toHaveLength(4);
+  expect(names.every((name) => Buffer.byteLength(name) <= 255)).toBe(true);
+  const originals = names.filter((name) => name.endsWith('.jpg'));
+  expect(originals).toHaveLength(2);
+  expect(new Set(originals).size).toBe(2);
+  expect(new Set(await Promise.all(originals.map(async (name) => hash(await readFile(join(output, name))))))).toEqual(
+    new Set([hash(await readFile(a.originalPath)), hash(await readFile(b.originalPath))]),
+  );
+  expect(
+    await readFile(
+      join(
+        output,
+        names.find((name) => name.endsWith('.xmp'))!,
+      ),
+      'utf8',
+    ),
+  ).toBe('fixture sidecar');
+});
+
+it('rejects a rename after cancellation and reclaims a crash-after-move reservation on restart', async () => {
+  const f = await prepare();
+  const admission = {
+    batchId: f.batch.id,
+    itemId: f.item.id,
+    confirmationId: f.dto.confirmationId,
+    checksum: hash(f.bytes),
+    bytes: f.bytes.length,
+  };
+  const target = join(root, `${randomUUID()}-master.png`),
+    staged = join(root, `${randomUUID()}-staged.png`);
+  await writeFile(staged, f.bytes);
+  await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  await f.repository.cancel(f.user.id, f.batch.id);
+  const deleted = await new PhysicalFileRepository(db).deleteUnreferencedPath(target, async () =>
+    rm(target, { force: true }),
+  );
+  expect(deleted.references).toBeGreaterThan(0);
+  await expect(
+    f.revisions.moveBatchMaster(f.user.id, admission, target, () => f.storage.rename(staged, target)),
+  ).rejects.toThrow();
+  expect(await stat(target).catch(() => null)).toBeNull();
+
+  const g = await prepare();
+  const pending = {
+    batchId: g.batch.id,
+    itemId: g.item.id,
+    confirmationId: g.dto.confirmationId,
+    checksum: hash(g.bytes),
+    bytes: g.bytes.length,
+  };
+  const destination = join(root, `${randomUUID()}-crashed.png`),
+    upload = join(root, `${randomUUID()}-upload.png`);
+  await writeFile(upload, g.bytes);
+  await g.revisions.reserveBatchMaster(g.user.id, pending, destination);
+  expect(
+    await g.revisions.moveBatchMaster(g.user.id, pending, destination, () => g.storage.rename(upload, destination)),
+  ).toBe(true);
+  expect(await readFile(destination)).toEqual(g.bytes);
+  await g.repository.cancel(g.user.id, g.batch.id);
+  const restarted = setup();
+  await restarted.sut.recover();
+  expect(await stat(destination).catch(() => null)).toBeNull();
+  expect(await usage(g.user.id)).toBe(0);
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('confirmationId', '=', pending.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBeNull();
+});
+
+it('restart cleanup preserves a master referenced by an adopted version', async () => {
+  const f = await prepare();
+  const imported = await f.sut.import(
+    f.auth,
+    f.batch.id,
+    f.item.id,
+    f.dto,
+    await stage(f.user.id, f.batch.id, f.bytes),
+  );
+  const revision = await f.revisions.get(imported.returns[0].revisionId!);
+  const next = await f.sut.create(f.auth, { assetIds: [f.asset.id], includeSidecars: false });
+  await f.sut.prepare(f.auth, next.id, next.items[0].id);
+  const confirmed = await f.sut.confirm(f.auth, next.id, {
+    files: [{ itemId: next.items[0].id, fileName: 'return.png', checksum: hash(f.bytes) }],
+  });
+  await db
+    .updateTable('develop_batch_return')
+    .set({ pendingMasterPath: revision!.masterPath!, stagedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+    .where('id', '=', confirmed.items[0].returns[0].id)
+    .execute();
+  await setup().sut.recover();
+  expect(await readFile(revision!.masterPath!)).toEqual(f.bytes);
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('id', '=', confirmed.items[0].returns[0].id)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBeNull();
+  expect(await usage(f.user.id)).toBe(f.bytes.length);
+});
+
+it('cannot adopt a missing master after cleanup unlinks then its transaction rolls back', async () => {
+  const f = await prepare();
+  let entered!: () => void, release!: () => void;
+  const reached = new Promise<void>((resolve) => (entered = resolve)),
+    barrier = new Promise<void>((resolve) => (release = resolve));
+  const create = f.revisions.create.bind(f.revisions);
+  vi.spyOn(f.revisions, 'create').mockImplementation(async (input) => {
+    entered();
+    await barrier;
+    return create(input);
+  });
+  const importing = f.sut
+    .import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes))
+    .catch((error) => error);
+  await reached;
+  const pending = await db
+    .selectFrom('develop_batch_return')
+    .select('pendingMasterPath')
+    .where('confirmationId', '=', f.dto.confirmationId)
+    .executeTakeFirstOrThrow();
+  expect(await readFile(pending.pendingMasterPath!)).toEqual(f.bytes);
+  await db
+    .updateTable('develop_batch_return')
+    .set({ stagedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+    .where('confirmationId', '=', f.dto.confirmationId)
+    .execute();
+  await expect(
+    f.repository.cleanupPendingMasters(async (path) => {
+      await rm(path, { force: true });
+      throw new Error('simulated crash before commit');
+    }, f.batch.id),
+  ).rejects.toThrow();
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('confirmationId', '=', f.dto.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBe(pending.pendingMasterPath);
+  release();
+  expect(await importing).toBeInstanceOf(Error);
+  expect(await f.revisions.listByAsset(f.asset.id)).toHaveLength(0);
+  expect(await usage(f.user.id)).toBe(0);
+  await setup().sut.recover();
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('confirmationId', '=', f.dto.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBeNull();
 });

@@ -1,16 +1,26 @@
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 
-export const batchExportName = (fileName: string, exportId: string) => {
-  const name = sanitize(path.posix.basename(fileName.replaceAll('\\', '/'))) || 'original';
-  const extension = path.extname(name).slice(0, 16);
-  return `${path.basename(name, path.extname(name)).slice(0, 190)}__fl_${exportId}${extension}`;
+const basename = (name: string) => path.posix.basename(name.replaceAll('\\', '/'));
+const truncateBytes = (value: string, limit: number) => {
+  let result = '',
+    bytes = 0;
+  for (const character of value) {
+    const size = Buffer.byteLength(character);
+    if (bytes + size > limit) break;
+    result += character;
+    bytes += size;
+  }
+  return result;
 };
-const stem = (name: string) =>
-  path
-    .parse(name.replaceAll('\\', '/').split('/').at(-1) ?? '')
-    .name.normalize('NFC')
-    .toLowerCase();
+export const batchExportName = (fileName: string, exportId: string) => {
+  const name = sanitize(basename(fileName)) || 'original';
+  const originalExtension = path.extname(name);
+  const extension = truncateBytes(originalExtension, 16);
+  const suffix = `__fl_${exportId}${extension}`;
+  return `${truncateBytes(path.basename(name, originalExtension), 255 - Buffer.byteLength(suffix) - 4)}${suffix}`;
+};
+const stem = (name: string) => path.parse(basename(name)).name.normalize('NFC').toLowerCase();
 export type BatchMatchItem = { id: string; exportId: string; fileName: string; exportName: string };
 export type BatchReturnFile = { fileName: string; checksum: string; itemId?: string; skip?: boolean };
 export const matchBatchReturns = (items: BatchMatchItem[], files: BatchReturnFile[]) => {
@@ -31,7 +41,7 @@ export const matchBatchReturns = (items: BatchMatchItem[], files: BatchReturnFil
     const base = { index, fileName: file.fileName, checksum: file.checksum, itemId: null as string | null };
     if (file.skip || /\.(json|xmp|aae)$/i.test(file.fileName)) return { ...base, status: 'skipped' as const };
     const identity = /__fl_([\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12})/i
-      .exec(file.fileName)?.[1]
+      .exec(basename(file.fileName))?.[1]
       ?.toLowerCase();
     const candidates = file.itemId
       ? (byId.get(file.itemId) ?? [])

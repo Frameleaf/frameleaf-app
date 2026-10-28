@@ -36,6 +36,24 @@ describe('batch return matching', () => {
     expect(result[0].itemId).toBe(first.id);
     expect(result[3].itemId).toBe(second.id);
   });
+  it('ignores export identities in parent folders but recognizes nested basename identities', () => {
+    const rows = matchBatchReturns(
+      [first, second],
+      [file(`folder__fl_${first.exportId}/renamed.jpg`), file(`folder/${second.exportName}`)],
+    );
+    expect(rows[0]).toMatchObject({ status: 'unmatched', itemId: null });
+    expect(rows[1]).toMatchObject({ status: 'matched', itemId: second.id });
+    expect(matchBatchReturns([first], [file(`folder__fl_${second.exportId}/renamed.jpg`, first.id)])[0]).toMatchObject({
+      status: 'matched',
+      itemId: first.id,
+    });
+  });
+  it('reserves UTF-8 bytes for the identity and sidecar suffix', () => {
+    const name = batchExportName(`${'相'.repeat(71)}.jpg`, first.exportId);
+    expect(Buffer.byteLength(`${name}.xmp`)).toBeLessThanOrEqual(255);
+    expect(name).toContain(first.exportId);
+    expect(name).not.toContain('�');
+  });
   it('never silently maps two files to one batch item and skips sidecars/manifests', () => {
     expect(matchBatchReturns([first], [file('Photo.png'), file('Photo.tif')]).map((row) => row.status)).toEqual([
       'ambiguous',

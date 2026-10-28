@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, HttpStatus, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { stat } from 'node:fs/promises';
 import type { BatchReturnAdmission } from 'src/repositories/develop-batch.repository.js';
 import {
   type AssetDevelopRecipe,
@@ -269,7 +270,11 @@ export class AssetDevelopRepository {
           });
         }
       }
-      if (input.batchReturn && input.masterPath) await lockFilePath(trx, input.masterPath);
+      if (input.batchReturn && input.masterPath) {
+        await lockFilePath(trx, input.masterPath);
+        if (!(await stat(input.masterPath).catch(() => null))?.isFile())
+          throw new ConflictException('The pending master is no longer available; review and retry');
+      }
       const { rows } = await sql<AssetDevelopRevision>`
         INSERT INTO ${TABLE} (
           "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
@@ -425,27 +430,46 @@ export class AssetDevelopRepository {
       await lockFilePath(tx, target);
       await tx
         .updateTable('develop_batch_return')
-        .set({ pendingMasterPath: target, stagedAt: new Date() })
+        .set({ pendingMasterPath: target, stagedAt: sql<Date>`clock_timestamp()` })
         .where('id', '=', returned.id)
         .execute();
       return target;
     });
   }
-  async abandonBatchMaster(ownerId: string, admission: BatchReturnAdmission): Promise<string | undefined> {
+  /** Serialize the short filesystem move with cancellation and pending-path cleanup. */
+  async moveBatchMaster(ownerId: string, admission: BatchReturnAdmission, target: string, move: () => Promise<void>) {
     return this.db.transaction().execute(async (tx) => {
-      await tx
+      const batch = await tx
         .selectFrom('develop_batch')
-        .select('id')
+        .select('status')
         .where('id', '=', admission.batchId)
         .where('ownerId', '=', ownerId)
         .forUpdate()
-        .executeTakeFirstOrThrow();
-      const { rows } = await sql<{
-        pendingMasterPath: string | null;
-      }>`WITH pending AS (SELECT r.id,r."pendingMasterPath" FROM develop_batch_return r JOIN develop_batch_item item ON item.id=r."itemId" WHERE item.id=${admission.itemId}::uuid AND item."batchId"=${admission.batchId}::uuid AND r.checksum=${admission.checksum} AND r."confirmationId"=${admission.confirmationId}::uuid AND r."revisionId" IS NULL FOR UPDATE OF r) UPDATE develop_batch_return r SET "pendingMasterPath"=NULL,"stagedAt"=NULL FROM pending WHERE r.id=pending.id RETURNING pending."pendingMasterPath"`.execute(
-        tx,
-      );
-      return rows[0]?.pendingMasterPath ?? undefined;
+        .executeTakeFirst();
+      if (!batch || batch.status === 'cancelled') throw new ConflictException('This batch was cancelled');
+      const returned = await tx
+        .selectFrom('develop_batch_return as returned')
+        .innerJoin('develop_batch_item as item', 'item.id', 'returned.itemId')
+        .select(['returned.revisionId', 'returned.pendingMasterPath'])
+        .where('item.batchId', '=', admission.batchId)
+        .where('item.id', '=', admission.itemId)
+        .where('returned.confirmationId', '=', admission.confirmationId)
+        .where('returned.checksum', '=', admission.checksum)
+        .forUpdate('returned')
+        .executeTakeFirst();
+      if (!returned) throw new ConflictException('Review this returned file before importing');
+      if (returned.revisionId) return false;
+      if (returned.pendingMasterPath !== target)
+        throw new ConflictException('This pending upload was cancelled; review and retry');
+      await lockFilePath(tx, target);
+      await move();
+      await tx
+        .updateTable('develop_batch_return')
+        .set({ stagedAt: sql<Date>`clock_timestamp()` })
+        .where('confirmationId', '=', admission.confirmationId)
+        .where('itemId', '=', admission.itemId)
+        .execute();
+      return true;
     });
   }
   async failBatchRender(id: string, code: string) {
