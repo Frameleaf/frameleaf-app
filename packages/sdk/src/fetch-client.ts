@@ -35193,7 +35193,6 @@ export enum Reasons {
     Enumerating = "enumerating",
     WorkloadDisabled = "workload-disabled",
     DestinationUnavailable = "destination-unavailable",
-    DestinationCapacity = "destination-capacity",
     DestinationConfiguration = "destination-configuration",
     DestinationConsent = "destination-consent",
     DestinationBudget = "destination-budget",

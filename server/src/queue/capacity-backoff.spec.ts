@@ -39,7 +39,8 @@ describe('capacity deferral policy', () => {
     },
   );
 
-  it('reports remote capacity waiting through the public run contract', () => {
-    expect(JobRunReasonSchema.parse('destination-capacity')).toBe('destination-capacity');
+  it('keeps the internal capacity reason outside the existing public enum', () => {
+    expect(JobRunReasonSchema.safeParse('destination-capacity').success).toBe(false);
+    expect(JobRunReasonSchema.parse('destination-unavailable')).toBe('destination-unavailable');
   });
 });
