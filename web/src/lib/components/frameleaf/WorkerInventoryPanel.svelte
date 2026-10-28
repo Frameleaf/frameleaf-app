@@ -64,9 +64,11 @@
     destinations: MlDestinationResponseDto[];
     /** Bumped by the page when a neighbouring panel changed something; reloads the inventory. */
     refreshKey?: number;
+    /** Each inventory this panel reads, so the page's list shows the same state (a check, the timer). */
+    onInventory?: (inventory: WorkerInventoryResponseDto) => void;
   };
 
-  let { inventory: initialInventory, destinations, refreshKey = 0 }: Props = $props();
+  let { inventory: initialInventory, destinations, refreshKey = 0, onInventory }: Props = $props();
 
   /**
    * The three "manage" buttons open the addresses and limits, which are on the same page since
@@ -103,6 +105,7 @@
     try {
       inventory = await getWorkerInventory();
       refreshFailed = false;
+      onInventory?.(inventory);
     } catch {
       // Keep the last snapshot on screen and say it is old; never blank the page.
       refreshFailed = true;
@@ -292,7 +295,10 @@
       <div>
         <dt>{$t('admin.frameleaf_workers_admission')}</dt>
         <dd>
-          {#if entry.admission.length === 0}
+          {#if entry.readiness === MlWorkerReadiness.Unknown}
+            <!-- Every verdict is "did not answer" until the first check; that is not a refusal yet. -->
+            {$t('admin.frameleaf_ml_destinations_never_probed')}
+          {:else if entry.admission.length === 0}
             {$t('admin.frameleaf_workers_capabilities_none')}
           {:else}
             <ul class="admission">

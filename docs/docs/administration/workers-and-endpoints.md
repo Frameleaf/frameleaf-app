@@ -2,7 +2,7 @@
 
 Frameleaf sends machine-learning work to **destinations**: the machine-learning container that ships with the server and other machines on your network. They are managed in **Settings → Computers & background work**:
 
-- **Computers** lists every worker. Its **Details → AI helpers: addresses, access keys and limits** holds the destinations (where you add workers) and the inventory of each worker with its current state.
+- **Computers** lists every worker. Its **Details → AI helpers: addresses, access tokens and limits** holds the destinations (where you add workers) and the inventory of each worker with its current state.
 - **Where work runs** chooses where each kind of work runs.
 
 ## Two kinds of worker
