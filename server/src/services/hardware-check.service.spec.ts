@@ -337,7 +337,12 @@ describe(HardwareCheckService.name, () => {
 
   it('shows enrolled render workers and restoration workers from what they reported', async () => {
     mocks.renderWorker.listWorkers.mockResolvedValue([
-      { id: '0195e2a0-0000-7000-8000-00000000aaa1', name: 'Studio PC', status: RenderWorkerStatus.Active },
+      {
+        id: '0195e2a0-0000-7000-8000-00000000aaa1',
+        name: 'Studio PC',
+        status: RenderWorkerStatus.Active,
+        lastSeenAt: new Date(),
+      },
       { id: 'render-2', name: 'Old laptop', status: RenderWorkerStatus.Active },
       { id: 'render-3', name: 'Gone', status: RenderWorkerStatus.Revoked },
     ] as never);
@@ -403,6 +408,17 @@ describe(HardwareCheckService.name, () => {
         gpu: { present: true, visible: true, usable: false },
       }),
     ]);
+
+    // FL-589: a session outlives a worker that stopped; one not seen for over ten minutes is not answering.
+    mocks.renderWorker.listWorkers.mockResolvedValue([
+      {
+        id: '0195e2a0-0000-7000-8000-00000000aaa1',
+        name: 'Studio PC',
+        status: RenderWorkerStatus.Active,
+        lastSeenAt: new Date(Date.now() - 11 * 60 * 1000),
+      },
+    ] as never);
+    expect((await sut.runCheck()).workers[0]).toMatchObject({ reachable: false, gpu: { usable: null } });
   });
 
   it('records throughput per workload, timing descriptions on this server only', async () => {
