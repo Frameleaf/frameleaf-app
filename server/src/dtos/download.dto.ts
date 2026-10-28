@@ -54,8 +54,33 @@ const DownloadArchiveSchema = z
       .describe(
         "Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no)",
       ),
+    includeLibraryMetadata: formBoolean
+      .optional()
+      .describe(
+        'Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only',
+      ),
+    includeSources: formBoolean
+      .optional()
+      .describe('Explicitly include private capture attribution in the portable manifest'),
+    bookmarkIds: z
+      .preprocess((value) => (typeof value === 'string' ? value.split(',') : value), z.array(z.uuidv4()).max(10_000))
+      .optional()
+      .describe('Owned bookmarks to include in the portable manifest'),
     archiveName: z.string().optional().describe('The name of the archive to download, without extension'),
   })
+  .refine(
+    (value) => value.includeLibraryMetadata || (!value.includeSources && !value.bookmarkIds?.length),
+    'Bookmarks and sources require a portable manifest',
+  )
+  .refine((value) => !value.includeLibraryMetadata || !value.edited, 'Portable library exports use originals')
+  .refine(
+    (value) =>
+      !value.includeLibraryMetadata ||
+      (value.assetIds.length <= 10_000 &&
+        new Set(value.assetIds).size === value.assetIds.length &&
+        new Set(value.bookmarkIds).size === (value.bookmarkIds?.length ?? 0)),
+    'Portable exports require at most 10000 unique assets and bookmarks',
+  )
   .meta({ id: 'DownloadArchiveDto' });
 
 export class DownloadInfoDto extends createZodDto(DownloadInfoSchema) {}

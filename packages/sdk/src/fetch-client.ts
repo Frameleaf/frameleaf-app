@@ -7586,10 +7586,16 @@ export type DownloadArchiveDto = {
     archiveName?: string;
     /** Asset IDs */
     assetIds: string[];
+    /** Owned bookmarks to include in the portable manifest */
+    bookmarkIds?: string[];
     /** Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals */
     edited?: boolean;
+    /** Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only */
+    includeLibraryMetadata?: boolean;
     /** Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no) */
     includeSidecar?: boolean;
+    /** Explicitly include private capture attribution in the portable manifest */
+    includeSources?: boolean;
 };
 export type DownloadInfoDto = {
     /** Album ID to download */

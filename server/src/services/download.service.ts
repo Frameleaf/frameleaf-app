@@ -109,10 +109,20 @@ export class DownloadService extends BaseService {
   }
 
   async downloadArchive(auth: AuthDto, request: DownloadArchiveDto): Promise<ReadStreamResponse> {
+    if (request.includeLibraryMetadata && (auth.sharedLink || auth.apiKey || auth.system)) {
+      throw new ForbiddenException('Private library export requires a signed-in account');
+    }
+    if (
+      (request.includeLibraryMetadata && request.edited) ||
+      (!request.includeLibraryMetadata && (request.includeSources || request.bookmarkIds?.length))
+    ) {
+      throw new BadRequestException('Portable library exports require a manifest and original files');
+    }
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: request.assetIds });
 
     const dto = await this.withDownloadPreferences(auth, request);
-    const assets = await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
+    const assets =
+      dto.assetIds.length === 0 ? [] : await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
     // FL-54: the archive holds each file's bytes, embedded location included, so apply the same policy
     // as a single original download before anything is streamed
     const policyFor = getOriginalLocationPolicies({ auth, assets, purpose: 'download' });
@@ -131,8 +141,24 @@ export class DownloadService extends BaseService {
         )
       : new Map<string, AssetDetails>();
     const developed = dto.edited ? await this.getShownDevelopMasters(auth, assets) : new Map<string, string>();
-    const zip = this.storageRepository.createZipStream();
     const paths = new Map<string, number>();
+    const manifestNames = new Map<string, string>();
+    if (dto.includeLibraryMetadata) {
+      nextArchiveName(paths, 'frameleaf-library.json');
+      for (const id of dto.assetIds) {
+        const asset = assetMap.get(id);
+        if (asset) manifestNames.set(id, nextArchiveName(paths, archiveFileName(asset, dto)));
+      }
+    }
+    const manifest = dto.includeLibraryMetadata
+      ? await this.downloadRepository.getLibraryManifest(
+          auth,
+          [...manifestNames].map(([id, file]) => ({ id, file })),
+          dto.bookmarkIds ?? [],
+          dto.includeSources ?? false,
+        )
+      : undefined;
+    const zip = this.storageRepository.createZipStream();
 
     for (const assetId of dto.assetIds) {
       const found = assetMap.get(assetId);
@@ -142,7 +168,7 @@ export class DownloadService extends BaseService {
 
       // As shown: the owner's current develop version takes the place of any other edited file.
       const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
-      const name = nextArchiveName(paths, archiveFileName(asset, dto));
+      const name = manifestNames.get(assetId) ?? nextArchiveName(paths, archiveFileName(asset, dto));
       zip.addFile(await this.resolveArchivePath(asset, dto), name);
 
       // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
@@ -157,6 +183,7 @@ export class DownloadService extends BaseService {
       }
     }
 
+    if (manifest) zip.addFile(Buffer.from(JSON.stringify(manifest), 'utf8'), 'frameleaf-library.json');
     void zip.finalize();
 
     return { stream: zip.stream, disposition };

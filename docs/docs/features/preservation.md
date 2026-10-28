@@ -60,6 +60,12 @@ The rules a restore keeps:
 
 Edited versions are rendered again from their recipes after the originals have been read. Unnamed faces are detected again; named people come back on their faces.
 
+## Ordinary ZIP downloads
+
+An ordinary original-file ZIP can optionally include a `frameleaf-library.json` inventory of owned album and tag memberships, bookmarks and library scopes. Capture attribution is included only when explicitly selected; its URLs omit browser credentials, query strings and fragments. Shared-link downloads cannot include this private inventory. Original file bytes are unchanged.
+
+The inventory is not a preservation package or a server backup, and cannot be submitted to preservation restore. Keep a preservation package and your database/files backups for restoration. An inventory that exceeds its format limits is refused rather than silently truncated.
+
 ## The package format
 
 | Path                                      | Contents                                                                                                                                      |

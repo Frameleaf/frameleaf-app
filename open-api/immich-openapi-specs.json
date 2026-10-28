@@ -82831,12 +82831,30 @@
             },
             "type": "array"
           },
+          "bookmarkIds": {
+            "description": "Owned bookmarks to include in the portable manifest",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "type": "array"
+          },
           "edited": {
             "description": "Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals",
             "type": "boolean"
           },
+          "includeLibraryMetadata": {
+            "description": "Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only",
+            "type": "boolean"
+          },
           "includeSidecar": {
             "description": "Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no)",
+            "type": "boolean"
+          },
+          "includeSources": {
+            "description": "Explicitly include private capture attribution in the portable manifest",
             "type": "boolean"
           }
         },
