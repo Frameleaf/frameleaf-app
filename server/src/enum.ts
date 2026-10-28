@@ -254,6 +254,11 @@ export const AssetOrderWithRandomSchema = z
 export enum Permission {
   All = 'all',
 
+  BookmarkCreate = 'bookmark.create',
+  BookmarkRead = 'bookmark.read',
+  BookmarkUpdate = 'bookmark.update',
+  BookmarkDelete = 'bookmark.delete',
+
   ActivityCreate = 'activity.create',
   ActivityRead = 'activity.read',
   ActivityUpdate = 'activity.update',
@@ -268,6 +273,7 @@ export enum Permission {
 
   // ASSET_CREATE = 'asset.create',
   AssetRead = 'asset.read',
+  AssetSourceRead = 'assetSource.read',
   AssetUpdate = 'asset.update',
   AssetDelete = 'asset.delete',
   AssetStatistics = 'asset.statistics',
@@ -3246,6 +3252,7 @@ export enum ConfigVisibility {
 }
 
 export enum ApiTag {
+  Bookmarks = 'Bookmarks',
   Activities = 'Activities',
   Albums = 'Albums',
   AlbumSources = 'Album sources',

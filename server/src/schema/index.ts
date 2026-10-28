@@ -38,6 +38,7 @@ import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
+import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
 import { AlbumUserAuditTable } from 'src/schema/tables/album-user-audit.table.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
@@ -72,10 +73,13 @@ import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
+import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
+import { BookmarkTable } from 'src/schema/tables/bookmark.table.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
 import {
@@ -272,6 +276,10 @@ export class ImmichDatabase {
     PushDeviceActivityTable,
     AssetBackupDeletionTable,
     BackupReconciliationTable,
+    BookmarkTable,
+    AlbumBookmarkTable,
+    BookmarkTagTable,
+    AssetSourceTable,
     ActivityTable,
     AdminAuditEventTable,
     AlbumAssetTable,
@@ -518,6 +526,10 @@ export interface DB extends QueueDatabase {
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  bookmark: BookmarkTable;
+  album_bookmark: AlbumBookmarkTable;
+  bookmark_tag: BookmarkTagTable;
+  asset_source: AssetSourceTable;
   asset_lock: AssetLockTable;
   asset_document_edit: AssetDocumentEditTable;
   asset_ocr: AssetOcrTable;
