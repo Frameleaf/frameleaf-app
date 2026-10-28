@@ -357,7 +357,12 @@
         />
         {#if inventory}
           <h3>{$t('frameleaf_computers_details_checks')}</h3>
-          <WorkerInventoryPanel {inventory} destinations={data.processing.destinations} refreshKey={inventoryKey} />
+          <WorkerInventoryPanel
+            {inventory}
+            destinations={data.processing.destinations}
+            refreshKey={inventoryKey}
+            onInventory={(next) => (inventory = next)}
+          />
         {/if}
       </div>
     </details>
