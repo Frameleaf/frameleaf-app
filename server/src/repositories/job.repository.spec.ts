@@ -300,6 +300,124 @@ describe(JobRepository.name, () => {
       );
     });
 
+    it('releases local admission and settles execution while committed observers are pending', async () => {
+      const observer = Promise.withResolvers<void>();
+      const held = await Promise.all(
+        Array.from({ length: QUEUE_EXECUTION_CAPACITY - 1 }, () =>
+          queueAdmission(sut['store'].db).execution.acquire(new AbortController().signal),
+        ),
+      );
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        if (queueExecution.getStore()!.claim.id === '1') {
+          queueExecution.getStore()!.afterCommit = [() => observer.promise];
+        }
+        return Promise.resolve();
+      });
+      const settled = vi.fn();
+      const first = sut['execute'](claim(1), new AbortController()).finally(settled);
+      const second = sut['execute'](claim(2), new AbortController());
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(settled).toHaveBeenCalledOnce();
+        expect(sut['eventRepository'].emit).toHaveBeenCalledTimes(2);
+        expect(sut['store'].complete).toHaveBeenCalledTimes(2);
+        expect(sut['store'].fail).not.toHaveBeenCalled();
+      } finally {
+        observer.resolve();
+        for (const release of held) release();
+        await Promise.all([first, second]);
+      }
+    });
+
+    it('reserves post-commit capacity before starting handlers and eventually delivers every callback', async () => {
+      const pending = Promise.withResolvers<void>();
+      const delivered: string[] = [];
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        const execution = queueExecution.getStore()!;
+        execution.afterCommit = [
+          () => pending.promise,
+          () => {
+            delivered.push(execution.claim.id);
+            return Promise.resolve();
+          },
+        ];
+        return Promise.resolve();
+      });
+      const executions = Array.from({ length: 24 }, (_, index) => sut['execute'](claim(index), new AbortController()));
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(sut['eventRepository'].emit).toHaveBeenCalledTimes(16);
+        expect(sut['store'].complete).toHaveBeenCalledTimes(16);
+        expect(delivered).toEqual([]);
+      } finally {
+        pending.resolve();
+        await Promise.all(executions);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(new Set(delivered)).toEqual(new Set(Array.from({ length: 24 }, (_, index) => String(index))));
+      expect(sut['store'].fail).not.toHaveBeenCalled();
+    });
+
+    it('drains cleanup observers registered by active jobs during shutdown', async () => {
+      const handler = Promise.withResolvers<void>();
+      const cleanup = Promise.withResolvers<void>();
+      sut['eventRepository'].emit = vi.fn().mockImplementation(async () => {
+        await handler.promise;
+        queueExecution.getStore()!.afterCommit = [() => cleanup.promise];
+      });
+      const abort = new AbortController();
+      const execution = sut['execute'](claim(1), abort).finally(() => sut['active'].delete('1'));
+      sut['active'].set('1', { abort, finished: execution.then(() => {}) });
+      const finished = vi.fn();
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        const stopping = sut.stopWorkers(1000).then(finished);
+        handler.resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(finished).not.toHaveBeenCalled();
+        expect(sut['active'].size).toBe(0);
+        cleanup.resolve();
+        await stopping;
+        expect(finished).toHaveBeenCalledOnce();
+      } finally {
+        handler.resolve();
+        cleanup.resolve();
+        await execution;
+      }
+    });
+
+    it('bounds shutdown waiting for a pending committed observer by the grace period', async () => {
+      const observer = Promise.withResolvers<void>();
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        queueExecution.getStore()!.afterCommit = [() => observer.promise];
+        return Promise.resolve();
+      });
+      const execution = sut['execute'](claim(1), new AbortController());
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await sut.stopWorkers(0);
+        expect(sut['store'].fail).not.toHaveBeenCalled();
+      } finally {
+        observer.resolve();
+        await execution;
+      }
+    });
+
+    it('contains rejected observers and failed warning logging after a durable completion', async () => {
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        queueExecution.getStore()!.afterCommit = [() => Promise.reject(new Error('offline'))];
+        return Promise.resolve();
+      });
+      vi.mocked(sut['logger'].warn).mockImplementation(() => {
+        throw new Error('logging unavailable');
+      });
+      await expect(sut['execute'](claim(1), new AbortController())).resolves.toBeUndefined();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(sut['store'].complete).toHaveBeenCalledOnce();
+      expect(sut['store'].fail).not.toHaveBeenCalled();
+      expect(sut['store'].defer).not.toHaveBeenCalled();
+    });
+
     it('backpressures 128 claimed handlers before they can exhaust the ten-session execution pool', async () => {
       const work = Promise.withResolvers<void>();
       let active = 0;
@@ -326,7 +444,7 @@ describe(JobRepository.name, () => {
         (index % 2 ? sut : other)['execute'](claim(index), new AbortController()),
       );
       try {
-        await Promise.resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
         expect(peak).toBeGreaterThan(0);
         expect(peak).toBeLessThan(10);
       } finally {

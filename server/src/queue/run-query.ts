@@ -85,6 +85,7 @@ export type RunItemRead = {
   reasons: RunReason[];
 };
 
+// Capacity keeps its own retry policy in storage; reads retain the released public reason enum.
 // Neither payloads nor free-text errors enter these reads. Stage names are operational job names.
 // Bookkeeping (rootItemKey NULL) affects run settlement, but never selected-media item counts.
 // OFFSET 0 retains one effective-state evaluation without a second full materialized ledger.
@@ -175,7 +176,8 @@ const stagesFor = (
     when "availableAt" > now() then 'delayed'
     else 'waiting' end outcome
   from ((
-  select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt", j."dependencyReason", q.paused,
+  select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt",
+  case when j."dependencyReason"='destination-capacity' then 'destination-unavailable' else j."dependencyReason" end "dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
   p.state "parentState"${collapse ? sql`,1::bigint weight,false fast` : sql``}
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}

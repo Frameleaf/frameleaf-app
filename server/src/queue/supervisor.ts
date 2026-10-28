@@ -13,6 +13,7 @@ export function superviseQueueWorker(
     diagnostic?: (message: string) => void;
     stopWaitMs?: number;
     childScanMs?: number;
+    startupMs?: number;
   } = {},
 ) {
   let watchdog: MessagePort | undefined;
@@ -48,7 +49,9 @@ export function superviseQueueWorker(
     void worker.terminate();
   };
   const timer = setInterval(() => {
-    if (watchdog && performance.now() - lastSeen > silenceMs) {
+    // Database migrations run before port registration and need a longer startup allowance.
+    const deadlineMs = watchdog ? silenceMs : (options.startupMs ?? 30 * 60_000);
+    if (performance.now() - lastSeen > deadlineMs) {
       terminate();
     }
   }, scanMs);

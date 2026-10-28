@@ -58,7 +58,8 @@ const stagesFor = (
     when "availableAt" > now() then 'delayed'
     else 'waiting' end outcome
   from ((
-  select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt", j."dependencyReason", q.paused,
+  select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt",
+  case when j."dependencyReason"='destination-capacity' then 'destination-unavailable' else j."dependencyReason" end "dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
   p.state "parentState"
   ${selectionItemContext(runScope, materializedInitialEntitlementContext)}

@@ -1013,6 +1013,7 @@ export const selectMlDestination = async (
   // another file, part, retry or start. Local destination health keeps its existing freshness bound.
   const probe = await machineLearningRepository.probe(endpoint as MlEndpoint, {
     maxAgeMs: destination.kind === MlDestinationKind.FrameleafCloud ? 0 : ML_PROBE_FRESHNESS_MS,
+    ...(destination.kind !== MlDestinationKind.FrameleafCloud && { includeHardware: false }),
   });
   // Local admissions share a cached observation. Its timestamp is already in the row we read,
   // so avoid another database round trip until the worker is actually probed again.

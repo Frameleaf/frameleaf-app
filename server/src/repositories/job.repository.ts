@@ -122,6 +122,7 @@ export class JobRepository {
   private coordinator?: Worker;
   private stopping?: Promise<void>;
   private active = new Map<string, { abort: AbortController; finished: Promise<void> }>();
+  private observerDeliveries = new Set<Promise<void>>();
   private rollingAvgBuffers: Partial<Record<JobName, number[]>> = {};
   private deferralWarnedAt = new Map<string, number>();
   private store: SqlQueueStore;
@@ -236,6 +237,7 @@ export class JobRepository {
   private async execute(claim: QueueClaim, abort: AbortController) {
     const admission = queueAdmission(this.store.db);
     let releaseExecution: (() => void) | undefined;
+    let releaseObservers: (() => void) | undefined;
     let started = false;
     let settled = false;
     const context: QueueExecution = {
@@ -250,6 +252,8 @@ export class JobRepository {
     try {
       try {
         if (this.stopping) abort.abort(new Error('Worker stopped'));
+        // Backpressure before media work so every committed callback has reserved delivery capacity.
+        releaseObservers = await deliverJobObservers.reserve(abort.signal);
         releaseExecution = await admission.execution.acquire(abort.signal);
         abort.signal.throwIfAborted();
         started = true;
@@ -295,10 +299,20 @@ export class JobRepository {
         ),
       );
       if (settled) {
-        // Notification failure cannot change an already committed outcome or replay media work.
-        await deliverJobObservers(context.afterCommit ?? [], () =>
-          this.logger.warn('Accepted job observer delivery unavailable'),
-        );
+        // Native execution can settle while the reserved callback chain drains independently.
+        const release = releaseObservers;
+        releaseObservers = undefined;
+        const drained = Promise.withResolvers<void>();
+        this.observerDeliveries.add(drained.promise);
+        void deliverJobObservers(
+          context.afterCommit ?? [],
+          () => this.logger.warn('Accepted job observer delivery unavailable'),
+          () => {
+            release();
+            this.observerDeliveries.delete(drained.promise);
+            drained.resolve();
+          },
+        ).catch(() => {});
         const buffer = (this.rollingAvgBuffers[claim.name as JobName] ??= []);
         buffer.push(Date.now() - new Date(claim.startedAt).getTime());
         if (buffer.length > 100) {
@@ -357,6 +371,7 @@ export class JobRepository {
         }
       }
       releaseExecution?.();
+      releaseObservers?.();
     }
   }
 
@@ -406,7 +421,12 @@ export class JobRepository {
 
   private async stopOnce(graceMs: number) {
     this.coordinator?.postMessage({ type: 'stop' });
-    await Promise.race([Promise.allSettled(this.active.values().map(({ finished }) => finished)), sleep(graceMs)]);
+    await Promise.race([
+      Promise.allSettled(this.active.values().map(({ finished }) => finished)).then(() =>
+        Promise.allSettled(this.observerDeliveries),
+      ),
+      sleep(graceMs),
+    ]);
     for (const { abort } of this.active.values()) {
       abort.abort(new Error('Worker stopped'));
     }

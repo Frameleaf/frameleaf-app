@@ -55,12 +55,12 @@ const stoppedJobAttempts = sql`((j.attempt = 0 or exists (
       and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt')))`;
 
 /**
- * Local capacity frees up within seconds. Any other dependency (machine learning off or unreachable,
+ * Local or destination capacity frees up within seconds. Any other dependency (machine learning off or unreachable,
  * consent, budget, a missing preview) can stay down for hours, so its jobs wait longer on each claim
  * (30s, 1m, 2m, 4m, 8m, then every 10m) instead of re-running every 30 seconds forever.
  */
 const deferralDelay = (reason: JobDependencyReason) =>
-  reason === 'local-capacity'
+  reason === 'local-capacity' || reason === 'destination-capacity'
     ? sql`interval '30 seconds'`
     : sql`least(interval '30 seconds' * power(2, least(attempt - 1, 5)), interval '10 minutes')`;
 

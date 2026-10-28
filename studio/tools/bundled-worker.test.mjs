@@ -1042,6 +1042,43 @@ describe('renderer', () => {
   );
 
   it(
+    'passes container browser ownership without enabling native sandbox restrictions',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const engineDir = await fakeEngine();
+      const key = `frameleaf-container-guard-${randomUUID()}`;
+      const sentinel = new Error('launch captured');
+      let launch;
+      globalThis[key] = (options) => {
+        launch = options;
+        throw sentinel;
+      };
+      try {
+        await writeFile(
+          path.join(engineDir, 'node_modules/playwright/index.js'),
+          `module.exports.chromium = { launch: async options => globalThis[${JSON.stringify(key)}](options) };`,
+        );
+        await writeFile(
+          path.join(engineDir, 'headless/lib/cli.mjs'),
+          'export const chromeLaunchArgs = () => ["--no-sandbox"];',
+        );
+        const renderer = await createEngineRenderer({
+          engineDir,
+          chromiumPath: '/usr/local/bin/frameleaf-studio-browser',
+        });
+        await assert.rejects(renderer.conformance(), (error) => error === sentinel);
+        assert.equal(launch.executablePath, '/usr/local/bin/frameleaf-studio-browser');
+        assert.equal(launch.env?.FRAMELEAF_STUDIO_OWNER_PID, String(process.pid));
+        assert.equal(launch.chromiumSandbox, undefined);
+        assert(launch.args.includes('--no-sandbox'));
+      } finally {
+        delete globalThis[key];
+        await rm(engineDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it(
     'uses the private guardian, real browser path and sandbox for native launches',
     { skip: process.platform === 'win32' },
     async () => {

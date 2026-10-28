@@ -69,6 +69,27 @@ describe('PostgreSQL queue', () => {
     await store.initialize([], workerB);
   });
 
+  it('keeps repeated remote capacity deferrals at thirty seconds without spending failure retries', async () => {
+    await store.enqueue([intent()]);
+    for (let index = 0; index < 8; index++) {
+      const [claim] = await store.claim(queue, workerA);
+      expect(await store.defer(claim, 'destination-capacity')).toBe(true);
+      const {
+        rows: [job],
+      } = await sql<{ state: string; attempt: number; base: number; wait: number }>`
+        select state, attempt, "retryBaseAttempt" base,
+          extract(epoch from "availableAt" - clock_timestamp())::float8 wait from job where id=${claim.id}::uuid
+      `.execute(db);
+      expect(job.state).toBe('pending');
+      expect(job.attempt).toBe(index + 1);
+      expect(job.base).toBe(index + 1);
+      expect(job.wait).toBeGreaterThan(25);
+      expect(job.wait).toBeLessThanOrEqual(30);
+      expect(await store.defer(claim, 'destination-capacity')).toBe(false);
+      await sql`update job set "availableAt"=now() where id=${claim.id}::uuid`.execute(db);
+    }
+  });
+
   it('discovers paused manifest-only work and pending producers in one read without treating retained terminal jobs as work', async () => {
     const producerQueue = `${queue}-producer`;
     const idleQueue = `${queue}-idle`;

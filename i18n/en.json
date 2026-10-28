@@ -7973,6 +7973,7 @@
   "frameleaf_job_runs_reason_dependency_unavailable": "A required service or resource is unavailable. Work remains pending until it is available.",
   "frameleaf_job_runs_reason_dependency_wait": "Waiting for a prerequisite to finish.",
   "frameleaf_job_runs_reason_destination-budget": "Processing is waiting for budget.",
+  "frameleaf_job_runs_reason_destination-capacity": "Waiting for processing capacity on the destination.",
   "frameleaf_job_runs_reason_destination-configuration": "The processing destination needs configuration.",
   "frameleaf_job_runs_reason_destination-consent": "The processing destination needs approval.",
   "frameleaf_job_runs_reason_destination-unavailable": "The processing destination is unavailable.",

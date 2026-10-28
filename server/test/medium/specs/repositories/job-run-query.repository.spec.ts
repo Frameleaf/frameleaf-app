@@ -52,6 +52,25 @@ const job = async (
   return id;
 };
 
+it('reports capacity waits using the existing public reason without changing the stored retry classification', async () => {
+  const id = await run();
+  const capacityStage = await stage(id, 'root', 'Capacity', 'pending');
+  const capacity = await job(id, capacityStage, 'Capacity', { dependency: true });
+  await sql`update job set "dependencyReason"='destination-capacity' where id=${capacity}::uuid`.execute(db);
+  const outageStage = await stage(id, 'root', 'Outage', 'pending');
+  await job(id, outageStage, 'Outage', { dependency: true });
+  const [summary] = await listRuns(db, 25, 0);
+  const [item] = (await listRunItems(db, id, 25, 0))!;
+  expect(summary.reasons).toEqual(['dependency_unavailable', 'destination-unavailable']);
+  expect(item.reasons).toEqual(['dependency_unavailable', 'destination-unavailable']);
+  const {
+    rows: [stored],
+  } = await sql<{ reason: string }>`select "dependencyReason" as reason from job where id=${capacity}::uuid`.execute(
+    db,
+  );
+  expect(stored.reason).toBe('destination-capacity');
+});
+
 it('reads an exact retained run outside the global page without changing default pagination or privacy', async () => {
   const retained = await run();
   await stage(retained, 'private-root', 'Thumbnail', 'failed');
