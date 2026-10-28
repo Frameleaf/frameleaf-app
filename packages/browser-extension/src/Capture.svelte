@@ -1,4 +1,9 @@
 <script lang="ts">
+  import QueuePanel from "./QueuePanel.svelte";
+  import { enqueueCapture, QueueFailure } from "./queue";
+  import { captureInput } from "./capture-input";
+  import { sameBinding } from "./api";
+  import { requestMediaOrigins } from "./platform";
   import { onMount } from "svelte";
   import { acquireCandidate, mediaOrigin, MediaFailure } from "./acquisition";
   import { requestMediaAccess, watchMediaAccess } from "./platform";
@@ -21,6 +26,12 @@
   let albumId = $state("");
   let tagIds = $state<string[]>([]);
   let note = $state("");
+  let sourcePage = $state("");
+  let sourceTitle = $state("");
+  let saving = $state(false);
+  let notice = $state("");
+  let saveController: AbortController | undefined;
+
   const imageBytes = new Map<string, Blob>();
   const approvedOrigins = new Set<string>();
   let thumbnails = $state<Record<string, string>>({});
@@ -29,6 +40,7 @@
   let download: AbortController | undefined;
   function clearImages() {
     download?.abort();
+    saveController?.abort();
     for (const url of Object.values(thumbnails)) URL.revokeObjectURL(url);
     imageBytes.clear();
     thumbnails = {};
@@ -36,7 +48,7 @@
     approvedOrigins.clear();
   }
   async function previewImage(candidate: CaptureCandidate) {
-    if (!preview || downloading) return;
+    if (!preview || downloading || saving) return;
     const currentPreview = preview.id;
     const controller = new AbortController();
     download = controller;
@@ -103,7 +115,12 @@
       });
       connection = reply.connection ?? null;
       const nextPreview = reply.ok ? (reply.preview ?? null) : null;
-      if (preview?.id !== nextPreview?.id) clearImages();
+      if (preview?.id !== nextPreview?.id) {
+        clearImages();
+        notice = "";
+        sourcePage = nextPreview?.discovery.pageUrl ?? "";
+        sourceTitle = (nextPreview?.discovery.title ?? "").slice(0, 2000);
+      }
       preview = nextPreview;
       error = reply.ok ? "" : reply.error;
       if (!preview) {
@@ -140,6 +157,112 @@
       clearImages();
     };
   });
+  async function saveSelected() {
+    if (
+      !preview ||
+      connection?.status !== "connected" ||
+      saving ||
+      downloading ||
+      !selected.length ||
+      !albumId
+    )
+      return;
+    if (!sanitizeSourceUrl(sourcePage)) {
+      error = "Enter a valid source page address before saving.";
+      return;
+    }
+    const previewId = preview.id;
+    const form = {
+      binding: connection.binding,
+      albumId,
+      tagIds: [...tagIds],
+      note,
+    };
+    const source = {
+      pageUrl: sourcePage,
+      title: sourceTitle,
+      capturedAt: new Date().toISOString(),
+    };
+    const batch = preview.discovery.candidates
+      .filter((candidate) => selected.includes(candidate.id))
+      .slice(0, 100);
+    const origins = [
+      ...new Set(
+        batch
+          .filter((candidate) => !imageBytes.has(candidate.id))
+          .map((candidate) => mediaOrigin(candidate.url))
+          .filter((origin): origin is string => !!origin),
+      ),
+    ];
+    const controller = new AbortController();
+    saveController = controller;
+    saving = true;
+    error = "";
+    notice = "";
+    let queued = 0;
+    try {
+      if (origins.length && !(await requestMediaOrigins(origins)))
+        throw new MediaFailure(
+          "Image access was not granted. Your selection is retained so you can try again.",
+        );
+      for (const origin of origins) approvedOrigins.add(origin);
+      for (const candidate of batch) {
+        if (
+          controller.signal.aborted ||
+          preview?.id !== previewId ||
+          connection?.status !== "connected" ||
+          !sameBinding(connection.binding, form.binding)
+        )
+          break;
+        const blob =
+          imageBytes.get(candidate.id) ??
+          (await acquireCandidate(
+            candidate,
+            approvedOrigins,
+            controller.signal,
+          ));
+        if (controller.signal.aborted || preview?.id !== previewId) break;
+        await enqueueCapture(
+          captureInput(
+            form,
+            { ...candidate, pageUrl: source.pageUrl, title: source.title },
+            blob,
+            source.capturedAt,
+          ),
+        );
+        queued++;
+        selected = selected.filter((id) => id !== candidate.id);
+        if (thumbnails[candidate.id])
+          URL.revokeObjectURL(thumbnails[candidate.id]);
+        delete thumbnails[candidate.id];
+        imageBytes.delete(candidate.id);
+        if (preview?.id === previewId) {
+          preview.discovery.candidates = preview.discovery.candidates.filter(
+            (value) => value.id !== candidate.id,
+          );
+          notice = `Queued ${queued} ${queued === 1 ? "image" : "images"}.`;
+        }
+        // Delivery owns its controller after the atomic enqueue; closing this page cannot cancel it.
+        void sendRequest({ type: "wake-queue" }).catch(() => {});
+        await sendRequest({
+          type: "release-candidates",
+          id: previewId,
+          candidateIds: [candidate.id],
+        }).catch(() => {});
+      }
+    } catch (reason) {
+      if (preview?.id === previewId)
+        error =
+          reason instanceof MediaFailure || reason instanceof QueueFailure
+            ? reason.message
+            : "Could not queue this selection. Queued images are retained; try the remaining selection again.";
+    } finally {
+      if (saveController === controller) {
+        saveController = undefined;
+        saving = false;
+      }
+    }
+  }
   function toggle(id: string, checked: boolean) {
     selected = checked
       ? selected.length < 100
@@ -173,6 +296,7 @@
   </header>
   {#if loading}<p role="status">Reading your collection…</p>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if notice}<p role="status">{notice}</p>{/if}
   {#if preview}
     <p class="page-title">{preview.discovery.title || "Untitled page"}</p>
     <p class="address">{preview.discovery.pageUrl}</p>
@@ -209,7 +333,7 @@
           <button
             type="button"
             onclick={() => (selected = [])}
-            disabled={!selected.length}>Clear selection</button
+            disabled={saving || !selected.length}>Clear selection</button
           >
         </div>
         {#if !visible.length}<p>
@@ -223,7 +347,7 @@
         <div class="preview-actions">
           <button
             type="button"
-            disabled={!Object.keys(thumbnails).length}
+            disabled={saving || !Object.keys(thumbnails).length}
             onclick={clearImages}>Clear loaded previews</button
           >
           {#if downloading}<button
@@ -238,8 +362,9 @@
                 ><input
                   type="checkbox"
                   checked={selected.includes(candidate.id)}
-                  disabled={selected.length >= 100 &&
-                    !selected.includes(candidate.id)}
+                  disabled={saving ||
+                    (selected.length >= 100 &&
+                      !selected.includes(candidate.id))}
                   onchange={(event) =>
                     toggle(candidate.id, event.currentTarget.checked)}
                 />{#if thumbnails[candidate.id]}<img
@@ -268,7 +393,7 @@
               <button
                 type="button"
                 class="preview-button"
-                disabled={!!downloading || !!thumbnails[candidate.id]}
+                disabled={saving || !!downloading || !!thumbnails[candidate.id]}
                 onclick={() => void previewImage(candidate)}
                 >{downloading === candidate.id
                   ? "Loading preview…"
@@ -287,7 +412,7 @@
         <h2>Destination</h2>
         <p class="address">{connection?.binding.origin}</p>
         <label for="album">Album</label>
-        <select id="album" bind:value={albumId}
+        <select id="album" disabled={saving} bind:value={albumId}
           ><option value="">Choose a design album</option
           >{#each connection?.catalog?.albums ?? [] as album}<option
               value={album.id}>{albumName(album.id)}</option
@@ -298,6 +423,7 @@
                 class="tag-choice"
                 ><input
                   type="checkbox"
+                  disabled={saving}
                   bind:group={tagIds}
                   value={tag.id}
                 />{tag.value}</label
@@ -307,11 +433,34 @@
           id="note"
           rows="4"
           maxlength="10000"
+          disabled={saving}
           bind:value={note}></textarea>
+        <label for="source-title">Source title</label><input
+          id="source-title"
+          maxlength="2000"
+          disabled={saving}
+          bind:value={sourceTitle}
+        />
+        <label for="source-page">Source page</label><input
+          id="source-page"
+          type="url"
+          maxlength="8192"
+          disabled={saving}
+          bind:value={sourcePage}
+        />
+        <p class="hint">Source query parameters and fragments are removed.</p>
+        <button
+          class="primary"
+          type="button"
+          disabled={saving || !!downloading || !selected.length || !albumId}
+          onclick={() => void saveSelected()}
+          >{saving ? "Queuing images…" : "Save selected images"}</button
+        >
         <p class="hint">
           This is a collection preview. Selected images have not been saved.
         </p>
       </aside>
     </div>
   {/if}
+  {#if connection?.status === "connected"}<QueuePanel />{/if}
 </main>

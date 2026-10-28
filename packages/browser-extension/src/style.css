@@ -264,3 +264,30 @@ fieldset {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+.queue-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.queue-list li {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--fl-border);
+}
+.queue-state {
+  color: var(--fl-muted);
+}
+.queue-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.queue-list progress {
+  width: 100%;
+  accent-color: var(--fl-accent);
+}
+.queue-list p {
+  margin: 0.25rem 0;
+}

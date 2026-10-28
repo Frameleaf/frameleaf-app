@@ -1,4 +1,5 @@
 <script lang="ts">
+  import QueuePanel from "./QueuePanel.svelte";
   import { onMount } from "svelte";
   import { openOptions, sendRequest, watchConnection } from "./platform";
   import type { ConnectionStatus } from "./settings";
@@ -82,4 +83,5 @@
     onclick={() => void openOptions()}
     >{connection ? "Connection settings" : "Connect server"}</button
   >
+  {#if connection?.status === "connected"}<QueuePanel />{/if}
 </main>

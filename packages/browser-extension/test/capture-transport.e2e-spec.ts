@@ -7,7 +7,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-test('capture delivery preserves one receipt through HTTP faults and browser restart', async () => {
+test('capture delivery preserves one receipt through HTTP faults and browser restart', async ({}, testInfo) => {
   const id = '33333333-3333-4333-8333-333333333333';
   const userId = '11111111-1111-4111-8111-111111111111';
   const itemId = '44444444-4444-4444-8444-444444444444';
@@ -30,15 +30,34 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     sourceCount = 0;
   const committedBodies = new Map<string, string>();
   let failCommitWithStatus = false;
+  let holdUiReceipt = false;
+  let releaseUiReceipt: (() => void) | undefined;
   const headers: {
     cookie?: string;
     authorization?: string;
     key?: string;
     referrer?: string;
   }[] = [];
+  const publicKeys: (string | undefined)[] = [];
   const metadata: Record<string, unknown>[] = [];
   const server = createServer(async (req, res) => {
     try {
+      if (!req.url?.startsWith('/frameleaf/api/'))
+        publicKeys.push(req.headers['x-api-key'] as string | undefined);
+      if (req.url === '/page') {
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"><rect width="64" height="48" fill="#2ab06f"/></svg>';
+        res
+          .writeHead(200, { 'Content-Type': 'text/html' })
+          .end(
+            `<title>Fixture inspiration</title><img src="data:image/svg+xml,${encodeURIComponent(svg)}">`,
+          );
+        return;
+      }
+      if (!req.url?.startsWith('/frameleaf/api/')) {
+        res.writeHead(404).end();
+        return;
+      }
       headers.push({
         cookie: req.headers.cookie,
         authorization: req.headers.authorization,
@@ -60,6 +79,13 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
           serverId: 'fixture',
           userId,
           maxFileBytes: 104857600,
+        });
+        return;
+      }
+      if (req.url === '/frameleaf/api/capture/catalog') {
+        send({
+          albums: [{ id: itemId, albumName: 'Inspiration', parentId: null }],
+          tags: [],
         });
         return;
       }
@@ -170,7 +196,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
             res
               .writeHead(503, {
                 'Content-Type': 'application/json',
-                'Retry-After': '60',
+                'Retry-After': '0',
               })
               .end('{}');
             return;
@@ -178,11 +204,17 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
           req.socket.destroy();
           return;
         }
-        send({
+        const receipt = {
           captureId: value.captureId,
           status: 'created',
           item: { kind: 'asset', asset: { id: itemId } },
-        });
+        };
+        if (holdUiReceipt) {
+          holdUiReceipt = false;
+          releaseUiReceipt = () => send(receipt);
+          return;
+        }
+        send(receipt);
         return;
       }
       send({}, 404);
@@ -378,6 +410,14 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       captureId: id,
       filename: 'synthetic.svg',
     });
+    await page.getByLabel('Server address').fill(origin + '/frameleaf');
+    await page.getByLabel('Browser capture key', { exact: true }).fill(key);
+    await page.getByText('Local development', { exact: true }).click();
+    await page.getByLabel('Allow HTTP on this computer only').check();
+    await page
+      .getByRole('button', { name: 'Connect server', exact: true })
+      .click();
+    await expect(page.getByText('Connected', { exact: true })).toBeVisible();
     loseCreate = true;
     loseAppend = true;
     loseCommit = true;
@@ -412,23 +452,38 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
           },
           file: { blob, filename: 'runner.svg' },
         });
-        await queue.resumeQueue(binding, key);
-        const current = (await queue.listCaptures(binding))[0];
-        return {
-          id: task.id,
-          binding,
-          state: current.state,
-          phase: current.phase,
-          retryAt: current.retryAt,
-          size: (await queue.captureBlob(task.id))?.size,
-        };
+        await chrome.runtime.sendMessage({ type: 'wake-queue' });
+        return { id: task.id, binding };
       },
       { origin, userId, itemId, key },
     );
-    expect(pending.state).toBe('committing');
-    expect(pending.phase).toBe('commit');
-    expect(pending.retryAt).toBeGreaterThan(Date.now() + 55000);
-    expect(pending.size).toBeGreaterThan(5 * 1024 * 1024);
+    await expect
+      .poll(async () =>
+        page.evaluate(async (binding) => {
+          const queue: typeof import('./fixtures/runner-entry') = await import(
+            chrome.runtime.getURL('runner-test.js')
+          );
+          const current = (await queue.listCaptures(binding))[0];
+          return current?.retryAt ? current.state : '';
+        }, pending.binding),
+      )
+      .toBe('committing');
+    const persisted = await page.evaluate(async (binding) => {
+      const queue: typeof import('./fixtures/runner-entry') = await import(
+        chrome.runtime.getURL('runner-test.js')
+      );
+      const current = (await queue.listCaptures(binding))[0];
+      return {
+        state: current.state,
+        phase: current.phase,
+        retryAt: current.retryAt,
+        size: (await queue.captureBlob(current.id))?.size,
+      };
+    }, pending.binding);
+    expect(persisted.state).toBe('committing');
+    expect(persisted.phase).toBe('commit');
+    expect(persisted.retryAt).toBeGreaterThan(Date.now());
+    expect(persisted.size).toBeGreaterThan(5 * 1024 * 1024);
     expect(sourceCount).toBe(2);
     const creationsBeforeRestart = creates;
     await context.close();
@@ -448,32 +503,132 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     await restartedPage.goto(
       `chrome-extension://${new URL(restartedWorker.url()).hostname}/options.html`,
     );
-    const resumed = await restartedPage.evaluate(
-      async ({ pending, key }) => {
-        const queue: typeof import('./fixtures/runner-entry') = await import(
-          chrome.runtime.getURL('runner-test.js')
-        );
-        const before = (await queue.listCaptures(pending.binding))[0];
-        await queue.retryCapture(pending.id, pending.binding);
-        await queue.resumeQueue(pending.binding, key);
-        const after = (await queue.listCaptures(pending.binding))[0];
-        return {
-          before: { phase: before.phase, state: before.state },
-          id: after.id,
-          state: after.state,
-          receipt: after.receipt,
-          removed: (await queue.captureBlob(after.id)) === null,
-        };
-      },
-      { pending, key },
-    );
-    expect(resumed.before).toEqual({ phase: 'commit', state: 'committing' });
+    await expect
+      .poll(
+        async () =>
+          restartedPage.evaluate(async () => {
+            const reply: import('../src/platform').ExtensionReply =
+              await chrome.runtime.sendMessage({ type: 'queue' });
+            return reply.ok
+              ? reply.queue?.items.find((item) => item.label === 'runner.svg')
+                  ?.state
+              : '';
+          }),
+        { timeout: 10000 },
+      )
+      .toBe('saved');
+    const resumed = await restartedPage.evaluate(async (pending) => {
+      const queue: typeof import('./fixtures/runner-entry') = await import(
+        chrome.runtime.getURL('runner-test.js')
+      );
+      const after = (await queue.listCaptures(pending.binding))[0];
+      return {
+        id: after.id,
+        state: after.state,
+        receipt: after.receipt,
+        removed: (await queue.captureBlob(after.id)) === null,
+      };
+    }, pending);
     expect(resumed.id).toBe(pending.id);
     expect(resumed.state).toBe('saved');
     expect(resumed.receipt?.captureId).toBe(pending.id);
     expect(resumed.removed).toBe(true);
     expect(sourceCount).toBe(2);
     expect(creates).toBe(creationsBeforeRestart);
+    const content = await context.newPage();
+    await content.goto(origin + '/page');
+    const popup = await context.newPage();
+    await popup.goto(
+      `chrome-extension://${new URL(restartedWorker.url()).hostname}/popup.html`,
+    );
+    await expect(popup.getByText('Connected', { exact: true })).toBeVisible();
+    await content.bringToFront();
+    const opened = context.waitForEvent('page');
+    await popup.evaluate(() => {
+      const button = [...document.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Find images on this page'),
+      );
+      button!.click();
+    });
+    const chooser = await opened;
+    await expect(
+      chooser.getByRole('heading', { name: 'Collect images', exact: true }),
+    ).toBeVisible();
+    await chooser.getByLabel('Album', { exact: true }).selectOption(itemId);
+    await chooser.locator('.candidate-list').getByRole('checkbox').check();
+    await expect(
+      chooser.getByRole('button', {
+        name: 'Save selected images',
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: 1000 });
+    await chooser.screenshot({
+      path: testInfo.outputPath('save-selection.png'),
+      fullPage: true,
+    });
+    holdUiReceipt = true;
+    await chooser
+      .getByRole('button', { name: 'Save selected images', exact: true })
+      .click();
+    await expect(
+      chooser.getByText('Queued 1 image.', { exact: true }),
+    ).toBeVisible();
+    await chooser.close();
+    await expect.poll(() => !!releaseUiReceipt).toBe(true);
+    releaseUiReceipt!();
+    const saved = popup
+      .locator('.queue-list li')
+      .filter({ hasText: 'capture.svg' });
+    await expect(saved.getByText('Saved', { exact: true })).toBeVisible();
+    await popup.screenshot({
+      path: testInfo.outputPath('saved-queue.png'),
+      fullPage: true,
+    });
+    expect(sourceCount).toBe(3);
+    const polling = await context.newPage();
+    await polling.clock.install();
+    await polling.addInitScript(() => {
+      const state = globalThis as typeof globalThis & {
+        queueReads: number;
+        releaseQueue?: () => void;
+      };
+      state.queueReads = 0;
+      const original = chrome.runtime.sendMessage.bind(chrome.runtime);
+      chrome.runtime.sendMessage = ((message: unknown) => {
+        if (
+          message &&
+          typeof message === 'object' &&
+          'type' in message &&
+          message.type === 'queue'
+        ) {
+          state.queueReads++;
+          return new Promise((resolve) => {
+            state.releaseQueue = () => {
+              void original(message).then(resolve);
+            };
+          });
+        }
+        return original(message);
+      }) as typeof chrome.runtime.sendMessage;
+    });
+    await polling.goto(
+      `chrome-extension://${new URL(restartedWorker.url()).hostname}/popup.html`,
+    );
+    await expect(polling.getByText('Connected', { exact: true })).toBeVisible();
+    await polling.clock.runFor(6000);
+    expect(
+      await polling.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { queueReads: number }).queueReads,
+      ),
+    ).toBe(1);
+    await polling.evaluate(() =>
+      (
+        globalThis as typeof globalThis & { releaseQueue?: () => void }
+      ).releaseQueue?.(),
+    );
+    await polling.close();
+    expect(publicKeys.every((value) => value === undefined)).toBe(true);
     for (const request of headers)
       expect(request).toEqual({
         cookie: undefined,

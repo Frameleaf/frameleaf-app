@@ -1,5 +1,19 @@
+import { wakeDelivery, stopDelivery, deliveryError } from './delivery';
+import {
+  listCaptures,
+  retryCapture,
+  cancelQueuedCapture,
+  QueueFailure,
+} from './queue';
+import type { ServerBinding } from './api';
+import type { QueueProgress } from './platform';
 import { DiscoveryFailure, discoverActivePage } from './discovery';
-import { clearPreview, createPreview, readPreview } from './preview';
+import {
+  clearPreview,
+  createPreview,
+  readPreview,
+  releaseCandidates,
+} from './preview';
 import { sameBinding } from './api';
 import {
   CaptureFailure,
@@ -9,6 +23,8 @@ import {
 } from './api';
 import {
   hasServerAccess,
+  ensureDeliveryAlarm,
+  registerDeliveryAlarm,
   openCapturePreview,
   registerBackground,
   trustedSender,
@@ -30,10 +46,66 @@ function serialize<T>(operation: () => Promise<T>): Promise<T> {
   writes = result.catch(() => {});
   return result;
 }
+const wake = () => void wakeDelivery(pauseDeliveryBinding);
+function pauseDeliveryBinding(binding: ServerBinding) {
+  return serialize(async () => {
+    const current = await connectionStatus();
+    if (current && sameBinding(current.binding, binding)) {
+      stopDelivery();
+      clearPreview();
+      await pauseConnection(binding);
+    }
+  });
+}
+async function queueProgress(): Promise<QueueProgress> {
+  const current = await connectionStatus();
+  const empty: QueueProgress = { items: [], unfinished: 0, hasMore: false };
+  if (!current || current.status !== 'connected') return empty;
+  if (!(await hasServerAccess(current.binding.origin))) {
+    stopDelivery();
+    clearPreview();
+    await pauseConnection(current.binding);
+    return empty;
+  }
+  const error = deliveryError(current.binding);
+  if (error) return { ...empty, error };
+  const tasks = await listCaptures(current.binding);
+  const done = (state: string) =>
+    ['saved', 'duplicate', 'cancelled'].includes(state);
+  const unfinished = tasks.filter((task) => !done(task.state));
+  const visible = [
+    ...unfinished.toReversed().slice(0, 100),
+    ...tasks.filter((task) => done(task.state)).slice(0, 20),
+  ];
+  const now = Date.now();
+  return {
+    unfinished: unfinished.length,
+    hasMore: unfinished.length > 100,
+    items: visible.map((task) => {
+      const busy = (task.claim?.expiresAt ?? 0) > now;
+      const label = task.file?.filename ?? task.bookmark?.title ?? 'Capture';
+      return {
+        id: task.id,
+        label: typeof label === 'string' ? label.slice(0, 2000) : 'Capture',
+        state: task.state,
+        offset: task.offset,
+        total: task.file?.size,
+        retryAt: task.retryAt,
+        error:
+          typeof task.error === 'string'
+            ? task.error.slice(0, 1000)
+            : undefined,
+        canRetry: !done(task.state) && !busy && (task.retryAt ?? 0) <= now,
+        canCancel: !done(task.state) && !busy && task.attempts === 0,
+      };
+    }),
+  };
+}
 async function refresh() {
   const current = await connectionStatus();
   if (!current || current.status !== 'connected') return;
   if (!(await hasServerAccess(current.binding.origin))) {
+    stopDelivery();
     clearPreview();
     await pauseConnection(current.binding);
     throw new CaptureFailure('permission');
@@ -48,6 +120,7 @@ async function refresh() {
       error instanceof CaptureFailure &&
       ['authorization', 'identity', 'unsupported'].includes(error.code)
     ) {
+      stopDelivery();
       clearPreview();
       await pauseConnection(current.binding);
     }
@@ -68,7 +141,16 @@ export function handleMessage(
       typeof message === 'object' &&
       'type' in message &&
       typeof message.type === 'string' &&
-      ['preview', 'status', 'refresh'].includes(message.type)
+      [
+        'preview',
+        'status',
+        'refresh',
+        'queue',
+        'wake-queue',
+        'retry-capture',
+        'cancel-capture',
+        'release-candidates',
+      ].includes(message.type)
     )
   )
     return Promise.resolve({
@@ -81,6 +163,7 @@ export function handleMessage(
         throw new Error();
       switch (message.type) {
         case 'connect': {
+          stopDelivery();
           if (
             !('address' in message) ||
             !('token' in message) ||
@@ -103,6 +186,7 @@ export function handleMessage(
             throw new CaptureFailure('permission');
           await saveConnection(binding, message.token);
           await refresh();
+          wake();
           break;
         }
         case 'refresh':
@@ -148,10 +232,82 @@ export function handleMessage(
           }
           return { ok: true, connection: current, preview };
         }
+        case 'release-candidates': {
+          if (
+            !capturePage ||
+            !('id' in message) ||
+            typeof message.id !== 'string' ||
+            !('candidateIds' in message) ||
+            !Array.isArray(message.candidateIds) ||
+            message.candidateIds.length > 100 ||
+            !message.candidateIds.every(
+              (id) => typeof id === 'string' && /^candidate-\d+$/.test(id),
+            )
+          )
+            throw new Error();
+          const current = await connectionStatus();
+          if (!current || current.status !== 'connected')
+            throw new CaptureFailure('credential');
+          const preview = releaseCandidates(
+            message.id,
+            current.binding,
+            message.candidateIds,
+          );
+          if (!preview)
+            throw new QueueFailure(
+              'This collection preview has expired. Find its images again.',
+            );
+          return { ok: true, connection: current, preview };
+        }
         case 'disconnect':
+          stopDelivery();
           clearPreview();
           await disconnect();
           break;
+        case 'queue': {
+          const queue = await queueProgress();
+          const current = await connectionStatus();
+          return {
+            ok: true,
+            connection: current ? { ...current, catalog: null } : null,
+            queue,
+          };
+        }
+        case 'wake-queue':
+          wake();
+          break;
+        case 'retry-capture':
+        case 'cancel-capture': {
+          if (
+            !('id' in message) ||
+            typeof message.id !== 'string' ||
+            !/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(
+              message.id,
+            )
+          )
+            throw new QueueFailure('Choose a capture from your queue.');
+          const current = await connectionStatus();
+          if (!current || current.status !== 'connected')
+            throw new CaptureFailure('credential');
+          if (!(await hasServerAccess(current.binding.origin)))
+            throw new CaptureFailure('permission');
+          const task = (await listCaptures(current.binding)).find(
+            (task) => task.id === message.id,
+          );
+          if (!task)
+            throw new QueueFailure(
+              'This capture is not in the selected account queue.',
+            );
+          if (message.type === 'retry-capture') {
+            if ((task.retryAt ?? 0) > Date.now())
+              throw new QueueFailure(
+                'This retry is scheduled. Wait until its retry time.',
+              );
+            await retryCapture(message.id, current.binding);
+            wake();
+          } else await cancelQueuedCapture(message.id, current.binding);
+          break;
+        }
         case 'status':
           break;
         default:
@@ -160,7 +316,9 @@ export function handleMessage(
       return { ok: true, connection: await connectionStatus() };
     } catch (error) {
       const reason =
-        error instanceof CaptureFailure || error instanceof DiscoveryFailure
+        error instanceof CaptureFailure ||
+        error instanceof DiscoveryFailure ||
+        error instanceof QueueFailure
           ? error.message
           : 'Could not read the connection. Reopen the extension and try again.';
       try {
@@ -175,12 +333,22 @@ export function handleMessage(
     }
   });
 }
-registerBackground(handleMessage, initializeStorage, () =>
-  serialize(async () => {
-    const current = await connectionStatus();
-    if (current && !(await hasServerAccess(current.binding.origin))) {
-      clearPreview();
-      await pauseConnection(current.binding);
-    }
-  }),
+registerDeliveryAlarm(wake);
+registerBackground(
+  handleMessage,
+  async () => {
+    await initializeStorage();
+    await ensureDeliveryAlarm();
+    wake();
+  },
+  () => {
+    stopDelivery();
+    return serialize(async () => {
+      const current = await connectionStatus();
+      if (current && !(await hasServerAccess(current.binding.origin))) {
+        clearPreview();
+        await pauseConnection(current.binding);
+      } else wake();
+    });
+  },
 );

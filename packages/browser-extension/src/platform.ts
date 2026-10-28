@@ -1,3 +1,4 @@
+import type { CaptureState } from './queue';
 import type { CapturePreview } from './preview';
 import type { ConnectionStatus } from './settings';
 import {
@@ -7,16 +8,47 @@ import {
 } from './api';
 
 export type ExtensionRequest =
-  | { type: 'status' | 'refresh' | 'disconnect' | 'discover' }
-  | { type: 'preview'; id: string }
+  | {
+      type:
+        | 'status'
+        | 'refresh'
+        | 'disconnect'
+        | 'discover'
+        | 'queue'
+        | 'wake-queue';
+    }
+  | { type: 'preview' | 'retry-capture' | 'cancel-capture'; id: string }
+  | { type: 'release-candidates'; id: string; candidateIds: string[] }
   | {
       type: 'connect';
       address: string;
       token: string;
       allowLocalhost?: boolean;
     };
+export interface QueueItem {
+  id: string;
+  label: string;
+  state: CaptureState;
+  offset: number;
+  total?: number;
+  retryAt?: number;
+  error?: string;
+  canRetry: boolean;
+  canCancel: boolean;
+}
+export interface QueueProgress {
+  items: QueueItem[];
+  unfinished: number;
+  hasMore: boolean;
+  error?: string;
+}
 export type ExtensionReply =
-  | { ok: true; connection: ConnectionStatus | null; preview?: CapturePreview }
+  | {
+      ok: true;
+      connection: ConnectionStatus | null;
+      preview?: CapturePreview;
+      queue?: QueueProgress;
+    }
   | { ok: false; error: string; connection?: ConnectionStatus | null };
 export const trustedStorage = () => chrome.storage.local;
 export function trustedSender(
@@ -112,3 +144,17 @@ export function watchMediaAccess(removed: () => void) {
   chrome.permissions.onRemoved.addListener(removed);
   return () => chrome.permissions.onRemoved.removeListener(removed);
 }
+
+const deliveryAlarm = 'frameleaf-capture-queue';
+export const ensureDeliveryAlarm = () =>
+  chrome.alarms.create(deliveryAlarm, { periodInMinutes: 1 });
+export function registerDeliveryAlarm(wake: () => void) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === deliveryAlarm) wake();
+  });
+}
+
+export const requestMediaOrigins = (origins: string[]) =>
+  chrome.permissions.request({
+    origins: [...new Set(origins.map(mediaPermissionPattern))],
+  });

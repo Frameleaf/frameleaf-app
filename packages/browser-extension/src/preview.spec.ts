@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { clearPreview, createPreview, readPreview } from './preview';
+import {
+  clearPreview,
+  createPreview,
+  readPreview,
+  releaseCandidates,
+} from './preview';
 const binding = {
   origin: 'https://frameleaf.example',
   serverId: 'server',
@@ -14,6 +19,36 @@ const discovery = {
   candidates: [],
 };
 describe('ephemeral collection preview', () => {
+  it('drops acquisition URLs after queued bytes are acknowledged without changing the destination', () => {
+    const preview = createPreview(binding, {
+      ...discovery,
+      candidates: [
+        {
+          id: 'candidate-1',
+          url: 'https://images.example/one?signature=private',
+          kind: 'image',
+          pageUrl: discovery.pageUrl,
+          title: 'One',
+        },
+        {
+          id: 'candidate-2',
+          url: 'https://images.example/two',
+          kind: 'image',
+          pageUrl: discovery.pageUrl,
+          title: 'Two',
+        },
+      ],
+    });
+    const current = releaseCandidates(preview.id, binding, ['candidate-1']);
+    expect(current?.binding).toEqual(binding);
+    expect(current?.discovery.candidates.map((value) => value.id)).toEqual([
+      'candidate-2',
+    ]);
+    expect(JSON.stringify(readPreview(preview.id, binding))).not.toContain(
+      'signature=private',
+    );
+  });
+
   it('retains only the latest preview for its original connection, never retargeting it', () => {
     const first = createPreview(binding, discovery, 100);
     expect(readPreview(first.id, binding, 101)).toEqual(first);

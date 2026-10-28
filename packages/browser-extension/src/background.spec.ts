@@ -1,3 +1,16 @@
+import { wakeDelivery, stopDelivery } from './delivery';
+import { listCaptures } from './queue';
+vi.mock('./delivery', () => ({
+  wakeDelivery: vi.fn().mockResolvedValue(undefined),
+  stopDelivery: vi.fn(),
+  deliveryError: vi.fn().mockReturnValue(null),
+}));
+vi.mock('./queue', async (original) => ({
+  ...(await original<typeof import('./queue')>()),
+  listCaptures: vi.fn().mockResolvedValue([]),
+  retryCapture: vi.fn(),
+  cancelQueuedCapture: vi.fn(),
+}));
 import { discoverActivePage } from './discovery';
 import { clearPreview } from './preview';
 vi.mock('./discovery', async (original) => ({
@@ -29,6 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   values = {};
   contains = vi.fn().mockResolvedValue(true);
+  vi.mocked(listCaptures).mockResolvedValue([]);
   const event = () => ({ addListener: vi.fn() });
   vi.stubGlobal('chrome', {
     runtime: {
@@ -54,6 +68,7 @@ beforeEach(() => {
     },
     permissions: { contains, onRemoved: event() },
     tabs: { create: vi.fn().mockResolvedValue({ id: 10 }) },
+    alarms: { create: vi.fn().mockResolvedValue(undefined), onAlarm: event() },
   });
   vi.mocked(discoverActivePage).mockResolvedValue({
     tabId: 42,
@@ -133,6 +148,84 @@ describe('trusted extension operations', () => {
     expect(
       (await handleMessage({ type: 'preview', id }, captureSender)).ok,
     ).toBe(false);
+  });
+  it('wakes delivery asynchronously after connecting, registers its alarm and projects queue data only to trusted connected pages', async () => {
+    const { handleMessage } = await import('./background');
+    await handleMessage(
+      { type: 'connect', address: binding.origin, token: 'private-key' },
+      sender,
+    );
+    expect(wakeDelivery).toHaveBeenCalled();
+    expect(chrome.alarms.onAlarm.addListener).toHaveBeenCalled();
+    vi.mocked(listCaptures).mockResolvedValue([
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        state: 'queued',
+        attempts: 0,
+        offset: 0,
+        file: { filename: 'reference.png', size: 3 },
+        source: { title: 'private-source' },
+        note: 'private-note',
+      },
+    ] as import('./queue').CaptureTask[]);
+    const captureSender = {
+      ...sender,
+      url: 'chrome-extension://frameleaf/capture.html',
+    };
+    const view = await handleMessage({ type: 'queue' }, captureSender);
+    expect(view).toMatchObject({
+      ok: true,
+      queue: {
+        unfinished: 1,
+        items: [{ label: 'reference.png', state: 'queued', canCancel: true }],
+      },
+    });
+    expect(JSON.stringify(view)).not.toContain('private-note');
+    expect(JSON.stringify(view)).not.toContain('private-source');
+    expect(JSON.stringify(view)).not.toContain('private-key');
+    const calls = vi.mocked(listCaptures).mock.calls.length;
+    expect(
+      (
+        await handleMessage(
+          { type: 'wake-queue' },
+          { ...sender, url: 'https://page.example/' },
+        )
+      ).ok,
+    ).toBe(false);
+    expect(vi.mocked(listCaptures).mock.calls.length).toBe(calls);
+    await handleMessage({ type: 'disconnect' }, sender);
+    expect(stopDelivery).toHaveBeenCalled();
+    expect(await handleMessage({ type: 'queue' }, captureSender)).toMatchObject(
+      { ok: true, queue: { unfinished: 0, items: [] } },
+    );
+  });
+  it('a late delivery authorization failure cannot overwrite a newer connection', async () => {
+    const { handleMessage } = await import('./background');
+    await handleMessage(
+      { type: 'connect', address: binding.origin, token: 'old-key' },
+      sender,
+    );
+    const pause = vi.mocked(wakeDelivery).mock.calls.at(-1)![0];
+    const replacement = {
+      ...binding,
+      credentialId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    };
+    const gate = Promise.withResolvers<typeof binding>();
+    vi.mocked(connectServer).mockReturnValueOnce(gate.promise);
+    const reconnect = handleMessage(
+      { type: 'connect', address: binding.origin, token: 'new-key' },
+      sender,
+    );
+    const { CaptureFailure } = await import('./api');
+    const late = pause(binding, new CaptureFailure('authorization'));
+    gate.resolve(replacement);
+    await reconnect;
+    await late;
+    expect(await handleMessage({ type: 'status' }, sender)).toMatchObject({
+      ok: true,
+      connection: { status: 'connected', binding: replacement },
+    });
+    expect(JSON.stringify(values)).toContain('new-key');
   });
   it('requires a host grant and never returns a key to the UI', async () => {
     const { handleMessage } = await import('./background');

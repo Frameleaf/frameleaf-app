@@ -36,3 +36,18 @@ export function readPreview(
     clearPreview();
   return current?.id === id ? current : null;
 }
+
+export function releaseCandidates(
+  id: string,
+  binding: ServerBinding,
+  ids: string[],
+): CapturePreview | null {
+  const preview = readPreview(id, binding);
+  if (preview) {
+    const released = new Set(ids);
+    preview.discovery.candidates = preview.discovery.candidates.filter(
+      (candidate) => !released.has(candidate.id),
+    );
+  }
+  return preview;
+}

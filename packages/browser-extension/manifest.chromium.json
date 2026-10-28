@@ -23,6 +23,6 @@
     "open_in_tab": true,
     "page": "options.html"
   },
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "alarms"],
   "version": "0.1.0"
 }
