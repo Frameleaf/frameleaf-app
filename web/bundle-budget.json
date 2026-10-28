@@ -6,6 +6,7 @@
   "/(user)/archive/[[photos=photos]]/[[assetId=id]]": 697965,
   "/(user)/best-photos/[[photos=photos]]/[[assetId=id]]": 703114,
   "/(user)/buy": 424862,
+  "/(user)/develop-batches": 583446,
   "/(user)/documents/[[photos=photos]]/[[assetId=id]]": 637406,
   "/(user)/explore": 584697,
   "/(user)/favorites/[[photos=photos]]/[[assetId=id]]": 697936,
