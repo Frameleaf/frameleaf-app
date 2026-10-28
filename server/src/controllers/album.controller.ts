@@ -5,6 +5,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
+  AlbumHierarchyResponseDto,
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumResponseDto,
@@ -70,11 +71,22 @@ export class AlbumController {
   @Endpoint({
     summary: 'Retrieve the album directory',
     description:
-      'Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. Albums nest one level deep inside collections only; collections and shared spaces are always top level.',
+      'Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. This compatibility projection flattens nested collections and promotes albums whose parent is not a visible collection. Use /albums/hierarchy for the full hierarchy.',
     history: new HistoryBuilder().added('v3'),
   })
   getAlbumTree(@Auth() auth: AuthDto): Promise<AlbumTreeResponseDto> {
     return this.service.getTree(auth);
+  }
+
+  @Get('hierarchy')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the nested album directory',
+    description: 'Albums and collections with their visible descendants. Shared spaces remain at the top level.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumHierarchy(@Auth() auth: AuthDto): Promise<AlbumHierarchyResponseDto> {
+    return this.service.getHierarchy(auth);
   }
 
   @Get('icons')
@@ -138,8 +150,7 @@ export class AlbumController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Delete an album',
-    description:
-      'Delete a specific album by its ID. Note the album is initially trashed and then immediately scheduled for deletion, but relies on a background job to complete the process.',
+    description: 'Delete a specific album by its ID. Direct children move to its parent; original media is preserved.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   deleteAlbum(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto) {
@@ -166,7 +177,7 @@ export class AlbumController {
   @Endpoint({
     summary: 'Count descendant albums',
     description:
-      'Return the number of descendant albums (children, grandchildren, etc.) for a specific album. Used by the UI to show "Delete X and N nested albums?" confirmations.',
+      'Return the number of descendant albums (children, grandchildren, etc.) for a specific album. Deleting an album preserves its descendants.',
     history: new HistoryBuilder().added('v3'),
   })
   getAlbumDescendantCount(
@@ -181,7 +192,7 @@ export class AlbumController {
   @Endpoint({
     summary: 'Move an album into or out of a collection',
     description:
-      'Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it (an editor gets 403); the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.',
+      'Move an album or collection under an editable album or collection, or send null to move it to the top level. Only the owner can move a node. Shared spaces stay at the top level.',
     history: new HistoryBuilder().added('v3'),
   })
   moveAlbumToCollection(

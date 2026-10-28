@@ -14,7 +14,14 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
-  import { canEdit, isOwner, removalOutcome } from '$lib/frameleaf/album-directory';
+  import {
+    albumAncestors,
+    directoryAlbums,
+    moveTargets,
+    canEdit,
+    isOwner,
+    removalOutcome,
+  } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { publishCollectionPage } from '$lib/frameleaf/collection-page-request';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
@@ -136,16 +143,17 @@
   /* ------------------------------------------------------------------ */
   /* Tree-derived context: breadcrumb, album strip, collection choices   */
   /* ------------------------------------------------------------------ */
-  const node = $derived(tree.collections.find(({ collection }) => collection.id === album.id));
-  const childAlbums = $derived(node?.albums ?? []);
-  const parent = $derived(
-    album.parentId
-      ? tree.collections.find(({ collection }) => collection.id === album.parentId)?.collection
-      : undefined,
+  const allAlbums = $derived(directoryAlbums(tree));
+  const childAlbums = $derived(allAlbums.filter(({ parentId }) => parentId === album.id));
+  const ancestors = $derived(albumAncestors(tree, album));
+  const parent = $derived(ancestors.at(-1));
+  const editableCollections = $derived(moveTargets(tree, album, currentUserId).map(({ collection }) => collection));
+  const collectionAlbums = $derived(
+    allAlbums.filter(
+      (candidate) => candidate.id === album.id || albumAncestors(tree, candidate).some(({ id }) => id === album.id),
+    ),
   );
-  const editableCollections = $derived(
-    tree.collections.map(({ collection }) => collection).filter((collection) => canEdit(collection, currentUserId)),
-  );
+  const node = $derived({ assetCount: collectionAlbums.reduce((total, child) => total + child.assetCount, 0) });
 
   /* ------------------------------------------------------------------ */
   /* Collection photos: the union of its albums                          */
@@ -177,7 +185,7 @@
   };
 
   $effect(() => {
-    const ids = childAlbums.map(({ id }) => id);
+    const ids = collectionAlbums.map(({ id }) => id);
     const order = album.order;
     const collectionId = albumId;
     const request = ++collectionRequest;
@@ -204,7 +212,7 @@
         collectionPage,
         collectionRequest,
         albumId,
-        childAlbums.map(({ id }) => id),
+        collectionAlbums.map(({ id }) => id),
         album.order,
       ),
     );
@@ -548,6 +556,7 @@
       {album}
       {childAlbums}
       {parent}
+      {ancestors}
       collections={editableCollections}
       likeCount={activityManager.likeCount}
       commentCount={activityManager.commentCount}

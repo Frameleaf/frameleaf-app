@@ -136,7 +136,9 @@ describe('AlbumCreateDialog editing (AL-2)', () => {
     expect(screen.getByRole('heading', { name: 'Edit album' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Rockies');
     expect(screen.queryByRole('switch', { name: /Smart album/ })).toBeNull();
-    await fireEvent.change(screen.getByRole('combobox', { name: 'In collection' }), { target: { value: 'family' } });
+    await fireEvent.change(screen.getByRole('combobox', { name: 'Parent album or collection' }), {
+      target: { value: 'family' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
@@ -160,7 +162,7 @@ describe('AlbumCreateDialog editing (AL-2)', () => {
       onSave,
     });
 
-    expect(screen.queryByRole('combobox', { name: 'In collection' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Parent album or collection' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave.mock.calls[0][0]).not.toHaveProperty('parentId');

@@ -1,4 +1,4 @@
-import type { AlbumResponseDto, AlbumTreeResponseDto } from '@frameleaf/sdk';
+import { AlbumKind, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { buildAlbumTree, flattenAlbumTree } from '$lib/frameleaf/album-tree';
 
@@ -100,4 +100,46 @@ describe('Frameleaf album tree adapter', () => {
 
     expect(flattenAlbumTree(result).map((node) => node.id)).toEqual(['trips', 'iceland', 'solo', 'family']);
   });
+});
+
+it('keeps every level of the hierarchy in rail and flattened navigation', () => {
+  const result = buildAlbumTree({
+    roots: [
+      {
+        album: album({ id: 'a', albumName: 'A', kind: AlbumKind.Album }),
+        children: [
+          {
+            album: album({ id: 'b', albumName: 'B', kind: AlbumKind.Collection, parentId: 'a' }),
+            children: [
+              {
+                album: album({ id: 'c', albumName: 'C', kind: AlbumKind.Album, parentId: 'b' }),
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const [
+    {
+      children: [
+        {
+          children: [grandchild],
+        },
+      ],
+    },
+  ] = result.albums;
+  expect(grandchild.id).toBe('c');
+  expect(flattenAlbumTree(result).map(({ id }) => id)).toEqual(['a', 'b', 'c']);
+});
+
+it('preserves mixed root sibling order from the hierarchy', () => {
+  const result = buildAlbumTree({
+    roots: [
+      { album: album({ id: 'first', albumName: 'First', kind: AlbumKind.Album }), children: [] },
+      { album: album({ id: 'second', albumName: 'Second', kind: AlbumKind.Collection }), children: [] },
+    ],
+  });
+  expect(flattenAlbumTree(result).map(({ id }) => id)).toEqual(['first', 'second']);
 });

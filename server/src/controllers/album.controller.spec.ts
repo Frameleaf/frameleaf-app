@@ -50,6 +50,18 @@ describe(AlbumController.name, () => {
     });
   });
 
+  describe('GET /albums/hierarchy', () => {
+    it('returns the authorized recursive album hierarchy', async () => {
+      const auth = AuthFactory.create();
+      ctx.authenticate.mockResolvedValue(auth);
+      service.getHierarchy.mockResolvedValue({ roots: [] });
+      const { status, body } = await request(ctx.getHttpServer()).get('/albums/hierarchy');
+      expect(status).toBe(200);
+      expect(body).toEqual({ roots: [] });
+      expect(service.getHierarchy).toHaveBeenCalledWith(auth);
+    });
+  });
+
   describe('GET /albums/icons', () => {
     it('should serve the icon catalogue as data', async () => {
       service.getIconCatalogue.mockReturnValue({ version: '7.4.47', names: ['mdiCameraOutline'], suggested: [] });

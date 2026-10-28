@@ -282,12 +282,14 @@ describe('AlbumDirectory', () => {
     await fireEvent.click(menu.getByRole('menuitem', { name: 'Delete' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Delete “Family”?' });
-    expect(dialog).toHaveTextContent('The collection is removed. Its 2 albums stay in your library, on their own.');
+    expect(dialog).toHaveTextContent(
+      'The collection is removed. Its children move to its parent, or to the top level. Its 2 child albums stay in your library.',
+    );
     expect(dialog.textContent?.match(/stays? in your library/g)).toHaveLength(1);
 
     const format = get(t);
     expect(format('frameleaf_album_delete_collection_keep', { values: { count: 1 } })).toBe(
-      'Its 1 album stays in your library, on its own.',
+      'Its 1 child album stays in your library.',
     );
   });
 

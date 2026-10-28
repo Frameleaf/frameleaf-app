@@ -1,3 +1,4 @@
+import { AlbumKind } from '@frameleaf/sdk';
 import { mdiCameraBurst, mdiFolderOutline, mdiHeartOutline } from '@mdi/js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -42,7 +43,7 @@ beforeEach(() => {
   resetIconCatalogueCache();
   app.page.url = new URL('http://localhost/photos');
   authManager.setUser(userAdminFactory.build());
-  sdkMock.getAlbumTree.mockResolvedValue({ collections: [], albums: [], spaces: [] });
+  sdkMock.getAlbumHierarchy.mockResolvedValue({ roots: [] });
   sdkMock.getPartners.mockResolvedValue([]);
   sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r0' } as never);
 });
@@ -53,16 +54,25 @@ afterEach(() => {
 });
 
 const treeWithIcon = (icon: string | null) => ({
-  collections: [
+  roots: [
     {
-      collection: albumFactory.build({ id: 'collection', albumName: 'Collection', icon }),
-      albums: [albumFactory.build({ id: 'child', albumName: 'Child', parentId: 'collection', icon })],
-      albumCount: 1,
-      assetCount: 0,
+      album: albumFactory.build({ id: 'collection', albumName: 'Collection', kind: AlbumKind.Collection, icon }),
+      children: [
+        {
+          album: albumFactory.build({
+            id: 'child',
+            albumName: 'Child',
+            kind: AlbumKind.Album,
+            parentId: 'collection',
+            icon,
+          }),
+          children: [],
+        },
+      ],
     },
+    { album: albumFactory.build({ id: 'album', albumName: 'Album', kind: AlbumKind.Album, icon }), children: [] },
+    { album: albumFactory.build({ id: 'space', albumName: 'Space', kind: AlbumKind.Space, icon }), children: [] },
   ],
-  albums: [albumFactory.build({ id: 'album', albumName: 'Album', icon })],
-  spaces: [albumFactory.build({ id: 'space', albumName: 'Space', icon })],
 });
 
 describe('LibraryRail', () => {
@@ -74,7 +84,7 @@ describe('LibraryRail', () => {
     ['mdiUnknown', mdiFolderOutline],
   ])('renders stored %s geometry for every tree node while preserving its link', async (icon, expected) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst })));
-    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon(icon));
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(icon));
     albumTreeDropdown.set(true);
     app.page.url = new URL(Route.viewAlbum({ id: 'child' }), 'http://localhost');
     render(LibraryRail);
@@ -94,21 +104,60 @@ describe('LibraryRail', () => {
     expect(fetch).toHaveBeenCalledTimes(icon?.startsWith('mdi') ? 1 : 0);
   });
 
+  it('expands each nested branch without hiding its own page link', async () => {
+    sdkMock.getAlbumHierarchy.mockResolvedValue({
+      roots: [
+        {
+          album: albumFactory.build({ id: 'root', albumName: 'Root', kind: AlbumKind.Album }),
+          children: [
+            {
+              album: albumFactory.build({
+                id: 'nested',
+                albumName: 'Nested',
+                kind: AlbumKind.Collection,
+                parentId: 'root',
+              }),
+              children: [
+                {
+                  album: albumFactory.build({
+                    id: 'leaf',
+                    albumName: 'Leaf',
+                    kind: AlbumKind.Album,
+                    parentId: 'nested',
+                  }),
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    render(LibraryRail);
+    expect(await screen.findByRole('link', { name: 'Root' })).toHaveAttribute('href', Route.viewAlbum({ id: 'root' }));
+    expect(screen.queryByRole('link', { name: 'Leaf' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /Expand Root/ }));
+    await fireEvent.click(await screen.findByRole('button', { name: /Expand Nested/ }));
+    expect(await screen.findByRole('link', { name: 'Leaf' })).toHaveAttribute('href', Route.viewAlbum({ id: 'leaf' }));
+    await fireEvent.click(screen.getByRole('button', { name: /Collapse Root/ }));
+    expect(screen.queryByRole('link', { name: 'Leaf' })).toBeNull();
+  });
+
   it('updates stored icon geometry after an album event and releases the subscription on unmount', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst, mdiHeartOutline })));
-    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon('mdiCameraBurst'));
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon('mdiCameraBurst'));
     const { unmount } = render(LibraryRail);
     const link = await screen.findByRole('link', { name: 'Album' });
     await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiCameraBurst));
 
-    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon('mdiHeartOutline'));
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon('mdiHeartOutline'));
     eventManager.emit('AlbumUpdate', albumFactory.build({ icon: 'mdiHeartOutline' }));
     await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiHeartOutline));
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(sdkMock.getAlbumTree).toHaveBeenCalledTimes(2);
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
     unmount();
     eventManager.emit('AlbumUpdate', albumFactory.build());
-    expect(sdkMock.getAlbumTree).toHaveBeenCalledTimes(2);
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
   });
 
   it('lists the sections in the September 24 order: Explore, Albums, Shared spaces, Tools', () => {
@@ -126,10 +175,8 @@ describe('LibraryRail', () => {
 
   it('lists saved searches in Albums, after the album tree and before Shared links', async () => {
     authManager.setPreferences(preferencesFactory.build({ sharedLinks: { enabled: true, sidebarWeb: true } } as never));
-    sdkMock.getAlbumTree.mockResolvedValue({
-      collections: [],
-      albums: [{ id: 'album-1', albumName: 'Porto' }],
-      spaces: [],
+    sdkMock.getAlbumHierarchy.mockResolvedValue({
+      roots: [{ album: { id: 'album-1', albumName: 'Porto', kind: AlbumKind.Album }, children: [] }],
     } as never);
     sdkMock.getMyPreferences.mockResolvedValue({
       savedSearches: [{ name: 'Lisbon', query: { ...emptyDiscoveryQuery(), filter: { city: { eq: 'Lisbon' } } } }],

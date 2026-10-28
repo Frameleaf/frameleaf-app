@@ -109,6 +109,7 @@
     childAlbums?: AlbumResponseDto[];
     /** The collection this album sits in, for the breadcrumb. */
     parent?: AlbumResponseDto;
+    ancestors?: AlbumResponseDto[];
     /** Collections the current user may create an album in. */
     collections?: AlbumResponseDto[];
     likeCount?: number;
@@ -132,6 +133,7 @@
     album,
     childAlbums = [],
     parent,
+    ancestors,
     collections = [],
     likeCount = 0,
     commentCount = 0,
@@ -150,6 +152,7 @@
   const currentUserId = $derived(authManager.user.id);
   const owner = $derived(isOwner(album, currentUserId));
   const editor = $derived(canEdit(album, currentUserId));
+  const breadcrumbAlbums = $derived(ancestors ?? (parent ? [parent] : []));
   const isCollection = $derived(album.kind === AlbumKind.Collection);
   const others = $derived(othersOf(album, currentUserId));
   const albumOwner = $derived(ownerOf(album));
@@ -394,10 +397,10 @@
     {:else}
       <a href={Route.albums()}>{$t('albums')}</a>
     {/if}
-    {#if parent}
+    {#each breadcrumbAlbums as ancestor (ancestor.id)}
       <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
-      <a href={Route.viewAlbum({ id: parent.id })}>{parent.albumName || $t('unnamed_album')}</a>
-    {/if}
+      <a href={Route.viewAlbum({ id: ancestor.id })}>{ancestor.albumName || $t('unnamed_album')}</a>
+    {/each}
     <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
     <span aria-current="page">{name}</span>
   </nav>
@@ -706,7 +709,7 @@
 
   <p class="status" role="status" aria-live="polite">{status}</p>
 
-  {#if isCollection}
+  {#if album.kind !== AlbumKind.Space && (childAlbums.length > 0 || editor)}
     <section class="strip" aria-label={$t('albums')}>
       <div class="strip-head">
         <h2>{$t('albums')}</h2>
@@ -755,7 +758,7 @@
   kind={album.kind}
   {album}
   collections={collections.filter(({ id }) => id !== album.id)}
-  canMove={album.kind === AlbumKind.Album && owner}
+  canMove={album.kind !== AlbumKind.Space && owner}
   bind:open={editOpen}
   onCreate={createChildAlbum}
   onSave={saveDetails}

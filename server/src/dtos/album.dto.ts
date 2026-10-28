@@ -75,9 +75,7 @@ const CreateAlbumSchema = z
     parentId: z
       .uuidv4()
       .optional()
-      .describe(
-        'Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.',
-      ),
+      .describe('Parent album or collection (omit for top-level). Shared spaces cannot nest.'),
     icon: AlbumIconSchema.optional().describe('Optional icon: any Material Design Icons name (see GET /albums/icons)'),
     kind: AlbumKindSchema.default(AlbumKind.Album)
       .optional()
@@ -134,7 +132,7 @@ const UpdateAlbumSchema = z
       .uuidv4()
       .nullable()
       .optional()
-      .describe('Collection to move the album into (null = move to top-level, omit = no change)'),
+      .describe('Parent album or collection (null = move to top-level, omit = no change)'),
     icon: AlbumIconSchema.nullable()
       .optional()
       .describe('Icon: any Material Design Icons name (null = clear / use default icon)'),
@@ -245,7 +243,7 @@ export const AlbumResponseSchema = z
     isActivityEnabled: z.boolean().describe('Activity feed enabled'),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
-    parentId: z.string().nullable().describe('Collection this album belongs to (null = top-level)'),
+    parentId: z.string().nullable().describe('Parent album or collection (null = top-level)'),
     // Deliberately tolerant on read: a value stored before validation existed
     // (or written directly to the DB) must not break album reads. Writes are
     // constrained via AlbumIconSchema on create/update.
@@ -295,22 +293,23 @@ export const AlbumResponseSchema = z
 
 const MoveAlbumSchema = z
   .object({
-    collectionId: z
-      .uuidv4()
-      .nullable()
-      .describe('Collection to move the album into, or null to take it out so it stands on its own'),
+    collectionId: z.uuidv4().nullable().describe('Parent album or collection, or null for top level'),
     expectedParentId: z
       .uuidv4()
       .nullable()
       .optional()
       .describe(
-        'Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.',
+        'Where the client last saw the album (its parent, or null for top level). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.',
       ),
   })
   .meta({ id: 'MoveAlbumDto' });
 
 const AlbumOrderSchema = z
   .object({
+    hierarchy: z
+      .boolean()
+      .optional()
+      .describe('Order actual siblings in the recursive hierarchy; omitted for the legacy flattened directory'),
     parentId: z
       .uuidv4()
       .nullable()
@@ -343,6 +342,21 @@ const AlbumTreeResponseSchema = z
     spaces: z.array(AlbumResponseSchema).describe('Shared spaces, always top level'),
   })
   .meta({ id: 'AlbumTreeResponseDto' });
+
+export interface AlbumHierarchyNode {
+  album: AlbumResponseDto;
+  children: AlbumHierarchyNode[];
+}
+
+const AlbumHierarchyNodeSchema: z.ZodType<AlbumHierarchyNode> = z
+  .lazy(() => z.object({ album: AlbumResponseSchema, children: z.array(AlbumHierarchyNodeSchema) }))
+  .meta({ id: 'AlbumHierarchyNode' });
+
+const AlbumHierarchyResponseSchema = z
+  .object({ roots: z.array(AlbumHierarchyNodeSchema) })
+  .meta({ id: 'AlbumHierarchyResponseDto' });
+
+export class AlbumHierarchyResponseDto extends createZodDto(AlbumHierarchyResponseSchema) {}
 
 const AlbumIconSuggestionResponseSchema = z
   .object({

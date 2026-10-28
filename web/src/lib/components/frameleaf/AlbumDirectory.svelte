@@ -22,6 +22,8 @@
   import {
     albumDirectoryFilters,
     albumDirectorySorts,
+    albumAncestors,
+    directoryAlbums,
     arrangeAlbumDirectory,
     canDropOnCollection,
     canEdit,
@@ -175,13 +177,9 @@
   const arrangement = $derived(
     arrangeAlbumDirectory(tree, { filter: view.filter, sort: view.sort, search, userId: currentUserId }),
   );
-  const everything = $derived([
-    ...tree.collections.flatMap((node) => [node.collection, ...node.albums]),
-    ...tree.albums,
-    ...tree.spaces,
-  ]);
+  const everything = $derived(directoryAlbums(tree));
   const editableCollections = $derived(
-    tree.collections.map(({ collection }) => collection).filter((collection) => canEdit(collection, currentUserId)),
+    everything.filter((album) => album.kind !== AlbumKind.Space && canEdit(album, currentUserId)),
   );
   const find = (id: string) => everything.find((album) => album.id === id);
 
@@ -204,8 +202,7 @@
       : isSpace(album)
         ? $t('frameleaf_album_kind_space')
         : $t('frameleaf_album_kind_album');
-  const albumCountOf = (album: AlbumResponseDto) =>
-    tree.collections.find(({ collection }) => collection.id === album.id)?.albumCount ?? 0;
+  const albumCountOf = (album: AlbumResponseDto) => everything.filter(({ parentId }) => parentId === album.id).length;
 
   const filterLabels: Record<AlbumDirectoryFilter, () => string> = {
     all: () => $t('all'),
@@ -459,7 +456,7 @@
   };
   /** In custom order everything can be dragged to arrange it; otherwise only an owner's album, to move it. */
   const canDrag = (album: AlbumResponseDto) =>
-    reorderable || (album.kind === AlbumKind.Album && isOwner(album, currentUserId));
+    reorderable || (album.kind !== AlbumKind.Space && isOwner(album, currentUserId));
 
   /** Delete and Leave confirm in the Frameleaf dialog (AlbumConfirmDialog), as the album header does. */
   const confirmDelete = async () => {
@@ -586,7 +583,6 @@
   {@const owner = isOwner(album, currentUserId)}
   {@const editor = canEdit(album, currentUserId)}
   {@const isAlbum = album.kind === AlbumKind.Album}
-  {@const isCollection = album.kind === AlbumKind.Collection}
   <!--
     The item menu in the prototype's order (Collections.jsx `menuFor`, lines 298-372), on the
     Frameleaf Menu. "Move earlier" / "Move later" (FL-52 custom order) sit with "Move to…", the
@@ -602,12 +598,12 @@
         <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />{$t('edit')}
       </MenuItem>
     {/if}
-    {#if editor && isCollection}
+    {#if editor && !isSpace(album)}
       <MenuItem onSelect={() => openCreate(AlbumKind.Album, album.id)}>
         <Icon icon={mdiPlus} size="18" aria-hidden={true} />{$t('frameleaf_albums_create_album')}
       </MenuItem>
     {/if}
-    {#if owner && isAlbum}
+    {#if owner && !isSpace(album)}
       <MenuItem onSelect={() => (moveDialog = { open: true, album })}>
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
       </MenuItem>
@@ -675,6 +671,13 @@
           in:listEnter={{ count: list.length }}
           out:listLeave={{ count: list.length }}
         >
+          {#if album.parentId}
+            <small class="album-path"
+              >{albumAncestors(tree, album)
+                .map(({ albumName }) => albumName)
+                .join(' / ')}</small
+            >
+          {/if}
           <AlbumTile
             {album}
             {currentUserId}
@@ -703,6 +706,13 @@
           in:listEnter={{ count: list.length }}
           out:listLeave={{ count: list.length }}
         >
+          {#if album.parentId}
+            <small class="album-path"
+              >{albumAncestors(tree, album)
+                .map(({ albumName }) => albumName)
+                .join(' / ')}</small
+            >
+          {/if}
           <AlbumTile
             {album}
             {currentUserId}
@@ -972,8 +982,10 @@
     bind:open={editDialog.open}
     kind={editDialog.album.kind}
     album={editDialog.album}
-    collections={editableCollections}
-    canMove={editDialog.album.kind === AlbumKind.Album && isOwner(editDialog.album, currentUserId)}
+    collections={editDialog.album
+      ? moveTargets(tree, editDialog.album, currentUserId).map(({ collection }) => collection)
+      : editableCollections}
+    canMove={editDialog.album.kind !== AlbumKind.Space && isOwner(editDialog.album, currentUserId)}
     onCreate={create}
     onSave={saveDetails}
   />

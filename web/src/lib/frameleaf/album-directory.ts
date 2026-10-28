@@ -7,14 +7,6 @@ import {
   type UserResponseDto,
 } from '@frameleaf/sdk';
 
-/**
- * Pure rules for the Albums page (FL-52). Vocabulary: an album holds photos, a
- * collection is a named group of albums one level deep, a shared space stays at
- * the top level. Nothing here touches the DOM or the network; the server's
- * GET /albums/tree already applied access, so this module only filters, sorts
- * and searches what the user is allowed to see.
- */
-
 export const albumDirectoryFilters = ['all', 'owned', 'shared', 'smart'] as const;
 export type AlbumDirectoryFilter = (typeof albumDirectoryFilters)[number];
 
@@ -298,7 +290,26 @@ export const placeBefore = (ids: string[], albumId: string, targetId: string): s
   return next.every((id, index) => id === ids[index]) ? undefined : next;
 };
 
-/** Only the owner reorganises an album, only an album moves, and only into a collection the user can edit. */
+/** The legacy directory is a flat projection; parent IDs retain the full hierarchy. */
+export const directoryAlbums = (tree: AlbumTreeResponseDto): AlbumResponseDto[] => [
+  ...tree.collections.flatMap(({ collection, albums }) => [collection, ...albums]),
+  ...tree.albums,
+  ...tree.spaces,
+];
+
+export const albumAncestors = (tree: AlbumTreeResponseDto, album: AlbumResponseDto): AlbumResponseDto[] => {
+  const visible = new Map(directoryAlbums(tree).map((item) => [item.id, item]));
+  const ancestors: AlbumResponseDto[] = [];
+  const visited = new Set([album.id]);
+  let parent = album.parentId ? visible.get(album.parentId) : undefined;
+  while (parent && !visited.has(parent.id)) {
+    ancestors.unshift(parent);
+    visited.add(parent.id);
+    parent = parent.parentId ? visible.get(parent.parentId) : undefined;
+  }
+  return ancestors;
+};
+
 export const canDropOnCollection = (
   album: AlbumResponseDto | undefined,
   collection: AlbumResponseDto,
@@ -306,24 +317,41 @@ export const canDropOnCollection = (
 ): boolean =>
   !!album &&
   album.id !== collection.id &&
-  album.kind === AlbumKind.Album &&
-  collection.kind === AlbumKind.Collection &&
+  album.kind !== AlbumKind.Space &&
+  collection.kind !== AlbumKind.Space &&
   isOwner(album, userId) &&
   canEdit(collection, userId) &&
   album.parentId !== collection.id;
 
 export const canTakeOut = (album: AlbumResponseDto | undefined, userId: string): boolean =>
-  !!album && album.kind === AlbumKind.Album && album.parentId !== null && isOwner(album, userId);
+  !!album && album.kind !== AlbumKind.Space && album.parentId !== null && isOwner(album, userId);
 
-/** Collections the user may move an album into, in title order. */
+/** Editable parents, excluding the moving node and all of its visible descendants. */
 export const moveTargets = (
   tree: AlbumTreeResponseDto,
   album: AlbumResponseDto,
   userId: string,
-): AlbumCollectionResponseDto[] =>
-  tree.collections
-    .filter((node) => node.collection.id !== album.id && canEdit(node.collection, userId))
-    .sort((a, b) => a.collection.albumName.localeCompare(b.collection.albumName));
+): AlbumCollectionResponseDto[] => {
+  const all = directoryAlbums(tree);
+  return all
+    .filter(
+      (candidate) =>
+        candidate.kind !== AlbumKind.Space &&
+        candidate.id !== album.id &&
+        canEdit(candidate, userId) &&
+        albumAncestors(tree, candidate).every(({ id }) => id !== album.id),
+    )
+    .sort((a, b) => a.albumName.localeCompare(b.albumName))
+    .map((collection) => {
+      const albums = all.filter(({ parentId }) => parentId === collection.id);
+      return {
+        collection,
+        albums,
+        albumCount: albums.length,
+        assetCount: albums.reduce((total, child) => total + child.assetCount, collection.assetCount),
+      };
+    });
+};
 
 /** "Aug 2026", "Jun – Aug 2026" or "2025 – 2026" for a run of capture dates. */
 export const monthSpan = (earliest: string | undefined, latest: string | undefined, locale?: string): string => {

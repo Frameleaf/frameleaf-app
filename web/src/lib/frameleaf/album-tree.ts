@@ -1,19 +1,10 @@
-import type { AlbumCollectionResponseDto, AlbumResponseDto, AlbumTreeResponseDto } from '@frameleaf/sdk';
-
-/**
- * Album/collection/shared-space tree adapter for the Frameleaf rail (FL-30, FL-55).
- *
- * Vocabulary from the approved template and authorized private design requirements:
- * an **album** holds photos, a **collection** is a named group of albums exactly one
- * level deep, and a **shared space** stays at the top level. Nothing is a
- * "subcollection".
- *
- * FL-52 added the real directory endpoint, `GET /albums/tree`, which already applies
- * every classification and access rule server-side (`AlbumTreeResponseDto`: collections
- * with their albums, standalone albums, and top-level shared spaces). This module is now
- * a thin, one-to-one shape adapter from that response to the rail's own node type — it
- * derives nothing and orders nothing; the server response is already in display order.
- */
+import type {
+  AlbumCollectionResponseDto,
+  AlbumHierarchyNode,
+  AlbumHierarchyResponseDto,
+  AlbumResponseDto,
+  AlbumTreeResponseDto,
+} from '@frameleaf/sdk';
 
 export type FrameleafAlbumKind = 'album' | 'collection' | 'space';
 
@@ -25,11 +16,12 @@ export interface FrameleafAlbumNode {
   kind: FrameleafAlbumKind;
   assetCount: number;
   shared: boolean;
-  /** Albums inside a collection. Always empty for `album` and `space` nodes. */
+  /** Visible child albums and collections. */
   children: FrameleafAlbumNode[];
 }
 
 export interface FrameleafAlbumTree {
+  roots?: FrameleafAlbumNode[];
   /** Collections (albums that contain other albums), each with its albums. */
   collections: FrameleafAlbumNode[];
   /** Albums that stand on their own. */
@@ -61,21 +53,35 @@ const toCollectionNode = (entry: AlbumCollectionResponseDto): FrameleafAlbumNode
     entry.albums.map((album) => toNode(album, 'album')),
   );
 
-/**
- * Map the real album directory response onto the rail's node shape. One to one:
- * `collections[].collection`/`collections[].albums` become a collection node with its
- * children, `albums` become album nodes, and `spaces` become space nodes — always top
- * level, never nested.
- */
-export const buildAlbumTree = (tree: AlbumTreeResponseDto): FrameleafAlbumTree => ({
-  collections: tree.collections.map((collection) => toCollectionNode(collection)),
-  albums: tree.albums.map((album) => toNode(album, 'album')),
-  spaces: tree.spaces.map((album) => toNode(album, 'space')),
-});
+/** Adapt recursive and legacy directory responses to shared navigation nodes. */
+export const buildAlbumTree = (tree: AlbumTreeResponseDto | AlbumHierarchyResponseDto): FrameleafAlbumTree => {
+  if ('roots' in tree) {
+    const convert = (node: AlbumHierarchyNode): FrameleafAlbumNode =>
+      toNode(
+        node.album,
+        node.album.kind as FrameleafAlbumKind,
+        node.children.map((child) => convert(child)),
+      );
+    const nodes = tree.roots.map((root) => convert(root));
+    return {
+      roots: nodes,
+      collections: nodes.filter(({ kind }) => kind === 'collection'),
+      albums: nodes.filter(({ kind }) => kind === 'album'),
+      spaces: nodes.filter(({ kind }) => kind === 'space'),
+    };
+  }
+  return {
+    collections: tree.collections.map((entry) => toCollectionNode(entry)),
+    albums: tree.albums.map((album) => toNode(album, 'album')),
+    spaces: tree.spaces.map((album) => toNode(album, 'space')),
+  };
+};
 
 /** Every node in the tree, in rail order. Used for active-state and palette lookups. */
-export const flattenAlbumTree = (tree: FrameleafAlbumTree): FrameleafAlbumNode[] => [
-  ...tree.collections.flatMap((collection) => [collection, ...collection.children]),
-  ...tree.albums,
-  ...tree.spaces,
-];
+export const flattenAlbumTree = (tree: FrameleafAlbumTree): FrameleafAlbumNode[] => {
+  const visit = (node: FrameleafAlbumNode): FrameleafAlbumNode[] => [
+    node,
+    ...node.children.flatMap((child) => visit(child)),
+  ];
+  return (tree.roots ?? [...tree.collections, ...tree.albums, ...tree.spaces]).flatMap((root) => visit(root));
+};

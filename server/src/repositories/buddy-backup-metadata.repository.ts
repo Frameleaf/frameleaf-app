@@ -3,7 +3,7 @@ import type { DB } from 'src/schema/index.js';
 import type { BuddyAlbum, BuddyAlbumPlan, BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
 import { isValidAlbumIcon } from 'src/constants/album-icons.js';
 import { AlbumKind, AlbumUserRole, AssetOrder, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
-import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AlbumRepository, lockAlbumHierarchy } from 'src/repositories/album.repository.js';
 
 import { buddyAlbumState, readBuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
 /** Source-library metadata only. Received peer vaults never enter these queries or the library. */
@@ -221,6 +221,7 @@ export class BuddyBackupMetadataRepository {
       throw new Error('Buddy metadata transaction required');
     }
     const trx = this.db as Transaction<DB>;
+    await lockAlbumHierarchy(trx);
     const albums = new AlbumRepository(trx);
     const entries = Object.entries(plan.albums).sort(
       ([leftId, left], [rightId, right]) =>

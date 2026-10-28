@@ -29,7 +29,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAlbumTree, getPartners, PartnerDirection, type PartnerResponseDto } from '@frameleaf/sdk';
+  import { getAlbumHierarchy, getPartners, PartnerDirection, type PartnerResponseDto } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiAccountOutline,
@@ -71,6 +71,9 @@
   let { children }: Props = $props();
 
   let tree = $state<FrameleafAlbumTree>(emptyAlbumTree());
+  const albumRoots = $derived(
+    (tree.roots ?? [...tree.collections, ...tree.albums]).filter(({ kind }) => kind !== 'space'),
+  );
   /** Sections folded on this device (`frameleaf.rail.closedSections`, as in the prototype). */
   let closedSections = $state<RailSectionId[]>(readClosedRailSections(browser ? localStorage : undefined));
   const foldSection = (id: RailSectionId) => {
@@ -90,7 +93,7 @@
       // The real album directory (FL-52): collections with their albums, standalone
       // albums and top-level shared spaces, already scoped to the account's own albums
       // plus the ones shared with it.
-      tree = buildAlbumTree(await getAlbumTree());
+      tree = buildAlbumTree(await getAlbumHierarchy());
     } catch (error) {
       handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
     }
@@ -191,8 +194,8 @@
   // A shared space has its own page and is still browsed through the album view, so either is "here".
   const isSpaceCurrent = (node: FrameleafAlbumNode) =>
     isAlbumCurrent(node) || pathname.startsWith(Route.viewSharedSpace({ id: node.id }));
-  const isCollectionCurrent = (collection: FrameleafAlbumNode) =>
-    isAlbumCurrent(collection) || collection.children.some((child) => isAlbumCurrent(child));
+  const isCollectionCurrent = (collection: FrameleafAlbumNode): boolean =>
+    isAlbumCurrent(collection) || collection.children.some((child) => isCollectionCurrent(child));
 
   // The saved album-tree preference is the default for every collection; a collection
   // the user opens or closes keeps its own state for this session.
@@ -234,6 +237,46 @@
     isDestinationCurrent(new URL(page.url.href), destination),
     false,
   )}
+{/snippet}
+
+{#snippet albumBranch(node: FrameleafAlbumNode)}
+  {#if node.children.length > 0 || node.kind === 'collection'}
+    <div class="nested-branch">
+      <div class="fl-branch" class:fl-current={isCollectionCurrent(node)}>
+        <!-- The twisty only opens the branch; the node keeps its own page,
+                   so every album and node stays reachable from the rail. -->
+        <button
+          type="button"
+          class="fl-twisty"
+          aria-label={$t(
+            isCollectionOpen(node.id) ? 'frameleaf_rail_collapse_collection' : 'frameleaf_rail_expand_collection',
+            { values: { name: node.name } },
+          )}
+          aria-expanded={isCollectionOpen(node.id)}
+          onclick={() => toggleCollection(node.id)}
+        >
+          <!-- One chevron that turns, in step with the section headings. -->
+          <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} class="fl-chevron" />
+        </button>
+        <a
+          href={Route.viewAlbum({ id: node.id })}
+          class="fl-link"
+          aria-current={isAlbumCurrent(node) ? 'page' : undefined}
+          data-sveltekit-preload-data="hover"
+        >
+          <AlbumIcon name={node.icon} size="1.25em" class="fl-icon" />
+          <span class="fl-label" title={node.name}>{node.name}</span>
+        </a>
+      </div>
+      {#if isCollectionOpen(node.id)}
+        {#each node.children as album (album.id)}
+          {@render albumBranch(album)}
+        {/each}
+      {/if}
+    </div>
+  {:else}
+    {@render albumLink(node)}
+  {/if}
 {/snippet}
 
 {#snippet albumLink(node: FrameleafAlbumNode)}
@@ -341,47 +384,8 @@
             {@render destinationLink(destination)}
 
             {#if destination.id === 'allAlbums' && !iconOnly}
-              <!-- Collections, each with the albums inside it. One level deep: in this
-               product an album never contains another album, and there is no
-               subcollection. -->
-              {#each tree.collections as collection (collection.id)}
-                <div class="fl-branch" class:fl-current={isCollectionCurrent(collection)}>
-                  <!-- The twisty only opens the branch; the collection keeps its own page,
-                   so every album and collection stays reachable from the rail. -->
-                  <button
-                    type="button"
-                    class="fl-twisty"
-                    aria-label={$t(
-                      isCollectionOpen(collection.id)
-                        ? 'frameleaf_rail_collapse_collection'
-                        : 'frameleaf_rail_expand_collection',
-                      { values: { name: collection.name } },
-                    )}
-                    aria-expanded={isCollectionOpen(collection.id)}
-                    onclick={() => toggleCollection(collection.id)}
-                  >
-                    <!-- One chevron that turns, in step with the section headings. -->
-                    <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} class="fl-chevron" />
-                  </button>
-                  <a
-                    href={Route.viewAlbum({ id: collection.id })}
-                    class="fl-link"
-                    aria-current={isAlbumCurrent(collection) ? 'page' : undefined}
-                    data-sveltekit-preload-data="hover"
-                  >
-                    <AlbumIcon name={collection.icon} size="1.25em" class="fl-icon" />
-                    <span class="fl-label" title={collection.name}>{collection.name}</span>
-                  </a>
-                </div>
-                {#if isCollectionOpen(collection.id)}
-                  {#each collection.children as album (album.id)}
-                    {@render albumLink(album)}
-                  {/each}
-                {/if}
-              {/each}
-
-              {#each tree.albums as album (album.id)}
-                {@render albumLink(album)}
+              {#each albumRoots as node (node.id)}
+                {@render albumBranch(node)}
               {/each}
             {/if}
             {#if destination.id === 'allAlbums'}
@@ -416,6 +420,9 @@
 </Sidebar>
 
 <style>
+  .nested-branch .nested-branch {
+    margin-inline-start: 12px;
+  }
   /* S-28: the rail follows styles.css:291-357 and 1674-1729 (flat full-width rows, 34px, 22px
      inset, 11px uppercase headings over a hairline, the accent tint with an inset bar). */
   .fl-rail,

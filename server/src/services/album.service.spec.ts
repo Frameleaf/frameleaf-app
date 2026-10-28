@@ -783,8 +783,8 @@ describe(AlbumService.name, () => {
 
       await sut.delete(AuthFactory.create(owner), album.id);
 
-      expect(mocks.album.delete).toHaveBeenCalledTimes(1);
-      expect(mocks.album.delete).toHaveBeenCalledWith(album.id);
+      expect(mocks.album.deleteCollection).toHaveBeenCalledTimes(1);
+      expect(mocks.album.deleteCollection).toHaveBeenCalledWith(album.id);
     });
   });
 
@@ -1144,28 +1144,27 @@ describe(AlbumService.name, () => {
       );
     });
 
-    it('refuses to nest an album inside a plain album', async () => {
+    it.each([AlbumKind.Album, AlbumKind.Collection])('creates a %s inside an ordinary album', async (kind) => {
       const parent = AlbumFactory.create();
       const { user: owner } = parent.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const child = AlbumFactory.from({ parentId: parent.id, kind }).owner(owner).build();
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([parent.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(parent));
+      mocks.album.create.mockResolvedValue(getForAlbum(child));
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
 
-      await expect(sut.create(AuthFactory.create(owner), { albumName: 'Nested', parentId: parent.id })).rejects.toThrow(
-        'Albums nest only inside a collection',
-      );
-      expect(mocks.album.create).not.toHaveBeenCalled();
+      const result = await sut.create(AuthFactory.create(owner), { albumName: 'Nested', parentId: parent.id, kind });
+
+      expect(result.parentId).toBe(parent.id);
+      expect(result.kind).toBe(kind);
     });
 
-    it('refuses to nest a collection or a shared space', async () => {
-      const collection = AlbumFactory.from({ kind: AlbumKind.Collection }).build();
-      const { user: owner } = collection.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
-
-      for (const kind of [AlbumKind.Collection, AlbumKind.Space]) {
-        await expect(
-          sut.create(AuthFactory.create(owner), { albumName: 'Nested', parentId: collection.id, kind }),
-        ).rejects.toThrow('Collections and shared spaces stay at the top level');
-      }
-      expect(mocks.access.album.checkOwnerAccess).not.toHaveBeenCalled();
+    it('refuses to nest a shared space', async () => {
+      const auth = AuthFactory.create();
+      await expect(
+        sut.create(auth, { albumName: 'Nested', parentId: newUuid(), kind: AlbumKind.Space }),
+      ).rejects.toThrow('Shared spaces stay at the top level');
       expect(mocks.album.create).not.toHaveBeenCalled();
     });
 
@@ -1266,8 +1265,8 @@ describe(AlbumService.name, () => {
       expect(mocks.album.reparent).not.toHaveBeenCalled();
     });
 
-    it('refuses to move a collection or a shared space', async () => {
-      for (const kind of [AlbumKind.Collection, AlbumKind.Space]) {
+    it('refuses to move a shared space', async () => {
+      for (const kind of [AlbumKind.Space]) {
         const item = AlbumFactory.from({ kind }).build();
         const { user: owner } = item.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
         mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([item.id]));
@@ -1275,7 +1274,7 @@ describe(AlbumService.name, () => {
 
         await expect(
           sut.moveToCollection(AuthFactory.create(owner), item.id, { collectionId: newUuid() }),
-        ).rejects.toThrow('Collections and shared spaces stay at the top level');
+        ).rejects.toThrow('Shared spaces stay at the top level');
       }
       expect(mocks.album.reparent).not.toHaveBeenCalled();
     });
@@ -1307,8 +1306,8 @@ describe(AlbumService.name, () => {
       expect(mocks.album.update).not.toHaveBeenCalled();
     });
 
-    it('refuses a destination that is not a collection', async () => {
-      const destination = AlbumFactory.create();
+    it('refuses a shared space as a nesting destination', async () => {
+      const destination = AlbumFactory.from({ kind: AlbumKind.Space }).build();
       // The factory always adds an owner, so `.owner()` would give the album a second one.
       const album = AlbumFactory.create();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
@@ -1322,7 +1321,7 @@ describe(AlbumService.name, () => {
 
       await expect(
         sut.moveToCollection(AuthFactory.create(owner), album.id, { collectionId: destination.id }),
-      ).rejects.toThrow('Albums nest only inside a collection');
+      ).rejects.toThrow('Albums cannot nest inside a shared space');
       expect(mocks.album.reparent).not.toHaveBeenCalled();
     });
 
@@ -1358,7 +1357,7 @@ describe(AlbumService.name, () => {
       expect(mocks.album.reparent).not.toHaveBeenCalled();
     });
 
-    it('deleting a plain album does not touch other albums', async () => {
+    it('deleting an ordinary album preserves its children', async () => {
       const album = AlbumFactory.create();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
@@ -1366,8 +1365,8 @@ describe(AlbumService.name, () => {
 
       await sut.delete(AuthFactory.create(owner), album.id);
 
-      expect(mocks.album.delete).toHaveBeenCalledWith(album.id);
-      expect(mocks.album.deleteCollection).not.toHaveBeenCalled();
+      expect(mocks.album.deleteCollection).toHaveBeenCalledWith(album.id);
+      expect(mocks.album.delete).not.toHaveBeenCalled();
       expect(mocks.album.reparent).not.toHaveBeenCalled();
     });
   });
@@ -1430,6 +1429,10 @@ describe(AlbumService.name, () => {
 
       expect(tree.albums.map(({ id, parentId }) => ({ id, parentId }))).toEqual([{ id: shared.id, parentId: null }]);
       expect(JSON.stringify(tree)).not.toContain(privateCollectionId);
+      const hierarchy = await sut.getHierarchy(AuthFactory.create(member));
+      expect(hierarchy.roots).toHaveLength(1);
+      expect(hierarchy.roots[0]).toMatchObject({ album: { id: shared.id, parentId: null }, children: [] });
+      expect(JSON.stringify(hierarchy)).not.toContain(privateCollectionId);
     });
 
     it('marks the Recovered Media album the identical-files run made, by id (FL-416)', async () => {

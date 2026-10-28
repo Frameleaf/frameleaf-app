@@ -4140,7 +4140,7 @@ export type AlbumResponseDto = {
     order?: AssetOrder;
     /** Present on your own album when partner sharing copied it from another library */
     origin?: PartnerOriginDto;
-    /** Collection this album belongs to (null = top-level) */
+    /** Parent album or collection (null = top-level) */
     parentId: string | null;
     /** True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}. */
     recovered?: boolean;
@@ -4175,7 +4175,7 @@ export type CreateAlbumDto = {
     icon?: string;
     /** What to create: an album (default), a collection of albums or a shared space */
     kind?: AlbumKind;
-    /** Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection. */
+    /** Parent album or collection (omit for top-level). Shared spaces cannot nest. */
     parentId?: string;
 };
 export type AlbumsAddAssetsDto = {
@@ -4188,6 +4188,13 @@ export type AlbumsAddAssetsResponseDto = {
     error?: BulkIdErrorReason;
     /** Operation success */
     success: boolean;
+};
+export type AlbumHierarchyNode = {
+    album: AlbumResponseDto;
+    children: AlbumHierarchyNode[];
+};
+export type AlbumHierarchyResponseDto = {
+    roots: AlbumHierarchyNode[];
 };
 export type AlbumIconSuggestionResponseDto = {
     /** Human label for search and accessibility */
@@ -4212,6 +4219,8 @@ export type AlbumIconCatalogueResponseDto = {
 export type AlbumOrderDto = {
     /** Every item of the group, in the order to show them. Must be exactly the group as it is now; a group that changed since the client loaded it is refused with 409. */
     albumIds: string[];
+    /** Order actual siblings in the recursive hierarchy; omitted for the legacy flattened directory */
+    hierarchy?: boolean;
     /** Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces) */
     parentId: string | null;
 };
@@ -4254,15 +4263,15 @@ export type UpdateAlbumDto = {
     /** Enable activity feed */
     isActivityEnabled?: boolean;
     order?: AssetOrder;
-    /** Collection to move the album into (null = move to top-level, omit = no change) */
+    /** Parent album or collection (null = move to top-level, omit = no change) */
     parentId?: string | null;
     /** Sibling display position. Lower values appear first. Computed by the client as a midpoint. */
     sortOrder?: number;
 };
 export type MoveAlbumDto = {
-    /** Collection to move the album into, or null to take it out so it stands on its own */
+    /** Parent album or collection, or null for top level */
     collectionId: string | null;
-    /** Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change. */
+    /** Where the client last saw the album (its parent, or null for top level). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change. */
     expectedParentId?: string | null;
 };
 export type AlbumDescendantCountResponseDto = {
@@ -21425,6 +21434,17 @@ export function addAssetsToAlbums({ albumsAddAssetsDto }: {
         method: "PUT",
         body: albumsAddAssetsDto
     })));
+}
+/**
+ * Retrieve the nested album directory
+ */
+export function getAlbumHierarchy(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumHierarchyResponseDto;
+    }>("/albums/hierarchy", {
+        ...opts
+    }));
 }
 /**
  * Retrieve the album icon catalogue

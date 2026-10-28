@@ -14,6 +14,7 @@ import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 's
 import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
+  AlbumHierarchyResponseDto,
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumResponseDto,
@@ -45,7 +46,7 @@ import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/reposit
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAlbumEditFields, queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
-import { albumOrderGroup, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
+import { albumOrderGroup, buildAlbumHierarchy, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
@@ -209,6 +210,18 @@ export class AlbumService extends BaseService {
     );
   }
 
+  async getHierarchy(auth: AuthDto): Promise<AlbumHierarchyResponseDto> {
+    const tree = await this.getTree(auth);
+    return buildAlbumHierarchy(
+      [
+        ...tree.collections.flatMap(({ collection, albums }) => [collection, ...albums]),
+        ...tree.albums,
+        ...tree.spaces,
+      ],
+      await this.albumRepository.getPositions(auth.user.id),
+    );
+  }
+
   /**
    * Save the person's custom order for one group of their directory (FL-52): the albums inside a
    * collection, or the collections, the albums on their own or the shared spaces at the top level.
@@ -226,7 +239,7 @@ export class AlbumService extends BaseService {
     // The group is read and the order written in one transaction, with the albums locked against a
     // concurrent move, so an order can never be saved for a group that changed in between.
     await this.albumRepository.setPositions(auth.user.id, albumIds, (visible) => {
-      const group = albumOrderGroup(visible, dto.parentId, albumIds[0]);
+      const group = albumOrderGroup(visible, dto.parentId, albumIds[0], dto.hierarchy);
       if (!group) {
         if (visible.every(({ id }) => id !== albumIds[0])) {
           throw new BadRequestException('Not found or no album.read access');
@@ -373,12 +386,12 @@ export class AlbumService extends BaseService {
 
     const kind = dto.kind ?? AlbumKind.Album;
     if (dto.parentId) {
-      if (kind !== AlbumKind.Album) {
-        throw new BadRequestException('Collections and shared spaces stay at the top level');
+      if (kind === AlbumKind.Space) {
+        throw new BadRequestException('Shared spaces stay at the top level');
       }
       // Nesting changes the collection, so require AlbumUpdate on it (owner or editor).
       await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [dto.parentId] });
-      await this.requireCollection(auth, dto.parentId);
+      await this.requireParentAlbum(auth, dto.parentId);
     }
 
     const allowedAssetIdsSet = await this.checkAccess({
@@ -527,8 +540,7 @@ export class AlbumService extends BaseService {
   }
 
   /**
-   * One level of nesting: only an album moves, only into a collection, and only
-   * its owner reorganises it (parentId is a single stored value, so an editor
+   * Albums and collections may nest; only their owner reorganises them (parentId is a single stored value, so an editor
    * of a shared album must not rewrite the owner's organisation). The
    * destination needs AlbumUpdate (owner or editor of the collection).
    */
@@ -542,8 +554,8 @@ export class AlbumService extends BaseService {
       throw new BadRequestException('An album cannot be its own parent');
     }
 
-    if (asAlbumKind(album.kind) !== AlbumKind.Album) {
-      throw new BadRequestException('Collections and shared spaces stay at the top level');
+    if (asAlbumKind(album.kind) === AlbumKind.Space) {
+      throw new BadRequestException('Shared spaces stay at the top level');
     }
 
     const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
@@ -554,7 +566,7 @@ export class AlbumService extends BaseService {
 
     if (newParentId !== null) {
       await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [newParentId] });
-      await this.requireCollection(auth, newParentId);
+      await this.requireParentAlbum(auth, newParentId);
     }
 
     // The descendant/cycle check runs inside reparent's transaction (atomic with
@@ -564,25 +576,21 @@ export class AlbumService extends BaseService {
       : this.albumRepository.reparent(album.id, newParentId, expectedParentId));
   }
 
-  private async requireCollection(auth: AuthDto, id: string): Promise<void> {
+  private async requireParentAlbum(auth: AuthDto, id: string): Promise<void> {
     const parent = await this.findOrFail(id, auth, { withAssets: false });
-    if (asAlbumKind(parent.kind) !== AlbumKind.Collection) {
-      throw new BadRequestException('Albums nest only inside a collection');
+    if (asAlbumKind(parent.kind) === AlbumKind.Space) {
+      throw new BadRequestException('Albums cannot nest inside a shared space');
     }
   }
 
   /**
-   * Deleting a collection leaves its albums standing, moved to the collection's
-   * parent (the top level when it has none), in one transaction; deleting an
-   * album keeps every original file in the library. Nested legacy albums under
-   * a plain album still follow the existing cascade.
+   * Deleting a node promotes its children in one transaction; original media
+   * and descendant albums are preserved.
    */
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AlbumDelete, ids: [id] });
-    const album = await this.findOrFail(id, auth, { withAssets: false });
-    await (asAlbumKind(album.kind) === AlbumKind.Collection
-      ? this.albumRepository.deleteCollection(id)
-      : this.albumRepository.delete(id));
+    await this.findOrFail(id, auth, { withAssets: false });
+    await this.albumRepository.deleteCollection(id);
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {

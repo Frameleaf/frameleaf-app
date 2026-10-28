@@ -104,7 +104,7 @@
     albumName = current?.albumName ?? '';
     description = current?.description ?? '';
     icon = current?.icon ?? defaultIconFor(current?.kind ?? kind);
-    parentId = current ? (current.parentId ?? null) : kind === AlbumKind.Album ? defaultParentId : null;
+    parentId = current ? (current.parentId ?? null) : kind !== AlbumKind.Space ? defaultParentId : null;
     error = '';
     smart = smartDefault;
     rule = emptyRule(untrack(() => sources.settings?.defaultAction));
@@ -125,7 +125,7 @@
   );
   /** Collections the album may live in; never itself (CollectionHeader.jsx `parentOptions`). */
   const parents = $derived(collections.filter((collection) => collection.id !== album?.id));
-  const showParent = $derived(formKind === AlbumKind.Album && parents.length > 0 && (!editing || canMove));
+  const showParent = $derived(formKind !== AlbumKind.Space && parents.length > 0 && (!editing || canMove));
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -170,7 +170,7 @@
             description: description.trim() || null,
             icon,
             kind,
-            parentId: kind === AlbumKind.Album && parentId ? parentId : undefined,
+            parentId: kind !== AlbumKind.Space && parentId ? parentId : undefined,
           });
       if (ok) {
         open = false;

@@ -8,7 +8,7 @@
   /**
    * Keyboard and touch alternative to dragging: move an album into one of the
    * collections the user can edit, or take it out so it stands on its own.
-   * Only collections are offered; an album never nests inside an album.
+   * Albums and collections are offered; descendants are excluded.
    */
   interface Props {
     album: AlbumResponseDto;
