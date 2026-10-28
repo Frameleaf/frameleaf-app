@@ -347,7 +347,7 @@ export class BookmarkRepository {
       .executeTakeFirstOrThrow(() => new NotFoundException('Bookmark not found'));
   }
 
-  async setTags(auth: AuthDto, id: string, tagIds: string[]): Promise<void> {
+  async setTags(auth: AuthDto, id: string, tagIds: string[], append = false): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
       const bookmark = await tx
         .selectFrom('bookmark')
@@ -370,11 +370,17 @@ export class BookmarkRepository {
           .execute();
         if (tags.length !== ids.length) throw new BadRequestException('Tag not found');
       }
-      await tx.deleteFrom('bookmark_tag').where('bookmarkId', '=', id).execute();
+      const existing = append
+        ? await tx.selectFrom('bookmark_tag').select('tagId').where('bookmarkId', '=', id).execute()
+        : [];
+      if (new Set([...existing.map((row) => row.tagId), ...ids]).size > 500)
+        throw new BadRequestException('Bookmark tag limit exceeded');
+      if (!append) await tx.deleteFrom('bookmark_tag').where('bookmarkId', '=', id).execute();
       if (ids.length > 0)
         await tx
           .insertInto('bookmark_tag')
           .values(ids.map((tagId) => ({ bookmarkId: id, tagId })))
+          .onConflict((oc) => oc.doNothing())
           .execute();
       await tx.updateTable('bookmark').set({ updatedAt: new Date() }).where('id', '=', id).execute();
     });

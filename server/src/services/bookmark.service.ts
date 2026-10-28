@@ -50,9 +50,9 @@ export class BookmarkService {
     await this.bookmarks.setTrashed(auth, id, false);
   }
 
-  async setTags(auth: AuthDto, id: string, ids: string[]): Promise<void> {
+  async setTags(auth: AuthDto, id: string, ids: string[], append = false): Promise<void> {
     this.requirePrivateSession(auth);
-    await this.bookmarks.setTags(auth, id, ids);
+    await this.bookmarks.setTags(auth, id, ids, append);
   }
 
   async getTags(auth: AuthDto, id: string): Promise<{ ids: string[] }> {

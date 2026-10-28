@@ -172,6 +172,25 @@ describe('shared bookmark and source persistence', () => {
     ).rejects.toThrow('Capture ID already used');
   });
 
+  it('preserves tags added concurrently when organizing bookmarks', async () => {
+    const { user } = await setup().newUser();
+    const repo = new BookmarkRepository(db);
+    const bookmark = await repo.create(user.id, {
+      url: 'https://example.org',
+      title: 'Reference',
+      libraryScope: LibraryScope.Design,
+    });
+    const tags = await db
+      .insertInto('tag')
+      .values(['Existing', 'First', 'Second'].map((value) => ({ userId: user.id, value })))
+      .returning('id')
+      .execute();
+    await repo.setTags({ user }, bookmark.id, [tags[0].id]);
+    await Promise.all(tags.slice(1).map((tag) => repo.setTags({ user }, bookmark.id, [tag.id], true)));
+    const rows = await db.selectFrom('bookmark_tag').select('tagId').where('bookmarkId', '=', bookmark.id).execute();
+    expect(rows.map((row) => row.tagId).sort()).toEqual(tags.map((tag) => tag.id).sort());
+  });
+
   it('reuses owner tag IDs, rejects foreign tags atomically and hides suppressed descendants', async () => {
     const ctx = setup();
     const { user } = await ctx.newUser();

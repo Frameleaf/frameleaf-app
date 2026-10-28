@@ -23740,6 +23740,19 @@ export function getBookmarkTags({ id }: {
     }));
 }
 /**
+ * Add tags to an owned bookmark
+ */
+export function addBookmarkTags({ id, bookmarkTagsDto }: {
+    id: string;
+    bookmarkTagsDto: BookmarkTagsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/bookmarks/${encodeURIComponent(id)}/tags`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: bookmarkTagsDto
+    })));
+}
+/**
  * Replace an owned bookmark’s tags
  */
 export function setBookmarkTags({ id, bookmarkTagsDto }: {

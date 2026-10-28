@@ -61,6 +61,14 @@ export class BookmarkController {
     return this.service.getTags(auth, id);
   }
 
+  @Post(':id/tags')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Authenticated({ permission: Permission.BookmarkUpdate })
+  @Endpoint({ summary: 'Add tags to an owned bookmark', history: new HistoryBuilder().added('v3') })
+  addBookmarkTags(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: BookmarkTagsDto): Promise<void> {
+    return this.service.setTags(auth, id, dto.ids, true);
+  }
+
   @Put(':id/tags')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Authenticated({ permission: Permission.BookmarkUpdate })
