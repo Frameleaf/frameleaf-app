@@ -16695,6 +16695,22 @@ export type WorkflowIssueDto = {
     /** Index of the step the issue belongs to */
     step?: number;
 };
+export type WorkflowScheduleDto = {
+    cron: string;
+};
+export type WorkflowSourceDto = {
+    filter: SearchFilter;
+    imageEnrichment?: ImageEnrichmentFilter;
+    rollingDates?: {
+        days: number;
+        field: Field;
+    }[];
+    semantic?: {
+        maxDistance: number;
+        query?: string;
+        queryAssetId?: string;
+    };
+};
 export type WorkflowStepResponseDto = {
     /** Step configuration, without stored credential values */
     config: {
@@ -16732,6 +16748,9 @@ export type WorkflowResponseDto = {
     logging: boolean;
     /** Workflow name */
     name: string | null;
+    nextRunAt?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     /** Workflow steps */
     steps: WorkflowStepResponseDto[];
     /** Workflow trigger type */
@@ -16768,9 +16787,48 @@ export type WorkflowCreateDto = {
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     steps?: WorkflowStepDto[];
     /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
     trigger: string;
+};
+export type WorkflowCapabilitiesDto = {
+    assetChanged: boolean;
+    batchRuns: boolean;
+    rollingDates: boolean;
+    schedules: boolean;
+    semanticThreshold: boolean;
+    sourceFilters: boolean;
+    timezone: string;
+    version: number;
+};
+export type WorkflowPreviewDto = {
+    /** Workflow description */
+    description?: string | null;
+    /** Workflow enabled */
+    enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
+    /** Workflow logs run results */
+    logging?: boolean;
+    /** Workflow name */
+    name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
+    steps?: WorkflowStepDto[];
+    /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
+    trigger: string;
+    workflowId?: string;
+};
+export type WorkflowPreviewResponseDto = {
+    actions: string[];
+    count: number;
+    evaluatedAt: string;
+    exampleAssetIds: string[];
+    issues: WorkflowIssueDto[];
 };
 export type WorkflowTriggerResponseDto = {
     /** Trigger type */
@@ -16791,9 +16849,26 @@ export type WorkflowUpdateDto = {
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     steps?: WorkflowStepDto[];
     /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
     trigger?: string;
+};
+export type WorkflowBatchResponseDto = {
+    completed: number;
+    createdAt: string;
+    error: string | null;
+    failed: number;
+    finishedAt: string | null;
+    id: string;
+    reason: Reason;
+    skipped: number;
+    snapshotAt: string;
+    status: Status12;
+    total: number;
+    updatedAt: string;
+    workflowId: string;
 };
 export type WorkflowLogEntryDto = {
     /** Workflow run date/time */
@@ -16841,6 +16916,9 @@ export type WorkflowShareResponseDto = {
     };
     /** Workflow name */
     name: string | null;
+    nextRunAt?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     /** Workflow steps */
     steps: WorkflowShareStepDto[];
     /** Workflow trigger type */
@@ -18142,7 +18220,7 @@ export type SyncAssetTrashStateV1 = {
     assetId: string;
     deletedAt: string;
     isOffline: boolean;
-    status: Status12;
+    status: Status13;
 };
 export type SyncAssetV1 = {
     /** Checksum */
@@ -32640,6 +32718,26 @@ export function createWorkflow({ workflowCreateDto }: {
         body: workflowCreateDto
     })));
 }
+export function getWorkflowCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowCapabilitiesDto;
+    }>("/workflows/capabilities", {
+        ...opts
+    }));
+}
+export function previewWorkflow({ workflowPreviewDto }: {
+    workflowPreviewDto: WorkflowPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowPreviewResponseDto;
+    }>("/workflows/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: workflowPreviewDto
+    })));
+}
 /**
  * List all workflow triggers
  */
@@ -32690,6 +32788,50 @@ export function updateWorkflow({ id, workflowUpdateDto }: {
         method: "PUT",
         body: workflowUpdateDto
     })));
+}
+export function getWorkflowBatches({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowBatchResponseDto[];
+    }>(`/workflows/${encodeURIComponent(id)}/batches`, {
+        ...opts
+    }));
+}
+export function runWorkflow({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+export function getWorkflowBatch({ batchId, id }: {
+    batchId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches/${encodeURIComponent(batchId)}`, {
+        ...opts
+    }));
+}
+export function cancelWorkflowBatch({ batchId, id }: {
+    batchId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches/${encodeURIComponent(batchId)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Retrieve workflow logs
@@ -35622,6 +35764,8 @@ export enum WorkflowType {
 }
 export enum WorkflowTrigger {
     AssetCreate = "AssetCreate",
+    AssetChanged = "AssetChanged",
+    Schedule = "Schedule",
     AssetMetadataExtraction = "AssetMetadataExtraction",
     AssetTagged = "AssetTagged"
 }
@@ -36646,6 +36790,23 @@ export enum WorkflowIssueCode {
     MethodIncompatible = "method_incompatible",
     ConfigInvalid = "config_invalid"
 }
+export enum Field {
+    TakenAt = "takenAt",
+    LocalDateTime = "localDateTime",
+    CreatedAt = "createdAt",
+    UpdatedAt = "updatedAt"
+}
+export enum Reason {
+    Manual = "manual",
+    Schedule = "schedule"
+}
+export enum Status12 {
+    Pending = "pending",
+    Running = "running",
+    Completed = "completed",
+    Cancelled = "cancelled",
+    Failed = "failed"
+}
 export enum WorkflowResult {
     Completed = "completed",
     Halted = "halted",
@@ -36759,7 +36920,7 @@ export enum StudioImportPublicationState {
     Published = "published",
     Aborted = "aborted"
 }
-export enum Status12 {
+export enum Status13 {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"

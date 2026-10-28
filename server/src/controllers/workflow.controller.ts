@@ -3,9 +3,14 @@ import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  WorkflowBatchParamsDto,
+  WorkflowBatchResponseDto,
+  WorkflowCapabilitiesDto,
   WorkflowCreateDto,
   WorkflowGetLogsDto,
   WorkflowLogEntryDto,
+  WorkflowPreviewDto,
+  WorkflowPreviewResponseDto,
   WorkflowResponseDto,
   WorkflowRunParamsDto,
   WorkflowSearchDto,
@@ -54,6 +59,48 @@ export class WorkflowController {
   })
   getWorkflowTriggers(): WorkflowTriggerResponseDto[] {
     return this.service.getTriggers();
+  }
+
+  @Get('capabilities')
+  @Authenticated({ permission: false })
+  getWorkflowCapabilities(): Promise<WorkflowCapabilitiesDto> {
+    return this.service.capabilities();
+  }
+
+  @Post('preview')
+  @Authenticated({ permission: Permission.WorkflowRead })
+  previewWorkflow(@Auth() auth: AuthDto, @Body() dto: WorkflowPreviewDto): Promise<WorkflowPreviewResponseDto> {
+    return this.service.preview(auth, dto);
+  }
+
+  @Post(':id/batches')
+  @Authenticated({ permission: Permission.WorkflowUpdate })
+  runWorkflow(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<WorkflowBatchResponseDto> {
+    return this.service.runBatch(auth, id);
+  }
+
+  @Get(':id/batches')
+  @Authenticated({ permission: Permission.WorkflowRead })
+  getWorkflowBatches(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<WorkflowBatchResponseDto[]> {
+    return this.service.getBatches(auth, id);
+  }
+
+  @Get(':id/batches/:batchId')
+  @Authenticated({ permission: Permission.WorkflowRead })
+  getWorkflowBatch(
+    @Auth() auth: AuthDto,
+    @Param() { id, batchId }: WorkflowBatchParamsDto,
+  ): Promise<WorkflowBatchResponseDto> {
+    return this.service.getBatch(auth, id, batchId);
+  }
+
+  @Post(':id/batches/:batchId/cancel')
+  @Authenticated({ permission: Permission.WorkflowUpdate })
+  cancelWorkflowBatch(
+    @Auth() auth: AuthDto,
+    @Param() { id, batchId }: WorkflowBatchParamsDto,
+  ): Promise<WorkflowBatchResponseDto> {
+    return this.service.cancelBatch(auth, id, batchId);
   }
 
   @Get(':id')

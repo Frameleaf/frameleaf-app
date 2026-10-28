@@ -609,6 +609,15 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('propagatePerson', () => {
+    it('does not notify workflows for a followed birthday with the same date value', async () => {
+      people.set(`${A}/${PG_A}`, person(A, PG_A, { birthDate: new Date('2000-01-15') }));
+      people.set(`${B}/${NEW_PG}`, person(B, NEW_PG, { birthDate: new Date('2000-01-15') }));
+      mocks.partnerOrigin.getPersonFollowers.mockImplementation((ownerId) =>
+        Promise.resolve(ownerId === A ? ([{ ownerId: B, personGroupId: NEW_PG, overriddenFields: [] }] as never) : []),
+      );
+      await sut.propagatePerson(A, PG_A);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('PersonChanged', expect.anything());
+    });
     it.each(['owner override', 'stopped following', 'changed source', 'source refreshed'] as const)(
       'rechecks %s after origin admission',
       async (change) => {
@@ -662,6 +671,7 @@ describe(PartnerPeopleService.name, () => {
 
       await sut.propagatePerson(A, PG_A);
 
+      expect(mocks.event.emit).toHaveBeenCalledWith('PersonChanged', { ownerId: B, personGroupId: NEW_PG });
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: B,
         personGroupId: NEW_PG,

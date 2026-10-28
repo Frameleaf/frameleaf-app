@@ -5,6 +5,7 @@ import type { PersonCopyUndo } from 'src/repositories/partner-origin.repository.
 import type { FaceCorrection, PartnerPersonLink } from 'src/repositories/person.repository.js';
 import { JobName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { asDateString } from 'src/utils/date.js';
 
 export type PartnerFaceCopyInput = {
   /** The asset the copy was made from (the partner's own, or their copy: A to B to C). */
@@ -149,6 +150,7 @@ export class PartnerPeopleService extends BaseService {
           continue;
         }
         seen.add(key);
+        let changed = false;
         const applied = await this.partnerOriginRepository.withPersonOrigin(
           follower.ownerId,
           follower.personGroupId,
@@ -169,6 +171,17 @@ export class PartnerPeopleService extends BaseService {
               ...(!overridden.has('hidden') && { isHidden: source.isHidden }),
             };
             if (Object.keys(values).length > 0) {
+              const before = await this.personRepository.getByGroupId({
+                ownerId: follower.ownerId,
+                personGroupId: follower.personGroupId,
+              });
+              changed =
+                !!before &&
+                Object.entries(values).some(([key, value]) =>
+                  key === 'birthDate'
+                    ? asDateString(before.birthDate) !== asDateString(values.birthDate ?? null)
+                    : before[key as keyof typeof before] !== value,
+                );
               await this.personRepository.update({
                 ownerId: follower.ownerId,
                 personGroupId: follower.personGroupId,
@@ -178,6 +191,11 @@ export class PartnerPeopleService extends BaseService {
             return true;
           },
         );
+        if (changed)
+          await this.eventRepository.emit('PersonChanged', {
+            ownerId: follower.ownerId,
+            personGroupId: follower.personGroupId,
+          });
         if (applied) queue.push({ ownerId: follower.ownerId, personGroupId: follower.personGroupId });
       }
     }

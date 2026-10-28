@@ -10,6 +10,7 @@ import {
   WorkflowTypeSchema,
 } from 'src/enum.js';
 import { redactCredentials } from 'src/utils/workflow-definition.js';
+import { WorkflowScheduleInputSchema, WorkflowSourceSchema } from 'src/utils/workflow-source.js';
 import { isoDatetimeToDate } from 'src/validation.js';
 
 const ExtraFieldsSchema = z
@@ -88,6 +89,8 @@ const TriggerInputSchema = z
 
 const WorkflowCreateSchema = z
   .object({
+    source: WorkflowSourceSchema.nullable().optional(),
+    schedule: WorkflowScheduleInputSchema.nullable().optional(),
     trigger: TriggerInputSchema,
     name: z.string().max(300).nullable().optional().describe('Workflow name'),
     description: z.string().max(2000).nullable().optional().describe('Workflow description'),
@@ -100,6 +103,8 @@ const WorkflowCreateSchema = z
 
 const WorkflowUpdateSchema = z
   .object({
+    source: WorkflowSourceSchema.nullable().optional(),
+    schedule: WorkflowScheduleInputSchema.nullable().optional(),
     trigger: TriggerInputSchema.optional(),
     name: z.string().max(300).nullable().optional().describe('Workflow name'),
     description: z.string().max(2000).nullable().optional().describe('Workflow description'),
@@ -113,6 +118,9 @@ const WorkflowUpdateSchema = z
 const WorkflowResponseSchema = z
   .object({
     id: z.uuidv4().describe('Workflow ID'),
+    source: WorkflowSourceSchema.nullable().optional(),
+    schedule: WorkflowScheduleInputSchema.nullable().optional(),
+    nextRunAt: z.string().nullable().optional(),
     trigger: z.string().describe('Workflow trigger type'),
     name: z.string().nullable().describe('Workflow name'),
     description: z.string().nullable().describe('Workflow description'),
@@ -130,6 +138,9 @@ const WorkflowResponseSchema = z
 
 const WorkflowShareResponseSchema = z
   .object({
+    source: WorkflowSourceSchema.nullable().optional(),
+    schedule: WorkflowScheduleInputSchema.nullable().optional(),
+    nextRunAt: z.string().nullable().optional(),
     trigger: z.string().describe('Workflow trigger type'),
     name: z.string().nullable().describe('Workflow name'),
     description: z.string().nullable().describe('Workflow description'),
@@ -173,6 +184,9 @@ export class WorkflowTriggerResponseDto extends createZodDto(WorkflowTriggerResp
 export class WorkflowSearchDto extends createZodDto(WorkflowSearchSchema) {}
 export class WorkflowStepDto extends createZodDto(WorkflowStepSchema) {}
 export class WorkflowCreateDto extends createZodDto(WorkflowCreateSchema) {}
+export class WorkflowPreviewDto extends createZodDto(
+  WorkflowCreateSchema.extend({ workflowId: z.uuid().optional() }).meta({ id: 'WorkflowPreviewDto' }),
+) {}
 export class WorkflowUpdateDto extends createZodDto(WorkflowUpdateSchema) {}
 export class WorkflowResponseDto extends createZodDto(WorkflowResponseSchema) {}
 export class WorkflowShareResponseDto extends createZodDto(WorkflowShareResponseSchema) {}
@@ -200,6 +214,8 @@ export const mapWorkflow = (
 ): WorkflowResponseDto => ({
   id: workflow.id,
   enabled: workflow.enabled,
+  source: definition.source,
+  schedule: definition.schedule,
   trigger: definition.trigger,
   logging: workflow.logging,
   name: workflow.name,
@@ -226,6 +242,8 @@ export const mapWorkflowShare = (
   workflow: Pick<Workflow, 'name' | 'description'>,
   definition: WorkflowDefinitionDocument,
 ): WorkflowShareResponseDto => ({
+  source: definition.source,
+  schedule: definition.schedule,
   trigger: definition.trigger,
   name: workflow.name,
   description: workflow.description,
@@ -237,3 +255,49 @@ export const mapWorkflowShare = (
     extra: redactExtra(step.extra),
   })),
 });
+
+export class WorkflowPreviewResponseDto extends createZodDto(
+  z
+    .object({
+      count: z.int().nonnegative(),
+      exampleAssetIds: z.array(z.uuid()),
+      actions: z.array(z.string()),
+      evaluatedAt: z.string(),
+      issues: z.array(WorkflowIssueSchema),
+    })
+    .meta({ id: 'WorkflowPreviewResponseDto' }),
+) {}
+export class WorkflowCapabilitiesDto extends createZodDto(
+  z
+    .object({
+      version: z.int().min(1).max(1),
+      sourceFilters: z.boolean(),
+      semanticThreshold: z.boolean(),
+      rollingDates: z.boolean(),
+      assetChanged: z.boolean(),
+      schedules: z.boolean(),
+      batchRuns: z.boolean(),
+      timezone: z.string(),
+    })
+    .meta({ id: 'WorkflowCapabilitiesDto' }),
+) {}
+export class WorkflowBatchParamsDto extends createZodDto(z.object({ id: z.uuid(), batchId: z.uuid() })) {}
+export class WorkflowBatchResponseDto extends createZodDto(
+  z
+    .object({
+      id: z.uuid(),
+      workflowId: z.uuid(),
+      status: z.enum(['pending', 'running', 'completed', 'cancelled', 'failed']),
+      reason: z.enum(['manual', 'schedule']),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+      finishedAt: z.string().nullable(),
+      total: z.int().nonnegative(),
+      completed: z.int().nonnegative(),
+      skipped: z.int().nonnegative(),
+      failed: z.int().nonnegative(),
+      snapshotAt: z.string(),
+      error: z.string().nullable(),
+    })
+    .meta({ id: 'WorkflowBatchResponseDto' }),
+) {}

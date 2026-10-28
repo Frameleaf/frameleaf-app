@@ -1,3 +1,4 @@
+import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
 import { Kysely, type SelectQueryBuilder, type Transaction, sql } from 'kysely';
@@ -548,7 +549,7 @@ export class JobRepository {
   private intent(item: JobItem): QueueIntent {
     const context = queueExecution.getStore();
     const runId = runSubmission.getStore() ?? context?.claim.runId ?? undefined;
-    const data = (item.data ?? {}) as Record<string, unknown>;
+    const data = inheritWorkflowCausation((item.data ?? {}) as Record<string, unknown>);
     const queue = this.getQueueName(item.name);
     const isMl = [
       QueueName.SmartSearch,
