@@ -1,13 +1,13 @@
 {
-  "sourceCommit": "c70fd66d5e81eee3cc348a000586b9113c4beae7",
+  "sourceCommit": "1b432239dde36d68ec84888e2d677a88497f9d0d",
   "sourceHashes": {
-    "src/enum.ts": "d2a8d56c4378ce7c660e156522cf84eaec31c9ae1f3ac94d18026bda38704119",
+    "src/enum.ts": "fbe1e904d377c930bc415b74dfd9422bf29f9e4b53fd5866475c4b4dbfef23d6",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
     "src/schema/frameleaf-feature-schema.ts": "dc478c5b3e85e0dbec52300f6c5b2a07f55a5175c96fca7a401c42748c1f081b",
     "src/schema/functions.ts": "7d91c62a7a5c67041b972c816f842be75f74d182f254a594f7d25e721d1d5acc",
-    "src/schema/index.ts": "4bc0abec21d50cdd0d4baf8f378ce20d52254cc518aeae1997fc28ee72d450d4",
+    "src/schema/index.ts": "e812fa886a155bb941475b8bb654f2d035790021426835a757d3e7d83dfbe68f",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -133,7 +133,8 @@
     "src/schema/tables/version-history.table.ts": "b290931697aea4e4e917927e1e547d894d40a1b768dc0e51c8d9325704bdc91f",
     "src/schema/tables/video-moment.table.ts": "bb202390870bb23b50a161d0637d713335cf413e1d9e40d2df87a1a2d665a1cd",
     "src/schema/tables/video-stream.table.ts": "9b737a5664583eac3d8c657111c7e9a2bbc9f9fd7691e8f70aac841eaa59f254",
-    "src/schema/tables/workflow-definition.table.ts": "1dcc0867aa8af475a735e81d09fbd69ee77b8c8cc87e9bc3e9da86e6b7d750e4",
+    "src/schema/tables/workflow-batch.table.ts": "8003a8def38d58540a8a088ac936c5d414b6e8bc1119fa0f6a667a53f363a92a",
+    "src/schema/tables/workflow-definition.table.ts": "ba3022de8c42c4a6116efa08fde1230f72fbbd4dec7284821f8eb5122c372125",
     "src/schema/tables/workflow-log-detail.table.ts": "afb7b1a8dbb79d5ac66f93a74d67a83e2835ef8cd89f91bf470c5406e4989a76",
     "src/schema/tables/workflow-log.table.ts": "9e81736a0ed01cc809058d3a08dd13042a84ac09b187a698fd4460925cfc1b8a",
     "src/schema/tables/workflow-run-step.table.ts": "6162a631775861a8625761127f3938f067b85b580c140b86ceadf4c257658ffb",
@@ -142,6 +143,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "d1ad44ac2bfef8a652d54f33917338aadc705f880edbc68e79147a8843894412",
-  "rawMetadataSha256": "fa88010a5c2d629182021a6fd1dfd5c16068fc75cf729d9655518ce738a4ef8d"
+  "dumpSha256": "8834d2ba964197dea55e0eac3c5e7afdc22289efc32d223d652b41b28c38eaf7",
+  "rawMetadataSha256": "3726579ad786f6a325ec367d3cd45c7cf8bc23da76ac524c8d7ade52f3e3c494"
 }
