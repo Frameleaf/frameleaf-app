@@ -1,6 +1,6 @@
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
-import { randomUUID } from 'node:crypto';
 import { Kysely } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import { AssetVisibility } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
@@ -52,7 +52,7 @@ describe('durable workflow selections', () => {
     await repository.update(workflow.id, { enabled: false });
     expect(await repository.nextBatchItem(first.id)).toBeUndefined();
     expect((await restarted.getBatches(workflow.id))[0]?.status).toBe('cancelled');
-  }, 30000);
+  }, 30_000);
   it('refuses a definition changed between source preparation and atomic snapshot capture', async () => {
     const { ctx } = setup();
     const repository = ctx.get(WorkflowRepository);

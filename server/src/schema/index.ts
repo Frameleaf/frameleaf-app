@@ -226,15 +226,15 @@ import {
   VideoStreamSessionTable,
   VideoStreamVariantTable,
 } from 'src/schema/tables/video-stream.table.js';
+import {
+  WorkflowBatchItemTable,
+  WorkflowBatchTable,
+  WorkflowCausationTable,
+  WorkflowScheduleTable,
+} from 'src/schema/tables/workflow-batch.table.js';
 import { WorkflowDefinitionTable } from 'src/schema/tables/workflow-definition.table.js';
 import { WorkflowLogDetailTable } from 'src/schema/tables/workflow-log-detail.table.js';
 import { WorkflowLogTable } from 'src/schema/tables/workflow-log.table.js';
-import {
-  WorkflowBatchTable,
-  WorkflowBatchItemTable,
-  WorkflowScheduleTable,
-  WorkflowCausationTable,
-} from 'src/schema/tables/workflow-batch.table.js';
 import { WorkflowRunStepTable } from 'src/schema/tables/workflow-run-step.table.js';
 import { WorkflowStepTable } from 'src/schema/tables/workflow-step.table.js';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';

@@ -32,13 +32,12 @@ describe('workflow source definitions', () => {
     ).toBe(false);
   });
   it('rejects seconds cron so a schedule cannot launch every second', () => {
-    expect(
-      WorkflowScheduleSchema.safeParse({cron:'* * * * * *'}).success,
-    ).toBe(false);
+    expect(WorkflowScheduleSchema.safeParse({ cron: '* * * * * *' }).success).toBe(false);
   });
 });
 
-import { nextWorkflowOccurrence, resolveWorkflowSource, WorkflowScheduleSchema } from 'src/utils/workflow-source.js';
+import { WorkflowScheduleSchema, nextWorkflowOccurrence, resolveWorkflowSource } from 'src/utils/workflow-source.js';
+
 describe('source time semantics', () => {
   it('rolls only explicitly relative fields at the frozen snapshot time', () => {
     const source = {
@@ -74,13 +73,16 @@ describe('semantic source references', () => {
 });
 
 it('rejects a schedule whose date can never occur', () => {
-  expect(
-    WorkflowScheduleSchema.safeParse({cron:'0 0 31 2 *'}).success,
-  ).toBe(false);
+  expect(WorkflowScheduleSchema.safeParse({ cron: '0 0 31 2 *' }).success).toBe(false);
 });
 
-it('keeps an invalid imported schedule while paused and reports why enabling is blocked',()=>{
- const dto=WorkflowCreateDto.schema.parse({trigger:'Schedule',enabled:false,source:{filter:{}},schedule:{cron:'daily'}});
- expect(toDefinition({...dto,steps:[]})).toMatchObject({schedule:{cron:'daily'}});
- expect(workflowIssues(toDefinition({...dto,steps:[]}),[])).not.toEqual([]);
+it('keeps an invalid imported schedule while paused and reports why enabling is blocked', () => {
+  const dto = WorkflowCreateDto.schema.parse({
+    trigger: 'Schedule',
+    enabled: false,
+    source: { filter: {} },
+    schedule: { cron: 'daily' },
+  });
+  expect(toDefinition({ ...dto, steps: [] })).toMatchObject({ schedule: { cron: 'daily' } });
+  expect(workflowIssues(toDefinition({ ...dto, steps: [] }), [])).not.toEqual([]);
 });

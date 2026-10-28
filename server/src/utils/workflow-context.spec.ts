@@ -1,4 +1,5 @@
-import { workflowCausation, inheritWorkflowCausation } from 'src/utils/workflow-context.js';
+import { inheritWorkflowCausation, workflowCausation } from 'src/utils/workflow-context.js';
+
 describe('workflow causation propagation', () => {
   it('keeps ordinary child job payloads unchanged', () => {
     const data = { id: 'asset' };
@@ -12,7 +13,9 @@ describe('workflow causation propagation', () => {
   });
 });
 
-it('preserves the explicit child ancestry when admitting a nested workflow job',()=>{
-  const result=workflowCausation.run(['chain:root','a:asset'],()=>inheritWorkflowCausation({id:'asset',causation:['chain:root','a:asset','b:asset']}));
-  expect(result.causation).toEqual(['chain:root','a:asset','b:asset']);
+it('preserves the explicit child ancestry when admitting a nested workflow job', () => {
+  const result = workflowCausation.run(['chain:root', 'a:asset'], () =>
+    inheritWorkflowCausation({ id: 'asset', causation: ['chain:root', 'a:asset', 'b:asset'] }),
+  );
+  expect(result.causation).toEqual(['chain:root', 'a:asset', 'b:asset']);
 });

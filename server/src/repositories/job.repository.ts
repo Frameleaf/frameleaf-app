@@ -1,4 +1,3 @@
-import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
 import { Kysely, type SelectQueryBuilder, type Transaction, sql } from 'kysely';
@@ -50,6 +49,7 @@ import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-autho
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
+import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;

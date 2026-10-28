@@ -7,10 +7,10 @@ import type {
 } from 'src/schema/tables/workflow-definition.table.js';
 import { WorkflowIssueCode, WorkflowType } from 'src/enum.js';
 import {
-  WorkflowSourceSchema,
+  type WorkflowSchedule,
   WorkflowScheduleSchema,
   type WorkflowSource,
-  type WorkflowSchedule,
+  WorkflowSourceSchema,
 } from 'src/utils/workflow-source.js';
 import { isMethodCompatible, parseMethodString, triggerMap } from 'src/utils/workflow.js';
 
