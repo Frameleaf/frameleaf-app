@@ -27534,6 +27534,57 @@
         "x-immich-state": "Stable"
       }
     },
+    "/library/items/search": {
+      "post": {
+        "description": "Bookmark rows require bookmark.read for API keys. Semantic mode ranks up to 1000 filtered asset candidates and reports an explicit candidate count cap. Source filters require assetSource.read.",
+        "operationId": "searchLibraryItems",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryItemSearchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemSearchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search accessible assets and bookmarks with one query and cursor",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/license/link-code": {
       "post": {
         "description": "CLD-004: redeems a one-time link code from the Frameleaf account site. Frameleaf Cloud activates the licence for this server directly, so the key never reaches this server or a URL. An administrator can receive a server key; anyone else only a personal key. Needs a linked server; the code travels only in this request body.",
@@ -63121,6 +63172,39 @@
         ],
         "type": "object"
       },
+      "AlbumSubtreeFilter": {
+        "$ref": "#/components/schemas/IdsFilter",
+        "properties": {
+          "all": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "any": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "none": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "AlbumTreeResponseDto": {
         "properties": {
           "albums": {
@@ -74087,6 +74171,14 @@
       },
       "ClassificationPreviewDto": {
         "properties": {
+          "filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchFilter"
+              }
+            ],
+            "nullable": true
+          },
           "mediaType": {
             "$ref": "#/components/schemas/ClassificationMediaType",
             "default": "any"
@@ -74273,6 +74365,14 @@
             "default": true,
             "type": "boolean"
           },
+          "filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchFilter"
+              }
+            ],
+            "nullable": true
+          },
           "icon": {
             "description": "Icon of the smart album",
             "maxLength": 80,
@@ -74396,6 +74496,14 @@
           "enabled": {
             "type": "boolean"
           },
+          "filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchFilter"
+              }
+            ],
+            "nullable": true
+          },
           "id": {
             "type": "string"
           },
@@ -74508,6 +74616,14 @@
           "enabled": {
             "description": "A disabled rule keeps what it applied and stops changing anything",
             "type": "boolean"
+          },
+          "filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchFilter"
+              }
+            ],
+            "nullable": true
           },
           "mediaType": {
             "$ref": "#/components/schemas/ClassificationMediaType"
@@ -78441,6 +78557,38 @@
           "userId"
         ],
         "type": "object"
+      },
+      "ColorFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "hex": {
+            "pattern": "^#[a-fA-F0-9]{6}$",
+            "type": "string"
+          },
+          "minWeight": {
+            "default": 0.05,
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "tolerance": {
+            "$ref": "#/components/schemas/ColorTolerance",
+            "default": "normal"
+          }
+        },
+        "required": [
+          "hex"
+        ],
+        "type": "object"
+      },
+      "ColorTolerance": {
+        "enum": [
+          "tight",
+          "normal",
+          "broad"
+        ],
+        "type": "string"
       },
       "Colorspace": {
         "description": "Colorspace",
@@ -91097,6 +91245,86 @@
         "enum": [
           "asset",
           "bookmark"
+        ],
+        "type": "string"
+      },
+      "LibraryItemSearchDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/SearchFilter"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/LibraryItemSearchMode",
+            "default": "text"
+          },
+          "query": {
+            "default": "",
+            "maxLength": 500,
+            "type": "string"
+          },
+          "queryAssetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/LibraryItemSearchSort"
+          }
+        },
+        "type": "object"
+      },
+      "LibraryItemSearchMode": {
+        "enum": [
+          "text",
+          "smart"
+        ],
+        "type": "string"
+      },
+      "LibraryItemSearchResponseDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "countCapped": {
+            "description": "The count covers bounded ranked candidates; more semantic matches may exist",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "countCapped",
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "LibraryItemSearchSort": {
+        "enum": [
+          "added",
+          "color"
         ],
         "type": "string"
       },
@@ -124777,11 +125005,21 @@
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
+          "albumSubtreeIds": {
+            "$ref": "#/components/schemas/AlbumSubtreeFilter"
+          },
+          "aspectRatio": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel width divided by height; null when dimensions are unavailable"
+          },
           "checksum": {
             "$ref": "#/components/schemas/StringFilter"
           },
           "city": {
             "$ref": "#/components/schemas/StringFilterNullable"
+          },
+          "color": {
+            "$ref": "#/components/schemas/ColorFilter"
           },
           "country": {
             "$ref": "#/components/schemas/StringFilterNullable"
@@ -124791,6 +125029,10 @@
           },
           "description": {
             "$ref": "#/components/schemas/StringPatternFilter"
+          },
+          "durationMs": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Video/GIF duration in milliseconds; null for static images"
           },
           "encodedVideoPath": {
             "$ref": "#/components/schemas/StringFilter"
@@ -124806,6 +125048,13 @@
           },
           "hasTags": {
             "$ref": "#/components/schemas/BoolFilter"
+          },
+          "hasTransparency": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "height": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel height from metadata"
           },
           "id": {
             "$ref": "#/components/schemas/IdFilter"
@@ -124874,6 +125123,9 @@
           "rating": {
             "$ref": "#/components/schemas/NumberFilterNullable"
           },
+          "source": {
+            "$ref": "#/components/schemas/SourceFilter"
+          },
           "state": {
             "$ref": "#/components/schemas/StringFilterNullable"
           },
@@ -124894,6 +125146,10 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/EnumFilterAssetVisibility"
+          },
+          "width": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel width from metadata"
           }
         },
         "type": "object"
@@ -124904,11 +125160,21 @@
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
+          "albumSubtreeIds": {
+            "$ref": "#/components/schemas/AlbumSubtreeFilter"
+          },
+          "aspectRatio": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel width divided by height; null when dimensions are unavailable"
+          },
           "checksum": {
             "$ref": "#/components/schemas/StringFilter"
           },
           "city": {
             "$ref": "#/components/schemas/StringFilterNullable"
+          },
+          "color": {
+            "$ref": "#/components/schemas/ColorFilter"
           },
           "country": {
             "$ref": "#/components/schemas/StringFilterNullable"
@@ -124918,6 +125184,10 @@
           },
           "description": {
             "$ref": "#/components/schemas/StringPatternFilter"
+          },
+          "durationMs": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Video/GIF duration in milliseconds; null for static images"
           },
           "encodedVideoPath": {
             "$ref": "#/components/schemas/StringFilter"
@@ -124933,6 +125203,13 @@
           },
           "hasTags": {
             "$ref": "#/components/schemas/BoolFilter"
+          },
+          "hasTransparency": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "height": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel height from metadata"
           },
           "id": {
             "$ref": "#/components/schemas/IdFilter"
@@ -124991,6 +125268,9 @@
           "rating": {
             "$ref": "#/components/schemas/NumberFilterNullable"
           },
+          "source": {
+            "$ref": "#/components/schemas/SourceFilter"
+          },
           "state": {
             "$ref": "#/components/schemas/StringFilterNullable"
           },
@@ -125011,6 +125291,10 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/EnumFilterAssetVisibility"
+          },
+          "width": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel width from metadata"
           }
         },
         "type": "object"
@@ -128949,6 +129233,20 @@
         "required": [
           "capped",
           "total"
+        ],
+        "type": "object"
+      },
+      "SourceFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "contains": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "contains"
         ],
         "type": "object"
       },

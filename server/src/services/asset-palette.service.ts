@@ -67,6 +67,17 @@ export class AssetPaletteService {
     }
   }
 
+  @OnEvent({ name: 'AssetDevelopCurrentChanged', workers: [FrameleafWorker.Microservices] })
+  async onDevelopCurrentChanged({ assetId }: ArgOf<'AssetDevelopCurrentChanged'>) {
+    await this.enqueue(assetId);
+  }
+
+  @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })
+  async onMetadataExtracted({ assetId }: ArgOf<'AssetMetadataExtracted'>) {
+    const source = await this.palettes.source(assetId);
+    if (source?.files.some((file) => file.type === AssetFileType.Preview)) await this.enqueue(assetId);
+  }
+
   @OnEvent({ name: 'AssetRestoreAll', workers: [FrameleafWorker.Microservices] })
   async onRestore({ assetIds }: ArgOf<'AssetRestoreAll'>) {
     for (const id of assetIds) await this.enqueue(id);

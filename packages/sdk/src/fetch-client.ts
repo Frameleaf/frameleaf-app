@@ -6294,7 +6294,214 @@ export type ClassificationContributionDto = {
     /** The tag this rule added, when it added one */
     tag: (ClassificationTagDto) | null;
 };
+export type IdsFilter = {
+    all?: string[];
+    "any"?: string[];
+    none?: string[];
+};
+export type AlbumSubtreeFilter = IdsFilter;
+export type NumberFilterNullable = {
+    eq?: number | null;
+    gt?: number;
+    gte?: number;
+    "in"?: number[];
+    lt?: number;
+    lte?: number;
+    ne?: number | null;
+    notIn?: number[];
+};
+export type StringFilter = {
+    eq?: string;
+    "in"?: string[];
+    ne?: string;
+    notIn?: string[];
+};
+export type StringFilterNullable = {
+    eq?: string | null;
+    "in"?: string[];
+    ne?: string | null;
+    notIn?: string[];
+};
+export type ColorFilter = {
+    hex: string;
+    minWeight?: number;
+    tolerance?: ColorTolerance;
+};
+export type DateFilter = {
+    eq?: string;
+    gt?: string;
+    gte?: string;
+    lt?: string;
+    lte?: string;
+    ne?: string;
+};
+export type StringPatternFilter = {
+    endsWith?: string;
+    eq?: string | null;
+    "in"?: string[];
+    like?: string;
+    ne?: string | null;
+    notIn?: string[];
+    notLike?: string;
+    startsWith?: string;
+};
+export type NumberFilter = {
+    eq?: number;
+    gt?: number;
+    gte?: number;
+    "in"?: number[];
+    lt?: number;
+    lte?: number;
+    ne?: number;
+    notIn?: number[];
+};
+export type BoolFilter = {
+    eq: boolean;
+};
+export type IdFilter = {
+    eq?: string;
+    ne?: string;
+};
+export type LandmarkIdsFilter = {
+    "any"?: string[];
+    none?: string[];
+};
+export type IdFilterNullable = {
+    eq?: string | null;
+    ne?: string | null;
+};
+export type StringSimilarityFilter = {
+    matches: string;
+};
+export type SourceFilter = {
+    contains: string;
+};
+export type DateFilterNullable = {
+    eq?: string | null;
+    gt?: string;
+    gte?: string;
+    lt?: string;
+    lte?: string;
+    ne?: string | null;
+};
+export type EnumFilterAssetType = {
+    eq?: AssetTypeEnum;
+    "in"?: AssetTypeEnum[];
+    ne?: AssetTypeEnum;
+    notIn?: AssetTypeEnum[];
+};
+export type EnumFilterAssetVisibility = {
+    eq?: AssetVisibility;
+    "in"?: AssetVisibility[];
+    ne?: AssetVisibility;
+    notIn?: AssetVisibility[];
+};
+export type SearchFilterBranch = {
+    albumIds?: IdsFilter;
+    albumSubtreeIds?: AlbumSubtreeFilter;
+    /** Source pixel width divided by height; null when dimensions are unavailable */
+    aspectRatio?: NumberFilterNullable;
+    checksum?: StringFilter;
+    city?: StringFilterNullable;
+    color?: ColorFilter;
+    country?: StringFilterNullable;
+    createdAt?: DateFilter;
+    description?: StringPatternFilter;
+    /** Video/GIF duration in milliseconds; null for static images */
+    durationMs?: NumberFilterNullable;
+    encodedVideoPath?: StringFilter;
+    fileSizeInBytes?: NumberFilter;
+    hasAlbums?: BoolFilter;
+    hasPeople?: BoolFilter;
+    hasTags?: BoolFilter;
+    hasTransparency?: BoolFilter;
+    /** Source pixel height from metadata */
+    height?: NumberFilterNullable;
+    id?: IdFilter;
+    isEncoded?: BoolFilter;
+    isFavorite?: BoolFilter;
+    isMotion?: BoolFilter;
+    isOffline?: BoolFilter;
+    isPanorama?: BoolFilter;
+    isScreenshot?: BoolFilter;
+    landmarkIds?: LandmarkIdsFilter;
+    lensModel?: StringPatternFilter;
+    libraryId?: IdFilterNullable;
+    localDateTime?: DateFilter;
+    make?: StringPatternFilter;
+    model?: StringPatternFilter;
+    ocr?: StringSimilarityFilter;
+    originalFileName?: StringPatternFilter;
+    originalPath?: StringPatternFilter;
+    personIds?: IdsFilter;
+    petIds?: IdsFilter;
+    rating?: NumberFilterNullable;
+    source?: SourceFilter;
+    state?: StringFilterNullable;
+    tagIds?: IdsFilter;
+    takenAt?: DateFilter;
+    trashedAt?: DateFilterNullable;
+    "type"?: EnumFilterAssetType;
+    updatedAt?: DateFilter;
+    visibility?: EnumFilterAssetVisibility;
+    /** Source pixel width from metadata */
+    width?: NumberFilterNullable;
+};
+export type SearchFilter = {
+    albumIds?: IdsFilter;
+    albumSubtreeIds?: AlbumSubtreeFilter;
+    /** Source pixel width divided by height; null when dimensions are unavailable */
+    aspectRatio?: NumberFilterNullable;
+    checksum?: StringFilter;
+    city?: StringFilterNullable;
+    color?: ColorFilter;
+    country?: StringFilterNullable;
+    createdAt?: DateFilter;
+    description?: StringPatternFilter;
+    /** Video/GIF duration in milliseconds; null for static images */
+    durationMs?: NumberFilterNullable;
+    encodedVideoPath?: StringFilter;
+    fileSizeInBytes?: NumberFilter;
+    hasAlbums?: BoolFilter;
+    hasPeople?: BoolFilter;
+    hasTags?: BoolFilter;
+    hasTransparency?: BoolFilter;
+    /** Source pixel height from metadata */
+    height?: NumberFilterNullable;
+    id?: IdFilter;
+    isEncoded?: BoolFilter;
+    isFavorite?: BoolFilter;
+    isMotion?: BoolFilter;
+    isOffline?: BoolFilter;
+    isPanorama?: BoolFilter;
+    isScreenshot?: BoolFilter;
+    landmarkIds?: LandmarkIdsFilter;
+    lensModel?: StringPatternFilter;
+    libraryId?: IdFilterNullable;
+    libraryScope?: LibraryViewScope;
+    localDateTime?: DateFilter;
+    make?: StringPatternFilter;
+    model?: StringPatternFilter;
+    ocr?: StringSimilarityFilter;
+    or?: SearchFilterBranch[];
+    originalFileName?: StringPatternFilter;
+    originalPath?: StringPatternFilter;
+    personIds?: IdsFilter;
+    petIds?: IdsFilter;
+    rating?: NumberFilterNullable;
+    source?: SourceFilter;
+    state?: StringFilterNullable;
+    tagIds?: IdsFilter;
+    takenAt?: DateFilter;
+    trashedAt?: DateFilterNullable;
+    "type"?: EnumFilterAssetType;
+    updatedAt?: DateFilter;
+    visibility?: EnumFilterAssetVisibility;
+    /** Source pixel width from metadata */
+    width?: NumberFilterNullable;
+};
 export type ClassificationPreviewDto = {
+    filter?: (SearchFilter) | null;
     mediaType?: ClassificationMediaType;
     /** Match any of these people */
     personIds?: string[];
@@ -6342,6 +6549,7 @@ export type ClassificationRuleResponseDto = {
     counts: ClassificationRuleCountsDto;
     createdAt: string;
     enabled: boolean;
+    filter?: (SearchFilter) | null;
     id: string;
     lastAppliedAt: string | null;
     mediaType: ClassificationMediaType;
@@ -6372,6 +6580,7 @@ export type ClassificationRuleCreateDto = {
     /** Description of the smart album */
     description?: string | null;
     enabled?: boolean;
+    filter?: (SearchFilter) | null;
     /** Icon of the smart album */
     icon?: string;
     mediaType?: ClassificationMediaType;
@@ -6400,6 +6609,7 @@ export type ClassificationRuleUpdateDto = {
     archiveConsent?: boolean;
     /** A disabled rule keeps what it applied and stops changing anything */
     enabled?: boolean;
+    filter?: (SearchFilter) | null;
     mediaType?: ClassificationMediaType;
     /** Match any of these people */
     personIds?: string[];
@@ -8591,6 +8801,22 @@ export type ValidateLibraryImportPathResponseDto = {
 export type ValidateLibraryResponseDto = {
     /** Validation results for import paths */
     importPaths?: ValidateLibraryImportPathResponseDto[];
+};
+export type LibraryItemSearchDto = {
+    cursor?: string;
+    filter?: SearchFilter;
+    limit?: number;
+    mode?: LibraryItemSearchMode;
+    query?: string;
+    queryAssetId?: string;
+    sort?: LibraryItemSearchSort;
+};
+export type LibraryItemSearchResponseDto = {
+    count: number;
+    /** The count covers bounded ranked candidates; more semantic matches may exist */
+    countCapped: boolean;
+    items: LibraryItemDto[];
+    nextCursor: string | null;
 };
 export type LicenseLinkCodeDto = {
     /** A one-time link code from the Frameleaf account site: flc_ and 26 lower-case base32 symbols */
@@ -12541,179 +12767,6 @@ export type PreservationPackageDto = {
     support: PreservationSupportDto[];
     updatedAt: string;
     verification: (PreservationVerificationDto) | null;
-};
-export type IdsFilter = {
-    all?: string[];
-    "any"?: string[];
-    none?: string[];
-};
-export type StringFilter = {
-    eq?: string;
-    "in"?: string[];
-    ne?: string;
-    notIn?: string[];
-};
-export type StringFilterNullable = {
-    eq?: string | null;
-    "in"?: string[];
-    ne?: string | null;
-    notIn?: string[];
-};
-export type DateFilter = {
-    eq?: string;
-    gt?: string;
-    gte?: string;
-    lt?: string;
-    lte?: string;
-    ne?: string;
-};
-export type StringPatternFilter = {
-    endsWith?: string;
-    eq?: string | null;
-    "in"?: string[];
-    like?: string;
-    ne?: string | null;
-    notIn?: string[];
-    notLike?: string;
-    startsWith?: string;
-};
-export type NumberFilter = {
-    eq?: number;
-    gt?: number;
-    gte?: number;
-    "in"?: number[];
-    lt?: number;
-    lte?: number;
-    ne?: number;
-    notIn?: number[];
-};
-export type BoolFilter = {
-    eq: boolean;
-};
-export type IdFilter = {
-    eq?: string;
-    ne?: string;
-};
-export type LandmarkIdsFilter = {
-    "any"?: string[];
-    none?: string[];
-};
-export type IdFilterNullable = {
-    eq?: string | null;
-    ne?: string | null;
-};
-export type StringSimilarityFilter = {
-    matches: string;
-};
-export type NumberFilterNullable = {
-    eq?: number | null;
-    gt?: number;
-    gte?: number;
-    "in"?: number[];
-    lt?: number;
-    lte?: number;
-    ne?: number | null;
-    notIn?: number[];
-};
-export type DateFilterNullable = {
-    eq?: string | null;
-    gt?: string;
-    gte?: string;
-    lt?: string;
-    lte?: string;
-    ne?: string | null;
-};
-export type EnumFilterAssetType = {
-    eq?: AssetTypeEnum;
-    "in"?: AssetTypeEnum[];
-    ne?: AssetTypeEnum;
-    notIn?: AssetTypeEnum[];
-};
-export type EnumFilterAssetVisibility = {
-    eq?: AssetVisibility;
-    "in"?: AssetVisibility[];
-    ne?: AssetVisibility;
-    notIn?: AssetVisibility[];
-};
-export type SearchFilterBranch = {
-    albumIds?: IdsFilter;
-    checksum?: StringFilter;
-    city?: StringFilterNullable;
-    country?: StringFilterNullable;
-    createdAt?: DateFilter;
-    description?: StringPatternFilter;
-    encodedVideoPath?: StringFilter;
-    fileSizeInBytes?: NumberFilter;
-    hasAlbums?: BoolFilter;
-    hasPeople?: BoolFilter;
-    hasTags?: BoolFilter;
-    id?: IdFilter;
-    isEncoded?: BoolFilter;
-    isFavorite?: BoolFilter;
-    isMotion?: BoolFilter;
-    isOffline?: BoolFilter;
-    isPanorama?: BoolFilter;
-    isScreenshot?: BoolFilter;
-    landmarkIds?: LandmarkIdsFilter;
-    lensModel?: StringPatternFilter;
-    libraryId?: IdFilterNullable;
-    localDateTime?: DateFilter;
-    make?: StringPatternFilter;
-    model?: StringPatternFilter;
-    ocr?: StringSimilarityFilter;
-    originalFileName?: StringPatternFilter;
-    originalPath?: StringPatternFilter;
-    personIds?: IdsFilter;
-    petIds?: IdsFilter;
-    rating?: NumberFilterNullable;
-    state?: StringFilterNullable;
-    tagIds?: IdsFilter;
-    takenAt?: DateFilter;
-    trashedAt?: DateFilterNullable;
-    "type"?: EnumFilterAssetType;
-    updatedAt?: DateFilter;
-    visibility?: EnumFilterAssetVisibility;
-};
-export type SearchFilter = {
-    albumIds?: IdsFilter;
-    checksum?: StringFilter;
-    city?: StringFilterNullable;
-    country?: StringFilterNullable;
-    createdAt?: DateFilter;
-    description?: StringPatternFilter;
-    encodedVideoPath?: StringFilter;
-    fileSizeInBytes?: NumberFilter;
-    hasAlbums?: BoolFilter;
-    hasPeople?: BoolFilter;
-    hasTags?: BoolFilter;
-    id?: IdFilter;
-    isEncoded?: BoolFilter;
-    isFavorite?: BoolFilter;
-    isMotion?: BoolFilter;
-    isOffline?: BoolFilter;
-    isPanorama?: BoolFilter;
-    isScreenshot?: BoolFilter;
-    landmarkIds?: LandmarkIdsFilter;
-    lensModel?: StringPatternFilter;
-    libraryId?: IdFilterNullable;
-    libraryScope?: LibraryViewScope;
-    localDateTime?: DateFilter;
-    make?: StringPatternFilter;
-    model?: StringPatternFilter;
-    ocr?: StringSimilarityFilter;
-    or?: SearchFilterBranch[];
-    originalFileName?: StringPatternFilter;
-    originalPath?: StringPatternFilter;
-    personIds?: IdsFilter;
-    petIds?: IdsFilter;
-    rating?: NumberFilterNullable;
-    state?: StringFilterNullable;
-    tagIds?: IdsFilter;
-    takenAt?: DateFilter;
-    trashedAt?: DateFilterNullable;
-    "type"?: EnumFilterAssetType;
-    updatedAt?: DateFilter;
-    visibility?: EnumFilterAssetVisibility;
 };
 export type PreservationScopeDto = {
     /** Exactly these items of yours, instead of a filter */
@@ -25613,6 +25666,21 @@ export function validate({ id, validateLibraryDto }: {
     })));
 }
 /**
+ * Search accessible assets and bookmarks with one query and cursor
+ */
+export function searchLibraryItems({ libraryItemSearchDto }: {
+    libraryItemSearchDto: LibraryItemSearchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryItemSearchResponseDto;
+    }>("/library/items/search", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryItemSearchDto
+    })));
+}
+/**
  * Redeem a Frameleaf account link code
  */
 export function redeemLicenseLinkCode({ licenseLinkCodeDto }: {
@@ -35015,6 +35083,11 @@ export enum ClassificationMatchDecision {
     Accepted = "accepted",
     Rejected = "rejected"
 }
+export enum ColorTolerance {
+    Tight = "tight",
+    Normal = "normal",
+    Broad = "broad"
+}
 export enum ClassificationMediaType {
     Any = "any",
     Photo = "photo",
@@ -35428,6 +35501,14 @@ export enum LibraryImportPathReason {
     Duplicate = "duplicate",
     Nested = "nested",
     OtherLibrary = "other_library"
+}
+export enum LibraryItemSearchMode {
+    Text = "text",
+    Smart = "smart"
+}
+export enum LibraryItemSearchSort {
+    Added = "added",
+    Color = "color"
 }
 export enum LicenseLinkCodeKind {
     Server = "server",

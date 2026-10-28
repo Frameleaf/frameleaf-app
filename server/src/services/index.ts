@@ -83,6 +83,7 @@ import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
 import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
+import { LibraryItemService } from 'src/services/library-item.service.js';
 import { LibraryProgressService } from 'src/services/library-progress.service.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
@@ -180,6 +181,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  LibraryItemService,
   AssetPaletteService,
   CaptureService,
   AlbumItemsService,

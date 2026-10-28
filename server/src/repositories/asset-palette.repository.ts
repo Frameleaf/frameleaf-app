@@ -5,19 +5,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AssetPaletteDto } from 'src/dtos/asset-palette.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-
-/** Shared by state reads and color search: stale derived rows never count as current matches. */
-export const assetPaletteRevision = (alias = 'asset') => {
-  const ref = (column: string) => sql.ref(`${alias}.${column}`);
-  return sql<string>`md5(jsonb_build_array(
-    ${ref('ownerId')}, ${ref('checksum')}, ${ref('originalPath')}, ${ref('fileModifiedAt')}, ${ref('isEdited')},
-    (select jsonb_agg(to_jsonb(e) order by e.sequence, e.id) from asset_edit e where e."assetId" = ${ref('id')}),
-    (select jsonb_agg(to_jsonb(f) order by f.id) from asset_file f where f."assetId" = ${ref('id')}),
-    (select to_jsonb(x) from asset_exif x where x."assetId" = ${ref('id')}),
-    (select jsonb_agg(to_jsonb(d) order by d.id) from asset_develop_revision d where d."assetId" = ${ref('id')} and d."ownerId" = ${ref('ownerId')} and d."isCurrent"),
-    (select m."coverTimestampMs" from video_moment_index m where m."assetId" = ${ref('id')})
-  )::text)`;
-};
+import { assetPaletteRevision } from 'src/utils/asset-palette-query.js';
 
 @Injectable()
 export class AssetPaletteRepository {

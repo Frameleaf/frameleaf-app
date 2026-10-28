@@ -1,18 +1,51 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Kysely, Selectable, sql } from 'kysely';
+import { Expression, ExpressionBuilder, Kysely, Selectable, SqlBool, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { AssetSearchScope } from 'src/repositories/search.repository.js';
+import type { LibraryCursor } from 'src/utils/library-search-cursor.js';
 import { columns } from 'src/database.js';
 import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { BookmarkCreateDto, BookmarkUpdateDto } from 'src/dtos/bookmark.dto.js';
-import { AlbumUserRole, AssetVisibility, UserMetadataKey } from 'src/enum.js';
+import { LibraryItemSearchDto } from 'src/dtos/library-search.dto.js';
+import { SearchFilterBranch, isAlbumConfined } from 'src/dtos/search.dto.js';
+import { AlbumUserRole, AssetType, AssetVisibility, LibraryScope, UserMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { BookmarkTable } from 'src/schema/tables/bookmark.table.js';
-import { hiddenContentBookmarkIdExists, searchAssetBuilder, tagIsSuppressed } from 'src/utils/database.js';
+import { assetColorDistance, assetColorPredicate, assetTransparencyPredicate } from 'src/utils/asset-palette-query.js';
+import {
+  anyUuid,
+  comparisonPredicates,
+  hiddenContentBookmarkIdExists,
+  hiddenFromSession,
+  idsPredicates,
+  searchAssetBuilder,
+  searchFilterPredicate,
+  tagIsSuppressed,
+} from 'src/utils/database.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { getLockedOwnerId, isLocked } from 'src/utils/locked.js';
 
 export type Bookmark = Selectable<BookmarkTable>;
+export type LibraryCandidate = { id: string; kind: 'asset' | 'bookmark'; dateKey: string; rank: number };
+const bookmarkFields = new Set([
+  'id',
+  'visibility',
+  'hasAlbums',
+  'hasTags',
+  'createdAt',
+  'updatedAt',
+  'trashedAt',
+  'tagIds',
+  'albumIds',
+  'albumSubtreeIds',
+  'source',
+  'color',
+  'hasTransparency',
+  'or',
+  'libraryScope',
+]);
 
 // Apply the same session boundary to the final write, so a concurrent lock cannot be edited while locked.
 const visible = (auth: AuthDto) => sql<boolean>`
@@ -32,7 +65,7 @@ const visible = (auth: AuthDto) => sql<boolean>`
 const owned = (auth: AuthDto) => sql<boolean>`bookmark."ownerId" = ${auth.user.id}::uuid
   and ${!auth.sharedLink} and ${visible(auth)}`;
 
-const albumReadable = (auth: AuthDto, albumId: string) => sql<boolean>`exists (
+const albumReadable = (auth: AuthDto, albumId: string | Expression<unknown>) => sql<boolean>`exists (
   select 1 from album where album.id = ${albumId}::uuid and album."deletedAt" is null and ${
     auth.sharedLink
       ? sql`exists (select 1 from shared_link where shared_link.id = ${auth.sharedLink.id}::uuid and shared_link."albumId" = album.id)`
@@ -43,6 +76,230 @@ const albumReadable = (auth: AuthDto, albumId: string) => sql<boolean>`exists (
 @Injectable()
 export class BookmarkRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  private libraryAssets(auth: AuthDto, query: LibraryItemSearchDto, scope: AssetSearchScope) {
+    return searchAssetBuilder(
+      this.db,
+      { filter: query.filter, ...getHiddenContentQueryOptions(auth), withExif: true },
+      scope,
+    )
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .$if(!!query.query, (qb) =>
+        qb.where((eb) =>
+          searchFilterPredicate(
+            eb,
+            {
+              or: [
+                { originalFileName: { like: query.query } },
+                { description: { like: query.query } },
+                { ocr: { matches: query.query } },
+              ],
+            },
+            auth.user.id,
+          ),
+        ),
+      );
+  }
+
+  private readablePreview(auth: AuthDto, branch: SearchFilterBranch) {
+    return this.db
+      .selectFrom('asset')
+      .where(sql<boolean>`asset.id = bookmark."previewAssetId"`)
+      .where('asset.ownerId', '=', auth.user.id)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.type', 'in', [AssetType.Image, AssetType.Video])
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .where(sql<boolean>`not ${hiddenFromSession(getHiddenContentQueryOptions(auth))}`)
+      .$if(!!branch.color, (qb) => qb.where(assetColorPredicate(branch.color!, auth.user.id)))
+      .$if(!!branch.hasTransparency, (qb) =>
+        qb.where(assetTransparencyPredicate(branch.hasTransparency!.eq, auth.user.id)),
+      );
+  }
+
+  private bookmarkBranch(
+    eb: ExpressionBuilder<DB, 'bookmark'>,
+    branch: SearchFilterBranch,
+    auth: AuthDto,
+  ): Expression<SqlBool>[] {
+    if (Object.entries(branch).some(([field, value]) => value !== undefined && !bookmarkFields.has(field)))
+      return [eb.lit(false)];
+    const state = sql<AssetVisibility>`case when bookmark."isLocked" then 'locked' when bookmark."isArchived" then 'archive' else 'timeline' end`;
+    const predicates: Expression<SqlBool>[] = [
+      ...comparisonPredicates(eb, 'bookmark.id', branch.id),
+      ...comparisonPredicates(eb, state, branch.visibility),
+      ...comparisonPredicates(eb, 'bookmark.createdAt', branch.createdAt),
+      ...comparisonPredicates(eb, 'bookmark.updatedAt', branch.updatedAt),
+      ...comparisonPredicates(eb, 'bookmark.deletedAt', branch.trashedAt),
+    ];
+    const tags = (ids: string[]) =>
+      eb
+        .selectFrom('bookmark_tag')
+        .innerJoin('tag_closure', 'tag_closure.id_descendant', 'bookmark_tag.tagId')
+        .whereRef('bookmark_tag.bookmarkId', '=', 'bookmark.id')
+        .where('tag_closure.id_ancestor', '=', anyUuid(ids));
+    predicates.push(
+      ...idsPredicates(eb, branch.tagIds, {
+        matchesAny: (ids) => eb.exists(tags(ids)),
+        matchesAll: (ids) =>
+          eb.exists(
+            tags(ids)
+              .select('bookmark_tag.bookmarkId')
+              .groupBy('bookmark_tag.bookmarkId')
+              .having((eb) => eb.fn.count('tag_closure.id_ancestor').distinct(), '=', ids.length),
+          ),
+      }),
+    );
+    for (const field of ['albumIds', 'albumSubtreeIds'] as const) {
+      const subtree = field === 'albumSubtreeIds';
+      const column = subtree ? 'album_closure.id_ancestor' : 'album_bookmark.albumId';
+      const matching = (ids: string[]) =>
+        eb
+          .selectFrom('album_bookmark')
+          .innerJoin('album_closure', 'album_closure.id_descendant', 'album_bookmark.albumId')
+          .whereRef('album_bookmark.bookmarkId', '=', 'bookmark.id')
+          .where(column, '=', anyUuid(ids))
+          .where(albumReadable(auth, sql.ref('album_bookmark.albumId')))
+          .$if(subtree, (qb) => qb.where(albumReadable(auth, sql.ref('album_closure.id_ancestor'))));
+      predicates.push(
+        ...idsPredicates(eb, branch[field], {
+          matchesAny: (ids) => eb.exists(matching(ids)),
+          matchesAll: (ids) =>
+            eb.exists(
+              matching(ids)
+                .select('album_bookmark.bookmarkId')
+                .groupBy('album_bookmark.bookmarkId')
+                .having((eb) => eb.fn.count(column).distinct(), '=', ids.length),
+            ),
+        }),
+      );
+    }
+    if (branch.hasTags) {
+      const exists = eb.exists(eb.selectFrom('bookmark_tag').whereRef('bookmark_tag.bookmarkId', '=', 'bookmark.id'));
+      predicates.push(branch.hasTags.eq ? exists : eb.not(exists));
+    }
+    if (branch.hasAlbums) {
+      const exists = eb.exists(
+        eb.selectFrom('album_bookmark').whereRef('album_bookmark.bookmarkId', '=', 'bookmark.id'),
+      );
+      predicates.push(branch.hasAlbums.eq ? exists : eb.not(exists));
+    }
+    if (branch.source)
+      predicates.push(sql<boolean>`bookmark."ownerId" = ${auth.user.id}::uuid and
+      strpos(lower(f_unaccent(concat_ws(' ', bookmark.source->>'pageUrl', bookmark.source->>'mediaUrl', bookmark.source->>'title',
+        bookmark.source->>'note', bookmark.source->>'creator', bookmark.source->>'licenseUrl'))), lower(f_unaccent(${branch.source.contains}))) > 0`);
+    if (branch.color || branch.hasTransparency)
+      predicates.push(eb.exists(this.readablePreview(auth, branch).select('asset.id')));
+    return predicates;
+  }
+
+  private libraryBookmarks(auth: AuthDto, query: LibraryItemSearchDto) {
+    const filter = query.filter;
+    const branches = filter.or ?? [];
+    const topConfined = isAlbumConfined(filter);
+    const perBranch = !topConfined && branches.some((branch) => isAlbumConfined(branch));
+    const global = !topConfined && !perBranch;
+    return this.db
+      .selectFrom('bookmark')
+      .where(visible(auth))
+      .where('bookmark.deletedAt', 'is', null)
+      .$if(global, (qb) => qb.where('bookmark.ownerId', '=', auth.user.id))
+      .$if(!!filter.libraryScope || global, (qb) =>
+        qb.where(libraryScopePredicate(filter.libraryScope ?? LibraryScope.Personal, 'bookmark')),
+      )
+      .where((eb) =>
+        eb.and([
+          ...this.bookmarkBranch(eb, filter, auth),
+          ...(branches.length > 0
+            ? [
+                eb.or(
+                  branches.map((branch) =>
+                    eb.and([
+                      ...this.bookmarkBranch(eb, branch, auth),
+                      ...(perBranch && !isAlbumConfined(branch)
+                        ? [
+                            eb('bookmark.ownerId', '=', auth.user.id),
+                            ...(!filter.libraryScope ? [libraryScopePredicate(LibraryScope.Personal, 'bookmark')] : []),
+                          ]
+                        : []),
+                    ]),
+                  ),
+                ),
+              ]
+            : []),
+        ]),
+      )
+      .$if(!!query.query, (qb) =>
+        qb.where(sql<boolean>`strpos(lower(f_unaccent(concat_ws(' ', bookmark.title, bookmark.url,
+        case when bookmark."ownerId" = ${auth.user.id}::uuid then bookmark.note else null end))), lower(f_unaccent(${query.query}))) > 0`),
+      );
+  }
+
+  async searchLibrary(
+    auth: AuthDto,
+    query: LibraryItemSearchDto,
+    scope: AssetSearchScope,
+    includeBookmarks: boolean,
+    cursor?: Extract<LibraryCursor, { mode: 'text' }>,
+  ): Promise<{ count: number; candidates: LibraryCandidate[] }> {
+    const sort = query.sort ?? 'added';
+    if (cursor && cursor.after.sort !== sort) throw new BadRequestException('Cursor sort changed');
+    const assetRank =
+      sort === 'color' ? assetColorDistance(query.filter.color!, auth.user.id) : sql<number>`0::double precision`;
+    const bookmarkRank =
+      sort === 'color'
+        ? this.readablePreview(auth, query.filter)
+            .select(assetColorDistance(query.filter.color!, auth.user.id).as('rank'))
+            .limit(1)
+        : sql<number>`0::double precision`;
+    const assets = this.libraryAssets(auth, query, scope)
+      .clearSelect()
+      .select([
+        'asset.id',
+        sql<string>`'asset'::text`.as('kind'),
+        'asset.createdAt',
+        sql<string>`to_char(asset."createdAt" at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as('dateKey'),
+        assetRank.as('rank'),
+      ]);
+    const bookmarks = this.libraryBookmarks(auth, query)
+      .where(sql<boolean>`${includeBookmarks}`)
+      .select([
+        'bookmark.id',
+        sql<string>`'bookmark'::text`.as('kind'),
+        'bookmark.createdAt',
+        sql<string>`to_char(bookmark."createdAt" at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as('dateKey'),
+        sql<number>`coalesce((${bookmarkRank}), 3)::double precision`.as('rank'),
+      ]);
+    const after = !cursor
+      ? sql`true`
+      : cursor.after.sort === 'added'
+        ? sql`("createdAt" < ${cursor.after.value}::timestamptz or ("createdAt" = ${cursor.after.value}::timestamptz and (kind,id) > (${cursor.kind}::text,${cursor.id}::uuid)))`
+        : sql`(rank,kind,id) > (${cursor.after.value}::double precision,${cursor.kind}::text,${cursor.id}::uuid)`;
+    const order = sort === 'added' ? sql`"createdAt" desc, kind, id` : sql`rank, kind, id`;
+    const aggregateOrder =
+      sort === 'added' ? sql`page."createdAt" desc, page.kind, page.id` : sql`page.rank, page.kind, page.id`;
+    const {
+      rows: [result],
+    } = await sql<{ count: number; candidates: LibraryCandidate[] }>`
+      with matched as materialized (${assets} union all ${bookmarks})
+      select (select count(*)::int from matched) as count,
+        coalesce((select jsonb_agg(to_jsonb(page) order by ${aggregateOrder}) from (
+          select id, kind, "dateKey", rank, "createdAt" from matched where ${after} order by ${order} limit ${query.limit + 1}
+        ) page), '[]'::jsonb) as candidates`.execute(this.db);
+    return result;
+  }
+
+  getLibraryAssets(auth: AuthDto, query: LibraryItemSearchDto, scope: AssetSearchScope, ids: string[]) {
+    return this.libraryAssets(auth, query, scope)
+      .where('asset.id', 'in', ids)
+      .select(columns.searchAsset)
+      .select(isLocked().as('isLocked'))
+      .execute();
+  }
+
+  getLibraryBookmarks(auth: AuthDto, query: LibraryItemSearchDto, ids: string[]) {
+    return this.libraryBookmarks(auth, query).where('bookmark.id', 'in', ids).selectAll('bookmark').execute();
+  }
 
   create(ownerId: string, dto: BookmarkCreateDto) {
     return this.db

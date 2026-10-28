@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { BookmarkCreateDto, BookmarkResponseDto, BookmarkUpdateDto } from 'src/dtos/bookmark.dto.js';
+import { LibraryItemSearchDto } from 'src/dtos/library-search.dto.js';
 import { Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { Bookmark, BookmarkRepository } from 'src/repositories/bookmark.repository.js';
-import { checkAccess, requireAccess, requireElevatedPermission } from 'src/utils/access.js';
+import { checkAccess, isGranted, requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { requireSourceFilterAllowed } from 'src/utils/search-filter.js';
 
 @Injectable()
 export class BookmarkService {
@@ -62,6 +64,20 @@ export class BookmarkService {
     const bookmarks = await this.bookmarks.getForAlbum(auth, albumId, afterId, limit);
     const ids = bookmarks.flatMap(({ previewAssetId }) => (previewAssetId ? [previewAssetId] : []));
     const readable = await checkAccess(this.access, { auth, permission: Permission.AssetRead, ids });
+    return Promise.all(bookmarks.map((bookmark) => this.map(auth, bookmark, readable)));
+  }
+
+  async getForSearch(auth: AuthDto, query: LibraryItemSearchDto, ids: string[]): Promise<BookmarkResponseDto[]> {
+    this.requirePrivateSession(auth);
+    if (
+      ids.length === 0 ||
+      (auth.apiKey && !isGranted({ requested: [Permission.BookmarkRead], current: auth.apiKey.permissions }))
+    )
+      return [];
+    requireSourceFilterAllowed(auth, query.filter);
+    const bookmarks = await this.bookmarks.getLibraryBookmarks(auth, query, ids);
+    const previewIds = bookmarks.flatMap(({ previewAssetId }) => (previewAssetId ? [previewAssetId] : []));
+    const readable = await checkAccess(this.access, { auth, permission: Permission.AssetRead, ids: previewIds });
     return Promise.all(bookmarks.map((bookmark) => this.map(auth, bookmark, readable)));
   }
 

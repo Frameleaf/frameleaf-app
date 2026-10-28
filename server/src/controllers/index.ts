@@ -59,6 +59,7 @@ import { IdenticalFilesController } from 'src/controllers/identical-files.contro
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
+import { LibraryItemController } from 'src/controllers/library-item.controller.js';
 import { LibraryProgressController } from 'src/controllers/library-progress.controller.js';
 import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
@@ -128,6 +129,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  LibraryItemController,
   AssetPaletteController,
   CaptureController,
   AlbumItemsController,

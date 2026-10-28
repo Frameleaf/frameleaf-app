@@ -39,3 +39,42 @@ describe('search request shapes', () => {
     expect(MetadataSearchDto.schema.safeParse({ filter: { petIds: { any: ['biscuit'] } } }).success).toBe(false);
   });
 });
+
+describe('shared designer search predicates', () => {
+  it('accepts and normalizes color, subtree and transparency in the ordinary structured filter', () => {
+    const id = '00000000-0000-4000-8000-00000000000a';
+    const result = MetadataSearchDto.schema.parse({
+      filter: {
+        libraryScope: 'design',
+        color: { hex: '#A0B0C0' },
+        albumSubtreeIds: { any: [id] },
+        hasTransparency: { eq: true },
+      },
+    });
+    expect(result.filter).toEqual({
+      libraryScope: 'design',
+      color: { hex: '#a0b0c0', tolerance: 'normal', minWeight: 0.05 },
+      albumSubtreeIds: { any: [id] },
+      hasTransparency: { eq: true },
+    });
+  });
+  it.each([
+    { hex: 'red' },
+    { hex: '#abcd' },
+    { hex: '#000000', tolerance: 'unlimited' },
+    { hex: '#000000', minWeight: -0.1 },
+    { hex: '#000000', minWeight: Infinity },
+  ])('rejects invalid color predicates %j', (color) => {
+    expect(MetadataSearchDto.schema.safeParse({ filter: { color } }).success).toBe(false);
+  });
+});
+
+it('preserves dimension, aspect ratio and millisecond duration predicates in the shared filter', () => {
+  const filter = {
+    width: { gte: 1920 },
+    height: { gte: 1080 },
+    aspectRatio: { gte: 1.7, lte: 1.8 },
+    durationMs: { lte: 30_000 },
+  };
+  expect(MetadataSearchDto.schema.parse({ filter }).filter).toEqual(filter);
+});

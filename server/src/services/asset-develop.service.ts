@@ -15,7 +15,6 @@ import sharp from 'sharp';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
 import type { HdrHistogram } from 'src/queue/image-hdr-histogram.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf, RawImageInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -65,6 +64,7 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { type ArgOf, EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { InpaintUnavailableError, MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -206,6 +206,7 @@ export class AssetDevelopService {
     private systemMetadataRepository: SystemMetadataRepository,
     private mediaOperationRepository: MediaOperationRepository,
     private machineLearningRepository: MachineLearningRepository,
+    private eventRepository: EventRepository,
   ) {
     this.logger.setContext(AssetDevelopService.name);
     this.editOperations = new EditOperationTracker(mediaOperationRepository, jobRepository, logger);
@@ -305,6 +306,7 @@ export class AssetDevelopService {
       }
     }
     await this.assetDevelopRepository.setCurrent(assetId, dto.revisionId ?? null);
+    await this.eventRepository.emit('AssetDevelopCurrentChanged', { assetId });
     return this.toResponse(assetId);
   }
 

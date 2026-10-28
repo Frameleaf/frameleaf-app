@@ -1,5 +1,5 @@
 import type { QueueExecution } from 'src/queue/types.js';
-import { AssetType, JobName, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetType, JobName, JobStatus } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { AssetPaletteService } from 'src/services/asset-palette.service.js';
 import { rgbToOklab } from 'src/utils/asset-palette.js';
@@ -41,6 +41,28 @@ const setup = () => {
 };
 
 describe('palette indexing lifecycle', () => {
+  it('refreshes the palette after a committed Develop switch', async () => {
+    const { service, jobs } = setup();
+    await service.onDevelopCurrentChanged({ assetId: 'asset' });
+    expect(jobs.queue).toHaveBeenCalledWith({
+      name: JobName.AssetPaletteExtract,
+      data: { id: 'asset', sourceRevision: 'rev' },
+    });
+  });
+  it('refreshes changed metadata only once a preview has been published', async () => {
+    const { service, jobs, palettes } = setup();
+    await service.onMetadataExtracted({ assetId: 'asset', userId: 'owner' });
+    expect(jobs.queue).not.toHaveBeenCalled();
+    palettes.source.mockResolvedValue({
+      ...source,
+      files: [{ type: AssetFileType.Preview, path: '/synthetic/preview.jpg', isEdited: false }],
+    } as never);
+    await service.onMetadataExtracted({ assetId: 'asset', userId: 'owner' });
+    expect(jobs.queue).toHaveBeenCalledWith({
+      name: JobName.AssetPaletteExtract,
+      data: { id: 'asset', sourceRevision: 'rev' },
+    });
+  });
   it('checks media access before returning palette state or allowing a retry', async () => {
     const { palettes, media, jobs } = setup();
     const mocks = getMocks();

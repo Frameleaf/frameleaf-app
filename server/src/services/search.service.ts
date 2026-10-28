@@ -49,7 +49,12 @@ import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-v
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
-import { applyLockedVisibilityPolicy, collectFilterIds, requirePetFilterAllowed } from 'src/utils/search-filter.js';
+import {
+  applyLockedVisibilityPolicy,
+  collectFilterIds,
+  requirePetFilterAllowed,
+  requireSourceFilterAllowed,
+} from 'src/utils/search-filter.js';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -580,13 +585,18 @@ export class SearchService extends BaseService {
     return this.mapResponse(items, { auth });
   }
 
-  private async resolveSearchScopeV3(
+  async resolveSearchScopeV3(
     auth: AuthDto,
     dto: { filter?: SearchFilter; libraryScope?: LibraryViewScope },
   ): Promise<{ filter: SearchFilter; scope: AssetSearchScope }> {
     const filter = { ...dto.filter, ...(dto.libraryScope && { libraryScope: dto.libraryScope }) };
     const effectiveFilter = applyLockedVisibilityPolicy(auth, filter);
+    requireSourceFilterAllowed(auth, effectiveFilter);
 
+    const subtreeIds = collectFilterIds(filter, 'albumSubtreeIds');
+    if (auth.sharedLink && subtreeIds.length > 0) {
+      throw new BadRequestException('Shared links do not grant descendant albums');
+    }
     const fullyConfined = isFullyAlbumConfined(filter);
     // a shared link visitor does not have a universe, so there every branch must be confined
     if (auth.sharedLink && !fullyConfined) {
@@ -595,7 +605,7 @@ export class SearchService extends BaseService {
 
     requirePetFilterAllowed(auth, collectFilterIds(filter, 'petIds'));
 
-    const albumIds = collectFilterIds(filter, 'albumIds');
+    const albumIds = [...new Set([...collectFilterIds(filter, 'albumIds'), ...subtreeIds])];
     if (albumIds.length > 0) {
       await this.requireAccess({ auth, ids: albumIds, permission: Permission.AlbumRead });
     }

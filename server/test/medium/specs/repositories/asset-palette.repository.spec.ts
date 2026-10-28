@@ -65,6 +65,11 @@ describe('current palette SQL persistence', () => {
       .execute();
     expect((await repo.source(asset.id))?.sourceRevision).not.toBe(edited?.sourceRevision);
   });
+  it('invalidates source selection when an image filename changes representative-frame handling', async () => {
+    const { repo, asset, source } = await setup();
+    await db.updateTable('asset').set({ originalFileName: 'reference.gif' }).where('id', '=', asset.id).execute();
+    expect((await repo.source(asset.id))?.sourceRevision).not.toBe(source.sourceRevision);
+  });
   it('rejects trashed/deleted sources and cascades only derived palette rows when an asset is deleted', async () => {
     const { repo, asset, ready, source } = await setup();
     await repo.publish(asset.id, source.sourceRevision, ready);

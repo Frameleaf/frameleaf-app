@@ -57,6 +57,8 @@ import {
 } from 'src/repositories/search.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { assetColorPredicate, assetTransparencyPredicate } from 'src/utils/asset-palette-query.js';
+import { assetSourcePredicate } from 'src/utils/asset-source-query.js';
 import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
 import { displayPathSql } from 'src/utils/library-path.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
@@ -759,8 +761,8 @@ const tagAssets = (eb: AssetExpressionBuilder) =>
   eb.selectFrom('tag_asset').whereRef('tag_asset.assetId', '=', 'asset.id');
 // shared any/all/none mechanics; `matchesAll` only receives deduplicated multi-id lists,
 // so its `count(distinct id) = ids.length` check stays satisfiable
-function idsPredicates(
-  eb: AssetExpressionBuilder,
+export function idsPredicates<TB extends keyof DB>(
+  eb: ExpressionBuilder<DB, TB>,
   { any, all, none }: IdsFilter = {},
   ops: {
     matchesAny: (ids: string[]) => Expression<SqlBool>;
@@ -794,6 +796,37 @@ function albumIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
           .groupBy('album_asset.assetId')
           .having((eb) => eb.fn.count('album_asset.albumId').distinct(), '=', ids.length),
       ),
+  });
+}
+function albumSubtreeIdsPredicates(
+  eb: AssetExpressionBuilder,
+  filter: IdsFilter | undefined,
+  viewerId?: string | null,
+) {
+  if (!filter) return [];
+  const matching = (ids: string[]) =>
+    albumAssets(eb)
+      .innerJoin('album_closure', 'album_closure.id_descendant', 'album_asset.albumId')
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .innerJoin('album_user', 'album_user.albumId', 'album.id')
+      .innerJoin('album as subtree_root', 'subtree_root.id', 'album_closure.id_ancestor')
+      .innerJoin('album_user as subtree_root_member', 'subtree_root_member.albumId', 'subtree_root.id')
+      .where('subtree_root.deletedAt', 'is', null)
+      .where('subtree_root_member.userId', '=', viewerId ?? '')
+      .where('album.deletedAt', 'is', null)
+      .where('album_user.userId', '=', viewerId ?? '')
+      .where('album_closure.id_ancestor', '=', anyUuid(ids));
+  return idsPredicates(eb, filter, {
+    matchesAny: (ids) => (viewerId ? eb.exists(matching(ids)) : eb.lit(false)),
+    matchesAll: (ids) =>
+      viewerId
+        ? eb.exists(
+            matching(ids)
+              .select('album_asset.assetId')
+              .groupBy('album_asset.assetId')
+              .having((eb) => eb.fn.count('album_closure.id_ancestor').distinct(), '=', ids.length),
+          )
+        : eb.lit(false),
   });
 }
 function personIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
@@ -889,7 +922,7 @@ type ComparisonFilter<T> = {
 };
 // one operator dispatch for every filter shape; the DTO schemas constrain which
 // operators (and null literals) each filter can actually carry
-function comparisonPredicates<TB extends keyof DB, RE extends ReferenceExpression<DB, TB>>(
+export function comparisonPredicates<TB extends keyof DB, RE extends ReferenceExpression<DB, TB>>(
   eb: ExpressionBuilder<DB, TB>,
   column: RE,
   filter?: ComparisonFilter<OperandValueExpression<DB, TB, RE>>,
@@ -1060,6 +1093,8 @@ function branchPredicates(
   branch: SearchFilterBranch,
   viewerId: string | undefined,
   revealOwnerId?: string,
+  privateViewerId: string | null | undefined = viewerId,
+  paletteViewerId: string | null | undefined = privateViewerId,
 ) {
   const { encodedVideoPath } = branch;
   return [
@@ -1099,12 +1134,24 @@ function branchPredicates(
       : []),
     ...comparisonPredicates(eb, 'asset_exif.rating', branch.rating),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
+    ...comparisonPredicates(eb, 'asset_exif.exifImageWidth', branch.width),
+    ...comparisonPredicates(eb, 'asset_exif.exifImageHeight', branch.height),
+    ...comparisonPredicates(
+      eb,
+      sql<number | null>`asset_exif."exifImageWidth"::double precision / nullif(asset_exif."exifImageHeight", 0)`,
+      branch.aspectRatio,
+    ),
+    ...comparisonPredicates(eb, 'asset.duration', branch.durationMs),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
     ...comparisonPredicates(eb, 'asset.localDateTime', branch.localDateTime),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),
     ...albumIdsPredicates(eb, branch.albumIds),
+    ...albumSubtreeIdsPredicates(eb, branch.albumSubtreeIds, privateViewerId),
+    ...(branch.source ? [assetSourcePredicate(branch.source.contains, privateViewerId)] : []),
+    ...(branch.color ? [assetColorPredicate(branch.color, paletteViewerId)] : []),
+    ...(branch.hasTransparency ? [assetTransparencyPredicate(branch.hasTransparency.eq, paletteViewerId)] : []),
     ...personIdsPredicates(eb, branch.personIds),
     ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
@@ -1132,14 +1179,20 @@ export function searchFilterPredicate(
   viewerId: string | undefined,
   revealOwnerId?: string,
   branchScope?: (branch: SearchFilterBranch) => Expression<SqlBool>[],
+  privacy: { privateViewerId?: string | null; paletteViewerId?: string | null } = {},
 ): Expression<SqlBool> {
-  const predicates = branchPredicates(eb, filter, viewerId, revealOwnerId);
+  const privateViewerId = privacy.privateViewerId === undefined ? viewerId : privacy.privateViewerId;
+  const paletteViewerId = privacy.paletteViewerId === undefined ? privateViewerId : privacy.paletteViewerId;
+  const predicates = branchPredicates(eb, filter, viewerId, revealOwnerId, privateViewerId, paletteViewerId);
   const branches = filter.or ?? [];
   if (branches.length > 0) {
     predicates.push(
       eb.or(
         branches.map((branch) =>
-          eb.and([...branchPredicates(eb, branch, viewerId, revealOwnerId), ...(branchScope?.(branch) ?? [])]),
+          eb.and([
+            ...branchPredicates(eb, branch, viewerId, revealOwnerId, privateViewerId, paletteViewerId),
+            ...(branchScope?.(branch) ?? []),
+          ]),
         ),
       ),
     );
@@ -1196,10 +1249,16 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) =>
-        searchFilterPredicate(eb, filter, viewerId, options.revealLockedOwnerId, (branch) =>
-          scopePerBranch && !isAlbumConfined(branch)
-            ? [ownershipPredicate(eb), ...(!libraryScope ? [libraryScopePredicate(LibraryScope.Personal)] : [])]
-            : [],
+        searchFilterPredicate(
+          eb,
+          filter,
+          viewerId,
+          options.revealLockedOwnerId,
+          (branch) =>
+            scopePerBranch && !isAlbumConfined(branch)
+              ? [ownershipPredicate(eb), ...(!libraryScope ? [libraryScopePredicate(LibraryScope.Personal)] : [])]
+              : [],
+          { privateViewerId: scope.sharedLink ? null : viewerId },
         ),
       )
   );
