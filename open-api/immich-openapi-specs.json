@@ -141696,6 +141696,13 @@
         ],
         "type": "object"
       },
+      "WorkflowBatchReason": {
+        "enum": [
+          "manual",
+          "schedule"
+        ],
+        "type": "string"
+      },
       "WorkflowBatchResponseDto": {
         "properties": {
           "completed": {
@@ -141725,11 +141732,7 @@
             "type": "string"
           },
           "reason": {
-            "enum": [
-              "manual",
-              "schedule"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/WorkflowBatchReason"
           },
           "skipped": {
             "maximum": 9007199254740991,
@@ -141740,14 +141743,7 @@
             "type": "string"
           },
           "status": {
-            "enum": [
-              "pending",
-              "running",
-              "completed",
-              "cancelled",
-              "failed"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/WorkflowBatchStatus"
           },
           "total": {
             "maximum": 9007199254740991,
@@ -141779,6 +141775,16 @@
           "workflowId"
         ],
         "type": "object"
+      },
+      "WorkflowBatchStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "completed",
+          "cancelled",
+          "failed"
+        ],
+        "type": "string"
       },
       "WorkflowCapabilitiesDto": {
         "properties": {

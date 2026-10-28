@@ -302,8 +302,8 @@ export class WorkflowBatchResponseDto extends createZodDto(
     .object({
       id: z.uuid(),
       workflowId: z.uuid(),
-      status: z.enum(['pending', 'running', 'completed', 'cancelled', 'failed']),
-      reason: z.enum(['manual', 'schedule']),
+      status: z.enum(['pending', 'running', 'completed', 'cancelled', 'failed']).meta({ id: 'WorkflowBatchStatus' }),
+      reason: z.enum(['manual', 'schedule']).meta({ id: 'WorkflowBatchReason' }),
       createdAt: z.string(),
       updatedAt: z.string(),
       finishedAt: z.string().nullable(),

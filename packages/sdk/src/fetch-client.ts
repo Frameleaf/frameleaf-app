@@ -16884,10 +16884,10 @@ export type WorkflowBatchResponseDto = {
     failed: number;
     finishedAt: string | null;
     id: string;
-    reason: Reason;
+    reason: WorkflowBatchReason;
     skipped: number;
     snapshotAt: string;
-    status: Status12;
+    status: WorkflowBatchStatus;
     total: number;
     updatedAt: string;
     workflowId: string;
@@ -18242,7 +18242,7 @@ export type SyncAssetTrashStateV1 = {
     assetId: string;
     deletedAt: string;
     isOffline: boolean;
-    status: Status13;
+    status: Status12;
 };
 export type SyncAssetV1 = {
     /** Checksum */
@@ -36834,11 +36834,11 @@ export enum Field {
     CreatedAt = "createdAt",
     UpdatedAt = "updatedAt"
 }
-export enum Reason {
+export enum WorkflowBatchReason {
     Manual = "manual",
     Schedule = "schedule"
 }
-export enum Status12 {
+export enum WorkflowBatchStatus {
     Pending = "pending",
     Running = "running",
     Completed = "completed",
@@ -36958,7 +36958,7 @@ export enum StudioImportPublicationState {
     Published = "published",
     Aborted = "aborted"
 }
-export enum Status13 {
+export enum Status12 {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"

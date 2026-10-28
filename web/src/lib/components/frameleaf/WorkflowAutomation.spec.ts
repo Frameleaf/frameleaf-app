@@ -1,6 +1,6 @@
+import { Field } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
-import { Field } from '@frameleaf/sdk';
 import { emptyDraft } from '$lib/frameleaf/workflows';
 import en from '../../../../../i18n/en.json';
 import WorkflowAutomation from './WorkflowAutomation.svelte';
