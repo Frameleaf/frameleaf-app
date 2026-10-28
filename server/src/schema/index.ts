@@ -226,6 +226,12 @@ import {
   VideoStreamSessionTable,
   VideoStreamVariantTable,
 } from 'src/schema/tables/video-stream.table.js';
+import {
+  WorkflowBatchItemTable,
+  WorkflowBatchTable,
+  WorkflowCausationTable,
+  WorkflowScheduleTable,
+} from 'src/schema/tables/workflow-batch.table.js';
 import { WorkflowDefinitionTable } from 'src/schema/tables/workflow-definition.table.js';
 import { WorkflowLogDetailTable } from 'src/schema/tables/workflow-log-detail.table.js';
 import { WorkflowLogTable } from 'src/schema/tables/workflow-log.table.js';
@@ -425,6 +431,10 @@ export class ImmichDatabase {
     WorkflowLogTable,
     WorkflowLogDetailTable,
     WorkflowRunStepTable,
+    WorkflowBatchTable,
+    WorkflowBatchItemTable,
+    WorkflowScheduleTable,
+    WorkflowCausationTable,
   ];
 
   functions = [
@@ -685,4 +695,8 @@ export interface DB extends QueueDatabase {
   workflow_definition: WorkflowDefinitionTable;
   workflow_log_detail: WorkflowLogDetailTable;
   workflow_run_step: WorkflowRunStepTable;
+  workflow_batch: WorkflowBatchTable;
+  workflow_batch_item: WorkflowBatchItemTable;
+  workflow_schedule: WorkflowScheduleTable;
+  workflow_causation: WorkflowCausationTable;
 }

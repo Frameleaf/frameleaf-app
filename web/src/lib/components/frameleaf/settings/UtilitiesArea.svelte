@@ -249,7 +249,17 @@
       return goto(commandCenterUrl('care', undefined, { scope: page.url.searchParams.get('scope') ?? undefined }));
     }
     const url = new URL(page.url.href);
-    for (const key of ['section', 'assetId', 'status', 'at', 'index', 'workflowId', 'from']) {
+    for (const key of [
+      'section',
+      'assetId',
+      'status',
+      'at',
+      'index',
+      'workflowId',
+      'workflowQuery',
+      'workflowName',
+      'from',
+    ]) {
       url.searchParams.delete(key);
     }
     if (section) {
@@ -313,12 +323,18 @@
       {:else if data.tool === 'live-photos'}<LivePhotosUtility {data} />
       {:else if data.tool === 'geolocation'}<GeolocationUtility />
       {:else if data.tool === 'workflows'}
-        {#key page.url.searchParams.get('workflowId')}
+        {#key page.url.searchParams.get('workflowId') ?? page.url.searchParams.get('workflowQuery') ?? page.url.searchParams.get('workflowAlbum')}
           <WorkflowsPanel
+            workflowQuery={page.url.searchParams.get('workflowQuery') ?? undefined}
+            workflowAlbum={page.url.searchParams.get('workflowAlbum') ?? undefined}
+            workflowName={page.url.searchParams.get('workflowName') ?? undefined}
             openId={page.url.searchParams.get('workflowId') ?? undefined}
             onOpenClosed={() => {
               const url = new URL(page.url.href);
               url.searchParams.delete('workflowId');
+              url.searchParams.delete('workflowQuery');
+              url.searchParams.delete('workflowName');
+              url.searchParams.delete('workflowAlbum');
               void gotoWithFocusAndScroll(`${url.pathname}${url.search}`, { replace: true, noScroll: true });
             }}
           />

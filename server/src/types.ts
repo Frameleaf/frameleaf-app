@@ -729,6 +729,11 @@ export type JobItem =
       data: {
         workflowId: string;
         assetId: string;
+        batchId?: string;
+        source?: import('src/utils/workflow-source.js').WorkflowSource;
+        embedding?: string;
+        embeddingKey?: string;
+        causation?: string[];
         /**
          * The run this job belongs to and which attempt it is (FL-82). Set when the run is queued, so a
          * replay of a stalled job logs to the same run; a job queued before that gets a new run id.

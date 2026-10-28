@@ -36846,7 +36846,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/PluginTemplateResponseDto"
+                    "$ref": "#/components/schemas/LegacyPluginTemplateResponseDto"
                   },
                   "type": "array"
                 }
@@ -57423,6 +57423,122 @@
         "x-immich-permission": "workflow.create"
       }
     },
+    "/workflows/automation/capabilities": {
+      "get": {
+        "operationId": "getWorkflowCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowCapabilitiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ]
+      }
+    },
+    "/workflows/automation/discovery": {
+      "get": {
+        "description": "Includes change-driven and scheduled automation. Legacy discovery endpoints retain their original trigger values.",
+        "operationId": "getWorkflowDiscovery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDiscoveryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discover all workflow triggers and plugin templates",
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "plugin.read"
+      }
+    },
+    "/workflows/preview": {
+      "post": {
+        "operationId": "previewWorkflow",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.read"
+      }
+    },
     "/workflows/triggers": {
       "get": {
         "description": "Retrieve a list of all available workflow triggers.",
@@ -57434,7 +57550,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/WorkflowTriggerResponseDto"
+                    "$ref": "#/components/schemas/LegacyWorkflowTriggerResponseDto"
                   },
                   "type": "array"
                 }
@@ -57627,6 +57743,203 @@
         ],
         "x-immich-permission": "workflow.update",
         "x-immich-state": "Deprecated"
+      }
+    },
+    "/workflows/{id}/batches": {
+      "get": {
+        "operationId": "getWorkflowBatches",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowBatchResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.read"
+      },
+      "post": {
+        "operationId": "runWorkflow",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.update"
+      }
+    },
+    "/workflows/{id}/batches/{batchId}": {
+      "get": {
+        "operationId": "getWorkflowBatch",
+        "parameters": [
+          {
+            "name": "batchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.read"
+      }
+    },
+    "/workflows/{id}/batches/{batchId}/cancel": {
+      "post": {
+        "operationId": "cancelWorkflowBatch",
+        "parameters": [
+          {
+            "name": "batchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.update"
       }
     },
     "/workflows/{id}/logs": {
@@ -88905,6 +89218,77 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "LegacyPluginTemplateResponseDto": {
+        "properties": {
+          "description": {
+            "description": "Template description",
+            "type": "string"
+          },
+          "key": {
+            "description": "Template key (unique across all templates)",
+            "type": "string"
+          },
+          "steps": {
+            "description": "Workflow steps",
+            "items": {
+              "$ref": "#/components/schemas/PluginTemplateStepResponseDto"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "Template title",
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "AssetCreate",
+              "AssetMetadataExtraction",
+              "AssetTagged"
+            ],
+            "type": "string"
+          },
+          "uiHints": {
+            "description": "Ui hints, for example \"smart-album\"",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "description",
+          "key",
+          "steps",
+          "title",
+          "trigger",
+          "uiHints"
+        ],
+        "type": "object"
+      },
+      "LegacyWorkflowTriggerResponseDto": {
+        "properties": {
+          "trigger": {
+            "enum": [
+              "AssetCreate",
+              "AssetMetadataExtraction",
+              "AssetTagged"
+            ],
+            "type": "string"
+          },
+          "types": {
+            "description": "Workflow types",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowType"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "trigger",
+          "types"
+        ],
         "type": "object"
       },
       "LibraryFeatureProgressDto": {
@@ -141312,6 +141696,137 @@
         ],
         "type": "object"
       },
+      "WorkflowBatchReason": {
+        "enum": [
+          "manual",
+          "schedule"
+        ],
+        "type": "string"
+      },
+      "WorkflowBatchResponseDto": {
+        "properties": {
+          "completed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/WorkflowBatchReason"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "snapshotAt": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkflowBatchStatus"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "workflowId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed",
+          "createdAt",
+          "error",
+          "failed",
+          "finishedAt",
+          "id",
+          "reason",
+          "skipped",
+          "snapshotAt",
+          "status",
+          "total",
+          "updatedAt",
+          "workflowId"
+        ],
+        "type": "object"
+      },
+      "WorkflowBatchStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "completed",
+          "cancelled",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "WorkflowCapabilitiesDto": {
+        "properties": {
+          "assetChanged": {
+            "type": "boolean"
+          },
+          "batchRuns": {
+            "type": "boolean"
+          },
+          "rollingDates": {
+            "type": "boolean"
+          },
+          "schedules": {
+            "type": "boolean"
+          },
+          "semanticThreshold": {
+            "type": "boolean"
+          },
+          "sourceFilters": {
+            "type": "boolean"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "version": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetChanged",
+          "batchRuns",
+          "rollingDates",
+          "schedules",
+          "semanticThreshold",
+          "sourceFilters",
+          "timezone",
+          "version"
+        ],
+        "type": "object"
+      },
       "WorkflowCreateDto": {
         "properties": {
           "description": {
@@ -141339,6 +141854,22 @@
             "nullable": true,
             "type": "string"
           },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
+          },
           "steps": {
             "items": {
               "$ref": "#/components/schemas/WorkflowStepDto"
@@ -141355,6 +141886,27 @@
         },
         "required": [
           "trigger"
+        ],
+        "type": "object"
+      },
+      "WorkflowDiscoveryResponseDto": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/PluginTemplateResponseDto"
+            },
+            "type": "array"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTriggerResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "templates",
+          "triggers"
         ],
         "type": "object"
       },
@@ -141463,6 +142015,113 @@
         ],
         "type": "object"
       },
+      "WorkflowPreviewDto": {
+        "properties": {
+          "description": {
+            "description": "Workflow description",
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Workflow enabled",
+            "type": "boolean"
+          },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
+          },
+          "logging": {
+            "description": "Workflow logs run results",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Workflow name",
+            "maxLength": 300,
+            "nullable": true,
+            "type": "string"
+          },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStepDto"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "trigger": {
+            "description": "Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workflowId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "WorkflowPreviewResponseDto": {
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evaluatedAt": {
+            "type": "string"
+          },
+          "exampleAssetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowIssueDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "actions",
+          "count",
+          "evaluatedAt",
+          "exampleAssetIds",
+          "issues"
+        ],
+        "type": "object"
+      },
       "WorkflowResponseDto": {
         "properties": {
           "createdAt": {
@@ -141504,6 +142163,26 @@
             "description": "Workflow name",
             "nullable": true,
             "type": "string"
+          },
+          "nextRunAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
           },
           "steps": {
             "description": "Workflow steps",
@@ -141553,6 +142232,19 @@
         ],
         "type": "string"
       },
+      "WorkflowScheduleDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cron": {
+            "maxLength": 160,
+            "type": "string"
+          }
+        },
+        "required": [
+          "cron"
+        ],
+        "type": "object"
+      },
       "WorkflowSearchDto": {
         "properties": {
           "description": {
@@ -141601,6 +142293,26 @@
             "nullable": true,
             "type": "string"
           },
+          "nextRunAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
+          },
           "steps": {
             "description": "Workflow steps",
             "items": {
@@ -141648,6 +142360,75 @@
           "config",
           "extra",
           "method"
+        ],
+        "type": "object"
+      },
+      "WorkflowSourceDto": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/SearchFilter"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
+          "rollingDates": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "days": {
+                  "exclusiveMinimum": true,
+                  "maximum": 36500,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field": {
+                  "enum": [
+                    "takenAt",
+                    "localDateTime",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "days"
+              ],
+              "type": "object"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
+          "semantic": {
+            "additionalProperties": false,
+            "properties": {
+              "maxDistance": {
+                "format": "double",
+                "maximum": 2,
+                "minimum": 0,
+                "type": "number"
+              },
+              "query": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "queryAssetId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "maxDistance"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "filter"
         ],
         "type": "object"
       },
@@ -141736,6 +142517,8 @@
         "description": "Plugin trigger type",
         "enum": [
           "AssetCreate",
+          "AssetChanged",
+          "Schedule",
           "AssetMetadataExtraction",
           "AssetTagged"
         ],
@@ -141794,6 +142577,22 @@
             "maxLength": 300,
             "nullable": true,
             "type": "string"
+          },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
           },
           "steps": {
             "items": {

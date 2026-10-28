@@ -40,6 +40,29 @@ describe('SearchSaveDialog', () => {
     return { onSaved };
   };
 
+  it('opens a copied workflow draft without creating an album or running actions', async () => {
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: true } as never);
+    const query = { ...emptyDiscoveryQuery(), text: 'Holiday', filter: { rating: { gte: 4 } } };
+    setup(query);
+    const button = screen.getByRole('button', { name: /Automate this search/ });
+    await waitFor(() => expect(button).toBeEnabled());
+    await fireEvent.click(button);
+    await waitFor(() => expect(goto).toHaveBeenCalled());
+    const url = new URL(String(vi.mocked(goto).mock.calls[0][0]), 'https://frameleaf.test');
+    expect(JSON.parse(url.searchParams.get('workflowQuery')!)).toEqual(query);
+    expect(sdkMock.createAlbum).not.toHaveBeenCalled();
+    expect(sdkMock.createWorkflow).not.toHaveBeenCalled();
+    expect(sdkMock.runWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('explains the unavailable automation capability on older servers', async () => {
+    sdkMock.getWorkflowCapabilities.mockRejectedValue(new Error('not found'));
+    setup(emptyDiscoveryQuery());
+    const button = screen.getByRole('button', { name: /Automate this search/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent('Update the server');
+  });
+
   it('creates a rule-backed smart album from a search a rule can say', async () => {
     sdkMock.createClassificationRule.mockResolvedValue({ albumId: ALBUM } as never);
     const query = {

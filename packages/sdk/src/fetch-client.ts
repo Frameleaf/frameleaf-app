@@ -12275,7 +12275,7 @@ export type PluginTemplateStepResponseDto = {
     /** Step plugin method */
     method: string;
 };
-export type PluginTemplateResponseDto = {
+export type LegacyPluginTemplateResponseDto = {
     /** Template description */
     description: string;
     /** Template key (unique across all templates) */
@@ -12284,8 +12284,7 @@ export type PluginTemplateResponseDto = {
     steps: PluginTemplateStepResponseDto[];
     /** Template title */
     title: string;
-    /** Workflow trigger */
-    trigger: WorkflowTrigger;
+    trigger: Trigger;
     /** Ui hints, for example "smart-album" */
     uiHints: string[];
 };
@@ -16695,6 +16694,22 @@ export type WorkflowIssueDto = {
     /** Index of the step the issue belongs to */
     step?: number;
 };
+export type WorkflowScheduleDto = {
+    cron: string;
+};
+export type WorkflowSourceDto = {
+    filter: SearchFilter;
+    imageEnrichment?: ImageEnrichmentFilter;
+    rollingDates?: {
+        days: number;
+        field: Field;
+    }[];
+    semantic?: {
+        maxDistance: number;
+        query?: string;
+        queryAssetId?: string;
+    };
+};
 export type WorkflowStepResponseDto = {
     /** Step configuration, without stored credential values */
     config: {
@@ -16732,6 +16747,9 @@ export type WorkflowResponseDto = {
     logging: boolean;
     /** Workflow name */
     name: string | null;
+    nextRunAt?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     /** Workflow steps */
     steps: WorkflowStepResponseDto[];
     /** Workflow trigger type */
@@ -16768,13 +16786,75 @@ export type WorkflowCreateDto = {
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     steps?: WorkflowStepDto[];
     /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
     trigger: string;
 };
+export type WorkflowCapabilitiesDto = {
+    assetChanged: boolean;
+    batchRuns: boolean;
+    rollingDates: boolean;
+    schedules: boolean;
+    semanticThreshold: boolean;
+    sourceFilters: boolean;
+    timezone: string;
+    version: number;
+};
+export type PluginTemplateResponseDto = {
+    /** Template description */
+    description: string;
+    /** Template key (unique across all templates) */
+    key: string;
+    /** Workflow steps */
+    steps: PluginTemplateStepResponseDto[];
+    /** Template title */
+    title: string;
+    /** Workflow trigger */
+    trigger: WorkflowTrigger;
+    /** Ui hints, for example "smart-album" */
+    uiHints: string[];
+};
 export type WorkflowTriggerResponseDto = {
     /** Trigger type */
     trigger: WorkflowTrigger;
+    /** Workflow types */
+    types: WorkflowType[];
+};
+export type WorkflowDiscoveryResponseDto = {
+    templates: PluginTemplateResponseDto[];
+    triggers: WorkflowTriggerResponseDto[];
+};
+export type WorkflowPreviewDto = {
+    /** Workflow description */
+    description?: string | null;
+    /** Workflow enabled */
+    enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
+    /** Workflow logs run results */
+    logging?: boolean;
+    /** Workflow name */
+    name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
+    steps?: WorkflowStepDto[];
+    /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
+    trigger: string;
+    workflowId?: string;
+};
+export type WorkflowPreviewResponseDto = {
+    actions: string[];
+    count: number;
+    evaluatedAt: string;
+    exampleAssetIds: string[];
+    issues: WorkflowIssueDto[];
+};
+export type LegacyWorkflowTriggerResponseDto = {
+    trigger: Trigger;
     /** Workflow types */
     types: WorkflowType[];
 };
@@ -16791,9 +16871,26 @@ export type WorkflowUpdateDto = {
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     steps?: WorkflowStepDto[];
     /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
     trigger?: string;
+};
+export type WorkflowBatchResponseDto = {
+    completed: number;
+    createdAt: string;
+    error: string | null;
+    failed: number;
+    finishedAt: string | null;
+    id: string;
+    reason: WorkflowBatchReason;
+    skipped: number;
+    snapshotAt: string;
+    status: WorkflowBatchStatus;
+    total: number;
+    updatedAt: string;
+    workflowId: string;
 };
 export type WorkflowLogEntryDto = {
     /** Workflow run date/time */
@@ -16841,6 +16938,9 @@ export type WorkflowShareResponseDto = {
     };
     /** Workflow name */
     name: string | null;
+    nextRunAt?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     /** Workflow steps */
     steps: WorkflowShareStepDto[];
     /** Workflow trigger type */
@@ -27755,7 +27855,7 @@ export function searchPluginMethods({ description, enabled, id, name, pluginName
 export function searchPluginTemplates(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: PluginTemplateResponseDto[];
+        data: LegacyPluginTemplateResponseDto[];
     }>("/plugins/templates", {
         ...opts
     }));
@@ -32640,13 +32740,44 @@ export function createWorkflow({ workflowCreateDto }: {
         body: workflowCreateDto
     })));
 }
+export function getWorkflowCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowCapabilitiesDto;
+    }>("/workflows/automation/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * Discover all workflow triggers and plugin templates
+ */
+export function getWorkflowDiscovery(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowDiscoveryResponseDto;
+    }>("/workflows/automation/discovery", {
+        ...opts
+    }));
+}
+export function previewWorkflow({ workflowPreviewDto }: {
+    workflowPreviewDto: WorkflowPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowPreviewResponseDto;
+    }>("/workflows/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: workflowPreviewDto
+    })));
+}
 /**
  * List all workflow triggers
  */
 export function getWorkflowTriggers(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: WorkflowTriggerResponseDto[];
+        data: LegacyWorkflowTriggerResponseDto[];
     }>("/workflows/triggers", {
         ...opts
     }));
@@ -32690,6 +32821,50 @@ export function updateWorkflow({ id, workflowUpdateDto }: {
         method: "PUT",
         body: workflowUpdateDto
     })));
+}
+export function getWorkflowBatches({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowBatchResponseDto[];
+    }>(`/workflows/${encodeURIComponent(id)}/batches`, {
+        ...opts
+    }));
+}
+export function runWorkflow({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+export function getWorkflowBatch({ batchId, id }: {
+    batchId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches/${encodeURIComponent(batchId)}`, {
+        ...opts
+    }));
+}
+export function cancelWorkflowBatch({ batchId, id }: {
+    batchId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches/${encodeURIComponent(batchId)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Retrieve workflow logs
@@ -35622,6 +35797,13 @@ export enum WorkflowType {
 }
 export enum WorkflowTrigger {
     AssetCreate = "AssetCreate",
+    AssetChanged = "AssetChanged",
+    Schedule = "Schedule",
+    AssetMetadataExtraction = "AssetMetadataExtraction",
+    AssetTagged = "AssetTagged"
+}
+export enum Trigger {
+    AssetCreate = "AssetCreate",
     AssetMetadataExtraction = "AssetMetadataExtraction",
     AssetTagged = "AssetTagged"
 }
@@ -36645,6 +36827,23 @@ export enum WorkflowIssueCode {
     MethodUnavailable = "method_unavailable",
     MethodIncompatible = "method_incompatible",
     ConfigInvalid = "config_invalid"
+}
+export enum Field {
+    TakenAt = "takenAt",
+    LocalDateTime = "localDateTime",
+    CreatedAt = "createdAt",
+    UpdatedAt = "updatedAt"
+}
+export enum WorkflowBatchReason {
+    Manual = "manual",
+    Schedule = "schedule"
+}
+export enum WorkflowBatchStatus {
+    Pending = "pending",
+    Running = "running",
+    Completed = "completed",
+    Cancelled = "cancelled",
+    Failed = "failed"
 }
 export enum WorkflowResult {
     Completed = "completed",
