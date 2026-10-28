@@ -9,6 +9,7 @@ import { ArchiveOperationController } from 'src/controllers/archive-operation.co
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
+import { AssetPaletteController } from 'src/controllers/asset-palette.controller.js';
 import { AssetRestorationController } from 'src/controllers/asset-restoration.controller.js';
 import { AssetSourceController } from 'src/controllers/asset-source.controller.js';
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
@@ -127,6 +128,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  AssetPaletteController,
   CaptureController,
   AlbumItemsController,
   AssetSourceController,

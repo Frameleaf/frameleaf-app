@@ -9,6 +9,7 @@ import { ArchiveOperationService } from 'src/services/archive-operation.service.
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetPaletteService } from 'src/services/asset-palette.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { AssetSourceService } from 'src/services/asset-source.service.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
@@ -179,6 +180,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  AssetPaletteService,
   CaptureService,
   AlbumItemsService,
   AssetSourceService,

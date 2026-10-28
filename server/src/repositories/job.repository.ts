@@ -77,6 +77,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
   JobName.AssetGenerateThumbnailsQueueAll,
+  JobName.AssetPaletteExtract,
+  JobName.AssetPaletteQueueAll,
   JobName.AssetEditThumbnailGeneration,
   JobName.OcrQueueAll,
   JobName.PetRecognitionQueueAll,
@@ -916,6 +918,12 @@ export class JobRepository {
           delay: item.data.delay ?? 0,
           deduplication: { id: `${JobName.PhotographyWorkflowRender}:${item.data.id}`, keepLastIfActive: true },
         };
+      }
+      case JobName.AssetPaletteExtract: {
+        return { deduplication: { id: `${item.name}:${item.data.id}:${item.data.sourceRevision}` } };
+      }
+      case JobName.AssetPaletteQueueAll: {
+        return { deduplication: { id: `${item.name}:${item.data.afterId ?? 'root'}:${!!item.data.force}` } };
       }
       case JobName.AssetDevelopRender: {
         // The automatic retry of a failed render waits before it is claimed (FL-64).

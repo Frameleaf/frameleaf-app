@@ -551,6 +551,8 @@ export type JobItem =
   // Thumbnails
   | { name: JobName.AssetGenerateThumbnailsQueueAll; data: IBaseJob }
   | { name: JobName.AssetGenerateThumbnails; data: IEntityJob }
+  | { name: JobName.AssetPaletteExtract; data: IEntityJob & { sourceRevision: string } }
+  | { name: JobName.AssetPaletteQueueAll; data: IBaseJob & { afterId?: string } }
 
   // Best Photos
   | { name: JobName.BestPhotosScoreQueueAll; data: IBaseJob }

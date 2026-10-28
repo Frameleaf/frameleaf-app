@@ -72,6 +72,7 @@ import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
@@ -277,6 +278,8 @@ export class ImmichDatabase {
     PushDeviceActivityTable,
     AssetBackupDeletionTable,
     BackupReconciliationTable,
+    AssetPaletteTable,
+    AssetPaletteSwatchTable,
     CaptureReceiptTable,
     BookmarkTable,
     AlbumBookmarkTable,
@@ -528,6 +531,8 @@ export interface DB extends QueueDatabase {
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  asset_palette: AssetPaletteTable;
+  asset_palette_swatch: AssetPaletteSwatchTable;
   capture_receipt: CaptureReceiptTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;

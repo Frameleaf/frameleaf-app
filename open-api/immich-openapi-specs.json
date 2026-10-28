@@ -17252,6 +17252,117 @@
         "x-immich-state": "Stable"
       }
     },
+    "/assets/{id}/palette": {
+      "get": {
+        "operationId": "getAssetPalette",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPaletteDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read the current representative palette and extraction state",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
+    "/assets/{id}/palette/retry": {
+      "post": {
+        "operationId": "retryAssetPalette",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Queue bounded palette extraction for the current source",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/{id}/restorations": {
       "get": {
         "description": "Every restoration of the asset, newest first, with its lifecycle state, the destination it was bound to and which result the owner chose as the playback version.",
@@ -68965,6 +69076,41 @@
         ],
         "type": "string"
       },
+      "AssetPaletteDto": {
+        "properties": {
+          "hasTransparency": {
+            "type": "boolean"
+          },
+          "representative": {
+            "$ref": "#/components/schemas/PaletteRepresentative"
+          },
+          "sourceRevision": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PaletteStatus"
+          },
+          "swatches": {
+            "items": {
+              "$ref": "#/components/schemas/PaletteSwatch"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "version": {
+            "$ref": "#/components/schemas/PaletteAlgorithmVersion"
+          }
+        },
+        "required": [
+          "hasTransparency",
+          "representative",
+          "sourceRevision",
+          "status",
+          "swatches",
+          "version"
+        ],
+        "type": "object"
+      },
       "AssetPlaybackOptionsDto": {
         "properties": {
           "edited": {
@@ -89173,6 +89319,8 @@
           "AssetGenerateVideoDuplicateFrames",
           "AssetEditThumbnailGeneration",
           "AssetDevelopRender",
+          "AssetPaletteExtract",
+          "AssetPaletteQueueAll",
           "AssetVideoEditGeneration",
           "AssetEncodeVideoQueueAll",
           "AssetEncodeVideo",
@@ -99220,6 +99368,59 @@
         "required": [
           "backups",
           "nextOffset"
+        ],
+        "type": "object"
+      },
+      "PaletteAlgorithmVersion": {
+        "enum": [
+          1
+        ],
+        "type": "number"
+      },
+      "PaletteRepresentative": {
+        "enum": [
+          "image",
+          "frame"
+        ],
+        "type": "string"
+      },
+      "PaletteStatus": {
+        "enum": [
+          "pending",
+          "ready",
+          "failed",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "PaletteSwatch": {
+        "properties": {
+          "hex": {
+            "pattern": "^#[a-f0-9]{6}$",
+            "type": "string"
+          },
+          "oklab": {
+            "items": {
+              "format": "double",
+              "maximum": 1.000001,
+              "minimum": 0,
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "weight": {
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "hex",
+          "oklab",
+          "weight"
         ],
         "type": "object"
       },

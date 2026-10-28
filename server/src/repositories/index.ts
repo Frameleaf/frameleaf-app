@@ -13,6 +13,7 @@ import { AssetDevelopRepository } from 'src/repositories/asset-develop.repositor
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetPaletteRepository } from 'src/repositories/asset-palette.repository.js';
 import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetSourceRepository } from 'src/repositories/asset-source.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
@@ -136,6 +137,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  AssetPaletteRepository,
   CaptureRepository,
   AssetSourceRepository,
   BookmarkRepository,

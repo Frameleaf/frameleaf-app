@@ -21,6 +21,7 @@ import { resizeHdrImage } from './image-hdr-pixels.js';
 import { type LinearHdrImage, type PairedHdrImage, imageHdrInput, imageHdrOperation } from './image-hdr.js';
 
 import { SharpDecodeError, SharpResourceLimitError, sharpPayloadBytes } from './sharp-protocol.js';
+import { extractPalette } from '../utils/asset-palette.js';
 import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
 import { perspectiveFor, warpPerspective } from '../utils/develop-perspective.js';
 import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
@@ -375,6 +376,33 @@ export class SharpOperations {
 
   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
     return this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
+  }
+
+  async extractAssetPalette(input: string | Buffer, options: DecodeToBufferOptions) {
+    if (options.colorspace !== 'srgb') throw new Error('Palette output must be sRGB');
+    const bytes = await imageHdrInput(input, this.maxBytes);
+    const metadata =
+      options.raw ?? (await sharp(bytes, { limitInputPixels: this.maxPixels, failOn: 'error' }).metadata());
+    const { width, height } = metadata;
+    if (!width || !height || width * height > this.maxPixels || width * height * 4 + bytes.length > this.maxBytes) {
+      throw new SharpResourceLimitError('palette source exceeds the decoded surface budget');
+    }
+    this.progress();
+    const { data, info } = await this.getImageDecodingPipeline(bytes, {
+      ...options,
+      size: undefined,
+      processInvalidImages: false,
+    })
+      .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
+      .ensureAlpha()
+      .toColourspace('srgb')
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    this.progress();
+    return {
+      swatches: extractPalette(data, info.width, info.height),
+      hasTransparency: data.some((alpha, index) => index % 4 === 3 && alpha < 255),
+    };
   }
 
   async generateImageThumbnails(

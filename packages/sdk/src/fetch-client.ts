@@ -5795,6 +5795,19 @@ export type AssetOcrResponseDto = {
     /** Normalized y coordinate of box corner 4 (0-1) */
     y4: number;
 };
+export type PaletteSwatch = {
+    hex: string;
+    oklab: number[];
+    weight: number;
+};
+export type AssetPaletteDto = {
+    hasTransparency: boolean;
+    representative: PaletteRepresentative;
+    sourceRevision: string;
+    status: PaletteStatus;
+    swatches: PaletteSwatch[];
+    version: PaletteAlgorithmVersion;
+};
 export type AssetRestorationEstimateDto = {
     /** Measured upload throughput for this destination and workload, or null with no samples */
     bytesPerSecond: number | null;
@@ -23073,6 +23086,35 @@ export function downloadAsset({ edited, format, id, key, slug }: {
     }));
 }
 /**
+ * Read the current representative palette and extraction state
+ */
+export function getAssetPalette({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetPaletteDto;
+    }>(`/assets/${encodeURIComponent(id)}/palette${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Queue bounded palette extraction for the current source
+ */
+export function retryAssetPalette({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/palette/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * List restorations of an asset
  */
 export function getAssetRestorations({ id }: {
@@ -34899,6 +34941,19 @@ export enum AssetImageEnrichmentAction {
     ClearGeneratedDescription = "clear-generated-description",
     ClearGeneratedTags = "clear-generated-tags"
 }
+export enum PaletteRepresentative {
+    Image = "image",
+    Frame = "frame"
+}
+export enum PaletteStatus {
+    Pending = "pending",
+    Ready = "ready",
+    Failed = "failed",
+    Unavailable = "unavailable"
+}
+export enum PaletteAlgorithmVersion {
+    $1 = 1
+}
 export enum AssetRestorationMode {
     Faithful = "faithful",
     Creative = "creative",
@@ -36332,6 +36387,8 @@ export enum JobName {
     AssetGenerateVideoDuplicateFrames = "AssetGenerateVideoDuplicateFrames",
     AssetEditThumbnailGeneration = "AssetEditThumbnailGeneration",
     AssetDevelopRender = "AssetDevelopRender",
+    AssetPaletteExtract = "AssetPaletteExtract",
+    AssetPaletteQueueAll = "AssetPaletteQueueAll",
     AssetVideoEditGeneration = "AssetVideoEditGeneration",
     AssetEncodeVideoQueueAll = "AssetEncodeVideoQueueAll",
     AssetEncodeVideo = "AssetEncodeVideo",
