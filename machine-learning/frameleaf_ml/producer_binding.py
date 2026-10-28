@@ -5,6 +5,7 @@ import json
 import math
 import re
 import threading
+from collections import OrderedDict
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,6 +16,7 @@ from PIL import Image as PillowImage
 from PIL.Image import Image
 
 from .config import settings
+from .models.base import InferenceModel
 from .models.transforms import decode_pil
 from .native_qualification import ModelBindingSpec, preprocessing_identity, verify_models
 from .schemas import ModelTask, ModelType
@@ -24,31 +26,40 @@ from .sessions import private_runtime_cache
 class BoundPredictor:
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._models: OrderedDict[tuple[str, str], tuple[InferenceModel, TemporaryDirectory[str]]] = OrderedDict()
+
+    def _clear(self) -> None:
+        directories = [directory for _, directory in self._models.values()]
+        self._models.clear()  # Release sessions before removing their compiled runtime files.
+        for directory in directories:
+            directory.cleanup()
+
+    def close(self) -> None:
+        with self._lock:
+            self._clear()
 
     def predict(self, raw: str, image: bytes | None, text: str | None) -> dict[str, Any]:
-        # Overlapping server calls (smart-search jobs, interactive search) queue rather than fail.
-        # ponytail: one request at a time; cache verified sessions if NAS measurements need parallel throughput.
+        # The bounded executor limits requests waiting for this model's native runtime.
         if not self._lock.acquire(timeout=300):
-            raise ValueError("producer_busy")
+            from .inference_executor import InferenceBusy
+
+            raise InferenceBusy("ml_worker_busy")
         try:
             result = None
-            with TemporaryDirectory(prefix="frameleaf-bound-") as temporary:
-                with private_runtime_cache(Path(temporary)):
-                    try:
-                        result = self._predict(raw, image, text)
-                    except Exception as error:
-                        # Retained exception chains must release sessions before derived files are removed.
-                        pending: list[BaseException] = [error]
-                        seen: set[int] = set()
-                        while pending:
-                            current = pending.pop()
-                            if id(current) in seen:
-                                continue
-                            seen.add(id(current))
-                            pending.extend(
-                                cause for cause in (current.__cause__, current.__context__) if cause is not None
-                            )
-                            current.__traceback__ = current.__cause__ = current.__context__ = None
+            try:
+                result = self._predict(raw, image, text)
+            except Exception as error:
+                # Retained exception chains must release sessions before derived files are removed.
+                pending: list[BaseException] = [error]
+                seen: set[int] = set()
+                while pending:
+                    current = pending.pop()
+                    if id(current) in seen:
+                        continue
+                    seen.add(id(current))
+                    pending.extend(cause for cause in (current.__cause__, current.__context__) if cause is not None)
+                    current.__traceback__ = current.__cause__ = current.__context__ = None
+                self._clear()
             if result is None:
                 raise ValueError("producer_identity_unavailable")
             return result
@@ -106,11 +117,21 @@ class BoundPredictor:
         if cache.is_symlink():
             raise ValueError("producer_cache_invalid")
         _, verified = verify_models(spec, cache, require_staged=False)
-        # shortcut: reload verified sessions per request; cache immutable sessions after NAS measurements.
-        model = verified[0]
-        model.load(allow_download=False)
-        payload: Image | str = decode_pil(image) if image is not None else text or ""
-        result: dict[str, Any] = {"clip": model.predict(payload, **options)}
+        key = (spec.model_key, str(cache.resolve()))
+        if key not in self._models:
+            # Keep the usual visual/textual pair warm, with a fixed memory bound.
+            if len(self._models) >= 2:
+                evicted, directory = self._models.popitem(last=False)[1]
+                del evicted
+                directory.cleanup()
+            directory = TemporaryDirectory(prefix="frameleaf-bound-")
+            self._models[key] = (verified[0], directory)
+        self._models.move_to_end(key)
+        model, directory = self._models[key]
+        with private_runtime_cache(Path(directory.name)):
+            model.load(allow_download=False)
+            payload: Image | str = decode_pil(image) if image is not None else text or ""
+            result: dict[str, Any] = {"clip": model.predict(payload, **options)}
         vector = orjson.loads(result["clip"])
         if (
             not isinstance(vector, list)

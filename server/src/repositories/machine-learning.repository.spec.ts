@@ -6,6 +6,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { QueueExecution } from 'src/queue/types.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
@@ -16,6 +17,7 @@ import {
   RestorationWorkerErrorCode,
 } from 'src/dtos/restoration-inference.dto.js';
 import { MachineLearningHardwareAcceleration, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CloudJobsUnavailableError,
@@ -129,6 +131,37 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('predict', () => {
+    it.each([
+      ['ml_worker_busy', 'destination-unavailable'],
+      ['model_identity_unavailable', undefined],
+    ])('only defers a structured worker capacity refusal (%s)', async (detail, expected) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail }, 503)));
+      const context = {
+        claim: { data: {}, safeToRetry: true },
+        signal: new AbortController().signal,
+      } as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.encodeText(selection(MlDestinationKind.Local, localUrl), 'fixture', { modelName: 'synthetic' }),
+        ),
+      ).rejects.toThrow();
+      expect(context.dependencyReason).toBe(expected);
+    });
+
+    it('does not try a fallback model when the worker is full', async () => {
+      const fetch = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ detail: 'ml_worker_busy' }, 503)));
+      vi.stubGlobal('fetch', fetch);
+      await expect(
+        sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, {
+          modelName: 'primary',
+          fallbackModelName: 'fallback',
+          acceleration: MachineLearningHardwareAcceleration.Auto,
+          device: 'AUTO',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
     it.each([MlWorkload.Clip, MlWorkload.PetRecognition])(
       'binds NAS %s transport and returned vector to the exact producing profile',
       async (workload) => {

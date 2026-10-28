@@ -148,12 +148,15 @@ def test_bound_runtime_files_are_private_temporary_and_do_not_change_global_sett
 
     monkeypatch.setattr(producer_binding, "TemporaryDirectory", temporary)
     _, cache, hashes = synthetic_clip_cache
-    result = producer_binding.BoundPredictor().predict(json.dumps(binding), None, "frameleaf fixture")
+    predictor = producer_binding.BoundPredictor()
+    result = predictor.predict(json.dumps(binding), None, "frameleaf fixture")
     assert result["modelKey"] == binding["modelKey"]
     assert cache_hashes(cache) == hashes
     assert settings.model_downloads is True
     assert runtime_cache_dir(cache / "textual/model.onnx") == cache / "textual"
-    assert paths and all(not path.exists() for path in paths)
+    assert paths and all(path.exists() for path in paths)
+    predictor.close()
+    assert all(not path.exists() for path in paths)
 
 
 def test_bound_prediction_does_not_reuse_an_unverified_legacy_model(deployed_app, binding, monkeypatch):
@@ -272,11 +275,12 @@ def test_failed_inference_releases_sessions_before_removing_runtime_files(bindin
     class CheckedTemporary:
         def __init__(self, *args, **kwargs):
             self.directory = TemporaryDirectory(*args, **kwargs)
+            self.name = self.directory.name
 
         def __enter__(self):
             return self.directory.name
 
-        def __exit__(self, *args):
+        def cleanup(self):
             assert references and all(reference() is None for reference in references)
             self.directory.cleanup()
 
@@ -320,3 +324,65 @@ def test_overlapping_bound_requests_wait_instead_of_refusing(monkeypatch):
         thread.join()
     assert sorted(r["ok"] for r in results) == ["0", "1", "2"]
     assert not overlapped
+
+
+def test_bound_warm_requests_reuse_one_verified_session(binding, monkeypatch):
+    from frameleaf_ml.producer_binding import BoundPredictor
+
+    original = OpenClipTextualEncoder._load
+    loads = []
+
+    def load(self):
+        loads.append(self.model_name)
+        return original(self)
+
+    monkeypatch.setattr(OpenClipTextualEncoder, "_load", load)
+    predictor = BoundPredictor()
+    try:
+        first = predictor.predict(json.dumps(binding), None, "fixture")
+        assert predictor.predict(json.dumps(binding), None, "fixture") == first
+        assert len(loads) == 1
+    finally:
+        predictor.close()
+
+
+def test_worker_saturation_has_a_distinct_temporary_response(deployed_app, binding, monkeypatch):
+    from frameleaf_ml import main
+    from frameleaf_ml.inference_executor import InferenceBusy
+
+    monkeypatch.setattr(main.bound_predictor, "predict", Mock(side_effect=InferenceBusy("ml_worker_busy")))
+    response = deployed_app.post("/predict-bound", data={"binding": json.dumps(binding), "text": "fixture"})
+    assert response.status_code == 503
+    assert response.json() == {"detail": "ml_worker_busy"}
+    assert response.headers["retry-after"] == "30"
+
+
+def test_bound_session_cache_evicts_old_runtime_files(binding, monkeypatch):
+    from tempfile import TemporaryDirectory
+
+    from frameleaf_ml import producer_binding
+
+    paths = []
+
+    def temporary(*args, **kwargs):
+        directory = TemporaryDirectory(*args, **kwargs)
+        paths.append(Path(directory.name))
+        return directory
+
+    monkeypatch.setattr(producer_binding, "TemporaryDirectory", temporary)
+    predictor = producer_binding.BoundPredictor()
+    try:
+        for language in ["en", "fr", "de"]:
+            binding["entries"]["clip"]["textual"]["options"] = {"language": language}
+            identity = {k: v for k, v in binding.items() if k != "modelKey"}
+            binding["modelKey"] = (
+                "clip:"
+                + hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            )
+            predictor.predict(json.dumps(binding), None, "fixture")
+        assert len(paths) == 3
+        assert not paths[0].exists()
+        assert all(path.exists() for path in paths[1:])
+    finally:
+        predictor.close()
+    assert all(not path.exists() for path in paths)

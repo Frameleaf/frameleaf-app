@@ -7,7 +7,6 @@ import secrets
 import signal
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import partial
 from typing import Any, AsyncGenerator, Callable
@@ -36,6 +35,7 @@ from frameleaf_ml.sessions.ort import flush_denormals
 from .config import PreloadModelData, log, model_source, settings
 from .env_aliases import read_env
 from .hardware_report import container_report
+from .inference_executor import InferenceBusy, InferenceExecutor
 from .models.cache import ModelCache
 from .producer_binding import BoundPredictor
 from .schemas import (
@@ -57,7 +57,7 @@ MultiPartParser.spool_max_size = 2**26  # spools to disk if payload is 64 MiB or
 
 model_cache = ModelCache(revalidate=settings.model_ttl > 0)
 bound_predictor = BoundPredictor()
-thread_pool: ThreadPoolExecutor | None = None
+thread_pool: InferenceExecutor | None = None
 lock = threading.Lock()
 active_requests = 0
 last_called: float | None = None
@@ -81,7 +81,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         flush_denormals()  # for work that runs on the event loop's own thread
         if settings.request_threads > 0:
             # asyncio is a huge bottleneck for performance, so we use a thread pool to run blocking code
-            thread_pool = ThreadPoolExecutor(settings.request_threads, initializer=flush_denormals)
+            thread_pool = InferenceExecutor(settings.request_threads, initializer=flush_denormals)
             log.info(f"Initialized request thread pool with {settings.request_threads} threads.")
         if settings.model_ttl > 0 and settings.model_ttl_poll_s > 0:
             asyncio.ensure_future(idle_shutdown_task())
@@ -104,6 +104,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
                 thread_pool.shutdown(wait=True)
             except Exception as error:
                 log.warning(f"Failed to shut down thread pool during shutdown: {error}")
+        bound_predictor.close()
         # Drop strong references held by the cache so Torch/OpenVINO sessions
         # (which may hold multi-GB of pinned GPU memory) are eligible for GC
         # before the worker is respawned. Without this, `del model` only
@@ -407,6 +408,11 @@ def _torch_cuda_info() -> tuple[bool, int]:
     return True, torch.cuda.device_count()
 
 
+@app.exception_handler(InferenceBusy)
+async def inference_busy(_: Request, __: Exception) -> JSONResponse:
+    return JSONResponse({"detail": "ml_worker_busy"}, status_code=503, headers={"Retry-After": "30"})
+
+
 @app.post("/predict-bound", dependencies=[Depends(update_state)])
 async def predict_bound(
     binding: str = Form(), image: bytes | None = File(default=None), text: str | None = Form(default=None)
@@ -415,6 +421,8 @@ async def predict_bound(
         raise HTTPException(422, "Exactly one inference input required")
     try:
         result = await run(bound_predictor.predict, binding, image, text)
+    except InferenceBusy:
+        raise
     except Exception as error:
         raise HTTPException(409, "model_identity_unavailable") from error
     return ORJSONResponse(result)
@@ -595,10 +603,16 @@ async def run_inference(
         outputs[model.identity] = output
         response[entry["task"]] = output
 
+    capacity = asyncio.Semaphore(max(1, settings.request_threads))
+
+    async def admitted(entry: InferenceEntry) -> None:
+        async with capacity:
+            await _run_inference(entry)
+
     without_deps, with_deps = entries
-    await asyncio.gather(*[_run_inference(entry) for entry in without_deps])
+    await asyncio.gather(*[admitted(entry) for entry in without_deps])
     if with_deps:
-        await asyncio.gather(*[_run_inference(entry) for entry in with_deps])
+        await asyncio.gather(*[admitted(entry) for entry in with_deps])
     if isinstance(payload, Image):
         response["imageHeight"], response["imageWidth"] = payload.height, payload.width
 
@@ -663,6 +677,7 @@ async def idle_shutdown_task() -> None:
             last_called is not None
             and not active_requests
             and not lock.locked()
+            and not (thread_pool is not None and thread_pool.busy)
             and time.time() - last_called > settings.model_ttl
         ):
             log.info("Shutting down due to inactivity.")

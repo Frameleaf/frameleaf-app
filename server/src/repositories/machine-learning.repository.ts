@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
 import { open, readFile, rm, stat } from 'node:fs/promises';
@@ -36,6 +36,7 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable, deferJobUntilDependency } from 'src/queue/dependency.js';
 import { fetchJobText } from 'src/queue/http.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
@@ -1174,6 +1175,18 @@ export class MachineLearningRepository implements RestorationInference {
 
     if (!response.ok) {
       selection.record(usage('failure', body.length));
+      if (response.status === 503) {
+        let detail: unknown;
+        try {
+          detail = JSON.parse(body)?.detail;
+        } catch {
+          // Unknown errors retain the ordinary failure path.
+        }
+        if (detail === 'ml_worker_busy') {
+          deferJobUntilDependency('destination-unavailable');
+          throw new ServiceUnavailableException('Machine learning worker is busy; try again shortly');
+        }
+      }
       throw new Error(
         `Machine learning request '${this.redact(config)}' to ${target} failed with status ${response.status}: ${response.statusText}`,
       );
@@ -1552,6 +1565,7 @@ export class MachineLearningRepository implements RestorationInference {
         }
         return describedBy(body[ModelTask.IMAGE_DESCRIPTION], candidateModel);
       } catch (error) {
+        if (error instanceof JobDependencyUnavailable || error instanceof ServiceUnavailableException) throw error;
         lastError = error;
         this.logger.warn(
           `Image description request to destination ${selection.destinationId} (model='${candidateModel}') failed: ${error instanceof Error ? error.message : error}`,
