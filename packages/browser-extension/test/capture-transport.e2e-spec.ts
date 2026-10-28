@@ -7,14 +7,20 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-test('capture SDK transport recovers lost HTTP responses using the same private upload and receipt', async () => {
+test('capture delivery preserves one receipt through HTTP faults and browser restart', async () => {
   const id = '33333333-3333-4333-8333-333333333333';
   const userId = '11111111-1111-4111-8111-111111111111';
   const itemId = '44444444-4444-4444-8444-444444444444';
   const key = 'synthetic-delivery-key';
   const resources = new Map<
     string,
-    { offset: number; size: number; ready: boolean; digest: string }
+    {
+      offset: number;
+      size: number;
+      ready: boolean;
+      digest: string;
+      chunks: Buffer[];
+    }
   >();
   let loseCreate = true,
     loseAppend = true,
@@ -22,7 +28,8 @@ test('capture SDK transport recovers lost HTTP responses using the same private 
   let creates = 0,
     commits = 0,
     sourceCount = 0;
-  let committedBody: string | undefined;
+  const committedBodies = new Map<string, string>();
+  let failCommitWithStatus = false;
   const headers: {
     cookie?: string;
     authorization?: string;
@@ -58,7 +65,8 @@ test('capture SDK transport recovers lost HTTP responses using the same private 
       }
       const state = (resourceId: string) => ({
         id: resourceId,
-        ...resources.get(resourceId),
+        offset: resources.get(resourceId)!.offset,
+        ready: resources.get(resourceId)!.ready,
         expiresAt: '2030-01-01T00:00:00.000Z',
       });
       if (
@@ -84,6 +92,7 @@ test('capture SDK transport recovers lost HTTP responses using the same private 
           offset: 0,
           size: Number(req.headers['upload-length']),
           ready: false,
+          chunks: [],
           digest: req.headers['repr-digest'] as string,
         });
         if (loseCreate) {
@@ -119,11 +128,12 @@ test('capture SDK transport recovers lost HTTP responses using the same private 
           for await (const chunk of req) chunks.push(Buffer.from(chunk));
           const bytes = Buffer.concat(chunks);
           resource.offset += bytes.length;
+          resource.chunks.push(bytes);
           resource.ready =
             resource.offset === resource.size &&
             req.headers['upload-complete'] === '?1' &&
             resource.digest ===
-              `sha-256=:${createHash('sha256').update(bytes).digest('base64')}:`;
+              `sha-256=:${createHash('sha256').update(Buffer.concat(resource.chunks)).digest('base64')}:`;
           if (loseAppend) {
             loseAppend = false;
             req.socket.destroy();
@@ -143,18 +153,28 @@ test('capture SDK transport recovers lost HTTP responses using the same private 
         const value = JSON.parse(body);
         if (
           !resources.get(value.captureId)?.ready ||
-          (committedBody && committedBody !== body)
+          (committedBodies.has(value.captureId) &&
+            committedBodies.get(value.captureId) !== body)
         ) {
           send({}, 409);
           return;
         }
         commits++;
-        if (!committedBody) {
-          committedBody = body;
+        if (!committedBodies.has(value.captureId)) {
+          committedBodies.set(value.captureId, body);
           sourceCount++;
         }
         if (loseCommit) {
           loseCommit = false;
+          if (failCommitWithStatus) {
+            res
+              .writeHead(503, {
+                'Content-Type': 'application/json',
+                'Retry-After': '60',
+              })
+              .end('{}');
+            return;
+          }
           req.socket.destroy();
           return;
         }
@@ -201,6 +221,21 @@ test('capture SDK transport recovers lost HTTP responses using the same private 
           entry: resolve(import.meta.dirname, '../src/capture-transport.ts'),
           formats: ['es'],
           fileName: () => 'transport-test.js',
+        },
+      },
+    });
+    await build({
+      configFile: false,
+      logLevel: 'silent',
+      build: {
+        target: 'chrome116',
+        outDir: extensionPath,
+        emptyOutDir: false,
+        sourcemap: false,
+        lib: {
+          entry: resolve(import.meta.dirname, 'fixtures/runner-entry.ts'),
+          formats: ['es'],
+          fileName: () => 'runner-test.js',
         },
       },
     });
@@ -343,6 +378,102 @@ test('capture SDK transport recovers lost HTTP responses using the same private 
       captureId: id,
       filename: 'synthetic.svg',
     });
+    loseCreate = true;
+    loseAppend = true;
+    loseCommit = true;
+    failCommitWithStatus = true;
+    const pending = await page.evaluate(
+      async ({ origin, userId, itemId, key }) => {
+        const queue: typeof import('./fixtures/runner-entry') = await import(
+          chrome.runtime.getURL('runner-test.js')
+        );
+        const binding = {
+          serverId: 'fixture',
+          userId,
+          credentialId: crypto.randomUUID(),
+          origin: origin + '/frameleaf',
+        };
+        const blob = new Blob(
+          [
+            '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><!--',
+            'x'.repeat(5 * 1024 * 1024),
+            '--><rect width="8" height="8"/></svg>',
+          ],
+          { type: 'image/svg+xml' },
+        );
+        const task = await queue.enqueueCapture({
+          binding,
+          albumId: itemId,
+          tagIds: [],
+          source: {
+            pageUrl: 'https://example.com/runner?private=1',
+            title: 'Native runner fixture',
+            capturedAt: new Date().toISOString(),
+          },
+          file: { blob, filename: 'runner.svg' },
+        });
+        await queue.resumeQueue(binding, key);
+        const current = (await queue.listCaptures(binding))[0];
+        return {
+          id: task.id,
+          binding,
+          state: current.state,
+          phase: current.phase,
+          retryAt: current.retryAt,
+          size: (await queue.captureBlob(task.id))?.size,
+        };
+      },
+      { origin, userId, itemId, key },
+    );
+    expect(pending.state).toBe('committing');
+    expect(pending.phase).toBe('commit');
+    expect(pending.retryAt).toBeGreaterThan(Date.now() + 55000);
+    expect(pending.size).toBeGreaterThan(5 * 1024 * 1024);
+    expect(sourceCount).toBe(2);
+    const creationsBeforeRestart = creates;
+    await context.close();
+    context = undefined;
+    context = await chromium.launchPersistentContext(join(temp, 'profile'), {
+      channel: 'chromium',
+      headless: true,
+      args: [
+        `--disable-extensions-except=${extensionPath}`,
+        `--load-extension=${extensionPath}`,
+      ],
+    });
+    const restartedWorker =
+      context.serviceWorkers()[0] ??
+      (await context.waitForEvent('serviceworker'));
+    const restartedPage = await context.newPage();
+    await restartedPage.goto(
+      `chrome-extension://${new URL(restartedWorker.url()).hostname}/options.html`,
+    );
+    const resumed = await restartedPage.evaluate(
+      async ({ pending, key }) => {
+        const queue: typeof import('./fixtures/runner-entry') = await import(
+          chrome.runtime.getURL('runner-test.js')
+        );
+        const before = (await queue.listCaptures(pending.binding))[0];
+        await queue.retryCapture(pending.id, pending.binding);
+        await queue.resumeQueue(pending.binding, key);
+        const after = (await queue.listCaptures(pending.binding))[0];
+        return {
+          before: { phase: before.phase, state: before.state },
+          id: after.id,
+          state: after.state,
+          receipt: after.receipt,
+          removed: (await queue.captureBlob(after.id)) === null,
+        };
+      },
+      { pending, key },
+    );
+    expect(resumed.before).toEqual({ phase: 'commit', state: 'committing' });
+    expect(resumed.id).toBe(pending.id);
+    expect(resumed.state).toBe('saved');
+    expect(resumed.receipt?.captureId).toBe(pending.id);
+    expect(resumed.removed).toBe(true);
+    expect(sourceCount).toBe(2);
+    expect(creates).toBe(creationsBeforeRestart);
     for (const request of headers)
       expect(request).toEqual({
         cookie: undefined,

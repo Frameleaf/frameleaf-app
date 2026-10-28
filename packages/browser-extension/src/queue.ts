@@ -55,7 +55,14 @@ export type EnqueueCapture = Pick<
   file?: { blob: Blob; filename: string };
   bookmark?: CaptureCommitDto['bookmark'];
 };
-export class QueueFailure extends Error {}
+export class QueueFailure extends Error {
+  constructor(
+    message: string,
+    readonly code: 'storage' | 'claim' = 'storage',
+  ) {
+    super(message);
+  }
+}
 const invalid = () =>
   new QueueFailure(
     'This capture has invalid metadata. Review its destination and source before trying again.',
@@ -65,7 +72,10 @@ const damaged = () =>
     'Could not read the capture queue. Browser storage may be unavailable or damaged.',
   );
 const claimLost = () =>
-  new QueueFailure('This capture claim expired or moved to another worker.');
+  new QueueFailure(
+    'This capture claim expired or moved to another worker.',
+    'claim',
+  );
 const sameDestination = (a: ServerBinding, b: ServerBinding) =>
   a.serverId === b.serverId && a.userId === b.userId && a.origin === b.origin;
 const request = <T>(value: IDBRequest<T>) =>
@@ -110,7 +120,9 @@ async function transaction<T>(
   try {
     database = await openQueue();
     database.onversionchange = () => database?.close();
-    const tx = database.transaction(stores, mode);
+    const tx = database.transaction(stores, mode, {
+      durability: mode === 'readwrite' ? 'strict' : 'default',
+    });
     const done = new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onabort = () => reject(tx.error ?? damaged());
@@ -447,7 +459,7 @@ export async function claimCapture(
         (task.claim?.expiresAt ?? 0) > now
       )
         continue;
-      if (task.file) {
+      if (task.file && task.phase === 'upload') {
         const stored = await request(tx.objectStore('blobs').get(task.id));
         if (
           !(stored?.blob instanceof Blob) ||
@@ -603,4 +615,21 @@ export const cancelQueuedCapture = (
     delete task.error;
     delete task.retryAt;
     await request(tx.objectStore('tasks').put(task));
+  });
+
+// Only after GET reported missing and creation/recovery confirmed the same UUID again.
+export const restartMissingUpload = (
+  id: string,
+  owner: string,
+  now = Date.now(),
+): Promise<CaptureTask> =>
+  transaction(['tasks'], 'readwrite', async (tx) => {
+    const task = await ownedTask(tx, id, owner, now);
+    if (!task.file || task.phase !== 'upload' || task.state !== 'uploading')
+      throw invalid();
+    task.offset = 0;
+    task.updatedAt = now;
+    task.claim!.expiresAt = now + CLAIM_MS;
+    await request(tx.objectStore('tasks').put(task));
+    return task;
   });

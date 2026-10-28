@@ -269,6 +269,29 @@ describe('durable capture queue', () => {
       ),
     ).not.toBeNull();
   });
+  it('only lets the current upload claim reset an acknowledged offset', async () => {
+    const task = await queue.enqueueCapture(file());
+    await queue.claimCapture(binding, 'owner');
+    await queue.saveCaptureProgress(task.id, 'owner', {
+      state: 'uploading',
+      offset: 2,
+    });
+    await expect(
+      queue.restartMissingUpload(task.id, 'other'),
+    ).rejects.toMatchObject({ code: 'claim' });
+    expect((await queue.restartMissingUpload(task.id, 'owner')).offset).toBe(0);
+    await queue.saveCaptureProgress(task.id, 'owner', {
+      state: 'committing',
+      offset: 3,
+    });
+    await expect(
+      queue.restartMissingUpload(task.id, 'owner'),
+    ).rejects.toThrow();
+    expect((await queue.listCaptures(binding))[0]).toMatchObject({
+      phase: 'commit',
+      offset: 3,
+    });
+  });
   it('keeps bytes across retry/attention, honors retryAt, and releases bytes only with a verified receipt or an unstarted cancellation', async () => {
     const task = await queue.enqueueCapture(file());
     await queue.claimCapture(binding, 'worker', 1000);
