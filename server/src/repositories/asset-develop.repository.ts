@@ -10,7 +10,7 @@ import {
 } from 'src/dtos/asset-develop.dto.js';
 import { Permission } from 'src/enum.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
-import { lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { liveBatchGrant } from 'src/utils/develop-batch-grant.js';
 import { assertRenderableDevelopRecipe, developEnvelope, preserveDevelopEnvelope } from 'src/utils/develop-envelope.js';
@@ -396,7 +396,11 @@ export class AssetDevelopRepository {
     );
   }
   /** A moved master remains discoverable even if the process dies before inserting its version. */
-  async reserveBatchMaster(ownerId: string, admission: BatchReturnAdmission, candidate: string): Promise<string> {
+  async reserveBatchMaster(
+    ownerId: string,
+    admission: BatchReturnAdmission,
+    candidate: string,
+  ): Promise<{ target: string; token: string | null }> {
     return this.db.transaction().execute(async (tx) => {
       const batch = await tx
         .selectFrom('develop_batch')
@@ -424,20 +428,34 @@ export class AssetDevelopRepository {
         }>`SELECT "masterPath" FROM ${TABLE} WHERE id=${returned.revisionId}::uuid`.execute(tx);
         if (!revision.rows[0]?.masterPath)
           throw new ConflictException({ message: 'The stored master is no longer available', code: 'source_changed' });
-        return revision.rows[0].masterPath;
+        return { target: revision.rows[0].masterPath, token: null };
       }
       const target = returned.pendingMasterPath ?? candidate;
       await lockFilePath(tx, target);
-      await tx
+      const reservation = await tx
         .updateTable('develop_batch_return')
-        .set({ pendingMasterPath: target, stagedAt: sql<Date>`clock_timestamp()` })
+        .set({
+          pendingMasterPath: target,
+          stagedAt: sql<Date>`GREATEST(clock_timestamp(), COALESCE("stagedAt" + interval '1 microsecond', clock_timestamp()))`,
+          status: 'confirmed',
+          error: null,
+          errorCode: null,
+        })
         .where('id', '=', returned.id)
-        .execute();
-      return target;
+        .returning(sql<string>`(extract(epoch from "stagedAt") * 1000000)::bigint::text`.as('token'))
+        .executeTakeFirstOrThrow();
+      return { target, token: reservation.token };
     });
   }
-  /** Serialize the short filesystem move with cancellation and pending-path cleanup. */
-  async moveBatchMaster(ownerId: string, admission: BatchReturnAdmission, target: string, move: () => Promise<void>) {
+  /** Serialize rename and adoption with cancellation, selection and failed-master cleanup. */
+  async moveBatchMaster<T>(
+    ownerId: string,
+    admission: BatchReturnAdmission,
+    target: string,
+    token: string | null,
+    move: () => Promise<void>,
+    adopt: () => Promise<T>,
+  ): Promise<{ quotaExceeded: true } | { value: T }> {
     return this.db.transaction().execute(async (tx) => {
       const batch = await tx
         .selectFrom('develop_batch')
@@ -447,29 +465,104 @@ export class AssetDevelopRepository {
         .forUpdate()
         .executeTakeFirst();
       if (!batch || batch.status === 'cancelled') throw new ConflictException('This batch was cancelled');
+      const item = await tx
+        .selectFrom('develop_batch_item')
+        .select('assetId')
+        .where('id', '=', admission.itemId)
+        .where('batchId', '=', admission.batchId)
+        .executeTakeFirst();
+      if (!item) throw new ConflictException('Review this returned file before importing');
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${item.assetId}`},0))`.execute(
+        tx,
+      );
+      const asset = await tx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', item.assetId)
+        .where('ownerId', '=', ownerId)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!asset) throw new BadRequestException('Develop source asset is no longer available');
       const returned = await tx
-        .selectFrom('develop_batch_return as returned')
-        .innerJoin('develop_batch_item as item', 'item.id', 'returned.itemId')
-        .select(['returned.revisionId', 'returned.pendingMasterPath'])
-        .where('item.batchId', '=', admission.batchId)
-        .where('item.id', '=', admission.itemId)
-        .where('returned.confirmationId', '=', admission.confirmationId)
-        .where('returned.checksum', '=', admission.checksum)
-        .forUpdate('returned')
+        .selectFrom('develop_batch_return')
+        .select([
+          'revisionId',
+          'pendingMasterPath',
+          sql<string | null>`(extract(epoch from "stagedAt") * 1000000)::bigint::text`.as('token'),
+        ])
+        .where('itemId', '=', admission.itemId)
+        .where('confirmationId', '=', admission.confirmationId)
+        .where('checksum', '=', admission.checksum)
+        .forUpdate()
         .executeTakeFirst();
       if (!returned) throw new ConflictException('Review this returned file before importing');
-      if (returned.revisionId) return false;
+      if (returned.revisionId) return { value: await publicationTransaction.run(tx, adopt) };
       if (returned.pendingMasterPath !== target)
         throw new ConflictException('This pending upload was cancelled; review and retry');
       await lockFilePath(tx, target);
+      const user = await tx
+        .selectFrom('user')
+        .select(
+          sql<boolean>`"quotaSizeInBytes" IS NULL OR "quotaUsageInBytes" + ${admission.bytes} <= "quotaSizeInBytes"`.as(
+            'allowed',
+          ),
+        )
+        .where('id', '=', ownerId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!user?.allowed) {
+        if (returned.token === token)
+          await tx
+            .updateTable('develop_batch_return')
+            .set({ status: 'failed', error: 'Import failed', errorCode: 'develop_batch_quota' })
+            .where('itemId', '=', admission.itemId)
+            .where('checksum', '=', admission.checksum)
+            .execute();
+        return { quotaExceeded: true };
+      }
       await move();
+      return { value: await publicationTransaction.run(tx, adopt) };
+    });
+  }
+  /** A reservation remains durable until this locked unlink commits or another attempt adopts it. */
+  async cleanupFailedBatchMaster(
+    ownerId: string,
+    admission: BatchReturnAdmission,
+    target: string,
+    token: string | null,
+    remove: () => Promise<void>,
+  ) {
+    await this.db.transaction().execute(async (tx) => {
+      const batch = await tx
+        .selectFrom('develop_batch')
+        .select('id')
+        .where('id', '=', admission.batchId)
+        .where('ownerId', '=', ownerId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!batch) return;
+      const returned = await tx
+        .selectFrom('develop_batch_return')
+        .select([
+          'id',
+          'revisionId',
+          'pendingMasterPath',
+          sql<string | null>`(extract(epoch from "stagedAt") * 1000000)::bigint::text`.as('token'),
+        ])
+        .where('itemId', '=', admission.itemId)
+        .where('confirmationId', '=', admission.confirmationId)
+        .where('checksum', '=', admission.checksum)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!returned || returned.revisionId || returned.pendingMasterPath !== target || returned.token !== token) return;
+      await lockFilePath(tx, target);
       await tx
         .updateTable('develop_batch_return')
-        .set({ stagedAt: sql<Date>`clock_timestamp()` })
-        .where('confirmationId', '=', admission.confirmationId)
-        .where('itemId', '=', admission.itemId)
+        .set({ pendingMasterPath: null, stagedAt: null })
+        .where('id', '=', returned.id)
         .execute();
-      return true;
+      if ((await countPathReferences(tx, target)) === 0) await remove();
     });
   }
   async failBatchRender(id: string, code: string) {

@@ -488,43 +488,42 @@ it('exports only authorized prepared originals and describes exclusions before a
 });
 it('never unlinks an adopted master when a concurrent identical upload fails or cancellation retains the completed version', async () => {
   const f = await prepare(),
-    create = f.revisions.create.bind(f.revisions);
-  let calls = 0,
-    releaseFailure!: () => void,
-    firstEntered!: () => void,
-    bothEntered!: () => void;
-  const firstReady = new Promise<void>((resolve) => (firstEntered = resolve));
-  const both = new Promise<void>((resolve) => (bothEntered = resolve));
-  const heldFailure = new Promise<void>((resolve) => (releaseFailure = resolve));
+    create = f.revisions.create.bind(f.revisions),
+    rename = f.storage.rename.bind(f.storage);
+  let release!: () => void,
+    entered!: () => void,
+    calls = 0;
+  const reached = new Promise<void>((resolve) => (entered = resolve)),
+    barrier = new Promise<void>((resolve) => (release = resolve));
+  vi.spyOn(f.storage, 'rename').mockImplementation(async (from, to) => {
+    entered();
+    await barrier;
+    return rename(from, to);
+  });
   vi.spyOn(f.revisions, 'create').mockImplementation(async (input) => {
-    calls++;
-    if (calls === 2) {
-      bothEntered();
-      await heldFailure;
-      throw new Error('fixture interrupted duplicate upload');
-    }
-    firstEntered();
-    await both;
+    if (++calls === 2) throw new Error('fixture interrupted duplicate upload');
     return create(input);
   });
   const first = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
-  await firstReady;
-  const second = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
+  await reached;
+  const second = f.sut
+    .import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes))
+    .catch((error) => error);
+  release();
   const adopted = await first;
+  expect(await second).toBeInstanceOf(Error);
   const revisionId = adopted.returns[0].revisionId!;
   expect(await f.develop.handleRender({ id: revisionId })).toBe(JobStatus.Success);
-  const cancel = f.sut.cancel(f.auth, f.batch.id);
-  releaseFailure();
-  await Promise.allSettled([second, cancel]);
+  await f.sut.cancel(f.auth, f.batch.id);
   const revision = await f.revisions.get(revisionId);
-  expect(revision?.masterPath).toBeTruthy();
   expect(await readFile(revision!.masterPath!)).toEqual(f.bytes);
   expect((await sharp(revision!.masterPath!).metadata()).width).toBe(64);
   expect(await f.revisions.listByAsset(f.asset.id)).toHaveLength(1);
   expect(await usage(f.user.id)).toBe(f.bytes.length);
   const unlink = vi.fn();
-  const result = await new PhysicalFileRepository(db).deleteUnreferencedPath(revision!.masterPath!, unlink);
-  expect(result.references).toBeGreaterThan(0);
+  expect(
+    (await new PhysicalFileRepository(db).deleteUnreferencedPath(revision!.masterPath!, unlink)).references,
+  ).toBeGreaterThan(0);
   expect(unlink).not.toHaveBeenCalled();
 });
 it('tracks a moved master across a pre-adoption crash and only releases an expired unassociated reservation', async () => {
@@ -537,7 +536,7 @@ it('tracks a moved master across a pre-adoption crash and only releases an expir
       checksum: hash(f.bytes),
       bytes: f.bytes.length,
     };
-  expect(await f.revisions.reserveBatchMaster(f.user.id, admission, path)).toBe(path);
+  expect(await f.revisions.reserveBatchMaster(f.user.id, admission, path)).toMatchObject({ target: path });
   await writeFile(path, f.bytes);
   const physical = new PhysicalFileRepository(db),
     unlink = vi.fn(async () => rm(path, { force: true }));
@@ -991,14 +990,21 @@ it('rejects a rename after cancellation and reclaims a crash-after-move reservat
   const target = join(root, `${randomUUID()}-master.png`),
     staged = join(root, `${randomUUID()}-staged.png`);
   await writeFile(staged, f.bytes);
-  await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  const cancelledReservation = await f.revisions.reserveBatchMaster(f.user.id, admission, target);
   await f.repository.cancel(f.user.id, f.batch.id);
   const deleted = await new PhysicalFileRepository(db).deleteUnreferencedPath(target, async () =>
     rm(target, { force: true }),
   );
   expect(deleted.references).toBeGreaterThan(0);
   await expect(
-    f.revisions.moveBatchMaster(f.user.id, admission, target, () => f.storage.rename(staged, target)),
+    f.revisions.moveBatchMaster(
+      f.user.id,
+      admission,
+      target,
+      cancelledReservation.token,
+      () => f.storage.rename(staged, target),
+      () => Promise.resolve(true),
+    ),
   ).rejects.toThrow();
   expect(await stat(target).catch(() => null)).toBeNull();
 
@@ -1013,10 +1019,17 @@ it('rejects a rename after cancellation and reclaims a crash-after-move reservat
   const destination = join(root, `${randomUUID()}-crashed.png`),
     upload = join(root, `${randomUUID()}-upload.png`);
   await writeFile(upload, g.bytes);
-  await g.revisions.reserveBatchMaster(g.user.id, pending, destination);
-  expect(
-    await g.revisions.moveBatchMaster(g.user.id, pending, destination, () => g.storage.rename(upload, destination)),
-  ).toBe(true);
+  const crashReservation = await g.revisions.reserveBatchMaster(g.user.id, pending, destination);
+  await expect(
+    g.revisions.moveBatchMaster(
+      g.user.id,
+      pending,
+      destination,
+      crashReservation.token,
+      () => g.storage.rename(upload, destination),
+      () => Promise.reject(new Error('simulated death after move')),
+    ),
+  ).rejects.toThrow('simulated death');
   expect(await readFile(destination)).toEqual(g.bytes);
   await g.repository.cancel(g.user.id, g.batch.id);
   const restarted = setup();
@@ -1070,25 +1083,17 @@ it('restart cleanup preserves a master referenced by an adopted version', async 
 
 it('cannot adopt a missing master after cleanup unlinks then its transaction rolls back', async () => {
   const f = await prepare();
-  let entered!: () => void, release!: () => void;
-  const reached = new Promise<void>((resolve) => (entered = resolve)),
-    barrier = new Promise<void>((resolve) => (release = resolve));
-  const create = f.revisions.create.bind(f.revisions);
-  vi.spyOn(f.revisions, 'create').mockImplementation(async (input) => {
-    entered();
-    await barrier;
-    return create(input);
-  });
-  const importing = f.sut
-    .import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes))
-    .catch((error) => error);
-  await reached;
-  const pending = await db
-    .selectFrom('develop_batch_return')
-    .select('pendingMasterPath')
-    .where('confirmationId', '=', f.dto.confirmationId)
-    .executeTakeFirstOrThrow();
-  expect(await readFile(pending.pendingMasterPath!)).toEqual(f.bytes);
+  const admission = {
+    batchId: f.batch.id,
+    itemId: f.item.id,
+    confirmationId: f.dto.confirmationId,
+    checksum: hash(f.bytes),
+    bytes: f.bytes.length,
+    sourceIdentity: f.asset.checksum,
+  };
+  const target = join(root, `${randomUUID()}-rollback.png`);
+  await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  await writeFile(target, f.bytes);
   await db
     .updateTable('develop_batch_return')
     .set({ stagedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
@@ -1108,9 +1113,21 @@ it('cannot adopt a missing master after cleanup unlinks then its transaction rol
         .where('confirmationId', '=', f.dto.confirmationId)
         .executeTakeFirstOrThrow()
     ).pendingMasterPath,
-  ).toBe(pending.pendingMasterPath);
-  release();
-  expect(await importing).toBeInstanceOf(Error);
+  ).toBe(target);
+  await expect(
+    f.revisions.create({
+      assetId: f.asset.id,
+      ownerId: f.user.id,
+      recipe: defaultDevelopRecipe(),
+      recipeVersion: 1,
+      label: null,
+      status: AssetDevelopRevisionStatus.Saved,
+      sourceChecksum: Buffer.from(f.item.sourceChecksum!, 'hex'),
+      exportId: f.item.exportId!,
+      masterPath: target,
+      batchReturn: admission,
+    }),
+  ).rejects.toThrow('no longer available');
   expect(await f.revisions.listByAsset(f.asset.id)).toHaveLength(0);
   expect(await usage(f.user.id)).toBe(0);
   await setup().sut.recover();
@@ -1123,4 +1140,326 @@ it('cannot adopt a missing master after cleanup unlinks then its transaction rol
         .executeTakeFirstOrThrow()
     ).pendingMasterPath,
   ).toBeNull();
+});
+
+it('promptly removes every quota-rejected master without charging bytes', async () => {
+  const f = await prepare();
+  await db.updateTable('user').set({ quotaSizeInBytes: 1 }).where('id', '=', f.user.id).execute();
+  const targets: string[] = [],
+    rename = f.storage.rename.bind(f.storage);
+  vi.spyOn(f.storage, 'rename').mockImplementation(async (from, to) => {
+    targets.push(to);
+    return rename(from, to);
+  });
+  for (const color of ['#102030', '#203040', '#304050']) {
+    const bytes = await image(color),
+      checksum = hash(bytes);
+    const batch = await f.sut.confirm(f.auth, f.batch.id, {
+      files: [{ itemId: f.item.id, fileName: 'return.png', checksum }],
+    });
+    const returned = batch.items[0].returns.find((row) => row.checksum === checksum)!;
+    const staged = await stage(f.user.id, f.batch.id, bytes);
+    await expect(
+      f.sut.import(
+        f.auth,
+        f.batch.id,
+        f.item.id,
+        { confirmationId: returned.confirmationId, renditionChecksum: checksum },
+        staged,
+      ),
+    ).rejects.toThrow('full');
+    expect(await stat(staged.path).catch(() => null)).toBeNull();
+    expect(
+      (
+        await db
+          .selectFrom('develop_batch_return')
+          .select('pendingMasterPath')
+          .where('id', '=', returned.id)
+          .executeTakeFirstOrThrow()
+      ).pendingMasterPath,
+    ).toBeNull();
+  }
+  expect(targets).toHaveLength(0);
+  expect(await usage(f.user.id)).toBe(0);
+  expect(await f.revisions.listByAsset(f.asset.id)).toHaveLength(0);
+});
+
+it('preserves a successful competing retry before the failed attempt cleans its reservation', async () => {
+  const f = await prepare();
+  await db.updateTable('user').set({ quotaSizeInBytes: 1 }).where('id', '=', f.user.id).execute();
+  let release!: () => void, entered!: () => void;
+  const reached = new Promise<void>((resolve) => (entered = resolve)),
+    barrier = new Promise<void>((resolve) => (release = resolve));
+  const cleanup = f.revisions.cleanupFailedBatchMaster.bind(f.revisions);
+  vi.spyOn(f.revisions, 'cleanupFailedBatchMaster').mockImplementation(async (...args) => {
+    entered();
+    await barrier;
+    return cleanup(...args);
+  });
+  const first = f.sut
+    .import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes))
+    .catch((error) => error);
+  await reached;
+  await db.updateTable('user').set({ quotaSizeInBytes: null }).where('id', '=', f.user.id).execute();
+  const second = await f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
+  const revision = await f.revisions.get(second.returns[0].revisionId!);
+  expect(await readFile(revision!.masterPath!)).toEqual(f.bytes);
+  release();
+  expect(await first).toBeInstanceOf(Error);
+  expect(await readFile(revision!.masterPath!)).toEqual(f.bytes);
+  expect(await usage(f.user.id)).toBe(f.bytes.length);
+  expect(await f.revisions.listByAsset(f.asset.id)).toHaveLength(1);
+});
+it('serializes selection with an in-flight batch import without a lock cycle', async () => {
+  const f = await prepare(),
+    rename = f.storage.rename.bind(f.storage);
+  const selectedVersion = await f.revisions.create({
+    assetId: f.asset.id,
+    ownerId: f.user.id,
+    recipe: defaultDevelopRecipe(),
+    recipeVersion: 1,
+    label: null,
+    status: AssetDevelopRevisionStatus.Rendered,
+  });
+  let release!: () => void,
+    entered!: () => void,
+    selected = false;
+  const reached = new Promise<void>((resolve) => (entered = resolve)),
+    barrier = new Promise<void>((resolve) => (release = resolve));
+  vi.spyOn(f.storage, 'rename').mockImplementation(async (from, to) => {
+    entered();
+    await barrier;
+    return rename(from, to);
+  });
+  const importing = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
+  await reached;
+  const selection = f.revisions.setCurrent(f.asset.id, selectedVersion.id).then(() => {
+    selected = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selected).toBe(false);
+  release();
+  await Promise.all([importing, selection]);
+  expect(selected).toBe(true);
+  expect((await f.revisions.getCurrent(f.asset.id))?.id).toBe(selectedVersion.id);
+});
+
+it('recovers a quota failure interrupted before prompt cleanup', async () => {
+  const f = await prepare();
+  await db.updateTable('user').set({ quotaSizeInBytes: 1 }).where('id', '=', f.user.id).execute();
+  const admission = {
+    batchId: f.batch.id,
+    itemId: f.item.id,
+    confirmationId: f.dto.confirmationId,
+    checksum: hash(f.bytes),
+    bytes: f.bytes.length,
+  };
+  const target = join(root, `${randomUUID()}-pending.png`);
+  const reservation = await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  await writeFile(target, f.bytes);
+  const move = vi.fn(),
+    adopt = vi.fn();
+  const result = await f.revisions.moveBatchMaster(f.user.id, admission, target, reservation.token, move, adopt);
+  expect(result).toEqual({ quotaExceeded: true });
+  expect(move).not.toHaveBeenCalled();
+  expect(adopt).not.toHaveBeenCalled();
+  expect(
+    await db
+      .selectFrom('develop_batch_return')
+      .select(['status', 'pendingMasterPath'])
+      .where('confirmationId', '=', admission.confirmationId)
+      .executeTakeFirstOrThrow(),
+  ).toEqual({ status: 'failed', pendingMasterPath: target });
+  await setup().sut.recover();
+  expect(await stat(target).catch(() => null)).toBeNull();
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('confirmationId', '=', admission.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBeNull();
+  expect(await usage(f.user.id)).toBe(0);
+});
+
+it('does not mark a renewed pending retry failed from a stale error', async () => {
+  const f = await prepare();
+  const admission = {
+    batchId: f.batch.id,
+    itemId: f.item.id,
+    confirmationId: f.dto.confirmationId,
+    checksum: hash(f.bytes),
+    bytes: f.bytes.length,
+  };
+  const target = join(root, `${randomUUID()}-renewed.png`);
+  await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  await f.repository.fail(f.user.id, f.batch.id, f.item.id, f.dto.confirmationId, 'import_rejected');
+  expect(
+    await db
+      .selectFrom('develop_batch_return')
+      .select(['status', 'pendingMasterPath'])
+      .where('confirmationId', '=', f.dto.confirmationId)
+      .executeTakeFirstOrThrow(),
+  ).toEqual({ status: 'confirmed', pendingMasterPath: target });
+  await f.sut.cleanupStaging();
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('confirmationId', '=', f.dto.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBe(target);
+});
+
+it('serializes asset deletion with import without an asset and user lock cycle', async () => {
+  const f = await prepare(),
+    rename = f.storage.rename.bind(f.storage);
+  let release!: () => void,
+    entered!: () => void,
+    deleted = false;
+  const reached = new Promise<void>((resolve) => (entered = resolve)),
+    barrier = new Promise<void>((resolve) => (release = resolve));
+  vi.spyOn(f.storage, 'rename').mockImplementation(async (from, to) => {
+    entered();
+    await barrier;
+    return rename(from, to);
+  });
+  const importing = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
+  const settledImport = importing.catch((error) => error);
+  await reached;
+  const deleting = f.assets.remove({ id: f.asset.id }, { files: () => [], queue: async () => {} }).then(() => {
+    deleted = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(deleted).toBe(false);
+  release();
+  await Promise.all([settledImport, deleting]);
+  expect(deleted).toBe(true);
+  await f.revisions.syncUsage(f.user.id);
+  expect(await usage(f.user.id)).toBe(0);
+});
+
+it('keeps a renewed retry usable while older quota cleanup runs before its move', async () => {
+  const f = await prepare();
+  await db.updateTable('user').set({ quotaSizeInBytes: 1 }).where('id', '=', f.user.id).execute();
+  let cleanupEntered!: () => void,
+    releaseCleanup!: () => void,
+    moveEntered!: () => void,
+    releaseMove!: () => void,
+    moves = 0;
+  const cleanupReached = new Promise<void>((resolve) => (cleanupEntered = resolve)),
+    cleanupBarrier = new Promise<void>((resolve) => (releaseCleanup = resolve));
+  const moveReached = new Promise<void>((resolve) => (moveEntered = resolve)),
+    moveBarrier = new Promise<void>((resolve) => (releaseMove = resolve));
+  const cleanup = f.revisions.cleanupFailedBatchMaster.bind(f.revisions),
+    move = f.revisions.moveBatchMaster.bind(f.revisions);
+  vi.spyOn(f.revisions, 'cleanupFailedBatchMaster').mockImplementation(async (...args) => {
+    cleanupEntered();
+    await cleanupBarrier;
+    return cleanup(...args);
+  });
+  vi.spyOn(f.revisions, 'moveBatchMaster').mockImplementation(async (...args) => {
+    if (++moves === 2) {
+      moveEntered();
+      await moveBarrier;
+    }
+    return move(...args);
+  });
+  const first = f.sut
+    .import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes))
+    .catch((error) => error);
+  await cleanupReached;
+  await db.updateTable('user').set({ quotaSizeInBytes: null }).where('id', '=', f.user.id).execute();
+  const second = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
+  await moveReached;
+  releaseCleanup();
+  expect(await first).toBeInstanceOf(Error);
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('confirmationId', '=', f.dto.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBeTruthy();
+  releaseMove();
+  const imported = await second;
+  const revision = await f.revisions.get(imported.returns[0].revisionId!);
+  expect(await readFile(revision!.masterPath!)).toEqual(f.bytes);
+  expect(await usage(f.user.id)).toBe(f.bytes.length);
+});
+it('does not let an older failed generation clean a newer failed reservation', async () => {
+  const f = await prepare();
+  await db.updateTable('user').set({ quotaSizeInBytes: 1 }).where('id', '=', f.user.id).execute();
+  const admission = {
+    batchId: f.batch.id,
+    itemId: f.item.id,
+    confirmationId: f.dto.confirmationId,
+    checksum: hash(f.bytes),
+    bytes: f.bytes.length,
+  };
+  const target = join(root, `${randomUUID()}-generation.png`);
+  const first = await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  await writeFile(target, f.bytes);
+  expect(await f.revisions.moveBatchMaster(f.user.id, admission, target, first.token, vi.fn(), vi.fn())).toEqual({
+    quotaExceeded: true,
+  });
+  const second = await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  expect(second.token).not.toBe(first.token);
+  expect(await f.revisions.moveBatchMaster(f.user.id, admission, target, second.token, vi.fn(), vi.fn())).toEqual({
+    quotaExceeded: true,
+  });
+  await f.revisions.cleanupFailedBatchMaster(f.user.id, admission, target, first.token, () =>
+    rm(target, { force: true }),
+  );
+  expect(await readFile(target)).toEqual(f.bytes);
+  await f.revisions.cleanupFailedBatchMaster(f.user.id, admission, target, second.token, () =>
+    rm(target, { force: true }),
+  );
+  expect(await stat(target).catch(() => null)).toBeNull();
+});
+
+it('does not mark a newer pending generation failed when an older preflight is rejected', async () => {
+  const f = await prepare();
+  await db.updateTable('user').set({ quotaSizeInBytes: 1 }).where('id', '=', f.user.id).execute();
+  const admission = {
+    batchId: f.batch.id,
+    itemId: f.item.id,
+    confirmationId: f.dto.confirmationId,
+    checksum: hash(f.bytes),
+    bytes: f.bytes.length,
+  };
+  const target = join(root, `${randomUUID()}-pending.png`);
+  const first = await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  const second = await f.revisions.reserveBatchMaster(f.user.id, admission, target);
+  expect(first.token).not.toBe(second.token);
+  expect(await f.revisions.moveBatchMaster(f.user.id, admission, target, first.token, vi.fn(), vi.fn())).toEqual({
+    quotaExceeded: true,
+  });
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('status')
+        .where('confirmationId', '=', admission.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).status,
+  ).toBe('confirmed');
+  await f.revisions.cleanupFailedBatchMaster(f.user.id, admission, target, first.token, () =>
+    rm(target, { force: true }),
+  );
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('confirmationId', '=', admission.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBe(target);
 });

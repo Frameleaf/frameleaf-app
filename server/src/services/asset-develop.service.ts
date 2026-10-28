@@ -814,6 +814,7 @@ export class AssetDevelopService {
       throw new BadRequestException('Choose the developed file to bring back');
     }
     let kept: string | undefined;
+    let reservationToken: string | null = null;
     try {
       await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
       const asset = await this.requireEditableStill(assetId);
@@ -868,18 +869,13 @@ export class AssetDevelopService {
         StorageCore.getNestedFolder(StorageFolder.Thumbnails, asset.ownerId, asset.id),
         `${asset.id}_develop_import_${randomUUID()}${extension}`,
       );
-      const master = batchReturn
+      const reservation = batchReturn
         ? await this.assetDevelopRepository.reserveBatchMaster(asset.ownerId, batchReturn, candidate)
-        : candidate;
+        : { target: candidate, token: null };
+      const master = reservation.target;
+      reservationToken = reservation.token;
       this.storageRepository.mkdirSync(path.dirname(master));
-      const moved = batchReturn
-        ? await this.assetDevelopRepository.moveBatchMaster(asset.ownerId, batchReturn, master, () =>
-            this.storageRepository.rename(file.path, master),
-          )
-        : (await this.storageRepository.rename(file.path, master), true);
-      if (moved) kept = master;
-
-      const revision = await this.assetDevelopRepository.create({
+      const input = {
         assetId,
         ownerId: asset.ownerId,
         recipe: defaultDevelopRecipe(),
@@ -894,7 +890,26 @@ export class AssetDevelopService {
         software: dto.software ?? null,
         masterPath: master,
         batchReturn: batchReturn ? { ...batchReturn, sourceIdentity: asset.checksum } : undefined,
-      });
+      };
+      let revision: AssetDevelopRevision;
+      if (batchReturn) {
+        kept = master;
+        const result = await this.assetDevelopRepository.moveBatchMaster(
+          asset.ownerId,
+          batchReturn,
+          master,
+          reservationToken,
+          () => this.storageRepository.rename(file.path, master),
+          () => this.assetDevelopRepository.create(input),
+        );
+        if ('quotaExceeded' in result)
+          throw new BadRequestException({ message: 'Your storage is full', code: 'develop_batch_quota' });
+        revision = result.value;
+      } else {
+        await this.storageRepository.rename(file.path, master);
+        kept = master;
+        revision = await this.assetDevelopRepository.create(input);
+      }
       if (batchReturn && revision.masterPath !== master) await this.queueFileDelete([master]);
       kept = undefined;
       this.logger.log(`Developed file ${fileName} brought back as version ${revision.revision} of asset ${assetId}`);
@@ -902,8 +917,18 @@ export class AssetDevelopService {
         return this.toRevisionDto(revision);
       return await this.queueRender(revision, asset.originalFileName);
     } finally {
-      // Batch masters stay reserved until adoption or transactional cleanup finishes.
-      await this.discard([file.path, ...(!batchReturn && kept ? [kept] : [])]);
+      try {
+        if (batchReturn && kept)
+          await this.assetDevelopRepository.cleanupFailedBatchMaster(
+            auth.user.id,
+            batchReturn,
+            kept,
+            reservationToken,
+            () => rm(kept!, { force: true }),
+          );
+      } finally {
+        await this.discard([file.path, ...(!batchReturn && kept ? [kept] : [])]);
+      }
     }
   }
 

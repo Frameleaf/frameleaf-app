@@ -94,7 +94,7 @@ export class DevelopBatchRepository {
     const { rows } = await sql<{ id: string; batchId: string }>`SELECT r.id,item."batchId" FROM develop_batch_return r
       JOIN develop_batch_item item ON item.id=r."itemId" JOIN develop_batch batch ON batch.id=item."batchId"
       WHERE r."revisionId" IS NULL AND r."pendingMasterPath" IS NOT NULL
-      AND (batch.status='cancelled' OR r."stagedAt"<clock_timestamp()-interval '24 hours')
+      AND (batch.status='cancelled' OR r.status='failed' OR r."stagedAt"<clock_timestamp()-interval '24 hours')
       ${batchId ? sql`AND batch.id=${batchId}::uuid` : sql``}`.execute(this.db);
     for (const row of rows)
       await this.db.transaction().execute(async (tx) => {
@@ -107,12 +107,17 @@ export class DevelopBatchRepository {
         if (!batch) return;
         const pending = await tx
           .selectFrom('develop_batch_return')
-          .select(['id', 'pendingMasterPath'])
+          .select(['id', 'pendingMasterPath', 'status'])
           .where('id', '=', row.id)
           .where('revisionId', 'is', null)
           .where('pendingMasterPath', 'is not', null)
           .$if(batch.status !== 'cancelled', (query) =>
-            query.where('stagedAt', '<', sql<Date>`clock_timestamp()-interval '24 hours'`),
+            query.where((eb) =>
+              eb.or([
+                eb('status', '=', 'failed'),
+                eb('stagedAt', '<', sql<Date>`clock_timestamp()-interval '24 hours'`),
+              ]),
+            ),
           )
           .forUpdate()
           .executeTakeFirst();
@@ -298,7 +303,7 @@ export class DevelopBatchRepository {
     return this.get(ownerId, id);
   }
   async fail(ownerId: string, batchId: string, itemId: string, confirmationId: string, errorCode: string) {
-    await sql`UPDATE develop_batch_return r SET status='failed',error='Import failed',"errorCode"=${errorCode} FROM develop_batch_item item,develop_batch batch WHERE r."itemId"=item.id AND item."batchId"=batch.id AND batch.id=${batchId}::uuid AND batch."ownerId"=${ownerId}::uuid AND item.id=${itemId}::uuid AND r."confirmationId"=${confirmationId}::uuid AND r."revisionId" IS NULL AND batch.status<>'cancelled'`.execute(
+    await sql`UPDATE develop_batch_return r SET status='failed',error='Import failed',"errorCode"=${errorCode} FROM develop_batch_item item,develop_batch batch WHERE r."itemId"=item.id AND item."batchId"=batch.id AND batch.id=${batchId}::uuid AND batch."ownerId"=${ownerId}::uuid AND item.id=${itemId}::uuid AND r."confirmationId"=${confirmationId}::uuid AND r."revisionId" IS NULL AND r."pendingMasterPath" IS NULL AND batch.status<>'cancelled'`.execute(
       this.db,
     );
   }
