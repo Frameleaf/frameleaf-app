@@ -47,6 +47,8 @@
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     AlbumKind,
+    LibraryScope,
+    LibraryViewScope,
     AlbumUserRole,
     getAlbumMapMarkers,
     createClassificationRule,
@@ -105,6 +107,7 @@
    */
   interface Props {
     album: AlbumResponseDto;
+    uploadScope?: LibraryScope;
     /** Albums inside this collection, from the tree endpoint. Empty for an album or space. */
     childAlbums?: AlbumResponseDto[];
     /** The collection this album sits in, for the breadcrumb. */
@@ -120,6 +123,8 @@
     ownerBadges?: boolean;
     /** Items on the page; the slideshow and download are offered only when there are some. */
     assetCount?: number;
+    /** Total authorized media and bookmarks; media actions still use assetCount. */
+    itemCount?: number;
     onAlbumChange: (album: AlbumResponseDto) => void;
     /** Re-read the album and the tree after membership or structure changed. */
     onRefresh: () => Promise<void> | void;
@@ -131,6 +136,7 @@
 
   let {
     album,
+    uploadScope,
     childAlbums = [],
     parent,
     ancestors,
@@ -141,6 +147,7 @@
     canShowOwnerBadges = false,
     ownerBadges = false,
     assetCount = 0,
+    itemCount,
     onAlbumChange,
     onRefresh,
     onAddPhotos,
@@ -341,7 +348,10 @@
 
   /** Creating inside a collection stays here and says so (CollectionHeader.jsx); the strip refreshes. */
   const createChildAlbum = async (dto: CreateAlbumDto) => {
-    const created = await handleCreateAlbumEntry(dto);
+    const created = await handleCreateAlbumEntry({
+      ...dto,
+      libraryScope: dto.libraryScope ?? uploadScope ?? album.libraryScope,
+    });
     if (!created) {
       return false;
     }
@@ -355,7 +365,11 @@
   /** A new smart album in this collection, created with its rule (FL-60). */
   const createChildSmartAlbum = async (dto: ClassificationRuleCreateDto) => {
     try {
-      const created = await createClassificationRule({ classificationRuleCreateDto: dto });
+      const scope = uploadScope ?? album.libraryScope;
+      const libraryScope = scope === LibraryScope.Design ? LibraryViewScope.Design : LibraryViewScope.Personal;
+      const created = await createClassificationRule({
+        classificationRuleCreateDto: { ...dto, filter: { ...dto.filter, libraryScope } },
+      });
       await goto(Route.viewAlbum({ id: created.albumId }));
       return true;
     } catch (error) {
@@ -380,7 +394,10 @@
 
   const upload = async () => {
     try {
-      await openFileUploadDialog({ albumId: album.id });
+      await openFileUploadDialog({
+        albumId: album.id,
+        libraryScope: uploadScope ?? (album.libraryScope === LibraryScope.Design ? LibraryScope.Design : undefined),
+      });
     } catch (error) {
       handleError(error, $t('errors.unable_to_upload_file'));
     }
@@ -492,7 +509,7 @@
       {/if}
 
       <div class="summary">
-        <span>{$t('frameleaf_albums_items', { values: { count: assetCount } })}</span>
+        <span>{$t('frameleaf_albums_items', { values: { count: itemCount ?? assetCount } })}</span>
         {#if span}
           <span>{span}</span>
         {/if}
@@ -739,7 +756,7 @@
     kind: 'album',
     albumId: album.id,
     name,
-    itemCount: assetCount,
+    itemCount: itemCount ?? assetCount,
     previewIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
   }}
 />
@@ -802,7 +819,7 @@
     ? $t('frameleaf_album_delete_collection_keep', { values: { count: childAlbums.length } })
     : album.isSmart
       ? $t('frameleaf_album_delete_smart_keep')
-      : $t('frameleaf_album_delete_keep', { values: { count: assetCount } })}
+      : $t('frameleaf_album_delete_keep', { values: { count: itemCount ?? assetCount } })}
   confirmLabel={$t('frameleaf_album_delete', { values: { kind: kindLabel } })}
   bind:open={deleteOpen}
   onConfirm={confirmDelete}

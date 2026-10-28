@@ -339,3 +339,16 @@ describe('AlbumHeader', () => {
     });
   });
 });
+
+it('counts bookmark items without enabling media actions for a bookmark-only album', () => {
+  render(AlbumHeader, {
+    album: albumAs(AlbumUserRole.Owner, { assetCount: 0 }),
+    assetCount: 0,
+    itemCount: 2,
+    onAlbumChange: vi.fn(),
+    onRefresh: vi.fn(),
+  });
+  expect(screen.getByText('2 items', { exact: true })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Slideshow' })).toBeDisabled();
+});

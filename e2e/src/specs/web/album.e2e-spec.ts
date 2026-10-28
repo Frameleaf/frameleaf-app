@@ -623,7 +623,7 @@ test.describe('Album', () => {
     await dialog.getByRole('button', { name: 'Move', exact: true }).click();
 
     await expect(page.getByRole('status')).toContainText('Your albums changed since this page loaded');
-    const tree = await getAlbumTree({ headers: asBearerAuth(admin.accessToken) });
+    const tree = await getAlbumTree({}, { headers: asBearerAuth(admin.accessToken) });
     const node = tree.collections.find(({ collection }) => collection.id === family.id);
     expect(node?.albums.map(({ id }) => id)).toContain(album.id);
   });

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { AlbumResponseDto } from '@frameleaf/sdk';
+  import { libraryUploadScope } from '$lib/frameleaf/search-context';
   import { page } from '$app/state';
   import { shouldIgnoreEvent } from '$lib/actions/shortcut';
   import '$lib/frameleaf/tokens.css';
@@ -89,6 +91,10 @@
     const sharedLink = authManager.isSharedLink;
     const { key, slug } = authManager.params;
     const targetAlbumId = albumId;
+    const libraryScope = libraryUploadScope(
+      new URL(page.url.href),
+      (page.data as { album?: AlbumResponseDto } | undefined)?.album,
+    );
     const isLockedAssets = isInLockedFolder;
     const receiveSharedFiles = dropUploads?.capture();
     // Directory reads can outlive the route or session that admitted the drop.
@@ -107,7 +113,7 @@
     if (sharedLink) {
       receiveSharedFiles?.(files);
     } else {
-      await fileUploadHandler({ files, albumId: targetAlbumId, isLockedAssets });
+      await fileUploadHandler({ files, albumId: targetAlbumId, isLockedAssets, libraryScope });
     }
   };
 
@@ -118,7 +124,7 @@
     const entries: FileSystemEntry[] = [];
     const files: File[] = [];
     for (const item of dataTransfer.items) {
-      // eslint-disable-next-line tscompat/tscompat
+      // eslint-disable-next-line tscompat/tscompat -- The directory API is feature-checked above; other browsers use files.
       const entry = item.webkitGetAsEntry();
       if (entry) {
         entries.push(entry);
@@ -132,7 +138,7 @@
     return [...files, ...(await getAllFilesFromTransferEntries(entries, isCurrent))];
   };
 
-  // eslint-disable-next-line tscompat/tscompat
+  // eslint-disable-next-line tscompat/tscompat -- Reading the optional method is the feature check itself.
   const browserSupportsDirectoryUpload = () => typeof DataTransferItem.prototype.webkitGetAsEntry === 'function';
 
   const getAllFilesFromTransferEntries = async (

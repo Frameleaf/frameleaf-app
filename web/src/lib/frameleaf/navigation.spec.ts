@@ -185,8 +185,13 @@ describe('Frameleaf rail destinations', () => {
 });
 
 describe('Frameleaf primary destinations', () => {
-  it('offers Library, Studio and Activity in the prototype order', () => {
-    expect(buildPrimaryDestinations().map((destination) => destination.id)).toEqual(['library', 'studio', 'activity']);
+  it('offers the free Pro workspace beside Library, Studio and Activity', () => {
+    expect(buildPrimaryDestinations().map((destination) => destination.id)).toEqual([
+      'library',
+      'pro',
+      'studio',
+      'activity',
+    ]);
   });
 
   it('sends Library home, Studio to the project library and Activity to its page', () => {
@@ -194,9 +199,15 @@ describe('Frameleaf primary destinations', () => {
 
     expect(hrefs).toEqual({
       library: Route.photos(),
+      pro: '/pro',
       studio: Route.studioProjects(),
       activity: Route.activity(),
     });
+  });
+
+  it('keeps Pro current while viewing design assets', () => {
+    expect(currentPrimaryDestination('/pro')).toBe('pro');
+    expect(currentPrimaryDestination('/pro/photos/asset')).toBe('pro');
   });
 
   it('keeps Studio current in the project library and the editor', () => {

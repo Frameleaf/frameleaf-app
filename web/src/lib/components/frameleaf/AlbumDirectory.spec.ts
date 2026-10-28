@@ -1,4 +1,11 @@
-import { AlbumKind, AlbumUserRole, SmartAlbumBuiltInKind, type AlbumTreeResponseDto } from '@frameleaf/sdk';
+import {
+  LibraryScope,
+  LibraryViewScope,
+  AlbumKind,
+  AlbumUserRole,
+  SmartAlbumBuiltInKind,
+  type AlbumTreeResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { init, register, t, waitLocale } from 'svelte-i18n';
@@ -7,6 +14,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { afterNavigate } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { defaultAlbumDirectoryView } from '$lib/frameleaf/album-directory';
+import { workspaceHref } from '$lib/frameleaf/search-context';
 import { installFrameleafToasts } from '$lib/frameleaf/toast';
 import { albumDirectoryView } from '$lib/stores/preferences.store';
 import { renderWithTooltips } from '$tests/helpers';
@@ -246,6 +254,23 @@ describe('AlbumDirectory', () => {
 
     expect(await screen.findByRole('dialog', { name: 'New album' })).toBeInTheDocument();
     expect(app.replaceState).toHaveBeenCalledOnce();
+  });
+
+  it('creates a Pro album in Design through the ordinary album flow', async () => {
+    app.page.url = new URL(
+      workspaceHref('/albums?create=album', LibraryViewScope.Design, 'http://localhost'),
+      'http://localhost',
+    );
+    sdkMock.createAlbum.mockResolvedValue(albumFactory.build({ libraryScope: LibraryScope.Design }));
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    const dialog = await screen.findByRole('dialog', { name: 'New album' });
+    await fireEvent.input(within(dialog).getByRole('textbox', { name: 'Name' }), { target: { value: 'Packaging' } });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await waitFor(() =>
+      expect(sdkMock.createAlbum).toHaveBeenCalledWith({
+        createAlbumDto: expect.objectContaining({ albumName: 'Packaging', libraryScope: LibraryScope.Design }),
+      }),
+    );
   });
 
   it('opens no create dialog on a plain visit to All albums', () => {

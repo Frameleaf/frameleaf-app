@@ -12,6 +12,7 @@
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import TabBar from '$lib/components/frameleaf/TabBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
+  import { libraryUploadScope } from '$lib/frameleaf/search-context';
   import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock } from '$lib/frameleaf/session-lock';
@@ -24,7 +25,7 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
-  import { getAuthStatus } from '@frameleaf/sdk';
+  import { LibraryScope, type AlbumResponseDto, getAuthStatus } from '@frameleaf/sdk';
   import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiBellOutline,
@@ -76,7 +77,11 @@
   const primaryDestinations = buildPrimaryDestinations();
   /** apple-style.css: phones show the Frameleaf symbol only. */
   const phone = new MediaQuery('max-width: 700px');
-  const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname));
+  const proContext = $derived(
+    libraryUploadScope(new URL(page.url.href), (page.data as { album?: AlbumResponseDto } | undefined)?.album) ===
+      LibraryScope.Design,
+  );
+  const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname, proContext));
 
   let showNotifications = $state(false);
   let showHelp = $state(false);
@@ -302,14 +307,18 @@
       shortcuts: a second instance would open the dialog twice.
     -->
     <div class="fl-topbar-search">
-      {#if featureFlagsManager.value.search}
+      {#if featureFlagsManager.value.search || proContext}
         <SearchEntry onToggleLocked={toggleSession} />
       {/if}
     </div>
 
     <section class="fl-topbar-actions">
       {#if onUploadClick}
-        <UploadMenuButton defaultAlbumId={uploadAlbumId} isLockedAssets={uploadIsLocked} />
+        <UploadMenuButton
+          libraryScope={proContext ? LibraryScope.Design : undefined}
+          defaultAlbumId={uploadAlbumId}
+          isLockedAssets={uploadIsLocked}
+        />
       {/if}
 
       <!-- The one "work in progress" indicator, at every width; on phones it is the ring alone. -->

@@ -22,6 +22,8 @@
   import { canAnimate, prefersReducedMotion } from '$lib/frameleaf/motion';
   import { DURATION } from '$lib/frameleaf/tokens';
   import '$lib/frameleaf/tokens.css';
+  import { searchContextFor, workspaceHref } from '$lib/frameleaf/search-context';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -29,7 +31,13 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAlbumHierarchy, getPartners, PartnerDirection, type PartnerResponseDto } from '@frameleaf/sdk';
+  import {
+    LibraryViewScope,
+    getAlbumHierarchy,
+    getPartners,
+    PartnerDirection,
+    type PartnerResponseDto,
+  } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiAccountOutline,
@@ -39,7 +47,7 @@
     mdiChevronRight,
     mdiPlus,
   } from '@mdi/js';
-  import { onMount, untrack, type Snippet } from 'svelte';
+  import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
@@ -88,39 +96,78 @@
   /** Collections whose open state the user has flipped away from the saved default. */
   const flipped = new SvelteSet<string>();
 
-  const refreshAlbums = async () => {
+  let treeRequest = 0;
+  const workspaceScope = $derived(searchContextFor(new URL(page.url.href)).query.filter.libraryScope);
+  const scopedHref = (href: string) => workspaceHref(href, workspaceScope, page.url.origin);
+  const refreshAlbums = async (scope = workspaceScope) => {
+    const version = ++treeRequest;
+    const current = authManager.captureSession();
     try {
-      // The real album directory (FL-52): collections with their albums, standalone
-      // albums and top-level shared spaces, already scoped to the account's own albums
-      // plus the ones shared with it.
-      tree = buildAlbumTree(await getAlbumHierarchy({}));
+      const response = await getAlbumHierarchy(scope ? { libraryScope: scope } : {});
+      if (version === treeRequest && current() && scope === workspaceScope) {
+        tree = buildAlbumTree(response);
+      }
     } catch (error) {
-      handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
+      if (version === treeRequest && current()) {
+        handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
+      }
     }
   };
+  $effect(() => {
+    const scope = workspaceScope;
+    untrack(() => {
+      tree = emptyAlbumTree();
+      void refreshAlbums(scope);
+    });
+  });
+  onDestroy(() => treeRequest++);
+  onDestroy(
+    onLibraryAccessChange(() => {
+      treeRequest++;
+      partnerRequest++;
+      tree = emptyAlbumTree();
+      partners = [];
+      if (authManager.authenticated) {
+        void refreshAlbums();
+        void refreshPartners();
+      }
+    }),
+  );
 
   /** People who share their library with this account (the prototype's partner library entry). */
   let partners = $state<PartnerResponseDto[]>([]);
+  let partnerRequest = 0;
+  onDestroy(() => partnerRequest++);
   const refreshPartners = async () => {
+    const version = ++partnerRequest;
+    const current = authManager.captureSession();
     try {
-      partners = await getPartners({ direction: PartnerDirection.SharedWith });
+      const response = await getPartners({ direction: PartnerDirection.SharedWith });
+      if (version === partnerRequest && current()) {
+        partners = response;
+      }
     } catch {
       // The rail still works without the entry; the Sharing page reports partner errors.
-      partners = [];
+      if (version === partnerRequest && current()) {
+        partners = [];
+      }
     }
   };
 
-  onMount(() => {
+  const refreshAccessAlbums = () => {
+    tree = emptyAlbumTree();
     void refreshAlbums();
+  };
+  onMount(() => {
     void refreshPartners();
 
     return eventManager.on({
       AlbumCreate: () => void refreshAlbums(),
       AlbumUpdate: () => void refreshAlbums(),
-      AlbumDelete: () => void refreshAlbums(),
-      AlbumShare: () => void refreshAlbums(),
-      AlbumUserUpdate: () => void refreshAlbums(),
-      AlbumUserDelete: () => void refreshAlbums(),
+      AlbumDelete: refreshAccessAlbums,
+      AlbumShare: refreshAccessAlbums,
+      AlbumUserUpdate: refreshAccessAlbums,
+      AlbumUserDelete: refreshAccessAlbums,
     });
   });
 
@@ -128,7 +175,7 @@
 
   const sections = $derived(
     buildRailSections({
-      search: featureFlagsManager.value.search,
+      search: featureFlagsManager.value.search || workspaceScope === LibraryViewScope.Design,
       map: featureFlagsManager.value.map,
       trash: featureFlagsManager.value.trash,
       // Feature preferences are the account's own display choices, never permissions:
@@ -259,7 +306,7 @@
           <Icon icon={mdiChevronRight} size="1em" aria-hidden={true} class="fl-chevron" />
         </button>
         <a
-          href={Route.viewAlbum({ id: node.id })}
+          href={scopedHref(Route.viewAlbum({ id: node.id }))}
           class="fl-link"
           aria-current={isAlbumCurrent(node) ? 'page' : undefined}
           data-sveltekit-preload-data="hover"
@@ -280,7 +327,7 @@
 {/snippet}
 
 {#snippet albumLink(node: FrameleafAlbumNode)}
-  {@render railLink(node.name, node, Route.viewAlbum({ id: node.id }), isAlbumCurrent(node), true)}
+  {@render railLink(node.name, node, scopedHref(Route.viewAlbum({ id: node.id })), isAlbumCurrent(node), true)}
 {/snippet}
 
 {#snippet spaceLink(node: FrameleafAlbumNode)}
@@ -358,7 +405,7 @@
           {#if create}
             <a
               class="fl-action"
-              href={create.href}
+              href={scopedHref(create.href)}
               title={$t(create.labelKey)}
               aria-label={$t(create.labelKey)}
               data-sveltekit-preload-data="hover"

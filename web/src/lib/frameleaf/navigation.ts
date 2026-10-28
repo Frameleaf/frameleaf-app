@@ -45,7 +45,7 @@ import { Route } from '$lib/route';
  * shows only the labels.
  */
 
-export type PrimaryDestinationId = 'library' | 'studio' | 'activity';
+export type PrimaryDestinationId = 'library' | 'pro' | 'studio' | 'activity';
 
 export interface PrimaryDestination {
   id: PrimaryDestinationId;
@@ -57,6 +57,7 @@ export interface PrimaryDestination {
 
 export const buildPrimaryDestinations = (): PrimaryDestination[] => [
   { id: 'library', labelKey: 'library', icon: mdiImageMultipleOutline, href: Route.photos() },
+  { id: 'pro', labelKey: 'frameleaf_pro_title', icon: mdiFolderMultipleOutline, href: '/pro' },
   { id: 'studio', labelKey: 'frameleaf_studio_title', icon: mdiMovieEditOutline, href: Route.studioProjects() },
   { id: 'activity', labelKey: 'activity', icon: mdiProgressClock, href: Route.activity() },
 ];
@@ -128,7 +129,10 @@ const PEOPLE_ROOT = pathOf(Route.people());
  * all-spaces indexes, a person's own page, a partner's library, Buy, Workflows, Trash, Utilities —
  * leaves the switcher without a current item there too, even though the rail still navigates them.
  */
-export const currentPrimaryDestination = (pathname: string): PrimaryDestinationId | null => {
+export const currentPrimaryDestination = (pathname: string, proContext = false): PrimaryDestinationId | null => {
+  if (isWithin(pathname, '/pro')) {
+    return 'pro';
+  }
   if (isWithin(pathname, pathOf(Route.studio()))) {
     return 'studio';
   }
@@ -140,6 +144,9 @@ export const currentPrimaryDestination = (pathname: string): PrimaryDestinationI
   }
   if (pathname === PEOPLE_ROOT) {
     return 'library';
+  }
+  if (proContext && (LIBRARY_INDEX_ROOTS.has(pathname) || LIBRARY_ROOTS.some((root) => isWithin(pathname, root)))) {
+    return 'pro';
   }
   if (LIBRARY_INDEX_ROOTS.has(pathname)) {
     return null;

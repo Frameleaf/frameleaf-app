@@ -16,6 +16,15 @@ import {
  * optional detail. It is pure: the caller translates the name and formats nothing else.
  */
 const FIELD_LABEL_KEYS: Record<string, Translations> = {
+  color: 'frameleaf_color_filter',
+  hasTransparency: 'frameleaf_filter_transparency',
+  source: 'frameleaf_sources_title',
+  text: 'frameleaf_search_mode_all_text',
+  albumSubtreeIds: 'frameleaf_filter_nested_albums',
+  width: 'frameleaf_filter_width',
+  height: 'frameleaf_filter_height',
+  aspectRatio: 'frameleaf_filter_aspect_ratio',
+  durationMs: 'frameleaf_filter_duration',
   personIds: 'people',
   hasPeople: 'people',
   petIds: 'frameleaf_pets_title',
@@ -143,7 +152,7 @@ const localDay = (day: string) => new Date(`${day}T00:00:00`);
 export const filterFieldLabelKey = (field: string) => FIELD_LABEL_KEYS[field] ?? 'frameleaf_library_filter_field_other';
 
 const LIST_OPERATORS = ['in', 'notIn', 'any', 'all', 'none'] as const;
-const TEXT_OPERATORS = ['like', 'notLike', 'startsWith', 'endsWith', 'matches'] as const;
+const TEXT_OPERATORS = ['like', 'notLike', 'startsWith', 'endsWith', 'matches', 'contains'] as const;
 
 const scalar = (value: unknown): string | null => {
   if (typeof value === 'string') {
@@ -255,6 +264,9 @@ const describeRawFilterField = (query: DiscoveryQuery, field: string): FilterChi
   );
   if (entries.length === 0) {
     return null;
+  }
+  if (field === 'color') {
+    return { ...base, detail: scalar((condition as Record<string, unknown>).hex) };
   }
   for (const operator of LIST_OPERATORS) {
     const values = (condition as Record<string, unknown>)[operator];

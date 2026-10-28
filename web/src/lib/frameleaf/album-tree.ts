@@ -85,3 +85,23 @@ export const flattenAlbumTree = (tree: FrameleafAlbumTree): FrameleafAlbumNode[]
   ];
   return (tree.roots ?? [...tree.collections, ...tree.albums, ...tree.spaces]).flatMap((root) => visit(root));
 };
+
+/** Picker paths name only ancestors present in the authorized album list. */
+export const albumSelectionOptions = (albums: AlbumResponseDto[]): { value: string; label: string }[] => {
+  const byId = new Map(albums.map((album) => [album.id, album]));
+  return albums.map((album) => {
+    const names = [album.albumName];
+    const seen = new Set([album.id]);
+    let parentId = album.parentId;
+    while (parentId && !seen.has(parentId) && names.length < 32) {
+      const parent = byId.get(parentId);
+      if (!parent) {
+        break;
+      }
+      seen.add(parentId);
+      names.unshift(parent.albumName);
+      parentId = parent.parentId;
+    }
+    return { value: album.id, label: names.join(' / ') };
+  });
+};

@@ -1,4 +1,11 @@
-import { ImageEnrichmentFilter, SearchFacetField, type PersonResponseDto, type PetResponseDto } from '@frameleaf/sdk';
+import {
+  ColorTolerance,
+  LibraryViewScope,
+  ImageEnrichmentFilter,
+  SearchFacetField,
+  type PersonResponseDto,
+  type PetResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -44,6 +51,26 @@ describe('FilterPanel', () => {
     return { onChange, panel: screen.getByRole('complementary', { name: 'Library filters' }) };
   };
 
+  it('edits the shared color filter without changing workspace scope', async () => {
+    const { onChange, panel } = setup({ ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } });
+    await fireEvent.change(within(panel).getByRole('textbox', { name: 'Hex color' }), { target: { value: '#609060' } });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filter: {
+          libraryScope: LibraryViewScope.Design,
+          color: { hex: '#609060', tolerance: ColorTolerance.Normal, minWeight: 0.05 },
+        },
+      }),
+    );
+  });
+  it('offers subtree membership through the existing album selector', async () => {
+    const { onChange, panel } = setup(emptyDiscoveryQuery(), {
+      options: { ...options, albums: [{ value: JAMIE, label: 'Brand / Packaging' }] },
+    });
+    const section = within(panel).getByRole('heading', { name: 'Albums including nested albums' }).closest('section')!;
+    await fireEvent.click(within(section).getByRole('checkbox', { name: /Brand \/ Packaging/ }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ filter: { albumSubtreeIds: { any: [JAMIE] } } }));
+  });
   it('embedded in the search palette, draws no heading and shows live counts', () => {
     const { panel } = setup(emptyDiscoveryQuery(), {
       embedded: true,

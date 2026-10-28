@@ -2,6 +2,9 @@ import {
   AssetMediaStatus,
   AssetUploadAction,
   AssetVisibility,
+  LibraryScope,
+  getAssetInfo,
+  updateAsset,
   checkBulkUpload,
   getBaseUrl,
   type AssetMediaResponseDto,
@@ -23,10 +26,16 @@ import { handleError } from './handle-error';
 
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
 const activeUploads = new Set<AbortController>();
-type UploadContext = { owner: string | undefined; sharedLink: boolean; query: string };
+type UploadContext = { current: () => boolean; owner: string | undefined; sharedLink: boolean; query: string };
 
 type FilePickerParam = { multiple?: boolean; extensions?: string[]; directory?: boolean };
-type FileUploadParam = { multiple?: boolean; albumId?: string; directory?: boolean; isLockedAssets?: boolean };
+type FileUploadParam = {
+  multiple?: boolean;
+  albumId?: string;
+  directory?: boolean;
+  isLockedAssets?: boolean;
+  libraryScope?: LibraryScope;
+};
 
 export const openFilePicker = async (options: FilePickerParam = {}) => {
   const { multiple = true, extensions, directory = false } = options;
@@ -84,7 +93,8 @@ export const openFilePicker = async (options: FilePickerParam = {}) => {
 };
 
 export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
-  const { albumId, multiple = true, directory = false, isLockedAssets } = options;
+  const { albumId, multiple = true, directory = false, isLockedAssets, libraryScope } = options;
+  const current = authManager.captureSession();
   const extensions = uploadManager.getExtensions();
   const files = await openFilePicker({
     multiple,
@@ -94,7 +104,10 @@ export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
     directory,
   });
 
-  return fileUploadHandler({ files, albumId, isLockedAssets });
+  if (!current()) {
+    return [];
+  }
+  return fileUploadHandler({ files, albumId, isLockedAssets, libraryScope });
 };
 
 type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile'> & {
@@ -105,9 +118,11 @@ export const fileUploadHandler = async ({
   files,
   albumId,
   isLockedAssets = false,
+  libraryScope,
 }: FileUploadHandlerParams): Promise<string[]> => {
   const extensions = uploadManager.getExtensions();
   const context: UploadContext = {
+    current: authManager.captureSession(),
     owner: authManager.authenticated ? authManager.user.id : undefined,
     sharedLink: authManager.isSharedLink,
     query: asQueryString(authManager.params),
@@ -117,10 +132,10 @@ export const fileUploadHandler = async ({
     const name = file.name.toLowerCase();
     if (extensions.some((extension) => name.endsWith(extension))) {
       const deviceAssetId = getDeviceAssetId(file);
-      uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId, isLockedAssets });
+      uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId, isLockedAssets, libraryScope });
       promises.push(
         uploadExecutionQueue.addTask(() =>
-          fileUploader({ deviceAssetId, assetFile: file, albumId, isLockedAssets }, context),
+          fileUploader({ deviceAssetId, assetFile: file, albumId, isLockedAssets, libraryScope }, context),
         ),
       );
     } else {
@@ -144,9 +159,9 @@ export const fileUploadHandler = async ({
 export const retryFailedUploads = async () => {
   const failed = get(uploadAssetsStore).filter((item) => item.state === UploadState.ERROR);
   await Promise.all(
-    failed.map(({ id, file, albumId, isLockedAssets }) => {
+    failed.map(({ id, file, albumId, isLockedAssets, libraryScope }) => {
       uploadAssetsStore.removeItem(id);
-      return fileUploadHandler({ files: [file], albumId, isLockedAssets });
+      return fileUploadHandler({ files: [file], albumId, isLockedAssets, libraryScope });
     }),
   );
 };
@@ -218,6 +233,7 @@ type FileUploaderParams = {
   assetFile: File;
   albumId?: string;
   replaceAssetId?: string;
+  libraryScope?: LibraryScope;
   isLockedAssets?: boolean;
   // TODO rework the asset uploader and remove this
   deviceAssetId: string;
@@ -225,7 +241,7 @@ type FileUploaderParams = {
 
 // TODO: should probably use the @api SDK
 async function fileUploader(
-  { assetFile, deviceAssetId, albumId, isLockedAssets = false }: FileUploaderParams,
+  { assetFile, deviceAssetId, albumId, isLockedAssets = false, libraryScope }: FileUploaderParams,
   context: UploadContext,
 ): Promise<string | undefined> {
   const fileCreatedAt = new Date(assetFile.lastModified).toISOString();
@@ -241,6 +257,7 @@ async function fileUploader(
     }
     const owner = authManager.authenticated ? authManager.user.id : undefined;
     if (
+      !context.current() ||
       owner !== context.owner ||
       authManager.isSharedLink !== context.sharedLink ||
       asQueryString(authManager.params) !== context.query
@@ -300,6 +317,9 @@ async function fileUploader(
       formData.append('fileCreatedAt', fileCreatedAt);
       formData.append('fileModifiedAt', fileCreatedAt);
       formData.append('isFavorite', 'false');
+      if (libraryScope) {
+        formData.append('libraryScope', libraryScope);
+      }
       formData.append('assetData', new File([assetFile], assetFile.name));
       if (isLockedAssets) {
         formData.append('visibility', AssetVisibility.Locked);
@@ -318,6 +338,24 @@ async function fileUploader(
       }
 
       responseData = response.data;
+    }
+
+    if (libraryScope === LibraryScope.Design && responseData.status === AssetMediaStatus.Duplicate && responseData.id) {
+      assertCurrent(false);
+      const existing = await getAssetInfo({ id: responseData.id }, { signal });
+      assertCurrent(false);
+      if (
+        context.sharedLink ||
+        existing.ownerId !== context.owner ||
+        existing.isTrashed ||
+        existing.visibility === AssetVisibility.Locked
+      ) {
+        throw new Error($t('errors.unable_to_upload_file'));
+      }
+      if (!existing.libraryScope || existing.libraryScope === LibraryScope.Personal) {
+        await updateAsset({ id: existing.id, updateAssetDto: { libraryScope: LibraryScope.Both } }, { signal });
+        assertCurrent(false);
+      }
     }
 
     // An acknowledged upload is saved; cancelling the batch cannot undo it.

@@ -1,10 +1,12 @@
 <script lang="ts">
   import { browser } from '$app/env';
-  import { afterNavigate, beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
-  import { navigating } from '$app/state';
+  import { afterNavigate, beforeNavigate, goto, invalidate } from '$app/navigation';
+  import { navigating, page } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import AlbumHeader from '$lib/components/frameleaf/AlbumHeader.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import LibraryItemsView from '$lib/components/frameleaf/LibraryItemsView.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
@@ -24,6 +26,10 @@
   } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { publishCollectionPage } from '$lib/frameleaf/collection-page-request';
+  import { albumSearchContext } from '$lib/frameleaf/search-context';
+  import { writeLibraryView, readLibraryView, createLibrarySession } from '$lib/frameleaf/library-session';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { HERO_PAGE_ATTRIBUTE, HERO_SHARED_ATTRIBUTE } from '$lib/frameleaf/motion';
   import { findTileImage } from '$lib/frameleaf/viewer-zoom';
@@ -32,18 +38,21 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAlbumAssetsActions, handleDeleteAlbum, leftLocally } from '$lib/services/album.service';
+  import { getAlbumAssetsActions, leftLocally } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { isAlbumsRoute, navigate } from '$lib/utils/navigation';
+  import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AlbumKind,
     AlbumUserRole,
     getAllTags,
     getAlbumInfo,
+    getAlbumItems,
+    LibraryScope,
+    LibraryViewScope,
     searchAssets,
     type AlbumResponseDto,
     type AssetResponseDto,
@@ -412,11 +421,56 @@
     }
   };
 
-  onNavigate(async ({ to }) => {
-    if (!isAlbumsRoute(to?.route.id) && album.assetCount === 0 && !album.albumName) {
-      await handleDeleteAlbum(album, { notify: false });
+  let bookmarkCount = $state(0);
+  let itemsUnavailable = $state(false);
+  let itemGeneration = $state(0);
+  const mixedQuery = $derived(albumSearchContext(new URL(page.url.href), album));
+  const designContext = $derived(mixedQuery.filter.libraryScope === LibraryViewScope.Design);
+  const mixedAlbum = $derived(
+    !isCollection &&
+      (bookmarkCount > 0 || album.libraryScope === LibraryScope.Design || album.libraryScope === LibraryScope.Both),
+  );
+  $effect(() => {
+    const id = albumId;
+    const selected = album;
+    const version = itemGeneration;
+    const current = authManager.captureSession();
+    const controller = new AbortController();
+    bookmarkCount = 0;
+    itemsUnavailable = false;
+    if (!isCollection) {
+      void getAlbumItems({ id, limit: 1 }, { signal: controller.signal })
+        .then((result) => {
+          if (
+            !controller.signal.aborted &&
+            current() &&
+            albumId === id &&
+            itemGeneration === version &&
+            album === selected
+          ) {
+            bookmarkCount = result.bookmarkCount;
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted && current() && albumId === id && itemGeneration === version) {
+            itemsUnavailable = true;
+          }
+        });
     }
+    return () => controller.abort();
   });
+  onDestroy(
+    onLibraryAccessChange(() => {
+      bookmarkCount = 0;
+      itemGeneration++;
+    }),
+  );
+  const updateMixedQuery = (query: import('$lib/components/discovery/query').DiscoveryQuery) => {
+    const url = new URL(Route.viewAlbum({ id: albumId }), page.url.origin);
+    const previous = readLibraryView(new URL(page.url.href)) ?? createLibrarySession().state;
+    const next = writeLibraryView(url, { ...previous, scope: { kind: 'album', id: albumId }, query });
+    void goto(next, { replace: true, reset: false });
+  };
 
   const options = $derived({ albumId, order: album.order });
 
@@ -522,7 +576,7 @@
   };
 
   const { Cast } = $derived(getGlobalActions($t));
-  const { Upload } = $derived(getAlbumAssetsActions($t, album));
+  const { Upload } = $derived(getAlbumAssetsActions($t, album, designContext ? LibraryScope.Design : undefined));
 
   const Close = $derived({
     title: $t('go_back'),
@@ -554,6 +608,7 @@
     {@const view = albumView}
     <AlbumHeader
       {album}
+      uploadScope={designContext ? LibraryScope.Design : undefined}
       {childAlbums}
       {parent}
       {ancestors}
@@ -564,6 +619,7 @@
       canShowOwnerBadges={containsEditors}
       ownerBadges={showAlbumUsers}
       {assetCount}
+      itemCount={assetCount + bookmarkCount}
       onAlbumChange={(next) => (album = next)}
       onRefresh={() => refreshEverything(view)}
       onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
@@ -581,7 +637,17 @@
   Photos, a person and a tag, so it carries the page gutter inside its scroller and the frosted
   toolbar band spans the page (LIB-P4). The comments sheet is fixed over the right edge (SHARING-P2).
 -->
-<UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.albums() }]]}>
+<UserPageLayout
+  scrollbar={false}
+  onUploadClick={() =>
+    void openFileUploadDialog({ albumId, libraryScope: designContext ? LibraryScope.Design : undefined })}
+  use={[[scrollMemoryClearer, { routeStartsWith: Route.albums() }]]}
+>
+  {#if itemsUnavailable}<InlineError
+      compact
+      message={$t('frameleaf_album_links_unavailable')}
+      onRetry={() => itemGeneration++}
+    />{/if}
   {#if isCollection}
     <div class="relative h-full overflow-hidden md:px-4">
       <Theme theme={appTheme}>
@@ -601,6 +667,19 @@
         </div>
       </Theme>
     </div>
+  {:else if mixedAlbum}
+    {#key albumId}
+      <LibraryItemsView
+        title={album.albumName || $t('unnamed_album')}
+        query={mixedQuery}
+        {album}
+        context={Route.viewAlbum({ id: albumId })}
+        workspace={designContext ? 'design' : 'personal'}
+        onQueryChange={updateMixedQuery}
+        {header}
+        {bulkContext}
+      />
+    {/key}
   {:else}
     <LibraryView
       enableRouting

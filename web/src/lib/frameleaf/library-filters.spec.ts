@@ -139,3 +139,14 @@ describe('pet filters (FL-58)', () => {
     expect(filterFieldEntityIds(withFilter({ petIds: { none: ['a'] } }), 'petIds')).toBeNull();
   });
 });
+
+it('describes designer filters without dropping their values', () => {
+  expect(
+    describeFilterField(withFilter({ color: { hex: '#609060', tolerance: 'normal', minWeight: 0.05 } }), 'color'),
+  ).toMatchObject({ labelKey: 'frameleaf_color_filter', detail: '#609060' });
+  expect(describeFilterField(withFilter({ source: { contains: 'publisher' } }), 'source')).toMatchObject({
+    labelKey: 'frameleaf_sources_title',
+    detail: 'publisher',
+  });
+  expect(filterFieldLabelKey('albumSubtreeIds')).toBe('frameleaf_filter_nested_albums');
+});

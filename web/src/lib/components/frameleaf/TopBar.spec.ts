@@ -48,6 +48,7 @@ beforeEach(() => {
   setSessionLockPending(false);
   sessionAccess.isElevated = false;
   authManager.setUser(userAdminFactory.build());
+  app.page.url = new URL('http://localhost/photos');
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   app.invalidateAll.mockResolvedValue(undefined);
   app.goto.mockResolvedValue(undefined);
@@ -60,6 +61,13 @@ afterEach(() => {
 });
 
 describe('TopBar session privacy', () => {
+  it('keeps Pro text search available when semantic search is disabled', () => {
+    app.page.url = new URL('http://localhost/pro');
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(false) as never);
+    render(TopBarTestHarness);
+    expect(screen.getByTestId('search-entry')).toBeInTheDocument();
+  });
+
   it('ignores a stale elevated auth-status response after the root locks without TopBar', async () => {
     const auth = deferred<ReturnType<typeof authStatus>>();
     sdkMock.getAuthStatus.mockReturnValue(auth.promise as never);

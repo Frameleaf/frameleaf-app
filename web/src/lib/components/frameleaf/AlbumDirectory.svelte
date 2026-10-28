@@ -56,11 +56,14 @@
   } from '$lib/services/album.service';
   import { albumDirectoryView } from '$lib/stores/preferences.store';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
+  import { searchContextFor } from '$lib/frameleaf/search-context';
   import { handleError } from '$lib/utils/handle-error';
   import { getAlbumDragData, isAlbumDrag } from '$lib/utils/album-drag';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     AlbumKind,
+    LibraryScope,
+    LibraryViewScope,
     SharedLinkType,
     createClassificationRule,
     getClassificationRule,
@@ -313,7 +316,13 @@
   const createSmart = async (dto: ClassificationRuleCreateDto) => {
     busy = true;
     try {
-      const rule = await createClassificationRule({ classificationRuleCreateDto: dto });
+      const design = searchContextFor(new URL(page.url.href)).query.filter.libraryScope === LibraryViewScope.Design;
+      const rule = await createClassificationRule({
+        classificationRuleCreateDto: {
+          ...dto,
+          ...(design && { filter: { ...dto.filter, libraryScope: LibraryViewScope.Design } }),
+        },
+      });
       announce($t('frameleaf_albums_created', { values: { name: rule.albumName } }));
       await goto(Route.viewAlbum({ id: rule.albumId }));
       return true;
@@ -348,7 +357,8 @@
   const create = async (dto: CreateAlbumDto) => {
     busy = true;
     try {
-      const album = await handleCreateAlbumEntry(dto);
+      const design = searchContextFor(new URL(page.url.href)).query.filter.libraryScope === LibraryViewScope.Design;
+      const album = await handleCreateAlbumEntry({ ...dto, ...(design && { libraryScope: LibraryScope.Design }) });
       if (!album) {
         return false;
       }

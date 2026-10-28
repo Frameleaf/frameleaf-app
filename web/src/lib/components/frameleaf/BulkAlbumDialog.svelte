@@ -11,7 +11,9 @@
   } from '$lib/frameleaf/album-targets';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import type { LibraryViewScope } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   /**
@@ -27,8 +29,10 @@
     count,
     open = $bindable(true),
     onSubmit,
+    libraryScope,
   }: {
     count: number;
+    libraryScope?: LibraryViewScope;
     open?: boolean;
     onSubmit: (payload: BulkPayload) => void;
   } = $props();
@@ -39,18 +43,40 @@
   let albumId = $state('');
   let limit = $state(PAGE);
 
+  let generation = 0;
+  onDestroy(() => generation++);
   const load = async () => {
+    const version = ++generation;
+    const current = authManager.captureSession();
+    directory = emptyAlbumTargets();
     status = 'loading';
     try {
-      directory = await loadAlbumTargets(authManager.user.id, $t('unnamed_album'));
+      const next = await loadAlbumTargets(authManager.user.id, $t('unnamed_album'), libraryScope);
+      if (!current() || version !== generation) {
+        return;
+      }
+      directory = next;
       status = 'ready';
     } catch {
+      if (!current() || version !== generation) {
+        return;
+      }
       status = 'failed';
     }
   };
 
   onMount(() => {
     void load();
+    return onLibraryAccessChange(() => {
+      generation++;
+      directory = emptyAlbumTargets();
+      albumId = '';
+      if (authManager.authenticated) {
+        void load();
+      } else {
+        status = 'failed';
+      }
+    }, authManager.user.id);
   });
 
   const onSearch = () => {

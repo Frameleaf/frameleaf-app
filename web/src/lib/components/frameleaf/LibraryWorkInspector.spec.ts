@@ -1,9 +1,23 @@
-import type { AssetResponseDto } from '@frameleaf/sdk';
+import {
+  PaletteAlgorithmVersion,
+  PaletteRepresentative,
+  PaletteStatus,
+  ColorTolerance,
+  type AssetResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
 import { timelineAssetFactory } from '@test-data/factories/asset-factory';
+
+const access = vi.hoisted(() => ({ listeners: new Set<() => void>() }));
+vi.mock('$lib/frameleaf/library-access', () => ({
+  onLibraryAccessChange: (callback: () => void) => {
+    access.listeners.add(callback);
+    return () => access.listeners.delete(callback);
+  },
+}));
 
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
@@ -35,6 +49,47 @@ const detailOf = (id: string, patch: Partial<AssetResponseDto> = {}) =>
 describe('LibraryWorkInspector', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    access.listeners.clear();
+    sdkMock.getAssetPalette.mockRejectedValue(new Error('not indexed'));
+    sdkMock.getAssetSources.mockResolvedValue([]);
+  });
+
+  it('exposes shared palette selection through its own inspector', async () => {
+    const asset = timelineAssetFactory.build();
+    sdkMock.getAssetInfo.mockResolvedValue(detailOf(asset.id));
+    sdkMock.getAssetPalette.mockResolvedValue({
+      version: PaletteAlgorithmVersion.$1,
+      sourceRevision: 'rev',
+      status: PaletteStatus.Ready,
+      representative: PaletteRepresentative.Image,
+      hasTransparency: false,
+      swatches: [{ hex: '#609060', weight: 1, oklab: [0.6, 0.1, 0.05] }],
+    });
+    const onChooseColor = vi.fn();
+    render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), onChooseColor });
+    await fireEvent.click((await screen.findByText('#609060')).closest('button')!);
+    expect(onChooseColor).toHaveBeenCalledWith({ hex: '#609060', tolerance: ColorTolerance.Normal, minWeight: 0.05 });
+    expect(sdkMock.getAssetSources).not.toHaveBeenCalled();
+  });
+  it('rejects metadata prepared before an access change', async () => {
+    const asset = timelineAssetFactory.build();
+    let resolve!: (value: AssetResponseDto) => void;
+    sdkMock.getAssetInfo.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    sdkMock.getAssetInfo.mockRejectedValue(new Error('revoked'));
+    render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn() });
+    await waitFor(() => expect(sdkMock.getAssetInfo).toHaveBeenCalledOnce());
+    for (const listener of access.listeners) {
+      listener();
+    }
+    resolve(detailOf(asset.id, { originalFileName: 'Private project' }));
+    expect(await screen.findByText('frameleaf_item_details_unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Private project')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'frameleaf_work_inspector_open' })).toBeDisabled();
   });
 
   it('shows the selected item’s information from its full record', async () => {
@@ -65,6 +120,7 @@ describe('LibraryWorkInspector', () => {
 
     render(LibraryWorkInspector, { asset, selectedCount: 1, onOpen, onClose });
 
+    await screen.findByRole('heading', { name: 'IMG_0042.HEIC' });
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_open' }));
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_close' }));
 

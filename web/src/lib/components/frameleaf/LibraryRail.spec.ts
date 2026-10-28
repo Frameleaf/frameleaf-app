@@ -1,4 +1,4 @@
-import { AlbumKind } from '@frameleaf/sdk';
+import { LibraryViewScope, AlbumKind } from '@frameleaf/sdk';
 import { mdiCameraBurst, mdiFolderOutline, mdiHeartOutline } from '@mdi/js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -76,6 +76,17 @@ const treeWithIcon = (icon: string | null) => ({
 });
 
 describe('LibraryRail', () => {
+  it('uses the shared Design hierarchy and keeps Pro context on album/create links', async () => {
+    app.page.url = new URL('http://localhost/pro');
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(null));
+    render(LibraryRail);
+    const album = await screen.findByRole('link', { name: 'Album' });
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledWith({ libraryScope: LibraryViewScope.Design });
+    const url = new URL(album.getAttribute('href')!, 'http://localhost');
+    expect(url.pathname).toBe('/albums/album');
+    expect(url.searchParams.has('fl')).toBe(true);
+  });
+
   it.each([
     ['mdiCameraBurst', mdiCameraBurst],
     ['heart', mdiHeartOutline],

@@ -2,6 +2,7 @@ import {
   AssetTypeEnum,
   AssetVisibility,
   ImageEnrichmentFilter,
+  LibraryViewScope,
   type MetadataSearchDto,
   type SearchFilter,
   type SmartSearchDto,
@@ -201,6 +202,7 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   isPanorama: { eq: (value) => typeof value === 'boolean' },
   isScreenshot: { eq: (value) => typeof value === 'boolean' },
   hasTransparency: { eq: (value) => typeof value === 'boolean' },
+  text: { contains: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 4096 },
   source: { contains: (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 500 },
   color: {
     hex: (value) => typeof value === 'string' && /^#[a-fA-F0-9]{6}$/.test(value),
@@ -489,7 +491,7 @@ export const readDiscoveryQuery = (url: URL): DiscoveryQuery => {
 
 /** The search results page for a query. The whole query travels, so nothing is lost on the way. */
 export const discoveryUrl = (query: DiscoveryQuery) =>
-  `/search?${new URLSearchParams({ [DISCOVERY_QUERY_PARAMETER]: JSON.stringify(query) })}`;
+  `${query.filter.libraryScope === LibraryViewScope.Design ? '/pro' : '/search'}?${new URLSearchParams({ [DISCOVERY_QUERY_PARAMETER]: JSON.stringify(query) })}`;
 
 /* -------------------------------------------------------------------------- */
 /* Legacy search requests                                                      */
@@ -856,6 +858,10 @@ const routeId = (pathname: string, prefix: string) =>
  * unscoped page instead of tagging the query `view: 'map'` for a results page that would ignore it.
  */
 export const contextDiscoveryState = (url: URL): DiscoveryContext => {
+  if (/^\/pro(?:\/|$)/.test(url.pathname)) {
+    const query = readDiscoveryQuery(url);
+    return { query: { ...query, filter: { ...query.filter, libraryScope: LibraryViewScope.Design } }, unsupported: [] };
+  }
   if (url.pathname === '/discover') {
     return { query: readDiscoveryQuery(url), unsupported: [] };
   }
@@ -974,6 +980,12 @@ const SECTION_FIELDS: Record<Exclude<DiscoveryFilterSection, 'all'>, readonly st
   date: ['takenAt', 'localDateTime', 'createdAt', 'updatedAt', 'trashedAt'],
   places: ['city', 'state', 'country', 'landmarkIds'],
   media: [
+    'color',
+    'hasTransparency',
+    'width',
+    'height',
+    'aspectRatio',
+    'durationMs',
     'type',
     'visibility',
     'rating',

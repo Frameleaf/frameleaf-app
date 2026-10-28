@@ -1,6 +1,6 @@
 import { AlbumKind, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
-import { buildAlbumTree, flattenAlbumTree } from '$lib/frameleaf/album-tree';
+import { albumSelectionOptions, buildAlbumTree, flattenAlbumTree } from '$lib/frameleaf/album-tree';
 
 const album = (partial: Partial<AlbumResponseDto> & { id: string; albumName: string }): AlbumResponseDto =>
   ({
@@ -142,4 +142,17 @@ it('preserves mixed root sibling order from the hierarchy', () => {
     ],
   });
   expect(flattenAlbumTree(result).map(({ id }) => id)).toEqual(['first', 'second']);
+});
+
+it('names nested album choices using only readable ancestors', () => {
+  const choices = albumSelectionOptions([
+    album({ id: 'root', albumName: 'Brand' }),
+    album({ id: 'child', albumName: 'Packaging', parentId: 'root' }),
+    album({ id: 'private-parent-child', albumName: 'Visible album', parentId: 'not-readable' }),
+  ]);
+  expect(choices).toEqual([
+    { value: 'root', label: 'Brand' },
+    { value: 'child', label: 'Brand / Packaging' },
+    { value: 'private-parent-child', label: 'Visible album' },
+  ]);
 });

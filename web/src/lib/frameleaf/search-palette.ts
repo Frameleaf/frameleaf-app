@@ -1,6 +1,7 @@
 import {
   AssetTypeEnum,
   AssetVisibility,
+  LibraryViewScope,
   ImageEnrichmentFilter,
   type ClassificationRuleCreateDto,
   SearchFacetField,
@@ -100,6 +101,9 @@ const MAX_OR_BRANCHES = 64;
  * exceed the server's branch limit, so the caller can refuse instead of widening the search.
  */
 export const withAllText = (filter: SearchFilter, text: string): SearchFilter | undefined => {
+  if (filter.libraryScope === LibraryViewScope.Design) {
+    return { ...filter, text: { contains: text } };
+  }
   const branches = allTextBranches(text);
   if (!filter.or?.length) {
     return { ...filter, or: branches };
@@ -121,6 +125,9 @@ export const withAllText = (filter: SearchFilter, text: string): SearchFilter | 
 
 /** The text an "All text" `or` searches for, when the filter's `or` is exactly one. */
 export const readAllText = (filter: SearchFilter | undefined): string | undefined => {
+  if (filter?.text) {
+    return filter.text.contains;
+  }
   const branches = filter?.or;
   if (!branches || branches.length !== ALL_TEXT_FIELDS.length) {
     return undefined;
@@ -944,13 +951,22 @@ export const compilePaletteQuery = (
 export const readPaletteState = (query: DiscoveryQuery): PaletteState => {
   const base = structuredClone(query);
   const allText = readAllText(base.filter);
-  if (allText !== undefined && !base.text) {
-    delete base.filter.or;
+  if (allText !== undefined && !base.text && base.mode !== 'smart') {
+    if (base.filter.text) {
+      delete base.filter.text;
+    } else {
+      delete base.filter.or;
+    }
     delete base.textField;
     return { input: allText, mode: 'all', base: { ...base, mode: 'text' } };
   }
   const input = base.text;
-  const mode: PaletteMode = base.mode === 'smart' ? 'smart' : discoveryTextField(base);
+  const mode: PaletteMode =
+    base.mode === 'smart'
+      ? 'smart'
+      : base.filter.libraryScope === LibraryViewScope.Design && !base.textField
+        ? 'all'
+        : discoveryTextField(base);
   base.text = '';
   delete base.textField;
   return { input, mode, base };

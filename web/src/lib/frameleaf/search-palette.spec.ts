@@ -380,6 +380,15 @@ describe('compiling the palette', () => {
     expect(readPaletteState(query).base.filter.or).toBeUndefined();
   });
 
+  it('keeps mixed Design text in one shared predicate without changing other conditions', () => {
+    const design = { ...base(), filter: { libraryScope: LibraryViewScope.Design, or: [{ hasTags: { eq: false } }] } };
+    const query = compilePaletteQuery(design, parseSearchInput('packaging', catalog), 'all')!;
+    expect(query.filter).toEqual({ ...design.filter, text: { contains: 'packaging' } });
+    expect(isDiscoveryFilter(query.filter)).toBe(true);
+    expect(readPaletteState(query)).toMatchObject({ input: 'packaging', mode: 'all', base: design });
+    expect(readPaletteState(design).mode).toBe('all');
+  });
+
   it('distributes "All text" into an existing or, within the branch limit', () => {
     const filter = withAllText({ or: [{ city: { eq: 'Banff' } }, { originalFileName: { like: 'x' } }] }, 'lake');
     expect(filter?.or).toHaveLength(7);

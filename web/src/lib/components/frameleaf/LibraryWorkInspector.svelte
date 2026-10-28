@@ -10,6 +10,10 @@
    * has no source for is left out rather than invented: the frame rate, the device-local note and
    * the prototype's Versions tab (versions live in the editor).
    */
+  import AssetPalette from '$lib/components/frameleaf/AssetPalette.svelte';
+  import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { onDestroy } from 'svelte';
   import { getExifRating } from '$lib/frameleaf/rating';
   import { formatDuration, cameraLabel, dimensionsLabel } from '$lib/frameleaf/viewer-headline';
   import { locationLabel } from '$lib/frameleaf/info-panel';
@@ -17,7 +21,7 @@
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
+  import { AssetMediaSize, getAssetInfo, updateAsset, type AssetResponseDto, type ColorFilter } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiMapMarker, mdiPlay, mdiStar, mdiStarOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -29,9 +33,10 @@
     selectedCount?: number;
     onOpen: (asset: TimelineAsset) => void;
     onClose: () => void;
+    onChooseColor?: (color: ColorFilter) => void;
   };
 
-  let { asset, selectedCount = 0, onOpen, onClose }: Props = $props();
+  let { asset, selectedCount = 0, onOpen, onClose, onChooseColor }: Props = $props();
 
   let tab = $state<'info' | 'people'>('info');
   const tabId = $props.id();
@@ -58,10 +63,21 @@
   let detail = $state<AssetResponseDto | null>(null);
   let rating = $state<number | null>(null);
   let ratingBusy = $state(false);
+  let generation = $state(0);
+  let detailFailed = $state(false);
+  onDestroy(
+    onLibraryAccessChange(() => {
+      detail = null;
+      rating = null;
+      generation++;
+    }),
+  );
 
   // The full record (EXIF, people, tags) is read per item; a newer selection wins over a slower answer.
   $effect(() => {
     const id = asset?.id;
+    const version = generation;
+    detailFailed = false;
     detail = null;
     rating = null;
     if (!id) {
@@ -70,7 +86,7 @@
     let current = true;
     void getAssetInfo({ ...authManager.params, id })
       .then((response) => {
-        if (!current) {
+        if (!current || generation !== version || asset?.id !== id) {
           return;
         }
 
@@ -78,7 +94,8 @@
         rating = getExifRating(response.exifInfo);
       })
       .catch((error) => {
-        if (current) {
+        if (current && generation === version && asset?.id === id) {
+          detailFailed = true;
           handleError(error, $t('errors.failed_to_load_asset'));
         }
       });
@@ -107,13 +124,10 @@
   const location = $derived(locationLabel(detail?.exifInfo));
   const people = $derived((detail?.people ?? []).filter((person) => !person.isHidden && person.name));
   const tags = $derived(detail?.tags ?? []);
-  const canRate = $derived(
-    !!detail &&
-      authManager.authenticated &&
-      !authManager.isSharedLink &&
-      authManager.preferences.ratings.enabled &&
-      detail.ownerId === authManager.user.id,
+  const isOwner = $derived(
+    !!detail && authManager.authenticated && !authManager.isSharedLink && detail.ownerId === authManager.user.id,
   );
+  const canRate = $derived(isOwner && authManager.preferences.ratings.enabled);
 
   const rate = async (value: number) => {
     if (!detail || ratingBusy) {
@@ -149,17 +163,22 @@
     <button
       type="button"
       class="preview"
+      disabled={!detail}
       aria-label={$t('frameleaf_work_inspector_open')}
       onclick={() => onOpen(asset)}
     >
-      <img src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })} alt="" />
-      {#if asset.isVideo}
-        <span class="play" aria-hidden="true"><Icon icon={mdiPlay} size="38" /></span>
-        {#if duration}<span class="duration">{duration}</span>{/if}
+      {#if detail}<img
+          src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+          alt=""
+        />
+        {#if asset.isVideo}
+          <span class="play" aria-hidden="true"><Icon icon={mdiPlay} size="38" /></span>
+          {#if duration}<span class="duration">{duration}</span>{/if}
+        {/if}
       {/if}
     </button>
     <h2>{detail?.originalFileName ?? ' '}</h2>
-    {#if selectedCount > 1}
+    {#if detail && selectedCount > 1}
       <p class="muted" aria-live="polite">
         {$t('frameleaf_work_inspector_selected', { values: { count: selectedCount } })}
       </p>
@@ -192,8 +211,10 @@
 
     <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} tabindex="0">
       {#if !detail}
-        <p class="muted" role="status">{$t('loading')}</p>
+        <p class="muted" role="status">{detailFailed ? $t('frameleaf_item_details_unavailable') : $t('loading')}</p>
       {:else if tab === 'info'}
+        <section class="part"><AssetPalette assetId={asset.id} canRetry={isOwner} onChoose={onChooseColor} /></section>
+        <section class="part"><AssetSources assetId={asset.id} canRead={isOwner} /></section>
         <dl>
           <dt>{$t('type')}</dt>
           <dd>{asset.isVideo ? $t('video') : $t('image')}</dd>

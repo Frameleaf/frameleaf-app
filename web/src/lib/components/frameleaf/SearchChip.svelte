@@ -112,6 +112,10 @@
   }
   .open {
     display: inline;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     min-width: 0;
     padding: 0 2px;
     font: inherit;
