@@ -126,12 +126,17 @@
   /** AI features do not answer: this counts as needing attention, and nothing about them is claimed. */
   const aiDown = $derived(!!check && !check.ml.reachable);
   type Kind = 'ai-down' | 'setup' | 'working' | 'none';
+  /** "Not being used" claims a card: only when a container saw one, never on a server where none was found. */
+  const cardFound = $derived(check?.server.gpu?.present === true || check?.ml.gpu?.present === true);
   const kind = $derived<Kind>(
-    aiDown ? 'ai-down' : issues.length > 0 ? 'setup' : worker.gpu || worker.serverGpu ? 'working' : 'none',
+    aiDown ? 'ai-down' : issues.length > 0 && cardFound ? 'setup' : worker.gpu || worker.serverGpu ? 'working' : 'none',
   );
 
+  // The sentences end in their own full stop; "12:09 p.m." would make it two.
   const when = (value: string) =>
-    new Date(value).toLocaleString($locale, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    new Date(value)
+      .toLocaleString($locale, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      .replace(/\.$/, '');
   const number = (value: number) => value.toLocaleString($locale, { maximumFractionDigits: 1 });
 
   const hero = $derived.by(() => {
@@ -185,6 +190,7 @@
 
   /** A container's own problems, so one side can be fine while the other is not reached. */
   const hasIssue = (container: 'server' | 'ml') =>
+    cardFound &&
     (check?.findings ?? []).some((finding) => finding.container === container && !problemById(finding.id)?.note);
   const descriptionsPerHour = $derived(
     check?.benchmark?.workloads?.find((row) => row.workload === 'descriptions' && row.perHour !== null)?.perHour,

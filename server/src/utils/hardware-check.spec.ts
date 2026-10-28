@@ -415,6 +415,20 @@ describe('hardware check (FL-159)', () => {
       ).toEqual(['server:macos']);
     });
 
+    it('nvidia-toolkit: the image default NVIDIA_VISIBLE_DEVICES is no request without an NVIDIA card', () => {
+      const desktop = host({ kernel: '6.10.14-linuxkit', gpus: [] });
+      expect(idsOf(detectHardwareFindings(server({ nvidiaRequested: true, host: desktop }), null))).toEqual([
+        'server:macos',
+      ]);
+      expect(detectHardwareIssues(server({ nvidiaRequested: true, host: host({ gpus: [intelIgpu] }) }), null)).toEqual(
+        [],
+      );
+      const nvidiaCard = { ...radeon, vendor: 'NVIDIA', renderNode: null };
+      expect(detectHardwareIssues(server({ nvidiaRequested: true, host: host({ gpus: [nvidiaCard] }) }), null)).toEqual(
+        ['nvidia-toolkit'],
+      );
+    });
+
     it('nvidia-bf16: a Turing card runs without bf16 and FlashAttention', () => {
       const turing = ml(
         {

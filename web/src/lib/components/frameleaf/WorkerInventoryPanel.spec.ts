@@ -1,4 +1,5 @@
 import {
+  MediaOperationKind,
   MlAdmissionRefusal,
   MlDestinationKind,
   MlWorkerAcceleration,
@@ -153,8 +154,27 @@ describe('WorkerInventoryPanel (FL-72)', () => {
     render(WorkerInventoryPanel, { inventory: inventory(), destinations: [] });
 
     const routes = screen.getByRole('region', { name: 'Library analysis routes' });
-    expect(within(routes).getByText('Frameleaf Cloud · Frameleaf Cloud')).toBeInTheDocument();
+    // A worker named after its kind is named once (FL-589: never "This server · This server").
+    expect(within(routes).getByText('Frameleaf Cloud')).toBeInTheDocument();
+    expect(within(routes).queryByText(/Frameleaf Cloud · Frameleaf Cloud/)).not.toBeInTheDocument();
     expect(within(routes).getAllByText('Not routed: jobs are refused').length).toBe(2);
+  });
+
+  it('names what a worker can run in words, and keeps the server summary for problems (FL-589)', () => {
+    const studio = entry({
+      id: '44444444-4444-4444-8444-444444444444',
+      source: WorkerInventorySource.RenderWorker,
+      name: 'Studio worker (machine learning)',
+      role: null,
+      url: null,
+      renderKinds: [MediaOperationKind.StudioExport],
+    });
+    const healthy = entry({ summary: 'Serves face, clip; auto; 12 ms' });
+    render(WorkerInventoryPanel, { inventory: inventory({ entries: [healthy, studio] }), destinations: [] });
+
+    expect(screen.getByText('Studio export')).toBeInTheDocument();
+    expect(screen.queryByText(/studio_export/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Serves face, clip/)).not.toBeInTheDocument();
   });
 
   it('checks exactly the endpoint asked for', async () => {

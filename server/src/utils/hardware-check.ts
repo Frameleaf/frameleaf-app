@@ -395,6 +395,16 @@ const wrongRenderNode = (nodes: RenderNode[], host: HostFacts | null | undefined
   return first?.integrated ? card.pciAddress : null;
 };
 
+/**
+ * Both images set `NVIDIA_VISIBLE_DEVICES=all` themselves, so the variable alone is no sign that
+ * NVIDIA was wanted. It counts only on a host that may have an NVIDIA card: not Docker Desktop, and
+ * an NVIDIA card in the PCI list when that list can be read.
+ */
+const nvidiaWanted = (requested: boolean, host: HostFacts | null | undefined) =>
+  requested &&
+  hostEnvironment(host) !== 'docker-desktop' &&
+  (!host?.gpus || host.gpus.some((gpu) => gpu.vendor === 'NVIDIA'));
+
 /** Findings that follow from where the container runs rather than from how it was set up. */
 const environmentFindings = (host: HostFacts | null | undefined, facts: GpuFacts, add: Finder) => {
   const environment = hostEnvironment(host);
@@ -440,7 +450,7 @@ export const detectHardwareFindings = (
   if (server) {
     const add = finder('server');
     fromMessages(`${server.nvidiaError ?? ''} ${server.test?.error ?? ''}`, add);
-    if (server.nvidiaRequested && !server.nvidiaDevice && !server.nvidia) {
+    if (nvidiaWanted(server.nvidiaRequested, server.host) && !server.nvidiaDevice && !server.nvidia) {
       add('nvidia-toolkit');
     }
     // An NVIDIA card handed over as /dev/dri instead of through the toolkit: the common mix-up.
@@ -468,7 +478,7 @@ export const detectHardwareFindings = (
     const facts = mlGpuFacts(ml);
     const gpuUsed = facts.usable === true;
     const nodes = ml.devices.renderNodes;
-    if (ml.devices.nvidiaRequested && !ml.devices.nvidia && !gpuUsed) {
+    if (nvidiaWanted(ml.devices.nvidiaRequested, ml.host) && !ml.devices.nvidia && !gpuUsed) {
       add('nvidia-toolkit');
     }
     if (image === 'cpu' && (ml.devices.nvidia || nodes.length > 0)) {

@@ -158,6 +158,7 @@ describe('Graphics card check (FL-364)', () => {
   it('explains a detected problem with its fix closed, and checks again on request', async () => {
     sdkMock.getHardwareCheck.mockResolvedValue(
       check({
+        ml: container({ gpu: { present: true, visible: false, usable: false } }),
         issues: ['nvidia-toolkit'],
         findings: [
           {
@@ -188,9 +189,37 @@ describe('Graphics card check (FL-364)', () => {
     expect(screen.getByRole('heading', { name: 'No graphics card found' })).toBeInTheDocument();
   });
 
+  it('says no graphics card was found on Docker Desktop on a Mac, where none can be seen', async () => {
+    const unknown = { present: null, visible: false, usable: false };
+    const finding = (container: HardwareFindingContainer) => ({
+      id: 'macos',
+      container,
+      gid: null,
+      pciAddress: null,
+      gfxVersion: null,
+      computeCapability: null,
+    });
+    sdkMock.getHardwareCheck.mockResolvedValue(
+      check({
+        mlImage: 'cpu',
+        server: container({ gpu: unknown }),
+        ml: container({ gpu: unknown }),
+        issues: ['macos'],
+        findings: [finding(HardwareFindingContainer.Server), finding(HardwareFindingContainer.Ml)],
+      }),
+    );
+    render(HardwareSection);
+
+    expect(await screen.findByRole('heading', { name: 'No graphics card found' })).toBeInTheDocument();
+    expect(status().queryByText('Graphics card not reached')).not.toBeInTheDocument();
+    expect(screen.queryByText('Show the fix for NVIDIA')).not.toBeInTheDocument();
+    expect(status().getByText(/Last checked .*[^.]\.$/)).toBeInTheDocument();
+  });
+
   it('fills the fix with what the check found, and shows a card limit as a note', async () => {
     sdkMock.getHardwareCheck.mockResolvedValue(
       check({
+        server: container({ gpu: { present: true, visible: false, usable: false } }),
         issues: ['render-group', 'nvidia-bf16'],
         findings: [
           {
