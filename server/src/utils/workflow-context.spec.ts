@@ -1,3 +1,5 @@
+import type { QueueExecution } from 'src/queue/types.js';
+import { queueExecution } from 'src/queue/context.js';
 import { inheritWorkflowCausation, workflowCausation } from 'src/utils/workflow-context.js';
 
 describe('workflow causation propagation', () => {
@@ -10,6 +12,13 @@ describe('workflow causation propagation', () => {
     const result = workflowCausation.run(['workflow:asset'], () => inheritWorkflowCausation(data));
     expect(result).toEqual({ id: 'asset', causation: ['workflow:asset'] });
     expect(data).not.toHaveProperty('causation');
+  });
+  it('inherits queue ancestry without changing the admitted parent payload', () => {
+    const ancestry = ['workflow:asset'];
+    const context = { claim: { data: { causation: ancestry } } } as unknown as QueueExecution;
+    const child = queueExecution.run(context, () => inheritWorkflowCausation({ id: 'child' }));
+    expect(child.causation).toEqual(ancestry);
+    expect(child.causation).not.toBe(ancestry);
   });
 });
 

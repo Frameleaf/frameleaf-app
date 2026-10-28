@@ -4,6 +4,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
@@ -47,8 +48,9 @@ const setup = () => {
       SystemMetadataRepository,
       UserRepository,
     ],
-    mock: [JobRepository, LoggingRepository],
+    mock: [EventRepository, JobRepository, LoggingRepository],
   });
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
   ctx.getMock(JobRepository).queue.mockResolvedValue();
   ctx.getMock(JobRepository).queueAll.mockResolvedValue();
   return { ctx, base: ctx.sut as BaseService };

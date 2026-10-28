@@ -62,7 +62,7 @@ export class WorkflowController {
     return this.service.getTriggers();
   }
 
-  @Get('discovery')
+  @Get('automation/discovery')
   @Authenticated({ permission: Permission.PluginRead })
   @Endpoint({
     summary: 'Discover all workflow triggers and plugin templates',
@@ -74,7 +74,7 @@ export class WorkflowController {
     return this.service.discovery();
   }
 
-  @Get('capabilities')
+  @Get('automation/capabilities')
   @Authenticated({ permission: false })
   getWorkflowCapabilities(): Promise<WorkflowCapabilitiesDto> {
     return this.service.capabilities();

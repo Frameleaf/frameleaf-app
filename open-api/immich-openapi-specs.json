@@ -57423,7 +57423,7 @@
         "x-immich-permission": "workflow.create"
       }
     },
-    "/workflows/capabilities": {
+    "/workflows/automation/capabilities": {
       "get": {
         "operationId": "getWorkflowCapabilities",
         "parameters": [],
@@ -57455,7 +57455,7 @@
         ]
       }
     },
-    "/workflows/discovery": {
+    "/workflows/automation/discovery": {
       "get": {
         "description": "Includes change-driven and scheduled automation. Legacy discovery endpoints retain their original trigger values.",
         "operationId": "getWorkflowDiscovery",

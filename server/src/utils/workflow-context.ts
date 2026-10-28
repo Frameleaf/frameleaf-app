@@ -7,7 +7,7 @@ export function inheritWorkflowCausation<T extends Record<string, unknown>>(data
   const chain =
     (data.causation as string[] | undefined) ??
     workflowCausation.getStore() ??
-    (queueExecution.getStore()?.claim.data.causation as string[] | undefined);
+    (queueExecution.getStore()?.claim.data?.causation as string[] | undefined);
   return chain?.length ? { ...data, causation: [...chain] } : data;
 }
 

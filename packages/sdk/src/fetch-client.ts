@@ -32744,7 +32744,7 @@ export function getWorkflowCapabilities(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: WorkflowCapabilitiesDto;
-    }>("/workflows/capabilities", {
+    }>("/workflows/automation/capabilities", {
         ...opts
     }));
 }
@@ -32755,7 +32755,7 @@ export function getWorkflowDiscovery(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: WorkflowDiscoveryResponseDto;
-    }>("/workflows/discovery", {
+    }>("/workflows/automation/discovery", {
         ...opts
     }));
 }
