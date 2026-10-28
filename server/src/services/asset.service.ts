@@ -44,6 +44,7 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  LibraryScope,
   Permission,
   QueueName,
   StorageFolder,
@@ -205,8 +206,9 @@ export class AssetService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
+    const { libraryScope, ...editDto } = dto;
     const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
-      dto;
+      editDto;
     const locking = visibility === AssetVisibility.Locked;
     const originIds = locking
       ? await this.assetRepository.findLockGroupIds([id, ...(rest.livePhotoVideoId ? [rest.livePhotoVideoId] : [])])
@@ -215,7 +217,7 @@ export class AssetService extends BaseService {
     const result = await this.partnerOriginRepository.withOriginEdit('asset', originIds, [], async () => {
       let result: Awaited<ReturnType<AssetService['updateLivePhoto']>>;
       if (rest.livePhotoVideoId !== undefined) {
-        result = await this.updateLivePhoto(auth, id, { ...dto, livePhotoVideoId: rest.livePhotoVideoId });
+        result = await this.updateLivePhoto(auth, id, { ...editDto, livePhotoVideoId: rest.livePhotoVideoId });
       } else {
         const sidecarIds = await this.updateExif({
           id,
@@ -252,7 +254,10 @@ export class AssetService extends BaseService {
           [AssetOriginField.Visibility],
           auth.user.id,
         );
-      return { ...result, visibilityIds };
+      const scopeIds =
+        libraryScope === undefined ? [] : await this.assetRepository.setLibraryScope([id], auth.user.id, libraryScope);
+      if (libraryScope !== undefined) result.asset.libraryScope = libraryScope;
+      return { ...result, visibilityIds, scopeIds };
     });
     const { asset } = result;
     for (const id of result.sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
@@ -290,6 +295,8 @@ export class AssetService extends BaseService {
       const siblingIds = asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];
       await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
     }
+
+    if (libraryScope !== undefined) await this.afterLibraryScopeChange(result.scopeIds, auth.user.id);
 
     // Locking needs no PIN, but a session without it can no longer read what it just locked (FL-34):
     // answer from the updated row instead of refusing a change that was made.
@@ -432,6 +439,7 @@ export class AssetService extends BaseService {
     const {
       ids,
       isFavorite,
+      libraryScope,
       visibility,
       dateTimeOriginal,
       latitude,
@@ -446,7 +454,7 @@ export class AssetService extends BaseService {
 
     const originIds = visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : ids;
     const admitted = new Set(originIds);
-    const { locationVideoIds, locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+    const { locationVideoIds, locked, visibilityIds, scopeIds } = await this.partnerOriginRepository.withOriginEdit(
       'asset',
       originIds,
       [],
@@ -522,7 +530,9 @@ export class AssetService extends BaseService {
             [AssetOriginField.Visibility],
             auth.user.id,
           );
-        return { locationVideoIds, locked, visibilityIds };
+        const scopeIds =
+          libraryScope === undefined ? [] : await this.assetRepository.setLibraryScope(ids, auth.user.id, libraryScope);
+        return { locationVideoIds, locked, visibilityIds, scopeIds };
       },
     );
     if (locked.length > 0) {
@@ -560,6 +570,8 @@ export class AssetService extends BaseService {
       await this.notifyAssetsUpdated([...ids, ...siblingIds], auth.user.id);
     }
 
+    if (libraryScope !== undefined) await this.afterLibraryScopeChange(scopeIds, auth.user.id);
+
     // Locking keeps album membership (owner decision, September 22, 2026): the asset stays in its albums
     // and every album read hides it from everyone but its owner's elevated session, so it is back in
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
@@ -567,6 +579,14 @@ export class AssetService extends BaseService {
     await this.jobRepository.queueAll(
       [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
     );
+  }
+
+  private async afterLibraryScopeChange(ids: string[], ownerId: string): Promise<void> {
+    await this.notifyAssetsUpdated(ids, ownerId);
+    for (const { id, libraryScope } of await this.assetRepository.getByIds(ids)) {
+      if (libraryScope === LibraryScope.Design) this.websocketRepository.clientSend('on_asset_delete', ownerId, id);
+      else await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnails, data: { id, notify: true } });
+    }
   }
 
   /** FL-51: the paired videos of these Live Photos that are not already among them. */

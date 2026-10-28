@@ -12,11 +12,19 @@ import {
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
-import { AlbumKind, AssetOrder } from 'src/enum.js';
-import { album_parent_cycle_check } from 'src/schema/functions.js';
+import { AlbumKind, AssetOrder, LibraryScope } from 'src/enum.js';
+import { library_scope_enum } from 'src/schema/enums.js';
+import { album_library_scope_refresh, album_parent_cycle_check } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table({ name: 'album' })
+@Trigger({
+  name: 'album_library_scope_refresh_trigger',
+  timing: 'after',
+  actions: ['update'],
+  scope: 'row',
+  functionName: album_library_scope_refresh.name,
+})
 @UpdatedAtTrigger('album_updatedAt')
 // DB-level cycle guard for the closure tree (migration 2100000000020). The
 // migration fires it on `INSERT OR UPDATE OF "parentId"`; the generator cannot
@@ -42,6 +50,9 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
   expression: `kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text])`,
 })
 export class AlbumTable {
+  @Column({ enum: library_scope_enum, default: LibraryScope.Personal })
+  libraryScope!: Generated<LibraryScope>;
+
   @PrimaryGeneratedColumn()
   id!: Generated<string>;
 
@@ -75,7 +86,7 @@ export class AlbumTable {
   @Column({ type: 'double precision', nullable: true, default: null })
   sortOrder!: number | null;
 
-  /** album holds photos; collection groups albums one level deep; space is a shared top-level library. */
+  /** album holds photos; collection groups nested albums; space is a shared top-level library. */
   @Column({ type: 'text', default: AlbumKind.Album })
   kind!: Generated<AlbumKind>;
 

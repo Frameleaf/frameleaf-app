@@ -3095,6 +3095,18 @@ export const OAuthTokenEndpointAuthMethodSchema = z
   .describe('OAuth token endpoint auth method')
   .meta({ id: 'OAuthTokenEndpointAuthMethod' });
 
+export enum LibraryScope {
+  Personal = 'personal',
+  Design = 'design',
+  Both = 'both',
+}
+
+export const LibraryScopeSchema = z.enum(LibraryScope).meta({ id: 'LibraryScope' });
+export const LibraryViewScopeSchema = z
+  .enum([LibraryScope.Personal, LibraryScope.Design])
+  .meta({ id: 'LibraryViewScope' });
+export type LibraryViewScope = z.infer<typeof LibraryViewScopeSchema>;
+
 export enum AssetVisibility {
   Archive = 'archive',
   Timeline = 'timeline',

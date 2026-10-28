@@ -93,7 +93,7 @@
       // The real album directory (FL-52): collections with their albums, standalone
       // albums and top-level shared spaces, already scoped to the account's own albums
       // plus the ones shared with it.
-      tree = buildAlbumTree(await getAlbumHierarchy());
+      tree = buildAlbumTree(await getAlbumHierarchy({}));
     } catch (error) {
       handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
     }

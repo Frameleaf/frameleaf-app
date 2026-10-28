@@ -9,7 +9,7 @@ import {
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -420,6 +420,8 @@ export class AssetUploadResourceRepository {
       prepared.video.asset.originalPath !== video.finalPath ||
       !Buffer.from(prepared.still.asset.checksum).equals(still.verifiedChecksum) ||
       !Buffer.from(prepared.video.asset.checksum).equals(video.verifiedChecksum) ||
+      (prepared.still.asset.libraryScope ?? LibraryScope.Personal) !==
+        (prepared.video.asset.libraryScope ?? LibraryScope.Personal) ||
       prepared.still.asset.livePhotoVideoId ||
       prepared.video.asset.livePhotoVideoId ||
       (prepared.still.lock && prepared.still.lock.lockedBy !== still.ownerId) ||

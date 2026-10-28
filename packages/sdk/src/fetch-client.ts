@@ -4137,6 +4137,7 @@ export type AlbumResponseDto = {
     kind: AlbumKind;
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
+    libraryScope?: LibraryScope;
     order?: AssetOrder;
     /** Present on your own album when partner sharing copied it from another library */
     origin?: PartnerOriginDto;
@@ -4175,6 +4176,7 @@ export type CreateAlbumDto = {
     icon?: string;
     /** What to create: an album (default), a collection of albums or a shared space */
     kind?: AlbumKind;
+    libraryScope?: LibraryScope;
     /** Parent album or collection (omit for top-level). Shared spaces cannot nest. */
     parentId?: string;
 };
@@ -4221,6 +4223,7 @@ export type AlbumOrderDto = {
     albumIds: string[];
     /** Order actual siblings in the recursive hierarchy; omitted for the legacy flattened directory */
     hierarchy?: boolean;
+    libraryScope?: LibraryViewScope;
     /** Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces) */
     parentId: string | null;
 };
@@ -4262,6 +4265,7 @@ export type UpdateAlbumDto = {
     icon?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
+    libraryScope?: LibraryScope;
     order?: AssetOrder;
     /** Parent album or collection (null = move to top-level, omit = no change) */
     parentId?: string | null;
@@ -4773,6 +4777,8 @@ export type AssetMediaCreateDto = {
     filename?: string;
     /** Mark as favorite */
     isFavorite?: boolean;
+    /** Workspace membership; defaults to personal */
+    libraryScope?: LibraryScope;
     /** Live photo video ID */
     livePhotoVideoId?: string;
     /** Asset metadata items */
@@ -4801,6 +4807,7 @@ export type AssetBulkUpdateDto = {
     isFavorite?: boolean;
     /** Latitude coordinate; null together with a null longitude removes the location */
     latitude?: number | null;
+    libraryScope?: LibraryScope;
     /** Longitude coordinate; null together with a null latitude removes the location */
     longitude?: number | null;
     /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
@@ -5138,6 +5145,7 @@ export type AssetResponseDto = {
     landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
+    libraryScope?: LibraryScope;
     /** Live photo video ID */
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
@@ -5180,6 +5188,7 @@ export type UpdateAssetDto = {
     isFavorite?: boolean;
     /** Latitude coordinate; null together with a null longitude removes the location */
     latitude?: number | null;
+    libraryScope?: LibraryScope;
     /** Live photo video ID */
     livePhotoVideoId?: string | null;
     /** Longitude coordinate; null together with a null latitude removes the location */
@@ -6066,6 +6075,7 @@ export type BestPhotoAssetResponseDto = {
     landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
+    libraryScope?: LibraryScope;
     /** Live photo video ID */
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
@@ -12518,6 +12528,7 @@ export type SearchFilter = {
     landmarkIds?: LandmarkIdsFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
+    libraryScope?: LibraryViewScope;
     localDateTime?: DateFilter;
     make?: StringPatternFilter;
     model?: StringPatternFilter;
@@ -13216,6 +13227,7 @@ export type AskSearchPlanDto = {
         lensModel?: string | null;
         /** Library ID to filter by */
         libraryId?: string | null;
+        libraryScope?: LibraryViewScope;
         /** Filter by camera make */
         make?: string | null;
         /** Filter by camera model */
@@ -13376,6 +13388,7 @@ export type SearchFacetsDto = {
     lensModel?: string | null;
     /** Library ID to filter by */
     libraryId?: string | null;
+    libraryScope?: LibraryViewScope;
     /** Filter by camera make */
     make?: string | null;
     /** Filter by camera model */
@@ -13446,6 +13459,7 @@ export type SearchHistogramDto = {
     lensModel?: string | null;
     /** Library ID to filter by */
     libraryId?: string | null;
+    libraryScope?: LibraryViewScope;
     /** Filter by camera make */
     make?: string | null;
     /** Filter by camera model */
@@ -13558,6 +13572,7 @@ export type MetadataSearchDto = {
     lensModel?: string | null;
     /** Library ID to filter by */
     libraryId?: string | null;
+    libraryScope?: LibraryViewScope;
     /** Filter by camera make */
     make?: string | null;
     /** Filter by camera model */
@@ -13653,6 +13668,7 @@ export type RandomSearchDto = {
     lensModel?: string | null;
     /** Library ID to filter by */
     libraryId?: string | null;
+    libraryScope?: LibraryViewScope;
     /** Filter by camera make */
     make?: string | null;
     /** Filter by camera model */
@@ -13725,6 +13741,7 @@ export type SmartSearchDto = {
     lensModel?: string | null;
     /** Library ID to filter by */
     libraryId?: string | null;
+    libraryScope?: LibraryViewScope;
     /** Filter by camera make */
     make?: string | null;
     /** Filter by camera model */
@@ -13805,6 +13822,7 @@ export type StatisticsSearchDto = {
     lensModel?: string | null;
     /** Library ID to filter by */
     libraryId?: string | null;
+    libraryScope?: LibraryViewScope;
     /** Filter by camera make */
     make?: string | null;
     /** Filter by camera model */
@@ -16869,6 +16887,9 @@ export type AlbumMapMarkerDto = {
     /** Accepted for the shared map settings; has no effect on an album map */
     withSharedAlbums?: boolean;
 };
+export type AlbumViewDto = {
+    libraryScope?: LibraryViewScope;
+};
 export type AnalyticsQueryDto = {
     range?: AnalyticsRange;
     /** `all` (the whole server, administrators only), `account:<id>` or `library:<id>` */
@@ -17015,6 +17036,7 @@ export type AssetStatsDto = {
     isFavorite?: boolean;
     /** Filter by trash status */
     isTrashed?: boolean;
+    libraryScope?: LibraryViewScope;
     visibility?: AssetVisibility;
 };
 export type AssetWaveformOptionsDto = {
@@ -17100,6 +17122,7 @@ export type GetAlbumsDto = {
     isOwned?: boolean;
     /** Filter by shared status: true = only shared, false = not shared, undefined = no filter */
     isShared?: boolean;
+    libraryScope?: LibraryViewScope;
     /** Album name (exact match) */
     name?: string;
     /** Return album metadata for suppressed content only */
@@ -17471,6 +17494,7 @@ export type LargeAssetSearchDto = {
     lensModel?: string | null;
     /** Library ID to filter by */
     libraryId?: string | null;
+    libraryScope?: LibraryViewScope;
     /** Filter by camera make */
     make?: string | null;
     /** Minimum file size in bytes */
@@ -18509,6 +18533,7 @@ export type TimeBucketAssetDto = {
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
     isTrashed?: boolean;
     key?: string;
+    libraryScope?: LibraryViewScope;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
@@ -18556,6 +18581,7 @@ export type TimeBucketDto = {
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
     isTrashed?: boolean;
     key?: string;
+    libraryScope?: LibraryViewScope;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
@@ -18604,6 +18630,7 @@ export type TimelineHighlightsDto = {
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
     isTrashed?: boolean;
     key?: string;
+    libraryScope?: LibraryViewScope;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
@@ -18653,6 +18680,7 @@ export type TimelineOrderedDto = {
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
     isTrashed?: boolean;
     key?: string;
+    libraryScope?: LibraryViewScope;
     /** With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session. */
     lockReason?: AssetLockReason | "immich-locked-folder";
     /** Sort order for assets within time buckets (ASC for oldest first, DESC for newest first) */
@@ -21267,10 +21295,11 @@ export function deleteUserSessionAdmin({ id, sessionId }: {
 /**
  * Retrieve user statistics
  */
-export function getUserStatisticsAdmin({ id, isFavorite, isTrashed, visibility }: {
+export function getUserStatisticsAdmin({ id, isFavorite, isTrashed, libraryScope, visibility }: {
     id: string;
     isFavorite?: boolean;
     isTrashed?: boolean;
+    libraryScope?: LibraryViewScope;
     visibility?: AssetVisibility;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -21279,6 +21308,7 @@ export function getUserStatisticsAdmin({ id, isFavorite, isTrashed, visibility }
     }>(`/admin/users/${encodeURIComponent(id)}/statistics${QS.query(QS.explode({
         isFavorite,
         isTrashed,
+        libraryScope,
         visibility
     }))}`, {
         ...opts
@@ -21383,11 +21413,12 @@ export function addAlbumSourceAssets({ id, bulkIdsDto }: {
 /**
  * List all albums
  */
-export function getAllAlbums({ assetId, id, isOwned, isShared, name, suppressedOnly }: {
+export function getAllAlbums({ assetId, id, isOwned, isShared, libraryScope, name, suppressedOnly }: {
     assetId?: string;
     id?: string;
     isOwned?: boolean;
     isShared?: boolean;
+    libraryScope?: LibraryViewScope;
     name?: string;
     suppressedOnly?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
@@ -21399,6 +21430,7 @@ export function getAllAlbums({ assetId, id, isOwned, isShared, name, suppressedO
         id,
         isOwned,
         isShared,
+        libraryScope,
         name,
         suppressedOnly
     }))}`, {
@@ -21438,11 +21470,15 @@ export function addAssetsToAlbums({ albumsAddAssetsDto }: {
 /**
  * Retrieve the nested album directory
  */
-export function getAlbumHierarchy(opts?: Oazapfts.RequestOpts) {
+export function getAlbumHierarchy({ libraryScope }: {
+    libraryScope?: LibraryViewScope;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AlbumHierarchyResponseDto;
-    }>("/albums/hierarchy", {
+    }>(`/albums/hierarchy${QS.query(QS.explode({
+        libraryScope
+    }))}`, {
         ...opts
     }));
 }
@@ -21483,11 +21519,15 @@ export function getAlbumStatistics(opts?: Oazapfts.RequestOpts) {
 /**
  * Retrieve the album directory
  */
-export function getAlbumTree(opts?: Oazapfts.RequestOpts) {
+export function getAlbumTree({ libraryScope }: {
+    libraryScope?: LibraryViewScope;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AlbumTreeResponseDto;
-    }>("/albums/tree", {
+    }>(`/albums/tree${QS.query(QS.explode({
+        libraryScope
+    }))}`, {
         ...opts
     }));
 }
@@ -22094,9 +22134,10 @@ export function getSafetySummary(opts?: Oazapfts.RequestOpts) {
 /**
  * Get asset statistics
  */
-export function getAssetStatistics({ isFavorite, isTrashed, visibility }: {
+export function getAssetStatistics({ isFavorite, isTrashed, libraryScope, visibility }: {
     isFavorite?: boolean;
     isTrashed?: boolean;
+    libraryScope?: LibraryViewScope;
     visibility?: AssetVisibility;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -22105,6 +22146,7 @@ export function getAssetStatistics({ isFavorite, isTrashed, visibility }: {
     }>(`/assets/statistics${QS.query(QS.explode({
         isFavorite,
         isTrashed,
+        libraryScope,
         visibility
     }))}`, {
         ...opts
@@ -28724,7 +28766,7 @@ export function getLandmarkIcon({ id }: {
 /**
  * Search large assets
  */
-export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, imageEnrichment, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, petIds, rating, size, state, suppressedOnly, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
+export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, imageEnrichment, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, libraryScope, make, minFileSize, model, ocr, personIds, petIds, rating, size, state, suppressedOnly, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
     albumIds?: string[];
     city?: string | null;
     country?: string | null;
@@ -28738,6 +28780,7 @@ export function searchLargeAssets({ albumIds, city, country, createdAfter, creat
     isOffline?: boolean;
     lensModel?: string | null;
     libraryId?: string | null;
+    libraryScope?: LibraryViewScope;
     make?: string | null;
     minFileSize?: number;
     model?: string | null;
@@ -28777,6 +28820,7 @@ export function searchLargeAssets({ albumIds, city, country, createdAfter, creat
         isOffline,
         lensModel,
         libraryId,
+        libraryScope,
         make,
         minFileSize,
         model,
@@ -31654,7 +31698,7 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -31665,6 +31709,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    libraryScope?: LibraryViewScope;
     lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
@@ -31694,6 +31739,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
         isFavorite,
         isTrashed,
         key,
+        libraryScope,
         lockReason,
         order,
         orderBy,
@@ -31715,7 +31761,7 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -31726,6 +31772,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    libraryScope?: LibraryViewScope;
     lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
@@ -31754,6 +31801,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
         isFavorite,
         isTrashed,
         key,
+        libraryScope,
         lockReason,
         order,
         orderBy,
@@ -31774,7 +31822,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -31787,6 +31835,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    libraryScope?: LibraryViewScope;
     lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
@@ -31817,6 +31866,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
         isFavorite,
         isTrashed,
         key,
+        libraryScope,
         lockReason,
         order,
         orderBy,
@@ -31837,7 +31887,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
@@ -31850,6 +31900,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    libraryScope?: LibraryViewScope;
     lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
@@ -31883,6 +31934,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
         isFavorite,
         isTrashed,
         key,
+        libraryScope,
         lockReason,
         order,
         orderBy,
@@ -33796,6 +33848,10 @@ export enum SuppressionScope {
     Owned = "owned",
     Visible = "visible"
 }
+export enum LibraryViewScope {
+    Personal = "personal",
+    Design = "design"
+}
 export enum AssetVisibility {
     Archive = "archive",
     Timeline = "timeline",
@@ -33850,6 +33906,11 @@ export enum AlbumKind {
     Album = "album",
     Collection = "collection",
     Space = "space"
+}
+export enum LibraryScope {
+    Personal = "personal",
+    Design = "design",
+    Both = "both"
 }
 export enum SmartAlbumBuiltInKind {
     Travel = "travel",

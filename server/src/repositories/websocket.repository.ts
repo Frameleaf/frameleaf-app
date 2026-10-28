@@ -81,6 +81,7 @@ export interface ClientEventMap {
    */
   on_user_preferences_update: [];
 
+  LibraryAssetUpdateV1: [AssetResponseDto];
   AssetUploadReadyV2: [{ asset: SyncAssetV2; exif: SyncAssetExifV1 }];
   AppRestartV1: [AppRestartEvent];
   AssetEditReadyV2: [{ asset: SyncAssetV2; edit: SyncAssetEditV1[] }];

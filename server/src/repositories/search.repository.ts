@@ -24,7 +24,15 @@ import {
   SearchHistogramGranularity,
   SearchOrder,
 } from 'src/dtos/search.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, PetObservationState } from 'src/enum.js';
+import {
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  ImageEnrichmentFilter,
+  LibraryScope,
+  LibraryViewScope,
+  PetObservationState,
+} from 'src/enum.js';
 import { deferJobAdoption } from 'src/queue/context.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
@@ -44,6 +52,7 @@ import {
   withHiddenContentFilter,
   withSearchOrder,
 } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
@@ -191,12 +200,13 @@ export interface SearchLockedOwnerOptions {
 
 export type AssetSearchOptions = Omit<BaseAssetSearchOptions, 'visibility'> &
   SearchRelationOptions &
-  SearchLockedOwnerOptions & { visibility?: AssetVisibility | 'not-locked' };
+  SearchLockedOwnerOptions & { visibility?: AssetVisibility | 'not-locked'; libraryScope?: LibraryViewScope };
 
 export type AssetSearchBuilderOptions = Omit<AssetSearchOptions, 'orderDirection'>;
 
 export interface AssetSearchBuilderV3Options extends HiddenContentQueryOptions, SearchImageEnrichmentOptions {
   filter?: SearchFilter;
+  libraryScope?: LibraryViewScope;
   /** Server-derived ownership scope. Never client-controlled. */
   userIds?: string[];
   /** whose version of the people to select, required when selecting faces or people */
@@ -617,6 +627,7 @@ export class SearchRepository {
                 .on(isTimelineVisible('asset', options.revealLockedOwnerId))
                 .on('asset.deletedAt', 'is', null),
             )
+            .where(libraryScopePredicate(LibraryScope.Personal))
             .whereRef('pet_observation.petId', '=', 'pet.id')
             .where('pet_observation.state', '=', PetObservationState.Confirmed)
             .$call((qb) => withHiddenContentFilter(qb, options)),
@@ -637,6 +648,7 @@ export class SearchRepository {
           .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
           .where('asset.ownerId', '=', anyUuid(userIds))
           .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+          .where(libraryScopePredicate(LibraryScope.Personal))
           .where('asset.type', '=', AssetType.Image)
           .where('asset.deletedAt', 'is', null)
           .$call((qb) => withHiddenContentFilter(qb, options))
@@ -654,6 +666,7 @@ export class SearchRepository {
                 .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
                 .where('asset.ownerId', '=', anyUuid(userIds))
                 .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+                .where(libraryScopePredicate(LibraryScope.Personal))
                 .where('asset.type', '=', AssetType.Image)
                 .where('asset.deletedAt', 'is', null)
                 .$call((qb) => withHiddenContentFilter(qb, options))
@@ -694,6 +707,7 @@ export class SearchRepository {
       .select((eb) => ['asset_exif.city', eb.fn.countAll<number>().as('count')])
       .where('asset.ownerId', '=', anyUuid(userIds))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where('asset_exif.city', 'is not', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -732,6 +746,7 @@ export class SearchRepository {
           )
           .where('asset.ownerId', '=', anyUuid(userIds))
           .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+          .where(libraryScopePredicate(LibraryScope.Personal))
           .where('asset.deletedAt', 'is', null)
           .$call((qb) => withHiddenContentFilter(qb, options)),
       )
@@ -1235,6 +1250,7 @@ export class SearchRepository {
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
       .where('ownerId', '=', anyUuid(userIds))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(field, 'is not', null)

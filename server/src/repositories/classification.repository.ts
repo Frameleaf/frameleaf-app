@@ -1,11 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Selectable, type Transaction, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetType, AssetVisibility, ClassificationMatchDecision, ClassificationMediaType } from 'src/enum.js';
+import {
+  AssetType,
+  AssetVisibility,
+  ClassificationMatchDecision,
+  ClassificationMediaType,
+  LibraryScope,
+} from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 
 export type ClassificationRule = Selectable<ClassificationRuleTable>;
@@ -232,6 +239,7 @@ export class ClassificationRepository {
   private eligible(ownerId: string) {
     return this.db
       .selectFrom('asset')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', 'in', LISTED)
@@ -676,6 +684,7 @@ export class ClassificationRepository {
   private async liveAssets(trx: Transaction<DB>, ownerId: string, assetIds: string[]) {
     const rows = await trx
       .selectFrom('asset')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .select(['asset.id', 'asset.visibility', isLocked('asset').as('isLocked')])
       .where('asset.id', 'in', assetIds)
       .where('asset.ownerId', '=', ownerId)

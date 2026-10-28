@@ -2,7 +2,15 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import type { AlbumRepository } from 'src/repositories/album.repository.js';
 import { CreateAlbumDto } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AlbumKind, AlbumUserRole, AssetOrder, AssetVisibility, PushEventType, UserMetadataKey } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  AssetOrder,
+  AssetVisibility,
+  LibraryScope,
+  PushEventType,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { ALBUM_MOVE_OWNER_ONLY, AlbumService } from 'src/services/album.service.js';
 import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
@@ -42,9 +50,19 @@ describe(AlbumService.name, () => {
         notShared: 0,
       });
 
-      expect(mocks.album.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { isOwned: true });
-      expect(mocks.album.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { isShared: true });
-      expect(mocks.album.getAll).toHaveBeenCalledWith(authStub.admin.user.id, { isOwned: true, isShared: false });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(authStub.admin.user.id, {
+        libraryScope: LibraryScope.Personal,
+        isOwned: true,
+      });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(authStub.admin.user.id, {
+        libraryScope: LibraryScope.Personal,
+        isShared: true,
+      });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(authStub.admin.user.id, {
+        libraryScope: LibraryScope.Personal,
+        isOwned: true,
+        isShared: false,
+      });
     });
   });
 
@@ -107,7 +125,11 @@ describe(AlbumService.name, () => {
       expect(result).toHaveLength(2);
       expect(result[0].id).toEqual(album.id);
       expect(result[1].id).toEqual(sharedWithUserAlbum.id);
-      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { isOwned: undefined, isShared: undefined });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, {
+        libraryScope: LibraryScope.Personal,
+        isOwned: undefined,
+        isShared: undefined,
+      });
     });
 
     it('should mask NSFW album thumbnails and metadata when privacy hiding is active', async () => {
@@ -282,7 +304,11 @@ describe(AlbumService.name, () => {
 
       const result = await sut.getAll(AuthFactory.create(owner), { isOwned: true, isShared: true });
       expect(result).toHaveLength(1);
-      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { isOwned: true, isShared: true });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, {
+        libraryScope: LibraryScope.Personal,
+        isOwned: true,
+        isShared: true,
+      });
     });
 
     it('returns empty list when isOwned=false and isShared=false', async () => {
@@ -292,7 +318,11 @@ describe(AlbumService.name, () => {
 
       const result = await sut.getAll(AuthFactory.create(owner), { isOwned: false, isShared: false });
       expect(result).toHaveLength(0);
-      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { isOwned: false, isShared: false });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, {
+        libraryScope: LibraryScope.Personal,
+        isOwned: false,
+        isShared: false,
+      });
     });
   });
 
@@ -317,6 +347,18 @@ describe(AlbumService.name, () => {
   });
 
   describe('create', () => {
+    it('publishes a design album in its requested scope', async () => {
+      const album = AlbumFactory.create({ libraryScope: LibraryScope.Design });
+      mocks.album.create.mockResolvedValue(getForAlbum(album));
+      mocks.user.getMetadata.mockResolvedValue([]);
+      await sut.create(authStub.admin, { albumName: 'Design', libraryScope: LibraryScope.Design });
+      expect(mocks.album.create).toHaveBeenCalledWith(
+        expect.objectContaining({ libraryScope: LibraryScope.Design }),
+        [],
+        expect.any(Array),
+        authStub.admin.user.id,
+      );
+    });
     it('creates album', async () => {
       const assetId = newUuid();
       const albumUser = { userId: newUuid(), role: AlbumUserRole.Editor };
@@ -347,6 +389,7 @@ describe(AlbumService.name, () => {
           parentId: null,
           icon: null,
           kind: AlbumKind.Album,
+          libraryScope: LibraryScope.Personal,
         },
         [assetId],
         [
@@ -406,6 +449,7 @@ describe(AlbumService.name, () => {
           parentId: null,
           icon: null,
           kind: AlbumKind.Album,
+          libraryScope: LibraryScope.Personal,
         },
         [assetId],
         [{ userId: owner.id, role: AlbumUserRole.Owner }, albumUser],
@@ -461,6 +505,7 @@ describe(AlbumService.name, () => {
           parentId: null,
           icon: null,
           kind: AlbumKind.Album,
+          libraryScope: LibraryScope.Personal,
         },
         [assetId],
         [{ userId: owner.id, role: AlbumUserRole.Owner }],
@@ -492,6 +537,18 @@ describe(AlbumService.name, () => {
   });
 
   describe('update', () => {
+    it('refuses an editor changing the owner library scope', async () => {
+      const album = AlbumFactory.from()
+        .albumUser({ userId: authStub.admin.user.id, role: AlbumUserRole.Editor })
+        .build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      await expect(sut.update(authStub.admin, album.id, { libraryScope: LibraryScope.Design })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(mocks.album.update).not.toHaveBeenCalled();
+    });
     it('keeps album writes and notifications behind origin edit admission', async () => {
       const album = AlbumFactory.from().albumUser().build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
@@ -1399,7 +1456,7 @@ describe(AlbumService.name, () => {
 
       const tree = await sut.getTree(auth);
 
-      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, {});
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, { libraryScope: LibraryScope.Personal });
       expect(tree.collections).toHaveLength(1);
       expect(tree.collections[0].collection.id).toBe(collection.id);
       expect(tree.collections[0].albums.map(({ id }) => id)).toEqual([inside.id]);
@@ -1470,6 +1527,46 @@ describe(AlbumService.name, () => {
   });
 
   describe('custom order (FL-52)', () => {
+    it('validates order against the requested workspace while keeping incoming shares', async () => {
+      const rows = [
+        {
+          id: newUuid(),
+          kind: AlbumKind.Album,
+          parentId: null,
+          libraryScope: LibraryScope.Personal,
+          role: AlbumUserRole.Owner,
+        },
+        {
+          id: newUuid(),
+          kind: AlbumKind.Album,
+          parentId: null,
+          libraryScope: LibraryScope.Design,
+          role: AlbumUserRole.Owner,
+        },
+        {
+          id: newUuid(),
+          kind: AlbumKind.Album,
+          parentId: null,
+          libraryScope: LibraryScope.Design,
+          role: AlbumUserRole.Viewer,
+        },
+      ];
+      mocks.album.setPositions.mockImplementation((_user, _ids, validate) => {
+        validate?.(rows);
+        return Promise.resolve();
+      });
+      await expect(
+        sut.setOrder(authStub.admin, { parentId: null, hierarchy: true, albumIds: [rows[2].id, rows[0].id] }),
+      ).resolves.toBeUndefined();
+      await expect(
+        sut.setOrder(authStub.admin, {
+          parentId: null,
+          hierarchy: true,
+          libraryScope: LibraryScope.Design,
+          albumIds: [rows[1].id, rows[2].id],
+        }),
+      ).resolves.toBeUndefined();
+    });
     const setup = () => {
       const collection = AlbumFactory.from({ albumName: 'Family', kind: AlbumKind.Collection }).build();
       const { user: owner } = collection.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;

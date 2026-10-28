@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { LRUMap } from 'mnemonist';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { LibraryViewScope } from 'src/enum.js';
 import type {
   AssetSearchOptions,
   AssetSearchScope,
@@ -581,9 +582,9 @@ export class SearchService extends BaseService {
 
   private async resolveSearchScopeV3(
     auth: AuthDto,
-    dto: { filter?: SearchFilter },
+    dto: { filter?: SearchFilter; libraryScope?: LibraryViewScope },
   ): Promise<{ filter: SearchFilter; scope: AssetSearchScope }> {
-    const filter = dto.filter ?? {};
+    const filter = { ...dto.filter, ...(dto.libraryScope && { libraryScope: dto.libraryScope }) };
     const effectiveFilter = applyLockedVisibilityPolicy(auth, filter);
 
     const fullyConfined = isFullyAlbumConfined(filter);

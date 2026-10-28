@@ -5,14 +5,17 @@ import {
   asset_face_source_type,
   asset_visibility_enum,
   assets_status_enum,
+  library_scope_enum,
 } from 'src/schema/enums.js';
 import {
+  album_library_scope_refresh,
   album_user_after_insert,
   album_user_delete,
   album_user_delete_audit,
   asset_delete_audit,
   asset_exif_landmark_match,
   asset_face_audit,
+  asset_library_scope_refresh,
   asset_metadata_audit,
   asset_ocr_delete_audit,
   desktop_clip_producer_guard,
@@ -438,6 +441,8 @@ export class ImmichDatabase {
     user_delete_audit,
     partner_delete_audit,
     asset_delete_audit,
+    asset_library_scope_refresh,
+    album_library_scope_refresh,
     album_user_after_insert,
     album_user_delete_audit,
     memory_delete_audit,
@@ -452,7 +457,7 @@ export class ImmichDatabase {
     album_user_delete,
   ];
 
-  enum = [album_user_role_enum, assets_status_enum, asset_face_source_type, asset_visibility_enum];
+  enum = [album_user_role_enum, assets_status_enum, asset_face_source_type, asset_visibility_enum, library_scope_enum];
 }
 
 export interface Migrations {

@@ -16,6 +16,9 @@ import {
   AlbumUserRoleSchema,
   AssetOrder,
   AssetOrderSchema,
+  LibraryScope,
+  LibraryScopeSchema,
+  LibraryViewScopeSchema,
 } from 'src/enum.js';
 import { MaybeDehydrated } from 'src/types.js';
 import { asDateTimeString } from 'src/utils/date.js';
@@ -53,6 +56,7 @@ const AlbumUserCreateSchema = z
 
 const CreateAlbumSchema = z
   .object({
+    libraryScope: LibraryScopeSchema.optional(),
     albumName: z.string().describe('Album name'),
     // TODO: drop the empty-string-to-null transform in v4 (clients should send null)
     description: z
@@ -99,6 +103,7 @@ const AlbumsAddAssetsResponseSchema = z
 
 const UpdateAlbumSchema = z
   .object({
+    libraryScope: LibraryScopeSchema.optional(),
     albumName: z.string().optional().describe('Album name'),
     // TODO: drop the empty-string-to-null transform in v4 (clients should send null)
     description: z
@@ -144,8 +149,11 @@ const UpdateAlbumSchema = z
   })
   .meta({ id: 'UpdateAlbumDto' });
 
+const AlbumViewSchema = z.object({ libraryScope: LibraryViewScopeSchema.optional() }).meta({ id: 'AlbumViewDto' });
+
 const GetAlbumsSchema = z
   .object({
+    libraryScope: LibraryViewScopeSchema.optional(),
     id: z.uuidv4().optional().describe('Album ID'),
     name: z.string().optional().describe('Album name (exact match)'),
     isOwned: stringToBool
@@ -202,6 +210,7 @@ const ContributorCountResponseSchema = z
 
 export const AlbumResponseSchema = z
   .object({
+    libraryScope: LibraryScopeSchema.optional(),
     id: z.uuidv4().describe('Album ID'),
     albumName: z.string().describe('Album name'),
     description: z
@@ -306,6 +315,7 @@ const MoveAlbumSchema = z
 
 const AlbumOrderSchema = z
   .object({
+    libraryScope: LibraryViewScopeSchema.optional(),
     hierarchy: z
       .boolean()
       .optional()
@@ -405,6 +415,7 @@ export class CreateAlbumDto extends createZodDto(CreateAlbumSchema) {}
 export class AlbumsAddAssetsDto extends createZodDto(AlbumsAddAssetsSchema) {}
 export class AlbumsAddAssetsResponseDto extends createZodDto(AlbumsAddAssetsResponseSchema) {}
 export class UpdateAlbumDto extends createZodDto(UpdateAlbumSchema) {}
+export class AlbumViewDto extends createZodDto(AlbumViewSchema) {}
 export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class GetAlbumInfoDto extends createZodDto(GetAlbumInfoSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
@@ -419,6 +430,7 @@ export class AlbumIconCatalogueResponseDto extends createZodDto(AlbumIconCatalog
 class AlbumUserResponseDto extends createZodDto(AlbumUserResponseSchema) {}
 
 export type MapAlbumDto = {
+  libraryScope?: LibraryScope;
   albumUsers?: AlbumUser[];
   assets?: ShallowDehydrateObject<MapAsset>[];
   sharedLinks?: ShallowDehydrateObject<AuthSharedLink>[];
@@ -468,6 +480,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
 
   return {
     albumName: entity.albumName,
+    libraryScope: entity.libraryScope,
     // TODO: return null instead of '' in v4
     description: entity.description ?? '',
     albumThumbnailAssetId: entity.albumThumbnailAssetId,

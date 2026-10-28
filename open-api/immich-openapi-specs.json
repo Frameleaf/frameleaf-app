@@ -10371,6 +10371,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "visibility",
             "required": false,
             "in": "query",
@@ -10876,6 +10884,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "name",
             "required": false,
             "in": "query",
@@ -11064,7 +11080,16 @@
       "get": {
         "description": "Albums and collections with their visible descendants. Shared spaces remain at the top level.",
         "operationId": "getAlbumHierarchy",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -11245,7 +11270,16 @@
       "get": {
         "description": "Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. This compatibility projection flattens nested collections and promotes albums whose parent is not a visible collection. Use /albums/hierarchy for the full hierarchy.",
         "operationId": "getAlbumTree",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -13854,6 +13888,14 @@
             "description": "Filter by trash status",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
             }
           },
           {
@@ -40777,6 +40819,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "make",
             "required": false,
             "in": "query",
@@ -53287,6 +53337,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "lockReason",
             "required": false,
             "in": "query",
@@ -53568,6 +53626,14 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
             }
           },
           {
@@ -53867,6 +53933,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "lockReason",
             "required": false,
             "in": "query",
@@ -54161,6 +54235,14 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
             }
           },
           {
@@ -61360,6 +61442,9 @@
             "description": "Order actual siblings in the recursive hierarchy; omitted for the legacy flattened directory",
             "type": "boolean"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "parentId": {
             "description": "Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces)",
             "format": "uuid",
@@ -61466,6 +61551,9 @@
             "description": "Last modified asset timestamp",
             "format": "date-time",
             "type": "string"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
           },
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
@@ -61950,6 +62038,14 @@
           "viewer"
         ],
         "type": "string"
+      },
+      "AlbumViewDto": {
+        "properties": {
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          }
+        },
+        "type": "object"
       },
       "AlbumsAddAssetsDto": {
         "properties": {
@@ -64341,6 +64437,9 @@
                 ],
                 "x-immich-state": "Deprecated"
               },
+              "libraryScope": {
+                "$ref": "#/components/schemas/LibraryViewScope"
+              },
               "make": {
                 "deprecated": true,
                 "description": "Filter by camera make",
@@ -64991,6 +65090,9 @@
             "minimum": -90,
             "nullable": true,
             "type": "number"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
           },
           "longitude": {
             "description": "Longitude coordinate; null together with a null latitude removes the location",
@@ -67404,6 +67506,10 @@
             "description": "Mark as favorite",
             "type": "boolean"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope",
+            "description": "Workspace membership; defaults to personal"
+          },
           "livePhotoVideoId": {
             "description": "Live photo video ID",
             "format": "uuid",
@@ -67941,6 +68047,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
           },
           "livePhotoVideoId": {
             "description": "Live photo video ID",
@@ -68930,6 +69039,9 @@
           "isTrashed": {
             "description": "Filter by trash status",
             "type": "boolean"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "visibility": {
             "$ref": "#/components/schemas/AssetVisibility"
@@ -69974,6 +70086,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
           },
           "livePhotoVideoId": {
             "description": "Live photo video ID",
@@ -76746,6 +76861,9 @@
             "default": "album",
             "description": "What to create: an album (default), a collection of albums or a shared space"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
+          },
           "parentId": {
             "description": "Parent album or collection (omit for top-level). Shared spaces cannot nest.",
             "format": "uuid",
@@ -82011,6 +82129,9 @@
           "isShared": {
             "description": "Filter by shared status: true = only shared, false = not shared, undefined = no filter",
             "type": "boolean"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "name": {
             "description": "Album name (exact match)",
@@ -88577,6 +88698,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "make": {
             "deprecated": true,
             "description": "Filter by camera make",
@@ -89706,6 +89830,14 @@
         ],
         "type": "string"
       },
+      "LibraryScope": {
+        "enum": [
+          "personal",
+          "design",
+          "both"
+        ],
+        "type": "string"
+      },
       "LibrarySearchDto": {
         "properties": {
           "withDeleted": {
@@ -89896,6 +90028,13 @@
           "videos"
         ],
         "type": "object"
+      },
+      "LibraryViewScope": {
+        "enum": [
+          "personal",
+          "design"
+        ],
+        "type": "string"
       },
       "LicenseActivateDto": {
         "properties": {
@@ -94721,6 +94860,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "make": {
             "deprecated": true,
@@ -117413,6 +117555,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "make": {
             "deprecated": true,
             "description": "Filter by camera make",
@@ -122199,6 +122344,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "make": {
             "deprecated": true,
             "description": "Filter by camera make",
@@ -122657,6 +122805,9 @@
           },
           "libraryId": {
             "$ref": "#/components/schemas/IdFilterNullable"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "localDateTime": {
             "$ref": "#/components/schemas/DateFilter"
@@ -123147,6 +123298,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "make": {
             "deprecated": true,
@@ -126312,6 +126466,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "make": {
             "deprecated": true,
             "description": "Filter by camera make",
@@ -127293,6 +127450,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "make": {
             "deprecated": true,
@@ -137110,6 +137270,9 @@
           "key": {
             "type": "string"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "lockReason": {
             "anyOf": [
               {
@@ -137493,6 +137656,9 @@
           "key": {
             "type": "string"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "lockReason": {
             "anyOf": [
               {
@@ -137691,6 +137857,9 @@
           "key": {
             "type": "string"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "lockReason": {
             "anyOf": [
               {
@@ -137817,6 +137986,9 @@
           },
           "key": {
             "type": "string"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "lockReason": {
             "anyOf": [
@@ -138451,6 +138623,9 @@
             "description": "Enable activity feed",
             "type": "boolean"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
+          },
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
           },
@@ -138513,6 +138688,9 @@
             "minimum": -90,
             "nullable": true,
             "type": "number"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
           },
           "livePhotoVideoId": {
             "description": "Live photo video ID",

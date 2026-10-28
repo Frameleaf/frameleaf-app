@@ -44,6 +44,7 @@ import {
   AssetVisibility,
   ExifOrientation,
   ImageEnrichmentFilter,
+  LibraryScope,
   PetObservationState,
   SearchOrderField,
   StudioExportVersionState,
@@ -58,6 +59,7 @@ import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
 import { displayPathSql } from 'src/utils/library-path.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import {
   isDefaultVisible,
   isLocked,
@@ -595,6 +597,9 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     kysely
       .withPlugin(joinDeduplicationPlugin)
       .selectFrom('asset')
+      .$if(!!options.libraryScope || !options.albumIds?.length, (qb) =>
+        qb.where(libraryScopePredicate(options.libraryScope ?? LibraryScope.Personal)),
+      )
       .$if(!!options.visibility, (qb) =>
         options.visibility === 'not-locked'
           ? qb.where(isNotLocked('asset'))
@@ -1160,6 +1165,7 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
   // search universe: own+partner assets unless album-confined, which searches the albums instead;
   // ownership lands nowhere (top level confined), per unconfined branch, or hoisted globally
   const topConfined = isAlbumConfined(filter);
+  const libraryScope = options.libraryScope ?? filter.libraryScope;
   const anyBranchConfined = branches.some((branch) => isAlbumConfined(branch));
   const scopePerBranch = !topConfined && anyBranchConfined;
   const scopeGlobally = !topConfined && !anyBranchConfined;
@@ -1167,6 +1173,9 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
     kysely
       .withPlugin(joinDeduplicationPlugin)
       .selectFrom('asset')
+      .$if(!!libraryScope || scopeGlobally, (qb) =>
+        qb.where(libraryScopePredicate(libraryScope ?? LibraryScope.Personal)),
+      )
       // postgres eliminates the left join when no exif column is referenced, so unused joins are free
       .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1188,7 +1197,9 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) =>
         searchFilterPredicate(eb, filter, viewerId, options.revealLockedOwnerId, (branch) =>
-          scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : [],
+          scopePerBranch && !isAlbumConfined(branch)
+            ? [ownershipPredicate(eb), ...(!libraryScope ? [libraryScopePredicate(LibraryScope.Personal)] : [])]
+            : [],
         ),
       )
   );

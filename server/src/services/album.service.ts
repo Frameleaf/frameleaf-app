@@ -20,6 +20,7 @@ import {
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
+  AlbumViewDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
   CreateAlbumDto,
@@ -37,6 +38,7 @@ import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import {
   AlbumKind,
   AlbumUserRole,
+  LibraryScope,
   Permission,
   PushEventType,
   SharedSpaceEventType,
@@ -55,10 +57,11 @@ import {
   getOthersRulesQueryOptions,
   getPrivacyQueryOptions,
 } from 'src/utils/hidden-content.js';
+import { scopeMatches } from 'src/utils/library-scope.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
-import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
+import { isSharedSpace, requireInvitableRole, requireSpaceOwner, spaceOwnerId } from 'src/utils/shared-space.js';
 import { getSupporters } from 'src/utils/supporter.js';
 
 /** Why an editor's move is refused. The album's place is one stored value that everyone sees. */
@@ -69,9 +72,13 @@ export const ALBUM_MOVE_OWNER_ONLY =
 export class AlbumService extends BaseService {
   async getStatistics(auth: AuthDto): Promise<AlbumStatisticsResponseDto> {
     const [owned, shared, notShared] = await Promise.all([
-      this.albumRepository.getAll(auth.user.id, { isOwned: true }),
-      this.albumRepository.getAll(auth.user.id, { isShared: true }),
-      this.albumRepository.getAll(auth.user.id, { isOwned: true, isShared: false }),
+      this.albumRepository.getAll(auth.user.id, { isOwned: true, libraryScope: LibraryScope.Personal }),
+      this.albumRepository.getAll(auth.user.id, { isShared: true, libraryScope: LibraryScope.Personal }),
+      this.albumRepository.getAll(auth.user.id, {
+        isOwned: true,
+        isShared: false,
+        libraryScope: LibraryScope.Personal,
+      }),
     ]);
 
     return {
@@ -88,7 +95,7 @@ export class AlbumService extends BaseService {
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
     let albums: MapAlbumDto[] = assetId
       ? await this.albumRepository.getByAssetId(ownerId, assetId, privacyOptions)
-      : await this.albumRepository.getAll(ownerId, rest);
+      : await this.albumRepository.getAll(ownerId, { libraryScope: LibraryScope.Personal, ...rest });
     // FL-522: a smart album the person hid stays out of their own album list (it keeps filling)
     const hidden: Set<string> | undefined = await this.smartAlbumRepository.getHiddenAlbumIds(ownerId);
     if (hidden && hidden.size > 0) {
@@ -168,11 +175,13 @@ export class AlbumService extends BaseService {
    * with. Access is the same membership rule as `getAll`; partner and shared
    * link rules are unchanged (neither grants album listing).
    */
-  async getTree(auth: AuthDto): Promise<AlbumTreeResponseDto> {
+  async getTree(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumTreeResponseDto> {
     await this.albumRepository.updateThumbnails();
 
     const privacyOptions = this.nsfwOptions(auth);
-    let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {});
+    let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {
+      libraryScope: dto.libraryScope ?? LibraryScope.Personal,
+    });
     if (albums.length === 0) {
       return buildAlbumTree([]);
     }
@@ -210,8 +219,8 @@ export class AlbumService extends BaseService {
     );
   }
 
-  async getHierarchy(auth: AuthDto): Promise<AlbumHierarchyResponseDto> {
-    const tree = await this.getTree(auth);
+  async getHierarchy(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumHierarchyResponseDto> {
+    const tree = await this.getTree(auth, dto);
     return buildAlbumHierarchy(
       [
         ...tree.collections.flatMap(({ collection, albums }) => [collection, ...albums]),
@@ -238,7 +247,13 @@ export class AlbumService extends BaseService {
     }
     // The group is read and the order written in one transaction, with the albums locked against a
     // concurrent move, so an order can never be saved for a group that changed in between.
-    await this.albumRepository.setPositions(auth.user.id, albumIds, (visible) => {
+    await this.albumRepository.setPositions(auth.user.id, albumIds, (rows) => {
+      const view = dto.libraryScope ?? LibraryScope.Personal;
+      const visible = rows.filter(
+        ({ libraryScope, role }) =>
+          scopeMatches(libraryScope ?? LibraryScope.Personal, view) ||
+          (view === LibraryScope.Personal && role !== undefined && role !== AlbumUserRole.Owner),
+      );
       const group = albumOrderGroup(visible, dto.parentId, albumIds[0], dto.hierarchy);
       if (!group) {
         if (visible.every(({ id }) => id !== albumIds[0])) {
@@ -415,6 +430,7 @@ export class AlbumService extends BaseService {
 
     const album = await this.albumRepository.create(
       {
+        libraryScope: dto.libraryScope ?? LibraryScope.Personal,
         albumName: dto.albumName,
         description: dto.description,
         albumThumbnailAssetId: coverAssetId ?? null,
@@ -458,6 +474,10 @@ export class AlbumService extends BaseService {
     // shown to, so the candidates are the assets that every viewer may see.
     const album = await this.findOrFail(id, auth, { withAssets: true, lockedOwnerId: undefined });
 
+    if (dto.libraryScope !== undefined && spaceOwnerId(album) !== auth.user.id) {
+      throw new ForbiddenException('Only the album owner can change its library scope');
+    }
+
     if (dto.albumThumbnailAssetId && dto.coverFollowsNewest) {
       throw new BadRequestException('Pick a cover or follow the newest item, not both');
     }
@@ -486,6 +506,7 @@ export class AlbumService extends BaseService {
         album.id,
         {
           id: album.id,
+          libraryScope: dto.libraryScope,
           albumName: dto.albumName,
           description: dto.description,
           albumThumbnailAssetId: dto.albumThumbnailAssetId,

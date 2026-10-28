@@ -87,6 +87,25 @@ describe('native upload headers', () => {
     'asset-metadata': metadata,
     'content-type': 'image/jpeg',
   };
+  it.each(['personal', 'design', 'both'])('retains %s scope before upload publication', (libraryScope) => {
+    const value = { ...JSON.parse(Buffer.from(metadata, 'base64url').toString()), libraryScope };
+    const parsed = parseAssetUploadHeaders({
+      ...headers,
+      'asset-metadata': Buffer.from(JSON.stringify(value)).toString('base64url'),
+    });
+    expect(parsed.metadata.libraryScope).toBe(libraryScope);
+  });
+
+  it('rejects an unknown library scope at upload admission', () => {
+    const value = { ...JSON.parse(Buffer.from(metadata, 'base64url').toString()), libraryScope: 'public' };
+    expect(() =>
+      parseAssetUploadHeaders({
+        ...headers,
+        'asset-metadata': Buffer.from(JSON.stringify(value)).toString('base64url'),
+      }),
+    ).toThrow('Invalid Asset-Metadata');
+  });
+
   it('requires an unambiguous real SHA256 and typed metadata', () => {
     expect(parseAssetUploadHeaders(headers).checksum).toEqual(Buffer.alloc(32));
     for (const value of [undefined, digest + ', ' + digest, 'sha-256=:YWJj:', 'sha-256=:!!!:']) {

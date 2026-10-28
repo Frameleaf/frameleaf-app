@@ -593,6 +593,14 @@ describe(PersonService.name, () => {
   });
 
   describe('getThumbnail', () => {
+    it('withholds a stale thumbnail whose featured face is outside personal media', async () => {
+      const person = PersonFactory.create({ faceAssetId: newUuid() });
+      const auth = AuthFactory.create();
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.person.getFeaturedAsset.mockResolvedValue(undefined);
+      await expect(sut.getThumbnail(auth, person.personGroupId)).rejects.toBeInstanceOf(NotFoundException);
+    });
     it('should require person.read permission', async () => {
       const auth = AuthFactory.create();
       const person = PersonFactory.create();

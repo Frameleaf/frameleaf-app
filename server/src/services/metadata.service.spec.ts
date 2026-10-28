@@ -20,6 +20,7 @@ import {
   FrameleafWorker,
   JobName,
   JobStatus,
+  LibraryScope,
   SourceType,
   StorageFolder,
 } from 'src/enum.js';
@@ -2007,6 +2008,17 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
       mocks.systemMetadata.get.mockResolvedValue({ metadata: { faces: { import: false } } });
+      mockReadTags(makeFaceTags({ Name: 'Person 1' }));
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.person.getDistinctNames).not.toHaveBeenCalled();
+    });
+
+    it('skips tagged faces when the asset moves to design before metadata publication', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction
+        .mockResolvedValueOnce(getForMetadataExtraction(asset))
+        .mockResolvedValue(getForMetadataExtraction({ ...asset, libraryScope: LibraryScope.Design }));
+      mocks.systemMetadata.get.mockResolvedValue({ metadata: { faces: { import: true } } });
       mockReadTags(makeFaceTags({ Name: 'Person 1' }));
       await sut.handleMetadataExtraction({ id: asset.id });
       expect(mocks.person.getDistinctNames).not.toHaveBeenCalled();

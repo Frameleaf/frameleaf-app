@@ -95,6 +95,7 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
       'fileModifiedAt',
       'duration',
       'isFavorite',
+      'libraryScope',
       'visibility',
       'metadata',
       'sourceIdentity',

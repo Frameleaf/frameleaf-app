@@ -11,6 +11,7 @@ import {
   AssetTypeSchema,
   AssetVisibilitySchema,
   ImageEnrichmentFilterSchema,
+  LibraryViewScopeSchema,
   SearchOrderField,
   SearchOrderFieldSchema,
 } from 'src/enum.js';
@@ -35,6 +36,7 @@ const FLAT_PET_IDS_FIELD = {
 };
 
 const BaseSearchSchema = z.object({
+  libraryScope: LibraryViewScopeSchema.optional(),
   imageEnrichment: ImageEnrichmentFilterSchema.optional(),
   suppressedOnly: z.boolean().optional().describe('Return only suppressed content. Requires an elevated session.'),
   libraryId: z.uuidv4().nullish().describe('Library ID to filter by').meta(DEPRECATED_FLAT_FIELD),
@@ -354,6 +356,7 @@ export const SearchFilterSchema = z
   .strictObject(searchFilterBranchShape)
   .partial()
   .extend({
+    libraryScope: LibraryViewScopeSchema.optional(),
     or: z.array(SearchFilterBranchSchema).min(1).optional(),
   })
   .meta({ id: 'SearchFilter' });

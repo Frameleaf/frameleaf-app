@@ -9,7 +9,7 @@ export const load = (async ({ url, depends }) => {
   depends('album:data');
   // Invitations are not memberships, so they are not in the tree; the spaces shelf only says how
   // many are waiting. The shelf is still worth showing without that count, so its failure is quiet.
-  const [tree, invitations] = await Promise.all([getAlbumTree(), getSharedSpaceInvitations().catch(() => [])]);
+  const [tree, invitations] = await Promise.all([getAlbumTree({}), getSharedSpaceInvitations().catch(() => [])]);
   const $t = await getFormatter();
 
   return {

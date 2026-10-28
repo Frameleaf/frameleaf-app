@@ -12,9 +12,18 @@ import {
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
-import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
-import { asset_checksum_algorithm_enum, asset_visibility_enum, assets_status_enum } from 'src/schema/enums.js';
-import { asset_backup_deletion_capture, asset_delete_audit } from 'src/schema/functions.js';
+import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, LibraryScope } from 'src/enum.js';
+import {
+  asset_checksum_algorithm_enum,
+  asset_visibility_enum,
+  assets_status_enum,
+  library_scope_enum,
+} from 'src/schema/enums.js';
+import {
+  asset_backup_deletion_capture,
+  asset_delete_audit,
+  asset_library_scope_refresh,
+} from 'src/schema/functions.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
@@ -22,6 +31,13 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 
 @Table('asset')
+@Trigger({
+  name: 'asset_library_scope_refresh_trigger',
+  timing: 'after',
+  actions: ['update'],
+  scope: 'row',
+  functionName: asset_library_scope_refresh.name,
+})
 @Trigger({
   name: 'asset_backup_deletion_capture_trigger',
   timing: 'before',
@@ -60,6 +76,7 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   name: 'asset_owner_filename_order_idx',
   expression: '"ownerId", "originalFileName" COLLATE "und-x-icu", "fileCreatedAt" DESC, id',
 })
+@Index({ name: 'asset_owner_scope_idx', columns: ['ownerId', 'libraryScope'] })
 @Index({ columns: ['originalPath', 'libraryId'] })
 @Index({ columns: ['id', 'stackId'] })
 @Index({
@@ -80,6 +97,9 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 })
 // For all assets, each originalpath must be unique per user and library
 export class AssetTable {
+  @Column({ enum: library_scope_enum, default: LibraryScope.Personal })
+  libraryScope!: Generated<LibraryScope>;
+
   @PrimaryGeneratedColumn()
   id!: Generated<string>;
 

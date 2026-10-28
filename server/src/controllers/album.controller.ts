@@ -12,6 +12,7 @@ import {
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
   AlbumUserParamDto,
+  AlbumViewDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
   CreateAlbumDto,
@@ -74,8 +75,8 @@ export class AlbumController {
       'Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. This compatibility projection flattens nested collections and promotes albums whose parent is not a visible collection. Use /albums/hierarchy for the full hierarchy.',
     history: new HistoryBuilder().added('v3'),
   })
-  getAlbumTree(@Auth() auth: AuthDto): Promise<AlbumTreeResponseDto> {
-    return this.service.getTree(auth);
+  getAlbumTree(@Auth() auth: AuthDto, @Query() query: AlbumViewDto): Promise<AlbumTreeResponseDto> {
+    return this.service.getTree(auth, query);
   }
 
   @Get('hierarchy')
@@ -85,8 +86,8 @@ export class AlbumController {
     description: 'Albums and collections with their visible descendants. Shared spaces remain at the top level.',
     history: new HistoryBuilder().added('v3'),
   })
-  getAlbumHierarchy(@Auth() auth: AuthDto): Promise<AlbumHierarchyResponseDto> {
-    return this.service.getHierarchy(auth);
+  getAlbumHierarchy(@Auth() auth: AuthDto, @Query() query: AlbumViewDto): Promise<AlbumHierarchyResponseDto> {
+    return this.service.getHierarchy(auth, query);
   }
 
   @Get('icons')

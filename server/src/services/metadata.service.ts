@@ -24,6 +24,7 @@ import {
   FrameleafWorker,
   JobName,
   JobStatus,
+  LibraryScope,
   QueueName,
   SourceType,
   StorageFolder,
@@ -490,7 +491,11 @@ export class MetadataService extends BaseService {
         },
       ];
 
-      if (isFaceImportEnabled(metadata) && this.hasTaggedFaces(exifTags)) {
+      if (
+        current.libraryScope !== LibraryScope.Design &&
+        isFaceImportEnabled(metadata) &&
+        this.hasTaggedFaces(exifTags)
+      ) {
         tasks.push(() => this.applyTaggedFaces(asset, exifTags));
       }
 

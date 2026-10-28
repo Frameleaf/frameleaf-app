@@ -16,7 +16,7 @@ import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
-import { AlbumUserRole } from 'src/enum.js';
+import { AlbumUserRole, LibraryScope, type LibraryViewScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -33,6 +33,7 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 // shortcut: hierarchy edits serialize across users; shard this lock if measured contention warrants it.
@@ -122,6 +123,8 @@ const isAlbumOwned = (ownerId: string) => (eb: ExpressionBuilder<DB, 'album'>) =
   );
 /** One album as a person's directory sees it, for checking a custom order (FL-52). */
 export type DirectoryItem = {
+  libraryScope?: LibraryScope;
+  role?: AlbumUserRole;
   id: string;
   kind: string;
   parentId: string | null;
@@ -322,6 +325,7 @@ export class AlbumRepository {
       isOwned?: boolean;
       isShared?: boolean;
       name?: string;
+      libraryScope?: LibraryViewScope;
     } = {},
   ): Promise<MapAlbumDto[]> {
     const rows = await this.buildAlbumBaseQuery(ownerId, options)
@@ -330,6 +334,24 @@ export class AlbumRepository {
       .select(withSharedLink)
       .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
       .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
+      .$if(!!options.libraryScope, (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            libraryScopePredicate(options.libraryScope!, 'album'),
+            ...(options.libraryScope === LibraryScope.Personal
+              ? [
+                  eb.exists(
+                    eb
+                      .selectFrom('album_user')
+                      .whereRef('album_user.albumId', '=', 'album.id')
+                      .where('album_user.userId', '=', ownerId)
+                      .where('album_user.role', '!=', AlbumUserRole.Owner),
+                  ),
+                ]
+              : []),
+          ]),
+        ),
+      )
       .orderBy('album.sortOrder', sql`asc nulls last`)
       .orderBy('album.createdAt', 'desc')
       .execute();
@@ -835,7 +857,15 @@ export class AlbumRepository {
             join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', userId),
           )
           .where('album.deletedAt', 'is', null)
-          .select(['album.id', 'album.icon', 'album.parentId', 'album.sortOrder', 'album.kind'])
+          .select([
+            'album.id',
+            'album.icon',
+            'album.parentId',
+            'album.sortOrder',
+            'album.kind',
+            'album.libraryScope',
+            'album_user.role',
+          ])
           .modifyEnd(sql`FOR SHARE OF album`)
           .execute();
         validate(rows);
