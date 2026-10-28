@@ -50,6 +50,7 @@ import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.ser
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
+import { DevelopBatchService } from 'src/services/develop-batch.service.js';
 import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
@@ -187,6 +188,7 @@ export const services = [
   AlbumItemsService,
   AssetSourceService,
   BookmarkService,
+  DevelopBatchService,
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,
   DesktopDeviceService,

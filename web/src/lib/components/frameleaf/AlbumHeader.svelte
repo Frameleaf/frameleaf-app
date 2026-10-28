@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
@@ -49,6 +49,7 @@
     AlbumKind,
     LibraryScope,
     LibraryViewScope,
+    getWorkflowCapabilities,
     AlbumUserRole,
     getAlbumMapMarkers,
     createClassificationRule,
@@ -157,6 +158,14 @@
   }: Props = $props();
 
   const currentUserId = $derived(authManager.user.id);
+  let automationAvailable = $state(false);
+  onMount(() => {
+    void Promise.resolve(getWorkflowCapabilities())
+      .then((value) => {
+        automationAvailable = value?.sourceFilters ?? false;
+      })
+      .catch(() => {});
+  });
   const owner = $derived(isOwner(album, currentUserId));
   const editor = $derived(canEdit(album, currentUserId));
   const breadcrumbAlbums = $derived(ancestors ?? (parent ? [parent] : []));
@@ -668,6 +677,15 @@
         <div class="menu-separator" role="separator"></div>
       {/if}
       {#if editor && !rule && !album.isSmart}
+        {#if !isCollection && automationAvailable}
+          <MenuItem
+            onSelect={() =>
+              void goto(`${Route.workflows()}&${new URLSearchParams({ workflowAlbum: album.id, workflowName: name })}`)}
+          >
+            <Icon icon={mdiAutoFix} size="18" />
+            {$t('frameleaf_workflows.automate_album')}
+          </MenuItem>
+        {/if}
         <MenuItem onSelect={() => (editOpen = true)}>
           <Icon icon={mdiPencilOutline} size="18" />
           {$t('frameleaf_album_edit_details')}

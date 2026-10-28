@@ -22815,6 +22815,661 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/develop-batches": {
+      "get": {
+        "operationId": "getDevelopBatches",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your external editor batches",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "operationId": "createDevelopBatch",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopBatchCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create an external editor batch",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/capabilities": {
+      "get": {
+        "operationId": "getDevelopBatchCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchCapabilitiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get batch external editor capabilities",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/{id}": {
+      "get": {
+        "operationId": "getDevelopBatch",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get resumable external editor batch status",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/{id}/cancel": {
+      "post": {
+        "operationId": "cancelDevelopBatch",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel unfinished batch work and retain completed versions",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/{id}/confirm": {
+      "post": {
+        "operationId": "confirmDevelopBatchReturns",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopBatchConfirmDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Confirm mappings and capture working versions for safe activation",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/{id}/download": {
+      "get": {
+        "operationId": "downloadDevelopBatch",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stream a ZIP of batch originals and associated sidecars",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/{id}/items/{itemId}/import": {
+      "post": {
+        "operationId": "importDevelopBatchReturn",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopBatchImportDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchItemResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import or resume one confirmed returned file idempotently",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/{id}/items/{itemId}/prepare": {
+      "post": {
+        "operationId": "prepareDevelopBatchItem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchItemResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Prepare or resume one original for a durable editing batch",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/{id}/manifest": {
+      "get": {
+        "operationId": "getDevelopBatchManifest",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopBatchManifestDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the versioned external editor manifest",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-batches/{id}/match": {
+      "post": {
+        "operationId": "matchDevelopBatchReturns",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopBatchMatchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DevelopBatchMatchResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Review returned file matches without importing",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/develop-presets": {
       "get": {
         "description": "Your saved develop presets, by name.",
@@ -38208,7 +38863,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/PluginTemplateResponseDto"
+                    "$ref": "#/components/schemas/LegacyPluginTemplateResponseDto"
                   },
                   "type": "array"
                 }
@@ -58825,6 +59480,122 @@
         "x-immich-permission": "workflow.create"
       }
     },
+    "/workflows/automation/capabilities": {
+      "get": {
+        "operationId": "getWorkflowCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowCapabilitiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ]
+      }
+    },
+    "/workflows/automation/discovery": {
+      "get": {
+        "description": "Includes change-driven and scheduled automation. Legacy discovery endpoints retain their original trigger values.",
+        "operationId": "getWorkflowDiscovery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDiscoveryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discover all workflow triggers and plugin templates",
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "plugin.read"
+      }
+    },
+    "/workflows/preview": {
+      "post": {
+        "operationId": "previewWorkflow",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.read"
+      }
+    },
     "/workflows/triggers": {
       "get": {
         "description": "Retrieve a list of all available workflow triggers.",
@@ -58836,7 +59607,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/WorkflowTriggerResponseDto"
+                    "$ref": "#/components/schemas/LegacyWorkflowTriggerResponseDto"
                   },
                   "type": "array"
                 }
@@ -59029,6 +59800,203 @@
         ],
         "x-immich-permission": "workflow.update",
         "x-immich-state": "Deprecated"
+      }
+    },
+    "/workflows/{id}/batches": {
+      "get": {
+        "operationId": "getWorkflowBatches",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowBatchResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.read"
+      },
+      "post": {
+        "operationId": "runWorkflow",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.update"
+      }
+    },
+    "/workflows/{id}/batches/{batchId}": {
+      "get": {
+        "operationId": "getWorkflowBatch",
+        "parameters": [
+          {
+            "name": "batchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.read"
+      }
+    },
+    "/workflows/{id}/batches/{batchId}/cancel": {
+      "post": {
+        "operationId": "cancelWorkflowBatch",
+        "parameters": [
+          {
+            "name": "batchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-permission": "workflow.update"
       }
     },
     "/workflows/{id}/logs": {
@@ -80309,6 +81277,522 @@
         ],
         "type": "string"
       },
+      "DevelopBatchCapabilitiesDto": {
+        "properties": {
+          "version": {
+            "$ref": "#/components/schemas/DevelopBatchProtocolVersion"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchConfirmDto": {
+        "properties": {
+          "files": {
+            "items": {
+              "properties": {
+                "checksum": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "fileName": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "itemId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "skip": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "fileName",
+                "checksum",
+                "itemId"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchCreateDto": {
+        "properties": {
+          "assetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "includeSidecars": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchImportDto": {
+        "properties": {
+          "confirmationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "file": {
+            "format": "binary",
+            "type": "string"
+          },
+          "renditionChecksum": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmationId",
+          "renditionChecksum"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchItemResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "exportId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "exportName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "fileName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "hasSidecar": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "preparationStatus": {
+            "$ref": "#/components/schemas/DevelopBatchPreparationStatus"
+          },
+          "returns": {
+            "items": {
+              "$ref": "#/components/schemas/DevelopBatchReturnResponseDto"
+            },
+            "type": "array"
+          },
+          "sourceChecksum": {
+            "nullable": true,
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "available",
+          "error",
+          "errorCode",
+          "exportId",
+          "exportName",
+          "fileName",
+          "hasSidecar",
+          "id",
+          "preparationStatus",
+          "returns",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DevelopBatchSummaryDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchManifestDto": {
+        "properties": {
+          "batchId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "exportId": {
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "exportName": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "fileName": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "hasSidecar": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "sourceChecksum": {
+                  "nullable": true,
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "assetId",
+                "exportId",
+                "fileName",
+                "exportName",
+                "sourceChecksum",
+                "hasSidecar"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "properties": {
+                "itemId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "itemId",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "version": {
+            "$ref": "#/components/schemas/DevelopBatchProtocolVersion"
+          }
+        },
+        "required": [
+          "batchId",
+          "items",
+          "skipped",
+          "version"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchMatchDto": {
+        "properties": {
+          "files": {
+            "items": {
+              "properties": {
+                "checksum": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "fileName": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "itemId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "skip": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "fileName",
+                "checksum"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchMatchResponseDto": {
+        "properties": {
+          "checksum": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "index": {
+            "format": "int32",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "itemId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DevelopBatchMatchStatus"
+          }
+        },
+        "required": [
+          "checksum",
+          "fileName",
+          "index",
+          "itemId",
+          "status"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchMatchStatus": {
+        "enum": [
+          "matched",
+          "ambiguous",
+          "unmatched",
+          "skipped"
+        ],
+        "type": "string"
+      },
+      "DevelopBatchPreparationStatus": {
+        "enum": [
+          "pending",
+          "prepared",
+          "failed",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "DevelopBatchProtocolVersion": {
+        "enum": [
+          1
+        ],
+        "format": "int32",
+        "type": "integer"
+      },
+      "DevelopBatchResponseDto": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "includeSidecars": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DevelopBatchItemResponseDto"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DevelopBatchStatus"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "includeSidecars",
+          "items",
+          "status"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchReturnResponseDto": {
+        "properties": {
+          "checksum": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "confirmationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "expectedCurrentRevisionId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "int32",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "revisionId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DevelopBatchReturnStatus"
+          }
+        },
+        "required": [
+          "checksum",
+          "confirmationId",
+          "error",
+          "errorCode",
+          "expectedCurrentRevisionId",
+          "id",
+          "progress",
+          "revisionId",
+          "status"
+        ],
+        "type": "object"
+      },
+      "DevelopBatchReturnStatus": {
+        "enum": [
+          "confirmed",
+          "imported",
+          "completed",
+          "conflict",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "DevelopBatchStatus": {
+        "enum": [
+          "open",
+          "completed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "DevelopBatchSummaryDto": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "includeSidecars": {
+            "type": "boolean"
+          },
+          "itemCount": {
+            "format": "int32",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DevelopBatchStatus"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "includeSidecars",
+          "itemCount",
+          "status"
+        ],
+        "type": "object"
+      },
       "DevelopExportResponseDto": {
         "properties": {
           "assetId": {
@@ -91069,6 +92553,77 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "LegacyPluginTemplateResponseDto": {
+        "properties": {
+          "description": {
+            "description": "Template description",
+            "type": "string"
+          },
+          "key": {
+            "description": "Template key (unique across all templates)",
+            "type": "string"
+          },
+          "steps": {
+            "description": "Workflow steps",
+            "items": {
+              "$ref": "#/components/schemas/PluginTemplateStepResponseDto"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "Template title",
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "AssetCreate",
+              "AssetMetadataExtraction",
+              "AssetTagged"
+            ],
+            "type": "string"
+          },
+          "uiHints": {
+            "description": "Ui hints, for example \"smart-album\"",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "description",
+          "key",
+          "steps",
+          "title",
+          "trigger",
+          "uiHints"
+        ],
+        "type": "object"
+      },
+      "LegacyWorkflowTriggerResponseDto": {
+        "properties": {
+          "trigger": {
+            "enum": [
+              "AssetCreate",
+              "AssetMetadataExtraction",
+              "AssetTagged"
+            ],
+            "type": "string"
+          },
+          "types": {
+            "description": "Workflow types",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowType"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "trigger",
+          "types"
+        ],
         "type": "object"
       },
       "LibraryAssetItemKind": {
@@ -143986,6 +145541,137 @@
         ],
         "type": "object"
       },
+      "WorkflowBatchReason": {
+        "enum": [
+          "manual",
+          "schedule"
+        ],
+        "type": "string"
+      },
+      "WorkflowBatchResponseDto": {
+        "properties": {
+          "completed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/WorkflowBatchReason"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "snapshotAt": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkflowBatchStatus"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "workflowId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed",
+          "createdAt",
+          "error",
+          "failed",
+          "finishedAt",
+          "id",
+          "reason",
+          "skipped",
+          "snapshotAt",
+          "status",
+          "total",
+          "updatedAt",
+          "workflowId"
+        ],
+        "type": "object"
+      },
+      "WorkflowBatchStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "completed",
+          "cancelled",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "WorkflowCapabilitiesDto": {
+        "properties": {
+          "assetChanged": {
+            "type": "boolean"
+          },
+          "batchRuns": {
+            "type": "boolean"
+          },
+          "rollingDates": {
+            "type": "boolean"
+          },
+          "schedules": {
+            "type": "boolean"
+          },
+          "semanticThreshold": {
+            "type": "boolean"
+          },
+          "sourceFilters": {
+            "type": "boolean"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "version": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetChanged",
+          "batchRuns",
+          "rollingDates",
+          "schedules",
+          "semanticThreshold",
+          "sourceFilters",
+          "timezone",
+          "version"
+        ],
+        "type": "object"
+      },
       "WorkflowCreateDto": {
         "properties": {
           "description": {
@@ -144013,6 +145699,22 @@
             "nullable": true,
             "type": "string"
           },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
+          },
           "steps": {
             "items": {
               "$ref": "#/components/schemas/WorkflowStepDto"
@@ -144029,6 +145731,27 @@
         },
         "required": [
           "trigger"
+        ],
+        "type": "object"
+      },
+      "WorkflowDiscoveryResponseDto": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/PluginTemplateResponseDto"
+            },
+            "type": "array"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTriggerResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "templates",
+          "triggers"
         ],
         "type": "object"
       },
@@ -144137,6 +145860,113 @@
         ],
         "type": "object"
       },
+      "WorkflowPreviewDto": {
+        "properties": {
+          "description": {
+            "description": "Workflow description",
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Workflow enabled",
+            "type": "boolean"
+          },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
+          },
+          "logging": {
+            "description": "Workflow logs run results",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Workflow name",
+            "maxLength": 300,
+            "nullable": true,
+            "type": "string"
+          },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStepDto"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "trigger": {
+            "description": "Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workflowId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "WorkflowPreviewResponseDto": {
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evaluatedAt": {
+            "type": "string"
+          },
+          "exampleAssetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowIssueDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "actions",
+          "count",
+          "evaluatedAt",
+          "exampleAssetIds",
+          "issues"
+        ],
+        "type": "object"
+      },
       "WorkflowResponseDto": {
         "properties": {
           "createdAt": {
@@ -144178,6 +146008,26 @@
             "description": "Workflow name",
             "nullable": true,
             "type": "string"
+          },
+          "nextRunAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
           },
           "steps": {
             "description": "Workflow steps",
@@ -144227,6 +146077,19 @@
         ],
         "type": "string"
       },
+      "WorkflowScheduleDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cron": {
+            "maxLength": 160,
+            "type": "string"
+          }
+        },
+        "required": [
+          "cron"
+        ],
+        "type": "object"
+      },
       "WorkflowSearchDto": {
         "properties": {
           "description": {
@@ -144275,6 +146138,26 @@
             "nullable": true,
             "type": "string"
           },
+          "nextRunAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
+          },
           "steps": {
             "description": "Workflow steps",
             "items": {
@@ -144322,6 +146205,75 @@
           "config",
           "extra",
           "method"
+        ],
+        "type": "object"
+      },
+      "WorkflowSourceDto": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/SearchFilter"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
+          "rollingDates": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "days": {
+                  "exclusiveMinimum": true,
+                  "maximum": 36500,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "field": {
+                  "enum": [
+                    "takenAt",
+                    "localDateTime",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "days"
+              ],
+              "type": "object"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
+          "semantic": {
+            "additionalProperties": false,
+            "properties": {
+              "maxDistance": {
+                "format": "double",
+                "maximum": 2,
+                "minimum": 0,
+                "type": "number"
+              },
+              "query": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "queryAssetId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "maxDistance"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "filter"
         ],
         "type": "object"
       },
@@ -144410,6 +146362,8 @@
         "description": "Plugin trigger type",
         "enum": [
           "AssetCreate",
+          "AssetChanged",
+          "Schedule",
           "AssetMetadataExtraction",
           "AssetTagged"
         ],
@@ -144468,6 +146422,22 @@
             "maxLength": 300,
             "nullable": true,
             "type": "string"
+          },
+          "schedule": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleDto"
+              }
+            ],
+            "nullable": true
+          },
+          "source": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowSourceDto"
+              }
+            ],
+            "nullable": true
           },
           "steps": {
             "items": {

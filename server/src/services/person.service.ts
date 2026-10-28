@@ -71,7 +71,7 @@ import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
-import { asDateTimeString } from 'src/utils/date.js';
+import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import {
   FaceBoundingBoxRow,
   NormalizedBox,
@@ -860,6 +860,16 @@ export class PersonService extends BaseService {
       return person;
     });
 
+    if (
+      (['name', 'birthDate', 'isHidden', 'isFavorite', 'color', 'faceAssetId'] as const).some((key) =>
+        key === 'birthDate'
+          ? asDateString(current.birthDate) !== asDateString(person.birthDate)
+          : current[key] !== person[key],
+      )
+    ) {
+      await this.eventRepository.emit('PersonChanged', { ownerId, personGroupId });
+    }
+
     if (assetId) {
       await this.jobRepository.queue({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
     }
@@ -914,7 +924,9 @@ export class PersonService extends BaseService {
       return;
     }
 
+    const affected = ownerId ? await this.workflowPersonAssets(ownerId, groupIds) : [];
     const people = await this.personRepository.delete(groupIds, ownerId);
+    for (const assetId of affected) await this.eventRepository.emit('AssetChanged', { assetId });
     await this.cleanupRemovedPeople(people, ownerId);
   }
 
@@ -1521,6 +1533,7 @@ export class PersonService extends BaseService {
         this.logger.log(`Merging ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
 
         try {
+          const affected = await this.workflowPersonAssets(targetPerson.ownerId, [mergeId, targetPerson.personGroupId]);
           const people = await this.personRepository.withMergeWrite(async () => {
             const survivor = await this.personRepository.getByGroupId({
               ownerId: targetPerson.ownerId,
@@ -1539,6 +1552,7 @@ export class PersonService extends BaseService {
             );
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
+          for (const assetId of affected) await this.eventRepository.emit('AssetChanged', { assetId });
           await this.cleanupRemovedPeople(people, targetPerson.ownerId);
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
@@ -1836,10 +1850,22 @@ export class PersonService extends BaseService {
   }
 
   /** Face overrides commit with the edit; dispatch changes to following copies afterward. */
+  private async workflowPersonAssets(ownerId: string, personGroupIds: string[]): Promise<string[]> {
+    const result: string[] = [];
+    let after: string | undefined;
+    while (true) {
+      const ids = await this.personRepository.getAssetIdsForPeople(ownerId, personGroupIds, { after, limit: 500 });
+      result.push(...ids);
+      if (ids.length < 500) return result;
+      after = ids.at(-1);
+    }
+  }
+
   private async noteFaceEdit(assetIds: string[]) {
     if (assetIds.length === 0) {
       return;
     }
+    for (const assetId of new Set(assetIds)) await this.eventRepository.emit('AssetChanged', { assetId });
     const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', [...new Set(assetIds)]);
     if (sources.length > 0) {
       await this.jobRepository.queueAll(

@@ -37,6 +37,7 @@ import { ConfigUserController } from 'src/controllers/config-user.controller.js'
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
+import { DevelopBatchController } from 'src/controllers/develop-batch.controller.js';
 import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
 import { DuplicateAdminController } from 'src/controllers/duplicate-admin.controller.js';
@@ -135,6 +136,7 @@ export const controllers = [
   AlbumItemsController,
   AssetSourceController,
   BookmarkController,
+  DevelopBatchController,
   DesktopDeviceController,
   PhotoSourceController,
   SourceResourceController,

@@ -3333,6 +3333,13 @@ export const WorkflowTriggerSchema = z
   .describe('Plugin trigger type')
   .meta({ id: 'WorkflowTrigger' });
 
+// Existing discovery clients decode a closed enum; new clients use /workflows/automation/discovery.
+export const LegacyWorkflowTriggerSchema = z.enum([
+  WorkflowTrigger.AssetCreate,
+  WorkflowTrigger.AssetMetadataExtraction,
+  WorkflowTrigger.AssetTagged,
+]);
+
 export enum WorkflowType {
   AssetV1 = 'AssetV1',
   // AssetPersonV1 = 'AssetPersonV1',

@@ -766,6 +766,24 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.restoreDefaultRoute).toHaveBeenCalledWith(MlWorkload.Face);
     });
 
+    it('returns work set to run only on a removed computer to the main order (OPS-06)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue({ ...mlDestinationStub.local, id: 'lan' });
+      mocks.mlDestination.getRouteStates.mockResolvedValue([
+        { workload: MlWorkload.Face, destinationId: 'lan', origin: 'pinned', revisionId: 'r1' },
+        { workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id, origin: 'pinned', revisionId: 'r2' },
+        { workload: MlWorkload.Ocr, destinationId: 'lan', origin: 'legacy', revisionId: null },
+      ]);
+      mocks.mlDestination.delete.mockResolvedValue();
+
+      await sut.delete('lan');
+
+      expect(mocks.mlDestination.delete).toHaveBeenCalledWith('lan');
+      expect(mocks.mlDestination.setProcessingOrder).toHaveBeenCalledTimes(1);
+      expect(mocks.mlDestination.setProcessingOrder).toHaveBeenCalledWith(MlWorkload.Face, null);
+      expect(mocks.mlDestination.restoreDefaultRoute).toHaveBeenCalledTimes(1);
+      expect(mocks.mlDestination.restoreDefaultRoute).toHaveBeenCalledWith(MlWorkload.Face);
+    });
+
     it('keeps routing current with the Frameleaf Cloud processing settings', async () => {
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);

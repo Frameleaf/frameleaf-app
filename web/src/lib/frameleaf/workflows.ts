@@ -3,6 +3,8 @@ import type {
   WorkflowCreateDto,
   WorkflowResponseDto,
   WorkflowShareResponseDto,
+  WorkflowSourceDto,
+  WorkflowScheduleDto,
   WorkflowStepDto,
   WorkflowTriggerResponseDto,
   WorkflowUpdateDto,
@@ -53,6 +55,8 @@ export type WorkflowDraftStep = {
 };
 
 export type WorkflowDraft = {
+  source?: WorkflowSourceDto | null;
+  schedule?: WorkflowScheduleDto | null;
   name: string | null;
   description: string | null;
   trigger: string;
@@ -65,6 +69,9 @@ export type WorkflowDraft = {
 export type WorkflowProblem = { step?: number; message: string };
 
 const KNOWN_WORKFLOW_KEYS = new Set([
+  'source',
+  'schedule',
+  'nextRunAt',
   'id',
   'ownerId',
   'trigger',
@@ -171,6 +178,18 @@ export function parseWorkflowDefinition(raw: unknown): Record<string, unknown> &
 /** A draft from a complete definition document, keeping every field this app does not use. */
 export function draftFromDocument(raw: unknown, previous?: WorkflowDraft): WorkflowDraft {
   const value = parseWorkflowDefinition(raw);
+  const hasSource =
+    value.source === null ||
+    (isPlainObject(value.source) &&
+      isPlainObject(value.source.filter) &&
+      Object.keys(value.source).every((key) =>
+        ['filter', 'semantic', 'rollingDates', 'imageEnrichment'].includes(key),
+      ));
+  const hasSchedule =
+    value.schedule === null ||
+    (isPlainObject(value.schedule) &&
+      typeof value.schedule.cron === 'string' &&
+      Object.keys(value.schedule).every((key) => key === 'cron'));
   const previousById = new Map(previous?.steps.filter((step) => step.id).map((step) => [step.id, step]));
   const seenIds = new Set<string>();
   const steps = (value.steps as Record<string, unknown>[]).map((step) => {
@@ -195,11 +214,18 @@ export function draftFromDocument(raw: unknown, previous?: WorkflowDraft): Workf
   });
   return {
     name: (value.name as string | null | undefined) ?? null,
+    ...(hasSource && { source: value.source as WorkflowSourceDto | null }),
+    ...(hasSchedule && { schedule: value.schedule as WorkflowScheduleDto | null }),
     description: (value.description as string | null | undefined) ?? null,
     trigger: value.trigger,
     enabled: value.enabled === true,
     logging: value.logging !== false,
-    extra: { ...(isPlainObject(value.extra) && value.extra), ...split(value, KNOWN_WORKFLOW_KEYS) },
+    extra: {
+      ...(isPlainObject(value.extra) && value.extra),
+      ...split(value, KNOWN_WORKFLOW_KEYS),
+      ...(value.source !== undefined && !hasSource && { source: value.source }),
+      ...(value.schedule !== undefined && !hasSchedule && { schedule: value.schedule }),
+    },
     steps,
   };
 }
@@ -208,6 +234,16 @@ export function draftFromDocument(raw: unknown, previous?: WorkflowDraft): Workf
 export function draftToDocument(draft: WorkflowDraft): Record<string, unknown> {
   return {
     ...draft.extra,
+    ...((draft.source !== undefined || draft.schedule !== undefined) && {
+      extra: {
+        ...(draft.source !== undefined &&
+          draft.extra.source !== undefined && { source: cloneJson(draft.extra.source) }),
+        ...(draft.schedule !== undefined &&
+          draft.extra.schedule !== undefined && { schedule: cloneJson(draft.extra.schedule) }),
+      },
+    }),
+    ...(draft.source !== undefined && { source: cloneJson(draft.source) }),
+    ...(draft.schedule !== undefined && { schedule: cloneJson(draft.schedule) }),
     name: draft.name,
     description: draft.description,
     trigger: draft.trigger,
@@ -253,6 +289,16 @@ export function exportDraft(draft: WorkflowDraft): Record<string, unknown> {
 export function exportDocument(share: WorkflowShareResponseDto): Record<string, unknown> {
   return {
     ...share.extra,
+    ...((share.source !== undefined || share.schedule !== undefined) && {
+      extra: {
+        ...(share.source !== undefined &&
+          share.extra.source !== undefined && { source: cloneJson(share.extra.source) }),
+        ...(share.schedule !== undefined &&
+          share.extra.schedule !== undefined && { schedule: cloneJson(share.extra.schedule) }),
+      },
+    }),
+    ...(share.source !== undefined && { source: cloneJson(share.source) }),
+    ...(share.schedule !== undefined && { schedule: cloneJson(share.schedule) }),
     name: share.name,
     description: share.description,
     trigger: share.trigger,
@@ -268,6 +314,8 @@ export function exportDocument(share: WorkflowShareResponseDto): Record<string, 
 export function draftFromWorkflow(workflow: WorkflowResponseDto): WorkflowDraft {
   return {
     name: workflow.name,
+    ...(workflow.source !== undefined && { source: cloneJson(workflow.source) }),
+    ...(workflow.schedule !== undefined && { schedule: cloneJson(workflow.schedule) }),
     description: workflow.description,
     trigger: workflow.trigger,
     enabled: workflow.enabled,
@@ -303,6 +351,8 @@ const toStepDto = (step: WorkflowDraftStep): WorkflowStepDto => ({
 });
 
 export const draftToCreateDto = (draft: WorkflowDraft): WorkflowCreateDto => ({
+  ...(draft.source !== undefined && { source: cloneJson(draft.source) }),
+  ...(draft.schedule !== undefined && { schedule: cloneJson(draft.schedule) }),
   name: draft.name,
   description: draft.description,
   trigger: draft.trigger,
@@ -460,14 +510,24 @@ export function findMethod(methods: PluginMethodResponseDto[], method: string) {
 
 /** What stops a draft from running with the installed methods and triggers; every step counts. */
 export function workflowProblems(
-  draft: Pick<WorkflowDraft, 'trigger' | 'steps'>,
+  draft: Pick<WorkflowDraft, 'trigger' | 'steps' | 'source' | 'schedule'>,
   methods: PluginMethodResponseDto[],
   triggers: WorkflowTriggerResponseDto[],
 ): WorkflowProblem[] {
   const problems: WorkflowProblem[] = [];
   const trigger = triggers.find((item) => item.trigger === draft.trigger);
   if (!trigger) {
-    problems.push({ message: 'This trigger is unavailable. Scheduled workflows are not supported.' });
+    problems.push({ message: 'This trigger is unavailable.' });
+  }
+  if (
+    trigger &&
+    (['Schedule', 'AssetChanged'].includes(draft.trigger) || draft.schedule) &&
+    !isPlainObject(draft.source?.filter)
+  ) {
+    problems.push({ message: 'Configure matching conditions before enabling this workflow.' });
+  }
+  if (trigger && draft.trigger === 'Schedule' && !draft.schedule) {
+    problems.push({ message: 'Configure a schedule before enabling this workflow.' });
   }
   for (const [index, step] of draft.steps.entries()) {
     const label = `Step ${index + 1}`;
@@ -513,7 +573,7 @@ export type WorkflowPreviewStep = {
  * running still needs the server's workflow service (owner decision FL-146: client-side dry run).
  */
 export function previewWorkflow(
-  draft: Pick<WorkflowDraft, 'trigger' | 'steps'>,
+  draft: Pick<WorkflowDraft, 'trigger' | 'steps' | 'source' | 'schedule'>,
   methods: PluginMethodResponseDto[],
   triggers: WorkflowTriggerResponseDto[],
 ): { problems: WorkflowProblem[]; steps: WorkflowPreviewStep[] } {

@@ -671,6 +671,7 @@ export class AlbumService extends BaseService {
     );
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
+    for (const assetId of newAssetIds) await this.eventRepository.emit('AssetChanged', { assetId });
     // Putting an item in a rule's smart album by hand is a decision the rule keeps (FL-60).
     await this.classificationRepository.recordAlbumAdditions(id, newAssetIds, auth.user.id);
     if (newAssetIds.length > 0) {
@@ -777,6 +778,8 @@ export class AlbumService extends BaseService {
       const added = albumAssetValues.filter((value) => value.albumId === albumId).map(({ assetId }) => assetId);
       await this.classificationRepository.recordAlbumAdditions(albumId, added, auth.user.id);
     }
+    for (const assetId of new Set(albumAssetValues.map((item) => item.assetId)))
+      await this.eventRepository.emit('AssetChanged', { assetId });
     for (const event of events) {
       await this.eventRepository.emit('AlbumUpdate', event);
     }
@@ -844,6 +847,7 @@ export class AlbumService extends BaseService {
     );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
+    for (const assetId of removedIds) await this.eventRepository.emit('AssetChanged', { assetId });
     const isOwner = album.albumUsers.some(({ role, user }) => role === AlbumUserRole.Owner && user.id === auth.user.id);
     await this.recordSmartAlbumRemovals(id, removedIds, auth.user.id, isOwner);
     if (removedIds.length > 0) {

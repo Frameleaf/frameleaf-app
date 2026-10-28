@@ -2,11 +2,14 @@ import { AlbumUserRole, type AlbumResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AlbumHeader from './AlbumHeader.svelte';
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn(() => Promise.resolve()) }));
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {} },
@@ -75,6 +78,20 @@ describe('AlbumHeader', () => {
     vi.clearAllMocks();
     sdkMock.getAlbumMapMarkers.mockResolvedValue([]);
     sdkMock.searchUsers.mockResolvedValue([]);
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: false } as never);
+  });
+
+  it('opens a workflow draft for this editable album without adding any photos', async () => {
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: true } as never);
+    renderHeader(albumAs(AlbumUserRole.Owner));
+    const more = await openMore();
+    await fireEvent.click(await more.findByRole('menuitem', { name: 'Automatically add matching photos' }));
+    await waitFor(() => expect(goto).toHaveBeenCalled());
+    const url = new URL(String(vi.mocked(goto).mock.calls[0][0]), 'https://frameleaf.test');
+    expect(url.searchParams.get('workflowAlbum')).toBe('album-1');
+    expect(url.searchParams.get('workflowName')).toBe('Summer');
+    expect(sdkMock.addAssetsToAlbum).not.toHaveBeenCalled();
+    expect(sdkMock.runWorkflow).not.toHaveBeenCalled();
   });
 
   it('offers the owner every control: add, upload, edit, share, links, activity and delete', async () => {

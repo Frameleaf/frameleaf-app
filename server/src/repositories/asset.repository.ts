@@ -2153,14 +2153,23 @@ export class AssetRepository {
   }
   private async deleteDevelopRevisions(id: string, db: Kysely<DB>): Promise<string[]> {
     const { rows } = await sql<{
+      ownerId: string;
+      batchChargedBytes: number;
       masterPath: string | null;
       previewPath: string | null;
       hdrMasterPath: string | null;
       hdrPreviewPath: string | null;
     }>`
       DELETE FROM public.asset_develop_revision WHERE "assetId" = ${id}::uuid
-      RETURNING "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath"
+      RETURNING "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath","ownerId","batchChargedBytes"
     `.execute(db);
+    for (const row of rows)
+      if (Number(row.batchChargedBytes) > 0)
+        await db
+          .updateTable('user')
+          .set({ quotaUsageInBytes: sql`GREATEST("quotaUsageInBytes"-${row.batchChargedBytes},0)` })
+          .where('id', '=', row.ownerId)
+          .execute();
     return rows
       .flatMap((row) => [row.masterPath, row.previewPath, row.hdrMasterPath, row.hdrPreviewPath])
       .filter((path): path is string => !!path);

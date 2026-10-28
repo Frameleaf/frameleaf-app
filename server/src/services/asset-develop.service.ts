@@ -15,6 +15,7 @@ import sharp from 'sharp';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
 import type { HdrHistogram } from 'src/queue/image-hdr-histogram.js';
+import type { BatchReturnAdmission } from 'src/repositories/develop-batch.repository.js';
 import type { JobOf, RawImageInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -59,6 +60,7 @@ import {
   AssetDevelopRepository,
   type AssetDevelopRevision,
   type AssetDevelopRevisionUpdate,
+  BatchDevelopCancelled,
 } from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -580,6 +582,13 @@ export class AssetDevelopService {
         if (!external) await this.discard([...Object.values(tmp), ...Object.values(outputs)]);
         return JobStatus.Skipped;
       }
+      if (
+        external &&
+        Number(revision.batchChargedBytes) > 0 &&
+        revision.sourceChecksum &&
+        !(await this.currentSourceChecksum(revision.assetId)).equals(revision.sourceChecksum)
+      )
+        throw new DevelopSourceChanged('The original changed while the returned preview rendered');
       // Rendering a version makes it the working version; Revert walks back through history.
       await publishJobResult(async () => {
         if (motion) {
@@ -592,8 +601,10 @@ export class AssetDevelopService {
           await assertPublicationSource(source.id, source.checksum);
         }
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
-        await this.assetDevelopRepository.update(revision.id, publication);
-        await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+        if (!(external && (await this.assetDevelopRepository.publishBatchRendered(revision, publication)))) {
+          await this.assetDevelopRepository.update(revision.id, publication);
+          await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+        }
         if (!external) {
           const accepted = new Set([
             publication.masterPath,
@@ -616,9 +627,10 @@ export class AssetDevelopService {
             ? [...Object.values(tmp), ...Object.values(outputs)]
             : [tmp.master, tmp.preview, outputs.master, outputs.preview],
       );
+      if (external && Number(revision.batchChargedBytes) > 0) await this.queueFileDelete([outputs.preview]);
       jobSignal()?.throwIfAborted();
       if (run?.done) return JobStatus.Skipped;
-      if (error instanceof DevelopRenderCancelled) {
+      if (error instanceof DevelopRenderCancelled || error instanceof BatchDevelopCancelled) {
         await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
         await run?.cancelled();
         return JobStatus.Skipped;
@@ -643,9 +655,15 @@ export class AssetDevelopService {
       }
       this.logger.error(`Develop render failed for revision ${id}: ${message}`);
       await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Failed, error: message });
+      if (Number(revision.batchChargedBytes) > 0)
+        await this.assetDevelopRepository.failBatchRender(
+          id,
+          error instanceof DevelopSourceChanged ? 'source_changed' : 'render_failed',
+        );
       if (external && permanent && revision.masterPath) {
         // A file that no longer answers the original (or is gone) can never become a version.
-        await this.assetDevelopRepository.update(id, { masterPath: null });
+        if (Number(revision.batchChargedBytes) > 0) await this.assetDevelopRepository.releaseBatchMaster(id);
+        else await this.assetDevelopRepository.update(id, { masterPath: null });
         await this.discard([revision.masterPath]);
       }
       return JobStatus.Failed;
@@ -682,8 +700,11 @@ export class AssetDevelopService {
     }
     this.logger.error(`Develop render failed for revision ${id}: ${message}`);
     await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Failed, error: message });
+    if (Number(revision.batchChargedBytes) > 0)
+      await this.assetDevelopRepository.failBatchRender(id, sourceChanged ? 'source_changed' : 'render_failed');
     if (revision.kind === AssetDevelopRevisionKind.External && permanent && revision.masterPath) {
-      await this.assetDevelopRepository.update(id, { masterPath: null });
+      if (Number(revision.batchChargedBytes) > 0) await this.assetDevelopRepository.releaseBatchMaster(id);
+      else await this.assetDevelopRepository.update(id, { masterPath: null });
       await this.discard([revision.masterPath]);
     }
     return JobStatus.Failed;
@@ -758,16 +779,22 @@ export class AssetDevelopService {
    * Records that the original is going out for development elsewhere, with the SHA-256 of its
    * bytes now. The client then downloads the original through the ordinary download route.
    */
-  async createExport(auth: AuthDto, assetId: string): Promise<DevelopExportResponseDto> {
+  async createExport(auth: AuthDto, assetId: string, reservedId?: string): Promise<DevelopExportResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
     const checksum = await this.currentSourceChecksum(assetId);
-    const created = await this.photoToolsRepository.createExport({
+    const create = reservedId
+      ? this.photoToolsRepository.createReservedExport.bind(this.photoToolsRepository)
+      : this.photoToolsRepository.createExport.bind(this.photoToolsRepository);
+    const created = await create({
+      ...(reservedId && { id: reservedId }),
       assetId,
       ownerId: asset.ownerId,
       sourceChecksum: checksum,
       fileName: asset.originalFileName,
     });
+    if (reservedId && !created.sourceChecksum.equals(checksum))
+      throw new ConflictException('The original changed after this export was prepared');
     return this.toExportDto(created, checksum);
   }
 
@@ -783,11 +810,13 @@ export class AssetDevelopService {
     assetId: string,
     dto: AssetDevelopImportDto,
     file: ImportedFile | undefined,
+    batchReturn?: BatchReturnAdmission,
   ): Promise<AssetDevelopRevisionResponseDto> {
     if (!file?.path) {
       throw new BadRequestException('Choose the developed file to bring back');
     }
     let kept: string | undefined;
+    let reservationToken: string | null = null;
     try {
       await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
       const asset = await this.requireEditableStill(assetId);
@@ -838,15 +867,17 @@ export class AssetDevelopService {
         throw new BadRequestException('The file did not arrive intact; nothing was changed, try again');
       }
 
-      const master = path.join(
+      const candidate = path.join(
         StorageCore.getNestedFolder(StorageFolder.Thumbnails, asset.ownerId, asset.id),
         `${asset.id}_develop_import_${randomUUID()}${extension}`,
       );
+      const reservation = batchReturn
+        ? await this.assetDevelopRepository.reserveBatchMaster(asset.ownerId, batchReturn, candidate)
+        : { target: candidate, token: null };
+      const master = reservation.target;
+      reservationToken = reservation.token;
       this.storageRepository.mkdirSync(path.dirname(master));
-      await this.storageRepository.rename(file.path, master);
-      kept = master;
-
-      const revision = await this.assetDevelopRepository.create({
+      const input = {
         assetId,
         ownerId: asset.ownerId,
         recipe: defaultDevelopRecipe(),
@@ -860,13 +891,46 @@ export class AssetDevelopService {
         fileName,
         software: dto.software ?? null,
         masterPath: master,
-      });
+        batchReturn: batchReturn ? { ...batchReturn, sourceIdentity: asset.checksum } : undefined,
+      };
+      let revision: AssetDevelopRevision;
+      if (batchReturn) {
+        kept = master;
+        const result = await this.assetDevelopRepository.moveBatchMaster(
+          asset.ownerId,
+          batchReturn,
+          master,
+          reservationToken,
+          () => this.storageRepository.rename(file.path, master),
+          () => this.assetDevelopRepository.create(input),
+        );
+        if ('quotaExceeded' in result)
+          throw new BadRequestException({ message: 'Your storage is full', code: 'develop_batch_quota' });
+        revision = result.value;
+      } else {
+        await this.storageRepository.rename(file.path, master);
+        kept = master;
+        revision = await this.assetDevelopRepository.create(input);
+      }
+      if (batchReturn && revision.masterPath !== master) await this.queueFileDelete([master]);
       kept = undefined;
       this.logger.log(`Developed file ${fileName} brought back as version ${revision.revision} of asset ${assetId}`);
+      if (batchReturn && !(await this.assetDevelopRepository.queueBatchRevision(revision.id)))
+        return this.toRevisionDto(revision);
       return await this.queueRender(revision, asset.originalFileName);
     } finally {
-      // Whatever was not recorded is removed: the staged upload, or a kept copy with no row.
-      await this.discard([file.path, ...(kept ? [kept] : [])]);
+      try {
+        if (batchReturn && kept)
+          await this.assetDevelopRepository.cleanupFailedBatchMaster(
+            auth.user.id,
+            batchReturn,
+            kept,
+            reservationToken,
+            () => rm(kept!, { force: true }),
+          );
+      } finally {
+        await this.discard([file.path, ...(!batchReturn && kept ? [kept] : [])]);
+      }
     }
   }
 

@@ -49,6 +49,7 @@ import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-autho
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
+import { inheritWorkflowCausation } from 'src/utils/workflow-context.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -550,7 +551,7 @@ export class JobRepository {
   private intent(item: JobItem): QueueIntent {
     const context = queueExecution.getStore();
     const runId = runSubmission.getStore() ?? context?.claim.runId ?? undefined;
-    const data = (item.data ?? {}) as Record<string, unknown>;
+    const data = inheritWorkflowCausation((item.data ?? {}) as Record<string, unknown>);
     const queue = this.getQueueName(item.name);
     const isMl = [
       QueueName.SmartSearch,

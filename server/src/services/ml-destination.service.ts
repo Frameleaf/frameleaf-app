@@ -342,9 +342,16 @@ export class MlDestinationService extends BaseService {
   async delete(id: string): Promise<void> {
     await this.require(id);
     // Routes cascade with the row. FL-456: its work goes to the next place in each workload's
-    // processing order; a workload whose own list named only this kind of place waits until one
-    // is added back. Work never goes to a place outside the list.
+    // processing order. A workload set to run only on this computer had nowhere left to wait for, so
+    // it follows the main order again ("First available, in order") with the route this server makes.
+    const pinned = (await this.mlDestinationRepository.getRouteStates())
+      .filter((route) => route.origin === 'pinned' && route.destinationId === id)
+      .map((route) => route.workload);
     await this.mlDestinationRepository.delete(id);
+    for (const workload of pinned) {
+      await this.mlDestinationRepository.setProcessingOrder(workload, null);
+      await this.mlDestinationRepository.restoreDefaultRoute(workload);
+    }
   }
 
   async grantConsent(

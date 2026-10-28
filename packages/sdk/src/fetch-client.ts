@@ -7116,6 +7116,101 @@ export type DesktopAcceptedQualificationDto = {
     runtimeFingerprint: string;
     sessionId: string;
 };
+export type DevelopBatchSummaryDto = {
+    createdAt: string;
+    id: string;
+    includeSidecars: boolean;
+    itemCount: number;
+    status: DevelopBatchStatus;
+};
+export type DevelopBatchListResponseDto = {
+    items: DevelopBatchSummaryDto[];
+    nextCursor: string | null;
+};
+export type DevelopBatchCreateDto = {
+    assetIds: string[];
+    includeSidecars?: boolean;
+};
+export type DevelopBatchReturnResponseDto = {
+    checksum: string;
+    confirmationId: string;
+    error: string | null;
+    errorCode: string | null;
+    expectedCurrentRevisionId: string | null;
+    id: string;
+    progress: number;
+    revisionId: string | null;
+    status: DevelopBatchReturnStatus;
+};
+export type DevelopBatchItemResponseDto = {
+    assetId: string | null;
+    available: boolean;
+    error: string | null;
+    errorCode: string | null;
+    exportId: string | null;
+    exportName: string | null;
+    fileName: string | null;
+    hasSidecar: boolean;
+    id: string;
+    preparationStatus: DevelopBatchPreparationStatus;
+    returns: DevelopBatchReturnResponseDto[];
+    sourceChecksum: string | null;
+};
+export type DevelopBatchResponseDto = {
+    createdAt: string;
+    id: string;
+    includeSidecars: boolean;
+    items: DevelopBatchItemResponseDto[];
+    status: DevelopBatchStatus;
+};
+export type DevelopBatchCapabilitiesDto = {
+    version: DevelopBatchProtocolVersion;
+};
+export type DevelopBatchConfirmDto = {
+    files: {
+        checksum: string;
+        fileName: string;
+        itemId: string;
+        skip?: boolean;
+    }[];
+};
+export type DevelopBatchImportDto = {
+    confirmationId: string;
+    file?: Blob;
+    renditionChecksum: string;
+};
+export type DevelopBatchManifestDto = {
+    batchId: string;
+    items: {
+        assetId: string | null;
+        exportId: string | null;
+        exportName: string | null;
+        fileName: string | null;
+        hasSidecar: boolean;
+        id: string;
+        sourceChecksum: string | null;
+    }[];
+    skipped: {
+        itemId: string;
+        reason: string;
+    }[];
+    version: DevelopBatchProtocolVersion;
+};
+export type DevelopBatchMatchDto = {
+    files: {
+        checksum: string;
+        fileName: string;
+        itemId?: string;
+        skip?: boolean;
+    }[];
+};
+export type DevelopBatchMatchResponseDto = {
+    checksum: string;
+    fileName: string;
+    index: number;
+    itemId: string | null;
+    status: DevelopBatchMatchStatus;
+};
 export type AssetDevelopMaskAdjustments = {
     /** Black point inside the mask */
     blacks?: number;
@@ -12696,7 +12791,7 @@ export type PluginTemplateStepResponseDto = {
     /** Step plugin method */
     method: string;
 };
-export type PluginTemplateResponseDto = {
+export type LegacyPluginTemplateResponseDto = {
     /** Template description */
     description: string;
     /** Template key (unique across all templates) */
@@ -12705,8 +12800,7 @@ export type PluginTemplateResponseDto = {
     steps: PluginTemplateStepResponseDto[];
     /** Template title */
     title: string;
-    /** Workflow trigger */
-    trigger: WorkflowTrigger;
+    trigger: Trigger;
     /** Ui hints, for example "smart-album" */
     uiHints: string[];
 };
@@ -16951,6 +17045,22 @@ export type WorkflowIssueDto = {
     /** Index of the step the issue belongs to */
     step?: number;
 };
+export type WorkflowScheduleDto = {
+    cron: string;
+};
+export type WorkflowSourceDto = {
+    filter: SearchFilter;
+    imageEnrichment?: ImageEnrichmentFilter;
+    rollingDates?: {
+        days: number;
+        field: Field;
+    }[];
+    semantic?: {
+        maxDistance: number;
+        query?: string;
+        queryAssetId?: string;
+    };
+};
 export type WorkflowStepResponseDto = {
     /** Step configuration, without stored credential values */
     config: {
@@ -16988,6 +17098,9 @@ export type WorkflowResponseDto = {
     logging: boolean;
     /** Workflow name */
     name: string | null;
+    nextRunAt?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     /** Workflow steps */
     steps: WorkflowStepResponseDto[];
     /** Workflow trigger type */
@@ -17024,13 +17137,75 @@ export type WorkflowCreateDto = {
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     steps?: WorkflowStepDto[];
     /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
     trigger: string;
 };
+export type WorkflowCapabilitiesDto = {
+    assetChanged: boolean;
+    batchRuns: boolean;
+    rollingDates: boolean;
+    schedules: boolean;
+    semanticThreshold: boolean;
+    sourceFilters: boolean;
+    timezone: string;
+    version: number;
+};
+export type PluginTemplateResponseDto = {
+    /** Template description */
+    description: string;
+    /** Template key (unique across all templates) */
+    key: string;
+    /** Workflow steps */
+    steps: PluginTemplateStepResponseDto[];
+    /** Template title */
+    title: string;
+    /** Workflow trigger */
+    trigger: WorkflowTrigger;
+    /** Ui hints, for example "smart-album" */
+    uiHints: string[];
+};
 export type WorkflowTriggerResponseDto = {
     /** Trigger type */
     trigger: WorkflowTrigger;
+    /** Workflow types */
+    types: WorkflowType[];
+};
+export type WorkflowDiscoveryResponseDto = {
+    templates: PluginTemplateResponseDto[];
+    triggers: WorkflowTriggerResponseDto[];
+};
+export type WorkflowPreviewDto = {
+    /** Workflow description */
+    description?: string | null;
+    /** Workflow enabled */
+    enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
+    /** Workflow logs run results */
+    logging?: boolean;
+    /** Workflow name */
+    name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
+    steps?: WorkflowStepDto[];
+    /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
+    trigger: string;
+    workflowId?: string;
+};
+export type WorkflowPreviewResponseDto = {
+    actions: string[];
+    count: number;
+    evaluatedAt: string;
+    exampleAssetIds: string[];
+    issues: WorkflowIssueDto[];
+};
+export type LegacyWorkflowTriggerResponseDto = {
+    trigger: Trigger;
     /** Workflow types */
     types: WorkflowType[];
 };
@@ -17047,9 +17222,26 @@ export type WorkflowUpdateDto = {
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     steps?: WorkflowStepDto[];
     /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
     trigger?: string;
+};
+export type WorkflowBatchResponseDto = {
+    completed: number;
+    createdAt: string;
+    error: string | null;
+    failed: number;
+    finishedAt: string | null;
+    id: string;
+    reason: WorkflowBatchReason;
+    skipped: number;
+    snapshotAt: string;
+    status: WorkflowBatchStatus;
+    total: number;
+    updatedAt: string;
+    workflowId: string;
 };
 export type WorkflowLogEntryDto = {
     /** Workflow run date/time */
@@ -17097,6 +17289,9 @@ export type WorkflowShareResponseDto = {
     };
     /** Workflow name */
     name: string | null;
+    nextRunAt?: string | null;
+    schedule?: (WorkflowScheduleDto) | null;
+    source?: (WorkflowSourceDto) | null;
     /** Workflow steps */
     steps: WorkflowShareStepDto[];
     /** Workflow trigger type */
@@ -24560,6 +24755,164 @@ export function renewDesktopWorkerSession({ xFrameleafDesktopProof, desktopWorke
     })));
 }
 /**
+ * List your external editor batches
+ */
+export function getDevelopBatches({ cursor }: {
+    cursor?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopBatchListResponseDto;
+    }>(`/develop-batches${QS.query(QS.explode({
+        cursor
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Create an external editor batch
+ */
+export function createDevelopBatch({ developBatchCreateDto }: {
+    developBatchCreateDto: DevelopBatchCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchResponseDto;
+    }>("/develop-batches", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developBatchCreateDto
+    })));
+}
+/**
+ * Get batch external editor capabilities
+ */
+export function getDevelopBatchCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopBatchCapabilitiesDto;
+    }>("/develop-batches/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * Get resumable external editor batch status
+ */
+export function getDevelopBatch({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopBatchResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel unfinished batch work and retain completed versions
+ */
+export function cancelDevelopBatch({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Confirm mappings and capture working versions for safe activation
+ */
+export function confirmDevelopBatchReturns({ id, developBatchConfirmDto }: {
+    id: string;
+    developBatchConfirmDto: DevelopBatchConfirmDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/confirm`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developBatchConfirmDto
+    })));
+}
+/**
+ * Stream a ZIP of batch originals and associated sidecars
+ */
+export function downloadDevelopBatch({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/develop-batches/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
+ * Import or resume one confirmed returned file idempotently
+ */
+export function importDevelopBatchReturn({ id, itemId, developBatchImportDto }: {
+    id: string;
+    itemId: string;
+    developBatchImportDto: DevelopBatchImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchItemResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/import`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: developBatchImportDto
+    })));
+}
+/**
+ * Prepare or resume one original for a durable editing batch
+ */
+export function prepareDevelopBatchItem({ id, itemId }: {
+    id: string;
+    itemId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchItemResponseDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/prepare`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Get the versioned external editor manifest
+ */
+export function getDevelopBatchManifest({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopBatchManifestDto;
+    }>(`/develop-batches/${encodeURIComponent(id)}/manifest`, {
+        ...opts
+    }));
+}
+/**
+ * Review returned file matches without importing
+ */
+export function matchDevelopBatchReturns({ id, developBatchMatchDto }: {
+    id: string;
+    developBatchMatchDto: DevelopBatchMatchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopBatchMatchResponseDto[];
+    }>(`/develop-batches/${encodeURIComponent(id)}/match`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developBatchMatchDto
+    })));
+}
+/**
  * List develop presets
  */
 export function getDevelopPresets(opts?: Oazapfts.RequestOpts) {
@@ -28387,7 +28740,7 @@ export function searchPluginMethods({ description, enabled, id, name, pluginName
 export function searchPluginTemplates(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: PluginTemplateResponseDto[];
+        data: LegacyPluginTemplateResponseDto[];
     }>("/plugins/templates", {
         ...opts
     }));
@@ -33282,13 +33635,44 @@ export function createWorkflow({ workflowCreateDto }: {
         body: workflowCreateDto
     })));
 }
+export function getWorkflowCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowCapabilitiesDto;
+    }>("/workflows/automation/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * Discover all workflow triggers and plugin templates
+ */
+export function getWorkflowDiscovery(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowDiscoveryResponseDto;
+    }>("/workflows/automation/discovery", {
+        ...opts
+    }));
+}
+export function previewWorkflow({ workflowPreviewDto }: {
+    workflowPreviewDto: WorkflowPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowPreviewResponseDto;
+    }>("/workflows/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: workflowPreviewDto
+    })));
+}
 /**
  * List all workflow triggers
  */
 export function getWorkflowTriggers(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: WorkflowTriggerResponseDto[];
+        data: LegacyWorkflowTriggerResponseDto[];
     }>("/workflows/triggers", {
         ...opts
     }));
@@ -33332,6 +33716,50 @@ export function updateWorkflow({ id, workflowUpdateDto }: {
         method: "PUT",
         body: workflowUpdateDto
     })));
+}
+export function getWorkflowBatches({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowBatchResponseDto[];
+    }>(`/workflows/${encodeURIComponent(id)}/batches`, {
+        ...opts
+    }));
+}
+export function runWorkflow({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+export function getWorkflowBatch({ batchId, id }: {
+    batchId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches/${encodeURIComponent(batchId)}`, {
+        ...opts
+    }));
+}
+export function cancelWorkflowBatch({ batchId, id }: {
+    batchId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: WorkflowBatchResponseDto;
+    }>(`/workflows/${encodeURIComponent(id)}/batches/${encodeURIComponent(batchId)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Retrieve workflow logs
@@ -35176,6 +35604,34 @@ export enum DesktopLibraryWorkload {
     Face = "face",
     Enrichment = "enrichment"
 }
+export enum DevelopBatchStatus {
+    Open = "open",
+    Completed = "completed",
+    Cancelled = "cancelled"
+}
+export enum DevelopBatchPreparationStatus {
+    Pending = "pending",
+    Prepared = "prepared",
+    Failed = "failed",
+    Unavailable = "unavailable"
+}
+export enum DevelopBatchReturnStatus {
+    Confirmed = "confirmed",
+    Imported = "imported",
+    Completed = "completed",
+    Conflict = "conflict",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum DevelopBatchProtocolVersion {
+    $1 = 1
+}
+export enum DevelopBatchMatchStatus {
+    Matched = "matched",
+    Ambiguous = "ambiguous",
+    Unmatched = "unmatched",
+    Skipped = "skipped"
+}
 export enum DevelopPresetMaskKind {
     Radial = "radial",
     Linear = "linear"
@@ -36326,6 +36782,13 @@ export enum WorkflowType {
 }
 export enum WorkflowTrigger {
     AssetCreate = "AssetCreate",
+    AssetChanged = "AssetChanged",
+    Schedule = "Schedule",
+    AssetMetadataExtraction = "AssetMetadataExtraction",
+    AssetTagged = "AssetTagged"
+}
+export enum Trigger {
+    AssetCreate = "AssetCreate",
     AssetMetadataExtraction = "AssetMetadataExtraction",
     AssetTagged = "AssetTagged"
 }
@@ -37351,6 +37814,23 @@ export enum WorkflowIssueCode {
     MethodUnavailable = "method_unavailable",
     MethodIncompatible = "method_incompatible",
     ConfigInvalid = "config_invalid"
+}
+export enum Field {
+    TakenAt = "takenAt",
+    LocalDateTime = "localDateTime",
+    CreatedAt = "createdAt",
+    UpdatedAt = "updatedAt"
+}
+export enum WorkflowBatchReason {
+    Manual = "manual",
+    Schedule = "schedule"
+}
+export enum WorkflowBatchStatus {
+    Pending = "pending",
+    Running = "running",
+    Completed = "completed",
+    Cancelled = "cancelled",
+    Failed = "failed"
 }
 export enum WorkflowResult {
     Completed = "completed",

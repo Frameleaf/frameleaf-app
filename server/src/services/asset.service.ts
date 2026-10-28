@@ -297,6 +297,7 @@ export class AssetService extends BaseService {
     }
 
     if (libraryScope !== undefined) await this.afterLibraryScopeChange(result.scopeIds, auth.user.id);
+    await this.eventRepository.emit('AssetChanged', { assetId: id });
 
     // Locking needs no PIN, but a session without it can no longer read what it just locked (FL-34):
     // answer from the updated row instead of refusing a change that was made.
@@ -576,6 +577,7 @@ export class AssetService extends BaseService {
     // and every album read hides it from everyone but its owner's elevated session, so it is back in
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
+    for (const assetId of ids) await this.eventRepository.emit('AssetChanged', { assetId });
     await this.jobRepository.queueAll(
       [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
     );

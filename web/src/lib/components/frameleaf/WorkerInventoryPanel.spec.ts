@@ -141,7 +141,9 @@ describe('WorkerInventoryPanel (FL-72)', () => {
     render(WorkerInventoryPanel, { inventory: inventory(), destinations: [] });
 
     const first = screen.getByRole('article', { name: 'ML endpoint 1' });
-    expect(within(first).getAllByText('CPU only').length).toBeGreaterThan(0);
+    // OPS-06: the pill says it serves its work; the Graphics line says it does so on the CPU.
+    expect(within(first).getByText('Model ready')).toBeInTheDocument();
+    expect(within(first).getByText(/CPU only/)).toBeInTheDocument();
     expect(within(first).getByText('No credentials in the URL')).toBeInTheDocument();
 
     const video = screen.getByRole('article', { name: 'Workshop GPU' });

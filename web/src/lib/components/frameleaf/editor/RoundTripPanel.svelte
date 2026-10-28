@@ -108,6 +108,8 @@
   };
 </script>
 
+<p><a href="/develop-batches">{$t('frameleaf_batch.manage')}</a></p>
+
 <h3>{$t('frameleaf_editor_roundtrip_heading')}</h3>
 <p>{$t('frameleaf_editor_roundtrip_help')}</p>
 <button type="button" class="ed-button" disabled={exporting} onclick={exportOriginal}>
