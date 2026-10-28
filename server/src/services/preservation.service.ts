@@ -437,13 +437,18 @@ export class PreservationService {
     this.requireAccount(auth);
     const packages = await this.repository.listPackages(auth.user.id);
     const ids = packages.map((item) => item.id);
-    const [counts, operations] = await Promise.all([
+    const [counts, operations, restrictedBookmarks] = await Promise.all([
       this.repository.countItems(ids, { excludeLocked: !this.isUnlocked(auth) }),
       this.repository.latestOperations(auth.user.id, 'packageId', ids),
+      this.isUnlocked(auth) ? Promise.resolve(new Set<string>()) : this.repository.lockedBookmarkPackageIds(ids),
     ]);
     return Promise.all(
       packages.map((item) =>
-        this.mapPackage(auth, item, { counts: counts.get(item.id), operation: operations.get(item.id) }),
+        this.mapPackage(auth, item, {
+          counts: counts.get(item.id),
+          operation: operations.get(item.id),
+          bookmarksRestricted: restrictedBookmarks.has(item.id),
+        }),
       ),
     );
   }
@@ -886,6 +891,7 @@ export class PreservationService {
     preloaded?: {
       counts?: { states: Record<string, number>; locked: number; bytes: number };
       operation?: MediaOperation;
+      bookmarksRestricted: boolean;
     },
   ): Promise<PreservationPackageDto> {
     const unlocked = this.isUnlocked(auth);
@@ -910,6 +916,15 @@ export class PreservationService {
     // The owner chose to include Locked items; beyond that choice an ordinary session learns nothing.
     const lockedContent = item.includeLocked || (unlocked && (counts?.locked ?? 0) > 0);
 
+    const bookmarksRestricted =
+      !unlocked &&
+      (item.includeLocked ||
+        (preloaded
+          ? preloaded.bookmarksRestricted
+          : (await this.repository.lockedBookmarkPackageIds([item.id])).has(item.id)));
+    const selectedBookmarks = asRecord(item.scope).bookmarkIds;
+    const writtenBookmarks = asInt(manifestCounts.bookmarks);
+    const skippedBookmarks = asInt(manifestCounts.bookmarkSkipped);
     return {
       id: item.id,
       name: item.name,
@@ -923,6 +938,13 @@ export class PreservationService {
       createdAt: asIso(item.createdAt)!,
       updatedAt: asIso(item.updatedAt)!,
       expiresAt: asIso(item.expiresAt),
+      bookmarks: bookmarksRestricted
+        ? null
+        : {
+            selected: Array.isArray(selectedBookmarks) ? selectedBookmarks.length : writtenBookmarks + skippedBookmarks,
+            written: writtenBookmarks,
+            skipped: skippedBookmarks,
+          },
       counts: {
         total: Object.values(states).reduce((sum, value) => sum + value, 0),
         pending: states.pending ?? 0,

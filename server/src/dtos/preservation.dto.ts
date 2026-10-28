@@ -203,6 +203,11 @@ const PreservationPackageSchema = z
     updatedAt: z.string().meta({ format: 'date-time' }),
     expiresAt: z.string().meta({ format: 'date-time' }).nullable().describe('When an uploaded package is discarded'),
     counts: PreservationPackageCountsSchema,
+    bookmarks: z
+      .object({ selected: z.int(), written: z.int(), skipped: z.int() })
+      .nullable()
+      .optional()
+      .describe('Saved links, counted separately from originals; withheld when this session cannot read the selection'),
     manifest: PreservationManifestSummarySchema.nullable(),
     verification: PreservationVerificationSchema.nullable(),
     operation: MediaOperationSchema.nullable().describe('The newest job on this package'),

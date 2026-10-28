@@ -12852,6 +12852,12 @@ export type PreservationVerificationDto = {
     unexpected: number;
 };
 export type PreservationPackageDto = {
+    /** Saved links, counted separately from originals; withheld when this session cannot read the selection */
+    bookmarks?: {
+        selected: number;
+        skipped: number;
+        written: number;
+    } | null;
     counts: PreservationPackageCountsDto;
     createdAt: string;
     downloadable: boolean;

@@ -128,6 +128,7 @@ describe(PreservationService.name, () => {
       listItems: vi.fn(),
       lockedItemIds: vi.fn().mockResolvedValue(new Set()),
       hasLockedItems: vi.fn().mockResolvedValue(false),
+      lockedBookmarkPackageIds: vi.fn().mockResolvedValue(new Set()),
       listedItems: vi.fn().mockResolvedValue([]),
       resetFailedItems: vi.fn().mockResolvedValue(0),
       createPackage: vi.fn(),
@@ -300,6 +301,25 @@ describe(PreservationService.name, () => {
   });
 
   describe('reading packages', () => {
+    it('reports saved links separately from originals and withholds restricted package counts', async () => {
+      const found = packageOf({
+        scope: { bookmarkIds: [newUuid(), newUuid(), newUuid()] },
+        manifest: { ...packageOf().manifest, counts: { bookmarks: 2, bookmarkSkipped: 1 } },
+      });
+      repository.getPackage.mockResolvedValue(found);
+      expect((await sut.getPackage(owner, found.id)).bookmarks).toEqual({ selected: 3, written: 2, skipped: 1 });
+      repository.lockedBookmarkPackageIds.mockResolvedValue(new Set([found.id]));
+      expect((await sut.getPackage(owner, found.id)).bookmarks).toBeNull();
+      expect((await sut.getPackage(unlocked, found.id)).bookmarks).toEqual({ selected: 3, written: 2, skipped: 1 });
+    });
+
+    it('batches the privacy lookup when listing saved-link packages', async () => {
+      const packages = [packageOf(), packageOf()];
+      repository.listPackages.mockResolvedValue(packages);
+      await sut.listPackages(owner);
+      expect(repository.lockedBookmarkPackageIds).toHaveBeenCalledExactlyOnceWith(packages.map(({ id }) => id));
+    });
+
     it('answers somebody else’s package exactly like a missing one', async () => {
       repository.getPackage.mockResolvedValue(undefined);
       await expect(sut.getPackage(owner, newUuidV7())).rejects.toBeInstanceOf(NotFoundException);

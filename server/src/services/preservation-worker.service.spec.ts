@@ -1619,6 +1619,34 @@ describe(PreservationWorkerService.name, () => {
         );
       });
 
+      it('reports changed saved-link metadata even when a package has no originals', async () => {
+        const built = buildPackage(0);
+        const bytes = preservationJson([]);
+        built.entries.set('bookmarks.json', Buffer.from('changed'));
+        built.entries.set(
+          'manifest.json',
+          preservationJson({
+            ...built.manifest,
+            schemaVersion: 2,
+            counts: { ...built.manifest.counts, bookmarks: 0 },
+            files: { ...built.manifest.files, 'bookmarks.json': { sha256: hash(bytes).sha256, bytes: bytes.length } },
+          }),
+        );
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload' });
+        repository.getPackageById.mockResolvedValue(found);
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id }),
+          claimToken: newUuid(),
+        });
+        expect(repository.updatePackage).toHaveBeenCalledWith(
+          found.id,
+          expect.objectContaining({
+            verification: expect.objectContaining({ status: 'problems', documentsChanged: ['bookmarks.json'] }),
+          }),
+        );
+      });
+
       it('reports the missing and changed files of a partial package, item by item', async () => {
         const built = buildPackage(3);
         const [kept, lost, altered] = built.index;

@@ -1159,7 +1159,12 @@ export class PreservationWorkerService {
             throw new PreservationPackageError('package_manifest_changed', 'The manifest differs from the one written');
           }
           result.documentsChanged = [];
-          for (const name of [PRESERVATION_ALBUMS_ENTRY, PRESERVATION_PEOPLE_ENTRY, PRESERVATION_TAGS_ENTRY] as const) {
+          for (const name of [
+            PRESERVATION_ALBUMS_ENTRY,
+            PRESERVATION_PEOPLE_ENTRY,
+            PRESERVATION_TAGS_ENTRY,
+            PRESERVATION_BOOKMARKS_ENTRY,
+          ] as const) {
             const expected = manifest.files[name];
             if (!expected) {
               continue;

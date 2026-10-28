@@ -119112,6 +119112,33 @@
       },
       "PreservationPackageDto": {
         "properties": {
+          "bookmarks": {
+            "description": "Saved links, counted separately from originals; withheld when this session cannot read the selection",
+            "nullable": true,
+            "properties": {
+              "selected": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "skipped": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "written": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "selected",
+              "written",
+              "skipped"
+            ],
+            "type": "object"
+          },
           "counts": {
             "$ref": "#/components/schemas/PreservationPackageCountsDto"
           },

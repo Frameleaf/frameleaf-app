@@ -82,6 +82,15 @@ const lockedPackageItem = sql<boolean>`(preservation_item.locked or exists (
 const lockedRestoreItem = sql<boolean>`(preservation_restore_item.locked or exists (
   select 1 from asset_lock where asset_lock."assetId" = preservation_restore_item."assetId"
 ))`;
+const lockedBookmark = sql<boolean>`(bookmark."isLocked" or exists (
+  select 1 from user_metadata preferences
+  where preferences."userId" = bookmark."ownerId" and preferences.key = ${UserMetadataKey.Preferences}
+    and exists (select 1 from bookmark_tag membership
+      join tag_closure closure on closure.id_descendant = membership."tagId"
+      where membership."bookmarkId" = bookmark.id and closure.id_ancestor in (
+        select (jsonb_path_query(preferences.value, '$.privacy.suppression.tagIds[*]') #>> '{}')::uuid
+      ))
+))`;
 /**
  * The database side of preservation packages (FL-74).
  *
@@ -730,6 +739,23 @@ export class PreservationRepository {
         .execute(),
     );
   }
+  /** Frozen selections may become private before publication; read no URLs or notes for this check. */
+  async lockedBookmarkPackageIds(packageIds: string[]): Promise<Set<string>> {
+    if (packageIds.length === 0) return new Set();
+    const { rows } = await sql<{ id: string }>`
+      select package.id from preservation_package package
+      where package.id = ${anyUuid(packageIds)} and exists (
+        select 1 from bookmark where bookmark."ownerId" = package."ownerId"
+          and bookmark.id in (
+            select value::uuid from jsonb_array_elements_text(coalesce(package.scope->'bookmarkIds', '[]'::jsonb))
+            union
+            select value::uuid from jsonb_array_elements_text(coalesce(package.manifest->'bookmarkIds', '[]'::jsonb))
+          ) and ${lockedBookmark}
+      )
+    `.execute(this.db);
+    return new Set(rows.map(({ id }) => id));
+  }
+
   /** Whether any item of the package is Locked in the library now, or was when it was written. */
   async hasLockedItems(packageId: string): Promise<boolean> {
     const row = await this.db
@@ -752,15 +778,7 @@ export class PreservationRepository {
         select 1 from preservation_package package
         join bookmark on bookmark."ownerId" = package."ownerId"
           and bookmark.id in (select value::uuid from jsonb_array_elements_text(coalesce(package.manifest->'bookmarkIds', '[]'::jsonb)))
-        where package.id = ${packageId}::uuid and (bookmark."isLocked" or exists (
-          select 1 from user_metadata preferences
-          where preferences."userId" = bookmark."ownerId" and preferences.key = ${UserMetadataKey.Preferences}
-            and exists (select 1 from bookmark_tag membership
-              join tag_closure closure on closure.id_descendant = membership."tagId"
-              where membership."bookmarkId" = bookmark.id and closure.id_ancestor in (
-                select (jsonb_path_query(preferences.value, '$.privacy.suppression.tagIds[*]') #>> '{}')::uuid
-              ))
-        ))
+        where package.id = ${packageId}::uuid and ${lockedBookmark}
       ) as locked
     `.execute(this.db);
     return rows[0].locked;

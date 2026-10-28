@@ -6,6 +6,8 @@ Find it under **Settings → Import & protection → Originals & preservation**.
 
 Metadata in a media export also carries matching owned saved links: their notes, ratings, workspaces, album and tag memberships, and preview references to included originals. Selecting individual originals exports those originals. A repeated restore reuses the links it restored before; resuming a stopped restore preserves edits to links already completed.
 
+Packages can contain saved links without any originals. The package list counts originals and saved links separately. Link counts are withheld when the package includes Locked links or its selected links have since become private to the current session.
+
 A package is not a backup of the server. It does not contain accounts, sharing, shared spaces, server settings, pets, memories or Studio projects (Studio projects travel as project bundles). Keep your database backups and a separate copy of your originals as well.
 
 ## Export

@@ -192,8 +192,10 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
       );
       expect(manifest.schemaVersion).toBe(2);
       expect(await repo.hasLockedItems(exported!.package.id)).toBe(false);
+      expect(await repo.lockedBookmarkPackageIds([exported!.package.id])).toEqual(new Set());
       await db.updateTable('bookmark').set({ isLocked: true }).where('id', '=', bookmark.id).execute();
       expect(await repo.hasLockedItems(exported!.package.id)).toBe(true);
+      expect(await repo.lockedBookmarkPackageIds([exported!.package.id])).toEqual(new Set([exported!.package.id]));
       await db.updateTable('bookmark').set({ isLocked: false }).where('id', '=', bookmark.id).execute();
 
       await db
@@ -208,6 +210,7 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         )
         .execute();
       expect(await repo.hasLockedItems(exported!.package.id)).toBe(true);
+      expect(await repo.lockedBookmarkPackageIds([exported!.package.id])).toEqual(new Set([exported!.package.id]));
       await db
         .deleteFrom('user_metadata')
         .where('userId', '=', owner.id)
@@ -376,6 +379,9 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
       100,
     );
     expect(linkOnly).toMatchObject({ items: 0, bookmarkItems: 1 });
+    await db.updateTable('bookmark').set({ isLocked: true }).where('id', '=', bookmark.id).execute();
+    expect(await repo.lockedBookmarkPackageIds([linkOnly!.package.id])).toEqual(new Set([linkOnly!.package.id]));
+    await db.updateTable('bookmark').set({ isLocked: false }).where('id', '=', bookmark.id).execute();
     await worker['publishPackage'](linkOnly!.package, commit);
     const linkSource = await files.openPackage('directory', linkOnly!.package.path);
     try {
