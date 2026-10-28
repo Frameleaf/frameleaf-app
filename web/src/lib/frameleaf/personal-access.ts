@@ -85,8 +85,8 @@ export const normalizeKeyPermissions = (selected: Permission[]): Permission[] =>
  * fixed list of existing permissions; "View only" does not download originals (defaulted on FL-367,
  * the owner's question is open), and "View and upload" may not change albums.
  */
-export type KeyPurpose = 'view' | 'upload' | 'view-upload' | 'everything';
-export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'view-upload', 'everything'];
+export type KeyPurpose = 'view' | 'upload' | 'capture' | 'view-upload' | 'everything';
+export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'capture', 'view-upload', 'everything'];
 const VIEW_PERMISSIONS: readonly Permission[] = [
   Permission.AssetRead,
   Permission.AssetView,
@@ -101,6 +101,7 @@ const VIEW_PERMISSIONS: readonly Permission[] = [
 export const PURPOSE_PERMISSIONS: Readonly<Record<KeyPurpose, readonly Permission[]>> = {
   view: VIEW_PERMISSIONS,
   upload: [Permission.AssetUpload],
+  capture: [Permission.CaptureCreate, Permission.CaptureCatalogRead],
   'view-upload': [...VIEW_PERMISSIONS, Permission.AssetUpload],
   everything: [Permission.All],
 };

@@ -141,6 +141,23 @@ describe('personal access (FL-67)', () => {
 });
 
 describe('API key purposes (FL-367)', () => {
+  it('keeps browser capture limited to its own capture and destination catalog operations', () => {
+    expect(PURPOSE_PERMISSIONS.capture).toEqual([Permission.CaptureCreate, Permission.CaptureCatalogRead]);
+    expect(keyPurpose([...PURPOSE_PERMISSIONS.capture])).toBe('capture');
+    expect(keyPurpose([...PURPOSE_PERMISSIONS.capture, Permission.AssetRead])).toBe('custom');
+    for (const permission of [
+      Permission.AssetRead,
+      Permission.AssetView,
+      Permission.AssetUpload,
+      Permission.AssetDelete,
+      Permission.TagCreate,
+      Permission.AlbumShare,
+      Permission.All,
+    ]) {
+      expect(PURPOSE_PERMISSIONS.capture).not.toContain(permission);
+    }
+    expect(keyCanDelete([...PURPOSE_PERMISSIONS.capture])).toBe(false);
+  });
   it('recognises a purpose from its exact permissions, and anything else as your own choice', () => {
     expect(keyPurpose([...PURPOSE_PERMISSIONS.view])).toBe('view');
     expect(keyPurpose([Permission.AssetUpload])).toBe('upload');

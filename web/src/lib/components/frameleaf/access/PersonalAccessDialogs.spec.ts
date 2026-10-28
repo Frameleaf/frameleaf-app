@@ -95,6 +95,21 @@ describe('PinDialog (FL-67)', () => {
 });
 
 describe('ApiKeyDialog (FL-67)', () => {
+  it('creates a browser capture key without silently granting general library access', async () => {
+    sdkMock.createApiKey.mockResolvedValue({
+      apiKey: { id: 'capture-key', name: 'Browser', permissions: [...PURPOSE_PERMISSIONS.capture] },
+      secret: 'synthetic-capture-key',
+    } as never);
+    render(ApiKeyDialog, { onClose: vi.fn() });
+    await typeInto(screen.getByLabelText('frameleaf_access_key_name'), 'Browser');
+    await fireEvent.click(screen.getByRole('radio', { name: /frameleaf_access_key_purpose_capture/ }));
+    await fireEvent.click(screen.getAllByRole('button', { name: 'frameleaf_access_key_create' }).at(-1)!);
+    await waitFor(() =>
+      expect(sdkMock.createApiKey).toHaveBeenCalledWith({
+        apiKeyCreateDto: { name: 'Browser', permissions: [Permission.CaptureCreate, Permission.CaptureCatalogRead] },
+      }),
+    );
+  });
   it('creates a key with the chosen permissions and shows its value once', async () => {
     sdkMock.createApiKey.mockResolvedValue({
       apiKey: { id: 'key-1', name: 'Importer', permissions: [Permission.AssetRead] },
