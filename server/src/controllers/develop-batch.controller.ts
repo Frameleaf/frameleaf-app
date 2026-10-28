@@ -8,6 +8,7 @@ import {
   Injectable,
   Param,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -31,6 +32,8 @@ import {
   DevelopBatchImportDto,
   DevelopBatchItemParamDto,
   DevelopBatchItemResponseDto,
+  DevelopBatchListQueryDto,
+  DevelopBatchListResponseDto,
   DevelopBatchManifestDto,
   DevelopBatchMatchDto,
   DevelopBatchMatchResponseDto,
@@ -102,8 +105,11 @@ export class DevelopBatchController {
   @Get()
   @Authenticated({ permission: Permission.AssetEditGet })
   @Endpoint({ summary: 'List your external editor batches', history: history() })
-  getDevelopBatches(@Auth() auth: AuthDto): Promise<DevelopBatchResponseDto[]> {
-    return this.service.list(auth);
+  getDevelopBatches(
+    @Auth() auth: AuthDto,
+    @Query() { cursor }: DevelopBatchListQueryDto,
+  ): Promise<DevelopBatchListResponseDto> {
+    return this.service.list(auth, cursor);
   }
   @Post()
   @Authenticated({ permission: Permission.AssetEditCreate })

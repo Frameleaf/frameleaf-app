@@ -16,6 +16,7 @@ export async function hasDevelopBatches(): Promise<boolean> {
 
 const reasons = new Set([
   'source_unavailable',
+  'credential_unavailable',
   'source_changed',
   'current_revision_changed',
   'batch_cancelled',

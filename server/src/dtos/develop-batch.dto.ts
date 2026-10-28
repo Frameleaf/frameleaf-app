@@ -65,6 +65,18 @@ export class DevelopBatchCreateDto extends createZodDto(
     .meta({ id: 'DevelopBatchCreateDto' }),
 ) {}
 export class DevelopBatchResponseDto extends createZodDto(batch) {}
+export class DevelopBatchListQueryDto extends createZodDto(z.object({ cursor: z.uuidv4().optional() })) {}
+export class DevelopBatchSummaryDto extends createZodDto(
+  batch
+    .pick({ id: true, status: true, createdAt: true, includeSidecars: true })
+    .extend({ itemCount: z.int().nonnegative().meta({ format: 'int32' }) })
+    .meta({ id: 'DevelopBatchSummaryDto' }),
+) {}
+export class DevelopBatchListResponseDto extends createZodDto(
+  z
+    .object({ items: z.array(DevelopBatchSummaryDto.schema), nextCursor: z.uuidv4().nullable() })
+    .meta({ id: 'DevelopBatchListResponseDto' }),
+) {}
 export class DevelopBatchItemResponseDto extends createZodDto(item) {}
 export class DevelopBatchMatchDto extends createZodDto(
   z.object({ files: z.array(file).min(1) }).meta({ id: 'DevelopBatchMatchDto' }),

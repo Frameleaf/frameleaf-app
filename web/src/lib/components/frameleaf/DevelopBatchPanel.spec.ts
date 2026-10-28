@@ -2,6 +2,7 @@ import {
   cancelDevelopBatch,
   confirmDevelopBatchReturns,
   createDevelopBatch,
+  DevelopBatchReturnStatus,
   getDevelopBatch,
   getDevelopBatchCapabilities,
   getDevelopBatches,
@@ -88,7 +89,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getDevelopBatchCapabilities).mockResolvedValue({ version: 1 } as never);
-  vi.mocked(getDevelopBatches).mockResolvedValue([batch()]);
+  vi.mocked(getDevelopBatches).mockResolvedValue({ items: [{ ...batch(), itemCount: 2 }], nextCursor: null } as never);
   vi.mocked(getDevelopBatch).mockResolvedValue(batch());
   vi.mocked(confirmDevelopBatchReturns).mockResolvedValue(batch());
   vi.mocked(importDevelopBatchReturn).mockResolvedValue(batch().items[0]);
@@ -133,6 +134,42 @@ describe('batch external editor review', () => {
     );
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm matches and import' })).not.toBeDisabled());
   });
+  it('keeps another explicit mapping while skipping and unskipping a file', async () => {
+    vi.mocked(matchDevelopBatchReturns).mockImplementation(
+      async ({ developBatchMatchDto }) =>
+        developBatchMatchDto.files.map((f, index) => ({
+          index,
+          fileName: f.fileName,
+          checksum: f.checksum,
+          itemId: f.skip ? null : (f.itemId ?? (index === 0 ? 'item-2' : null)),
+          status: f.skip ? 'skipped' : f.itemId || index === 0 ? 'matched' : 'unmatched',
+        })) as never,
+    );
+    mount();
+    await choose(['return.png', 'other.png']);
+    await fireEvent.change(screen.getByLabelText('Photo for return.png'), { target: { value: 'item-1' } });
+    await waitFor(() => expect(screen.getByLabelText('Photo for return.png')).toHaveValue('item-1'));
+    await fireEvent.change(screen.getByLabelText('Photo for other.png'), { target: { value: 'skip' } });
+    await waitFor(() =>
+      expect(matchDevelopBatchReturns).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          developBatchMatchDto: {
+            files: [expect.objectContaining({ itemId: 'item-1' }), expect.objectContaining({ skip: true })],
+          },
+        }),
+      ),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm matches and import' }));
+    await waitFor(() =>
+      expect(confirmDevelopBatchReturns).toHaveBeenCalledWith(
+        expect.objectContaining({
+          developBatchConfirmDto: { files: [expect.objectContaining({ itemId: 'item-1' })] },
+        }),
+      ),
+    );
+    await fireEvent.change(screen.getByLabelText('Photo for other.png'), { target: { value: 'item-2' } });
+    await waitFor(() => expect(screen.getByLabelText('Photo for other.png')).toHaveValue('item-2'));
+  });
   it('preserves partial successes and retries only the failed local file', async () => {
     vi.mocked(matchDevelopBatchReturns).mockResolvedValue([
       { index: 0, fileName: 'return.png', checksum: 'a'.repeat(64), itemId: 'item-1', status: 'matched' },
@@ -162,11 +199,42 @@ describe('batch external editor review', () => {
     await waitFor(() => expect(cancelDevelopBatch).toHaveBeenCalledWith({ id: 'batch-1' }));
     await waitFor(() => expect(screen.queryByLabelText('Choose returned files')).not.toBeInTheDocument());
   });
+  it('explains a revoked confirmation credential on an inactive version', async () => {
+    const value = batch();
+    value.items[0].returns[0] = {
+      ...value.items[0].returns[0],
+      status: DevelopBatchReturnStatus.Conflict,
+      errorCode: 'credential_unavailable',
+    };
+    vi.mocked(getDevelopBatch).mockResolvedValue(value);
+    mount();
+    await screen.findByText(
+      'The session or API key used to confirm this edit is no longer authorized. This version was kept inactive in Versions.',
+    );
+  });
   it('resumes the batch selected from the list', async () => {
-    vi.mocked(getDevelopBatches).mockResolvedValue([batch(), { ...batch(), id: 'batch-2' }]);
+    vi.mocked(getDevelopBatches).mockResolvedValue({
+      items: [
+        { ...batch(), itemCount: 2 },
+        { ...batch(), id: 'batch-2', itemCount: 2 },
+      ],
+      nextCursor: null,
+    } as never);
     mount();
     const select = await screen.findByLabelText('Resume a batch');
     await fireEvent.change(select, { target: { value: 'batch-2' } });
+    await waitFor(() => expect(getDevelopBatch).toHaveBeenCalledWith({ id: 'batch-2' }));
+  });
+  it('loads older summary pages on request and opens their detail', async () => {
+    vi.mocked(getDevelopBatches)
+      .mockResolvedValueOnce({ items: [{ ...batch(), itemCount: 2 }], nextCursor: 'cursor-1' } as never)
+      .mockResolvedValueOnce({ items: [{ ...batch(), id: 'batch-2', itemCount: 2 }], nextCursor: null } as never);
+    mount();
+    const more = await screen.findByRole('button', { name: 'Load More' });
+    await waitFor(() => expect(more).not.toBeDisabled());
+    await fireEvent.click(more);
+    await waitFor(() => expect(getDevelopBatches).toHaveBeenCalledWith({ cursor: 'cursor-1' }));
+    await fireEvent.change(screen.getByLabelText('Resume a batch'), { target: { value: 'batch-2' } });
     await waitFor(() => expect(getDevelopBatch).toHaveBeenCalledWith({ id: 'batch-2' }));
   });
   it.each([404, 405])('shows old-server capability only for HTTP %s', async (status) => {

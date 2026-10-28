@@ -6711,6 +6711,21 @@ export type DesktopAcceptedQualificationDto = {
     runtimeFingerprint: string;
     sessionId: string;
 };
+export type DevelopBatchSummaryDto = {
+    createdAt: string;
+    id: string;
+    includeSidecars: boolean;
+    itemCount: number;
+    status: DevelopBatchStatus;
+};
+export type DevelopBatchListResponseDto = {
+    items: DevelopBatchSummaryDto[];
+    nextCursor: string | null;
+};
+export type DevelopBatchCreateDto = {
+    assetIds: string[];
+    includeSidecars?: boolean;
+};
 export type DevelopBatchReturnResponseDto = {
     checksum: string;
     confirmationId: string;
@@ -6742,10 +6757,6 @@ export type DevelopBatchResponseDto = {
     includeSidecars: boolean;
     items: DevelopBatchItemResponseDto[];
     status: DevelopBatchStatus;
-};
-export type DevelopBatchCreateDto = {
-    assetIds: string[];
-    includeSidecars?: boolean;
 };
 export type DevelopBatchCapabilitiesDto = {
     version: DevelopBatchProtocolVersion;
@@ -24129,11 +24140,15 @@ export function renewDesktopWorkerSession({ xFrameleafDesktopProof, desktopWorke
 /**
  * List your external editor batches
  */
-export function getDevelopBatches(opts?: Oazapfts.RequestOpts) {
+export function getDevelopBatches({ cursor }: {
+    cursor?: string;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: DevelopBatchResponseDto[];
-    }>("/develop-batches", {
+        data: DevelopBatchListResponseDto;
+    }>(`/develop-batches${QS.query(QS.explode({
+        cursor
+    }))}`, {
         ...opts
     }));
 }
@@ -34893,6 +34908,11 @@ export enum DesktopLibraryWorkload {
     Face = "face",
     Enrichment = "enrichment"
 }
+export enum DevelopBatchStatus {
+    Open = "open",
+    Completed = "completed",
+    Cancelled = "cancelled"
+}
 export enum DevelopBatchPreparationStatus {
     Pending = "pending",
     Prepared = "prepared",
@@ -34905,11 +34925,6 @@ export enum DevelopBatchReturnStatus {
     Completed = "completed",
     Conflict = "conflict",
     Failed = "failed",
-    Cancelled = "cancelled"
-}
-export enum DevelopBatchStatus {
-    Open = "open",
-    Completed = "completed",
     Cancelled = "cancelled"
 }
 export enum DevelopBatchProtocolVersion {

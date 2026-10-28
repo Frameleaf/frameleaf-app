@@ -891,7 +891,7 @@ export class AssetDevelopService {
         masterPath: master,
         batchReturn: batchReturn ? { ...batchReturn, sourceIdentity: asset.checksum } : undefined,
       });
-      if (batchReturn && revision.masterPath !== master) await this.discard([master]);
+      if (batchReturn && revision.masterPath !== master) await this.queueFileDelete([master]);
       kept = undefined;
       this.logger.log(`Developed file ${fileName} brought back as version ${revision.revision} of asset ${assetId}`);
       if (batchReturn && !(await this.assetDevelopRepository.queueBatchRevision(revision.id)))
@@ -900,8 +900,12 @@ export class AssetDevelopService {
     } finally {
       // Whatever was not recorded is removed: the staged upload, or a kept copy with no row.
       if (batchReturn && kept) {
-        const abandoned = await this.assetDevelopRepository.abandonBatchMaster(auth.user.id, batchReturn);
-        if (abandoned) await this.queueFileDelete([abandoned]);
+        let abandoned: string | undefined;
+        try {
+          abandoned = await this.assetDevelopRepository.abandonBatchMaster(auth.user.id, batchReturn);
+        } finally {
+          await this.queueFileDelete([...new Set([kept, ...(abandoned ? [abandoned] : [])])]);
+        }
       }
       await this.discard([file.path, ...(!batchReturn && kept ? [kept] : [])]);
     }

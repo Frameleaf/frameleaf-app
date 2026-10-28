@@ -7,9 +7,11 @@ import {
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
+import { Permission } from 'src/enum.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
+import { liveBatchGrant } from 'src/utils/develop-batch-grant.js';
 import { assertRenderableDevelopRecipe, developEnvelope, preserveDevelopEnvelope } from 'src/utils/develop-envelope.js';
 import { developRenderArtifacts } from 'src/utils/develop-recipe.js';
 
@@ -523,36 +525,35 @@ export class AssetDevelopRepository {
           .select('assetId')
           .where('assetId', '=', revision.assetId)
           .executeTakeFirst();
-        const grant =
-          returned.locked && returned.sessionId
-            ? await tx
-                .selectFrom('session')
-                .select('id')
-                .where('id', '=', returned.sessionId)
-                .where('userId', '=', revision.ownerId)
-                .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
-                .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
-                .executeTakeFirst()
-            : undefined;
+        const grant = await liveBatchGrant(
+          tx,
+          revision.ownerId,
+          returned.sessionId,
+          returned.apiKeyId,
+          Permission.AssetEditCreate,
+          true,
+        );
         const current = await sql<{
           id: string;
         }>`SELECT id FROM ${TABLE} WHERE "assetId"=${revision.assetId}::uuid AND "isCurrent"`.execute(tx);
+        const grantUnavailable = grant === null || (returned.locked && !grant);
         const error =
           batch.status === 'cancelled' || returned.status === 'cancelled'
             ? 'Batch cancelled'
-            : !asset ||
-                asset.ownerId !== revision.ownerId ||
-                !returned.sourceIdentity ||
-                !Buffer.from(asset.checksum).equals(returned.sourceIdentity) ||
-                asset.deletedAt ||
-                asset.isOffline ||
-                asset.visibility === 'hidden' ||
-                !!locked !== returned.locked ||
-                (returned.locked && !grant)
-              ? 'The original is no longer available for this confirmed edit'
-              : returned.activationInvalidated || (current.rows[0]?.id ?? null) !== returned.expectedCurrentRevisionId
-                ? 'A newer working version was selected after confirmation; this returned version was kept inactive'
-                : null;
+            : grantUnavailable
+              ? 'The confirming session or API key is no longer authorized; this version was kept inactive'
+              : !asset ||
+                  asset.ownerId !== revision.ownerId ||
+                  !returned.sourceIdentity ||
+                  !Buffer.from(asset.checksum).equals(returned.sourceIdentity) ||
+                  asset.deletedAt ||
+                  asset.isOffline ||
+                  asset.visibility === 'hidden' ||
+                  !!locked !== returned.locked
+                ? 'The original is no longer available for this confirmed edit'
+                : returned.activationInvalidated || (current.rows[0]?.id ?? null) !== returned.expectedCurrentRevisionId
+                  ? 'A newer working version was selected after confirmation; this returned version was kept inactive'
+                  : null;
         await this.update(revision.id, patch);
         if (!error) {
           if ((current.rows[0]?.id ?? null) !== revision.id)
@@ -570,17 +571,18 @@ export class AssetDevelopRepository {
             errorCode: error
               ? batch.status === 'cancelled' || returned.status === 'cancelled'
                 ? 'batch_cancelled'
-                : !asset ||
-                    asset.ownerId !== revision.ownerId ||
-                    !returned.sourceIdentity ||
-                    !Buffer.from(asset.checksum).equals(returned.sourceIdentity) ||
-                    asset.deletedAt ||
-                    asset.isOffline ||
-                    asset.visibility === 'hidden' ||
-                    !!locked !== returned.locked ||
-                    (returned.locked && !grant)
-                  ? 'source_unavailable'
-                  : 'current_revision_changed'
+                : grantUnavailable
+                  ? 'credential_unavailable'
+                  : !asset ||
+                      asset.ownerId !== revision.ownerId ||
+                      !returned.sourceIdentity ||
+                      !Buffer.from(asset.checksum).equals(returned.sourceIdentity) ||
+                      asset.deletedAt ||
+                      asset.isOffline ||
+                      asset.visibility === 'hidden' ||
+                      !!locked !== returned.locked
+                    ? 'source_unavailable'
+                    : 'current_revision_changed'
               : null,
           })
           .where('id', '=', returned.id)

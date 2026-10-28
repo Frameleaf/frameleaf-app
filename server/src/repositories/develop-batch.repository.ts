@@ -4,7 +4,10 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { DevelopBatchResponseDto } from 'src/dtos/develop-batch.dto.js';
 import type { DB } from 'src/schema/index.js';
+import { Permission } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { anyUuid } from 'src/utils/database.js';
+import { liveBatchGrant } from 'src/utils/develop-batch-grant.js';
 
 export type BatchReturnAdmission = {
   batchId: string;
@@ -19,6 +22,9 @@ export type BatchItem = DevelopBatchResponseDto['items'][number];
 export class DevelopBatchRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
     this.db = publicationDatabase(db);
+  }
+  async liveGrant(ownerId: string, sessionId: string | null, apiKeyId: string | null, permission: Permission) {
+    return liveBatchGrant(this.db, ownerId, sessionId, apiKeyId, permission);
   }
   async create(
     ownerId: string,
@@ -94,13 +100,33 @@ export class DevelopBatchRepository {
   async listOwners() {
     return this.db.selectFrom('user').select('id').execute();
   }
-  async list(ownerId: string) {
-    return this.db
-      .selectFrom('develop_batch')
-      .select('id')
-      .where('ownerId', '=', ownerId)
-      .orderBy('createdAt', 'desc')
-      .execute();
+  async list(ownerId: string, cursor?: string) {
+    const anchor = cursor
+      ? await this.db
+          .selectFrom('develop_batch')
+          .select(['id', 'createdAt'])
+          .where('ownerId', '=', ownerId)
+          .where('id', '=', cursor)
+          .executeTakeFirst()
+      : undefined;
+    if (cursor && !anchor) throw new NotFoundException('Editing batch cursor not found');
+    const { rows } = await sql<{
+      id: string;
+      createdAt: Date;
+      includeSidecars: boolean;
+      status: 'open' | 'completed' | 'cancelled';
+      itemCount: number;
+    }>`
+      SELECT b.id,b."createdAt",b."includeSidecars",count(item.id)::int AS "itemCount",
+        CASE WHEN b.status='cancelled' THEN 'cancelled' WHEN count(item.id)>0 AND bool_and(EXISTS (SELECT 1 FROM develop_batch_return r WHERE r."itemId"=item.id AND r.status IN ('completed','conflict'))) THEN 'completed' ELSE 'open' END AS status
+      FROM (SELECT * FROM develop_batch WHERE "ownerId"=${ownerId}::uuid
+        ${anchor ? sql`AND ("createdAt",id)<(SELECT "createdAt",id FROM develop_batch WHERE id=${anchor.id}::uuid AND "ownerId"=${ownerId}::uuid)` : sql``}
+        ORDER BY "createdAt" DESC,id DESC LIMIT 51) b
+      LEFT JOIN develop_batch_item item ON item."batchId"=b.id GROUP BY b.id,b."createdAt",b."includeSidecars",b.status
+      ORDER BY b."createdAt" DESC,b.id DESC`.execute(this.db);
+    const hasMore = rows.length > 50;
+    const page = rows.slice(0, 50).map((row) => ({ ...row, createdAt: new Date(row.createdAt).toISOString() }));
+    return { items: page, nextCursor: hasMore ? page.at(-1)!.id : null };
   }
   async get(ownerId: string, id: string, itemId?: string): Promise<DevelopBatchResponseDto> {
     const batch = await this.db
@@ -177,7 +203,13 @@ export class DevelopBatchRepository {
       })),
     };
   }
-  async confirm(ownerId: string, id: string, sessionId: string | null, files: { itemId: string; checksum: string }[]) {
+  async confirm(
+    ownerId: string,
+    id: string,
+    sessionId: string | null,
+    apiKeyId: string | null,
+    files: { itemId: string; checksum: string }[],
+  ) {
     await this.db.transaction().execute(async (tx) => {
       const batch = await tx
         .selectFrom('develop_batch')
@@ -188,17 +220,22 @@ export class DevelopBatchRepository {
         .executeTakeFirst();
       if (!batch) throw new NotFoundException('Editing batch not found');
       if (batch.status === 'cancelled') throw new ConflictException('This batch was cancelled');
+      const items = await tx
+        .selectFrom('develop_batch_item as item')
+        .innerJoin('asset', 'asset.id', 'item.assetId')
+        .select(['item.id', 'item.assetId'])
+        .where('item.id', '=', anyUuid(files.map((file) => file.itemId)))
+        .where('item.batchId', '=', id)
+        .where('asset.ownerId', '=', ownerId)
+        .where('asset.deletedAt', 'is', null)
+        .execute();
+      const byId = new Map(items.map((item) => [item.id, item]));
+      if (files.some((file) => !byId.has(file.itemId))) throw new NotFoundException('Editing batch item not found');
+      for (const assetId of [...new Set(items.map((item) => item.assetId))].sort()) {
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${assetId}`},0))`.execute(tx);
+      }
       for (const file of files) {
-        const item = await tx
-          .selectFrom('develop_batch_item as item')
-          .innerJoin('asset', 'asset.id', 'item.assetId')
-          .select(['item.id', 'item.assetId'])
-          .where('item.id', '=', file.itemId)
-          .where('item.batchId', '=', id)
-          .where('asset.ownerId', '=', ownerId)
-          .where('asset.deletedAt', 'is', null)
-          .executeTakeFirst();
-        if (!item) throw new NotFoundException('Editing batch item not found');
+        const item = byId.get(file.itemId)!;
         const existing = await tx
           .selectFrom('develop_batch_return')
           .selectAll()
@@ -206,9 +243,6 @@ export class DevelopBatchRepository {
           .where('checksum', '=', file.checksum)
           .executeTakeFirst();
         if (existing) continue;
-        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${item.assetId}`},0))`.execute(
-          tx,
-        );
         const { rows } = await sql<{
           id: string;
         }>`SELECT id FROM asset_develop_revision WHERE "assetId"=${item.assetId}::uuid AND "isCurrent"`.execute(tx);
@@ -226,6 +260,7 @@ export class DevelopBatchRepository {
             expectedCurrentRevisionId: rows[0]?.id ?? null,
             locked: !!locked,
             sessionId,
+            apiKeyId,
           })
           .execute();
       }

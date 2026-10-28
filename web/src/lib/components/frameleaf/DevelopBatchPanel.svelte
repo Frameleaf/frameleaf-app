@@ -11,6 +11,7 @@
     importDevelopBatchReturn,
     matchDevelopBatchReturns,
     type DevelopBatchResponseDto,
+    type DevelopBatchSummaryDto,
     type DevelopBatchItemResponseDto,
     type DevelopBatchMatchResponseDto,
   } from '@frameleaf/sdk';
@@ -19,7 +20,8 @@
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
   let { assetIds = [], initialBatchId }: { assetIds?: string[]; initialBatchId?: string } = $props();
-  let batches = $state<DevelopBatchResponseDto[]>([]),
+  let batches = $state<DevelopBatchSummaryDto[]>([]),
+    nextCursor = $state<string | null>(null),
     batch = $state<DevelopBatchResponseDto | null>(null),
     files = $state<File[]>([]),
     matches = $state<DevelopBatchMatchResponseDto[]>([]);
@@ -50,7 +52,9 @@
     error = reason(batchErrorCode(error_));
   };
   const load = async () => {
-    batches = await getDevelopBatches();
+    const page = await getDevelopBatches({});
+    batches = page.items;
+    nextCursor = page.nextCursor;
     if (batch) {
       batch = await getDevelopBatch({ id: batch.id });
     }
@@ -65,6 +69,14 @@
     } finally {
       busy = false;
     }
+  };
+  const loadMore = async () => {
+    if (!nextCursor) {
+      return;
+    }
+    const page = await getDevelopBatches({ cursor: nextCursor });
+    batches = [...batches, ...page.items];
+    nextCursor = page.nextCursor;
   };
   const selectBatch = async (id: string) => {
     batch = await getDevelopBatch({ id });
@@ -156,7 +168,7 @@
           skip: true,
         }),
         ...((row.index === index ? itemId : row.itemId) &&
-          itemId !== 'skip' && { itemId: (row.index === index ? itemId : row.itemId)! }),
+          (row.index !== index || itemId !== 'skip') && { itemId: (row.index === index ? itemId : row.itemId)! }),
       }));
       matches = await matchDevelopBatchReturns({ id: batch.id, developBatchMatchDto: { files: metadata } });
     });
@@ -266,11 +278,14 @@
       >
         <option value="">{$t('frameleaf_batch.choose')}</option>
         {#each batches as entry (entry.id)}<option value={entry.id}
-            >{new Date(entry.createdAt).toLocaleString()} · {entry.items.length} · {$t(
+            >{new Date(entry.createdAt).toLocaleString()} · {entry.itemCount} · {$t(
               `frameleaf_batch.${entry.status}` as Translations,
             )}</option
           >{/each}
       </select>
+      {#if nextCursor}<Button disabled={busy || uploading} onclick={() => void perform(loadMore)}
+          >{$t('load_more')}</Button
+        >{/if}
     {/if}
     {#if batch}
       <p role="status">{$t('frameleaf_batch.prepared_count', { values: { prepared, total: batch.items.length } })}</p>
@@ -316,24 +331,22 @@
             {#each matches as row (row.index)}
               <li>
                 <strong>{row.fileName}</strong><span>{$t(`frameleaf_batch.${row.status}` as Translations)}</span>
-                {#if row.status !== 'skipped'}
-                  <label for={`batch-map-${row.index}`}
-                    >{$t('frameleaf_batch.map_file', { values: { file: row.fileName } })}</label
+                <label for={`batch-map-${row.index}`}
+                  >{$t('frameleaf_batch.map_file', { values: { file: row.fileName } })}</label
+                >
+                <select
+                  id={`batch-map-${row.index}`}
+                  value={row.status === 'skipped' ? 'skip' : (row.itemId ?? '')}
+                  disabled={busy || uploading}
+                  onchange={(event) => void mapFile(row.index, event.currentTarget.value)}
+                >
+                  <option value="">{$t('frameleaf_batch.choose_photo')}</option><option value="skip"
+                    >{$t('frameleaf_batch.skip_file')}</option
                   >
-                  <select
-                    id={`batch-map-${row.index}`}
-                    value={row.itemId ?? ''}
-                    disabled={busy || uploading}
-                    onchange={(event) => void mapFile(row.index, event.currentTarget.value)}
-                  >
-                    <option value="">{$t('frameleaf_batch.choose_photo')}</option><option value="skip"
-                      >{$t('frameleaf_batch.skip_file')}</option
-                    >
-                    {#each batch.items.filter((item) => item.available && item.preparationStatus === 'prepared') as item (item.id)}<option
-                        value={item.id}>{item.fileName} · {item.exportId?.slice(0, 8)}</option
-                      >{/each}
-                  </select>
-                {/if}
+                  {#each batch.items.filter((item) => item.available && item.preparationStatus === 'prepared') as item (item.id)}<option
+                      value={item.id}>{item.fileName} · {item.exportId?.slice(0, 8)}</option
+                    >{/each}
+                </select>
                 {#if localErrors[row.index]}<p role="alert">{localErrors[row.index]}</p>{/if}
               </li>
             {/each}

@@ -12,6 +12,7 @@ import { DevelopExportTable } from 'src/schema/tables/photo-tools.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Index({ name: 'IDX_develop_batch_ownerId', columns: ['ownerId'] })
+@Index({ name: 'IDX_develop_batch_owner_cursor', columns: ['ownerId', 'createdAt', 'id'] })
 @Table('develop_batch')
 @Check({ name: 'develop_batch_status_check', expression: "status IN ('open','cancelled')" })
 export class DevelopBatchTable {
@@ -65,6 +66,7 @@ export class DevelopBatchReturnTable {
   @Column({ type: 'bytea', nullable: true }) sourceIdentity!: Buffer | null;
   @Column({ type: 'boolean' }) locked!: boolean;
   @Column({ type: 'uuid', nullable: true }) sessionId!: string | null;
+  @Column({ type: 'uuid', nullable: true }) apiKeyId!: string | null;
   @Column({ type: 'text', default: "'confirmed'" }) status!: Generated<string>;
   @Column({ type: 'text', nullable: true }) error!: string | null;
   @Column({ type: 'text', nullable: true }) errorCode!: string | null;

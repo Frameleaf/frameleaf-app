@@ -3694,6 +3694,7 @@
     "progress": "{completed} of {total} files uploaded",
     "reason_authentication_required": "Sign in again to continue this batch.",
     "reason_batch_cancelled": "Unfinished work was cancelled. Completed versions are retained.",
+    "reason_credential_unavailable": "The session or API key used to confirm this edit is no longer authorized. This version was kept inactive in Versions.",
     "reason_current_revision_changed": "The working version changed after confirmation. This returned version was kept inactive in Versions.",
     "reason_develop_batch_quota": "Your storage is full. Free some space, then retry this file.",
     "reason_export_failed": "The original could not be prepared. Check that it is available, then retry.",

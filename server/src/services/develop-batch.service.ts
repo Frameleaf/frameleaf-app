@@ -97,9 +97,8 @@ export class DevelopBatchService {
     }
     return this.getItem(auth, id, itemId);
   }
-  async list(auth: AuthDto) {
-    const batches = await this.repository.list(auth.user.id);
-    return Promise.all(batches.map(({ id }) => this.get(auth, id)));
+  async list(auth: AuthDto, cursor?: string) {
+    return this.repository.list(auth.user.id, cursor);
   }
   async get(auth: AuthDto, id: string): Promise<DevelopBatchResponseDto & { includeSidecars: boolean }> {
     const batch = await this.repository.get(auth.user.id, id);
@@ -210,6 +209,7 @@ export class DevelopBatchService {
     sidecar: boolean,
   ): AsyncGenerator<Buffer> {
     await this.repository.requireOpen(auth.user.id, id);
+    auth = await this.liveAuth(auth, Permission.AssetDownload);
     const asset = await this.requireAsset(auth, item.assetId!);
     await requireAccess(this.access, { auth, permission: Permission.AssetDownload, ids: [asset.id] });
     if ((await this.crypto.hashFile(asset.originalPath, 'sha256')).toString('hex') !== item.sourceChecksum)
@@ -226,6 +226,8 @@ export class DevelopBatchService {
       for await (const bytes of stream) {
         if (Date.now() >= nextCheck) {
           await this.repository.requireOpen(auth.user.id, id);
+          auth = await this.liveAuth(auth, Permission.AssetDownload);
+          await this.requireAsset(auth, asset.id);
           await requireAccess(this.access, { auth, permission: Permission.AssetDownload, ids: [asset.id] });
           nextCheck = Date.now() + 500;
         }
@@ -234,6 +236,16 @@ export class DevelopBatchService {
     } finally {
       stream.destroy();
     }
+  }
+  private async liveAuth(auth: AuthDto, permission: Permission): Promise<AuthDto> {
+    const elevated = await this.repository.liveGrant(
+      auth.user.id,
+      auth.session?.id ?? null,
+      auth.apiKey?.id ?? null,
+      permission,
+    );
+    if (elevated === null) throw new ForbiddenException('The credential grant is no longer available');
+    return auth.session ? { ...auth, session: { ...auth.session, hasElevatedPermission: elevated } } : auth;
   }
   async match(auth: AuthDto, id: string, dto: DevelopBatchMatchDto) {
     const batch = await this.get(auth, id);
@@ -250,6 +262,7 @@ export class DevelopBatchService {
     );
   }
   async confirm(auth: AuthDto, id: string, dto: DevelopBatchConfirmDto) {
+    auth = await this.liveAuth(auth, Permission.AssetEditCreate);
     const matches = await this.match(auth, id, dto);
     if (matches.some((row) => row.status !== 'matched'))
       throw new BadRequestException('Choose one batch photo for each returned file before confirming');
@@ -257,6 +270,7 @@ export class DevelopBatchService {
       auth.user.id,
       id,
       auth.session?.id ?? null,
+      auth.apiKey?.id ?? null,
       dto.files.map((file) => ({ itemId: file.itemId, checksum: file.checksum })),
     );
     return this.get(auth, id);

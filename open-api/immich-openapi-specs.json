@@ -21507,16 +21507,24 @@
     "/develop-batches": {
       "get": {
         "operationId": "getDevelopBatches",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/DevelopBatchResponseDto"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/DevelopBatchListResponseDto"
                 }
               }
             },
@@ -79278,6 +79286,27 @@
         ],
         "type": "object"
       },
+      "DevelopBatchListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DevelopBatchSummaryDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "DevelopBatchManifestDto": {
         "properties": {
           "batchId": {
@@ -79574,6 +79603,39 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "DevelopBatchSummaryDto": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "includeSidecars": {
+            "type": "boolean"
+          },
+          "itemCount": {
+            "format": "int32",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DevelopBatchStatus"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "includeSidecars",
+          "itemCount",
+          "status"
+        ],
+        "type": "object"
       },
       "DevelopExportResponseDto": {
         "properties": {

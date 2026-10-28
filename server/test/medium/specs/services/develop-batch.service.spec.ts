@@ -1,13 +1,14 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import sharp from 'sharp';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
-import { AssetType, ChecksumAlgorithm, JobName, JobStatus } from 'src/enum.js';
+import { AssetLockReason, AssetType, ChecksumAlgorithm, JobName, JobStatus, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -84,7 +85,7 @@ const setup = () => {
     new DownloadRepository(db),
     jobs as never,
   );
-  return { ctx, revisions, repository, develop, sut, media, jobs, assets, access };
+  return { ctx, revisions, repository, develop, sut, media, jobs, assets, access, storage };
 };
 const photo = async (ctx: ReturnType<typeof setup>['ctx'], ownerId: string, name = 'IMG_0001.jpg') => {
   const bytes = await image(
@@ -115,7 +116,8 @@ const stage = async (ownerId: string, batchId: string, bytes: Buffer, originalna
 const prepare = async () => {
   const env = setup(),
     { user } = await env.ctx.newUser(),
-    auth = factory.auth({ user }),
+    { session } = await env.ctx.newSession({ userId: user.id }),
+    auth = factory.auth({ user, session }),
     asset = await photo(env.ctx, user.id);
   let batch = await env.sut.create(auth, { assetIds: [asset.id], includeSidecars: true });
   await env.sut.prepare(auth, batch.id, batch.items[0].id);
@@ -153,7 +155,8 @@ afterAll(async () => {
 it('streams originals and permitted sidecars under collision-safe names plus a versioned manifest', async () => {
   const { ctx, sut } = setup(),
     { user } = await ctx.newUser(),
-    auth = factory.auth({ user });
+    { session } = await ctx.newSession({ userId: user.id }),
+    auth = factory.auth({ user, session });
   const a = await photo(ctx, user.id, '../Photo.JPG'),
     b = await photo(ctx, user.id, 'photo.JPG');
   const sidecar = join(root, 'metadata.xmp');
@@ -339,7 +342,8 @@ it('recovers insert-before-queue crashes and serializes quota recount with concu
 it('persists selection before hashing, resumes preparation after restart and streams headers before waiting for all original checks', async () => {
   const f = setup(),
     { user } = await f.ctx.newUser(),
-    auth = factory.auth({ user });
+    { session } = await f.ctx.newSession({ userId: user.id }),
+    auth = factory.auth({ user, session });
   const assets = [];
   for (let i = 0; i < 20; i++) assets.push(await photo(f.ctx, user.id));
   const hashes = vi.spyOn(CryptoRepository.prototype, 'hashFile');
@@ -487,7 +491,9 @@ it('never unlinks an adopted master when a concurrent identical upload fails or 
     create = f.revisions.create.bind(f.revisions);
   let calls = 0,
     releaseFailure!: () => void,
+    firstEntered!: () => void,
     bothEntered!: () => void;
+  const firstReady = new Promise<void>((resolve) => (firstEntered = resolve));
   const both = new Promise<void>((resolve) => (bothEntered = resolve));
   const heldFailure = new Promise<void>((resolve) => (releaseFailure = resolve));
   vi.spyOn(f.revisions, 'create').mockImplementation(async (input) => {
@@ -497,10 +503,12 @@ it('never unlinks an adopted master when a concurrent identical upload fails or 
       await heldFailure;
       throw new Error('fixture interrupted duplicate upload');
     }
+    firstEntered();
     await both;
     return create(input);
   });
   const first = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
+  await firstReady;
   const second = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
   const adopted = await first;
   const revisionId = adopted.returns[0].revisionId!;
@@ -652,3 +660,287 @@ it('handles large batch metadata with bounded insert and status queries', async 
   expect(item.items).toHaveLength(1);
   access.mockRestore();
 }, 60_000);
+
+it.each(['revoked', 'expired'] as const)(
+  'retains an inactive preview when its confirming session is %s',
+  async (kind) => {
+    const f = await prepare();
+    const imported = await f.sut.import(
+      f.auth,
+      f.batch.id,
+      f.item.id,
+      f.dto,
+      await stage(f.user.id, f.batch.id, f.bytes),
+    );
+    if (kind === 'revoked') await db.deleteFrom('session').where('id', '=', f.auth.session!.id).execute();
+    else
+      await db
+        .updateTable('session')
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where('id', '=', f.auth.session!.id)
+        .execute();
+    const revisionId = imported.returns[0].revisionId!;
+    expect(await f.develop.handleRender({ id: revisionId })).toBe(JobStatus.Success);
+    expect(await f.revisions.getCurrent(f.asset.id)).toBeUndefined();
+    expect((await f.repository.get(f.user.id, f.batch.id)).items[0].returns[0]).toMatchObject({
+      status: 'conflict',
+      errorCode: 'credential_unavailable',
+    });
+    expect((await f.revisions.get(revisionId))?.masterPath).toBeTruthy();
+  },
+);
+it('keeps the preview inactive when its confirming locked session loses its PIN grant', async () => {
+  const f = await prepare();
+  await db.insertInto('asset_lock').values({ assetId: f.asset.id, reason: AssetLockReason.Marked }).execute();
+  await db
+    .updateTable('session')
+    .set({ pinExpiresAt: new Date(Date.now() + 60_000) })
+    .where('id', '=', f.auth.session!.id)
+    .execute();
+  f.auth.session!.hasElevatedPermission = true;
+  const bytes = await image('#334455');
+  const confirmed = await f.sut.confirm(f.auth, f.batch.id, {
+    files: [{ itemId: f.item.id, fileName: 'return.png', checksum: hash(bytes) }],
+  });
+  const returned = confirmed.items[0].returns.find((r) => r.checksum === hash(bytes))!;
+  const imported = await f.sut.import(
+    f.auth,
+    f.batch.id,
+    f.item.id,
+    { confirmationId: returned.confirmationId, renditionChecksum: hash(bytes) },
+    await stage(f.user.id, f.batch.id, bytes),
+  );
+  await db
+    .updateTable('session')
+    .set({ pinExpiresAt: new Date(Date.now() - 1000) })
+    .where('id', '=', f.auth.session!.id)
+    .execute();
+  const revisionId = imported.returns.find((r) => r.id === returned.id)!.revisionId!;
+  expect(await f.develop.handleRender({ id: revisionId })).toBe(JobStatus.Success);
+  expect(await f.revisions.getCurrent(f.asset.id)).toBeUndefined();
+  expect(
+    (await f.repository.get(f.user.id, f.batch.id)).items[0].returns.find((r) => r.id === returned.id),
+  ).toMatchObject({ status: 'conflict', errorCode: 'credential_unavailable' });
+});
+it.each(['deleted', 'narrowed'] as const)('does not activate after the confirming API key is %s', async (kind) => {
+  const f = await prepare();
+  const key = await db
+    .insertInto('api_key')
+    .values({
+      userId: f.user.id,
+      name: 'test',
+      key: Buffer.from(randomUUID()),
+      permissions: [Permission.AssetEditCreate],
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  const auth = factory.auth({ user: f.user, apiKey: { id: key.id, permissions: key.permissions } });
+  const bytes = await image('#120034');
+  const confirmed = await f.sut.confirm(auth, f.batch.id, {
+    files: [{ itemId: f.item.id, fileName: 'return.png', checksum: hash(bytes) }],
+  });
+  const returned = confirmed.items[0].returns.find((r) => r.checksum === hash(bytes))!;
+  const imported = await f.sut.import(
+    auth,
+    f.batch.id,
+    f.item.id,
+    { confirmationId: returned.confirmationId, renditionChecksum: hash(bytes) },
+    await stage(f.user.id, f.batch.id, bytes),
+  );
+  if (kind === 'deleted') await db.deleteFrom('api_key').where('id', '=', key.id).execute();
+  else await db.updateTable('api_key').set({ permissions: [] }).where('id', '=', key.id).execute();
+  expect(await f.develop.handleRender({ id: imported.returns.find((r) => r.id === returned.id)!.revisionId! })).toBe(
+    JobStatus.Success,
+  );
+  expect(await f.revisions.getCurrent(f.asset.id)).toBeUndefined();
+  expect(
+    (await f.repository.get(f.user.id, f.batch.id)).items[0].returns.find((r) => r.id === returned.id),
+  ).toMatchObject({ status: 'conflict', errorCode: 'credential_unavailable' });
+});
+it.each(['pin expiry', 'session revocation'] as const)(
+  'stops a locked original stream at the next bounded check after %s',
+  async (kind) => {
+    const f = await prepare();
+    await db.insertInto('asset_lock').values({ assetId: f.asset.id, reason: AssetLockReason.Marked }).execute();
+    await db
+      .updateTable('session')
+      .set({ pinExpiresAt: new Date(Date.now() + 60_000) })
+      .where('id', '=', f.auth.session!.id)
+      .execute();
+    f.auth.session!.hasElevatedPermission = true;
+    const bytes = await readFile(f.asset.originalPath);
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => (release = resolve));
+    vi.spyOn(f.storage, 'createPlainReadStream').mockImplementation(
+      () =>
+        Readable.from(
+          (async function* () {
+            yield bytes.subarray(0, 10);
+            await barrier;
+            yield bytes.subarray(10);
+          })(),
+        ) as never,
+    );
+    const stream = (f.sut as any).openEntry(f.auth, f.batch.id, f.item, false) as AsyncGenerator<Buffer>;
+    expect((await stream.next()).value).toEqual(bytes.subarray(0, 10));
+    if (kind === 'pin expiry')
+      await db
+        .updateTable('session')
+        .set({ pinExpiresAt: new Date(Date.now() - 1000) })
+        .where('id', '=', f.auth.session!.id)
+        .execute();
+    else await db.deleteFrom('session').where('id', '=', f.auth.session!.id).execute();
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    release();
+    await expect(stream.next()).rejects.toThrow();
+  },
+);
+it('queues guarded deletion when cancellation deletes the reservation before the paused rename', async () => {
+  const f = await prepare();
+  let release!: () => void,
+    entered!: () => void,
+    target = '';
+  const barrier = new Promise<void>((resolve) => (release = resolve));
+  const reached = new Promise<void>((resolve) => (entered = resolve));
+  const rename = f.storage.rename.bind(f.storage);
+  vi.spyOn(f.storage, 'rename').mockImplementation(async (from, to) => {
+    target = to;
+    entered();
+    await barrier;
+    return rename(from, to);
+  });
+  const uploadPath = join(root, `${randomUUID()}-inflight.png`);
+  await writeFile(uploadPath, f.bytes);
+  const pending = f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, {
+    path: uploadPath,
+    originalname: 'return.png',
+    size: f.bytes.length,
+  } as Express.Multer.File);
+  const failure = pending.catch((error) => error);
+  await reached;
+  await f.sut.cancel(f.auth, f.batch.id);
+  const files = new PhysicalFileRepository(db);
+  await files.deleteUnreferencedPath(target, async () => {
+    await rm(target, { force: true });
+  });
+  release();
+  expect(await failure).toBeInstanceOf(Error);
+  expect(await readFile(target)).toEqual(f.bytes);
+  expect(
+    f.jobs.queue.mock.calls.some(([job]) => job.name === JobName.FileDelete && job.data.files.includes(target)),
+  ).toBe(true);
+  const cleanup = await files.deleteUnreferencedPath(target, async () => {
+    await rm(target, { force: true });
+  });
+  expect(cleanup.references).toBe(0);
+  expect(
+    (
+      await db
+        .selectFrom('develop_batch_return')
+        .select('pendingMasterPath')
+        .where('confirmationId', '=', f.dto.confirmationId)
+        .executeTakeFirstOrThrow()
+    ).pendingMasterPath,
+  ).toBeNull();
+  expect(await stat(target).catch(() => null)).toBeNull();
+  expect(await usage(f.user.id)).toBe(0);
+  expect(await f.revisions.listByAsset(f.asset.id)).toHaveLength(0);
+});
+it('confirms overlapping batches in reverse order without deadlock', async () => {
+  const f = await prepare(),
+    second = await photo(f.ctx, f.user.id);
+  const batches = await Promise.all([
+    f.sut.create(f.auth, { assetIds: [f.asset.id, second.id], includeSidecars: false }),
+    f.sut.create(f.auth, { assetIds: [f.asset.id, second.id], includeSidecars: false }),
+  ]);
+  await sql`CREATE OR REPLACE FUNCTION test_batch_confirm_pause() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.1); RETURN NEW; END $$`.execute(
+    db,
+  );
+  await sql`CREATE TRIGGER test_batch_confirm_pause BEFORE INSERT ON develop_batch_return FOR EACH ROW EXECUTE FUNCTION test_batch_confirm_pause()`.execute(
+    db,
+  );
+  try {
+    const files = batches.map((batch, index) =>
+      (index ? batch.items.toReversed() : batch.items).map((item) => ({ itemId: item.id, checksum: hash(f.bytes) })),
+    );
+    await Promise.all(
+      batches.map((batch, index) => f.repository.confirm(f.user.id, batch.id, f.auth.session!.id, null, files[index])),
+    );
+    for (const batch of batches)
+      expect((await f.repository.get(f.user.id, batch.id)).items.every((item) => item.returns.length === 1)).toBe(true);
+  } finally {
+    await sql`DROP TRIGGER test_batch_confirm_pause ON develop_batch_return`.execute(db);
+    await sql`DROP FUNCTION test_batch_confirm_pause()`.execute(db);
+  }
+});
+it('pages historical batch summaries without reading batch details', async () => {
+  const f = setup(),
+    { user } = await f.ctx.newUser(),
+    auth = factory.auth({ user });
+  for (let i = 0; i < 120; i++) await f.repository.create(user.id, false, []);
+  const get = vi.spyOn(f.repository, 'get');
+  const all: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await f.sut.list(auth, cursor);
+    expect(page.items.length).toBeLessThanOrEqual(50);
+    expect(page.items.every((item) => item.itemCount === 0 && !('items' in item))).toBe(true);
+    all.push(...page.items.map((item) => item.id));
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  expect(new Set(all).size).toBe(120);
+  expect(get).not.toHaveBeenCalled();
+});
+
+it('keeps the first confirmation authority when the same bytes are reviewed by a new session', async () => {
+  const f = await prepare();
+  const { session } = await f.ctx.newSession({ userId: f.user.id });
+  const nextAuth = factory.auth({ user: f.user, session });
+  await db.deleteFrom('session').where('id', '=', f.auth.session!.id).execute();
+  const repeated = await f.sut.confirm(nextAuth, f.batch.id, {
+    files: [{ itemId: f.item.id, fileName: 'return.png', checksum: hash(f.bytes) }],
+  });
+  expect(repeated.items[0].returns[0].confirmationId).toBe(f.dto.confirmationId);
+  const imported = await f.sut.import(
+    nextAuth,
+    f.batch.id,
+    f.item.id,
+    f.dto,
+    await stage(f.user.id, f.batch.id, f.bytes),
+  );
+  expect(await f.develop.handleRender({ id: imported.returns[0].revisionId! })).toBe(JobStatus.Success);
+  expect((await f.repository.get(f.user.id, f.batch.id)).items[0].returns[0]).toMatchObject({
+    status: 'conflict',
+    errorCode: 'credential_unavailable',
+  });
+});
+
+it('activates a return when its confirming API key remains authorized', async () => {
+  const f = await prepare();
+  const key = await db
+    .insertInto('api_key')
+    .values({
+      userId: f.user.id,
+      name: 'test',
+      key: Buffer.from(randomUUID()),
+      permissions: [Permission.AssetEditCreate],
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  const auth = factory.auth({ user: f.user, apiKey: { id: key.id, permissions: key.permissions } });
+  const bytes = await image('#888888');
+  const confirmed = await f.sut.confirm(auth, f.batch.id, {
+    files: [{ itemId: f.item.id, fileName: 'return.png', checksum: hash(bytes) }],
+  });
+  const returned = confirmed.items[0].returns.find((r) => r.checksum === hash(bytes))!;
+  const imported = await f.sut.import(
+    auth,
+    f.batch.id,
+    f.item.id,
+    { confirmationId: returned.confirmationId, renditionChecksum: hash(bytes) },
+    await stage(f.user.id, f.batch.id, bytes),
+  );
+  const revisionId = imported.returns.find((r) => r.id === returned.id)!.revisionId!;
+  expect(await f.develop.handleRender({ id: revisionId })).toBe(JobStatus.Success);
+  expect((await f.revisions.getCurrent(f.asset.id))?.id).toBe(revisionId);
+});
