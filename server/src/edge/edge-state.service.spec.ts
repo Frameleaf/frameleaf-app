@@ -240,9 +240,7 @@ describe(EdgeStateService.name, () => {
       setSettings({ enabled: false });
       mocks.database.isSchemaReady.mockResolvedValue(false);
       await sut.tick(now);
-      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function), {
-        untilFree: true,
-      });
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
       expect(mocks.systemMetadata.get).not.toHaveBeenCalled();
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
       expect(mocks.database.holdLock).not.toHaveBeenCalled();
@@ -255,9 +253,7 @@ describe(EdgeStateService.name, () => {
       // once the schema is there it is not checked again
       mocks.database.withLock.mockClear();
       await sut.tick(now);
-      expect(mocks.database.withLock).not.toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function), {
-        untilFree: true,
-      });
+      expect(mocks.database.withLock).not.toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
     });
 
     it('leaves remote access to the edge worker that holds the lock', async () => {

@@ -45,6 +45,33 @@ describe('BulkTagDialog (FL-648)', () => {
     expect(sdkMock.getAllTags).not.toHaveBeenCalled();
   });
 
+  it('offers no "Create tag" while the tags are loading', async () => {
+    let resolveTags!: (tags: TagResponseDto[]) => void;
+    sdkMock.getAllTags.mockReturnValue(new Promise((resolve) => (resolveTags = resolve)));
+    renderWithTooltips(BulkTagDialog, { count: 1, onSubmit: vi.fn() });
+
+    await search('BEACH');
+    expect(screen.queryByText('frameleaf_bulk_tag_create')).not.toBeInTheDocument();
+
+    resolveTags([tag('t-beach', 'beach')]);
+    expect(await screen.findByRole('option', { name: 'beach' })).toBeInTheDocument();
+    expect(screen.queryByText('frameleaf_bulk_tag_create')).not.toBeInTheDocument();
+  });
+
+  it('keeps an exact match within the eight suggestions', async () => {
+    const options = [
+      ...Array.from({ length: 8 }, (_, index) => ({ id: `t-${index}`, name: `beach ${index}` })),
+      { id: 't-beach', name: 'beach' },
+    ];
+    renderWithTooltips(BulkTagDialog, { count: 1, options, onSubmit: vi.fn() });
+
+    await search('beach');
+
+    const names = (await screen.findAllByRole('option')).map((option) => option.textContent?.trim());
+    expect(names).toHaveLength(8);
+    expect(names[0]).toBe('beach');
+  });
+
   it('still creates a tag by name when the tags cannot be loaded', async () => {
     sdkMock.getAllTags.mockRejectedValue(new Error('offline'));
     const onSubmit = vi.fn();

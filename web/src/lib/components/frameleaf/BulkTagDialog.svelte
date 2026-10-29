@@ -35,14 +35,20 @@
   const listId = $props.id();
 
   let loaded = $state<TagOption[]>([]);
+  // Until the account's tags are in, "Create tag" could add a second tag beside an existing one
+  // whose name differs only in case (the upsert matches exact values), so it is held back.
+  let loading = $state(false);
   let available = $derived(options.length > 0 ? options : loaded);
 
   const loadTags = async () => {
+    loading = true;
     try {
       const tags = await getAllTags();
       loaded = (tags ?? []).map(({ id, value }) => ({ id, name: value }));
     } catch {
       // Without the list the dialog still tags by name: the upsert reuses an existing tag.
+    } finally {
+      loading = false;
     }
   };
 
@@ -54,14 +60,19 @@
 
   let needle = $derived(query.trim().toLowerCase());
   let chosenNames = $derived(new Set(chosen.map((tag) => tag.name.toLowerCase())));
-  let matches = $derived(
-    available
+  let matches = $derived.by(() => {
+    const found = available
       .filter((option) => !chosenNames.has(option.name.toLowerCase()))
-      .filter((option) => !needle || option.name.toLowerCase().includes(needle))
-      .slice(0, 8),
-  );
+      .filter((option) => !needle || option.name.toLowerCase().includes(needle));
+    // an exact match first, so the eight-item limit never hides the tag that was typed
+    const exact = found.filter((option) => option.name.toLowerCase() === needle);
+    return [...exact, ...found.filter((option) => option.name.toLowerCase() !== needle)].slice(0, 8);
+  });
   let canCreate = $derived(
-    !!needle && available.every((option) => option.name.toLowerCase() !== needle) && !chosenNames.has(needle),
+    !loading &&
+      !!needle &&
+      available.every((option) => option.name.toLowerCase() !== needle) &&
+      !chosenNames.has(needle),
   );
   let suggestions: (TagOption & { isNew?: boolean })[] = $derived([
     ...matches,
