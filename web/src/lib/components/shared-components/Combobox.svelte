@@ -49,6 +49,8 @@
     forceFocus?: boolean;
     /** What the list says when a search matches nothing; "No results" by default. */
     emptyText?: string;
+    /** What was typed, each time it changes (and '' on opening), for options the caller searches for. */
+    onSearch?: (query: string) => void;
   }
 
   let {
@@ -63,6 +65,7 @@
     onSelect = () => {},
     forceFocus = false,
     emptyText,
+    onSearch,
   }: Props = $props();
 
   /**
@@ -132,6 +135,7 @@
   const activate = () => {
     isActive = true;
     searchQuery = '';
+    onSearch?.('');
     openDropdown();
   };
 
@@ -166,6 +170,7 @@
   const onInput: FormEventHandler<HTMLInputElement> = (event) => {
     openDropdown();
     searchQuery = event.currentTarget.value;
+    onSearch?.(searchQuery);
     selectedIndex = defaultFirstOption ? 0 : undefined;
     optionRefs[0]?.scrollIntoView({ block: 'nearest' });
   };

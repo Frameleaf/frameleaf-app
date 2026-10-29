@@ -67,6 +67,16 @@ describe(AlbumService.name, () => {
   });
 
   describe('getAll', () => {
+    it('passes a picker search and limit to the album query (FL-647)', async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.getAll.mockResolvedValue([]);
+
+      await expect(sut.getAll(AuthFactory.create(owner), { search: 'trip', take: 20 })).resolves.toEqual([]);
+
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, expect.objectContaining({ search: 'trip', take: 20 }));
+    });
+
     it("labels the viewer's own albums copied from a partner with the original owner (FL-326)", async () => {
       const album = AlbumFactory.from().albumUser().build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;

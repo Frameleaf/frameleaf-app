@@ -10,6 +10,13 @@
    */
   import Self from '$lib/components/frameleaf/WorkflowParameter.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Picker from '$lib/components/frameleaf/Picker.svelte';
+  import type { ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
+  import {
+    isWorkflowReferenceKind,
+    resolveWorkflowReferences,
+    searchWorkflowReferences,
+  } from '$lib/frameleaf/workflow-references';
   import {
     isArraySchema,
     isCredentialKey,
@@ -18,9 +25,9 @@
     updateWorkflowParameter,
     type WorkflowParameterSchema,
   } from '$lib/frameleaf/workflows';
+  import { onDestroy } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
-
-  export type ReferenceOption = { id: string; label: string };
 
   let {
     schema,
@@ -31,7 +38,6 @@
     required = false,
     disabled = false,
     storedSecrets = [],
-    references = {},
     onChange,
   }: {
     schema: WorkflowParameterSchema;
@@ -44,19 +50,98 @@
     required?: boolean;
     disabled?: boolean;
     storedSecrets?: string[];
-    references?: Record<string, ReferenceOption[]>;
     onChange: (next: unknown) => void;
   } = $props();
 
   const id = $props.id();
   const entries = $derived(Array.isArray(value) ? (value as unknown[]) : []);
-  const referenceOptions = $derived(schema.uiHint?.type ? references[schema.uiHint.type] : undefined);
+  // FL-647: tag and album choices are searched for as the person types, not loaded all at once
+  const referenceKind = $derived(isWorkflowReferenceKind(schema.uiHint?.type) ? schema.uiHint.type : undefined);
+  const referenceNames = new SvelteMap<string, string>();
+  const attempted = new Set<string>();
+  let resolving = $state(false);
+  let matches = $state<ComboBoxOption[]>([]);
+  let picked = $state<ComboBoxOption | undefined>();
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchAbort: AbortController | undefined;
   const isCredential = $derived(isCredentialKey(name));
   const hasStoredSecret = $derived(isCredential && value === undefined && storedSecrets.includes(path.join('.')));
   const numeric = $derived(schema.type === 'number' || schema.type === 'integer');
   const referenceLabel = (itemId: string) =>
-    referenceOptions?.find((item) => item.id === itemId)?.label ??
-    $t('frameleaf_workflows.unavailable_selection', { values: { id: itemId } });
+    referenceNames.get(itemId) ??
+    (resolving ? itemId : $t('frameleaf_workflows.unavailable_selection', { values: { id: itemId } }));
+
+  // a saved workflow's choices are shown by name: read only the ones chosen
+  $effect(() => {
+    const kind = referenceKind;
+    // each choice is read at most once: one that cannot be read stays an unavailable selection
+    const ids = entries.map(String).filter((itemId) => !referenceNames.has(itemId) && !attempted.has(itemId));
+    if (!kind || ids.length === 0) {
+      return;
+    }
+    for (const itemId of ids) {
+      attempted.add(itemId);
+    }
+    let current = true;
+    resolving = true;
+    void resolveWorkflowReferences(kind, ids)
+      .then((found) => {
+        if (current) {
+          for (const item of found) {
+            referenceNames.set(item.id, item.label);
+          }
+        }
+      })
+      .finally(() => {
+        if (current) {
+          resolving = false;
+        }
+      });
+    return () => {
+      current = false;
+    };
+  });
+
+  const searchReferences = (query: string) => {
+    const kind = referenceKind;
+    if (!kind) {
+      return;
+    }
+    clearTimeout(searchTimer);
+    searchAbort?.abort();
+    const abort = new AbortController();
+    searchAbort = abort;
+    searchTimer = setTimeout(
+      () => {
+        searchWorkflowReferences(kind, query, abort.signal)
+          .then((found) => {
+            if (abort.signal.aborted) {
+              return;
+            }
+            for (const item of found) {
+              referenceNames.set(item.id, item.label);
+            }
+            matches = found.map((item) => ({ id: item.id, label: item.label, value: item.id }));
+          })
+          .catch(() => {
+            // identifiers can still be entered directly
+          });
+      },
+      query ? 250 : 0,
+    );
+  };
+
+  const addReference = (option: ComboBoxOption | undefined) => {
+    if (option && !entries.includes(option.value)) {
+      onChange([...entries, option.value]);
+    }
+    picked = undefined;
+  };
+
+  onDestroy(() => {
+    clearTimeout(searchTimer);
+    searchAbort?.abort();
+  });
   const lines = (text: string) =>
     text
       .split('\n')
@@ -78,12 +163,11 @@
         value={(value as Record<string, unknown> | undefined)?.[key]}
         {disabled}
         {storedSecrets}
-        {references}
         onChange={(next) => onChange(updateWorkflowParameter(value ?? {}, [key], next))}
       />
     {/each}
   </fieldset>
-{:else if isArraySchema(schema) && referenceOptions}
+{:else if isArraySchema(schema) && referenceKind}
   <fieldset class="wd-object" {disabled}>
     <legend>{label}{required ? ' *' : ''}</legend>
     <div class="wd-reference-values">
@@ -100,25 +184,17 @@
         </span>
       {/each}
     </div>
-    <label class="wd-field">
-      {schema.uiHint?.type === 'TagId' ? $t('frameleaf_workflows.find_tag') : $t('frameleaf_workflows.find_album')}
-      <select
+    <div class="wd-field">
+      <Picker
+        label={referenceKind === 'TagId' ? $t('frameleaf_workflows.find_tag') : $t('frameleaf_workflows.find_album')}
+        placeholder={$t('frameleaf_workflows.choose_to_add')}
+        options={matches.filter((item) => !entries.includes(item.value))}
+        bind:selectedOption={picked}
         {disabled}
-        value=""
-        onchange={(event) => {
-          const next = event.currentTarget.value;
-          if (next) {
-            onChange([...entries, next]);
-          }
-          event.currentTarget.value = '';
-        }}
-      >
-        <option value="">{$t('frameleaf_workflows.choose_to_add')}</option>
-        {#each referenceOptions.filter((item) => !entries.includes(item.id)) as item (item.id)}
-          <option value={item.id}>{item.label}</option>
-        {/each}
-      </select>
-    </label>
+        onSearch={searchReferences}
+        onSelect={addReference}
+      />
+    </div>
     <details>
       <summary>{$t('frameleaf_workflows.advanced_identifiers')}</summary>
       <textarea
