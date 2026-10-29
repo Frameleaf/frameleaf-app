@@ -47,7 +47,11 @@ const LOST_REASON_TEXT: Record<LostOriginalReason, string> = {
 const lockedFace = `EXISTS (SELECT 1 FROM public.asset_face f JOIN public.asset_lock l ON l."assetId"=f."assetId" WHERE f.id=s."faceAssetId")`;
 /** Columns `convertLocks` rewrites. Verification accepts a changed value only where a lock explains it. */
 const LOCK_REWRITES: Record<string, Record<string, string>> = {
-  asset: { visibility: `s.visibility='locked' AND EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=d.id)` },
+  asset: {
+    visibility: `s.visibility='locked' AND EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=d.id)
+      AND d.visibility=CASE WHEN EXISTS (SELECT 1 FROM public.asset still WHERE still."livePhotoVideoId"=d.id)
+        THEN 'hidden' ELSE 'timeline' END::asset_visibility_enum`,
+  },
   album: {
     albumThumbnailAssetId: `EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=s."albumThumbnailAssetId")`,
   },
