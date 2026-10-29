@@ -346,12 +346,6 @@
     <section class="filter-section" data-section="media">
       <ColorFilter color={query.filter.color} onChange={(value) => setCondition('color', value)} />
       <DimensionFilters filter={query.filter} onChange={setCondition} />
-      <Picker
-        label={$t('frameleaf_filter_transparency')}
-        options={flagOptions}
-        selectedOption={flagOptions.find((option) => option.value === flagValue('hasTransparency'))}
-        onSelect={onFlag('hasTransparency')}
-      />
     </section>
 
     <section class="filter-section" data-section="date">

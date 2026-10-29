@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/env';
-  import { afterNavigate, beforeNavigate, goto, invalidate } from '$app/navigation';
+  import { afterNavigate, beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
   import { navigating, page } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
@@ -38,12 +38,12 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAlbumAssetsActions, leftLocally } from '$lib/services/album.service';
+  import { getAlbumAssetsActions, handleDeleteAlbum, leftLocally } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { navigate } from '$lib/utils/navigation';
+  import { isAlbumsRoute, navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AlbumKind,
@@ -469,6 +469,25 @@
     void goto(next, { replace: true, reset: false });
   };
 
+  /**
+   * An album made with "Create album" and left without a name or anything in it is removed when
+   * you leave for anywhere but another album, so abandoned drafts never pile up in Albums. Only your
+   * own plain album qualifies: never a collection or space, nor one holding albums or saved links.
+   */
+  onNavigate(async ({ to }) => {
+    if (
+      !isAlbumsRoute(to?.route.id) &&
+      album.kind === AlbumKind.Album &&
+      album.assetCount === 0 &&
+      !album.albumName &&
+      bookmarkCount === 0 &&
+      childAlbums.length === 0 &&
+      isOwner(album, currentUserId)
+    ) {
+      await handleDeleteAlbum(album, { notify: false });
+    }
+  });
+
   const options = $derived({ albumId, order: album.order });
 
   $effect(() => {
@@ -610,6 +629,7 @@
       {parent}
       {ancestors}
       collections={editableCollections}
+      albums={allAlbums}
       likeCount={activityManager.likeCount}
       commentCount={activityManager.commentCount}
       {activityOpen}

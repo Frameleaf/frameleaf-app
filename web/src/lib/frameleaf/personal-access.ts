@@ -90,9 +90,13 @@ export const normalizeKeyPermissions = (selected: Permission[]): Permission[] =>
  * FL-367: what a new key is for, in place of choosing from every permission. Each purpose is a
  * fixed list of existing permissions; "View only" does not download originals (defaulted on FL-367,
  * the owner's question is open), and "View and upload" may not change albums.
+ *
+ * `capture` is the "Browser extension" purpose (FL-622, `ApiKeys.jsx`): it saves images, links and
+ * screenshots into Boards and lists the collections and tags to file them, and cannot see photos.
+ * The order is the prototype's, with the browser extension just before Everything.
  */
 export type KeyPurpose = 'view' | 'upload' | 'capture' | 'view-upload' | 'everything';
-export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'capture', 'view-upload', 'everything'];
+export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'view-upload', 'capture', 'everything'];
 const VIEW_PERMISSIONS: readonly Permission[] = [
   Permission.AssetRead,
   Permission.AssetView,

@@ -5,6 +5,7 @@ import {
   currentPrimaryDestination,
   currentTab,
   defaultRailCapabilities,
+  isClientsEnabled,
   isDestinationCurrent,
   isSettingsRoute,
   RAIL_CLOSED_SECTIONS_KEY,
@@ -182,6 +183,19 @@ describe('Frameleaf rail destinations', () => {
     expect(hrefs).not.toContain(Route.studio());
     expect(hrefs).not.toContain(Route.activity());
   });
+
+  it('takes Clients out of Tools once the account uses it, keeping RAW support', () => {
+    const tools = buildRailSections({ ...allCapabilities(), clients: true }).find((section) => section.id === 'tools');
+
+    expect(tools?.destinations.map((destination) => destination.id)).toEqual(['rawSupport', 'workflows', 'trash']);
+  });
+
+  it('reads Clients as off when the preference is missing', () => {
+    expect(isClientsEnabled(undefined)).toBe(false);
+    expect(isClientsEnabled({})).toBe(false);
+    expect(isClientsEnabled({ clients: { enabled: false } })).toBe(false);
+    expect(isClientsEnabled({ clients: { enabled: true } })).toBe(true);
+  });
 });
 
 describe('Frameleaf primary destinations', () => {
@@ -192,6 +206,28 @@ describe('Frameleaf primary destinations', () => {
       'studio',
       'activity',
     ]);
+  });
+
+  it('puts Clients between Boards and Studio once the account uses it', () => {
+    const destinations = buildPrimaryDestinations({ clients: true });
+
+    expect(destinations.map((destination) => destination.id)).toEqual([
+      'library',
+      'pro',
+      'clients',
+      'studio',
+      'activity',
+    ]);
+    expect(destinations.find(({ id }) => id === 'clients')).toMatchObject({
+      labelKey: 'frameleaf_photography',
+      href: Route.photography(),
+    });
+  });
+
+  it('keeps Clients current in its workspace and the RAW develop editor', () => {
+    expect(currentPrimaryDestination(Route.photography())).toBe('clients');
+    expect(currentPrimaryDestination(Route.photographyDevelop({ shoot: 'shoot-id' }))).toBe('clients');
+    expect(currentPrimaryDestination('/photographyx')).toBeNull();
   });
 
   it('sends Library home, Studio to the project library and Activity to its page', () => {
@@ -331,7 +367,9 @@ describe('Frameleaf rail folding', () => {
 });
 
 describe('Frameleaf phone tab bar', () => {
-  it('is absent from Studio and the settings screens', () => {
+  it('is absent from Studio, Clients and the settings screens', () => {
+    expect(showsTabBar(Route.photography())).toBe(false);
+    expect(showsTabBar(Route.photographyDevelop({ shoot: 'shoot-id' }))).toBe(false);
     expect(showsTabBar(Route.photos())).toBe(true);
     expect(showsTabBar(Route.albums())).toBe(true);
     expect(showsTabBar(Route.studio())).toBe(false);

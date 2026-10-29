@@ -398,7 +398,10 @@ export const defaultIconFor = (kind: AlbumKind | string | undefined): string => 
 export interface AlbumDetailsDraft {
   albumName: string;
   description: string | null;
-  icon: string;
+  /** Null clears it, so the kind's default icon shows. */
+  icon: string | null;
+  /** One of the album colours, or null for none. Left out, the colour is not changed. */
+  color?: string | null;
   parentId?: string | null;
 }
 

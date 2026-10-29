@@ -43,9 +43,14 @@ import { Route } from '$lib/route';
  *
  * The icons are the ones the prototype's command index gives the same pages; the switcher itself
  * shows only the labels.
+ *
+ * Clients (the photography-studio suite, formerly Photography) is opt-in (owner, October 28;
+ * `ClientsIntro.jsx`): until the account starts using it, it lives under Tools in the rail and
+ * opens an introduction. Once started (the account's `clients.enabled` preference) it sits in the
+ * top bar between Boards and Studio and leaves Tools.
  */
 
-export type PrimaryDestinationId = 'library' | 'pro' | 'studio' | 'activity';
+export type PrimaryDestinationId = 'library' | 'pro' | 'clients' | 'studio' | 'activity';
 
 export interface PrimaryDestination {
   id: PrimaryDestinationId;
@@ -55,12 +60,34 @@ export interface PrimaryDestination {
   href: string;
 }
 
-export const buildPrimaryDestinations = (): PrimaryDestination[] => [
+export interface PrimaryDestinationOptions {
+  /** The account uses Clients, so it is a top-bar section rather than a Tools entry. */
+  clients?: boolean;
+}
+
+export const buildPrimaryDestinations = ({ clients = false }: PrimaryDestinationOptions = {}): PrimaryDestination[] => [
   { id: 'library', labelKey: 'library', icon: mdiImageMultipleOutline, href: Route.photos() },
   { id: 'pro', labelKey: 'frameleaf_pro_title', icon: mdiFolderMultipleOutline, href: '/pro' },
+  ...(clients
+    ? [
+        {
+          id: 'clients' as const,
+          labelKey: 'frameleaf_photography' as Translations,
+          icon: mdiCameraIris,
+          href: Route.photography(),
+        },
+      ]
+    : []),
   { id: 'studio', labelKey: 'frameleaf_studio_title', icon: mdiMovieEditOutline, href: Route.studioProjects() },
   { id: 'activity', labelKey: 'activity', icon: mdiProgressClock, href: Route.activity() },
 ];
+
+/**
+ * Whether the account has started using Clients. Missing from preferences written before Clients
+ * existed (and from servers that predate it), which reads as off, the default.
+ */
+export const isClientsEnabled = (preferences: { clients?: { enabled: boolean } } | undefined): boolean =>
+  !!preferences?.clients?.enabled;
 
 const pathOf = (href: string) => href.split('?', 1)[0].split('#', 1)[0];
 
@@ -133,6 +160,10 @@ export const currentPrimaryDestination = (pathname: string, proContext = false):
   if (isWithin(pathname, '/pro')) {
     return 'pro';
   }
+  // Clients and its RAW develop editor; only shown as current while Clients is in the top bar.
+  if (isWithin(pathname, pathOf(Route.photography()))) {
+    return 'clients';
+  }
   if (isWithin(pathname, pathOf(Route.studio()))) {
     return 'studio';
   }
@@ -167,14 +198,14 @@ export const currentPrimaryDestination = (pathname: string, proContext = false):
  *   Explore: Explore, People, Pets, Memories, Places, Map, Tags, Folders, Documents
  *   Albums (+ New album): All albums, each collection with its albums, Shared links
  *   Shared spaces (+ New shared space)
- *   Tools: Workflows, Trash
+ *   Tools: Clients (until it is in the top bar), RAW support, Workflows, Trash
  *   Library Care, Settings, Support
  *
  * Each labelled section folds away from its heading, remembered per device
  * (`RAIL_CLOSED_SECTIONS_KEY`); the icon-only rail always shows everything.
  *
- * Studio and Activity are primary destinations in the top bar (see above), not rail entries, so
- * the rail's Tools section holds only Workflows and Trash, as in the prototype.
+ * Studio and Activity are primary destinations in the top bar (see above), not rail entries.
+ * Clients is in Tools only until the account starts using it, as in the prototype.
  *
  * Every entry points at a route that exists in production, so the rail never renders a
  * dead link. Pets landed with the identity model in FL-58 and is unconditional: it is a
@@ -250,6 +281,11 @@ export interface RailCapabilities {
   tags: boolean;
   folders: boolean;
   sharedLinks: boolean;
+  /**
+   * The account uses Clients, so it is in the top bar and leaves the Tools section. Optional: a
+   * rail that does not pass it keeps Clients under Tools, where it opens the introduction.
+   */
+  clients?: boolean;
 }
 
 export const defaultRailCapabilities = (): RailCapabilities => ({
@@ -331,8 +367,13 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       id: 'tools',
       labelKey: 'frameleaf_tools',
       destinations: [
-        destination('photography', 'frameleaf_photography', mdiCameraIris, Route.photography()),
-        // FL-420: LibraryRail.jsx lists RAW support right under Photography.
+        // Clients sits here until the account starts using it; then it is in the top bar instead
+        // (`clientsInTopBar` in LibraryRail.jsx).
+        ...keep(
+          !capabilities.clients,
+          destination('photography', 'frameleaf_photography', mdiCameraIris, Route.photography()),
+        ),
+        // FL-420: LibraryRail.jsx lists RAW support right under Clients.
         destination('rawSupport', 'frameleaf_raw_support_nav', mdiCameraOutline, Route.rawSupport()),
         destination('workflows', 'workflows', mdiTuneVariant, Route.workflows()),
         ...keep(capabilities.trash, destination('trash', 'trash', mdiDeleteOutline, Route.trash())),
@@ -429,9 +470,14 @@ export const toggleRailSection = (
 
 export type TabBarId = 'library' | 'memories' | 'albums' | 'search';
 
-/** Studio and the settings screens have no tab bar (`!["studio", "admin", "review"]` in App.jsx). */
+/**
+ * Studio, Clients and the settings screens have no tab bar (`!["studio", "admin", "review",
+ * "photography", …]` in App.jsx).
+ */
 export const showsTabBar = (pathname: string): boolean =>
-  !isWithin(pathname, pathOf(Route.studio())) && !isSettingsRoute(pathname);
+  !isWithin(pathname, pathOf(Route.studio())) &&
+  !isWithin(pathname, pathOf(Route.photography())) &&
+  !isSettingsRoute(pathname);
 
 /**
  * The tab that is current, as App.jsx's tab bar decides it: Memories on its screen, Albums on the

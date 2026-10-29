@@ -448,7 +448,7 @@ describe('AssetGrid', () => {
       onOpen,
       onOpenBookmark,
     });
-    const open = await screen.findByRole('button', { name: 'Packaging reference' });
+    const open = await screen.findByRole('button', { name: 'frameleaf_boards_open_link' });
     await fireEvent.click(open);
     expect(onOpenBookmark).toHaveBeenCalledWith(bookmark);
     expect(onOpen).not.toHaveBeenCalled();

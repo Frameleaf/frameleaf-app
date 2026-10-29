@@ -53,7 +53,8 @@ describe('FilterPanel', () => {
 
   it('edits the shared color filter without changing workspace scope', async () => {
     const { onChange, panel } = setup({ ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } });
-    await fireEvent.change(within(panel).getByRole('textbox', { name: 'Hex color' }), { target: { value: '#609060' } });
+    await fireEvent.input(within(panel).getByRole('textbox', { name: 'Hex color' }), { target: { value: '#609060' } });
+    await fireEvent.click(within(panel).getByRole('button', { name: 'Show matches' }));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         filter: {

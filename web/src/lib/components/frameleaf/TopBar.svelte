@@ -13,10 +13,11 @@
   import TabBar from '$lib/components/frameleaf/TabBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { libraryUploadScope } from '$lib/frameleaf/search-context';
-  import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
+  import { buildPrimaryDestinations, currentPrimaryDestination, isClientsEnabled } from '$lib/frameleaf/navigation';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock } from '$lib/frameleaf/session-lock';
   import '$lib/frameleaf/tokens.css';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
@@ -52,8 +53,9 @@
    * on the first row, the switcher on the second, and the activity indicator hidden.
    *
    * September 24 (apple-style.css "#3 materials", "#9 edge-to-edge", "top bar", "#7 phone tab
-   * bar"): the bar is frosted and keeps clear of the notch; from 1200px the search field sits in
-   * the true centre; on phones (≤700px) the bar has no search field, because the tab bar owns
+   * bar"): the bar is frosted and keeps clear of the notch; the search field sits in the true centre
+   * only where the sections and the buttons both fit beside it (from 1440px, so five sections fit),
+   * and otherwise sits in the row between them; on phones (≤700px) the bar has no search field, because the tab bar owns
    * Search, and the brand shows the Frameleaf symbol only while keeping "Frameleaf" as its name.
    *
    * Every control drives an existing production service: the Locked toggle is the elevated
@@ -74,7 +76,12 @@
 
   let { onUploadClick, noBorder = false, hasRail = true }: Props = $props();
 
-  const primaryDestinations = buildPrimaryDestinations();
+  // Clients joins the sections once the account uses it (ClientsIntro.jsx, owner October 28).
+  const primaryDestinations = $derived(
+    buildPrimaryDestinations({
+      clients: authManager.authenticated && isClientsEnabled(authManager.preferences),
+    }),
+  );
   /** apple-style.css: phones show the Frameleaf symbol only. */
   const phone = new MediaQuery('max-width: 700px');
   const proContext = $derived(
@@ -285,7 +292,7 @@
         </a>
       </div>
 
-      <!-- The prototype's `.primary-nav`: the three workspaces, text only, in this order. -->
+      <!-- The prototype's `.primary-nav`: the workspaces, text only, in this order. -->
       <nav class="fl-primary-nav" aria-label={$t('frameleaf_primary_navigation')}>
         {#each primaryDestinations as destination (destination.id)}
           <a
@@ -439,14 +446,13 @@
     border-bottom: 0;
   }
   /*
-   * Three tracks: brand and workspaces, search, actions. The outer two share the spare width
-   * equally, so the search field sits in the true centre whenever both sides fit; when they do
-   * not, each side keeps the width of its content and the search field is what gives way. It can
-   * never run under the Upload button.
+   * One row: brand and workspaces, search, actions (apple-style.css "top bar", changed so five
+   * sections fit). Below 1440px the search field sits in the row, midway between the sections and
+   * the buttons, and is what gives way first, down to its magnifier; only after that do the
+   * sections scroll sideways. Nothing in the bar can run under anything else.
    */
   .fl-topbar-grid {
-    display: grid;
-    grid-template-columns: minmax(max-content, 1fr) minmax(0, 30rem) minmax(max-content, 1fr);
+    display: flex;
     align-items: center;
     column-gap: 1.125rem;
     height: 100%;
@@ -454,6 +460,7 @@
   }
   .fl-topbar-start {
     display: flex;
+    flex: 0 1 auto;
     align-items: center;
     align-self: stretch;
     gap: 1.125rem;
@@ -475,6 +482,13 @@
     display: flex;
     align-self: stretch;
     gap: 0.75rem;
+    /* Five sections on a narrow window scroll sideways rather than run under the buttons. */
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .fl-primary-nav::-webkit-scrollbar {
+    display: none;
   }
   .fl-primary-nav a {
     position: relative;
@@ -491,6 +505,12 @@
   .fl-primary-nav a.fl-current {
     color: var(--fl-text);
   }
+  /* Inset, so the scrolling row never clips the focus ring. */
+  .fl-primary-nav a:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: -2px;
+    border-radius: var(--fl-radius-control);
+  }
   .fl-primary-nav a.fl-current::after {
     content: '';
     position: absolute;
@@ -501,11 +521,38 @@
     border-radius: 2px;
     background: var(--fl-accent);
   }
+  /*
+   * Only the space the sections and the buttons leave, up to 30rem and centred in it. It never goes
+   * below its 44px magnifier; only then do the sections give way, by scrolling.
+   */
   .fl-topbar-search {
-    min-width: 0;
+    flex: 1 1 0;
+    min-width: 2.75rem;
+    max-width: 30rem;
+    margin-inline: auto;
+    container-type: inline-size;
+  }
+  /* Squeezed to a magnifier, the entry drops the shortcut hint and hides its label visually only,
+     so the button keeps its accessible name. */
+  @container (max-width: 9rem) {
+    .fl-topbar-search :global(.search-entry) {
+      justify-content: center;
+    }
+    .fl-topbar-search :global(.search-entry kbd) {
+      display: none;
+    }
+    .fl-topbar-search :global(.search-entry .label) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
   .fl-topbar-actions {
     display: flex;
+    flex: none;
     align-items: center;
     justify-content: flex-end;
     gap: 0.5rem;
@@ -518,10 +565,19 @@
     z-index: 40;
     padding-top: 0.5rem;
   }
-  /* From laptop width up the search field keeps a usable floor, whatever the actions hold. */
-  @media (min-width: 62.5625rem) {
+  /*
+   * Wide enough for five sections either side of it: three tracks, the outer two sharing the spare
+   * width equally, so the search field sits in the true centre whenever both sides fit; when they
+   * do not, each side keeps the width of its content and the search field gives way, down to a
+   * usable floor.
+   */
+  @media (min-width: 90rem) {
     .fl-topbar-grid {
+      display: grid;
       grid-template-columns: minmax(max-content, 1fr) minmax(12rem, 30rem) minmax(max-content, 1fr);
+    }
+    .fl-topbar-search {
+      margin-inline: 0;
     }
   }
   @media (max-width: 80rem) {
@@ -608,6 +664,9 @@
     }
     .fl-topbar-search {
       grid-area: search;
+      min-width: 0;
+      max-width: none;
+      margin-inline: 0;
     }
     .fl-topbar-actions {
       grid-area: actions;

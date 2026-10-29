@@ -86,6 +86,18 @@ describe('PhotographyWorkspace', () => {
     expect(screen.queryByText(/project/i)).toBeNull();
   });
 
+  it('offers "Remove from the top bar" at the rail foot only when the page passes it', async () => {
+    const onRemoveFromTopBar = vi.fn();
+    const view = render(PhotographyWorkspace);
+    await screen.findByRole('button', { name: 'New shoot' });
+    expect(screen.queryByRole('button', { name: /Remove from the top bar/ })).toBeNull();
+    view.unmount();
+
+    render(PhotographyWorkspace, { onRemoveFromTopBar });
+    await fireEvent.click(await screen.findByRole('button', { name: /Remove from the top bar/ }));
+    expect(onRemoveFromTopBar).toHaveBeenCalledOnce();
+  });
+
   it("opens the shoot's RAW photos in the RAW editor, the chosen ones once some are chosen (FL-420)", async () => {
     vi.mocked(loadPhotos).mockResolvedValue({
       photos: [photo('one'), photo('two'), { ...photo('three'), fileName: 'three.JPG' }],

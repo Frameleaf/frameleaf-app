@@ -25,6 +25,7 @@
   } = $props();
   const url = $derived(libraryReferenceUrl(bookmark.url));
   const host = $derived(url ? new URL(url).hostname : '');
+  const name = $derived(bookmark.title || host || bookmark.url);
   const dragSelect = (node: HTMLElement) => {
     const listener = () => {
       if (!selected) {
@@ -47,7 +48,10 @@
   <button
     type="button"
     class="fl-bookmark-open"
-    aria-label={bookmark.title || host}
+    aria-label={$t(selecting ? 'frameleaf_boards_select_link' : 'frameleaf_boards_open_link', {
+      values: { title: name },
+    })}
+    aria-pressed={selecting ? selected : undefined}
     onfocus={onFocus}
     use:longPress={{ onLongPress: () => onToggleSelect?.(bookmark, new MouseEvent('click')) }}
     onclick={(event) => (selecting ? toggle(event) : onOpen?.(bookmark))}
@@ -67,14 +71,14 @@
         />
       {:else}<Icon icon={mdiLinkVariant} size="32" />{/if}
     </div>
-    <span class="fl-bookmark-title">{bookmark.title || host}</span>
+    <span class="fl-bookmark-title">{name}</span>
     <span class="fl-bookmark-host">{host}</span>
   </button>
   <label class="fl-bookmark-select"
     ><input
       type="checkbox"
       checked={selected}
-      aria-label={$t('frameleaf_bookmark_select', { values: { title: bookmark.title || host } })}
+      aria-label={$t('frameleaf_bookmark_select', { values: { title: name } })}
       onclick={toggle}
     /></label
   >

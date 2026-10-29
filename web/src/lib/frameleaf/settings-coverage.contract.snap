@@ -1118,6 +1118,9 @@
   "preferences.cast.gCastEnabled": {
     "type": "boolean"
   },
+  "preferences.clients.enabled": {
+    "type": "boolean"
+  },
   "preferences.download.archiveSize": {
     "type": "integer",
     "minimum": 1,

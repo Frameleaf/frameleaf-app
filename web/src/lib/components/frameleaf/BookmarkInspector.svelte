@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BoardsRating from '$lib/components/frameleaf/BoardsRating.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
@@ -22,7 +23,7 @@
   let detail = $state<BookmarkResponseDto | null>(null);
   let title = $state('');
   let note = $state('');
-  let rating = $state('');
+  let rating = $state<number | null>(null);
   let busy = $state(false);
   let failed = $state(false);
   let generation = $state(0);
@@ -35,7 +36,7 @@
       detail = null;
       title = '';
       note = '';
-      rating = '';
+      rating = null;
       generation++;
     }),
   );
@@ -47,7 +48,7 @@
     detail = null;
     title = '';
     note = '';
-    rating = '';
+    rating = null;
     failed = false;
     busy = false;
     if (!authManager.authenticated) {
@@ -68,7 +69,7 @@
         detail = result;
         title = result.title;
         note = result.note ?? '';
-        rating = result.rating?.toString() ?? '';
+        rating = result.rating ?? null;
       })
       .catch(() => {
         if (!controller.signal.aborted && generation === version) {
@@ -88,7 +89,7 @@
     try {
       const updated = await updateBookmark({
         id: selected,
-        bookmarkUpdateDto: { title, note: note || null, rating: rating ? Number(rating) : null },
+        bookmarkUpdateDto: { title, note: note || null, rating },
       });
       if (id !== selected || generation !== version) {
         return;
@@ -131,13 +132,11 @@
           >{$t('frameleaf_bookmark_note')}<textarea bind:value={note} maxlength="20000" rows="8" disabled={busy}
           ></textarea></label
         >
-        <label
-          >{$t('rating')}<select bind:value={rating} disabled={busy}>
-            <option value="">{$t('frameleaf_bookmark_unrated')}</option>
-            <option value="-1">{$t('frameleaf_library_rating_rejected')}</option>
-            {#each [1, 2, 3, 4, 5] as value (value)}<option value={String(value)}>{value} ★</option>{/each}
-          </select></label
-        >
+        <div class="fl-bookmark-field">
+          <span aria-hidden="true">{$t('rating')}</span>
+          <!-- The same Rejected-and-stars control as files; it is saved with the form. -->
+          <BoardsRating value={rating} disabled={busy} onChange={(next) => (rating = next)} />
+        </div>
         <Button type="submit" variant="primary" disabled={busy}>{$t('save')}</Button>
       </form>
     {/if}
@@ -169,7 +168,8 @@
     text-decoration: underline;
   }
   form,
-  label {
+  label,
+  .fl-bookmark-field {
     display: flex;
     flex-direction: column;
     gap: var(--fl-space-2);
@@ -178,8 +178,7 @@
     gap: var(--fl-space-4);
   }
   input,
-  textarea,
-  select {
+  textarea {
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

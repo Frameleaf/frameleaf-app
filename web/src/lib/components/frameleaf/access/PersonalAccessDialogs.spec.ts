@@ -95,6 +95,17 @@ describe('PinDialog (FL-67)', () => {
 });
 
 describe('ApiKeyDialog (FL-67)', () => {
+  it('names each purpose with who it suits, the browser extension just before Everything (FL-622)', () => {
+    render(ApiKeyDialog, { onClose: vi.fn() });
+
+    expect(
+      screen.getAllByRole('radio').map((radio) => radio.closest('label')?.querySelector('strong')?.textContent),
+    ).toEqual(
+      ['view', 'upload', 'view_upload', 'capture', 'everything'].map(
+        (id) => `frameleaf_access_key_purpose_${id} · frameleaf_access_key_purpose_${id}_for`,
+      ),
+    );
+  });
   it('creates a browser capture key without silently granting general library access', async () => {
     sdkMock.createApiKey.mockResolvedValue({
       apiKey: {

@@ -39,6 +39,7 @@
     type AlbumDetailsDraft,
     type AlbumDirectoryViewMode,
   } from '$lib/frameleaf/album-directory';
+  import { albumColorStyle } from '$lib/frameleaf/album-tree';
   import { toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -198,6 +199,10 @@
   const isSpace = (album: AlbumResponseDto) => album.kind === AlbumKind.Space;
   const openRoute = (album: AlbumResponseDto) =>
     isSpace(album) ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id });
+  /** Where "Move to…" may put an album: every album or collection the user can edit. */
+  const moveCandidates = $derived(
+    directoryAlbums(tree).filter((album) => album.kind !== AlbumKind.Space && canEdit(album, currentUserId)),
+  );
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
   const kindOf = (album: AlbumResponseDto) =>
     album.kind === AlbumKind.Collection
@@ -677,6 +682,8 @@
       {#each list as album (album.id)}
         <div
           class="cell"
+          class:tile-tinted={!!albumColorStyle(album.color)}
+          style={albumColorStyle(album.color)}
           animate:listFlip={{ count: list.length }}
           in:listEnter={{ count: list.length }}
           out:listLeave={{ count: list.length }}
@@ -712,6 +719,8 @@
       {#each list as album (album.id)}
         <div
           role="listitem"
+          class:tile-tinted={!!albumColorStyle(album.color)}
+          style={albumColorStyle(album.color)}
           animate:listFlip={{ count: list.length }}
           in:listEnter={{ count: list.length }}
           out:listLeave={{ count: list.length }}
@@ -835,22 +844,29 @@
 
   {#each arrangement.shelves as shelf (shelf.collection.id)}
     {@const editor = canEdit(shelf.collection, currentUserId)}
-    <CollectionShelf
-      {shelf}
-      {currentUserId}
-      collapsed={isCollapsed(shelf.collection.id)}
-      canEdit={editor}
-      acceptsDrop={canDropOnCollection(dragged, shelf.collection, currentUserId)}
-      onToggle={() => toggleCollapsed(shelf.collection.id)}
-      onNewAlbum={() => openCreate(AlbumKind.Album, shelf.collection.id)}
-      onDrop={(albumId) => void dropOnCollection(albumId, shelf.collection)}
+    <!-- The shelf's icon wears the collection's colour (README point 22: "They also show in Albums"). -->
+    <div
+      class="shelf-tint"
+      class:tinted={!!albumColorStyle(shelf.collection.color)}
+      style={albumColorStyle(shelf.collection.color)}
     >
-      {#snippet actions()}{@render menu(shelf.collection)}{/snippet}
-      {@render albums(
-        shelf.albums,
-        editor ? $t('frameleaf_albums_shelf_empty_editor') : $t('frameleaf_albums_shelf_empty'),
-      )}
-    </CollectionShelf>
+      <CollectionShelf
+        {shelf}
+        {currentUserId}
+        collapsed={isCollapsed(shelf.collection.id)}
+        canEdit={editor}
+        acceptsDrop={canDropOnCollection(dragged, shelf.collection, currentUserId)}
+        onToggle={() => toggleCollapsed(shelf.collection.id)}
+        onNewAlbum={() => openCreate(AlbumKind.Album, shelf.collection.id)}
+        onDrop={(albumId) => void dropOnCollection(albumId, shelf.collection)}
+      >
+        {#snippet actions()}{@render menu(shelf.collection)}{/snippet}
+        {@render albums(
+          shelf.albums,
+          editor ? $t('frameleaf_albums_shelf_empty_editor') : $t('frameleaf_albums_shelf_empty'),
+        )}
+      </CollectionShelf>
+    </div>
   {/each}
 
   {#if arrangement.albums.length > 0}
@@ -952,7 +968,7 @@
   <AlbumMoveDialog
     bind:open={moveDialog.open}
     album={moveDialog.album}
-    targets={moveTargets(tree, moveDialog.album, currentUserId)}
+    albums={moveCandidates}
     {busy}
     onMove={(collectionId) => moveDialog.album && void move(moveDialog.album, collectionId)}
   />
@@ -1048,6 +1064,21 @@
 {/if}
 
 <style>
+  /*
+   * An album or collection with a colour draws its fallback icon (no cover yet) in that colour, in
+   * the light or dark shade (AlbumMark's custom properties).
+   */
+  .shelf-tint {
+    display: contents;
+  }
+  .tile-tinted :global(.cover-empty),
+  .shelf-tint.tinted :global(.mosaic-icon) {
+    color: var(--mark-light);
+  }
+  :global([data-theme='dark']) .tile-tinted :global(.cover-empty),
+  :global([data-theme='dark']) .shelf-tint.tinted :global(.mosaic-icon) {
+    color: var(--mark-dark);
+  }
   /*
    * The Albums page rhythm of apple-style.css:941-984 ("tighter rhythm, denser grid, like Photos'
    * Albums"), over collections.css: page padding, 20px under the filters, 28px between shelves and

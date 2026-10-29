@@ -528,8 +528,8 @@ describe('AlbumDirectory', () => {
       const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
       await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
       const dialog = within(await screen.findByRole('dialog', { name: /Move “Summer in the Rockies”/ }));
-      await fireEvent.click(dialog.getByRole('radio', { name: /On its own/ }));
-      await fireEvent.click(dialog.getByRole('button', { name: 'Move' }));
+      await fireEvent.click(dialog.getByRole('radio', { name: /Top level/ }));
+      await fireEvent.click(dialog.getByRole('button', { name: 'Move here' }));
 
       await waitFor(() => expect(onRefresh).toHaveBeenCalled());
       expect(directoryStatus()).toHaveTextContent('Your albums changed since this page loaded');
@@ -558,7 +558,7 @@ describe('AlbumDirectory', () => {
     const destination = dialog.getByRole('radio', { name: /Trips/ });
     destination.focus();
     await fireEvent.click(destination);
-    await fireEvent.submit(dialog.getByRole('button', { name: 'Move' }).closest('form')!);
+    await fireEvent.submit(dialog.getByRole('button', { name: 'Move here' }).closest('form')!);
 
     await waitFor(() =>
       expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
@@ -568,6 +568,28 @@ describe('AlbumDirectory', () => {
     );
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
     expect(await screen.findByText(/Summer in the Rockies.*Trips/)).toBeInTheDocument();
+  });
+
+  it('keeps a collection and everything inside it listed but refused when moving it, saying why', async () => {
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Family' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Family' }));
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
+    const dialog = within(await screen.findByRole('dialog', { name: /Move “Family”/ }));
+
+    const self = dialog.getByRole('radio', { name: /^Family/ });
+    expect(self).toBeDisabled();
+    expect(self).toHaveAccessibleDescription('This is the one you’re moving');
+    const inside = dialog.getByRole('radio', { name: /Summer in the Rockies/ });
+    expect(inside).toBeDisabled();
+    expect(inside).toHaveAccessibleDescription('It’s inside the one you’re moving');
+
+    await fireEvent.input(dialog.getByRole('searchbox', { name: 'Find a collection' }), {
+      target: { value: 'rockies' },
+    });
+    expect(dialog.getByText('Family')).toBeInTheDocument();
+    expect(dialog.queryByRole('radio', { name: /Top level/ })).toBeNull();
   });
 
   it('never offers Move to… or a drag to an editor of someone else’s album (FL-83 AL-9)', async () => {

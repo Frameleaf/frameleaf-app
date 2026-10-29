@@ -6,6 +6,7 @@ import {
   PURPOSE_PERMISSIONS,
   filterPermissions,
   INDIVIDUAL_PERMISSIONS,
+  KEY_PURPOSES,
   isCompletePin,
   isProfileImageFile,
   keyCanDelete,
@@ -157,6 +158,9 @@ describe('API key purposes (FL-367)', () => {
       expect(PURPOSE_PERMISSIONS.capture).not.toContain(permission);
     }
     expect(keyCanDelete([...PURPOSE_PERMISSIONS.capture])).toBe(false);
+  });
+  it('offers the browser extension just before Everything, as ApiKeys.jsx does', () => {
+    expect(KEY_PURPOSES).toEqual(['view', 'upload', 'view-upload', 'capture', 'everything']);
   });
   it('recognises a purpose from its exact permissions, and anything else as your own choice', () => {
     expect(keyPurpose([...PURPOSE_PERMISSIONS.view])).toBe('view');

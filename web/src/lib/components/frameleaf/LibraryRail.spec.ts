@@ -46,6 +46,7 @@ beforeEach(() => {
   sdkMock.getAlbumHierarchy.mockResolvedValue({ roots: [] });
   sdkMock.getPartners.mockResolvedValue([]);
   sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r0' } as never);
+  sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
 });
 
 afterEach(() => {
@@ -80,7 +81,7 @@ describe('LibraryRail', () => {
     app.page.url = new URL('http://localhost/pro');
     sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(null));
     render(LibraryRail);
-    const album = await screen.findByRole('link', { name: 'Album' });
+    const album = await screen.findByRole('link', { name: /^Album/ });
     expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledWith({ libraryScope: LibraryViewScope.Design });
     const url = new URL(album.getAttribute('href')!, 'http://localhost');
     expect(url.pathname).toBe('/albums/album');
@@ -339,5 +340,151 @@ describe('LibraryRail', () => {
     expect(partner).toHaveAttribute('href', Route.viewPartner({ id: 'jamie' }));
     expect(sdkMock.getPartners).toHaveBeenCalledWith({ direction: 'shared-with' });
     expect(screen.queryByRole('link', { name: 'All shared spaces' })).toBeNull();
+  });
+});
+
+/** Boards (FL-622, README points 1, 11, 13 and 22): the rail of the Design workspace. */
+describe('LibraryRail in Boards', () => {
+  const boardsTree = {
+    roots: [
+      {
+        album: albumFactory.build({
+          id: 'brand',
+          albumName: 'Brand refresh',
+          kind: AlbumKind.Album,
+          assetCount: 7,
+          color: 'teal',
+          icon: null,
+        }),
+        children: [
+          {
+            album: albumFactory.build({
+              id: 'mood',
+              albumName: 'Moodboard',
+              kind: AlbumKind.Album,
+              parentId: 'brand',
+              assetCount: 4,
+              color: null,
+              icon: null,
+            }),
+            children: [],
+          },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    app.page.url = new URL('http://localhost/pro');
+    sdkMock.getAlbumHierarchy.mockResolvedValue(boardsTree as never);
+  });
+
+  afterEach(async () => {
+    sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r9' } as never);
+    await savedSearchesStore.load(true);
+  });
+
+  it('is titled Boards with a Free badge and lists All items, Images, Videos, Links and Unfiled with counts', async () => {
+    sdkMock.searchLibraryItems.mockImplementation((({
+      libraryItemSearchDto,
+    }: {
+      libraryItemSearchDto: { kinds?: string[] };
+    }) =>
+      Promise.resolve({
+        count: libraryItemSearchDto.kinds?.includes('bookmark') ? 2 : 9,
+        countCapped: false,
+        items: [],
+        nextCursor: null,
+      })) as never);
+    render(LibraryRail);
+
+    expect(document.querySelector('.fl-boards-title')).toHaveTextContent(/^Boards\s*Free$/);
+    expect(screen.queryByRole('button', { name: 'Albums' })).toBeNull();
+    const items = within(screen.getByRole('navigation', { name: 'Boards items' }));
+    const links = items.getAllByRole('link');
+    expect(links.map((link) => link.querySelector('.fl-label')?.textContent)).toEqual([
+      'All items',
+      'Images',
+      'Videos',
+      'Links',
+      'Unfiled',
+    ]);
+    expect(links[0]).toHaveAttribute('aria-current', 'page');
+    expect(new URL(links[3].getAttribute('href')!, 'http://localhost').searchParams.get('kinds')).toBe('bookmark');
+    await waitFor(() => expect(links[3]).toHaveTextContent('2'));
+    expect(links[1]).toHaveTextContent('9');
+    expect(sdkMock.searchLibraryItems).toHaveBeenCalledWith({
+      libraryItemSearchDto: { filter: { libraryScope: LibraryViewScope.Design }, limit: 1, kinds: ['bookmark'] },
+    });
+  });
+
+  it('marks Links current from the kinds parameter', () => {
+    app.page.url = new URL('http://localhost/pro?kinds=bookmark');
+    render(LibraryRail);
+    const items = within(screen.getByRole('navigation', { name: 'Boards items' }));
+    expect(items.getByRole('link', { name: /^Links/ })).toHaveAttribute('aria-current', 'page');
+    expect(items.getByRole('link', { name: /^All items/ })).not.toHaveAttribute('aria-current');
+  });
+
+  it('shows collections as a nested tree with their own colour, counts and a "+" for a new one', async () => {
+    albumTreeDropdown.set(true);
+    render(LibraryRail);
+    const brand = await screen.findByRole('link', { name: /^Brand refresh/ });
+    expect(brand).toHaveTextContent('7');
+    expect(brand.querySelector('[data-color="teal"]')).not.toBeNull();
+    expect(await screen.findByRole('link', { name: /^Moodboard/ })).toHaveTextContent('4');
+    const toggle = screen.getByRole('button', { name: /Brand refresh/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(screen.queryByRole('link', { name: /^Moodboard/ })).toBeNull());
+    const create = screen.getByRole('link', { name: 'New collection' });
+    expect(new URL(create.getAttribute('href')!, 'http://localhost').searchParams.has('fl')).toBe(true);
+  });
+
+  it('lists smart collections saved in Boards, and leaves out searches saved in the Library', async () => {
+    sdkMock.getMyPreferences.mockResolvedValue({
+      savedSearches: [
+        {
+          name: 'Teal and blue',
+          query: {
+            ...emptyDiscoveryQuery(),
+            filter: { libraryScope: LibraryViewScope.Design, color: { hex: '#3d7f8f' } },
+          },
+        },
+        { name: 'Lisbon', query: { ...emptyDiscoveryQuery(), filter: { city: { eq: 'Lisbon' } } } },
+      ],
+      revision: 'r3',
+    } as never);
+    await savedSearchesStore.load(true);
+    render(LibraryRail);
+    const smart = within(await screen.findByRole('navigation', { name: 'Smart collections' }));
+    const link = smart.getByRole('link', { name: 'Teal and blue' });
+    expect(new URL(link.getAttribute('href')!, 'http://localhost').pathname).toBe('/pro');
+    expect(smart.queryByRole('link', { name: 'Lisbon' })).toBeNull();
+  });
+
+  it('opens "Get the browser extension" with its three steps', async () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    render(LibraryRail);
+    await fireEvent.click(screen.getByRole('button', { name: 'Get the browser extension' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Save to Frameleaf from your browser' }));
+    expect(dialog.getByText('Add the extension')).toBeInTheDocument();
+    expect(dialog.getByText('For Chrome and Edge. Free.')).toBeInTheDocument();
+    const key = dialog.getByRole('link', { name: 'Make a browser key' });
+    expect(key.getAttribute('href')).toContain('section=api-keys');
+    expect(dialog.getByText('Paste it into the extension')).toBeInTheDocument();
+  });
+
+  it('turns the drawer into the "Collections and filters" sheet only in Boards', () => {
+    const { unmount } = render(LibraryRail);
+    expect(document.documentElement).toHaveAttribute('data-fl-boards-rail');
+    expect(screen.getByRole('heading', { name: 'Collections and filters' })).toBeInTheDocument();
+    unmount();
+    expect(document.documentElement).not.toHaveAttribute('data-fl-boards-rail');
+    app.page.url = new URL('http://localhost/photos');
+    render(LibraryRail);
+    expect(document.documentElement).not.toHaveAttribute('data-fl-boards-rail');
   });
 });

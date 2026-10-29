@@ -1,6 +1,18 @@
 import { AlbumKind, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
-import { albumSelectionOptions, buildAlbumTree, flattenAlbumTree } from '$lib/frameleaf/album-tree';
+import {
+  ALBUM_COLORS,
+  albumAncestorNames,
+  albumColor,
+  albumColorStyle,
+  albumPickerTree,
+  albumSelectionOptions,
+  buildAlbumTree,
+  descendantIds,
+  flattenAlbumTree,
+  moveRefusal,
+  searchAlbums,
+} from '$lib/frameleaf/album-tree';
 
 const album = (partial: Partial<AlbumResponseDto> & { id: string; albumName: string }): AlbumResponseDto =>
   ({
@@ -155,4 +167,82 @@ it('names nested album choices using only readable ancestors', () => {
     { value: 'child', label: 'Brand / Packaging' },
     { value: 'private-parent-child', label: 'Visible album' },
   ]);
+});
+
+describe('album colours (Boards, README point 22)', () => {
+  it('offers the eight tag colours in picker order, each with a name', () => {
+    expect(ALBUM_COLORS.map(({ id }) => id)).toEqual([
+      'grey',
+      'green',
+      'teal',
+      'blue',
+      'purple',
+      'pink',
+      'amber',
+      'red',
+    ]);
+    for (const color of ALBUM_COLORS) {
+      expect(color.labelKey).toBe(`frameleaf_album_color_${color.id}`);
+    }
+  });
+
+  it('keeps a known colour and drops anything else to the plain look', () => {
+    expect(albumColor('teal')).toBe('teal');
+    expect(albumColor('magenta')).toBeNull();
+    expect(albumColor(null)).toBeNull();
+    expect(albumColor(undefined)).toBeNull();
+    expect(albumColorStyle('amber')).toContain('--mark-light: #a8761a');
+    expect(albumColorStyle('nope')).toBeUndefined();
+  });
+
+  it('carries the colour onto every tree node', () => {
+    const result = buildAlbumTree(tree({ albums: [album({ id: 'a', albumName: 'A', color: 'pink' })] }));
+    expect(result.albums[0].color).toBe('pink');
+  });
+});
+
+describe('album pickers', () => {
+  const albums = [
+    album({ id: 'brand', albumName: 'Brand refresh' }),
+    album({ id: 'mood', albumName: 'Moodboard', parentId: 'brand' }),
+    album({ id: 'type', albumName: 'Type', parentId: 'brand' }),
+    album({ id: 'deep', albumName: 'Deep mood', parentId: 'mood' }),
+    album({ id: 'other', albumName: 'Other' }),
+  ];
+
+  it('nests albums under the parents in the list, and keeps an orphan at the top', () => {
+    const roots = albumPickerTree([...albums, album({ id: 'orphan', albumName: 'Orphan', parentId: 'gone' })]);
+    expect(roots.map(({ album }) => album.id)).toEqual(['brand', 'other', 'orphan']);
+    expect(roots[0].children.map(({ album }) => album.id)).toEqual(['mood', 'type']);
+    expect(roots[0].children[0].children.map(({ album }) => album.id)).toEqual(['deep']);
+  });
+
+  it('survives a parent loop without recursing forever', () => {
+    const loop = [album({ id: 'x', albumName: 'X', parentId: 'y' }), album({ id: 'y', albumName: 'Y', parentId: 'x' })];
+    expect(albumPickerTree(loop)).toEqual([]);
+    expect([...descendantIds(loop, 'x')]).toEqual(['y']);
+  });
+
+  it('lists every album inside one, at any depth', () => {
+    expect([...descendantIds(albums, 'brand')].sort()).toEqual(['deep', 'mood', 'type']);
+    expect(descendantIds(albums, 'other').size).toBe(0);
+  });
+
+  it('names the path above a search result', () => {
+    expect(albumAncestorNames(albums, 'deep')).toEqual(['Brand refresh', 'Moodboard']);
+    expect(albumAncestorNames(albums, 'brand')).toEqual([]);
+  });
+
+  it('refuses a move into the collection itself or anything inside it, and says which', () => {
+    expect(moveRefusal(albums, 'brand', 'brand')).toBe('self');
+    expect(moveRefusal(albums, 'brand', 'deep')).toBe('inside');
+    expect(moveRefusal(albums, 'brand', 'other')).toBeNull();
+    expect(moveRefusal(albums, 'mood', 'type')).toBeNull();
+  });
+
+  it('matches every word of a search, ignoring case', () => {
+    expect(searchAlbums(albums, 'MOOD').map(({ id }) => id)).toEqual(['mood', 'deep']);
+    expect(searchAlbums(albums, 'deep mood').map(({ id }) => id)).toEqual(['deep']);
+    expect(searchAlbums(albums, '  ')).toHaveLength(albums.length);
+  });
 });

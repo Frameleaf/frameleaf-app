@@ -12,6 +12,7 @@ import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import PrivatePreviewModal from '@test-data/frameleaf/PrivatePreviewModal.svelte';
 import en from '../../../../../i18n/en.json';
@@ -294,6 +295,40 @@ describe('TopBar chrome (September 24)', () => {
 
     expect(document.querySelector('#dashboard-navbar')).toHaveClass('fl-material');
     expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull();
+    await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
+    view.unmount();
+  });
+
+  const sectionNames = () =>
+    within(screen.getByRole('navigation', { name: 'Primary' }))
+      .getAllByRole('link')
+      .map((link) => link.textContent?.trim());
+
+  it('keeps Clients out of the sections until the account uses it', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(false) as never);
+    authManager.setPreferences(preferencesFactory.build({ clients: { enabled: false } }));
+    const view = render(TopBarTestHarness);
+
+    expect(sectionNames()).toEqual([en.library, en.frameleaf_pro_title, en.frameleaf_studio_title, en.activity]);
+    await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
+    view.unmount();
+  });
+
+  it('puts Clients between Boards and Studio once started, current on its pages', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(false) as never);
+    authManager.setPreferences(preferencesFactory.build({ clients: { enabled: true } }));
+    app.page.url = new URL('http://localhost/photography');
+    const view = render(TopBarTestHarness);
+
+    expect(sectionNames()).toEqual([
+      en.library,
+      en.frameleaf_pro_title,
+      en.frameleaf_photography,
+      en.frameleaf_studio_title,
+      en.activity,
+    ]);
+    expect(screen.getByRole('link', { name: en.frameleaf_photography })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: en.frameleaf_photography })).toHaveAttribute('href', '/photography');
     await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
     view.unmount();
   });

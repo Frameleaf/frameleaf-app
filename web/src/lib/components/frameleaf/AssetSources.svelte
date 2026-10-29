@@ -1,12 +1,34 @@
 <script lang="ts">
+  /**
+   * Where an item came from (approved Boards prototype `Inspector` source facts, README point 27):
+   * "Saved with", the Page (title and site), Creator, Licence, the original image address with the
+   * note that only the owner sees it, and when it was Added.
+   *
+   * Saved sources are private to the owner, so they are only read when `canRead`; anyone else sees
+   * when the item was added and nothing about where it was saved from. An item with a saved source
+   * came in through the browser extension, which is the only path that records one; any other item
+   * was uploaded. Stored links are untrusted and only http(s) addresses become links.
+   */
   import { getAssetSources, type AssetSourceResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiPuzzleOutline, mdiTrayArrowUp } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
 
-  let { assetId, canRead = false }: { assetId: string; canRead?: boolean } = $props();
+  let {
+    assetId,
+    canRead = false,
+    added,
+  }: {
+    assetId: string;
+    canRead?: boolean;
+    /** When the item was added to the library (ISO date). */
+    added?: string;
+  } = $props();
+  const headingId = $props.id();
   let sources = $state<AssetSourceResponseDto[]>([]);
   let loading = $state(false);
   let failed = $state(false);
@@ -25,7 +47,7 @@
     void getAssetSources({ id }, { signal: controller.signal })
       .then((value) => {
         if (!controller.signal.aborted && canRead && assetId === id && generation === version) {
-          sources = value;
+          sources = [...value].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
         }
       })
       .catch(() => {
@@ -46,41 +68,72 @@
       generation++;
     }),
   );
+
+  const formatDate = (value: string) =>
+    new Date(value).toLocaleDateString($locale ?? undefined, { dateStyle: 'medium' });
+  /** A link's site and path without the scheme, for a licence or page shown as plain text. */
+  const shortUrl = (href: string) => {
+    const url = new URL(href);
+    return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`;
+  };
+  const viaExtension = $derived(sources.length > 0);
 </script>
 
-{#if canRead}
-  <section class="fl-asset-sources" aria-label={$t('frameleaf_sources_title')} aria-busy={loading}>
-    <h3>{$t('frameleaf_sources_title')}</h3>
+{#if canRead || added}
+  <section class="fl-asset-sources" aria-labelledby={headingId} aria-busy={loading}>
+    <h3 id={headingId}>{$t('frameleaf_boards_source')}</h3>
     {#if loading}<p role="status">{$t('loading')}</p>
     {:else if failed}
       <p role="status">{$t('frameleaf_sources_unavailable')}</p>
       <Button onclick={() => generation++}>{$t('retry')}</Button>
-    {:else if sources.length === 0}<p>{$t('frameleaf_sources_empty')}</p>
     {:else}
-      <ul>
+      <dl>
+        {#if canRead}
+          <dt>{$t('frameleaf_boards_source_saved_with')}</dt>
+          <dd class="via">
+            <Icon icon={viaExtension ? mdiPuzzleOutline : mdiTrayArrowUp} size="15" aria-hidden />
+            {viaExtension ? $t('frameleaf_boards_source_via_extension') : $t('frameleaf_boards_source_via_upload')}
+          </dd>
+        {/if}
         {#each sources as source (source.id)}
           {@const pageUrl = libraryReferenceUrl(source.pageUrl)}
           {@const mediaUrl = libraryReferenceUrl(source.mediaUrl)}
           {@const licenseUrl = libraryReferenceUrl(source.licenseUrl)}
-          <li>
-            {#if pageUrl}<a href={pageUrl} target="_blank" rel="noopener noreferrer">{source.title || pageUrl}</a
-              >{:else}<span>{source.title}</span>{/if}
-            <time datetime={source.capturedAt}
-              >{new Date(source.capturedAt).toLocaleDateString($locale ?? undefined, { dateStyle: 'medium' })}</time
-            >
-            {#if source.creator}<p>{source.creator}</p>{/if}
-            <div class="fl-source-links">
-              {#if mediaUrl}<a href={mediaUrl} target="_blank" rel="noopener noreferrer"
-                  >{$t('frameleaf_sources_original_link')}</a
-                >{/if}
-              {#if licenseUrl}<a href={licenseUrl} target="_blank" rel="noopener noreferrer"
-                  >{$t('frameleaf_sources_license')}</a
-                >{/if}
-            </div>
-            {#if source.note}<p class="fl-source-note">{source.note}</p>{/if}
-          </li>
+          {#if pageUrl || source.title}
+            <dt>{$t('frameleaf_boards_source_page')}</dt>
+            <dd>
+              {#if pageUrl}<a href={pageUrl} target="_blank" rel="noopener noreferrer">{source.title || pageUrl}</a>
+                <small>{new URL(pageUrl).hostname}</small>
+              {:else}{source.title}{/if}
+            </dd>
+          {/if}
+          {#if source.creator}
+            <dt>{$t('frameleaf_boards_source_creator')}</dt>
+            <dd>{source.creator}</dd>
+          {/if}
+          {#if licenseUrl}
+            <dt>{$t('frameleaf_boards_source_licence')}</dt>
+            <dd><a href={licenseUrl} target="_blank" rel="noopener noreferrer">{shortUrl(licenseUrl)}</a></dd>
+          {/if}
+          {#if mediaUrl}
+            <dt>{$t('frameleaf_boards_source_image')}</dt>
+            <dd>
+              <a href={mediaUrl} target="_blank" rel="noopener noreferrer">{$t('frameleaf_boards_source_image_link')}</a
+              >
+              <small>{$t('frameleaf_boards_source_private')}</small>
+            </dd>
+          {/if}
+          {#if source.note}
+            <dd class="note">{source.note}</dd>
+          {/if}
         {/each}
-      </ul>
+        {#if added || sources[0]}
+          <dt>{$t('frameleaf_boards_source_added')}</dt>
+          <dd>
+            <time datetime={added ?? sources[0].capturedAt}>{formatDate(added ?? sources[0].capturedAt)}</time>
+          </dd>
+        {/if}
+      </dl>
     {/if}
   </section>
 {/if}
@@ -93,26 +146,34 @@
   }
   h3 {
     margin: 0;
-    font-size: var(--fl-font-size);
-    font-weight: 600;
+    color: var(--fl-muted);
+    font-size: 12px;
   }
-  ul {
+  dl {
     display: grid;
-    gap: var(--fl-space-3);
+    grid-template-columns: minmax(5.5rem, auto) 1fr;
+    gap: var(--fl-space-2) var(--fl-space-3);
     margin: 0;
-    padding: 0;
-    list-style: none;
+    font-size: var(--fl-font-small);
   }
-  li {
+  dt {
+    color: var(--fl-muted);
+  }
+  dd {
     display: grid;
-    gap: var(--fl-space-1);
-    padding-block-end: var(--fl-space-3);
-    border-block-end: 1px solid var(--fl-border);
+    gap: 2px;
+    min-width: 0;
+    margin: 0;
     overflow-wrap: anywhere;
   }
-  li:last-child {
-    padding-block-end: 0;
-    border: 0;
+  dd.via {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-1);
+  }
+  dd.note {
+    grid-column: 1 / -1;
+    white-space: pre-wrap;
   }
   a {
     color: var(--fl-accent);
@@ -125,19 +186,9 @@
     border-radius: var(--fl-radius-control);
   }
   p,
-  time {
+  small {
     margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
-  }
-  .fl-source-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--fl-space-3);
-    font-size: var(--fl-font-small);
-  }
-  .fl-source-note {
-    color: var(--fl-text);
-    white-space: pre-wrap;
   }
 </style>

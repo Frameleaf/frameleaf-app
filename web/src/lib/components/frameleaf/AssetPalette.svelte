@@ -8,30 +8,39 @@
     type AssetPaletteDto,
     type ColorFilter,
   } from '@frameleaf/sdk';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiProgressClock } from '@mdi/js';
 
   let {
     assetId,
     canRetry = false,
     onChoose,
   }: { assetId: string; canRetry?: boolean; onChoose?: (color: ColorFilter) => void } = $props();
+  const headingId = $props.id();
   let palette = $state<AssetPaletteDto | null>(null);
   let loading = $state(true);
   let busy = $state(false);
   let generation = $state(0);
   let reload = $state(0);
+  /** What the shown palette belongs to; a refresh of a still-pending palette keeps its message up. */
+  let shownFor = '';
   $effect(() => {
     const id = assetId;
     const version = generation;
     void reload;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    palette = null;
-    loading = true;
+    const key = `${id}:${version}`;
+    if (shownFor !== key || untrack(() => palette?.status) !== PaletteStatus.Pending) {
+      palette = null;
+      loading = true;
+    }
+    shownFor = key;
     void getAssetPalette({ ...authManager.params, id }, { signal: controller.signal })
       .then((value) => {
         if (controller.signal.aborted || assetId !== id || generation !== version) {
@@ -88,45 +97,54 @@
     weight.toLocaleString($locale ?? undefined, { style: 'percent', maximumFractionDigits: 0 });
 </script>
 
-<section class="fl-asset-palette" aria-label={$t('frameleaf_palette_title')} aria-busy={loading}>
-  <h3>{$t('frameleaf_palette_title')}</h3>
+<section class="fl-asset-palette" aria-labelledby={headingId} aria-busy={loading}>
+  <h3 id={headingId}>{$t('frameleaf_boards_colours')}</h3>
   {#if palette?.status === PaletteStatus.Ready}
-    {#if palette.representative === PaletteRepresentative.Frame}<p>{$t('frameleaf_palette_frame')}</p>{/if}
     {#if palette.swatches.length === 0}<p role="status">{$t('frameleaf_palette_empty')}</p>{/if}
     <ul class="fl-palette-swatches">
       {#each palette.swatches as swatch (swatch.hex)}
+        {@const label = $t('frameleaf_boards_colour_swatch', {
+          values: { hex: swatch.hex.toUpperCase(), coverage: coverage(swatch.weight) },
+        })}
         <li>
           {#if onChoose}
             <button
               type="button"
-              class="fl-control"
-              aria-label={$t('frameleaf_palette_swatch', {
-                values: { hex: swatch.hex, coverage: coverage(swatch.weight) },
-              })}
+              class="fl-palette-chip"
+              style:background-color={swatch.hex}
+              aria-label={label}
+              title={label}
               onclick={() => onChoose?.({ hex: swatch.hex, tolerance: ColorTolerance.Normal, minWeight: 0.05 })}
-            >
-              <span class="fl-palette-chip" style:background-color={swatch.hex} aria-hidden="true"></span><span
-                >{swatch.hex}</span
-              ><small>{coverage(swatch.weight)}</small>
-            </button>
+            ></button>
           {:else}
-            <span class="fl-palette-readonly"
-              ><span class="fl-palette-chip" style:background-color={swatch.hex} aria-hidden="true"
-              ></span>{swatch.hex}<small>{coverage(swatch.weight)}</small></span
-            >
+            <span class="fl-palette-chip" style:background-color={swatch.hex} role="img" aria-label={label}></span>
           {/if}
+          <small aria-hidden="true">{coverage(swatch.weight)}</small>
         </li>
       {/each}
     </ul>
+    {#if palette.representative === PaletteRepresentative.Frame || (onChoose && palette.swatches.length > 0)}
+      <p>
+        {[
+          palette.representative === PaletteRepresentative.Frame ? $t('frameleaf_boards_colours_video_frame') : '',
+          onChoose && palette.swatches.length > 0 ? $t('frameleaf_boards_colours_choose') : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      </p>
+    {/if}
+  {:else if !loading && palette?.status === PaletteStatus.Pending}
+    <p class="fl-palette-reading" role="status">
+      <Icon icon={mdiProgressClock} size="16" aria-hidden />
+      <span>{$t('frameleaf_boards_colours_reading')}</span>
+    </p>
   {:else}
     <p role="status">
       {loading
         ? $t('loading')
-        : palette?.status === PaletteStatus.Pending
-          ? $t('frameleaf_palette_pending')
-          : palette?.status === PaletteStatus.Failed
-            ? $t('frameleaf_palette_failed')
-            : $t('frameleaf_palette_unavailable')}
+        : palette?.status === PaletteStatus.Failed
+          ? $t('frameleaf_palette_failed')
+          : $t('frameleaf_palette_unavailable')}
     </p>
     {#if canRetry && palette?.status === PaletteStatus.Failed}<Button disabled={busy} onclick={() => void retry()}
         >{$t('frameleaf_palette_retry')}</Button
@@ -142,13 +160,22 @@
   }
   h3 {
     margin: 0;
-    font-size: var(--fl-font-size);
-    font-weight: 600;
+    color: var(--fl-muted);
+    font-size: 12px;
   }
   p {
     margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+  }
+  .fl-palette-reading {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--fl-space-2);
+  }
+  .fl-palette-reading :global(svg) {
+    flex-shrink: 0;
+    margin-top: 1px;
   }
   .fl-palette-swatches {
     display: flex;
@@ -158,36 +185,34 @@
     padding: 0;
     list-style: none;
   }
-  button,
-  .fl-palette-readonly {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--fl-space-2);
-    padding: var(--fl-space-2);
-    font-variant-numeric: tabular-nums;
+  li {
+    display: grid;
+    justify-items: center;
+    gap: var(--fl-space-1);
   }
-  button {
-    min-height: 2.75rem;
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
+  /* The swatch is the control; its edge keeps light and dark colours visible on either theme. */
+  .fl-palette-chip {
+    display: block;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--fl-border-strong);
+    border-radius: var(--fl-radius-control-compact);
   }
-  button:focus-visible {
+  button.fl-palette-chip {
+    cursor: pointer;
+    transition: transform var(--fl-motion-fast) var(--fl-ease);
+  }
+  button.fl-palette-chip:hover {
+    transform: translateY(-1px);
+  }
+  button.fl-palette-chip:focus-visible {
     outline: 2px solid var(--fl-accent);
     outline-offset: 2px;
   }
-  button:hover {
-    border-color: var(--fl-accent);
-  }
-  .fl-palette-chip {
-    width: 1.5rem;
-    height: 1.5rem;
-    flex-shrink: 0;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-  }
   small {
     color: var(--fl-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
   }
 </style>

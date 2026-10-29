@@ -1,7 +1,7 @@
-import { LibraryViewScope, ColorTolerance } from '@frameleaf/sdk';
+import { LibraryItemSearchKind, LibraryViewScope, ColorTolerance } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
-import { libraryItemSearchRequest } from './library-item-search';
+import { effectiveLibraryItemSort, libraryItemSearchRequest } from './library-item-search';
 
 describe('mixed library request adapter', () => {
   it('keeps Design text, color and unfiled conditions without needing semantic search', () => {
@@ -23,9 +23,22 @@ describe('mixed library request adapter', () => {
     expect(request.query).toBeUndefined();
     expect(request.filter).not.toHaveProperty('originalFileName');
   });
+  it('asks only for the kinds a view wants, and every kind otherwise', () => {
+    expect(libraryItemSearchRequest(emptyDiscoveryQuery(), 'added', [LibraryItemSearchKind.Bookmark]).kinds).toEqual([
+      LibraryItemSearchKind.Bookmark,
+    ]);
+    expect(libraryItemSearchRequest(emptyDiscoveryQuery())).not.toHaveProperty('kinds');
+  });
   it('refuses unsupported enrichment rather than silently dropping it', () => {
     expect(() =>
       libraryItemSearchRequest({ ...emptyDiscoveryQuery(), imageEnrichment: 'nsfw-review' as never }),
     ).toThrow();
+  });
+  it('sends name and rating sorts, and falls back to Recently added where the server cannot sort', () => {
+    const base = { ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } };
+    expect(libraryItemSearchRequest(base, 'name').sort).toBe('name');
+    expect(libraryItemSearchRequest(base, 'rating').sort).toBe('rating');
+    expect(libraryItemSearchRequest(base, 'color').sort).toBe('added');
+    expect(effectiveLibraryItemSort({ ...base, mode: 'smart', text: 'chairs' }, 'name')).toBe('added');
   });
 });

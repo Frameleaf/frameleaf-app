@@ -1,10 +1,13 @@
 <script lang="ts">
-  import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
+  import AlbumColorChoice from '$lib/components/frameleaf/AlbumColorChoice.svelte';
+  import AlbumDestinationPicker from '$lib/components/frameleaf/AlbumDestinationPicker.svelte';
+  import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
   import RuleBuilder from '$lib/components/frameleaf/RuleBuilder.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { defaultIconFor, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
+  import { albumColor, type AlbumColor } from '$lib/frameleaf/album-tree';
   import { emptyRule, ruleProblem, toCreate, type RuleDraft } from '$lib/frameleaf/classification-rules';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
   import {
@@ -90,7 +93,10 @@
 
   let albumName = $state('');
   let description = $state('');
-  let icon = $state<string>(defaultIconFor(kind));
+  /** Null keeps the default look for the kind; an icon is optional (prototype `NewCollectionDialog`). */
+  let icon = $state<string | null>(null);
+  let color = $state<AlbumColor | null>(null);
+  let iconsOpen = $state(false);
   let parentId = $state<string | null>(defaultParentId);
   let busy = $state(false);
   let error = $state('');
@@ -103,7 +109,9 @@
     const current = untrack(() => (editing ? album : undefined));
     albumName = current?.albumName ?? '';
     description = current?.description ?? '';
-    icon = current?.icon ?? defaultIconFor(current?.kind ?? kind);
+    icon = current?.icon ?? null;
+    color = albumColor(current?.color);
+    iconsOpen = false;
     parentId = current ? (current.parentId ?? null) : kind !== AlbumKind.Space ? defaultParentId : null;
     error = '';
     smart = smartDefault;
@@ -149,6 +157,7 @@
           albumName: name,
           description: description.trim() || null,
           icon,
+          ...(formKind !== AlbumKind.Space && { color }),
           ...(showParent && { parentId: parentId ?? null }),
         });
         if (saved) {
@@ -161,14 +170,15 @@
             toCreate(rule, {
               albumName: name,
               description: description.trim() || null,
-              icon,
+              icon: icon ?? defaultIconFor(kind),
               parentId: parentId ?? null,
             }),
           )
         : await onCreate({
             albumName: name,
             description: description.trim() || null,
-            icon,
+            ...(icon && { icon }),
+            ...(color && { color }),
             kind,
             parentId: kind !== AlbumKind.Space && parentId ? parentId : undefined,
           });
@@ -194,23 +204,49 @@
       <span>{$t('description')}</span>
       <textarea bind:value={description} rows="2" maxlength="2000"></textarea>
     </label>
+    {#if formKind !== AlbumKind.Space}
+      <AlbumColorChoice value={color} onChange={(next) => (color = next)} name="album-create-color" />
+    {/if}
     <div class="field">
-      <span class="field-label">
-        {$t('icon')}
-        <span class="preview" aria-hidden="true"><AlbumIcon name={icon} size="20" /></span>
-      </span>
-      <IconChooser value={icon} onChange={(name) => (icon = name)} inline label={$t('frameleaf_icons_choose')} />
+      <div class="icon-row">
+        <span class="preview" data-testid="album-create-preview">
+          <AlbumMark {icon} color={formKind === AlbumKind.Space ? null : color} kind={formKind} size="18" />
+          <span>{albumName.trim() || title}</span>
+        </span>
+        <button
+          type="button"
+          class="icons-toggle"
+          aria-expanded={iconsOpen}
+          aria-controls="album-create-icons"
+          onclick={() => (iconsOpen = !iconsOpen)}
+        >
+          {iconsOpen ? $t('frameleaf_boards_hide_icons') : $t('frameleaf_boards_choose_icon')}
+        </button>
+      </div>
+      {#if iconsOpen}
+        <div id="album-create-icons">
+          <IconChooser
+            value={icon ?? defaultIconFor(formKind)}
+            onChange={(name) => (icon = name)}
+            inline
+            label={$t('frameleaf_icons_choose')}
+          />
+        </div>
+      {/if}
     </div>
     {#if showParent}
-      <label class="field">
-        <span>{$t('frameleaf_albums_in_collection')}</span>
-        <select bind:value={parentId}>
-          <option value={null}>{$t('frameleaf_albums_no_collection')}</option>
-          {#each parents as collection (collection.id)}
-            <option value={collection.id}>{collection.albumName || $t('unnamed_album')}</option>
-          {/each}
-        </select>
-      </label>
+      <div class="field">
+        <span class="field-label" aria-hidden="true">{$t('frameleaf_albums_in_collection')}</span>
+        <AlbumDestinationPicker
+          albums={parents}
+          value={parentId}
+          onChange={(id) => (parentId = id)}
+          allowTop
+          topLabel={$t('frameleaf_albums_no_collection')}
+          name="album-create-parent"
+          label={$t('frameleaf_albums_in_collection')}
+        />
+      </div>
     {/if}
     {#if canBeSmart}
       <label class="switch">
@@ -296,9 +332,38 @@
     margin: 0;
     accent-color: var(--fl-accent);
   }
+  .icon-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-2);
+  }
   .preview {
     display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.375rem 0.625rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    background: var(--fl-raised);
     color: var(--fl-text);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .icons-toggle {
+    min-height: 36px;
+    padding: 0 0.875rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font: inherit;
+  }
+  .icons-toggle:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
   }
   .buttons {
     display: flex;

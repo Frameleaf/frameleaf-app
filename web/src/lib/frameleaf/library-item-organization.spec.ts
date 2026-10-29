@@ -1,6 +1,12 @@
-import { LibraryAssetItemKind, LibraryBookmarkItemKind, type LibraryItemDto } from '@frameleaf/sdk';
+import { LibraryAssetItemKind, LibraryBookmarkItemKind, LibraryScope, type LibraryItemDto } from '@frameleaf/sdk';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { organizeLibraryItems } from './library-item-organization';
+import {
+  organizeLibraryItems,
+  ownsLibrarySelection,
+  rateLibraryItems,
+  setLibraryItemsScope,
+  trashLibraryItems,
+} from './library-item-organization';
 
 const items = [
   { kind: LibraryAssetItemKind.Asset, asset: { id: 'same', ownerId: 'owner' } },
@@ -67,4 +73,40 @@ it('stops the rest of a mixed organization after access changes during the first
     organizeLibraryItems(items, ['same', 'bookmark:same'], 'owner', { albumId: 'album' }, () => current),
   ).rejects.toThrow('Library access changed');
   expect(sdkMock.addBookmarksToAlbum).not.toHaveBeenCalled();
+});
+
+describe('Boards selection changes', () => {
+  const owned = [
+    { kind: LibraryAssetItemKind.Asset, asset: { id: 'file', ownerId: 'owner' } },
+    { kind: LibraryBookmarkItemKind.Bookmark, bookmark: { id: 'link', ownerId: 'owner' } },
+  ] as LibraryItemDto[];
+  const keys = ['file', 'bookmark:link'];
+
+  it('rates files and links together, including Rejected', async () => {
+    await rateLibraryItems(owned, keys, 'owner', -1, () => true);
+    expect(sdkMock.updateAssets).toHaveBeenCalledWith({ assetBulkUpdateDto: { ids: ['file'], rating: -1 } });
+    expect(sdkMock.updateBookmark).toHaveBeenCalledWith({ id: 'link', bookmarkUpdateDto: { rating: -1 } });
+  });
+
+  it('shows files in Photos too without touching links', async () => {
+    await setLibraryItemsScope(owned, keys, 'owner', LibraryScope.Both, () => true);
+    expect(sdkMock.updateAssets).toHaveBeenCalledWith({ assetBulkUpdateDto: { ids: ['file'], libraryScope: 'both' } });
+    expect(sdkMock.updateBookmark).not.toHaveBeenCalled();
+  });
+
+  it('moves both kinds to the trash', async () => {
+    await trashLibraryItems(owned, keys, 'owner', () => true);
+    expect(sdkMock.deleteAssets).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: ['file'] } });
+    expect(sdkMock.trashBookmark).toHaveBeenCalledWith({ id: 'link' });
+  });
+
+  it("refuses to change someone else's item", async () => {
+    const shared = [
+      { kind: LibraryAssetItemKind.Asset, asset: { id: 'file', ownerId: 'partner' } },
+    ] as LibraryItemDto[];
+    expect(ownsLibrarySelection(shared, ['file'], 'owner')).toBe(false);
+    expect(ownsLibrarySelection(owned, keys, 'owner')).toBe(true);
+    await expect(trashLibraryItems(shared, ['file'], 'owner', () => true)).rejects.toThrow();
+    expect(sdkMock.deleteAssets).not.toHaveBeenCalled();
+  });
 });

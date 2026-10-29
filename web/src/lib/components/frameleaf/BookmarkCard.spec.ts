@@ -28,7 +28,7 @@ describe('bookmark grid card', () => {
   it('opens internal details, renders escaped text and never follows the website on a tile click', async () => {
     const onOpen = vi.fn();
     const { container } = render(BookmarkCard, { bookmark, onOpen });
-    await fireEvent.click(screen.getByRole('button', { name: '<b>Reference</b>' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Open saved link <b>Reference</b>' }));
     expect(onOpen).toHaveBeenCalledWith(bookmark);
     expect(container.querySelector('a')).toBeNull();
     expect(container.querySelector('b')).toBeNull();
@@ -40,7 +40,7 @@ describe('bookmark grid card', () => {
       const onToggleSelect = vi.fn();
       const onOpen = vi.fn();
       render(BookmarkCard, { bookmark, onToggleSelect, onOpen });
-      const button = screen.getByRole('button', { name: bookmark.title });
+      const button = screen.getByRole('button', { name: `Open saved link ${bookmark.title}` });
       await fireEvent.pointerDown(button, { button: 0, pointerId: 1, pointerType: 'touch', clientX: 20, clientY: 20 });
       await vi.advanceTimersByTimeAsync(400);
       await fireEvent.pointerUp(button, { pointerId: 1 });
@@ -57,7 +57,9 @@ describe('bookmark grid card', () => {
     const onOpen = vi.fn();
     render(BookmarkCard, { bookmark, selected: true, selecting: true, onToggleSelect, onOpen });
     expect(screen.getByRole('checkbox')).toBeChecked();
-    await fireEvent.click(screen.getByRole('button', { name: '<b>Reference</b>' }));
+    const card = screen.getByRole('button', { name: 'Select saved link <b>Reference</b>' });
+    expect(card).toHaveAttribute('aria-pressed', 'true');
+    await fireEvent.click(card);
     expect(onToggleSelect).toHaveBeenCalledWith(bookmark, expect.anything());
     expect(onOpen).not.toHaveBeenCalled();
     expect(screen.getByTestId('frameleaf-bookmark-card')).toHaveAttribute('data-asset-id', 'bookmark:book');

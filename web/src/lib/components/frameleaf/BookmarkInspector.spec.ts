@@ -35,12 +35,28 @@ it('saves owner notes and ratings through bookmark APIs', async () => {
   render(BookmarkInspector, { id: bookmark.id, onClose: vi.fn() });
   const note = await screen.findByRole('textbox', { name: 'frameleaf_bookmark_note' });
   await fireEvent.input(note, { target: { value: 'Packaging note' } });
-  await fireEvent.change(screen.getByRole('combobox', { name: 'rating' }), { target: { value: '4' } });
+  const stars = screen.getAllByRole('button', { name: 'rating_count' });
+  expect(stars[1]).toHaveAttribute('aria-pressed', 'true');
+  await fireEvent.click(stars[3]);
   await fireEvent.click(screen.getByRole('button', { name: 'save' }));
   await waitFor(() =>
     expect(sdkMock.updateBookmark).toHaveBeenCalledWith({
       id: bookmark.id,
       bookmarkUpdateDto: { title: 'Reference', note: 'Packaging note', rating: 4 },
+    }),
+  );
+});
+it('rejects a saved link with the same thumbs-down files use', async () => {
+  sdkMock.updateBookmark.mockResolvedValue({ ...bookmark, rating: -1 });
+  render(BookmarkInspector, { id: bookmark.id, onClose: vi.fn() });
+  const reject = await screen.findByRole('button', { name: 'frameleaf_library_rating_rejected' });
+  await fireEvent.click(reject);
+  expect(reject).toHaveAttribute('aria-pressed', 'true');
+  await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+  await waitFor(() =>
+    expect(sdkMock.updateBookmark).toHaveBeenCalledWith({
+      id: bookmark.id,
+      bookmarkUpdateDto: { title: 'Reference', note: 'Original', rating: -1 },
     }),
   );
 });

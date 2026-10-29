@@ -38,18 +38,32 @@ describe('asset palette inspection', () => {
     vi.resetAllMocks();
     access.changed = undefined;
   });
-  it('labels representative frames and lets a swatch become the shared color filter', async () => {
+  it('labels video frames, shows each colour’s coverage and lets a swatch become the shared color filter', async () => {
     sdkMock.getAssetPalette.mockResolvedValue(ready);
     const onChoose = vi.fn();
     render(AssetPalette, { assetId: 'asset', onChoose });
-    expect(await screen.findByText('Colors from a representative frame')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: /#609060/ }));
+    expect(
+      await screen.findByText('From a frame in the middle of the clip. Choose a colour to find similar items.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Colours' })).toBeInTheDocument();
+    expect(screen.getByText('80%')).toBeInTheDocument();
+    const swatch = screen.getByRole('button', { name: 'Find items with #609060, 80% of the picture' });
+    await fireEvent.click(swatch);
     expect(onChoose).toHaveBeenCalledWith({ hex: '#609060', tolerance: ColorTolerance.Normal, minWeight: 0.05 });
+  });
+  it('shows the colours of a still image as read-only swatches when there is nothing to filter', async () => {
+    sdkMock.getAssetPalette.mockResolvedValue({ ...ready, representative: PaletteRepresentative.Image });
+    render(AssetPalette, { assetId: 'asset' });
+    expect(await screen.findByRole('img', { name: 'Find items with #609060, 80% of the picture' })).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByText(/middle of the clip/)).toBeNull();
   });
   it('keeps pending indexing distinct from unavailable colors and only offers an authorized retry', async () => {
     sdkMock.getAssetPalette.mockResolvedValue({ ...ready, status: PaletteStatus.Pending, swatches: [] });
     const view = render(AssetPalette, { assetId: 'asset' });
-    expect(await screen.findByText('Colors are being indexed.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Colours are still being read. They’ll appear here in a moment.'),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry color indexing' })).not.toBeInTheDocument();
     sdkMock.getAssetPalette.mockResolvedValue({ ...ready, status: PaletteStatus.Failed, swatches: [] });
     await view.rerender({ assetId: 'other', canRetry: true });
@@ -73,7 +87,7 @@ describe('asset palette inspection', () => {
       await vi.advanceTimersByTimeAsync(3000);
       await tick();
       expect(sdkMock.getAssetPalette).toHaveBeenCalledTimes(2);
-      expect(screen.getByText('#609060')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /#609060/ })).toBeInTheDocument();
       view.unmount();
       await vi.advanceTimersByTimeAsync(10_000);
       expect(sdkMock.getAssetPalette).toHaveBeenCalledTimes(2);
