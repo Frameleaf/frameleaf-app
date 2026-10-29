@@ -195,7 +195,13 @@ export function validateBaseRaster(capture, envelope, binding) {
             '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
           // FL-562 transcript editing changes the transcript panel and timeline edits only.
           binding.sourceSha256 ===
-            'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b')),
+            'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
+          // FL-596 motion tracking writes ordinary keyframes; it changes no producer.
+          binding.sourceSha256 ===
+            '076073e60d0baee97812afe90c3c2a8eb65681ac91e68093548baec1a989c229' ||
+          // FL-627 tracking changes keyframe edits and timeline overlays only.
+          binding.sourceSha256 ===
+            'de474a4240010bc905eb165b85886ec8b1c02d999f08d35293991a1f921861e5')),
     'SOURCE_BROWSER',
   )
   check(

@@ -206,7 +206,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.test.ts
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,139 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -339,12 +339,18 @@ new file mode 100644
 +    expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'stale' })
 +    expect(keysOf('x')).toEqual([])
 +  })
++
++  it('treats a result as stale when the target position or size keys change', () => {
++    const result = resultFor(path)
++    useKeyframesStore.getState()._addKeyframes([{ itemId: 'title', property: 'x', frame: 70, value: 3 }])
++    expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'stale' })
++  })
 +})
 diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,280 @@
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import type { AnimationKeyframeSource } from '@/types/keyframe'
 +import { useItemsStore } from '../../items-store'
@@ -353,11 +359,11 @@ new file mode 100644
 +import { execute } from '../shared'
 +import { hasLockedEditParticipants } from '../linked-edit'
 +import { importMediaLibraryService } from '@/features/timeline/deps/media-library-service'
-+import { getSourceDimensions, resolveTransform } from '@/features/timeline/deps/composition-runtime'
++import { getSourceDimensions, resolveItemTransformAtFrame, resolveTransform } from '@/features/timeline/deps/composition-runtime'
 +import { useProjectStore } from '@/features/timeline/deps/projects'
 +import { timelineToSourceFrames } from '../../../utils/source-calculations'
 +import { canvasToSource, followTrack, type PlacedClip, type TrackedValue } from '../../../utils/motion-track-mapping'
-+import { checkSeed, trackRegion, MOTION_TRACKER_ALGORITHM, type GrayFrame, type TrackSample } from '@/shared/utils/motion-tracker'
++import { checkSeed, createRegionTracker, MOTION_TRACKER_ALGORITHM, type GrayFrame, type RegionTracker, type TrackSample } from '@/shared/utils/motion-tracker'
 +
 +const MOTION_TRACK_PRESET_ID = 'frameleaf.motion-track'
 +/** Tracking runs on frames this wide; boxes are scaled back to source pixels. */
@@ -424,8 +430,12 @@ new file mode 100644
 +  const video = source as VideoItem
 +  return JSON.stringify([
 +    MOTION_TRACKER_ALGORITHM, source.id, source.mediaId, video.sourceStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1,
-+    source.from, source.durationInFrames, source.transform ?? null, target.id, target.transform ?? null, seedFrame, direction,
-+    canvasSize(),
++    source.from, source.durationInFrames, source.transform ?? null, target.id, target.from, target.transform ?? null,
++    // The target's own position and size keys decide its seed box, so edits to them make a result stale.
++    (useKeyframesStore.getState().keyframesByItemId[target.id]?.properties ?? [])
++      .filter((property) => (TRACKED_PROPERTIES as readonly string[]).includes(property.property))
++      .map((property) => [property.property, property.keyframes.map((keyframe) => [keyframe.frame, keyframe.value, keyframe.easing])]),
++    seedFrame, direction, canvasSize(),
 +  ])
 +}
 +
@@ -478,13 +488,17 @@ new file mode 100644
 +  const frames: number[] = []
 +  for (let frame = seedFrame; step > 0 ? frame <= last : frame >= last; frame += step) frames.push(frame)
 +
-+  const targetPlacement = resolveTransform(target, canvasSize(), getSourceDimensions(target))
++  // The target's box as shown at the seed frame, keyframes included.
++  const targetPlacement = resolveItemTransformAtFrame(target, {
++    canvas: canvasSize(), frame: seedFrame, keyframes: useKeyframesStore.getState().keyframesByItemId[target.id],
++  })
 +  const seedBox = canvasToSource(clip, { cx: targetPlacement.x, cy: targetPlacement.y, width: targetPlacement.width, height: targetPlacement.height })
 +  const fps = useTimelineSettingsStore.getState().fps
 +  const scale = ANALYSIS_WIDTH / clip.sourceWidth
 +  const analysisSeed = { cx: seedBox.cx * scale, cy: seedBox.cy * scale, width: seedBox.width * scale, height: seedBox.height * scale }
 +
-+  let grayFrames: GrayFrame[]
++  // Decode, track and drop one frame at a time: only the previous box and the template are kept.
++  const samples: TrackSample[] = []
 +  try {
 +    const { mediaLibraryService } = await importMediaLibraryService()
 +    const blob = source.mediaId ? await mediaLibraryService.getMediaFile(source.mediaId) : null
@@ -496,14 +510,29 @@ new file mode 100644
 +      if (!track) return { ok: false, reason: 'decode-failed' }
 +      const height = Math.max(1, Math.round((ANALYSIS_WIDTH * clip.sourceHeight) / clip.sourceWidth))
 +      const sink = new CanvasSink(track, { width: ANALYSIS_WIDTH, height, fit: 'fill' })
-+      grayFrames = []
++      let tracker: RegionTracker | null = null
 +      for (const [index, frame] of frames.entries()) {
 +        if (options.signal?.aborted) throw new DOMException('Tracking cancelled', 'AbortError')
++        // Once lost, later frames are lost too: stop decoding.
++        if (tracker?.lost) {
++          samples.push({ ...samples.at(-1)!, confidence: 0, lost: true })
++          continue
++        }
 +        // Timestamps come from the clip's source-time mapping, so VFR sources decode the frame actually shown.
 +        const wrapped = await sink.getCanvas(sourceSecondsAt(source, frame, fps))
 +        if (!wrapped) return { ok: false, reason: 'decode-failed' }
-+        grayFrames.push(toGray(wrapped.canvas as OffscreenCanvas | HTMLCanvasElement))
++        const gray = toGray(wrapped.canvas as OffscreenCanvas | HTMLCanvasElement)
++        if (!tracker) {
++          const seedRefusal = checkSeed(gray, analysisSeed)
++          if (seedRefusal) return { ok: false, reason: seedRefusal }
++          tracker = createRegionTracker(gray, analysisSeed)
++          samples.push(tracker.first)
++        } else {
++          samples.push(tracker.next(gray))
++        }
 +        options.onProgress?.(index + 1, frames.length)
++        // Let the page breathe between frames.
++        await new Promise((resolve) => setTimeout(resolve, 0))
 +      }
 +    } finally {
 +      input.dispose()
@@ -512,10 +541,8 @@ new file mode 100644
 +    if (error instanceof DOMException && error.name === 'AbortError') throw error
 +    return { ok: false, reason: 'decode-failed' }
 +  }
-+
-+  const seedRefusal = checkSeed(grayFrames[0]!, analysisSeed)
-+  if (seedRefusal) return { ok: false, reason: seedRefusal }
-+  const samples = trackRegion(grayFrames, analysisSeed).map((sample) => ({
++  if (options.signal?.aborted) throw new DOMException('Tracking cancelled', 'AbortError')
++  const sourceSamples = samples.map((sample) => ({
 +    ...sample, cx: sample.cx / scale, cy: sample.cy / scale, width: sample.width / scale, height: sample.height / scale,
 +  }))
 +  return {
@@ -525,9 +552,9 @@ new file mode 100644
 +      targetId,
 +      binding: motionTrackBinding(source, target, seedFrame, direction),
 +      frames,
-+      samples,
-+      values: followTrack(clip, samples, frames, targetPlacement),
-+      lostFrames: frames.filter((_, index) => samples[index]!.lost),
++      samples: sourceSamples,
++      values: followTrack(clip, sourceSamples, frames, targetPlacement),
++      lostFrames: frames.filter((_, index) => sourceSamples[index]!.lost),
 +    },
 +  }
 +}
@@ -1172,9 +1199,9 @@ diff --git a/src/shared/utils/motion-tracker.test.ts b/src/shared/utils/motion-t
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/motion-tracker.test.ts
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,100 @@
 +import { describe, expect, it } from 'vite-plus/test'
-+import { checkSeed, trackRegion, type GrayFrame, type TrackBox } from './motion-tracker'
++import { checkSeed, createRegionTracker, trackRegion, type GrayFrame, type TrackBox } from './motion-tracker'
 +
 +// Analysis frames are 480x270, a quarter of 1080p; errors are reported at 1080p (x4).
 +const W = 480
@@ -1261,12 +1288,23 @@ new file mode 100644
 +    expect(checkSeed(frame, { cx: 400, cy: 200, width: 10, height: 10 })).toBe('low-texture')
 +    expect(checkSeed(frame, pathAt(0, 2))).toBeNull()
 +  })
++
++  it('tracks incrementally, one frame at a time, and stays lost once lost', () => {
++    const count = 30
++    const truth = Array.from({ length: count }, (_, i) => pathAt(i, count))
++    const frames = truth.map((box, i) => render(box, i >= 10))
++    const tracker = createRegionTracker(frames[0]!, truth[0]!)
++    const samples = [tracker.first, ...frames.slice(1).map((frame) => tracker.next(frame))]
++    expect(samples).toEqual(trackRegion(frames, truth[0]!))
++    expect(tracker.lost).toBe(true)
++    expect(samples.slice(10).every((sample) => sample.lost)).toBe(true)
++  })
 +})
 diff --git a/src/shared/utils/motion-tracker.ts b/src/shared/utils/motion-tracker.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/motion-tracker.ts
-@@ -0,0 +1,170 @@
+@@ -0,0 +1,192 @@
 +/**
 + * Motion tracking (FL-596): follows a seed box through grayscale frames by
 + * normalised cross-correlation, searching position and a small scale range.
@@ -1306,6 +1344,7 @@ new file mode 100644
 +const TEMPLATE_SIZE = 24
 +const DEFAULT_MIN_CONFIDENCE = 0.6
 +const DEFAULT_SCALE_STEP = 0.04
++const MAX_SEARCH_RADIUS = 48
 +/** Below this luma standard deviation a template has too little texture to track. */
 +const MIN_TEMPLATE_SPREAD = 0.02
 +
@@ -1361,7 +1400,8 @@ new file mode 100644
 +
 +/** Best match near `previous`: coarse grid, then a one-pixel refinement with a parabolic sub-pixel fit. */
 +function search(template: Float32Array, frame: GrayFrame, previous: TrackBox, scaleStep: number): TrackSample {
-+  const radius = Math.max(8, Math.round(Math.max(previous.width, previous.height) * 0.5))
++  // Half the box, at least 8 px and at most MAX_SEARCH_RADIUS, bounds the work per frame.
++  const radius = Math.min(MAX_SEARCH_RADIUS, Math.max(8, Math.round(Math.max(previous.width, previous.height) * 0.5)))
 +  let best = { ...previous, confidence: -1, lost: false }
 +  for (const scale of [1 - scaleStep, 1, 1 + scaleStep]) {
 +    const width = previous.width * scale
@@ -1396,44 +1436,64 @@ new file mode 100644
 +  return seedPatch.spread < MIN_TEMPLATE_SPREAD ? 'low-texture' : null
 +}
 +
++export interface RegionTracker {
++  /** The seed sample (frame 0). */
++  readonly first: TrackSample
++  /** Track the next frame. Once lost, every later frame is lost too. */
++  next(frame: GrayFrame): TrackSample
++  readonly lost: boolean
++}
++
++/**
++ * An incremental tracker: it keeps only the previous box and the template, so
++ * frames can be decoded, tracked and dropped one at a time.
++ */
++export function createRegionTracker(firstFrame: GrayFrame, seed: TrackBox, options: TrackOptions = {}): RegionTracker {
++  const minConfidence = options.minConfidence ?? DEFAULT_MIN_CONFIDENCE
++  const scaleStep = options.scaleStep ?? DEFAULT_SCALE_STEP
++  const seedPatch = patch(firstFrame, seed)
++  const usable = !!seedPatch && seedPatch.spread >= MIN_TEMPLATE_SPREAD
++  let template = usable ? seedPatch!.values : new Float32Array(0)
++  let previous: TrackBox = seed
++  let lost = !usable
++  return {
++    first: usable ? { ...seed, confidence: 1, lost: false } : { ...seed, confidence: 0, lost: true },
++    get lost() { return lost },
++    next(frame) {
++      if (lost) return { ...previous, confidence: 0, lost: true }
++      const found = search(template, frame, previous, scaleStep)
++      if (found.confidence < minConfidence) {
++        // Lost: never guess through it.
++        lost = true
++        return { ...previous, confidence: 0, lost: true }
++      }
++      previous = found
++      // Follow slow appearance changes from confident matches only.
++      if (found.confidence > 0.9) {
++        const updated = patch(frame, found)
++        if (updated && updated.spread >= MIN_TEMPLATE_SPREAD) {
++          const blended = new Float32Array(template.length)
++          let norm = 0
++          for (let k = 0; k < template.length; k += 1) {
++            blended[k] = 0.8 * template[k]! + 0.2 * updated.values[k]!
++            norm += blended[k]! * blended[k]!
++          }
++          const scale = norm > 0 ? 1 / Math.sqrt(norm) : 0
++          for (let k = 0; k < blended.length; k += 1) blended[k] = blended[k]! * scale
++          template = blended
++        }
++      }
++      return found
++    },
++  }
++}
++
 +/**
 + * Track `seed` (on frames[0]) through the frames in order. Pass frames in
 + * reverse order to track backward. The first sample is the seed itself.
 + */
 +export function trackRegion(frames: readonly GrayFrame[], seed: TrackBox, options: TrackOptions = {}): TrackSample[] {
-+  const minConfidence = options.minConfidence ?? DEFAULT_MIN_CONFIDENCE
-+  const scaleStep = options.scaleStep ?? DEFAULT_SCALE_STEP
 +  if (frames.length === 0) return []
-+  const seedPatch = patch(frames[0]!, seed)
-+  if (!seedPatch || seedPatch.spread < MIN_TEMPLATE_SPREAD) return frames.map(() => ({ ...seed, confidence: 0, lost: true }))
-+
-+  const samples: TrackSample[] = [{ ...seed, confidence: 1, lost: false }]
-+  let template = seedPatch.values
-+  let previous: TrackBox = seed
-+  for (let index = 1; index < frames.length; index += 1) {
-+    const found = search(template, frames[index]!, previous, scaleStep)
-+    if (found.confidence < minConfidence) {
-+      // Lost: mark this and every later frame rather than guessing through it.
-+      for (let rest = index; rest < frames.length; rest += 1) samples.push({ ...previous, confidence: 0, lost: true })
-+      break
-+    }
-+    samples.push(found)
-+    previous = found
-+    // Follow slow appearance changes from confident matches only.
-+    if (found.confidence > 0.9) {
-+      const updated = patch(frames[index]!, found)
-+      if (updated && updated.spread >= MIN_TEMPLATE_SPREAD) {
-+        const blended = new Float32Array(template.length)
-+        let norm = 0
-+        for (let k = 0; k < template.length; k += 1) {
-+          blended[k] = 0.8 * template[k]! + 0.2 * updated.values[k]!
-+          norm += blended[k]! * blended[k]!
-+        }
-+        const scale = norm > 0 ? 1 / Math.sqrt(norm) : 0
-+        for (let k = 0; k < blended.length; k += 1) blended[k] = blended[k]! * scale
-+        template = blended
-+      }
-+    }
-+  }
-+  return samples
++  const tracker = createRegionTracker(frames[0]!, seed, options)
++  return [tracker.first, ...frames.slice(1).map((frame) => tracker.next(frame))]
 +}

@@ -157,11 +157,10 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
      expect(keysOf('x')).toEqual([])
      useTimelineCommandStore.getState().undo()
      expect(keysOf('x')).toHaveLength(3)
-@@ -130,4 +133,38 @@ describe('motion track actions', () => {
+@@ -136,4 +139,49 @@ describe('motion track actions', () => {
+     useKeyframesStore.getState()._addKeyframes([{ itemId: 'title', property: 'x', frame: 70, value: 3 }])
      expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'stale' })
-     expect(keysOf('x')).toEqual([])
    })
-+
 +  it('removes an applied track after reopening, when keyframes have lost their source tag', () => {
 +    const outcome = applyMotionTrack(resultFor(path))
 +    if (!outcome.ok) throw new Error(outcome.reason)
@@ -195,6 +194,18 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 +    applyMotionTrack(result, { keepTrackedPart: true })
 +    expect(useTimelineItemOverlayStore.getState().overlaysByItemId['v1'] ?? []).toEqual([])
 +  })
++
++  it('treats a result as stale when its separate tracking box moves', () => {
++    useItemsStore.getState().setItems([source(), title(), title({ id: 'box', transform: { x: 0, y: 0, width: 50, height: 50 } })])
++    const { itemById } = useItemsStore.getState()
++    const result: MotionTrackResult = {
++      ...resultFor(path),
++      boxItemId: 'box',
++      binding: motionTrackBinding(itemById['v1']!, itemById['title']!, 20, 'forward', itemById['box']!),
++    }
++    useItemsStore.getState()._updateItem('box', { transform: { x: 10, y: 0, width: 50, height: 50 } })
++    expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'stale' })
++  })
  })
 diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
 --- a/src/features/timeline/stores/actions/edit/motion-track-actions.ts
@@ -216,7 +227,43 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    | 'same-clip'
    | 'source-transform'
    | 'reversed'
-@@ -109,16 +112,25 @@ export async function analyzeMotionTrack(
+@@ -42,6 +45,8 @@ export interface MotionTrackResult {
+   values: TrackedValue[]
+   /** Timeline frames that were lost, in order; empty when the whole range tracked. */
+   lostFrames: number[]
++  /** The separate tracking box clip, when one was used. */
++  boxItemId?: string
+ }
+ 
+ export type MotionTrackAnalysis =
+@@ -73,7 +78,13 @@ function placedClip(item: VideoItem): PlacedClip | MotionTrackRefusal {
+ }
+ 
+ /** Binds a track to the clips' source, timing, transforms, seed frame and canvas. */
+-export function motionTrackBinding(source: TimelineItem, target: TimelineItem, seedFrame: number, direction: 'forward' | 'backward'): string {
++export function motionTrackBinding(
++  source: TimelineItem,
++  target: TimelineItem,
++  seedFrame: number,
++  direction: 'forward' | 'backward',
++  box?: TimelineItem,
++): string {
+   const video = source as VideoItem
+   return JSON.stringify([
+     MOTION_TRACKER_ALGORITHM, source.id, source.mediaId, video.sourceStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1,
+@@ -83,6 +94,11 @@ export function motionTrackBinding(source: TimelineItem, target: TimelineItem, s
+       .filter((property) => (TRACKED_PROPERTIES as readonly string[]).includes(property.property))
+       .map((property) => [property.property, property.keyframes.map((keyframe) => [keyframe.frame, keyframe.value, keyframe.easing])]),
+     seedFrame, direction, canvasSize(),
++    // A separate tracking box is bound too: moving it after tracking makes the result stale.
++    box ? [box.id, box.from, box.transform ?? null,
++      (useKeyframesStore.getState().keyframesByItemId[box.id]?.properties ?? [])
++        .filter((property) => (TRACKED_PROPERTIES as readonly string[]).includes(property.property))
++        .map((property) => [property.property, property.keyframes.map((keyframe) => [keyframe.frame, keyframe.value])])] : null,
+   ])
+ }
+ 
+@@ -113,16 +129,25 @@ export async function analyzeMotionTrack(
    targetId: string,
    seedFrame: number,
    direction: 'forward' | 'backward',
@@ -244,17 +291,41 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    if (hasKeyframes(targetId, ['position', 'scale'])) return { ok: false, reason: 'vector-keys' }
    const clip = placedClip(source)
    if (typeof clip === 'string') return { ok: false, reason: clip }
-@@ -132,7 +144,8 @@ export async function analyzeMotionTrack(
-   for (let frame = seedFrame; step > 0 ? frame <= last : frame >= last; frame += step) frames.push(frame)
- 
-   const targetPlacement = resolveTransform(target, canvasSize(), getSourceDimensions(target))
+@@ -139,7 +164,11 @@ export async function analyzeMotionTrack(
+   const targetPlacement = resolveItemTransformAtFrame(target, {
+     canvas: canvasSize(), frame: seedFrame, keyframes: useKeyframesStore.getState().keyframesByItemId[target.id],
+   })
 -  const seedBox = canvasToSource(clip, { cx: targetPlacement.x, cy: targetPlacement.y, width: targetPlacement.width, height: targetPlacement.height })
-+  const boxPlacement = resolveTransform(boxItem, canvasSize(), getSourceDimensions(boxItem))
++  // The tracking box (default: the target) as shown at the seed frame, keyframes included.
++  const boxPlacement = boxItem.id === target.id ? targetPlacement : resolveItemTransformAtFrame(boxItem, {
++    canvas: canvasSize(), frame: seedFrame, keyframes: useKeyframesStore.getState().keyframesByItemId[boxItem.id],
++  })
 +  const seedBox = canvasToSource(clip, { cx: boxPlacement.x, cy: boxPlacement.y, width: boxPlacement.width, height: boxPlacement.height })
    const fps = useTimelineSettingsStore.getState().fps
    const scale = ANALYSIS_WIDTH / clip.sourceWidth
    const analysisSeed = { cx: seedBox.cx * scale, cy: seedBox.cy * scale, width: seedBox.width * scale, height: seedBox.height * scale }
-@@ -227,33 +240,94 @@ export function applyMotionTrack(
+@@ -197,7 +226,8 @@ export async function analyzeMotionTrack(
+     result: {
+       sourceId,
+       targetId,
+-      binding: motionTrackBinding(source, target, seedFrame, direction),
++      binding: motionTrackBinding(source, target, seedFrame, direction, boxItem.id === targetId ? undefined : boxItem),
++      boxItemId: boxItem.id === targetId ? undefined : boxItem.id,
+       frames,
+       samples: sourceSamples,
+       values: followTrack(clip, sourceSamples, frames, targetPlacement),
+@@ -222,7 +252,9 @@ export function applyMotionTrack(
+   const source = items.find((item) => item.id === result.sourceId)
+   const target = items.find((item) => item.id === result.targetId)
+   const direction = result.frames.length > 1 && result.frames[1]! < result.frames[0]! ? 'backward' : 'forward'
+-  if (!source || !target || motionTrackBinding(source, target, result.frames[0]!, direction) !== result.binding) {
++  const box = result.boxItemId ? items.find((item) => item.id === result.boxItemId) : undefined
++  if (!source || !target || (result.boxItemId && !box)
++    || motionTrackBinding(source, target, result.frames[0]!, direction, box) !== result.binding) {
+     return { ok: false, reason: 'stale' }
+   }
+   if (result.lostFrames.length > 0 && !decisions.keepTrackedPart) return { ok: false, reason: 'unreviewed-lost' }
+@@ -248,33 +280,94 @@ export function applyMotionTrack(
      itemId: target.id, property, frame: value.frame - target.from, value: Math.round(value[property] * 100) / 100,
      easing: 'linear' as const, source: source_,
    })))
@@ -297,16 +368,16 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
 +  /** Item-relative frames that received x, y, width and height keys. */
 +  keyFrames: number[]
 +  lostFrames: number
- }
- 
--/** Remove one applied track's keyframes in one undo step; other keys stay. */
++}
++
 +type TrackedItem = TimelineItem & { motionTracks?: MotionTrackRecord[] }
 +
 +/** Applied tracks on an item, oldest first. */
 +export function listMotionTracks(itemId: string): MotionTrackRecord[] {
 +  return ((useItemsStore.getState().itemById[itemId] as TrackedItem | undefined)?.motionTracks ?? []).slice()
-+}
-+
+ }
+ 
+-/** Remove one applied track's keyframes in one undo step; other keys stay. */
 +/**
 + * Remove one applied track in one undo step: its x, y, width and height keys
 + * at the frames it wrote (including later manual edits of those keys) and its
