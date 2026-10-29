@@ -19871,6 +19871,240 @@
         "x-immich-permission": "bookmark.update"
       }
     },
+    "/browser-extension/sign-in": {
+      "delete": {
+        "description": "Called with the extension’s own access: removes it, so it is no longer listed in API keys. Only an access added by signing in can sign itself out.",
+        "operationId": "signOutBrowserExtension",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Sign Save to Frameleaf out",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "Public. Tells Save to Frameleaf this server can sign in from the browser; a server without it is asked for a key instead.",
+        "operationId": "getBrowserExtensionSignIn",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInInfoDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Check that Save to Frameleaf can sign in here",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/browser-extension/sign-in/authorize": {
+      "post": {
+        "description": "Signed in with a session (never a key). Allow makes a single-use code, valid five minutes, bound to you, this session, the code challenge, the exact return address and this server; only its SHA-256 is kept. Cancel makes nothing. Either way the response is where the sign-in window goes next.",
+        "operationId": "authorizeBrowserExtensionSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserExtensionSignInAuthorizeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInAuthorizeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Allow or cancel a Save to Frameleaf sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/browser-extension/sign-in/exchange": {
+      "post": {
+        "description": "Public: the code is the proof. Exchanges the code with its code verifier and the same return address for a new API key that can only save captures and list collections and tags (capture.create and capture.catalog.read), listed in API keys as “Save to Frameleaf · Chrome” or “· Edge” and added by signing in. It replaces this extension’s previous access to the account. The code is used up by the first attempt.",
+        "operationId": "exchangeBrowserExtensionSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserExtensionSignInExchangeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInExchangeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInErrorDto"
+                }
+              }
+            },
+            "description": "expired: the code is older than five minutes; invalid: anything else (unknown, used, wrong verifier, return address or server)"
+          }
+        },
+        "summary": "Finish a Save to Frameleaf sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/browser-extension/sign-in/start": {
+      "post": {
+        "description": "For the Allow page, signed in with a session (never a key). Checks the extension’s return address (https://<extension id>.chromiumapp.org/ only) and its S256 code challenge, and says whether this extension already has access, so Allow is asked only once per browser.",
+        "operationId": "startBrowserExtensionSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserExtensionSignInStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInStartResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a Save to Frameleaf sign-in before Allow",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/capture/albums": {
       "post": {
         "operationId": "createCaptureAlbum",
@@ -66366,6 +66600,11 @@
             "description": "API key secret (only shown once)",
             "type": "string"
           },
+          "signedInFrom": {
+            "description": "The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace.",
+            "nullable": true,
+            "type": "string"
+          },
           "updatedAt": {
             "description": "Last update date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -66383,6 +66622,7 @@
           "name",
           "permissions",
           "secret",
+          "signedInFrom",
           "updatedAt"
         ],
         "type": "object"
@@ -66426,6 +66666,11 @@
             },
             "type": "array"
           },
+          "signedInFrom": {
+            "description": "The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace.",
+            "nullable": true,
+            "type": "string"
+          },
           "updatedAt": {
             "description": "Last update date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -66441,6 +66686,7 @@
           "lastUsedAt",
           "name",
           "permissions",
+          "signedInFrom",
           "updatedAt"
         ],
         "type": "object"
@@ -73664,6 +73910,235 @@
         },
         "required": [
           "eq"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionClient": {
+        "description": "The browser Save to Frameleaf runs in",
+        "enum": [
+          "chrome",
+          "edge"
+        ],
+        "type": "string"
+      },
+      "BrowserExtensionSignInAuthorizeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "description": "true for Allow, false for Cancel",
+            "type": "boolean"
+          },
+          "client": {
+            "$ref": "#/components/schemas/BrowserExtensionClient"
+          },
+          "codeChallenge": {
+            "description": "The base64url SHA-256 of the extension’s code verifier",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "codeChallengeMethod": {
+            "description": "Only S256 is accepted",
+            "enum": [
+              "S256"
+            ],
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "state": {
+            "description": "Returned unchanged to the extension",
+            "maxLength": 512,
+            "minLength": 16,
+            "type": "string"
+          }
+        },
+        "required": [
+          "allow",
+          "client",
+          "codeChallenge",
+          "codeChallengeMethod",
+          "redirectUri",
+          "state"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInAuthorizeResponseDto": {
+        "properties": {
+          "redirectUrl": {
+            "description": "Where the sign-in window goes next: the return address with the code (or the cancellation) and state",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirectUrl"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInErrorCode": {
+        "description": "expired: the code is too old, sign in again; invalid: anything else",
+        "enum": [
+          "expired",
+          "invalid"
+        ],
+        "type": "string"
+      },
+      "BrowserExtensionSignInErrorDto": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/BrowserExtensionSignInErrorCode"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "statusCode": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "error",
+          "message",
+          "statusCode"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInExchangeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "The single-use code from the return address",
+            "maxLength": 200,
+            "minLength": 16,
+            "type": "string"
+          },
+          "codeVerifier": {
+            "description": "The code verifier the challenge was made from",
+            "maxLength": 128,
+            "minLength": 43,
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "The same return address the sign-in started with",
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "codeVerifier",
+          "redirectUri"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInExchangeResponseDto": {
+        "properties": {
+          "apiKeyId": {
+            "description": "The access, as listed in API keys",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "How the access is listed in API keys",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The new access key, shown once; it can only save captures and list collections and tags",
+            "type": "string"
+          },
+          "serverId": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiKeyId",
+          "name",
+          "secret",
+          "serverId",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInInfoDto": {
+        "properties": {
+          "version": {
+            "description": "The extension sign-in this server supports (1)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInStartDto": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/BrowserExtensionClient"
+          },
+          "codeChallenge": {
+            "description": "The base64url SHA-256 of the extension’s code verifier",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "codeChallengeMethod": {
+            "description": "Only S256 is accepted",
+            "enum": [
+              "S256"
+            ],
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "state": {
+            "description": "Returned unchanged to the extension",
+            "maxLength": 512,
+            "minLength": 16,
+            "type": "string"
+          }
+        },
+        "required": [
+          "client",
+          "codeChallenge",
+          "codeChallengeMethod",
+          "redirectUri",
+          "state"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInStartResponseDto": {
+        "properties": {
+          "accessName": {
+            "description": "How the access is listed in API keys, e.g. “Save to Frameleaf · Chrome”",
+            "type": "string"
+          },
+          "alreadyAllowed": {
+            "description": "This browser’s extension already has access to your account, so Allow is not asked again",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accessName",
+          "alreadyAllowed"
         ],
         "type": "object"
       },
