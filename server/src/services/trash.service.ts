@@ -70,12 +70,8 @@ export class TrashService extends BaseService {
         ? new Date(oldestDeletedAt.getTime() + trash.days * 86_400_000).toISOString()
         : DateTime.now().endOf('day').toJSDate().toISOString();
     }
-    let freesBytes = 0;
-    if (summary.count > 0) {
-      const rows = await this.trashRepository.getReviewRows(auth.user.id, TrashReviewAction.Empty, undefined, scope);
-      const reviewed = summarizeTrashReview(rows);
-      freesBytes = Math.max(0, reviewed.bytes - reviewed.retainedBytes);
-    }
+    const freesBytes =
+      summary.count > 0 ? await this.trashRepository.getFreedBytes(auth.user.id, TrashReviewAction.Empty, scope) : 0;
     return { ...summary, nextGoesAt, freesBytes };
   }
 

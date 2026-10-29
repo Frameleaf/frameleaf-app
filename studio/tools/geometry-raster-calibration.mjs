@@ -211,9 +211,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
             'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
+          // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
+          binding.sourceSha256 ===
+            'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
           // FL-638 Stabilise: only a stabilised video clip draws differently (through its correction).
           binding.sourceSha256 ===
-            '0f9719d7e953530da1c18ae4c110ac029705dfd85801577751eb6c5fec36bf48')),
+            'd7ebf469b188e2285a119fd248d7e0af96a11ed93f4e695c1b17dc370000a73d')),
     'SOURCE_BROWSER',
   )
   check(

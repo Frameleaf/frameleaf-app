@@ -2653,7 +2653,10 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             effectiveVisibility('asset').as('visibility'),
-            sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
+            // the viewer's own mark; a shared link's visitor never sees its owner's favorites
+            (auth.sharedLink ? sql`false` : sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`).as(
+              'isFavorite',
+            ),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
@@ -3390,6 +3393,51 @@ export class AssetRepository {
       )
       .where('asset.id', '=', id)
       .executeTakeFirstOrThrow();
+  }
+  /**
+   * Writes each asset's current tag values to its EXIF row and locks them, as `getForUpdateTags` and an
+   * `upsertExif` with `lockedPropertiesBehavior: 'append'` do for one asset, in one statement per chunk
+   * instead of two round trips per asset. An asset that no longer exists is skipped.
+   */
+  @Chunked()
+  async updateTagsForAssets(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    const locked: LockableProperty[] = ['tags'];
+    // Two tag edits on the same items at once: the second waits here, then reads the first one's
+    // committed tags, so neither writes a tag list that misses the other's change. Ordered by id, so
+    // overlapping edits never deadlock; NO KEY UPDATE leaves other tables' references to the items alone.
+    await sql`SELECT id FROM asset WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR NO KEY UPDATE`.execute(this.db);
+    await this.db
+      .insertInto('asset_exif')
+      .columns(['assetId', 'tags', 'lockedProperties'])
+      .expression((eb) =>
+        eb
+          .selectFrom('asset')
+          .select((eb) => [
+            'asset.id',
+            eb.fn
+              .coalesce(
+                eb
+                  .selectFrom('tag_asset')
+                  .innerJoin('tag', 'tag.id', 'tag_asset.tagId')
+                  .select((eb) => eb.fn.agg<string[]>('array_agg', ['tag.value']).as('tags'))
+                  .whereRef('tag_asset.assetId', '=', 'asset.id'),
+                sql<string[]>`'{}'::character varying[]`,
+              )
+              .as('tags'),
+            sql<LockableProperty[]>`${locked}::character varying[]`.as('lockedProperties'),
+          ])
+          .where('asset.id', '=', anyUuid(ids)),
+      )
+      .onConflict((oc) =>
+        oc.column('assetId').doUpdateSet((eb) => ({
+          tags: eb.ref('excluded.tags'),
+          lockedProperties: distinctLocked(eb, locked),
+        })),
+      )
+      .execute();
   }
   @GenerateSql({ params: [] })
   async getDescriptionStats(): Promise<DescriptionStats> {

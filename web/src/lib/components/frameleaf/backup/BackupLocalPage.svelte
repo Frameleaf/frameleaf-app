@@ -25,10 +25,11 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleCreateJob } from '$lib/services/job.service';
   import {
-    getQueuesLegacy,
+    getQueue,
     getServerVersion,
     listDatabaseBackups,
     ManualJobName,
+    QueueName,
     type DatabaseBackupDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -72,9 +73,10 @@
   );
 
   /** The backup queue, or undefined when it cannot be read. */
+  /** The database backup queue alone; reading every queue's counts on each poll is far more work. */
   const readQueue = async () => {
     try {
-      return (await getQueuesLegacy()).backupDatabase;
+      return await getQueue({ name: QueueName.BackupDatabase });
     } catch {
       return undefined;
     }
@@ -83,7 +85,7 @@
   const takeSnapshot = async () => {
     failed = false;
     const before = new Set((backups ?? []).map(({ filename }) => filename));
-    const failedBefore = (await readQueue())?.jobCounts.failed ?? 0;
+    const failedBefore = (await readQueue())?.statistics.failed ?? 0;
     if (!(await handleCreateJob({ name: ManualJobName.BackupDatabase }))) {
       return;
     }
@@ -111,8 +113,8 @@
       }
       const queue = await readQueue();
       if (queue) {
-        const { failed: failedNow, active, waiting, delayed } = queue.jobCounts;
-        const idle = !queue.queueStatus.isActive && active + waiting + delayed === 0;
+        const { failed: failedNow, active, waiting, delayed } = queue.statistics;
+        const idle = active + waiting + delayed === 0;
         // The first poll may run before the queue picks the job up, so idle only counts after it.
         if (failedNow > failedBefore || (idle && polls > 1)) {
           stop(true);

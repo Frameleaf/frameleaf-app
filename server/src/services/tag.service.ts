@@ -24,7 +24,6 @@ import { BaseService } from 'src/services/base.service.js';
 import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { isGranted, requireEntityAccess } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
-import { updateLockedColumns } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
@@ -134,9 +133,7 @@ export class TagService extends BaseService {
       // The repository holds tag rows until this transaction commits, pinning the affected memberships.
       const tag = await this.tagRepository.update(id, { name, color, parentId });
       const assetIds = await this.tagRepository.getSubtreeAssetIds(id);
-      for (const assetId of assetIds) {
-        await this.updateTags(assetId);
-      }
+      await this.updateTags(assetIds);
       await this.partnerOriginRepository.markOverridden('asset', assetIds, [AssetOriginField.Tags], auth.user.id);
       return { tag, assetIds };
     });
@@ -154,7 +151,7 @@ export class TagService extends BaseService {
 
     const assetIds = await this.partnerOriginRepository.withOwnerTagEdit(auth.user.id, async () => {
       const assetIds = await this.tagRepository.delete(id);
-      for (const assetId of assetIds) await this.updateTags(assetId);
+      await this.updateTags(assetIds);
       await this.partnerOriginRepository.markOverridden('asset', assetIds, [AssetOriginField.Tags], auth.user.id);
       return assetIds;
     });
@@ -200,7 +197,7 @@ export class TagService extends BaseService {
         );
         return { result, rulesChanged: changesSyncVisibility(previous, updated) };
       });
-      for (const assetId of outcome.result.assetIds) await this.updateTags(assetId);
+      await this.updateTags(outcome.result.assetIds);
       await this.partnerOriginRepository.markOverridden(
         'asset',
         outcome.result.assetIds,
@@ -242,9 +239,7 @@ export class TagService extends BaseService {
     const results = await this.partnerOriginRepository.withOriginEdit('asset', [...assetIds], [], async () => {
       const results = await this.tagRepository.upsertAssetIds(items);
       const changed = [...new Set(results.map((item) => item.assetId))];
-      for (const assetId of changed) {
-        await this.updateTags(assetId);
-      }
+      await this.updateTags(changed);
       await this.partnerOriginRepository.markOverridden('asset', changed, [AssetOriginField.Tags], auth.user.id);
       return results;
     });
@@ -266,9 +261,7 @@ export class TagService extends BaseService {
         { parentId: id, assetIds: dto.ids, permission: Permission.AssetUpdate },
       );
       const changed = getSucceededIds(results);
-      for (const assetId of changed) {
-        await this.updateTags(assetId);
-      }
+      await this.updateTags(changed);
       await this.partnerOriginRepository.markOverridden('asset', changed, [AssetOriginField.Tags], auth.user.id);
       return results;
     });
@@ -295,9 +288,7 @@ export class TagService extends BaseService {
         { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.TagDelete },
       );
       const changed = getSucceededIds(results);
-      for (const assetId of changed) {
-        await this.updateTags(assetId);
-      }
+      await this.updateTags(changed);
       await this.partnerOriginRepository.markOverridden('asset', changed, [AssetOriginField.Tags], auth.user.id);
       return results;
     });
@@ -348,12 +339,9 @@ export class TagService extends BaseService {
     return tag;
   }
 
-  private async updateTags(assetId: string) {
-    const { tags } = await this.assetRepository.getForUpdateTags(assetId);
-    await this.assetRepository.upsertExif({
-      exif: updateLockedColumns({ assetId, tags: tags.map(({ value }) => value) }),
-      lockedPropertiesBehavior: 'append',
-    });
+  /** Each item's tag list (kept locked, so the next metadata read cannot change it), in one statement. */
+  private async updateTags(assetIds: string[]) {
+    await this.assetRepository.updateTagsForAssets(assetIds);
   }
 }
 

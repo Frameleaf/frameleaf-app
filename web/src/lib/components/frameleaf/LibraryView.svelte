@@ -74,11 +74,12 @@
   import { searchQueryForTimeline, timelineQueryOptions } from '$lib/frameleaf/library-query-options';
   import { locale } from '$lib/stores/preferences.store';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
-  import type {
-    LibraryGrouping,
-    LibraryLayout,
-    LibrarySessionAction,
-    LibrarySort,
+  import {
+    scopeForDestination,
+    type LibraryGrouping,
+    type LibraryLayout,
+    type LibrarySessionAction,
+    type LibrarySort,
   } from '$lib/frameleaf/library-session';
   import {
     describeFilterFields,
@@ -584,6 +585,14 @@
     restoredView = urlView;
     writtenView = undefined;
     session.restore(new URL(page.url.href), storageUserId, storageContext);
+    // The device's last view can be an album's; anywhere but an album or a space it is the library,
+    // or "everything matching" here would quietly mean that album's items.
+    untrack(() => {
+      const scope = scopeForDestination(session.state.scope, destination?.kind);
+      if (scope) {
+        session.normalizeScope(scope);
+      }
+    });
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
     // than being quietly replaced by the stored view.
     if (session.refusedView) {

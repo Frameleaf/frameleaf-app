@@ -494,7 +494,8 @@
       if (disposed || current !== detailGeneration) {
         return;
       }
-      photos = [...photos, ...page.photos.filter((photo) => photos.every(({ id }) => id !== photo.id))];
+      const loaded = new Set(photos.map(({ id }) => id));
+      photos = [...photos, ...page.photos.filter((photo) => !loaded.has(photo.id))];
       nextCursor = page.nextCursor;
     } catch (error_) {
       if (current === detailGeneration) {

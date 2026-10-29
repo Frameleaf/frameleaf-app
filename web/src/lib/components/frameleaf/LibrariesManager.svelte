@@ -110,7 +110,11 @@
     if (!moving) {
       return;
     }
-    const timer = setInterval(() => void refresh(), LIBRARY_SCAN_POLL_MS);
+    const timer = setInterval(() => {
+      if (!document.hidden) {
+        void refresh();
+      }
+    }, LIBRARY_SCAN_POLL_MS);
     return () => clearInterval(timer);
   });
 

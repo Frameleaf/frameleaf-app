@@ -578,9 +578,14 @@ export class AssetService extends BaseService {
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
     for (const assetId of ids) await this.eventRepository.emit('AssetChanged', { assetId });
-    await this.jobRepository.queueAll(
-      [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
-    );
+    // A sidecar holds the description, capture date and time zone, location and rating only: a favorite,
+    // archive, lock or duplicate change leaves it as it is, so it queues no rewrite of every item's file.
+    const sidecarFields = [dateTimeOriginal, latitude, longitude, rating, description, dateTimeRelative, timeZone];
+    if (sidecarFields.some((value) => value !== undefined)) {
+      await this.jobRepository.queueAll(
+        [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
+      );
+    }
   }
 
   private async afterLibraryScopeChange(ids: string[], ownerId: string): Promise<void> {

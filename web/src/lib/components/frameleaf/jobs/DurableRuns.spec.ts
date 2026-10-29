@@ -81,4 +81,20 @@ describe('durable run history', () => {
     expect(sdkMock.listDurableJobRuns).toHaveBeenLastCalledWith({ take: 25, skip: 0 });
     expect(await screen.findByText('Completed with errors')).toBeInTheDocument();
   });
+  it('does not poll the run history while the tab is hidden', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    try {
+      render(DurableRuns);
+      await vi.waitFor(() => expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(1);
+      hidden.mockReturnValue(false);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(2);
+    } finally {
+      hidden.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });
