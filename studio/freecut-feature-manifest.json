@@ -12783,9 +12783,10 @@
           "0031-managed-color-working-range.patch",
           "0136-project-colour-policy-disclosure.patch",
           "e6bca4d7d8",
-          "0147-colour-match-between-shots.patch"
+          "0147-colour-match-between-shots.patch",
+          "0151-graded-hdr-colour-match.patch"
         ],
-        "note": "FL-97 closeout: managed floating-point colour. FL-599 adds colour matching to a reference shot as an editable exposure and temperature/tint pair.",
+        "note": "FL-97 closeout: managed floating-point colour. FL-599 adds colour matching to a reference shot as an editable exposure and temperature/tint pair; FL-626 matches graded clips and HDR projects from frames rendered in the working space.",
         "status": "shipped"
       },
       "id": "extra.color-workspace",

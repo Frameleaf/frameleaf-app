@@ -192,6 +192,19 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0151 (FL-626) matches colour through existing grades and in HDR. Instead of decoding source
+frames, each clip is rendered alone through the export renderer at a small size of its own aspect
+(`renderWorkingFrame`). The reference keeps all of its effects, and the target leaves out only its own
+match, so the match lands after the grade and approximates the graded reference. SDR projects read the
+sRGB-encoded working values. HDR projects read the GPU float route's PQ BT.2020 signal, decoded to linear
+BT.709 in reference-white units; there exposure and temperature/tint are still linear, so the same exact
+solve applies, with values above reference white kept. HDR analysis without WebGPU is refused with an
+explanation. Results are now bound to the reference's source, timing and full grade and to the
+project's colour management as well as the target's, so changing any of them makes a proposal stale.
+The panel shows reference, before and after swatches (with values) at the chosen strength. Tests cover
+graded staleness and an HDR linear chart whose error falls by at least half. Browser rendering of the
+sampled frames and preview/export pixel comparisons remain open.
+
 Patch 0147 (FL-599) adds colour matching between shots. The video panel's Match colour section takes a
 reference clip and samples the frame at the playhead (or each clip's middle) from the source, downscaled,
 in the SDR working space. A match is an editable `gpu-exposure` then `gpu-temperature` pair after the
