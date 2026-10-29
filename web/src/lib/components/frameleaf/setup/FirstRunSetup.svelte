@@ -79,7 +79,6 @@
     getFrameleafSetupLibrary,
     getFrameleafSetupStorage,
     getHardwareCheck,
-    getServerConfig,
     getSummary,
     HardwareBackend,
     login,
@@ -260,10 +259,11 @@
    * names Frameleaf Cloud (`FRAMELEAF_CLOUD_URL`); reading that contacts nothing. A server already
    * linked (a headless link token) signs the administrator in with Frameleaf; any other server creates
    * the administrator and then links, and nothing is sent until the administrator starts the link.
+   * FL-647: read from the server config the root layout already loaded, not a second request.
    */
-  const probeFrameleafSignIn = async () => {
+  const probeFrameleafSignIn = () => {
     try {
-      const config = await getServerConfig();
+      const config = serverConfigManager.value;
       frameleafAvailable = config.frameleaf.cloudConfigured;
       frameleafSignIn = config.frameleaf.signInAvailable;
     } catch {
@@ -276,7 +276,7 @@
       void loadServerData();
     }
     if (setup.flow === 'new') {
-      void probeFrameleafSignIn();
+      probeFrameleafSignIn();
     }
   });
 
