@@ -74149,6 +74149,11 @@
             ],
             "type": "string"
           },
+          "installationId": {
+            "description": "A random id this installation of the extension made once; its access replaces only its own",
+            "pattern": "^[\\w-]{16,128}$",
+            "type": "string"
+          },
           "redirectUri": {
             "description": "The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it",
             "maxLength": 2048,
@@ -74166,6 +74171,7 @@
           "client",
           "codeChallenge",
           "codeChallengeMethod",
+          "installationId",
           "redirectUri",
           "state"
         ],
@@ -74310,6 +74316,11 @@
             ],
             "type": "string"
           },
+          "installationId": {
+            "description": "A random id this installation of the extension made once; its access replaces only its own",
+            "pattern": "^[\\w-]{16,128}$",
+            "type": "string"
+          },
           "redirectUri": {
             "description": "The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it",
             "maxLength": 2048,
@@ -74326,6 +74337,7 @@
           "client",
           "codeChallenge",
           "codeChallengeMethod",
+          "installationId",
           "redirectUri",
           "state"
         ],

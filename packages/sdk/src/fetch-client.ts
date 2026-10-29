@@ -6282,6 +6282,8 @@ export type BrowserExtensionSignInAuthorizeDto = {
     codeChallenge: string;
     /** Only S256 is accepted */
     codeChallengeMethod: CodeChallengeMethod;
+    /** A random id this installation of the extension made once; its access replaces only its own */
+    installationId: string;
     /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
     redirectUri: string;
     /** Returned unchanged to the extension */
@@ -6321,6 +6323,8 @@ export type BrowserExtensionSignInStartDto = {
     codeChallenge: string;
     /** Only S256 is accepted */
     codeChallengeMethod: CodeChallengeMethod;
+    /** A random id this installation of the extension made once; its access replaces only its own */
+    installationId: string;
     /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
     redirectUri: string;
     /** Returned unchanged to the extension */
