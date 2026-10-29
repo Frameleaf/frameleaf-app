@@ -14,6 +14,7 @@ export interface PageDiscovery {
   pageUrl: string;
   title: string;
   candidates: CaptureCandidate[];
+  bookmarkUrl?: string;
 }
 export class DiscoveryFailure extends Error {
   constructor() {
@@ -77,7 +78,9 @@ export function parseDiscovery(
 }
 
 /** Chromium boundary: only the active top-level web document is inspected. */
-export async function discoverActivePage(): Promise<PageDiscovery> {
+export async function discoverActivePage(
+  mode: 'images' | 'bookmark' = 'images',
+): Promise<PageDiscovery> {
   try {
     const [tab] = await chrome.tabs.query({
       active: true,
@@ -91,6 +94,25 @@ export async function discoverActivePage(): Promise<PageDiscovery> {
       new URL(tab.url).password
     )
       throw failure();
+    if (mode === 'bookmark') {
+      if (tab.url.length > 8192) throw failure();
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: 'ISOLATED',
+        func: () => ({
+          documentUrl: document.URL,
+          title: document.title.slice(0, 2000),
+          candidates: [],
+        }),
+      });
+      if (!result?.documentId || result.frameId !== 0) throw failure();
+      return {
+        tabId: tab.id,
+        documentId: result.documentId,
+        ...parseDiscovery(result.result, tab.url),
+        bookmarkUrl: tab.url,
+      };
+    }
     const [loaded] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: ['content.js'],

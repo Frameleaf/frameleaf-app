@@ -44,7 +44,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     try {
       if (!req.url?.startsWith('/frameleaf/api/'))
         publicKeys.push(req.headers['x-api-key'] as string | undefined);
-      if (req.url === '/page') {
+      if (req.url?.startsWith('/page')) {
         const svg =
           '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"><rect width="64" height="48" fill="#2ab06f"/></svg>';
         res
@@ -178,7 +178,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
         const body = Buffer.concat(chunks).toString();
         const value = JSON.parse(body);
         if (
-          !resources.get(value.captureId)?.ready ||
+          (!value.bookmark && !resources.get(value.captureId)?.ready) ||
           (committedBodies.has(value.captureId) &&
             committedBodies.get(value.captureId) !== body)
         ) {
@@ -207,7 +207,9 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
         const receipt = {
           captureId: value.captureId,
           status: 'created',
-          item: { kind: 'asset', asset: { id: itemId } },
+          item: value.bookmark
+            ? { kind: 'bookmark', bookmark: { id: itemId } }
+            : { kind: 'asset', asset: { id: itemId } },
         };
         if (holdUiReceipt) {
           holdUiReceipt = false;
@@ -585,6 +587,69 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       fullPage: true,
     });
     expect(sourceCount).toBe(3);
+    await content.goto(origin + '/page?variant=2#section');
+    await content.bringToFront();
+    const bookmarkOpened = context.waitForEvent('page');
+    await popup.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === 'Save page bookmark')!
+        .click();
+    });
+    const bookmarkPage = await bookmarkOpened;
+    await expect(
+      bookmarkPage.getByRole('heading', {
+        name: 'Save page bookmark',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      bookmarkPage.getByLabel('Bookmark address', { exact: true }),
+    ).toHaveValue(origin + '/page?variant=2#section');
+    await expect(
+      bookmarkPage.getByLabel('Source page', { exact: true }),
+    ).toHaveValue(origin + '/page');
+    await expect(bookmarkPage.locator('.candidate-list')).toHaveCount(0);
+    await bookmarkPage
+      .getByLabel('Album', { exact: true })
+      .selectOption(itemId);
+    const uploadsBeforeBookmark = creates;
+    await bookmarkPage.screenshot({
+      path: testInfo.outputPath('bookmark-preview.png'),
+      fullPage: true,
+    });
+    await bookmarkPage
+      .getByRole('button', { name: 'Save page bookmark', exact: true })
+      .click();
+    await expect(
+      bookmarkPage.getByText('Queued 1 bookmark.', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      bookmarkPage.getByRole('button', {
+        name: 'Bookmark queued',
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await bookmarkPage.close();
+    const bookmarkRow = popup
+      .locator('.queue-list li')
+      .filter({ hasText: 'Fixture inspiration' });
+    await expect(bookmarkRow.getByText('Saved', { exact: true })).toBeVisible();
+    expect(creates).toBe(uploadsBeforeBookmark);
+    expect(sourceCount).toBe(4);
+    const bookmarkBody = [...committedBodies.values()]
+      .map((body) => JSON.parse(body))
+      .find((body) => body.bookmark);
+    expect(bookmarkBody.bookmark).toEqual({
+      url: origin + '/page?variant=2#section',
+      title: 'Fixture inspiration',
+    });
+    expect(bookmarkBody.source.pageUrl).toBe(origin + '/page');
+    expect(bookmarkBody.uploadResourceId).toBeUndefined();
+    expect(bookmarkBody.sha256).toBeUndefined();
+    await popup.screenshot({
+      path: testInfo.outputPath('bookmark-saved.png'),
+      fullPage: true,
+    });
     const polling = await context.newPage();
     await polling.clock.install();
     await polling.addInitScript(() => {

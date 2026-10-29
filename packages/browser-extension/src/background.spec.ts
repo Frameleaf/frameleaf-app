@@ -107,6 +107,7 @@ describe('trusted extension operations', () => {
       sender,
     );
     expect((await handleMessage({ type: 'discover' }, sender)).ok).toBe(false);
+    expect((await handleMessage({ type: 'bookmark' }, sender)).ok).toBe(false);
     expect(discoverActivePage).not.toHaveBeenCalled();
     const captureSender = {
       ...sender,
@@ -144,6 +145,14 @@ describe('trusted extension operations', () => {
         )
       ).ok,
     ).toBe(false);
+    expect((await handleMessage({ type: 'bookmark' }, captureSender)).ok).toBe(
+      false,
+    );
+    await handleMessage(
+      { type: 'bookmark' },
+      { ...sender, url: 'chrome-extension://frameleaf/popup.html' },
+    );
+    expect(discoverActivePage).toHaveBeenLastCalledWith('bookmark');
     await handleMessage({ type: 'disconnect' }, sender);
     expect(
       (await handleMessage({ type: 'preview', id }, captureSender)).ok,

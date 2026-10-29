@@ -14,6 +14,7 @@ export type ExtensionRequest =
         | 'refresh'
         | 'disconnect'
         | 'discover'
+        | 'bookmark'
         | 'queue'
         | 'wake-queue';
     }

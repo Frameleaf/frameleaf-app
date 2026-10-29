@@ -192,12 +192,15 @@ export function handleMessage(
         case 'refresh':
           await refresh();
           break;
-        case 'discover': {
+        case 'discover':
+        case 'bookmark': {
           if (!trustedSender(sender, ['/popup.html'])) throw new Error();
           const current = await connectionStatus();
           if (!current || current.status !== 'connected')
             throw new CaptureFailure('credential');
-          const discovery = await discoverActivePage();
+          const discovery = await discoverActivePage(
+            message.type === 'bookmark' ? 'bookmark' : 'images',
+          );
           const latest = await connectionStatus();
           if (
             !latest ||

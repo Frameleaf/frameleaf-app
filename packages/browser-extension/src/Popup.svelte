@@ -7,11 +7,11 @@
   let loading = $state(true);
   let error = $state("");
   let discovering = $state(false);
-  async function discover() {
+  async function discover(type: "discover" | "bookmark" = "discover") {
     discovering = true;
     error = "";
     try {
-      const reply = await sendRequest({ type: "discover" });
+      const reply = await sendRequest({ type });
       if (!reply.ok) error = reply.error;
     } catch {
       error =
@@ -76,6 +76,11 @@
       disabled={discovering || loading}
       onclick={() => void discover()}
       >{discovering ? "Finding images…" : "Find images on this page"}</button
+    >{/if}
+  {#if connection?.status === "connected"}<button
+      type="button"
+      disabled={discovering || loading}
+      onclick={() => void discover("bookmark")}>Save page bookmark</button
     >{/if}
   <button
     type="button"

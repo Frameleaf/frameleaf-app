@@ -61,3 +61,43 @@ export function captureInput(
     file: { blob, filename },
   };
 }
+
+export function bookmarkInput(
+  form: {
+    binding: ServerBinding;
+    albumId: string;
+    tagIds: string[];
+    note: string;
+  },
+  target: string,
+  page: string,
+  title: string,
+  capturedAt = new Date().toISOString(),
+): EnqueueCapture {
+  const pageUrl = sanitizeSourceUrl(page);
+  let url: URL;
+  try {
+    url = new URL(target);
+  } catch {
+    throw new QueueFailure('Enter a valid bookmark address before saving.');
+  }
+  if (
+    !pageUrl ||
+    !['https:', 'http:'].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.href.length > 8192
+  )
+    throw new QueueFailure(
+      'Enter a valid bookmark address without embedded credentials before saving.',
+    );
+  const name = title.slice(0, 2000);
+  return {
+    binding: form.binding,
+    albumId: form.albumId,
+    tagIds: [...form.tagIds],
+    note: form.note,
+    source: { pageUrl, title: name, capturedAt },
+    bookmark: { url: url.href, title: name },
+  };
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureInput } from './capture-input';
+import { captureInput, bookmarkInput } from './capture-input';
 const binding = {
   serverId: 'one',
   userId: '11111111-1111-4111-8111-111111111111',
@@ -14,6 +14,39 @@ const candidate = {
   title: 'x'.repeat(4096),
 };
 describe('capture form input', () => {
+  it('keeps an explicitly confirmed bookmark target separate from sanitized attribution', () => {
+    const value = bookmarkInput(
+      { binding, albumId: 'album', tagIds: ['tag'], note: 'Reference' },
+      'https://page.example/work?variant=2#section',
+      candidate.pageUrl,
+      'Page title',
+      '2026-10-28T12:00:00.000Z',
+    );
+    expect(value.bookmark).toEqual({
+      url: 'https://page.example/work?variant=2#section',
+      title: 'Page title',
+    });
+    expect(value.source).toEqual({
+      pageUrl: 'https://page.example/work',
+      title: 'Page title',
+      capturedAt: '2026-10-28T12:00:00.000Z',
+    });
+    expect(value.file).toBeUndefined();
+    for (const target of [
+      'javascript:alert(1)',
+      'https://user:password@page.example/',
+      'file:///private/file',
+      'https://page.example/' + 'x'.repeat(8192),
+    ])
+      expect(() =>
+        bookmarkInput(
+          { binding, albumId: 'album', tagIds: [], note: '' },
+          target,
+          candidate.pageUrl,
+          'Title',
+        ),
+      ).toThrow();
+  });
   it('preserves original bytes/note/destination, sanitizes attribution and bounds the title and filename', () => {
     const blob = new Blob(['bytes'], { type: 'image/png' });
     const value = captureInput(

@@ -1,7 +1,7 @@
 <script lang="ts">
   import QueuePanel from "./QueuePanel.svelte";
   import { enqueueCapture, QueueFailure } from "./queue";
-  import { captureInput } from "./capture-input";
+  import { captureInput, bookmarkInput } from "./capture-input";
   import { sameBinding } from "./api";
   import { requestMediaOrigins } from "./platform";
   import { onMount } from "svelte";
@@ -27,6 +27,8 @@
   let tagIds = $state<string[]>([]);
   let note = $state("");
   let sourcePage = $state("");
+  let bookmarkTarget = $state("");
+  let bookmarkQueued = $state(false);
   let sourceTitle = $state("");
   let saving = $state(false);
   let notice = $state("");
@@ -119,6 +121,8 @@
         clearImages();
         notice = "";
         sourcePage = nextPreview?.discovery.pageUrl ?? "";
+        bookmarkTarget = nextPreview?.discovery.bookmarkUrl ?? sourcePage;
+        bookmarkQueued = false;
         sourceTitle = (nextPreview?.discovery.title ?? "").slice(0, 2000);
       }
       preview = nextPreview;
@@ -263,6 +267,43 @@
       }
     }
   }
+  async function saveBookmark() {
+    if (
+      !preview ||
+      connection?.status !== "connected" ||
+      saving ||
+      downloading ||
+      !albumId ||
+      bookmarkQueued
+    )
+      return;
+    const previewId = preview.id;
+    saving = true;
+    error = "";
+    notice = "";
+    try {
+      const input = bookmarkInput(
+        { binding: connection.binding, albumId, tagIds: [...tagIds], note },
+        bookmarkTarget,
+        sourcePage,
+        sourceTitle,
+      );
+      await enqueueCapture(input);
+      if (preview?.id === previewId) {
+        bookmarkQueued = true;
+        notice = "Queued 1 bookmark.";
+      }
+      void sendRequest({ type: "wake-queue" }).catch(() => {});
+    } catch (reason) {
+      if (preview?.id === previewId)
+        error =
+          reason instanceof QueueFailure
+            ? reason.message
+            : "Could not queue this bookmark. Check the address and try again.";
+    } finally {
+      saving = false;
+    }
+  }
   function toggle(id: string, checked: boolean) {
     selected = checked
       ? selected.length < 100
@@ -289,10 +330,15 @@
   }
 </script>
 
-<main class="collection">
+<main
+  class="collection"
+  class:bookmark-collection={!!preview?.discovery.bookmarkUrl}
+>
   <header>
     <img src="icons/icon48.png" width="32" height="32" alt="" />
-    <h1>Collect images</h1>
+    <h1>
+      {preview?.discovery.bookmarkUrl ? "Save page bookmark" : "Collect images"}
+    </h1>
   </header>
   {#if loading}<p role="status">Reading your collection…</p>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -301,113 +347,123 @@
     <p class="page-title">{preview.discovery.title || "Untitled page"}</p>
     <p class="address">{preview.discovery.pageUrl}</p>
     <div class="collection-layout">
-      <section aria-label="Discovered images">
-        <div class="filters">
-          <label
-            >Minimum width <input
-              type="number"
-              min="0"
-              max="100000"
-              bind:value={minWidth}
-            /></label
-          >
-          <div class="format-filter">
-            <label for="format">Format</label>
-            <select id="format" bind:value={format}>
-              <option value="">All formats</option>
-              {#each ["jpeg", "png", "webp", "avif", "gif", "svg"] as value}
-                <option {value}>{value.toUpperCase()}</option>
-              {/each}
-            </select>
-          </div>
-        </div>
-        <p class="hint">
-          Dimensions and formats are page hints. Unloaded content and other
-          frames are excluded. Discovery is limited to {discoveryLimits.candidates}
-          images and {discoveryLimits.elements.toLocaleString()} elements.
-        </p>
-        <div class="selection-bar">
-          <p role="status">
-            {selected.length} of 100 selected · {visible.length} shown
+      {#if preview.discovery.bookmarkUrl}<section aria-label="Bookmark preview">
+          <h2>Page bookmark</h2>
+          <p>
+            Save a link with your tags and note. The page and its images will
+            not be downloaded.
           </p>
-          <button
-            type="button"
-            onclick={() => (selected = [])}
-            disabled={saving || !selected.length}>Clear selection</button
-          >
-        </div>
-        {#if !visible.length}<p>
-            No matching images are available on this page.
-          </p>{/if}
-        <p class="hint">
-          Previews download anonymously from the origin shown on each button.
-          Permission is requested when needed. Redirected and protected images
-          may need a bookmark or screenshot.
-        </p>
-        <div class="preview-actions">
-          <button
-            type="button"
-            disabled={saving || !Object.keys(thumbnails).length}
-            onclick={clearImages}>Clear loaded previews</button
-          >
-          {#if downloading}<button
+        </section>{:else}
+        <section aria-label="Discovered images">
+          <div class="filters">
+            <label
+              >Minimum width <input
+                type="number"
+                min="0"
+                max="100000"
+                bind:value={minWidth}
+              /></label
+            >
+            <div class="format-filter">
+              <label for="format">Format</label>
+              <select id="format" bind:value={format}>
+                <option value="">All formats</option>
+                {#each ["jpeg", "png", "webp", "avif", "gif", "svg"] as value}
+                  <option {value}>{value.toUpperCase()}</option>
+                {/each}
+              </select>
+            </div>
+          </div>
+          <p class="hint">
+            Dimensions and formats are page hints. Unloaded content and other
+            frames are excluded. Discovery is limited to {discoveryLimits.candidates}
+            images and {discoveryLimits.elements.toLocaleString()} elements.
+          </p>
+          <div class="selection-bar">
+            <p role="status">
+              {selected.length} of 100 selected · {visible.length} shown
+            </p>
+            <button
               type="button"
-              onclick={() => download?.abort()}>Cancel download</button
-            >{/if}
-        </div>
-        <ul class="candidate-list">
-          {#each visible as candidate (candidate.id)}
-            <li>
-              <label class="candidate"
-                ><input
-                  type="checkbox"
-                  checked={selected.includes(candidate.id)}
-                  disabled={saving ||
-                    (selected.length >= 100 &&
-                      !selected.includes(candidate.id))}
-                  onchange={(event) =>
-                    toggle(candidate.id, event.currentTarget.checked)}
-                />{#if thumbnails[candidate.id]}<img
-                    class="candidate-thumbnail"
-                    src={thumbnails[candidate.id]}
-                    alt=""
-                    onerror={(event) =>
-                      previewFailed(
-                        candidate.id,
-                        event.currentTarget.getAttribute("src") ?? "",
-                      )}
-                  />{:else}<span
-                    class="candidate-placeholder"
-                    aria-hidden="true">Image</span
-                  >{/if}<span class="candidate-description"
-                  ><span class="address">{label(candidate.url)}</span><span
-                    class="muted"
-                    >{candidate.width
-                      ? `${candidate.width}px wide`
-                      : "Width unknown"}{candidate.height
-                      ? ` · ${candidate.height}px high`
-                      : ""}</span
-                  ></span
-                ></label
-              >
-              <button
+              onclick={() => (selected = [])}
+              disabled={saving || !selected.length}>Clear selection</button
+            >
+          </div>
+          {#if !visible.length}<p>
+              No matching images are available on this page.
+            </p>{/if}
+          <p class="hint">
+            Previews download anonymously from the origin shown on each button.
+            Permission is requested when needed. Redirected and protected images
+            may need a bookmark or screenshot.
+          </p>
+          <div class="preview-actions">
+            <button
+              type="button"
+              disabled={saving || !Object.keys(thumbnails).length}
+              onclick={clearImages}>Clear loaded previews</button
+            >
+            {#if downloading}<button
                 type="button"
-                class="preview-button"
-                disabled={saving || !!downloading || !!thumbnails[candidate.id]}
-                onclick={() => void previewImage(candidate)}
-                >{downloading === candidate.id
-                  ? "Loading preview…"
-                  : thumbnails[candidate.id]
-                    ? "Preview loaded"
-                    : `Preview from ${mediaOrigin(candidate.url) ?? "this page"}`}</button
-              >
-              {#if previewErrors[candidate.id]}<p class="error" role="alert">
-                  {previewErrors[candidate.id]}
-                </p>{/if}
-            </li>
-          {/each}
-        </ul>
-      </section>
+                onclick={() => download?.abort()}>Cancel download</button
+              >{/if}
+          </div>
+          <ul class="candidate-list">
+            {#each visible as candidate (candidate.id)}
+              <li>
+                <label class="candidate"
+                  ><input
+                    type="checkbox"
+                    checked={selected.includes(candidate.id)}
+                    disabled={saving ||
+                      (selected.length >= 100 &&
+                        !selected.includes(candidate.id))}
+                    onchange={(event) =>
+                      toggle(candidate.id, event.currentTarget.checked)}
+                  />{#if thumbnails[candidate.id]}<img
+                      class="candidate-thumbnail"
+                      src={thumbnails[candidate.id]}
+                      alt=""
+                      onerror={(event) =>
+                        previewFailed(
+                          candidate.id,
+                          event.currentTarget.getAttribute("src") ?? "",
+                        )}
+                    />{:else}<span
+                      class="candidate-placeholder"
+                      aria-hidden="true">Image</span
+                    >{/if}<span class="candidate-description"
+                    ><span class="address">{label(candidate.url)}</span><span
+                      class="muted"
+                      >{candidate.width
+                        ? `${candidate.width}px wide`
+                        : "Width unknown"}{candidate.height
+                        ? ` · ${candidate.height}px high`
+                        : ""}</span
+                    ></span
+                  ></label
+                >
+                <button
+                  type="button"
+                  class="preview-button"
+                  disabled={saving ||
+                    !!downloading ||
+                    !!thumbnails[candidate.id]}
+                  onclick={() => void previewImage(candidate)}
+                  >{downloading === candidate.id
+                    ? "Loading preview…"
+                    : thumbnails[candidate.id]
+                      ? "Preview loaded"
+                      : `Preview from ${mediaOrigin(candidate.url) ?? "this page"}`}</button
+                >
+                {#if previewErrors[candidate.id]}<p class="error" role="alert">
+                    {previewErrors[candidate.id]}
+                  </p>{/if}
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
       <aside aria-label="Destination">
         <h2>Destination</h2>
         <p class="address">{connection?.binding.origin}</p>
@@ -449,16 +505,34 @@
           bind:value={sourcePage}
         />
         <p class="hint">Source query parameters and fragments are removed.</p>
-        <button
-          class="primary"
-          type="button"
-          disabled={saving || !!downloading || !selected.length || !albumId}
-          onclick={() => void saveSelected()}
-          >{saving ? "Queuing images…" : "Save selected images"}</button
-        >
+        {#if !preview.discovery.bookmarkUrl}<button
+            class="primary"
+            type="button"
+            disabled={saving || !!downloading || !selected.length || !albumId}
+            onclick={() => void saveSelected()}
+            >{saving ? "Queuing images…" : "Save selected images"}</button
+          >
+          <p class="hint">
+            This is a collection preview. Selected images have not been saved.
+          </p>{/if}
+        <label for="bookmark-target">Bookmark address</label><input
+          id="bookmark-target"
+          type="url"
+          maxlength="8192"
+          disabled={saving || bookmarkQueued}
+          bind:value={bookmarkTarget}
+        />
         <p class="hint">
-          This is a collection preview. Selected images have not been saved.
+          The confirmed bookmark address keeps its query parameters and
+          fragment. Remove private values before saving.
         </p>
+        <button
+          type="button"
+          class:primary={!!preview.discovery.bookmarkUrl}
+          disabled={saving || !!downloading || !albumId || bookmarkQueued}
+          onclick={() => void saveBookmark()}
+          >{bookmarkQueued ? "Bookmark queued" : "Save page bookmark"}</button
+        >
       </aside>
     </div>
   {/if}

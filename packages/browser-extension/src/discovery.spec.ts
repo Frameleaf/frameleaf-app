@@ -23,6 +23,23 @@ beforeEach(() => {
   vi.stubGlobal('chrome', { tabs: { query }, scripting: { executeScript } });
 });
 describe('invoked discovery boundary', () => {
+  it('reads an explicit bookmark without loading or scanning image content', async () => {
+    executeScript.mockReset().mockResolvedValue([
+      {
+        frameId: 0,
+        documentId: 'bookmark-doc',
+        result: { ...raw, candidates: [] },
+      },
+    ]);
+    const result = await discoverActivePage('bookmark');
+    expect(executeScript).toHaveBeenCalledOnce();
+    expect(executeScript.mock.calls[0][0]).not.toHaveProperty('files');
+    expect(result).toMatchObject({
+      bookmarkUrl: page,
+      pageUrl: 'https://example.com/page',
+      candidates: [],
+    });
+  });
   it('pins the second injection to the first document and projects untrusted results', async () => {
     const discovery = await discoverActivePage();
     expect(executeScript.mock.calls[0][0]).toEqual({
@@ -57,6 +74,7 @@ describe('invoked discovery boundary', () => {
       .mockReset()
       .mockResolvedValue([{ frameId: 2, documentId: 'subframe' }]);
     await expect(discoverActivePage()).rejects.toThrow('page');
+    await expect(discoverActivePage('bookmark')).rejects.toThrow('page');
   });
   it.each([
     'chrome://settings',
@@ -68,9 +86,32 @@ describe('invoked discovery boundary', () => {
     async (url) => {
       query.mockResolvedValue([{ id: 42, url }] as chrome.tabs.Tab[]);
       await expect(discoverActivePage()).rejects.toThrow();
+      await expect(discoverActivePage('bookmark')).rejects.toThrow();
       expect(executeScript).not.toHaveBeenCalled();
     },
   );
+  it('rejects navigation and overlong targets during bookmark invocation', async () => {
+    query.mockResolvedValue([
+      { id: 42, url: 'https://example.com/' + 'x'.repeat(8192) },
+    ]);
+    await expect(discoverActivePage('bookmark')).rejects.toThrow();
+    expect(executeScript).not.toHaveBeenCalled();
+    query.mockResolvedValue([{ id: 42, url: page }]);
+    executeScript
+      .mockReset()
+      .mockResolvedValue([
+        {
+          frameId: 0,
+          documentId: 'changed',
+          result: {
+            ...raw,
+            documentUrl: 'https://other.example/',
+            candidates: [],
+          },
+        },
+      ]);
+    await expect(discoverActivePage('bookmark')).rejects.toThrow();
+  });
   it('rejects malformed, oversized and unsafe content results', () => {
     for (const value of [
       null,
