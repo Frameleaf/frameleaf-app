@@ -1,6 +1,6 @@
 {
   "name": "@frameleaf/browser-extension",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -8,7 +8,8 @@
     "test": "vitest --config vite.config.ts",
     "check": "tsc6 --noEmit && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "build": "vite build && vite build --config vite.content.config.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "package": "pnpm build && node scripts/package.mjs"
   },
   "dependencies": {
     "@frameleaf/sdk": "workspace:*",

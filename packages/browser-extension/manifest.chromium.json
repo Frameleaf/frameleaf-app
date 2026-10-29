@@ -1,5 +1,9 @@
 {
   "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    },
     "default_popup": "popup.html",
     "default_title": "Save to Frameleaf"
   },
@@ -12,6 +16,7 @@
   },
   "description": "Collect images and inspiration in your own Frameleaf library.",
   "icons": {
+    "128": "icons/icon128.png",
     "16": "icons/icon16.png",
     "48": "icons/icon48.png"
   },
@@ -31,5 +36,5 @@
     "contextMenus",
     "identity"
   ],
-  "version": "0.1.0"
+  "version": "1.0.0"
 }

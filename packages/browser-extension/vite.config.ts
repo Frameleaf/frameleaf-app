@@ -37,7 +37,7 @@ export default defineConfig({
             resolve(import.meta.dirname, 'node_modules/srcset/license'),
           ),
         });
-        for (const size of [16, 48])
+        for (const size of [16, 48, 128])
           this.emitFile({
             type: 'asset',
             fileName: `icons/icon${size}.png`,
