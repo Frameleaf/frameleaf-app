@@ -111,6 +111,58 @@ describe(`${BrowserExtensionSignInService.name} (database)`, () => {
     expect(two.apiKeyId).not.toBe(one.apiKeyId);
   });
 
+  it('leaves one access when two sign-ins for one installation finish at once', async () => {
+    const { sut, keys, signedIn } = setup();
+    const auth = await signedIn();
+    const first = await sut.authorize(auth, allow());
+    const second = await sut.authorize(auth, allow());
+
+    const results = await Promise.all(
+      [first, second].map(({ redirectUrl }) =>
+        sut.exchange({ code: codeOf(redirectUrl), codeVerifier: verifier, redirectUri: REDIRECT }),
+      ),
+    );
+
+    const listed = await keys.getAll(auth);
+    expect(listed).toHaveLength(1);
+    expect(results.map((result) => result.apiKeyId)).toContain(listed[0].id);
+    const stored = await database
+      .selectFrom('browser_extension_access')
+      .select('apiKeyId')
+      .where('userId', '=', auth.user.id)
+      .execute();
+    expect(stored).toEqual([{ apiKeyId: listed[0].id }]);
+  });
+
+  it('refuses a second access row for one installation', async () => {
+    const { sut, signedIn } = setup();
+    const auth = await signedIn();
+    const first = await sut.authorize(auth, allow());
+    const { apiKeyId } = await sut.exchange({
+      code: codeOf(first.redirectUrl),
+      codeVerifier: verifier,
+      redirectUri: REDIRECT,
+    });
+    const other = await new ApiKeyRepository(database).create({
+      key: createHash('sha256').update('another').digest(),
+      name: 'x',
+      userId: auth.user.id,
+      permissions: [],
+    });
+    const row = await database
+      .selectFrom('browser_extension_access')
+      .selectAll()
+      .where('apiKeyId', '=', apiKeyId)
+      .executeTakeFirstOrThrow();
+
+    await expect(
+      database
+        .insertInto('browser_extension_access')
+        .values({ ...row, apiKeyId: other.id, createdAt: undefined })
+        .execute(),
+    ).rejects.toThrow('browser_extension_access_installation_uq');
+  });
+
   it('keeps each installation’s access apart', async () => {
     const { sut, keys, signedIn } = setup();
     const auth = await signedIn();

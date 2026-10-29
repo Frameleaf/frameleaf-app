@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable, Selectable } from 'kysely';
 import type {
@@ -85,9 +85,15 @@ export class BrowserExtensionSignInRepository {
   /**
    * One access per installation: the new key replaces this installation's previous access to the
    * account (never another browser's), in one transaction, and is recorded as added by signing in.
+   * Two exchanges for one installation at once take turns on a transaction lock, so the second
+   * replaces the first rather than both keys staying valid (the unique constraint backs this up).
    */
   async replaceAccess(grant: BrowserExtensionAccessGrant) {
     return this.db.transaction().execute(async (trx) => {
+      const installation = JSON.stringify([grant.userId, grant.client, grant.redirectOrigin, grant.installationId]);
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'browser_extension_access:' + installation}, 0))`.execute(
+        trx,
+      );
       const previous = await trx
         .selectFrom('browser_extension_access')
         .select('apiKeyId')

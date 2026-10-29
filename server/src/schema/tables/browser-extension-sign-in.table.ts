@@ -1,4 +1,13 @@
-import { Check, Column, CreateDateColumn, ForeignKeyColumn, Index, PrimaryColumn, Table } from '@frameleaf/sql-tools';
+import {
+  Check,
+  Column,
+  CreateDateColumn,
+  ForeignKeyColumn,
+  Index,
+  PrimaryColumn,
+  Table,
+  Unique,
+} from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { ApiKeyTable } from 'src/schema/tables/api-key.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
@@ -38,7 +47,11 @@ export class BrowserExtensionSignInCodeTable {
  * Allow page for) only the same installation, never another browser signed in to the account.
  */
 @Table('browser_extension_access')
-@Index({ columns: ['userId', 'client', 'redirectOrigin', 'installationId'] })
+// one access per installation, enforced (and replaced under a lock in `replaceAccess`)
+@Unique({
+  name: 'browser_extension_access_installation_uq',
+  columns: ['userId', 'client', 'redirectOrigin', 'installationId'],
+})
 @Check({ name: 'browser_extension_access_client_check', expression: `"client" IN ('chrome', 'edge')` })
 export class BrowserExtensionAccessTable {
   @ForeignKeyColumn(() => ApiKeyTable, { primary: true, onDelete: 'CASCADE', onUpdate: 'CASCADE', index: false })
