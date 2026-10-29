@@ -7,11 +7,17 @@
   let loading = $state(true);
   let error = $state("");
   let discovering = $state(false);
-  async function discover(type: "discover" | "bookmark" = "discover") {
+  async function discover(
+    type: "discover" | "bookmark" | "visible" | "area" = "discover",
+  ) {
     discovering = true;
     error = "";
     try {
-      const reply = await sendRequest({ type });
+      const reply = await sendRequest(
+        type === "visible" || type === "area"
+          ? { type: "screenshot", mode: type }
+          : { type },
+      );
       if (!reply.ok) error = reply.error;
     } catch {
       error =
@@ -81,6 +87,15 @@
       type="button"
       disabled={discovering || loading}
       onclick={() => void discover("bookmark")}>Save page bookmark</button
+    >{/if}
+  {#if connection?.status === "connected"}<button
+      type="button"
+      disabled={discovering || loading}
+      onclick={() => void discover("visible")}>Capture visible tab</button
+    ><button
+      type="button"
+      disabled={discovering || loading}
+      onclick={() => void discover("area")}>Capture selected area</button
     >{/if}
   <button
     type="button"

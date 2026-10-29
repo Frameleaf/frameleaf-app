@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { cropCapture, ScreenshotFailure } from "./capture";
   import QueuePanel from "./QueuePanel.svelte";
   import { enqueueCapture, QueueFailure } from "./queue";
   import { captureInput, bookmarkInput } from "./capture-input";
@@ -32,7 +33,12 @@
   let sourceTitle = $state("");
   let saving = $state(false);
   let creating = $state(false);
-  let busy = $derived(saving || creating);
+  let preparingScreenshot = $state(false);
+  let screenshotBlob = $state<Blob | null>(null);
+  let screenshotUrl = $state("");
+  let screenshotDone = $state(false);
+  let screenshotDimensions = $state("");
+  let busy = $derived(saving || creating || preparingScreenshot);
   let newAlbumName = $state("");
   let newAlbumParent = $state("");
   let creationNeedsRefresh = $state(false);
@@ -53,6 +59,10 @@
     thumbnails = {};
     previewErrors = {};
     approvedOrigins.clear();
+    if (screenshotUrl) URL.revokeObjectURL(screenshotUrl);
+    screenshotUrl = "";
+    screenshotBlob = null;
+    preparingScreenshot = false;
   }
   async function previewImage(candidate: CaptureCandidate) {
     if (!preview || downloading || busy) return;
@@ -115,10 +125,13 @@
     }),
   );
   async function load() {
-    if (new URL(location.href).searchParams.get("error") === "page") {
+    const failure = new URL(location.href).searchParams.get("error");
+    if (failure === "page" || failure === "screenshot") {
       loading = false;
       error =
-        "Could not inspect the selected page or image. Return to its top-level webpage and try again, or use Save page bookmark from the toolbar.";
+        failure === "screenshot"
+          ? "Screenshot was not captured. Return to the same web tab, check the connection and try again. Nothing has been queued."
+          : "Could not inspect the selected page or image. Return to its top-level webpage and try again, or use Save page bookmark from the toolbar.";
       return;
     }
     try {
@@ -134,6 +147,8 @@
         sourcePage = nextPreview?.discovery.pageUrl ?? "";
         bookmarkTarget = nextPreview?.discovery.bookmarkUrl ?? sourcePage;
         bookmarkQueued = false;
+        screenshotDone = false;
+        screenshotDimensions = "";
         newAlbumName = "";
         newAlbumParent = "";
         creationNeedsRefresh = false;
@@ -141,6 +156,13 @@
       }
       preview = nextPreview;
       error = reply.ok ? "" : reply.error;
+      if (
+        preview?.screenshot &&
+        !screenshotBlob &&
+        !screenshotDone &&
+        !preparingScreenshot
+      )
+        void prepareScreenshot(preview);
       if (!preview) {
         selected = [];
         albumId = "";
@@ -175,6 +197,91 @@
       clearImages();
     };
   });
+  async function prepareScreenshot(current: CapturePreview) {
+    const shot = current.screenshot;
+    if (!shot?.dataUrl) {
+      error =
+        "This screenshot preview has been cleared. Capture it again from the toolbar.";
+      return;
+    }
+    preparingScreenshot = true;
+    try {
+      if (!shot.dataUrl.startsWith("data:image/png;base64,"))
+        throw new ScreenshotFailure();
+      const blob = await cropCapture(
+        await (await fetch(shot.dataUrl)).blob(),
+        shot.viewport,
+        shot.selection,
+      );
+      if (preview?.id !== current.id) return;
+      screenshotBlob = blob;
+      screenshotUrl = URL.createObjectURL(blob);
+    } catch {
+      if (preview?.id === current.id)
+        error =
+          "Could not prepare this screenshot. Capture it again; nothing has been queued.";
+    } finally {
+      if (preview?.id === current.id) preparingScreenshot = false;
+    }
+  }
+  async function discardScreenshot() {
+    if (!preview?.screenshot || busy) return;
+    clearImages();
+    screenshotDone = true;
+    notice = "Screenshot discarded. Capture again from the toolbar.";
+    preview.screenshot.dataUrl = null;
+    await sendRequest({ type: "release-screenshot", id: preview.id }).catch(
+      () => {},
+    );
+  }
+  async function saveScreenshot() {
+    if (
+      !preview?.screenshot ||
+      !screenshotBlob ||
+      screenshotDone ||
+      connection?.status !== "connected" ||
+      busy ||
+      !albumId
+    )
+      return;
+    const id = preview.id;
+    const mode = preview.screenshot.mode;
+    saving = true;
+    error = "";
+    notice = "";
+    try {
+      const input = captureInput(
+        { binding: connection.binding, albumId, tagIds: [...tagIds], note },
+        {
+          id: "screenshot",
+          kind: "image",
+          url: "data:image/png,",
+          pageUrl: sourcePage,
+          title: sourceTitle,
+        },
+        screenshotBlob,
+      );
+      input.file!.filename =
+        mode === "area" ? "screenshot-area.png" : "screenshot-visible.png";
+      await enqueueCapture(input);
+      if (preview?.id === id) {
+        clearImages();
+        screenshotDone = true;
+        preview.screenshot.dataUrl = null;
+        notice = "Queued 1 screenshot.";
+      }
+      void sendRequest({ type: "wake-queue" }).catch(() => {});
+      await sendRequest({ type: "release-screenshot", id }).catch(() => {});
+    } catch (reason) {
+      if (preview?.id === id)
+        error =
+          reason instanceof QueueFailure
+            ? reason.message
+            : "Could not queue this screenshot. Its preview is retained; try again.";
+    } finally {
+      saving = false;
+    }
+  }
   async function saveSelected() {
     if (
       !preview ||
@@ -407,12 +514,17 @@
 
 <main
   class="collection"
-  class:bookmark-collection={!!preview?.discovery.bookmarkUrl}
+  class:bookmark-collection={!!preview?.discovery.bookmarkUrl ||
+    !!preview?.screenshot}
 >
   <header>
     <img src="icons/icon48.png" width="32" height="32" alt="" />
     <h1>
-      {preview?.discovery.bookmarkUrl ? "Save page bookmark" : "Collect images"}
+      {preview?.screenshot
+        ? "Review screenshot"
+        : preview?.discovery.bookmarkUrl
+          ? "Save page bookmark"
+          : "Collect images"}
     </h1>
   </header>
   {#if loading}<p role="status">Reading your collection…</p>{/if}
@@ -422,7 +534,39 @@
     <p class="page-title">{preview.discovery.title || "Untitled page"}</p>
     <p class="address">{preview.discovery.pageUrl}</p>
     <div class="collection-layout">
-      {#if preview.discovery.bookmarkUrl}<section aria-label="Bookmark preview">
+      {#if preview.screenshot}<section aria-label="Screenshot preview">
+          <h2>
+            {preview.screenshot.mode === "area"
+              ? "Selected area screenshot"
+              : "Visible tab screenshot"}
+          </h2>
+          <p>
+            Review these pixels before saving. This is a screenshot, not the
+            original image. Screenshots are limited to 40 million pixels and 24
+            MiB.
+          </p>
+          {#if preparingScreenshot}<p role="status">
+              Preparing screenshot…
+            </p>{:else if screenshotUrl}<img
+              class="screenshot-preview"
+              src={screenshotUrl}
+              alt="Screenshot to confirm before saving"
+              onload={(event) => {
+                if (event.currentTarget instanceof HTMLImageElement)
+                  screenshotDimensions = `${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight} pixels`;
+              }}
+            />
+            <p>{screenshotDimensions}</p>
+            <button
+              type="button"
+              disabled={busy}
+              onclick={() => void discardScreenshot()}
+              >Discard screenshot</button
+            >{/if}
+        </section>
+      {:else if preview.discovery.bookmarkUrl}<section
+          aria-label="Bookmark preview"
+        >
           <h2>Page bookmark</h2>
           <p>
             Save a link with your tags and note. The page and its images will
@@ -614,34 +758,44 @@
           bind:value={sourcePage}
         />
         <p class="hint">Source query parameters and fragments are removed.</p>
-        {#if !preview.discovery.bookmarkUrl}<button
+        {#if preview.screenshot}<button
             class="primary"
             type="button"
-            disabled={busy || !!downloading || !selected.length || !albumId}
-            onclick={() => void saveSelected()}
-            >{saving ? "Queuing images…" : "Save selected images"}</button
+            disabled={busy || !screenshotBlob || screenshotDone || !albumId}
+            onclick={() => void saveScreenshot()}>Save screenshot</button
           >
           <p class="hint">
-            This is a collection preview. Selected images have not been saved.
-          </p>{/if}
-        <label for="bookmark-target">Bookmark address</label><input
-          id="bookmark-target"
-          type="url"
-          maxlength="8192"
-          disabled={busy || bookmarkQueued}
-          bind:value={bookmarkTarget}
-        />
-        <p class="hint">
-          The confirmed bookmark address keeps its query parameters and
-          fragment. Remove private values before saving.
-        </p>
-        <button
-          type="button"
-          class:primary={!!preview.discovery.bookmarkUrl}
-          disabled={busy || !!downloading || !albumId || bookmarkQueued}
-          onclick={() => void saveBookmark()}
-          >{bookmarkQueued ? "Bookmark queued" : "Save page bookmark"}</button
-        >
+            Nothing is queued until you confirm with Save screenshot.
+          </p>{:else}
+          {#if !preview.discovery.bookmarkUrl}<button
+              class="primary"
+              type="button"
+              disabled={busy || !!downloading || !selected.length || !albumId}
+              onclick={() => void saveSelected()}
+              >{saving ? "Queuing images…" : "Save selected images"}</button
+            >
+            <p class="hint">
+              This is a collection preview. Selected images have not been saved.
+            </p>{/if}
+          <label for="bookmark-target">Bookmark address</label><input
+            id="bookmark-target"
+            type="url"
+            maxlength="8192"
+            disabled={busy || bookmarkQueued}
+            bind:value={bookmarkTarget}
+          />
+          <p class="hint">
+            The confirmed bookmark address keeps its query parameters and
+            fragment. Remove private values before saving.
+          </p>
+          <button
+            type="button"
+            class:primary={!!preview.discovery.bookmarkUrl}
+            disabled={busy || !!downloading || !albumId || bookmarkQueued}
+            onclick={() => void saveBookmark()}
+            >{bookmarkQueued ? "Bookmark queued" : "Save page bookmark"}</button
+          >
+        {/if}
       </aside>
     </div>
   {/if}

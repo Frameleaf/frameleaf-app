@@ -1,3 +1,4 @@
+import type { ScreenshotPreview } from './capture';
 import { sameBinding, type ServerBinding } from './api';
 import type { PageDiscovery } from './discovery';
 export interface CapturePreview {
@@ -5,19 +6,22 @@ export interface CapturePreview {
   binding: ServerBinding;
   discovery: PageDiscovery;
   createdAt: number;
+  screenshot?: ScreenshotPreview;
 }
-// Previews are transient, not queued saves. A terminated worker requires another explicit scan.
+// Previews are transient, not queued saves. A terminated worker requires another explicit capture.
 let current: CapturePreview | null = null;
 export function createPreview(
   binding: ServerBinding,
   discovery: PageDiscovery,
   now = Date.now(),
+  screenshot?: ScreenshotPreview,
 ): CapturePreview {
   return (current = {
     id: crypto.randomUUID(),
     binding,
     discovery,
     createdAt: now,
+    ...(screenshot && { screenshot }),
   });
 }
 export function clearPreview() {
@@ -49,5 +53,11 @@ export function releaseCandidates(
       (candidate) => !released.has(candidate.id),
     );
   }
+  return preview;
+}
+
+export function releaseScreenshot(id: string, binding: ServerBinding) {
+  const preview = readPreview(id, binding);
+  if (preview?.screenshot) preview.screenshot.dataUrl = null;
   return preview;
 }

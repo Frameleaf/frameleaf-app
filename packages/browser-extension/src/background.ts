@@ -1,3 +1,4 @@
+import { takeScreenshot, ScreenshotFailure } from './capture';
 import {
   initializeCaptureMenus,
   registerCaptureMenus,
@@ -18,6 +19,7 @@ import {
   createPreview,
   readPreview,
   releaseCandidates,
+  releaseScreenshot,
 } from './preview';
 import { sameBinding } from './api';
 import {
@@ -47,6 +49,10 @@ import {
   saveConnection,
 } from './settings';
 
+let screenshotController: AbortController | undefined;
+function stopScreenshot() {
+  screenshotController?.abort();
+}
 let writes: Promise<unknown> = Promise.resolve();
 function serialize<T>(operation: () => Promise<T>): Promise<T> {
   const result = writes.then(operation);
@@ -59,6 +65,7 @@ function pauseDeliveryBinding(binding: ServerBinding) {
     const current = await connectionStatus();
     if (current && sameBinding(current.binding, binding)) {
       stopDelivery();
+      stopScreenshot();
       clearPreview();
       await pauseConnection(binding);
     }
@@ -70,6 +77,7 @@ async function queueProgress(): Promise<QueueProgress> {
   if (!current || current.status !== 'connected') return empty;
   if (!(await hasServerAccess(current.binding.origin))) {
     stopDelivery();
+    stopScreenshot();
     clearPreview();
     await pauseConnection(current.binding);
     return empty;
@@ -113,6 +121,7 @@ async function refresh() {
   if (!current || current.status !== 'connected') return;
   if (!(await hasServerAccess(current.binding.origin))) {
     stopDelivery();
+    stopScreenshot();
     clearPreview();
     await pauseConnection(current.binding);
     throw new CaptureFailure('permission');
@@ -128,6 +137,7 @@ async function refresh() {
       ['authorization', 'identity', 'unsupported'].includes(error.code)
     ) {
       stopDelivery();
+      stopScreenshot();
       clearPreview();
       await pauseConnection(current.binding);
     }
@@ -157,6 +167,7 @@ export function handleMessage(
         'retry-capture',
         'cancel-capture',
         'release-candidates',
+        'release-screenshot',
         'create-album',
       ].includes(message.type)
     )
@@ -165,6 +176,25 @@ export function handleMessage(
       ok: false,
       error: 'Open the Frameleaf extension to change its connection.',
     });
+  if (message && typeof message === 'object' && 'type' in message) {
+    if (
+      settingsPage &&
+      ['connect', 'disconnect'].includes(String(message.type))
+    )
+      stopScreenshot();
+    if (message.type === 'screenshot') {
+      if (
+        !trustedSender(sender, ['/popup.html']) ||
+        !('mode' in message) ||
+        (message.mode !== 'visible' && message.mode !== 'area')
+      )
+        return Promise.resolve({
+          ok: false,
+          error: 'Open the extension toolbar to capture a screenshot.',
+        });
+      return startScreenshot(message.mode);
+    }
+  }
   return serialize(async () => {
     try {
       if (!message || typeof message !== 'object' || !('type' in message))
@@ -172,6 +202,7 @@ export function handleMessage(
       switch (message.type) {
         case 'connect': {
           stopDelivery();
+          stopScreenshot();
           if (
             !('address' in message) ||
             !('token' in message) ||
@@ -290,6 +321,7 @@ export function handleMessage(
               ['authorization', 'identity', 'unsupported'].includes(error.code)
             ) {
               stopDelivery();
+              stopScreenshot();
               clearPreview();
               await pauseConnection(current.binding);
             }
@@ -307,6 +339,21 @@ export function handleMessage(
           )
             throw new CaptureFailure('album');
           return { ok: true, connection: latest, albumId: album.id };
+        }
+        case 'release-screenshot': {
+          if (
+            !capturePage ||
+            !('id' in message) ||
+            typeof message.id !== 'string'
+          )
+            throw new Error();
+          const current = await connectionStatus();
+          if (
+            current?.status !== 'connected' ||
+            !releaseScreenshot(message.id, current.binding)
+          )
+            throw new CaptureFailure('credential');
+          return { ok: true, connection: current };
         }
         case 'release-candidates': {
           if (
@@ -337,6 +384,7 @@ export function handleMessage(
         }
         case 'disconnect':
           stopDelivery();
+          stopScreenshot();
           clearPreview();
           await disconnect();
           break;
@@ -409,6 +457,61 @@ export function handleMessage(
     }
   });
 }
+async function startScreenshot(
+  mode: 'visible' | 'area',
+): Promise<ExtensionReply> {
+  if (screenshotController)
+    return {
+      ok: false,
+      error: 'Finish or cancel the current screenshot first.',
+    };
+  const controller = new AbortController();
+  screenshotController = controller;
+  try {
+    const current = await serialize(async () => {
+      const value = await connectionStatus();
+      if (value?.status !== 'connected') throw new CaptureFailure('credential');
+      if (!(await hasServerAccess(value.binding.origin)))
+        throw new CaptureFailure('permission');
+      return value;
+    });
+    const result = await takeScreenshot(mode, controller.signal);
+    return await serialize(async () => {
+      if (controller.signal.aborted) throw new ScreenshotFailure();
+      const latest = await connectionStatus();
+      if (
+        latest?.status !== 'connected' ||
+        !sameBinding(latest.binding, current.binding) ||
+        !(await hasServerAccess(current.binding.origin))
+      )
+        throw new CaptureFailure('credential');
+      if (result) {
+        const preview = createPreview(
+          current.binding,
+          result.discovery,
+          Date.now(),
+          result.screenshot,
+        );
+        await openCapturePreview(preview.id);
+      }
+      return { ok: true, connection: latest };
+    });
+  } catch (error) {
+    if (mode === 'area' && !controller.signal.aborted)
+      await chrome.tabs
+        .create({ url: chrome.runtime.getURL('capture.html?error=screenshot') })
+        .catch(() => {});
+    return {
+      ok: false,
+      error:
+        error instanceof CaptureFailure
+          ? error.message
+          : new ScreenshotFailure().message,
+    };
+  } finally {
+    if (screenshotController === controller) screenshotController = undefined;
+  }
+}
 async function handleMenu(
   info: chrome.contextMenus.OnClickData,
   tab?: chrome.tabs.Tab,
@@ -422,6 +525,7 @@ async function handleMenu(
       }
       if (!(await hasServerAccess(current.binding.origin))) {
         stopDelivery();
+        stopScreenshot();
         clearPreview();
         await pauseConnection(current.binding);
         await openOptions();
@@ -456,6 +560,7 @@ registerBackground(
   },
   () => {
     stopDelivery();
+    stopScreenshot();
     return serialize(async () => {
       const current = await connectionStatus();
       if (current && !(await hasServerAccess(current.binding.origin))) {

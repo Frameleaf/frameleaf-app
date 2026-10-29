@@ -312,3 +312,12 @@ fieldset {
   gap: 0.75rem;
   padding-block: 0.5rem;
 }
+
+.screenshot-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  margin-block: 1rem;
+  border: 1px solid var(--fl-border);
+}

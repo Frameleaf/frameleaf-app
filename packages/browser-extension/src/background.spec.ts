@@ -1,3 +1,8 @@
+import { takeScreenshot } from './capture';
+vi.mock('./capture', async (original) => ({
+  ...(await original<typeof import('./capture')>()),
+  takeScreenshot: vi.fn(),
+}));
 import { discoverMenuPage } from './context-menus';
 vi.mock('./context-menus', async (original) => ({
   ...(await original<typeof import('./context-menus')>()),
@@ -104,6 +109,89 @@ beforeEach(() => {
 });
 
 describe('trusted extension operations', () => {
+  it('accepts screenshots only from the toolbar and releases transient pixels only for its bound capture page', async () => {
+    const { handleMessage } = await import('./background');
+    const popup = { ...sender, url: 'chrome-extension://frameleaf/popup.html' };
+    expect(
+      (await handleMessage({ type: 'screenshot', mode: 'visible' }, sender)).ok,
+    ).toBe(false);
+    expect(
+      (await handleMessage({ type: 'screenshot', mode: 'visible' }, popup)).ok,
+    ).toBe(false);
+    expect(takeScreenshot).not.toHaveBeenCalled();
+    await handleMessage(
+      { type: 'connect', address: binding.origin, token: 'private-key' },
+      sender,
+    );
+    vi.mocked(takeScreenshot).mockResolvedValue({
+      discovery: {
+        tabId: 42,
+        documentId: 'shot-doc',
+        pageUrl: 'https://example.com/',
+        title: 'Screenshot page',
+        candidates: [],
+      },
+      screenshot: {
+        mode: 'visible',
+        dataUrl: 'data:image/png;base64,private-pixels',
+        viewport: { width: 100, height: 80 },
+      },
+    });
+    expect(
+      (await handleMessage({ type: 'screenshot', mode: 'visible' }, popup)).ok,
+    ).toBe(true);
+    const id = new URL(
+      vi.mocked(chrome.tabs.create).mock.calls.at(-1)![0].url!,
+    ).searchParams.get('id')!;
+    const capture = {
+      ...sender,
+      url: 'chrome-extension://frameleaf/capture.html',
+    };
+    expect(await handleMessage({ type: 'preview', id }, capture)).toMatchObject(
+      {
+        ok: true,
+        preview: {
+          screenshot: {
+            mode: 'visible',
+            dataUrl: 'data:image/png;base64,private-pixels',
+          },
+        },
+      },
+    );
+    expect(JSON.stringify(values)).not.toContain('private-pixels');
+    expect(
+      (await handleMessage({ type: 'release-screenshot', id }, sender)).ok,
+    ).toBe(false);
+    expect(
+      (await handleMessage({ type: 'release-screenshot', id }, capture)).ok,
+    ).toBe(true);
+    expect(await handleMessage({ type: 'preview', id }, capture)).toMatchObject(
+      { ok: true, preview: { screenshot: { dataUrl: null } } },
+    );
+  });
+  it('disconnect cancels a pending area selection without waiting behind it or publishing its pixels', async () => {
+    const { handleMessage } = await import('./background');
+    await handleMessage(
+      { type: 'connect', address: binding.origin, token: 'private-key' },
+      sender,
+    );
+    let signal: AbortSignal | undefined;
+    vi.mocked(takeScreenshot).mockImplementation(async (_mode, current) => {
+      signal = current;
+      return await new Promise((resolve) =>
+        current.addEventListener('abort', () => resolve(null), { once: true }),
+      );
+    });
+    const pending = handleMessage(
+      { type: 'screenshot', mode: 'area' },
+      { ...sender, url: 'chrome-extension://frameleaf/popup.html' },
+    );
+    await vi.waitFor(() => expect(signal).toBeDefined());
+    expect((await handleMessage({ type: 'disconnect' }, sender)).ok).toBe(true);
+    expect(signal?.aborted).toBe(true);
+    expect((await pending).ok).toBe(false);
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+  });
   it('routes menu events through the bound preview, shows connection settings when disconnected and exposes only static failure URLs', async () => {
     const { handleMessage } = await import('./background');
     const clicked = vi.mocked(chrome.contextMenus.onClicked.addListener).mock

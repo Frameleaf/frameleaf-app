@@ -277,7 +277,8 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     const manifest = JSON.parse(
       await readFile(join(extensionPath, 'manifest.json'), 'utf8'),
     );
-    manifest.host_permissions = ['http://127.0.0.1/*'];
+    // Owned isolated screenshot fixture; production retains invoked activeTab only.
+    manifest.host_permissions = ['<all_urls>'];
     // Test-only callback capture exercises the registered production listener; native menu clicks remain a separate gate.
     await writeFile(
       join(extensionPath, 'menu-background-test.js'),
@@ -324,6 +325,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     context = await chromium.launchPersistentContext(join(temp, 'profile'), {
       channel: 'chromium',
       headless: true,
+      viewport: null,
       args: [
         `--disable-extensions-except=${extensionPath}`,
         `--load-extension=${extensionPath}`,
@@ -541,6 +543,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     context = await chromium.launchPersistentContext(join(temp, 'profile'), {
       channel: 'chromium',
       headless: true,
+      viewport: null,
       args: [
         `--disable-extensions-except=${extensionPath}`,
         `--load-extension=${extensionPath}`,
@@ -888,6 +891,133 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       'Could not inspect the selected page or image',
     );
     await failedMenu.close();
+    await content.bringToFront();
+    const queuedCount = () =>
+      popup.evaluate(async () => {
+        const queue: typeof import('./fixtures/runner-entry') = await import(
+          chrome.runtime.getURL('runner-test.js')
+        );
+        const reply: import('../src/platform').ExtensionReply =
+          await chrome.runtime.sendMessage({ type: 'status' });
+        if (!reply.ok || !reply.connection)
+          throw new Error('Expected fixture connection');
+        return (await queue.listCaptures(reply.connection.binding)).length;
+      });
+    const beforeScreenshots = await queuedCount();
+    const visibleOpened = context.waitForEvent('page');
+    await popup.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === 'Capture visible tab')!
+        .click();
+    });
+    const visibleShot = await visibleOpened;
+    await expect(
+      visibleShot.getByRole('heading', {
+        name: 'Review screenshot',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      visibleShot.getByAltText('Screenshot to confirm before saving'),
+    ).toBeVisible();
+    expect(sourceCount).toBe(6);
+    expect(await queuedCount()).toBe(beforeScreenshots);
+    await visibleShot
+      .getByLabel('Album', { exact: true })
+      .selectOption(nestedId);
+    await visibleShot.screenshot({
+      path: testInfo.outputPath('screenshot-confirmation.png'),
+      fullPage: true,
+    });
+    await visibleShot
+      .getByRole('button', { name: 'Save screenshot', exact: true })
+      .click();
+    await expect(
+      visibleShot.getByText('Queued 1 screenshot.', { exact: true }),
+    ).toBeVisible();
+    await visibleShot.close();
+    await expect.poll(() => sourceCount).toBe(7);
+    await expect(
+      popup
+        .locator('.queue-list li')
+        .filter({ hasText: 'screenshot-visible.png' })
+        .getByText('Saved', { exact: true }),
+    ).toBeVisible();
+    await content.bringToFront();
+    const areaOpened = context.waitForEvent('page');
+    await popup.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find(
+          (button) => button.textContent?.trim() === 'Capture selected area',
+        )!
+        .click();
+    });
+    await expect(content.locator('[id^="frameleaf-area-"]')).toHaveCount(1);
+    await content.mouse.move(100, 100);
+    await content.mouse.down();
+    await content.mouse.move(200, 200);
+    await content.mouse.up();
+    const areaShot = await areaOpened;
+    const areaImage = areaShot.getByAltText(
+      'Screenshot to confirm before saving',
+    );
+    await expect(areaImage).toBeVisible();
+    expect(
+      await areaImage.evaluate((image) => ({
+        width: (image as HTMLImageElement).naturalWidth,
+        height: (image as HTMLImageElement).naturalHeight,
+      })),
+    ).toEqual({ width: 100, height: 100 });
+    expect(sourceCount).toBe(7);
+    expect(await queuedCount()).toBe(beforeScreenshots + 1);
+    await areaShot.getByLabel('Album', { exact: true }).selectOption(nestedId);
+    await areaShot
+      .getByRole('button', { name: 'Save screenshot', exact: true })
+      .click();
+    await expect(
+      areaShot.getByText('Queued 1 screenshot.', { exact: true }),
+    ).toBeVisible();
+    await areaShot.close();
+    await expect.poll(() => sourceCount).toBe(8);
+    await expect(
+      popup
+        .locator('.queue-list li')
+        .filter({ hasText: 'screenshot-area.png' })
+        .getByText('Saved', { exact: true }),
+    ).toBeVisible();
+    await content.bringToFront();
+    const discardedOpened = context.waitForEvent('page');
+    await popup.evaluate(() => {
+      [...document.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === 'Capture visible tab')!
+        .click();
+    });
+    const discarded = await discardedOpened;
+    await expect(
+      discarded.getByAltText('Screenshot to confirm before saving'),
+    ).toBeVisible();
+    await discarded
+      .getByRole('button', { name: 'Discard screenshot', exact: true })
+      .click();
+    await expect(
+      discarded.getByText(
+        'Screenshot discarded. Capture again from the toolbar.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      discarded.getByRole('button', { name: 'Save screenshot', exact: true }),
+    ).toBeDisabled();
+    const cleared = await discarded.evaluate(async () =>
+      chrome.runtime.sendMessage({
+        type: 'preview',
+        id: new URL(location.href).searchParams.get('id'),
+      }),
+    );
+    expect(cleared.preview.screenshot.dataUrl).toBeNull();
+    expect(sourceCount).toBe(8);
+    expect(await queuedCount()).toBe(beforeScreenshots + 2);
+    await discarded.close();
     const polling = await context.newPage();
     await polling.clock.install();
     await polling.addInitScript(() => {

@@ -18,7 +18,12 @@ export type ExtensionRequest =
         | 'queue'
         | 'wake-queue';
     }
-  | { type: 'preview' | 'retry-capture' | 'cancel-capture'; id: string }
+  | {
+      type:
+        'preview' | 'retry-capture' | 'cancel-capture' | 'release-screenshot';
+      id: string;
+    }
+  | { type: 'screenshot'; mode: 'visible' | 'area' }
   | { type: 'create-album'; previewId: string; name: string; parentId?: string }
   | { type: 'release-candidates'; id: string; candidateIds: string[] }
   | {
