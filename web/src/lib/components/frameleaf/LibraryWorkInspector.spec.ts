@@ -1,4 +1,6 @@
 import {
+  AssetAnnotationKind,
+  AssetTypeEnum,
   LibraryScope,
   PaletteAlgorithmVersion,
   PaletteRepresentative,
@@ -11,6 +13,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import userEvent from '@testing-library/user-event';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
+import { acquireAnnotations, resetAnnotationsRegistry } from '$lib/frameleaf/boards-annotations-store.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -61,6 +64,7 @@ const detailOf = (id: string, patch: Partial<AssetResponseDto> = {}) =>
 describe('LibraryWorkInspector', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    resetAnnotationsRegistry();
     access.listeners.clear();
     sdkMock.getAssetPalette.mockRejectedValue(new Error('not indexed'));
     sdkMock.getAssetSources.mockResolvedValue([]);
@@ -352,6 +356,204 @@ describe('LibraryWorkInspector', () => {
       // the item's collections are read again once the picker closes
       await waitFor(() => expect(sdkMock.getAllAlbums).toHaveBeenCalledTimes(2));
       show.mockRestore();
+    });
+
+    describe('annotations', () => {
+      const items = [
+        {
+          id: 'a1',
+          kind: AssetAnnotationKind.Rect,
+          geometry: { x: 0.05, y: 0.27, width: 0.45, height: 0.2 },
+          note: 'Headline runs to three lines on a phone.',
+        },
+        { id: 'a2', kind: AssetAnnotationKind.Arrow, geometry: { x: 0.36, y: 0.66, endX: 0.2, endY: 0.56 } },
+      ];
+      const document = (patch = {}) =>
+        ({
+          version: 1,
+          sourceRevision: 'rev',
+          sourceChanged: false,
+          canEdit: true,
+          items,
+          updatedAt: null,
+          ...patch,
+        }) as never;
+      const picture = (id: string) => boardsDetail(id, { type: AssetTypeEnum.Image });
+
+      it('lists them under the name with the switch, and highlights the chosen one on the preview', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document());
+        render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+
+        const section = await screen.findByTestId('boards-annotations');
+        expect(
+          within(section).getByRole('heading', { name: 'frameleaf_boards_annotations_count' }),
+        ).toBeInTheDocument();
+        expect(within(section).getByRole('button', { name: /frameleaf_boards_annotate$/ })).toBeInTheDocument();
+        expect(within(section).getAllByRole('listitem')).toHaveLength(2);
+        expect(within(section).getByText('frameleaf_boards_annotations_kept')).toBeInTheDocument();
+        expect(sdkMock.getAssetAnnotations).toHaveBeenCalledWith(expect.objectContaining({ id: asset.id }));
+
+        // the drawing on the preview is hidden from screen readers: the list is the way in
+        const preview = await screen.findByTestId('boards-annotated-image');
+        expect(preview.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+        expect(preview.querySelectorAll('.ann')).toHaveLength(2);
+
+        const [first] = within(section).getAllByRole('button', { name: 'frameleaf_boards_annotation_label' });
+        await fireEvent.click(first);
+        expect(first).toHaveAttribute('aria-pressed', 'true');
+        await waitFor(() => expect(preview.querySelector('.ann.on')).not.toBeNull());
+
+        await fireEvent.click(
+          within(section).getByRole('switch', { name: 'frameleaf_boards_annotations_show_on_picture' }),
+        );
+        await waitFor(() => expect(preview.querySelector('svg')).toBeNull());
+        // the list stays when they are hidden
+        expect(within(section).getAllByRole('listitem')).toHaveLength(2);
+      });
+
+      it('shows a save that failed after the viewer closed, with Retry', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document());
+        sdkMock.replaceAssetAnnotations.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({} as never);
+        render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+
+        await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_boards_viewer_view_large_name' }));
+        const viewer = await screen.findByTestId('boards-viewer');
+        await fireEvent.click(within(viewer).getByRole('button', { name: /frameleaf_boards_annotate$/ }));
+        await fireEvent.click(screen.getAllByRole('button', { name: 'frameleaf_boards_annotation_delete_number' })[0]);
+        await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_boards_viewer_close' }));
+        await waitFor(() => expect(screen.queryByTestId('boards-viewer')).not.toBeInTheDocument());
+
+        const section = await screen.findByTestId('boards-annotations');
+        expect(await within(section).findByText('frameleaf_boards_annotations_save_failed')).toBeInTheDocument();
+        await fireEvent.click(within(section).getByRole('button', { name: /retry|try/i }));
+        await waitFor(() => expect(sdkMock.replaceAssetAnnotations).toHaveBeenCalledTimes(2));
+        expect(
+          sdkMock.replaceAssetAnnotations.mock.lastCall?.[0].assetAnnotationsUpdateDto.items.map(({ id }) => id),
+        ).toEqual(['a2']);
+        await waitFor(() =>
+          expect(within(section).queryByText('frameleaf_boards_annotations_save_failed')).not.toBeInTheDocument(),
+        );
+      });
+
+      it('keeps an unsaved change across moving to another picture and back, with Retry', async () => {
+        const a = timelineAssetFactory.build();
+        const b = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockImplementation(({ id }) => Promise.resolve(picture(id)));
+        sdkMock.getAssetAnnotations.mockImplementation(({ id }) =>
+          Promise.resolve(id === a.id ? document() : document({ items: [] })),
+        );
+        // saving fails until the person presses Retry
+        let online = false;
+        sdkMock.replaceAssetAnnotations.mockImplementation(() =>
+          online ? Promise.resolve({ sourceRevision: 'rev' } as never) : Promise.reject(new Error('offline')),
+        );
+        const view = render(LibraryWorkInspector, { asset: a, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+
+        await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_boards_viewer_view_large_name' }));
+        const viewer = await screen.findByTestId('boards-viewer');
+        await fireEvent.click(within(viewer).getByRole('button', { name: /frameleaf_boards_annotate$/ }));
+        await fireEvent.click(
+          within(viewer).getAllByRole('button', { name: 'frameleaf_boards_annotation_delete_number' })[0],
+        );
+
+        // move to B while A's save fails
+        await view.rerender({ asset: b, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        await waitFor(() => expect(sdkMock.replaceAssetAnnotations).toHaveBeenCalled());
+        const onB = await screen.findByTestId('boards-annotations');
+        expect(within(onB).getByText('frameleaf_boards_annotations_none')).toBeInTheDocument();
+        expect(within(onB).queryByText('frameleaf_boards_annotations_save_failed')).not.toBeInTheDocument();
+
+        // back to A: the unsaved change is shown with the notice, and Retry saves it for A
+        await view.rerender({ asset: a, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        const onA = await screen.findByTestId('boards-annotations');
+        expect(await within(onA).findByText('frameleaf_boards_annotations_save_failed')).toBeInTheDocument();
+        await waitFor(() => expect(within(onA).getAllByRole('listitem')).toHaveLength(1));
+        const before = sdkMock.replaceAssetAnnotations.mock.calls.length;
+        online = true;
+        await fireEvent.click(within(onA).getByRole('button', { name: /retry|try/i }));
+        await waitFor(() => expect(sdkMock.replaceAssetAnnotations.mock.calls.length).toBeGreaterThan(before));
+        expect(sdkMock.replaceAssetAnnotations.mock.calls.every(([call]) => call.id === a.id)).toBe(true);
+        expect(
+          sdkMock.replaceAssetAnnotations.mock.lastCall?.[0].assetAnnotationsUpdateDto.items.map(({ id }) => id),
+        ).toEqual(['a2']);
+        await waitFor(() =>
+          expect(within(onA).queryByText('frameleaf_boards_annotations_save_failed')).not.toBeInTheDocument(),
+        );
+      });
+
+      it('reads the annotations once per selection, and never retries a failed read on its own', async () => {
+        // the picture is already registered, as when it is shown again (another view still has it open)
+        const asset = timelineAssetFactory.build();
+        acquireAnnotations(asset.id);
+        sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document());
+        const view = render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        await screen.findByTestId('boards-annotations');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(1);
+        view.unmount();
+
+        const failing = timelineAssetFactory.build();
+        acquireAnnotations(failing.id);
+        sdkMock.getAssetInfo.mockResolvedValue(picture(failing.id));
+        sdkMock.getAssetAnnotations.mockClear();
+        sdkMock.getAssetAnnotations.mockRejectedValue(new Error('offline'));
+        render(LibraryWorkInspector, { asset: failing, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        expect(await screen.findByText('frameleaf_boards_annotations_unavailable')).toBeInTheDocument();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(1);
+
+        // Retry is the person's choice
+        sdkMock.getAssetAnnotations.mockResolvedValue(document());
+        await fireEvent.click(screen.getByRole('button', { name: /retry|try/i }));
+        expect(await screen.findByTestId('boards-annotations')).toBeInTheDocument();
+        expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(2);
+      });
+
+      it('offers Annotate on an empty picture and opens the Boards viewer from View large', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document({ items: [] }));
+        const onOpen = vi.fn();
+        render(LibraryWorkInspector, { asset, onOpen, onClose: vi.fn(), boards: true });
+
+        const section = await screen.findByTestId('boards-annotations');
+        expect(within(section).getByText('frameleaf_boards_annotations_none')).toBeInTheDocument();
+        expect(within(section).queryByRole('switch')).not.toBeInTheDocument();
+
+        await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_boards_viewer_view_large_name' }));
+        expect(await screen.findByTestId('boards-viewer')).toBeInTheDocument();
+        expect(onOpen).not.toHaveBeenCalled();
+      });
+
+      it('shows someone else’s annotations read-only, and nothing when there are none', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(boardsDetail(asset.id, { type: AssetTypeEnum.Image, ownerId: 'other' }));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document({ canEdit: false }));
+        const view = render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        const section = await screen.findByTestId('boards-annotations');
+        expect(within(section).queryByRole('button', { name: /frameleaf_boards_annotate$/ })).not.toBeInTheDocument();
+        view.unmount();
+
+        sdkMock.getAssetAnnotations.mockResolvedValue(document({ canEdit: false, items: [] }));
+        render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        await screen.findByRole('heading', { name: 'frameleaf_boards_file' });
+        await waitFor(() => expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(2));
+        expect(screen.queryByTestId('boards-annotations')).not.toBeInTheDocument();
+      });
+
+      it('leaves videos and Photos items without annotations', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(boardsDetail(asset.id, { type: AssetTypeEnum.Video }));
+        render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        await screen.findByRole('heading', { name: 'frameleaf_boards_file' });
+        expect(sdkMock.getAssetAnnotations).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('boards-annotated-image')).not.toBeInTheDocument();
+      });
     });
 
     it('shows someone else’s item read-only', async () => {
