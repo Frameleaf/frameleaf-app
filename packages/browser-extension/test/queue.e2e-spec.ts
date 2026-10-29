@@ -30,7 +30,7 @@ test('native IndexedDB commits bytes atomically and preserves acknowledged captu
       configFile: false,
       logLevel: 'silent',
       build: {
-        target: 'chrome114',
+        target: 'chrome116',
         outDir: extensionPath,
         emptyOutDir: false,
         sourcemap: false,
@@ -75,6 +75,12 @@ test('native IndexedDB commits bytes atomically and preserves acknowledged captu
             filename: 'one.png',
           },
         });
+        await q.claimCapture(
+          input.binding,
+          'old-cancellation-owner',
+          Date.now() - q.CLAIM_MS - 100,
+        );
+        await q.requestCaptureCancellation(first.id, input.binding);
         const second = await q.enqueueCapture({
           ...input,
           file: {
@@ -114,6 +120,7 @@ test('native IndexedDB commits bytes atomically and preserves acknowledged captu
         }
         return {
           ids: [first.id, second.id, bookmark.id],
+          cancelId: first.id,
           rolledBack,
           count: (await q.listCaptures(input.binding)).length,
         };
@@ -127,7 +134,7 @@ test('native IndexedDB commits bytes atomically and preserves acknowledged captu
     running = await launch();
     context = running.browser;
     const recovered = await running.page.evaluate(
-      async ({ binding, ids, albumId }) => {
+      async ({ binding, ids, albumId, cancelId }) => {
         const q: typeof import('../src/queue') = await import(
           chrome.runtime.getURL('queue-test.js')
         );
@@ -143,36 +150,64 @@ test('native IndexedDB commits bytes atomically and preserves acknowledged captu
         const claimed = claims.filter(
           (value): value is NonNullable<typeof value> => value !== null,
         );
-        const file = claimed.find((task) => task.file)!;
-        await q.saveCaptureProgress(file.id, file.claim!.owner, {
-          state: 'committing',
-          offset: file.file!.size,
-        });
-        await q.finishCapture(file.id, file.claim!.owner, {
-          captureId: file.id,
-          status: 'created',
-          kind: 'asset',
-          itemId: albumId,
-        });
+        let savedFile: string | undefined;
+        const settle = async (task: NonNullable<(typeof claims)[number]>) => {
+          if (task.cancelRequested) {
+            await q.finishCaptureCancellation(task.id, task.claim!.owner, {
+              captureId: task.id,
+              status: 'cancelled',
+            });
+          } else {
+            await q.saveCaptureProgress(task.id, task.claim!.owner, {
+              state: 'committing',
+              offset: task.file?.size ?? 0,
+            });
+            await q.finishCapture(task.id, task.claim!.owner, {
+              captureId: task.id,
+              status: 'created',
+              kind: task.file ? 'asset' : 'bookmark',
+              itemId: albumId,
+            });
+            if (task.file) savedFile = task.id;
+          }
+        };
+        for (const task of claimed) await settle(task);
+        const remaining = await q.claimCapture(binding, 'remaining');
+        if (remaining) await settle(remaining);
+        const cancelled = (await q.listCaptures(binding)).find(
+          (task) => task.id === cancelId,
+        )!;
         return {
           ids: tasks.map((task) => task.id),
           bytes,
           claims: claimed.map((task) => task.id),
           source: tasks[0].source.pageUrl,
-          removed: (await q.captureBlob(file.id)) === null,
+          removed: (await q.captureBlob(savedFile!)) === null,
           state: (await q.listCaptures(binding)).find(
-            (task) => task.id === file.id,
+            (task) => task.id === savedFile,
           )?.state,
+          intentSurvived: tasks.find((task) => task.id === cancelId)
+            ?.cancelRequested,
+          cancelled: cancelled.state,
+          cancellationReceipt: cancelled.cancellationReceipt,
+          cancelledBytesRemoved: (await q.captureBlob(cancelId)) === null,
         };
       },
-      { binding, ids: created.ids, albumId },
+      { binding, ids: created.ids, albumId, cancelId: created.cancelId },
     );
-    expect(recovered.ids.sort()).toEqual(created.ids.sort());
+    expect([...recovered.ids].sort()).toEqual([...created.ids].sort());
     expect(recovered.bytes).toEqual(['abc', 'def']);
     expect(new Set(recovered.claims).size).toBe(2);
     expect(recovered.source).toBe('https://example.com/page');
     expect(recovered.removed).toBe(true);
     expect(recovered.state).toBe('saved');
+    expect(recovered.intentSurvived).toBe(true);
+    expect(recovered.cancelled).toBe('cancelled');
+    expect(recovered.cancellationReceipt).toEqual({
+      captureId: created.cancelId,
+      status: 'cancelled',
+    });
+    expect(recovered.cancelledBytesRemoved).toBe(true);
   } finally {
     await context?.close();
     await rm(temp, { recursive: true, force: true });

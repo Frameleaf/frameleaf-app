@@ -41,6 +41,206 @@ beforeEach(async () => {
 });
 afterEach(() => vi.useRealTimers());
 describe('durable capture queue', () => {
+  it('persists cancellation intent without stealing a claim or dropping originals', async () => {
+    const task = await queue.enqueueCapture(file());
+    await queue.claimCapture(binding, 'worker', 1000);
+    await expect(
+      queue.requestCaptureCancellation(
+        task.id,
+        { ...binding, userId: albumId },
+        1001,
+      ),
+    ).rejects.toThrow();
+    await queue.requestCaptureCancellation(task.id, binding, 1001);
+    vi.resetModules();
+    queue = await import('./queue');
+    expect((await queue.listCaptures(binding))[0]).toMatchObject({
+      cancelRequested: true,
+      claim: { owner: 'worker' },
+      phase: 'upload',
+    });
+    expect(await (await queue.captureBlob(task.id))?.text()).toBe('abc');
+    await expect(
+      queue.saveCaptureProgress(
+        task.id,
+        'worker',
+        { state: 'committing', offset: 3 },
+        1002,
+      ),
+    ).rejects.toMatchObject({ code: 'cancel' });
+    await queue.finishCaptureCancellation(
+      task.id,
+      'worker',
+      { captureId: task.id, status: 'cancelled' },
+      1003,
+    );
+    expect((await queue.listCaptures(binding))[0]).toMatchObject({
+      state: 'cancelled',
+      cancellationReceipt: { captureId: task.id, status: 'cancelled' },
+    });
+    expect(
+      (await queue.listCaptures(binding))[0].cancelRequested,
+    ).toBeUndefined();
+    expect(await queue.captureBlob(task.id)).toBeNull();
+    await expect(
+      queue.finishCaptureCancellation(
+        task.id,
+        'worker',
+        { captureId: task.id, status: 'cancelled' },
+        1004,
+      ),
+    ).rejects.toMatchObject({ code: 'claim' });
+  });
+  it('retains bytes for mismatched, contradictory and stale cancellation receipts', async () => {
+    const task = await queue.enqueueCapture(file());
+    await queue.claimCapture(binding, 'worker', 1000);
+    await queue.requestCaptureCancellation(task.id, binding, 1001);
+    const receipt = {
+      captureId: task.id,
+      status: 'created' as const,
+      kind: 'asset' as const,
+      itemId: albumId,
+    };
+    for (const outcome of [
+      { captureId: albumId, status: 'cancelled' },
+      { captureId: task.id, status: 'cancelled', receipt },
+      {
+        captureId: task.id,
+        status: 'already-published',
+        receipt: { ...receipt, captureId: albumId },
+      },
+      {
+        captureId: task.id,
+        status: 'already-published',
+        receipt: { ...receipt, kind: 'bookmark' },
+      },
+    ])
+      await expect(
+        queue.finishCaptureCancellation(
+          task.id,
+          'worker',
+          outcome as never,
+          1002,
+        ),
+      ).rejects.toThrow();
+    await expect(
+      queue.finishCaptureCancellation(
+        task.id,
+        'stale',
+        { captureId: task.id, status: 'cancelled' },
+        1002,
+      ),
+    ).rejects.toMatchObject({ code: 'claim' });
+    expect(await queue.captureBlob(task.id)).not.toBeNull();
+    expect((await queue.listCaptures(binding))[0].cancelRequested).toBe(true);
+  });
+  it('records the exact server outcome when publication wins cancellation', async () => {
+    const task = await queue.enqueueCapture(file());
+    await queue.claimCapture(binding, 'worker', 1000);
+    await queue.requestCaptureCancellation(task.id, binding, 1001);
+    const receipt = {
+      captureId: task.id,
+      status: 'duplicate' as const,
+      kind: 'asset' as const,
+      itemId: albumId,
+    };
+    await queue.finishCaptureCancellation(
+      task.id,
+      'worker',
+      { captureId: task.id, status: 'already-published', receipt },
+      1002,
+    );
+    expect((await queue.listCaptures(binding))[0]).toMatchObject({
+      state: 'duplicate',
+      phase: 'commit',
+      offset: 3,
+      receipt,
+    });
+    expect(
+      (await queue.listCaptures(binding))[0].cancelRequested,
+    ).toBeUndefined();
+    expect(await queue.captureBlob(task.id)).toBeNull();
+  });
+  it('accepts an in-flight verified receipt after cancellation intent arrives', async () => {
+    const task = await queue.enqueueCapture(file());
+    await queue.claimCapture(binding, 'worker', 1000);
+    await queue.saveCaptureProgress(
+      task.id,
+      'worker',
+      { state: 'committing', offset: 3 },
+      1001,
+    );
+    await queue.requestCaptureCancellation(task.id, binding, 1002);
+    await queue.finishCapture(
+      task.id,
+      'worker',
+      { captureId: task.id, status: 'created', kind: 'asset', itemId: albumId },
+      1003,
+    );
+    expect((await queue.listCaptures(binding))[0].state).toBe('saved');
+    expect(
+      (await queue.listCaptures(binding))[0].cancelRequested,
+    ).toBeUndefined();
+  });
+  it('keeps cancellation intent and backoff across retries and repeated requests', async () => {
+    const task = await queue.enqueueCapture(file());
+    await queue.claimCapture(binding, 'worker', 1000);
+    await queue.deferCapture(
+      task.id,
+      'worker',
+      { kind: 'retry', retryAt: 50000, message: 'Wait' },
+      1001,
+    );
+    await queue.requestCaptureCancellation(task.id, binding, 1002);
+    await queue.requestCaptureCancellation(task.id, binding, 1003);
+    expect((await queue.listCaptures(binding))[0]).toMatchObject({
+      cancelRequested: true,
+      retryAt: 50000,
+    });
+    await queue.retryCapture(task.id, binding, 50001);
+    expect((await queue.listCaptures(binding))[0].cancelRequested).toBe(true);
+  });
+  it('confirms bookmark cancellation without fabricating a saved item', async () => {
+    const task = await queue.enqueueCapture({
+      binding,
+      albumId,
+      source,
+      bookmark: { url: 'https://page.example/?v=1#part', title: 'Reference' },
+    });
+    await queue.claimCapture(binding, 'worker', 1000);
+    await queue.requestCaptureCancellation(task.id, binding, 1001);
+    await queue.finishCaptureCancellation(
+      task.id,
+      'worker',
+      { captureId: task.id, status: 'cancelled' },
+      1002,
+    );
+    expect((await queue.listCaptures(binding))[0]).toMatchObject({
+      state: 'cancelled',
+      bookmark: { url: 'https://page.example/?v=1#part' },
+    });
+    expect((await queue.listCaptures(binding))[0].receipt).toBeUndefined();
+  });
+  it('reports an unproven stored cancellation instead of hiding an attempted capture', async () => {
+    const original = await queue.enqueueCapture(file());
+    const task = (await queue.claimCapture(binding, 'worker'))!;
+    task.state = 'cancelled';
+    delete task.claim;
+    const [{ name }] = await indexedDB.databases();
+    const database = await new Promise<IDBDatabase>((resolve) => {
+      const opening = indexedDB.open(name!);
+      opening.onsuccess = () => resolve(opening.result);
+    });
+    const tx = database.transaction('tasks', 'readwrite');
+    const committed = new Promise<void>((resolve) => {
+      tx.oncomplete = () => resolve();
+    });
+    tx.objectStore('tasks').put(task);
+    await committed;
+    database.close();
+    await expect(queue.listCaptures(binding)).rejects.toThrow('damaged');
+    expect(await queue.captureBlob(original.id)).not.toBeNull();
+  });
   it('commits stable UUID, checksum and bytes together, strips transient attribution and never stores a credential', async () => {
     const input = file();
     Object.assign(input.binding, { token: 'never-store-this' });

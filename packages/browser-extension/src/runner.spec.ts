@@ -85,6 +85,64 @@ beforeEach(async () => {
   vi.mocked(createCaptureTransport).mockReturnValue(transport);
 });
 describe('durable capture delivery', () => {
+  it('pauses cancellation intent before any network request while unrelated captures continue', async () => {
+    const cancelled = await enqueue();
+    const other = await enqueue();
+    await queue.requestCaptureCancellation(cancelled.id, binding);
+    await expect(
+      runner.resumeQueue(binding, 'private-key'),
+    ).resolves.toBeUndefined();
+    const tasks = await queue.listCaptures(binding);
+    expect(tasks.find((task) => task.id === cancelled.id)).toMatchObject({
+      state: 'needs-attention',
+      cancelRequested: true,
+    });
+    expect(tasks.find((task) => task.id === other.id)?.state).toBe('saved');
+    expect(await queue.captureBlob(cancelled.id)).not.toBeNull();
+    for (const call of [
+      ...transport.getUpload.mock.calls,
+      ...transport.createUpload.mock.calls,
+      ...transport.appendUpload.mock.calls,
+      ...transport.commit.mock.calls,
+    ])
+      expect(call[0].id).not.toBe(cancelled.id);
+  });
+  it('stops at the next durable boundary if cancellation arrives during append', async () => {
+    const task = await enqueue();
+    transport.appendUpload.mockImplementationOnce(async (current) => {
+      remote.set(current.id, current.file!.size);
+      await queue.requestCaptureCancellation(current.id, binding);
+      return state(current);
+    });
+    await expect(
+      runner.resumeQueue(binding, 'private-key'),
+    ).resolves.toBeUndefined();
+    expect(transport.commit).not.toHaveBeenCalled();
+    expect((await queue.listCaptures(binding))[0]).toMatchObject({
+      state: 'needs-attention',
+      cancelRequested: true,
+      phase: 'upload',
+    });
+    expect(await queue.captureBlob(task.id)).not.toBeNull();
+  });
+  it('records the verified save if cancellation arrives while commit is returning', async () => {
+    const task = await enqueue();
+    transport.commit.mockImplementationOnce(async (current) => {
+      await queue.requestCaptureCancellation(current.id, binding);
+      return {
+        captureId: current.id,
+        status: 'created',
+        kind: 'asset',
+        itemId: albumId,
+      };
+    });
+    await runner.resumeQueue(binding, 'private-key');
+    expect((await queue.listCaptures(binding))[0].state).toBe('saved');
+    expect(
+      (await queue.listCaptures(binding))[0].cancelRequested,
+    ).toBeUndefined();
+    expect(await queue.captureBlob(task.id)).toBeNull();
+  });
   it('persists commit phase before the network call and releases bytes only after the receipt', async () => {
     const task = await enqueue();
     transport.commit.mockImplementationOnce(async (current) => {

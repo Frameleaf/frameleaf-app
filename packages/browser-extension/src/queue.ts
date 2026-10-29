@@ -44,6 +44,8 @@ export interface CaptureTask {
   error?: string;
   claim?: { owner: string; expiresAt: number };
   receipt?: CaptureReceipt;
+  cancelRequested?: true;
+  cancellationReceipt?: { captureId: string; status: 'cancelled' };
   createdAt: number;
   updatedAt: number;
 }
@@ -58,11 +60,16 @@ export type EnqueueCapture = Pick<
 export class QueueFailure extends Error {
   constructor(
     message: string,
-    readonly code: 'storage' | 'claim' = 'storage',
+    readonly code: 'storage' | 'claim' | 'cancel' = 'storage',
   ) {
     super(message);
   }
 }
+export const CANCELLATION_PENDING =
+  'Cancellation requested. Waiting for a confirmed server outcome.';
+export type CaptureCancellation =
+  | { captureId: string; status: 'cancelled' }
+  | { captureId: string; status: 'already-published'; receipt: CaptureReceipt };
 const invalid = () =>
   new QueueFailure(
     'This capture has invalid metadata. Review its destination and source before trying again.',
@@ -295,6 +302,25 @@ function checkTask(task: CaptureTask): CaptureTask {
       )
         throw damaged();
     } else if (task.receipt !== undefined) throw damaged();
+    if (task.cancelRequested !== undefined && task.cancelRequested !== true)
+      throw damaged();
+    if (
+      task.cancelRequested &&
+      ['saved', 'duplicate', 'cancelled'].includes(task.state)
+    )
+      throw damaged();
+    if (task.state === 'cancelled') {
+      const proof = task.cancellationReceipt;
+      if (
+        task.claim ||
+        (task.attempts > 0 && !proof) ||
+        (proof !== undefined &&
+          (!proof ||
+            proof.captureId !== task.id ||
+            proof.status !== 'cancelled'))
+      )
+        throw damaged();
+    } else if (task.cancellationReceipt !== undefined) throw damaged();
     bindingCopy(task.binding);
     sourceCopy(task.source);
     if (
@@ -459,7 +485,7 @@ export async function claimCapture(
         (task.claim?.expiresAt ?? 0) > now
       )
         continue;
-      if (task.file && task.phase === 'upload') {
+      if (task.file && task.phase === 'upload' && !task.cancelRequested) {
         const stored = await request(tx.objectStore('blobs').get(task.id));
         if (
           !(stored?.blob instanceof Blob) ||
@@ -493,6 +519,8 @@ export const saveCaptureProgress = (
 ): Promise<CaptureTask> =>
   transaction(['tasks'], 'readwrite', async (tx) => {
     const task = await ownedTask(tx, id, owner, now);
+    if (task.cancelRequested)
+      throw new QueueFailure(CANCELLATION_PENDING, 'cancel');
     if (
       !['uploading', 'committing'].includes(progress.state) ||
       !Number.isSafeInteger(progress.offset) ||
@@ -564,6 +592,31 @@ async function releaseBytes(tx: IDBTransaction, task: CaptureTask) {
   await request(tx.objectStore('blobs').delete(task.id));
   await request(tx.objectStore('meta').put(used - size, 'bytes'));
 }
+async function recordReceipt(
+  tx: IDBTransaction,
+  task: CaptureTask,
+  receipt: CaptureReceipt,
+  now: number,
+) {
+  if (!validReceipt(receipt, task.id, task.file ? 'asset' : 'bookmark'))
+    throw invalid();
+  await releaseBytes(tx, task);
+  task.state = receipt.status === 'created' ? 'saved' : 'duplicate';
+  task.phase = 'commit';
+  task.offset = task.file?.size ?? 0;
+  task.receipt = {
+    captureId: task.id,
+    status: receipt.status,
+    kind: receipt.kind,
+    itemId: receipt.itemId,
+  };
+  task.updatedAt = now;
+  delete task.claim;
+  delete task.error;
+  delete task.retryAt;
+  delete task.cancelRequested;
+  await request(tx.objectStore('tasks').put(task));
+}
 export const finishCapture = (
   id: string,
   owner: string,
@@ -575,22 +628,57 @@ export const finishCapture = (
     if (
       task.state !== 'committing' ||
       task.phase !== 'commit' ||
-      task.offset !== (task.file?.size ?? 0) ||
-      !validReceipt(receipt, id, task.file ? 'asset' : 'bookmark')
+      task.offset !== (task.file?.size ?? 0)
+    )
+      throw invalid();
+    await recordReceipt(tx, task, receipt, now);
+  });
+export const requestCaptureCancellation = (
+  id: string,
+  binding: ServerBinding,
+  now = Date.now(),
+): Promise<void> =>
+  transaction(['tasks'], 'readwrite', async (tx) => {
+    const task = checkTask(await request(tx.objectStore('tasks').get(id)));
+    if (
+      !sameDestination(task.binding, binding) ||
+      ['saved', 'duplicate', 'cancelled'].includes(task.state)
+    )
+      throw invalid();
+    if (task.cancelRequested) return;
+    task.cancelRequested = true;
+    task.error = CANCELLATION_PENDING;
+    task.updatedAt = now;
+    task.retryAt = Math.max(now, task.retryAt ?? now);
+    await request(tx.objectStore('tasks').put(task));
+  });
+export const finishCaptureCancellation = (
+  id: string,
+  owner: string,
+  outcome: CaptureCancellation,
+  now = Date.now(),
+): Promise<void> =>
+  transaction(['tasks', 'blobs', 'meta'], 'readwrite', async (tx) => {
+    const task = await ownedTask(tx, id, owner, now);
+    if (!task.cancelRequested || !outcome || outcome.captureId !== id)
+      throw invalid();
+    if (outcome.status === 'already-published') {
+      await recordReceipt(tx, task, outcome.receipt, now);
+      return;
+    }
+    if (
+      outcome.status !== 'cancelled' ||
+      ('receipt' in outcome && outcome.receipt !== undefined)
     )
       throw invalid();
     await releaseBytes(tx, task);
-    task.state = receipt.status === 'created' ? 'saved' : 'duplicate';
-    task.receipt = {
-      captureId: id,
-      status: receipt.status,
-      kind: receipt.kind,
-      itemId: receipt.itemId,
-    };
+    task.state = 'cancelled';
     task.updatedAt = now;
+    task.cancellationReceipt = { captureId: id, status: 'cancelled' };
     delete task.claim;
     delete task.error;
     delete task.retryAt;
+    delete task.cancelRequested;
     await request(tx.objectStore('tasks').put(task));
   });
 export const cancelQueuedCapture = (
@@ -611,6 +699,7 @@ export const cancelQueuedCapture = (
       );
     await releaseBytes(tx, task);
     task.state = 'cancelled';
+    delete task.cancelRequested;
     task.updatedAt = now;
     delete task.error;
     delete task.retryAt;

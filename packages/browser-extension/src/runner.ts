@@ -7,6 +7,7 @@ import {
 } from './capture-transport';
 import {
   captureBlob,
+  CANCELLATION_PENDING,
   claimCapture,
   deferCapture,
   finishCapture,
@@ -52,6 +53,8 @@ async function deliver(
   transport: CaptureTransport,
   signal: AbortSignal,
 ) {
+  if (task.cancelRequested)
+    throw new QueueFailure(CANCELLATION_PENDING, 'cancel');
   const remember = async (state: 'uploading' | 'committing', offset: number) =>
     (task = await saveCaptureProgress(task.id, owner, { state, offset }));
   const call = async <T>(operation: () => Promise<T>): Promise<T> => {
@@ -140,7 +143,8 @@ export async function resumeQueue(
           await deliver(task, owner, transport, active);
         } catch (error) {
           if (lostClaim(error)) continue;
-          if (error instanceof QueueFailure) throw error;
+          if (error instanceof QueueFailure && error.code !== 'cancel')
+            throw error;
           if (fatalConnection(error)) {
             fatal ??= error as CaptureFailure;
             stop.abort();
@@ -150,7 +154,8 @@ export async function resumeQueue(
           const permanent =
             error instanceof DeliveryFailure && error.kind === 'permanent';
           const message =
-            error instanceof CaptureFailure
+            error instanceof CaptureFailure ||
+            (error instanceof QueueFailure && error.code === 'cancel')
               ? error.message
               : 'Could not confirm this capture. Its queue entry is retained.';
           try {
