@@ -34,6 +34,10 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE INDEX "eagle_import_ownerId_createdAt_idx" ON "eagle_import" ("ownerId", "createdAt");`.execute(db);
   await sql`CREATE INDEX "eagle_import_ownerId_idx" ON "eagle_import" ("ownerId");`.execute(db);
   await sql`CREATE INDEX "eagle_import_rootAlbumId_idx" ON "eagle_import" ("rootAlbumId");`.execute(db);
+  // One running import of a library per account: two clicks or two tabs share it.
+  await sql`CREATE UNIQUE INDEX "eagle_import_active_library_uq" ON "eagle_import" ("ownerId", "libraryPath") WHERE (("status" IN ('running', 'stopping')));`.execute(
+    db,
+  );
   await sql`CREATE TABLE "eagle_import_item" (
   "id" uuid NOT NULL DEFAULT immich_uuid_v7(),
   "importId" uuid NOT NULL,

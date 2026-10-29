@@ -37,6 +37,8 @@ import {
 
 export const EAGLE_IMPORT_TICK_MS = 5000;
 export const EAGLE_IMPORT_LEASE_MS = 2 * 60_000;
+/** The lease is renewed this often while an item is being copied, however long the file takes. */
+export const EAGLE_IMPORT_HEARTBEAT_MS = 30_000;
 const TAG_BATCH = 100;
 const RECENT = 3;
 const NIL_UUID = /^0{8}-(?:0{4}-){3}0{12}$/;
@@ -155,6 +157,18 @@ export class EagleImportWorkerService {
     }
     const controller = new AbortController();
     this.running = controller;
+    // The lease is kept alive while a large file is copied; once it is lost, the copy is cut short
+    // and nothing more is written (every write below checks `throwIfReleased` or the lease itself).
+    const heartbeat = setInterval(() => {
+      void this.repository
+        .renew(row.id, this.workerId, EAGLE_IMPORT_LEASE_MS)
+        .then((status) => {
+          if (!status) {
+            controller.abort(new EagleRunReleased('Another worker has this import'));
+          }
+        })
+        .catch(() => {});
+    }, EAGLE_IMPORT_HEARTBEAT_MS);
     try {
       const run = await this.prepare(row, controller.signal);
       await this.makeCollections(run);
@@ -182,9 +196,17 @@ export class EagleImportWorkerService {
       this.logger.warn(`Eagle import ${row.id} stopped: ${String(error)}`);
       await this.repository.finish(row.id, this.workerId, 'stopped', message);
     } finally {
+      clearInterval(heartbeat);
       if (this.running === controller) {
         this.running = undefined;
       }
+    }
+  }
+
+  /** Stops before the next write once the lease was lost or the server is restarting. */
+  private throwIfReleased(run: EagleRun) {
+    if (run.signal.aborted || this.stopping) {
+      throw new EagleRunReleased('This worker no longer holds the import');
     }
   }
 
@@ -268,6 +290,7 @@ export class EagleImportWorkerService {
       if (!(await this.stillCurrent(run))) {
         return;
       }
+      this.throwIfReleased(run);
       const parentId = folder.parent ? run.albums[folder.parent] : (run.rootAlbumId ?? undefined);
       const colour = eagleColour(folder.color);
       const album = await this.albums.create(auth, {
@@ -304,6 +327,7 @@ export class EagleImportWorkerService {
     const { auth, row } = run;
     try {
       const { assetId, created } = await this.createAsset(run, item);
+      this.throwIfReleased(run);
       const filed = item.folders.filter((id) => run.albums[id]);
       const albumIds = filed.map((id) => run.albums[id]);
       if (albumIds.length === 0 && run.target.mode === 'inside' && run.rootAlbumId) {
@@ -314,14 +338,19 @@ export class EagleImportWorkerService {
       }
       const tagIds = item.tags.map((name) => run.tagIds[name]).filter(Boolean);
       if (tagIds.length > 0) {
+        this.throwIfReleased(run);
         await this.tags.bulkTagAssets(auth, { assetIds: [assetId], tagIds });
       }
+      this.throwIfReleased(run);
       await this.describe(run, item, assetId, created);
       const pageUrl = eagleSourceUrl(item);
       if (pageUrl) {
+        this.throwIfReleased(run);
         await this.sources.addImported(auth, assetId, { importedFrom: 'eagle', pageUrl });
       }
-      await this.repository.addOutcome(row.id, item.id, assetId, !created);
+      if (!(await this.repository.addOutcome(row.id, this.workerId, item.id, assetId, !created))) {
+        throw new EagleRunReleased('Another worker has this import');
+      }
       run.failed.delete(item.id);
       const names = filed.length > 0 ? filed : run.target.mode === 'inside' ? [''] : [];
       run.recent = [
@@ -350,16 +379,17 @@ export class EagleImportWorkerService {
    */
   private async createAsset(run: EagleRun, item: EagleServerItem): Promise<{ assetId: string; created: boolean }> {
     const { auth, row } = run;
-    const source = this.libraries.itemFilePath(row.libraryPath, item.id, item.fileName!);
-    const file = await this.libraries.statFile(source);
+    const file = await this.libraries.openItemFile(row.libraryPath, item.id, item.fileName!);
     if (!file) {
       throw new EagleItemError('The file is not in the library folder');
     }
     const extension = path.extname(item.fileName!).toLowerCase();
     const destination = StorageCore.getNestedPath(StorageFolder.Upload, row.ownerId, `${randomUUID()}${extension}`);
-    const digest = await this.staging.copyToLibrary(source, file.size, destination, run.signal, () =>
-      Promise.resolve(),
-    );
+    // Copied from the handle that was checked, never by opening the path again.
+    const digest = await this.staging
+      .copyToLibrary(file.handle, file.size, destination, run.signal, () => Promise.resolve())
+      .finally(() => file.handle.close());
+    this.throwIfReleased(run);
     const name = eagleFileName(item);
     const response = await this.assetMedia.uploadAsset(
       auth,

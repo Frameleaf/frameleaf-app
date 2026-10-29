@@ -261,6 +261,10 @@ export function eagleAddedDate(item: Pick<EagleItem, 'modificationTime'>, now = 
   return time > 0 && time < now ? new Date(time) : undefined;
 }
 
+/** A single path segment that can't leave its folder: no separators, no `.` or `..`, no NUL. */
+export const isSafeSegment = (value: string) =>
+  value.length > 0 && value.length <= 255 && value !== '.' && value !== '..' && !/[/\\\0]/.test(value);
+
 /** The item's own file among the names in its folder: `<name>.<ext>`, or the one other file of that type. */
 export function findEagleItemFile(item: Pick<EagleItem, 'name' | 'ext'>, fileNames: readonly string[]) {
   const exact = `${item.name}.${item.ext}`;
@@ -305,7 +309,8 @@ export function buildEagleLibrary(
     if (details === undefined) {
       return unreadableEagleItem(id);
     }
-    const item = parseEagleItem(details, id);
+    // The folder name locates the item's files: the id in its own JSON is never used for a path.
+    const item = { ...parseEagleItem(details, id), id };
     const fileName = findEagleItemFile(item, fileNames);
     return fileName ? { ...item, present: true, fileName } : item;
   });

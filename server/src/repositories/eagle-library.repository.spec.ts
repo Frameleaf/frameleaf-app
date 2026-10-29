@@ -50,7 +50,27 @@ describe(EagleLibraryRepository.name, () => {
       { id: 'I2', metadata: undefined, fileNames: ['metadata.json'] },
     ]);
     await expect(sut.readLibraryMetadata(folder)).resolves.toEqual({ folders: [] });
-    await expect(sut.statFile(sut.itemFilePath(folder, 'I1', 'a.jpg'))).resolves.toMatchObject({ size: 5 });
-    await expect(sut.statFile(path.join(folder, 'images', 'I2.info', 'b.jpg'))).resolves.toBeUndefined();
+    const opened = await sut.openItemFile(folder, 'I1', 'a.jpg');
+    expect(opened).toMatchObject({ size: 5 });
+    await opened!.handle.close();
+    await expect(sut.openItemFile(folder, 'I2', 'b.jpg')).resolves.toBeUndefined();
+  });
+
+  it('opens an item file only by plain names, inside the library, never through a link', async () => {
+    const folder = await library('Studio.library');
+    await mkdir(path.join(outside, 'X.info'));
+    await writeFile(path.join(outside, 'X.info', 'a.jpg'), 'secret');
+    // A folder name or file name that would leave the library.
+    await expect(sut.openItemFile(folder, '../../../outside', 'a.jpg')).resolves.toBeUndefined();
+    await expect(sut.openItemFile(folder, 'I1', '../../metadata.json')).resolves.toBeUndefined();
+    // An item folder that is a link to somewhere else.
+    await symlink(path.join(outside, 'X.info'), path.join(folder, 'images', 'S.info'));
+    await expect(sut.openItemFile(folder, 'S', 'a.jpg')).resolves.toBeUndefined();
+    expect((await sut.readInfoFolders(folder)).map(({ id }) => id)).toEqual(['I1']);
+    // A metadata.json swapped for a link is never read.
+    await writeFile(path.join(outside, 'metadata.json'), JSON.stringify({ id: 'secret' }));
+    await rm(path.join(folder, 'images', 'I1.info', 'metadata.json'));
+    await symlink(path.join(outside, 'metadata.json'), path.join(folder, 'images', 'I1.info', 'metadata.json'));
+    expect((await sut.readInfoFolders(folder))[0].metadata).toBeUndefined();
   });
 });

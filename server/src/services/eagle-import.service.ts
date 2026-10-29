@@ -77,7 +77,9 @@ export class EagleImportService {
     this.requireAdminSession(auth);
     const directory = await this.resolve(dto.rootId, dto.path);
     const library = await this.read(directory);
+    const earlier = await this.repository.findResumable(auth.user.id, directory, library.fingerprint);
     return {
+      earlierImport: earlier ? await this.present(earlier) : null,
       name: library.name,
       folders: eagleFolders(library.folders).map(({ id, name, parent, description, color, icon }) => ({
         id,
@@ -130,6 +132,9 @@ export class EagleImportService {
       target,
       existingTop: dto.existingTop,
     });
+    if (!row) {
+      throw new ConflictException('This library is being imported already');
+    }
     this.logger.log(`Eagle import ${row.id} started from a server folder`);
     return this.present(row);
   }

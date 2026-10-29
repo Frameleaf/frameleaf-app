@@ -408,7 +408,8 @@ export class TakeoutStagingRepository {
    * caller removes it. The destination must not exist yet.
    */
   async copyToLibrary(
-    staged: string,
+    /** The staged file, or a handle already opened on it (read from where it is, never reopened by name). */
+    staged: string | FileHandle,
     declared: number,
     destination: string,
     signal: AbortSignal,
@@ -420,7 +421,9 @@ export class TakeoutStagingRepository {
     const output = await open(destination, 'wx', 0o600);
     try {
       await onCreated();
-      await pipeline(createReadStream(staged), digest.transform, output.createWriteStream({ autoClose: true }), {
+      const input =
+        typeof staged === 'string' ? createReadStream(staged) : staged.createReadStream({ autoClose: false, start: 0 });
+      await pipeline(input, digest.transform, output.createWriteStream({ autoClose: true }), {
         signal,
       });
     } catch (error) {

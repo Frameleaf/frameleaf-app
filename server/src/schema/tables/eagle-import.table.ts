@@ -33,6 +33,13 @@ export interface EagleImportRecent {
  */
 @Table('eagle_import')
 @Index({ columns: ['ownerId', 'createdAt'] })
+/** One running import of a library per account, so two clicks or two tabs never import it twice. */
+@Index({
+  name: 'eagle_import_active_library_uq',
+  columns: ['ownerId', 'libraryPath'],
+  unique: true,
+  where: `("status" IN ('running', 'stopping'))`,
+})
 @Check({
   name: 'eagle_import_status_check',
   expression: `"status" IN ('running', 'stopping', 'stopped', 'finished')`,

@@ -37,7 +37,7 @@ const setup = async () => {
 describe('FL-653 Eagle imports on the server', () => {
   it('lets one worker at a time hold an import, until its lease runs out', async () => {
     const { sut, create } = await setup();
-    const row = await create();
+    const row = (await create())!;
     expect(row).toMatchObject({ status: 'running', existingTop: ['Web'], albums: {}, failed: [] });
     const [first, second] = await Promise.all([sut.claim('w1', 60_000), sut.claim('w2', 60_000)]);
     expect([first?.id, second?.id].filter(Boolean)).toEqual([row.id]);
@@ -60,26 +60,58 @@ describe('FL-653 Eagle imports on the server', () => {
 
   it('stops a held import after the item in hand, and one nobody holds at once', async () => {
     const { sut, user, create } = await setup();
-    const held = await create('/imports/A.library');
+    const held = (await create('/imports/A.library'))!;
     await sut.claim('w1', 60_000);
     await expect(sut.requestStop(held.id, user.id)).resolves.toMatchObject({ status: 'stopping' });
     await sut.finish(held.id, 'w1', 'finished');
     await expect(sut.getById(held.id)).resolves.toMatchObject({ status: 'stopped', leaseOwner: null });
 
-    const idle = await create('/imports/B.library');
+    const idle = (await create('/imports/B.library'))!;
     await expect(sut.requestStop(idle.id, user.id)).resolves.toMatchObject({ status: 'stopped' });
     await expect(sut.requestStop(idle.id, '00000000-0000-4000-8000-000000000000')).resolves.toBeUndefined();
   });
 
-  it('records each item once and carries on the same library', async () => {
+  it('runs one import of a library at a time, so a second start shares the first', async () => {
+    const { sut, user, create } = await setup();
+    const [first, second] = await Promise.all([create(), create()]);
+    expect(first?.id).toBe(second?.id);
+    const other = await create('/imports/Other.library');
+    expect(other?.id).not.toBe(first?.id);
+    // A stopped import of the library can't start again while another is running.
+    await sut.requestStop(first!.id, user.id);
+    const third = await create();
+    expect(third?.id).not.toBe(first?.id);
+    await expect(sut.restart(first!.id, { target: { mode: 'top' }, existingTop: [] })).resolves.toBeUndefined();
+  });
+
+  it('keeps a stop that came after the run’s last check', async () => {
     const { sut, user, create } = await setup();
     const row = await create();
-    await sut.addOutcome(row.id, 'I1', '6b0bd5a4-2f52-4e2a-9d2c-0d9a7b4c1f10', false);
-    await sut.addOutcome(row.id, 'I1', '6b0bd5a4-2f52-4e2a-9d2c-0d9a7b4c1f10', false);
-    await sut.addOutcome(row.id, 'I2', '7c1ce6b5-3a63-4f3b-8e3d-1e0b8c5d2a21', true);
+    await sut.claim('w1', 60_000);
+    await db
+      .updateTable('eagle_import')
+      .set({ leaseExpiresAt: sql`now() - interval '1 second'` })
+      .where('id', '=', row!.id)
+      .execute();
+    await expect(sut.requestStop(row!.id, user.id)).resolves.toMatchObject({ status: 'stopped' });
+    await sut.finish(row!.id, 'w1', 'finished');
+    await expect(sut.getById(row!.id)).resolves.toMatchObject({ status: 'stopped' });
+  });
+
+  it('records each item once and carries on the same library', async () => {
+    const { sut, user, create } = await setup();
+    const row = (await create())!;
+    // Only the worker holding the import can record an item.
+    await expect(sut.addOutcome(row.id, 'w1', 'I1', '6b0bd5a4-2f52-4e2a-9d2c-0d9a7b4c1f10', false)).resolves.toBe(
+      false,
+    );
+    await sut.claim('w1', 60_000);
+    await sut.addOutcome(row.id, 'w1', 'I1', '6b0bd5a4-2f52-4e2a-9d2c-0d9a7b4c1f10', false);
+    await sut.addOutcome(row.id, 'w1', 'I1', '6b0bd5a4-2f52-4e2a-9d2c-0d9a7b4c1f10', false);
+    await sut.addOutcome(row.id, 'w1', 'I2', '7c1ce6b5-3a63-4f3b-8e3d-1e0b8c5d2a21', true);
+    await expect(sut.addOutcome(row.id, 'w2', 'I3', '7c1ce6b5-3a63-4f3b-8e3d-1e0b8c5d2a21', true)).resolves.toBe(false);
     await expect(sut.counts(row.id)).resolves.toEqual({ done: 2, already: 1 });
 
-    await sut.claim('w1', 60_000);
     await sut.save(row.id, 'w1', { failed: ['I3'], albums: { F1: 'a' } });
     await sut.finish(row.id, 'w1', 'finished');
     // Finished with an item left over: choosing the library again carries it on.

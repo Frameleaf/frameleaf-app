@@ -7,6 +7,7 @@ import {
   eagleSourceUrl,
   findEagleItemFile,
   isComing,
+  isSafeSegment,
   parseEagleFolders,
   topFolderNames,
 } from 'src/utils/eagle-library.js';
@@ -73,6 +74,19 @@ describe('FL-653 Eagle library on the server', () => {
       'hash:12473b5ae1c6e707ebc9ee703766',
     );
     expect(eagleLibraryFingerprint({ id: 'L1' }, [], 0)).toBe('eagle:id:L1');
+  });
+
+  it('names an item by its folder, never by the id in its own details', () => {
+    const library = buildEagleLibrary('x.library', metadata, [
+      { id: 'I1', metadata: { id: '../../escape', name: 'a', ext: 'jpg' }, fileNames: ['a.jpg'] },
+      { id: 'I2', metadata: { id: 'I1', name: 'b', ext: 'jpg' }, fileNames: ['b.jpg'] },
+    ])!;
+    expect(library.items.map(({ id, fileName }) => [id, fileName])).toEqual([
+      ['I1', 'a.jpg'],
+      ['I2', 'b.jpg'],
+    ]);
+    expect(['a.jpg', 'I1.info'].every((name) => isSafeSegment(name))).toBe(true);
+    expect(['..', '.', '', 'a/b', String.raw`a\b`, 'a\0b'].some((name) => isSafeSegment(name))).toBe(false);
   });
 
   it('is no library without its list', () => {

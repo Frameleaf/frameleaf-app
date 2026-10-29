@@ -85,22 +85,6 @@ const EagleItemSchema = z
   })
   .meta({ id: 'EagleItemDto' });
 
-/** The library's lists, read on the server, for the check before importing. */
-export class EagleLibraryResponseDto extends createZodDto(
-  z
-    .object({
-      name: z.string(),
-      folders: z.array(EagleFolderSchema).describe('Every folder, parents before their children'),
-      smartFolders: z.array(z.string()),
-      tagGroups: z.array(z.string()),
-      changed: z.number().meta({ format: 'double' }).optional().describe('When Eagle last changed the library (ms)'),
-      items: z.array(EagleItemSchema),
-      fingerprint: z.string(),
-      supported: z.array(z.string()).describe('File types this import brings over (lower case, no dot)'),
-    })
-    .meta({ id: 'EagleLibraryResponseDto' }),
-) {}
-
 export class EagleImportCreateDto extends createZodDto(
   z
     .object({
@@ -156,6 +140,25 @@ export class EagleImportResponseDto extends createZodDto(
       updatedAt: z.string().meta({ format: 'date-time' }),
     })
     .meta({ id: 'EagleImportResponseDto' }),
+) {}
+
+/** The library's lists, read on the server, for the check before importing. */
+export class EagleLibraryResponseDto extends createZodDto(
+  z
+    .object({
+      name: z.string(),
+      folders: z.array(EagleFolderSchema).describe('Every folder, parents before their children'),
+      smartFolders: z.array(z.string()),
+      tagGroups: z.array(z.string()),
+      changed: z.number().meta({ format: 'double' }).optional().describe('When Eagle last changed the library (ms)'),
+      items: z.array(EagleItemSchema),
+      fingerprint: z.string(),
+      supported: z.array(z.string()).describe('File types this import brings over (lower case, no dot)'),
+      earlierImport: EagleImportResponseDto.schema
+        .nullable()
+        .describe('Your earlier import of this library that has more to do, to carry on'),
+    })
+    .meta({ id: 'EagleLibraryResponseDto' }),
 ) {}
 
 export class EagleImportListResponseDto extends createZodDto(

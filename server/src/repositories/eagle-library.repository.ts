@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { Dirent } from 'node:fs';
-import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
+import { Dirent, constants } from 'node:fs';
+import { FileHandle, lstat, open, readdir, readlink, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { isSafeSegment } from 'src/utils/eagle-library.js';
 
 /** The library's own lists can be large; an item's details are small. Anything bigger is not Eagle's. */
 const LIBRARY_METADATA_MAX_BYTES = 64 * 1024 * 1024;
@@ -16,6 +17,35 @@ export interface EagleInfoFolder {
   id: string;
   metadata: unknown;
   fileNames: string[];
+}
+
+/** An item's file, opened for reading: the copy reads from this handle, the one that was checked. */
+export interface EagleOpenFile {
+  handle: FileHandle;
+  size: number;
+  modifiedAt: Date;
+}
+
+const isInside = (child: string, root: string) => child.startsWith(root + path.sep);
+
+/**
+ * The real path of an open file. On Linux the kernel says which file the descriptor holds; elsewhere
+ * the path is resolved and must still be that same file (device and inode), or there is no answer.
+ */
+async function realPathOf(handle: FileHandle, filePath: string): Promise<string | undefined> {
+  const info = await handle.stat();
+  if (process.platform === 'linux') {
+    const real = await readlink(`/proc/self/fd/${handle.fd}`).catch(() => {});
+    if (real) {
+      return real;
+    }
+  }
+  const real = await realpath(filePath).catch(() => {});
+  if (!real) {
+    return;
+  }
+  const now = await stat(real).catch(() => {});
+  return now && now.dev === info.dev && now.ino === info.ino ? real : undefined;
 }
 
 const isLibraryName = (name: string) => name.toLowerCase().endsWith('.library');
@@ -45,6 +75,10 @@ export class EagleLibraryRepository {
           continue;
         }
         const full = path.join(directory, entry.name);
+        // Checked again here: a folder swapped for a link after it was listed is not followed.
+        if ((await realpath(full).catch(() => {})) !== full) {
+          continue;
+        }
         if (isLibraryName(entry.name)) {
           if (await this.isRegularFile(path.join(full, 'metadata.json'))) {
             found.push(path.relative(realRoot, full));
@@ -63,18 +97,21 @@ export class EagleLibraryRepository {
 
   /** The library's `metadata.json`, parsed; undefined when it is missing or not JSON. */
   async readLibraryMetadata(library: string): Promise<unknown> {
-    return this.readJson(path.join(library, 'metadata.json'), LIBRARY_METADATA_MAX_BYTES);
+    return this.readJson(path.join(library, 'metadata.json'), LIBRARY_METADATA_MAX_BYTES, library);
   }
 
   /** Every `images/<id>.info` folder with its details and the names of its files, sorted by id. */
   async readInfoFolders(library: string): Promise<EagleInfoFolder[]> {
     const images = path.join(library, 'images');
     const info = await lstat(images).catch(() => {});
-    if (!info?.isDirectory()) {
+    if (
+      !info?.isDirectory() ||
+      (await realpath(images).catch(() => {})) !== path.join(await realpath(library), 'images')
+    ) {
       return [];
     }
     const folders = (await readdir(images, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory() && entry.name.endsWith('.info'))
+      .filter((entry) => entry.isDirectory() && entry.name.endsWith('.info') && isSafeSegment(entry.name))
       .map((entry) => entry.name)
       .toSorted((a, b) => a.localeCompare(b));
     const result = Array.from<EagleInfoFolder>({ length: folders.length });
@@ -88,8 +125,10 @@ export class EagleLibraryRepository {
           const entries = await readdir(folder, { withFileTypes: true }).catch(() => [] as Dirent[]);
           result[index] = {
             id: name.slice(0, -'.info'.length),
-            metadata: await this.readJson(path.join(folder, 'metadata.json'), ITEM_METADATA_MAX_BYTES),
-            fileNames: entries.filter((entry) => entry.isFile()).map((entry) => entry.name),
+            metadata: await this.readJson(path.join(folder, 'metadata.json'), ITEM_METADATA_MAX_BYTES, library),
+            fileNames: entries
+              .filter((entry) => entry.isFile() && isSafeSegment(entry.name))
+              .map((entry) => entry.name),
           };
         }
       }),
@@ -97,30 +136,59 @@ export class EagleLibraryRepository {
     return result;
   }
 
-  /** The path of an item's file, from names its folder listing gave. */
-  itemFilePath(library: string, id: string, fileName: string) {
-    return path.join(library, 'images', `${id}.info`, fileName);
+  /**
+   * Opens an item's file for reading. The id and file name must each be one plain name (they come
+   * from the library's folder listing); the file must be a regular file, opened without following a
+   * link, and the file the handle holds must be inside the library. Undefined otherwise.
+   */
+  async openItemFile(library: string, id: string, fileName: string): Promise<EagleOpenFile | undefined> {
+    if (!isSafeSegment(`${id}.info`) || !isSafeSegment(fileName)) {
+      return;
+    }
+    return this.openInside(path.join(library, 'images', `${id}.info`, fileName), library);
   }
 
-  /** Size and last change of a regular file reached without a link; undefined otherwise. */
-  async statFile(filePath: string): Promise<{ size: number; modifiedAt: Date } | undefined> {
-    const info = await lstat(filePath).catch(() => {});
-    return info?.isFile() ? { size: info.size, modifiedAt: info.mtime } : undefined;
+  /** A regular file inside `within`, opened without following a link and checked through its handle. */
+  private async openInside(filePath: string, within: string): Promise<EagleOpenFile | undefined> {
+    const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => {});
+    if (!handle) {
+      return;
+    }
+    try {
+      const info = await handle.stat();
+      const real = info.isFile() ? await realPathOf(handle, filePath) : undefined;
+      const root = await realpath(within);
+      if (real && isInside(real, root)) {
+        return { handle, size: info.size, modifiedAt: info.mtime };
+      }
+    } catch {
+      // Treated as not there.
+    }
+    await handle.close();
   }
 
   private async isRegularFile(filePath: string) {
     return (await lstat(filePath).catch(() => {}))?.isFile() ?? false;
   }
 
-  private async readJson(filePath: string, maxBytes: number): Promise<unknown> {
-    const info = await lstat(filePath).catch(() => {});
-    if (!info?.isFile() || info.size > maxBytes) {
+  /** JSON read through the checked handle, so a file swapped for a link after the check is never read. */
+  private async readJson(filePath: string, maxBytes: number, within: string): Promise<unknown> {
+    const file = await this.openInside(filePath, within);
+    if (!file) {
       return undefined;
     }
     try {
-      return JSON.parse(await readFile(filePath, 'utf8')) as unknown;
+      if (file.size > maxBytes) {
+        return undefined;
+      }
+      // A FileHandle, not a path: the rule's string form is the same read through the checked descriptor.
+      // eslint-disable-next-line unicorn/consistent-json-file-read
+      const content = await file.handle.readFile({ encoding: 'utf8' });
+      return JSON.parse(content) as unknown;
     } catch {
       return undefined;
+    } finally {
+      await file.handle.close();
     }
   }
 }

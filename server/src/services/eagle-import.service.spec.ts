@@ -235,7 +235,7 @@ describe('FL-653 Eagle import from a server folder', () => {
         finish: vitest.fn().mockResolvedValue(undefined),
         release: vitest.fn().mockResolvedValue(undefined),
         renew: vitest.fn(() => Promise.resolve(status)),
-        addOutcome: vitest.fn().mockResolvedValue(undefined),
+        addOutcome: vitest.fn().mockResolvedValue(true),
       });
       let album = 0;
       albums = {
@@ -333,9 +333,7 @@ describe('FL-653 Eagle import from a server folder', () => {
         ['asset-hero.jpg', new Date(1_789_000_000_000).toISOString()],
         ['asset-loose.png', new Date(1_789_000_000_000).toISOString()],
       ]);
-      expect(
-        repository.addOutcome.mock.calls.map(([, itemId, assetId, duplicate]) => [itemId, assetId, duplicate]),
-      ).toEqual([
+      expect(repository.addOutcome.mock.calls.map((call) => call.slice(2))).toEqual([
         ['I1', 'asset-hero.jpg', false],
         ['I2', 'asset-loose.png', false],
         ['I3', 'existing-already', true],
@@ -374,6 +372,43 @@ describe('FL-653 Eagle import from a server folder', () => {
       expect(repository.addOutcome).toHaveBeenCalledTimes(2);
       expect(repository.save).toHaveBeenCalledWith(expect.any(String), workerId, { failed: ['I1'] });
       expect(repository.finish).toHaveBeenCalledWith(expect.any(String), workerId, 'finished');
+    });
+
+    it('copies from the checked handle, never by opening the path again', async () => {
+      await worker.run(row({ fingerprint }) as never);
+      const [source] = staging.copyToLibrary.mock.calls[0];
+      expect(typeof source).toBe('object');
+      expect(source).toHaveProperty('fd');
+    });
+
+    it('writes nothing more once another worker took the import part-way through an item', async () => {
+      repository.addOutcome.mockResolvedValue(false);
+      await worker.run(row({ fingerprint }) as never);
+      expect(assetMedia.uploadAsset).toHaveBeenCalledTimes(1);
+      expect(repository.release).toHaveBeenCalled();
+      expect(repository.finish).not.toHaveBeenCalled();
+    });
+
+    it('cuts a long copy short when the lease is lost while it runs', async () => {
+      vitest.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        staging.copyToLibrary.mockImplementationOnce(
+          (_from: unknown, _size: number, _to: string, signal: AbortSignal) =>
+            new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason))),
+        );
+        repository.renew.mockImplementation(() =>
+          Promise.resolve(staging.copyToLibrary.mock.calls.length > 0 ? undefined : 'running'),
+        );
+        const running = worker.run(row({ fingerprint }) as never);
+        await vitest.waitFor(() => expect(staging.copyToLibrary).toHaveBeenCalled());
+        await vitest.advanceTimersByTimeAsync(30_000);
+        await running;
+        expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+        expect(repository.release).toHaveBeenCalled();
+        expect(repository.finish).not.toHaveBeenCalled();
+      } finally {
+        vitest.useRealTimers();
+      }
     });
 
     it('lets the import go, without ending it, when another worker has it', async () => {

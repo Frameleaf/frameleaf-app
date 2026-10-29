@@ -17,16 +17,38 @@ const json = (value: unknown) => sql<never>`${JSON.stringify(value)}::text::json
 export class EagleImportRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  create(input: Insertable<EagleImportTable>) {
-    return this.db
+  /**
+   * Starts an import, or answers the one already running for this account and library: the
+   * partial unique index allows one running import per library, so two clicks or two tabs share it.
+   */
+  async create(input: Insertable<EagleImportTable>) {
+    const created = await this.db
       .insertInto('eagle_import')
       .values({
         ...input,
         target: json(input.target),
         ...(input.existingTop && { existingTop: json(input.existingTop) }),
       })
+      .onConflict((oc) =>
+        oc
+          .columns(['ownerId', 'libraryPath'])
+          .where(sql<boolean>`"status" in ('running', 'stopping')`)
+          .doNothing(),
+      )
       .returningAll()
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
+    return created ?? (await this.findActive(input.ownerId, input.libraryPath));
+  }
+
+  /** The import of this library running now for the account, if any. */
+  findActive(ownerId: string, libraryPath: string) {
+    return this.db
+      .selectFrom('eagle_import')
+      .selectAll()
+      .where('ownerId', '=', ownerId)
+      .where('libraryPath', '=', libraryPath)
+      .where('status', 'in', ['running', 'stopping'])
+      .executeTakeFirst();
   }
 
   getById(id: string) {
@@ -67,9 +89,12 @@ export class EagleImportRepository {
       .execute();
   }
 
-  /** Starts it again from where it got to, with the choices made now. */
+  /**
+   * Starts it again from where it got to, with the choices made now. Undefined when it isn't
+   * stopped or finished, or when another import of the library is already running.
+   */
   restart(id: string, patch: Pick<EagleImportPatch, 'target' | 'existingTop'>) {
-    return this.db
+    const restarted = this.db
       .updateTable('eagle_import')
       .set({
         status: 'running',
@@ -82,6 +107,12 @@ export class EagleImportRepository {
       .where('status', 'in', ['stopped', 'finished'])
       .returningAll()
       .executeTakeFirst();
+    return restarted.catch((error: unknown) => {
+      if ((error as { constraint_name?: string })?.constraint_name === 'eagle_import_active_library_uq') {
+        return;
+      }
+      throw error;
+    });
   }
 
   /**
@@ -164,7 +195,8 @@ export class EagleImportRepository {
     await this.db
       .updateTable('eagle_import')
       .set({
-        status: sql`case when "status" = 'stopping' then 'stopped' else ${status} end`,
+        // A stop that arrived after the run's last check stays a stop.
+        status: sql`case when "status" in ('stopping', 'stopped') then 'stopped' else ${status} end`,
         error: error ?? null,
         leaseOwner: null,
         leaseExpiresAt: null,
@@ -205,11 +237,26 @@ export class EagleImportRepository {
     return { done: Number(row.done), already: Number(row.already ?? 0) };
   }
 
-  async addOutcome(importId: string, itemId: string, assetId: string, duplicate: boolean) {
-    await this.db
+  /** Records an item, only while `workerId` still holds the import. False once it lost the lease. */
+  async addOutcome(importId: string, workerId: string, itemId: string, assetId: string, duplicate: boolean) {
+    const row = await this.db
       .insertInto('eagle_import_item')
-      .values({ importId, itemId, assetId, duplicate })
+      .columns(['importId', 'itemId', 'assetId', 'duplicate'])
+      .expression((eb) =>
+        eb
+          .selectFrom('eagle_import')
+          .select([
+            'eagle_import.id',
+            sql<string>`${itemId}::varchar`.as('itemId'),
+            sql<string>`${assetId}::uuid`.as('assetId'),
+            sql<boolean>`${duplicate}::boolean`.as('duplicate'),
+          ])
+          .where('eagle_import.id', '=', importId)
+          .where('eagle_import.leaseOwner', '=', workerId),
+      )
       .onConflict((oc) => oc.columns(['importId', 'itemId']).doUpdateSet({ assetId, duplicate }))
-      .execute();
+      .returning('id')
+      .executeTakeFirst();
+    return !!row;
   }
 }
