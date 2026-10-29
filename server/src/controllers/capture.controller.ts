@@ -21,10 +21,10 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseDto } from 'src/dtos/album.dto.js';
 import {
   CaptureAlbumCreateDto,
+  CaptureCancelResponseDto,
   CaptureCapabilitiesDto,
   CaptureCatalogDto,
   CaptureCommitDto,
-  CaptureCancelResponseDto,
   CaptureResponseDto,
   CaptureUploadStateDto,
 } from 'src/dtos/capture.dto.js';
