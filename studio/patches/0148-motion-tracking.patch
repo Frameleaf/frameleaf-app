@@ -208,7 +208,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.test.ts
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,158 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -308,15 +308,17 @@ new file mode 100644
 +  it('applies x, y, width and height keys relative to the target, then removes them as one application', async () => {
 +    const outcome = applyMotionTrack(resultFor(path))
 +    expect(outcome.ok).toBe(true)
-+    expect(keysOf('x')).toEqual([[10, 100], [11, 110], [12, 120]])
-+    expect(keysOf('height')).toEqual([[10, 80], [11, 84], [12, 88]])
++    // Frames 9 and 13 pin the target's own values just outside the track, so it is unchanged there.
++    expect(keysOf('x')).toEqual([[9, 100], [10, 100], [11, 110], [12, 120], [13, 100]])
++    // The pins carry the height as shown (the title's resolved box), not its stored transform.
++    expect(keysOf('height')).toEqual([[9, 104], [10, 80], [11, 84], [12, 88], [13, 104]])
 +    const [applicationId] = listMotionTracks('title')
 +    expect(applicationId).toBe(outcome.ok ? outcome.applicationId : '')
 +
 +    expect(removeMotionTrack('title', applicationId!)).toBe(true)
-+    expect(keysOf('x')).toEqual([])
++    expect(keysOf('x')).toEqual([[9, 100], [13, 100]])
 +    useTimelineCommandStore.getState().undo()
-+    expect(keysOf('x')).toHaveLength(3)
++    expect(keysOf('x')).toHaveLength(5)
 +  })
 +
 +  it('blocks unreviewed lost frames, and keeps the tracked part only when told to', async () => {
@@ -334,7 +336,8 @@ new file mode 100644
 +    const result = resultFor(path)
 +    expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'conflict' })
 +    expect(applyMotionTrack(result, { replaceExisting: true }).ok).toBe(true)
-+    expect(keysOf('x')).toEqual([[10, 100], [11, 110], [12, 120], [50, 7]])
++    // The pins hold the pre-apply curve: -999 before the old key, and its interpolation at frame 13.
++    expect(keysOf('x')).toEqual([[9, -999], [10, 100], [11, 110], [12, 120], [13, -947.41], [50, 7]])
 +    expect(keysOf('opacity')).toEqual([[11, 0.5]])
 +    useTimelineCommandStore.getState().undo()
 +    expect(keysOf('x')).toEqual([[11, -999], [50, 7]])
@@ -356,12 +359,19 @@ new file mode 100644
 +  it('applies a one-frame backward result instead of calling it stale', () => {
 +    expect(applyMotionTrack(resultFor([path[0]!], [], 'backward', [20]), {})).toMatchObject({ ok: true })
 +  })
++
++  it('refuses to remove a track from a locked target', () => {
++    const outcome = applyMotionTrack(resultFor(path))
++    if (!outcome.ok) throw new Error(outcome.reason)
++    useItemsStore.getState().setTracks([track('t1', true)])
++    expect(removeMotionTrack('title', outcome.applicationId)).toBe(false)
++  })
 +})
 diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,307 @@
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import type { AnimationKeyframeSource } from '@/types/keyframe'
 +import { useItemsStore } from '../../items-store'
@@ -443,6 +453,10 @@ new file mode 100644
 +  return JSON.stringify([
 +    MOTION_TRACKER_ALGORITHM, source.id, source.mediaId, video.sourceStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1,
 +    source.from, source.durationInFrames, source.transform ?? null, target.id, target.from, target.transform ?? null,
++    // The source mapping's refusal inputs: a change to any of them changes where tracked points land.
++    video.crop ?? null, video.cornerPin ?? null, video.isReversed === true,
++    (useKeyframesStore.getState().keyframesByItemId[source.id]?.properties ?? [])
++      .map((property) => [property.property, property.keyframes.map((keyframe) => [keyframe.frame, keyframe.value, keyframe.easing])]),
 +    // The target's own position and size keys decide its seed box, so edits to them make a result stale.
 +    (useKeyframesStore.getState().keyframesByItemId[target.id]?.properties ?? [])
 +      .filter((property) => (TRACKED_PROPERTIES as readonly string[]).includes(property.property))
@@ -621,6 +635,19 @@ new file mode 100644
 +    itemId: target.id, property, frame: value.frame - target.from, value: Math.round(value[property] * 100) / 100,
 +    easing: 'linear' as const, source: source_,
 +  })))
++  // A partial track must not change the target outside it: pin the pre-apply value on the frame just
++  // before and after the tracked range (unless a key is already there). These keys are the target's
++  // own, so removing the track leaves them, and they hold what was shown anyway.
++  const keyed = (property: string, frame: number) => (record?.properties ?? [])
++    .some((entry) => entry.property === property && entry.keyframes.some((keyframe) => keyframe.frame === frame))
++  const boundaries = [low - 1, high + 1].filter((frame) => frame >= 0 && frame < target.durationInFrames)
++  for (const frame of boundaries) {
++    const shown = resolveItemTransformAtFrame(target, { canvas: canvasSize(), frame: target.from + frame, keyframes: record })
++    for (const property of TRACKED_PROPERTIES) {
++      if (keyed(property, frame)) continue
++      payloads.push({ itemId: target.id, property, frame, value: Math.round(shown[property] * 100) / 100, easing: 'linear' })
++    }
++  }
 +  execute('APPLY_MOTION_TRACK', () => {
 +    const keyframes = useKeyframesStore.getState()
 +    for (const { property, id } of conflicting) keyframes._removeKeyframe(target.id, property, id)
@@ -644,7 +671,8 @@ new file mode 100644
 +
 +/** Remove one applied track's keyframes in one undo step; other keys stay. */
 +export function removeMotionTrack(itemId: string, applicationId: string): boolean {
-+  if (!listMotionTracks(itemId).includes(applicationId)) return false
++  const item = useItemsStore.getState().itemById[itemId]
++  if (!item || hasLockedEditParticipants([item]) || !listMotionTracks(itemId).includes(applicationId)) return false
 +  execute('REMOVE_MOTION_TRACK', () => {
 +    useKeyframesStore.getState()._removeKeyframesByApplication(itemId, applicationId)
 +    useTimelineSettingsStore.getState().markDirty()
