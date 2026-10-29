@@ -5,9 +5,48 @@ import { STUDIO_FRAME_PROTOCOL_VERSION } from './frame-protocol';
 import {
   STUDIO_FRAME_SERVICE_SCHEMA_V7,
   STUDIO_FRAME_SERVICE_SCHEMA_V8,
+  STUDIO_FRAME_SERVICE_SCHEMA_V9,
+  STUDIO_LIBRARY_ADD_LIMIT,
   isStudioFrameServiceName,
+  isStudioLibraryQuery,
   isStudioSourceRequest,
 } from './frame-service-schema';
+
+describe('FL-641 caption translation in protocol 9', () => {
+  const check = STUDIO_FRAME_SERVICE_SCHEMA_V9.translateCaptions;
+
+  it('adds translateCaptions only to protocol 9', () => {
+    expect(Object.keys(STUDIO_FRAME_SERVICE_SCHEMA_V9)).toEqual([
+      ...Object.keys(STUDIO_FRAME_SERVICE_SCHEMA_V8),
+      'translateCaptions',
+      'searchLibrary',
+      'libraryFacets',
+      'addLibraryAssets',
+    ]);
+    for (const name of ['searchLibrary', 'libraryFacets', 'addLibraryAssets']) {
+      expect(Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, name), name).toBe(false);
+    }
+    expect(Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, 'translateCaptions')).toBe(false);
+    expect(isStudioFrameServiceName('translateCaptions')).toBe(true);
+  });
+
+  it('accepts two offered languages and caption text, nothing else', () => {
+    expect(check([{ source: 'en', target: 'fr', lines: ['Hello', ''] }])).toBe(true);
+    for (const bad of [
+      [],
+      [{ source: 'en', target: 'fr', lines: ['Hi'] }, true],
+      [{ source: 'en', target: 'ja', lines: ['Hi'] }],
+      [{ source: 'en', target: 'en', lines: ['Hi'] }],
+      [{ source: 'en', target: 'fr', lines: [] }],
+      [{ source: 'en', target: 'fr', lines: [1] }],
+      [{ source: 'en', target: 'fr', lines: ['x'.repeat(1001)] }],
+      [{ source: 'en', target: 'fr', lines: Array.from({ length: 501 }, () => 'x') }],
+      [{ source: 'en', target: 'fr', lines: ['Hi'], projectId: 'other' }],
+    ]) {
+      expect(check(bad)).toBe(false);
+    }
+  });
+});
 
 const oldNames = [
   'submitCommands',
@@ -20,7 +59,7 @@ const oldNames = [
 ];
 describe('one explicitly versioned Studio service schema', () => {
   it('preserves the seven old names and retains cancellation and adds canonical source resolution only to protocol8', () => {
-    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(8);
+    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(9);
     expect(Object.keys(STUDIO_FRAME_SERVICE_SCHEMA_V7)).toEqual(oldNames);
     expect(Object.keys(STUDIO_FRAME_SERVICE_SCHEMA_V8)).toEqual([
       ...oldNames,
@@ -31,6 +70,34 @@ describe('one explicitly versioned Studio service schema', () => {
     for (const name of ['resolveVectorSource', 'vector-sources', '__proto__', 'constructor', 'unknown']) {
       expect(isStudioFrameServiceName(name)).toBe(false);
     }
+  });
+  it('accepts only well-formed Library view searches and adoptions (FL-636)', () => {
+    const uuid = '11111111-1111-4111-8111-111111111111';
+    expect(isStudioLibraryQuery({})).toBe(true);
+    expect(
+      isStudioLibraryQuery({ text: 'lake', type: 'video', personId: uuid, city: 'Banff', month: '2026-07', page: 2 }),
+    ).toBe(true);
+    expect(isStudioLibraryQuery({ text: null, personId: null, city: null, month: null })).toBe(true);
+    for (const bad of [
+      null,
+      [],
+      { albumIds: [uuid] },
+      { visibility: 'locked' },
+      { type: 'audio' },
+      { personId: 'jamie' },
+      { month: '2026-13' },
+      { page: 0 },
+      { text: 'x'.repeat(501) },
+    ]) {
+      expect(isStudioLibraryQuery(bad), JSON.stringify(bad)).toBe(false);
+    }
+    const add = STUDIO_FRAME_SERVICE_SCHEMA_V9.addLibraryAssets;
+    expect(add([[uuid]])).toBe(true);
+    expect(add([[]])).toBe(false);
+    expect(add([['../etc']])).toBe(false);
+    expect(add([Array.from({ length: STUDIO_LIBRARY_ADD_LIMIT + 1 }, () => uuid)])).toBe(false);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.libraryFacets([])).toBe(true);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.searchLibrary([{ month: 'July' }])).toBe(false);
   });
   it('keeps current publication cancellation in protocol8 with its independent origin checks', () => {
     const uuid = '11111111-1111-4111-8111-111111111111';

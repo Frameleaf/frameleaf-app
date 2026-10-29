@@ -4,8 +4,8 @@
    * `personal-key-create` / `personal-key-edit` forms and the one-time reveal of the design
    * template's `PersonalForm`.
    *
-   * FL-367: a key starts from what it is for (View only, Upload only, View and upload, Browser
-   * extension, Everything), each with who it suits and what it can and can't do (`ApiKeys.jsx`);
+   * FL-367: a key starts from what it is for (View only, Upload only, View and upload, Everything;
+   * FL-655 moved Browser extension under "For a browser that can't sign in"), each with who it suits and what it can and can't do (`ApiKeys.jsx`);
    * every permission stays behind "Choose exact permissions", searchable, and ticking one there
    * makes the key "Your own choice". Choosing full access or every permission saves `all`, as the
    * previous editor did. A key that can delete
@@ -19,8 +19,8 @@
     API_KEY_NAME_MAX_LENGTH,
     filterPermissions,
     INDIVIDUAL_PERMISSIONS,
-    KEY_PURPOSES,
     keyCanDelete,
+    listedKeyPurposes,
     keyPurpose,
     normalizeKeyPermissions,
     PURPOSE_PERMISSIONS,
@@ -154,7 +154,7 @@
       </label>
       <fieldset class="purposes">
         <legend>{$t('frameleaf_access_key_purpose')}</legend>
-        {#each KEY_PURPOSES as option (option)}
+        {#each listedKeyPurposes(purpose) as option (option)}
           <label class="fl-access-check purpose">
             <input
               type="radio"
@@ -178,6 +178,22 @@
           <p class="fl-access-footnote">{$t('frameleaf_access_key_purpose_custom')}</p>
         {/if}
       </fieldset>
+      {#if purpose === 'capture'}
+        <div class="fl-access-notice browser-chosen" role="note">
+          <strong>{$t('frameleaf_access_key_browser_chosen_title')}</strong>
+          <span>{$t('frameleaf_access_key_browser_chosen_body')}</span>
+        </div>
+      {:else}
+        <details>
+          <summary>{$t('frameleaf_access_key_browser_fallback')}</summary>
+          <div class="browser-fallback">
+            <p>{$t('frameleaf_access_key_browser_fallback_body')}</p>
+            <Button disabled={working} onclick={() => choosePurpose('capture')}>
+              {$t('frameleaf_access_key_browser_fallback_make')}
+            </Button>
+          </div>
+        </details>
+      {/if}
       <details bind:open={exact}>
         <summary>{$t('frameleaf_access_key_exact')}</summary>
         <p>{$t('frameleaf_access_key_permissions_count', { values: { count } })}</p>
@@ -236,6 +252,19 @@
   /* Who the purpose suits, after its name: "Browser extension · Saving from your web browser". */
   .purpose .suits {
     font-weight: 400;
+  }
+  .browser-chosen {
+    display: grid;
+    gap: var(--fl-space-1);
+  }
+  .browser-fallback {
+    display: grid;
+    justify-items: start;
+    gap: var(--fl-space-2);
+  }
+  .browser-fallback p {
+    margin: 0;
+    color: var(--fl-muted);
   }
   details > summary {
     cursor: pointer;

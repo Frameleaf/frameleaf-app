@@ -81,8 +81,11 @@
     outputIntent = 'sdr',
     hdrEnabled = false,
     projectId = null,
+    captionLanguages = [],
     onExport,
   }: {
+    /** FL-641: other caption languages that go with the export as subtitle files, already named. */
+    captionLanguages?: readonly string[];
     open?: boolean;
     sequenceName: string;
     /**
@@ -632,6 +635,12 @@
             >
           </select>
         </label>
+        {#if captionLanguages.length > 0 && subtitleMode !== StudioExportSubtitleMode.Off}
+          <!-- FL-641: the languages ticked "Subtitle track in the export" are saved as their own files. -->
+          <p class="note" data-testid="studio-export-caption-languages">
+            {$t('frameleaf_studio_export_caption_languages', { values: { languages: captionLanguages.join(', ') } })}
+          </p>
+        {/if}
       {/if}
     </div>
 

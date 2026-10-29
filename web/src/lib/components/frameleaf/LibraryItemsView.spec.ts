@@ -1,5 +1,6 @@
 import {
   ColorTolerance,
+  LibraryAssetItemKind,
   LibraryBookmarkItemKind,
   LibraryScope,
   LibraryViewScope,
@@ -13,6 +14,7 @@ import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { renderWithTooltips } from '$tests/helpers';
+import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
@@ -97,6 +99,13 @@ it('opens designer assets and notes for an ordinary account without a Pro entitl
     }),
     expect.anything(),
   );
+});
+
+it('opens the saved link a deep link names, even before the grid reaches it', async () => {
+  sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
+  renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn(), bookmark: 'book' });
+  expect(await screen.findByRole('textbox', { name: 'Notes' })).toHaveValue('Owner note');
+  expect(sdkMock.getBookmark).toHaveBeenCalledWith({ id: 'book' }, expect.anything());
 });
 
 it('keeps the loaded grid in place when a tile receives pointer or keyboard focus', async () => {
@@ -228,4 +237,43 @@ it('rates and trashes a selected link from the Boards selection bar', async () =
     }),
   );
   await waitFor(() => expect(sdkMock.trashBookmark).toHaveBeenCalledWith({ id: 'book' }));
+});
+
+it('opens the Download dialog from the Boards selection bar and adds the library file with the links', async () => {
+  const file = assetFactory.build({ ownerId: user.id });
+  sdkMock.searchLibraryItems.mockResolvedValue({
+    count: 2,
+    countCapped: false,
+    items: [
+      { kind: LibraryAssetItemKind.Asset, asset: file },
+      { kind: LibraryBookmarkItemKind.Bookmark, bookmark },
+    ],
+    nextCursor: null,
+  });
+  sdkMock.getDownloadInfo.mockResolvedValue({ totalSize: 10, archives: [{ size: 10, assetIds: [file.id] }] });
+  sdkMock.downloadArchive.mockResolvedValue(new Blob(['zip']));
+  renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn() });
+  await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Packaging reference' }));
+  await fireEvent.click(await screen.findByRole('checkbox', { name: /^Select Image taken on/ }));
+  const bar = await screen.findByRole('toolbar', { name: '2 items selected' });
+  await fireEvent.click(within(bar).getByRole('button', { name: 'Download' }));
+
+  expect(await screen.findByRole('heading', { name: 'Download 2 items' })).toBeInTheDocument();
+  expect(screen.getByRole('switch', { name: /Include a library file/ })).toBeChecked();
+  await fireEvent.click(screen.getByRole('button', { name: 'Download .zip' }));
+
+  await waitFor(() =>
+    expect(sdkMock.downloadArchive).toHaveBeenCalledWith(
+      {
+        downloadArchiveDto: expect.objectContaining({
+          assetIds: [file.id],
+          edited: false,
+          includeLibraryMetadata: true,
+          includeSources: true,
+          bookmarkIds: ['book'],
+        }),
+      },
+      expect.anything(),
+    ),
+  );
 });

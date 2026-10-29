@@ -208,6 +208,10 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/link/confirm': RATE_LIMITS.frameleafSignIn,
   'DELETE oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  // FL-655: Save to Frameleaf's sign-in; the exchange is public, the code being the proof
+  'POST browser-extension/sign-in/start': RATE_LIMITS.extensionSignIn,
+  'POST browser-extension/sign-in/authorize': RATE_LIMITS.extensionSignIn,
+  'POST browser-extension/sign-in/exchange': RATE_LIMITS.extensionSignIn,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
   // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
   'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },

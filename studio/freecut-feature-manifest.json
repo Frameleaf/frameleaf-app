@@ -4031,8 +4031,10 @@
           "0059-mask-path-keyframes.patch",
           "0113-crop-rotation-keyboard-entry.patch",
           "0138-number-input-text-commit-lifecycle.patch",
-          "e6bca4d7d8"
+          "e6bca4d7d8",
+          "0164-stabilise-shaky-clips.patch"
         ],
+        "note": "FL-638 adds Stabilise: a clip's camera path, measured once on the server, is smoothed for the chosen level and drawn as a per-frame shift, turn and crop-in in preview and export.",
         "status": "shipped"
       },
       "id": "readme.preview-playback.1",
@@ -5060,9 +5062,10 @@
           "0087-preview-track-gain.patch",
           "0090-track-gain-automation.patch",
           "0145-dialogue-loudness-match-and-export-report.patch",
-          "0150-master-true-peak-limiter.patch"
+          "0150-master-true-peak-limiter.patch",
+          "0162-voice-cleanup.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter. FL-637 adds Clean up voice: one clip at a time, the cleaned sound a project audio import the clip plays in preview and export, with the original kept.",
         "status": "shipped"
       },
       "id": "readme.audio.1",
@@ -7237,9 +7240,10 @@
           "0140-whisper-no-adapter-fallback.patch",
           "6a2085d30a",
           "PR #288",
-          "0168-word-by-word-captions.patch"
+          "0168-word-by-word-captions.patch",
+          "0170-caption-languages.patch"
         ],
-        "note": "FL-111 closeout: Whisper model choice with a no-GPU fallback. FL-640 adds word-by-word captions: captions made from the transcript keep its word times, and the Caption style card burns Highlight, Word by word or One big word into the picture in preview and export (a subtitle file keeps whole lines); a Vertical 9:16 export defaults to Highlight, Large, Middle (studio/tools/bundled-worker-word-captions.mjs).",
+        "note": "FL-111 closeout: Whisper model choice with a no-GPU fallback. FL-640 adds word-by-word captions: captions made from the transcript keep its word times, and the Caption style card burns Highlight, Word by word or One big word into the picture in preview and export (a subtitle file keeps whole lines); a Vertical 9:16 export defaults to Highlight, Large, Middle (studio/tools/bundled-worker-word-captions.mjs). FL-641 adds a Languages card: captions translated into the ten app languages and English (M2M100 418M on the processing order), each its own caption track on the original timing, one language in the picture.",
         "status": "shipped"
       },
       "id": "readme.local-ai-analysis.1",
@@ -7393,9 +7397,10 @@
         "evidence": [
           "0028-approved-model-revisions.patch",
           "0029-bundled-onnx-runtimes.patch",
-          "0030-pinned-supertonic-space.patch"
+          "0030-pinned-supertonic-space.patch",
+          "0170-caption-languages.patch"
         ],
-        "note": "Kokoro carried over unchanged apart from pinned model revisions and bundled runtimes (FL-111 closeout).",
+        "note": "Kokoro carried over unchanged apart from pinned model revisions and bundled runtimes (FL-111 closeout). FL-641 makes a translated voice-over from a language's captions with the voices Studio has (Kokoro in English, Supertonic for the others it speaks), on its own voice track with everything else ducking under it.",
         "status": "shipped"
       },
       "id": "readme.local-ai-analysis.5",
@@ -8230,9 +8235,10 @@
           "0050-caption-import-export-modes.patch",
           "0051-extracted-caption-export-modes.patch",
           "0105-subtitle-sidecar-shared-producer.patch",
-          "fd9eaf9e0c"
+          "fd9eaf9e0c",
+          "0170-caption-languages.patch"
         ],
-        "note": "Off, burn-in (the default), a private SRT sibling, or an embedded text track (mov_text, SubRip or WebVTT by container), admitted per format by server/src/utils/render-admission.ts. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "note": "Off, burn-in (the default), a private SRT sibling, or an embedded text track (mov_text, SubRip or WebVTT by container), admitted per format by server/src/utils/render-admission.ts. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity. FL-641: the language in the picture is burned in; every other language ticked Subtitle track in the export is saved as its own SRT next to the export.",
         "status": "shipped"
       },
       "id": "readme.export.6",
@@ -17397,8 +17403,10 @@
           "0125-shared-proxy-deletion-alias-guard.patch",
           "0126-project-copy-media-entry-references.patch",
           "0132-anime4k-retained-provenance.patch",
-          "0b7183d4dd"
+          "0b7183d4dd",
+          "0160-library-view-in-media-bin.patch"
         ],
+        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead.",
         "status": "shipped"
       },
       "id": "module.media-library",

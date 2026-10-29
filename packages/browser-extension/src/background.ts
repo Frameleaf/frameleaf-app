@@ -1,4 +1,9 @@
-import { takeScreenshot, ScreenshotFailure } from './capture';
+import {
+  takeScreenshot,
+  ScreenshotFailure,
+  type ScreenshotPreview,
+} from './capture';
+import { takeWholePage } from './whole-page-capture';
 import {
   initializeCaptureMenus,
   registerCaptureMenus,
@@ -14,7 +19,11 @@ import {
 } from './queue';
 import type { ServerBinding } from './api';
 import type { QueueProgress } from './platform';
-import { DiscoveryFailure, discoverActivePage } from './discovery';
+import {
+  DiscoveryFailure,
+  discoverActivePage,
+  type PageDiscovery,
+} from './discovery';
 import {
   clearPreview,
   createPreview,
@@ -31,19 +40,45 @@ import {
   normalizeServerAddress,
 } from './api';
 import {
+  allowPageUrl,
+  checkServer,
+  codeChallenge,
+  exchangeCode,
+  randomText,
+  readReturn,
+  removeAccess,
+  SIGN_IN_WINDOW_MS,
+  SignInFailure,
+  windowClosed,
+} from './sign-in';
+import {
+  browserClient,
   hasServerAccess,
+  launchSignInWindow,
+  signInRedirectUri,
   openOptions,
   ensureDeliveryAlarm,
   registerDeliveryAlarm,
   openCapturePreview,
   registerBackground,
+  registerStartup,
   trustedSender,
   type ExtensionReply,
 } from './platform';
 import {
+  accessFor,
+  addPendingRemoval,
   connectionStatus,
+  pendingRemovals,
+  setPendingRemovals,
+  installationId,
   credentialFor,
   disconnect,
+  recentServers,
+  rememberServer,
+  setSignInNotice,
+  signInNotice,
+  type SignInProblem,
   initializeStorage,
   pauseConnection,
   saveCatalog,
@@ -194,20 +229,26 @@ export function handleMessage(
   if (message && typeof message === 'object' && 'type' in message) {
     if (
       settingsPage &&
-      ['connect', 'disconnect'].includes(String(message.type))
+      ['connect', 'disconnect', 'sign-in'].includes(String(message.type))
     )
       stopScreenshot();
+    // FL-655: the sign-in window stays open while you sign in, so it never holds the queue of messages.
+    if (settingsPage && message.type === 'sign-in') return signIn(message);
     if (message.type === 'screenshot') {
       if (
         !trustedSender(sender, ['/popup.html']) ||
         !('mode' in message) ||
-        (message.mode !== 'visible' && message.mode !== 'area')
+        (message.mode !== 'visible' &&
+          message.mode !== 'area' &&
+          message.mode !== 'whole')
       )
         return Promise.resolve({
           ok: false,
           error: 'Open the extension toolbar to capture a screenshot.',
         });
-      return startScreenshot(message.mode);
+      return message.mode === 'whole'
+        ? startWholeScreenshot()
+        : startScreenshot(message.mode);
     }
   }
   return serialize(async () => {
@@ -238,9 +279,15 @@ export function handleMessage(
           });
           if (!(await hasServerAccess(origin)))
             throw new CaptureFailure('permission');
+          // FL-655: a key replaces a signed-in access, which is removed on its server
+          await revokeSignedIn();
+          generation++;
           await saveConnection(binding, message.token);
+          await rememberServer(origin, binding.userName);
+          await setSignInNotice(null);
           await refresh();
           wake();
+          void retryRemovals();
           break;
         }
         case 'refresh':
@@ -397,11 +444,28 @@ export function handleMessage(
             );
           return { ok: true, connection: current, preview };
         }
-        case 'disconnect':
+        case 'disconnect': {
           stopDelivery();
           stopScreenshot();
           clearPreview();
-          await disconnect();
+          // FL-655: "Sign out of this browser only" leaves the access in Frameleaf on purpose
+          const localOnly =
+            'localOnly' in message && message.localOnly === true;
+          if (!(await signOutCurrent(localOnly)))
+            throw new CaptureFailure('signOut');
+          generation++;
+          await setSignInNotice(null);
+          break;
+        }
+        case 'sign-in-state':
+          return {
+            ok: true,
+            connection: await connectionStatus(),
+            recent: await recentServers(),
+            notice: await signInNotice(),
+          };
+        case 'dismiss-notice':
+          await setSignInNotice(null);
           break;
         case 'queue': {
           const queue = await queueProgress();
@@ -477,6 +541,268 @@ export function handleMessage(
     }
   });
 }
+/**
+ * FL-655: sign out of the current server. An access added by signing in removes itself on the
+ * server, so it leaves API keys too; a key pasted by hand is only forgotten here. Waiting items
+ * are kept either way, for when you sign in to that server again.
+ */
+async function signOutCurrent(localOnly = false): Promise<boolean> {
+  const current = await connectionStatus().catch(() => null);
+  if (current) {
+    const access = await accessFor(current.binding).catch(() => null);
+    // A paused access can't save any more: sign out here, and remove it on the server now or later.
+    if (
+      access?.method === 'sign-in' &&
+      !localOnly &&
+      current.status !== 'connected'
+    ) {
+      await revoke(current.binding.origin, access.token);
+      await disconnect();
+      return true;
+    }
+    if (access?.method === 'sign-in' && !localOnly) {
+      // nothing more is sent with the key while it is being removed
+      stopDelivery();
+      const removed =
+        (await hasServerAccess(current.binding.origin)) &&
+        (await removeAccess(
+          current.binding.origin,
+          access.token,
+          globalThis.fetch.bind(globalThis),
+        ).catch(() => false));
+      if (!removed) {
+        // still signed in: keep the key, and carry on saving with it
+        wake();
+        return false;
+      }
+    }
+  }
+  await disconnect();
+  return true;
+}
+/**
+ * FL-655: counts every change you make to the connection (connect, sign out, a sign-in saved), so a
+ * sign-in window that comes back after a newer change is not saved over it.
+ */
+let generation = 0;
+class Superseded extends Error {}
+/** Remove an access on the server; if it can't be reached now, keep trying later. */
+async function revoke(origin: string, token: string) {
+  const removed =
+    (await hasServerAccess(origin).catch(() => false)) &&
+    (await removeAccess(origin, token, globalThis.fetch.bind(globalThis)).catch(
+      () => false,
+    ));
+  if (!removed) await addPendingRemoval(origin, token);
+}
+/** A signed-in access about to be replaced by another connection. */
+async function revokeSignedIn() {
+  const current = await connectionStatus().catch(() => null);
+  if (!current) return;
+  const access = await accessFor(current.binding).catch(() => null);
+  if (access?.method === 'sign-in')
+    await revoke(current.binding.origin, access.token);
+}
+let retrying: Promise<void> | undefined;
+/** Retries the removals still owed; each leaves the list once the server removed it or says it's gone. */
+export function retryRemovals(): Promise<void> {
+  return (retrying ??= (async () => {
+    try {
+      const removed = new Set<string>();
+      for (const item of await pendingRemovals()) {
+        const done =
+          (await hasServerAccess(item.origin).catch(() => false)) &&
+          (await removeAccess(
+            item.origin,
+            item.token,
+            globalThis.fetch.bind(globalThis),
+          ).catch(() => false));
+        if (done) removed.add(item.token);
+      }
+      // removals added meanwhile are kept
+      await setPendingRemovals(
+        (await pendingRemovals()).filter((item) => !removed.has(item.token)),
+      );
+    } finally {
+      retrying = undefined;
+    }
+  })());
+}
+let signingIn = false;
+/**
+ * FL-655: sign in with your Frameleaf account. The popup closes while the browser's sign-in window
+ * is open, so this runs here and leaves a notice ("You're signed in", or what went wrong) for the
+ * next time the popup opens.
+ */
+async function signIn(message: object): Promise<ExtensionReply> {
+  if (
+    !('address' in message) ||
+    typeof message.address !== 'string' ||
+    message.address.length > 8192
+  )
+    return { ok: false, error: new CaptureFailure('address').message };
+  const allowLocalhost =
+    'allowLocalhost' in message && message.allowLocalhost === true;
+  const switching = 'switching' in message && message.switching === true;
+  let origin: string;
+  try {
+    origin = normalizeServerAddress(message.address, allowLocalhost);
+  } catch {
+    return {
+      ok: false,
+      error: new CaptureFailure('address').message,
+      problem: 'address',
+    };
+  }
+  if (signingIn)
+    return {
+      ok: false,
+      error: 'A sign-in window is already open.',
+      problem: 'busy',
+    };
+  signingIn = true;
+  const transport = globalThis.fetch.bind(globalThis);
+  /** An access the server made that this browser has not kept yet, removed again if it isn't. */
+  let exchanged: { secret: string } | undefined;
+  let saved = false;
+  try {
+    if (!(await hasServerAccess(origin))) throw new SignInFailure('permission');
+    await checkServer(origin, transport);
+    await setSignInNotice(null);
+    if (switching)
+      await serialize(async () => {
+        stopDelivery();
+        stopScreenshot();
+        clearPreview();
+        if (!(await signOutCurrent())) throw new SignInFailure('sign-out');
+        generation++;
+      });
+    // a sign-out or another connection while the window is open wins over this sign-in
+    const before = generation;
+    const verifier = randomText(48);
+    const state = randomText(24);
+    const redirectUri = signInRedirectUri();
+    const started = Date.now();
+    let returned: string | undefined;
+    try {
+      returned = await launchSignInWindow(
+        allowPageUrl(origin, {
+          redirectUri,
+          codeChallenge: await codeChallenge(verifier),
+          state,
+          client: browserClient(),
+          installationId: await installationId(),
+        }),
+      );
+    } catch (error) {
+      // closing the window is cancelling; a window left open too long has expired; a window that
+      // could not open at all offers the key instead
+      throw new SignInFailure(
+        Date.now() - started > SIGN_IN_WINDOW_MS
+          ? 'expired'
+          : windowClosed(error)
+            ? 'cancelled'
+            : 'window',
+      );
+    }
+    if (Date.now() - started > SIGN_IN_WINDOW_MS)
+      throw new SignInFailure('expired');
+    const code = readReturn(returned, redirectUri, state);
+    const access = await exchangeCode(
+      origin,
+      { code, codeVerifier: verifier, redirectUri },
+      transport,
+    );
+    exchanged = access;
+    await serialize(async () => {
+      stopDelivery();
+      stopScreenshot();
+      clearPreview();
+      if (!(await hasServerAccess(origin)))
+        throw new SignInFailure('permission');
+      const binding = await connectServer(origin, access.secret, {
+        allowLocalhost,
+      });
+      if (
+        binding.serverId !== access.serverId ||
+        binding.userId !== access.userId
+      )
+        throw new SignInFailure('failed');
+      if (generation !== before) throw new Superseded();
+      // the access this replaces, on whichever server, is removed there
+      await revokeSignedIn();
+      generation++;
+      await saveConnection(binding, access.secret, {
+        method: 'sign-in',
+        apiKeyId: access.apiKeyId,
+      });
+      saved = true;
+      await rememberServer(origin, binding.userName);
+      await setSignInNotice({ kind: 'welcome' });
+      await refresh().catch(() => {});
+      wake();
+    });
+    void retryRemovals();
+    return { ok: true, connection: await connectionStatus() };
+  } catch (error) {
+    // an access the server made but this browser didn't keep is removed again, now or later
+    if (exchanged && !saved)
+      await revoke(origin, exchanged.secret).catch(() => {});
+    if (error instanceof Superseded)
+      return {
+        ok: false,
+        error:
+          'You signed out or connected again while signing in, so this sign-in wasn’t kept.',
+        connection: await connectionStatus().catch(() => null),
+      };
+    const problem: SignInProblem =
+      error instanceof SignInFailure ? error.problem : 'failed';
+    await setSignInNotice({ kind: 'problem', problem, origin }).catch(() => {});
+    return {
+      ok: false,
+      error: problem,
+      problem,
+      connection: await connectionStatus().catch(() => null),
+    };
+  } finally {
+    signingIn = false;
+  }
+}
+function connectedForScreenshot() {
+  return serialize(async () => {
+    const value = await connectionStatus();
+    if (value?.status !== 'connected') throw new CaptureFailure('credential');
+    if (!(await hasServerAccess(value.binding.origin)))
+      throw new CaptureFailure('permission');
+    return value;
+  });
+}
+function showScreenshot(
+  controller: AbortController,
+  binding: ServerBinding,
+  result: { discovery: PageDiscovery; screenshot: ScreenshotPreview } | null,
+): Promise<ExtensionReply> {
+  return serialize(async () => {
+    if (controller.signal.aborted) throw new ScreenshotFailure();
+    const latest = await connectionStatus();
+    if (
+      latest?.status !== 'connected' ||
+      !sameBinding(latest.binding, binding) ||
+      !(await hasServerAccess(binding.origin))
+    )
+      throw new CaptureFailure('credential');
+    if (result) {
+      const preview = createPreview(
+        binding,
+        result.discovery,
+        Date.now(),
+        result.screenshot,
+      );
+      await openCapturePreview(preview.id);
+    }
+    return { ok: true, connection: latest };
+  });
+}
 async function startScreenshot(
   mode: 'visible' | 'area',
 ): Promise<ExtensionReply> {
@@ -488,34 +814,9 @@ async function startScreenshot(
   const controller = new AbortController();
   screenshotController = controller;
   try {
-    const current = await serialize(async () => {
-      const value = await connectionStatus();
-      if (value?.status !== 'connected') throw new CaptureFailure('credential');
-      if (!(await hasServerAccess(value.binding.origin)))
-        throw new CaptureFailure('permission');
-      return value;
-    });
+    const current = await connectedForScreenshot();
     const result = await takeScreenshot(mode, controller.signal);
-    return await serialize(async () => {
-      if (controller.signal.aborted) throw new ScreenshotFailure();
-      const latest = await connectionStatus();
-      if (
-        latest?.status !== 'connected' ||
-        !sameBinding(latest.binding, current.binding) ||
-        !(await hasServerAccess(current.binding.origin))
-      )
-        throw new CaptureFailure('credential');
-      if (result) {
-        const preview = createPreview(
-          current.binding,
-          result.discovery,
-          Date.now(),
-          result.screenshot,
-        );
-        await openCapturePreview(preview.id);
-      }
-      return { ok: true, connection: latest };
-    });
+    return await showScreenshot(controller, current.binding, result);
   } catch (error) {
     if (mode === 'area' && !controller.signal.aborted)
       await chrome.tabs
@@ -528,6 +829,60 @@ async function startScreenshot(
           ? error.message
           : new ScreenshotFailure().message,
     };
+  } finally {
+    if (screenshotController === controller) screenshotController = undefined;
+  }
+}
+/**
+ * Replies as soon as the capture can start, so the popup can close itself and stay out of
+ * the picture. Progress and Cancel are shown on the page; the preview opens in a tab.
+ */
+async function startWholeScreenshot(): Promise<ExtensionReply> {
+  if (screenshotController)
+    return {
+      ok: false,
+      error: 'Finish or cancel the current screenshot first.',
+    };
+  const controller = new AbortController();
+  screenshotController = controller;
+  let current: Awaited<ReturnType<typeof connectedForScreenshot>>;
+  try {
+    current = await connectedForScreenshot();
+  } catch (error) {
+    if (screenshotController === controller) screenshotController = undefined;
+    return {
+      ok: false,
+      error:
+        error instanceof CaptureFailure
+          ? error.message
+          : new ScreenshotFailure().message,
+    };
+  }
+  void runWholeScreenshot(controller, current.binding);
+  return { ok: true, connection: current };
+}
+async function runWholeScreenshot(
+  controller: AbortController,
+  binding: ServerBinding,
+) {
+  // A failure in the fallback the person chose is an ordinary screenshot failure, not a whole-page one.
+  let failure: 'whole' | 'screenshot' = 'whole';
+  try {
+    // Give the popup a moment to close before the page starts to scroll.
+    await new Promise((done) => setTimeout(done, 300));
+    const outcome = await takeWholePage(controller.signal);
+    if (outcome.kind === 'cancelled') return;
+    if (outcome.kind === 'fallback') failure = 'screenshot';
+    const result =
+      outcome.kind === 'fallback'
+        ? await takeScreenshot(outcome.mode, controller.signal)
+        : outcome;
+    await showScreenshot(controller, binding, result);
+  } catch {
+    if (!controller.signal.aborted)
+      await chrome.tabs
+        .create({ url: chrome.runtime.getURL(`capture.html?error=${failure}`) })
+        .catch(() => {});
   } finally {
     if (screenshotController === controller) screenshotController = undefined;
   }
@@ -569,7 +924,12 @@ async function handleMenu(
   });
 }
 registerCaptureMenus(handleMenu);
-registerDeliveryAlarm(wake);
+registerDeliveryAlarm(() => {
+  wake();
+  void retryRemovals().catch(() => {});
+});
+// FL-655: removals still owed are retried when the browser starts, on the alarm and after connecting
+registerStartup(() => void retryRemovals().catch(() => {}));
 registerBackground(
   handleMessage,
   async () => {

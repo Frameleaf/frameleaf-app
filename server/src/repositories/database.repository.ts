@@ -92,6 +92,12 @@ const MEDIA_PATH_JSON_COLUMNS: ReadonlyArray<readonly [string, string]> = [
   ['photography_workflow', 'value'],
 ];
 
+/**
+ * Locks whose waiters must not give up after the pool's lock_timeout: the migration lock is held for as long as a
+ * worker migrates, which on a fresh or slow database is far longer than 5 s, and every other worker must wait for it.
+ */
+const UNBOUNDED_WAIT_LOCKS: ReadonlySet<DatabaseLock> = new Set([DatabaseLock.Migrations]);
+
 @Injectable()
 export class DatabaseRepository {
   private readonly asyncLock = new AsyncLock();
@@ -492,6 +498,7 @@ export class DatabaseRepository {
     });
   }
 
+  /** Takes `lock`, waiting without the pool's lock_timeout for the locks in `UNBOUNDED_WAIT_LOCKS`. */
   async withLock<R>(lock: DatabaseLock, callback: () => Promise<R>): Promise<R> {
     return this.asyncLock.acquire(DatabaseLock[lock], () =>
       this.db.connection().execute(async (connection) => {
@@ -658,7 +665,20 @@ export class DatabaseRepository {
   }
 
   private async acquireLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<void> {
-    await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
+    if (!UNBOUNDED_WAIT_LOCKS.has(lock)) {
+      await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
+      return;
+    }
+    // FL-646: the pool's session lock_timeout (5 s) also bounds advisory-lock waits. On a fresh or slow database the
+    // first worker holds the migration lock for longer than that, and the other worker's wait was cancelled with
+    // "canceling statement due to lock timeout" (55P03). Wait on this reserved session until the holder finishes (or its
+    // session ends), then restore the pool default before the session does anything else.
+    await sql`SET lock_timeout = 0`.execute(connection);
+    try {
+      await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
+    } finally {
+      await sql`RESET lock_timeout`.execute(connection);
+    }
   }
 
   private async acquireTryLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<boolean> {

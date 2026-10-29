@@ -2999,6 +2999,8 @@ export type MediaOperationDto = {
     };
     startedAt: string | null;
     status: MediaOperationStatus;
+    /** Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise */
+    studioWork?: string | null;
     totalUnits: string | null;
     updatedAt: string;
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
@@ -4497,6 +4499,8 @@ export type AssetResponseDto = {
     /** Owner user ID */
     ownerId: string;
     people?: PersonResponseDto[];
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Is resized */
     resized?: boolean;
     stack?: (AssetStackResponseDto) | null;
@@ -4534,6 +4538,8 @@ export type SanitizedAssetResponseDto = {
     localDateTime: string;
     /** Original MIME type */
     originalMimeType?: string;
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting. */
     thumbhash: string | null;
     "type": AssetTypeEnum;
@@ -4943,6 +4949,8 @@ export type ApiKeyResponseDto = {
     name: string;
     /** List of permissions */
     permissions: ApiKeyResponsePermission[];
+    /** The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace. */
+    signedInFrom: string | null;
     /** Last update date */
     updatedAt: string;
 };
@@ -4968,6 +4976,8 @@ export type ApiKeyCreateResponseDto = {
     permissions: ApiKeyResponsePermission[];
     /** API key secret (only shown once) */
     secret: string;
+    /** The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace. */
+    signedInFrom: string | null;
     /** Last update date */
     updatedAt: string;
 };
@@ -5150,6 +5160,14 @@ export type AssetCopyDto = {
     stack?: boolean;
     /** Target asset ID */
     targetId: string;
+};
+export type AssetInfoBatchDto = {
+    /** Asset IDs to read, at most 200 */
+    ids: string[];
+};
+export type AssetInfoBatchResponseDto = {
+    /** Each requested asset the caller may read, as the single-asset read returns it, in request order; ids the caller may not read or that do not exist are left out */
+    assets: AssetResponseDto[];
 };
 export type AssetJobsDto = {
     /** Asset IDs */
@@ -6204,6 +6222,8 @@ export type BestPhotoAssetResponseDto = {
     /** Owner user ID */
     ownerId: string;
     people?: PersonResponseDto[];
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Is resized */
     resized?: boolean;
     stack?: (AssetStackResponseDto) | null;
@@ -6257,6 +6277,72 @@ export type BookmarkUpdateDto = {
 };
 export type BookmarkTagsDto = {
     ids: string[];
+};
+export type BrowserExtensionSignInInfoDto = {
+    /** The extension sign-in this server supports (1) */
+    version: number;
+};
+export type BrowserExtensionSignInAuthorizeDto = {
+    /** true for Allow, false for Cancel */
+    allow: boolean;
+    client: BrowserExtensionClient;
+    /** The base64url SHA-256 of the extension’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: CodeChallengeMethod;
+    /** A random id this installation of the extension made once; its access replaces only its own */
+    installationId: string;
+    /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
+    redirectUri: string;
+    /** Returned unchanged to the extension */
+    state: string;
+};
+export type BrowserExtensionSignInAuthorizeResponseDto = {
+    /** Where the sign-in window goes next: the return address with the code (or the cancellation) and state */
+    redirectUrl: string;
+};
+export type BrowserExtensionSignInExchangeDto = {
+    /** The single-use code from the return address */
+    code: string;
+    /** The code verifier the challenge was made from */
+    codeVerifier: string;
+    /** The same return address the sign-in started with */
+    redirectUri: string;
+};
+export type BrowserExtensionSignInExchangeResponseDto = {
+    /** The access, as listed in API keys */
+    apiKeyId: string;
+    /** How the access is listed in API keys */
+    name: string;
+    /** The new access key, shown once; it can only save captures and list collections and tags */
+    secret: string;
+    serverId: string;
+    userId: string;
+};
+export type BrowserExtensionSignInErrorDto = {
+    code: BrowserExtensionSignInErrorCode;
+    error: string;
+    message: string;
+    statusCode: number;
+};
+export type BrowserExtensionSignInStartDto = {
+    client: BrowserExtensionClient;
+    /** The base64url SHA-256 of the extension’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: CodeChallengeMethod;
+    /** A random id this installation of the extension made once; its access replaces only its own */
+    installationId: string;
+    /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
+    redirectUri: string;
+    /** Returned unchanged to the extension */
+    state: string;
+};
+export type BrowserExtensionSignInStartResponseDto = {
+    /** How the access is listed in API keys, e.g. “Save to Frameleaf · Chrome” */
+    accessName: string;
+    /** This browser’s extension already has access to your account, so Allow is not asked again */
+    alreadyAllowed: boolean;
 };
 export type CaptureAlbumCreateDto = {
     libraryScope: CaptureAlbumScope;
@@ -9514,6 +9600,8 @@ export type MediaOperationDetailDto = {
     };
     startedAt: string | null;
     status: MediaOperationStatus;
+    /** Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise */
+    studioWork?: string | null;
     totalUnits: string | null;
     updatedAt: string;
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
@@ -15680,6 +15768,24 @@ export type StudioBundleExportCreateDto = {
     /** Export only these sequences, with every sequence they nest. `main` names the Main timeline. Leave out for the whole project. */
     sequenceIds?: string[];
 };
+export type StudioCaptionTranslationCreateDto = {
+    /** The caption lines, in order, as plain text. Timing stays with the caller. */
+    lines: string[];
+    /** The language the captions are in */
+    source: StudioCaptionLanguage;
+    /** The language to translate them into */
+    target: StudioCaptionLanguage;
+};
+export type StudioCaptionTranslationDto = {
+    /** The machine-learning destination that translated the lines */
+    destinationId: string;
+    /** One translation per line asked for, in the same order */
+    lines: string[];
+    /** The translation model the worker used */
+    model: string;
+    source: StudioCaptionLanguage;
+    target: StudioCaptionLanguage;
+};
 export type StudioTimeDto = {
     /** Denominator */
     den: number;
@@ -16066,6 +16172,51 @@ export type StudioSourceResolutionDto = {
     revision: number;
     selection: StudioSourceSelectionDto;
 };
+export type StudioStabiliseCreateDto = {
+    /** A video clip on the main timeline of the head revision */
+    clipId: string;
+};
+export type StudioStabiliseQueuedDto = {
+    /** The job id; follow it in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioStabiliseMotionDto = {
+    /** Cumulative camera turn in radians, float32 little-endian, base64 */
+    a: string;
+    /** Samples in each path */
+    count: number;
+    /** Share of frames whose movement was found */
+    found: number;
+    /** Height of the analysed picture */
+    height: number;
+    /** How the movement was estimated, such as `block-similarity-v1` */
+    method: string;
+    /** Samples a second */
+    rate: number;
+    /** Source seconds of the first sample */
+    start: number;
+    /** Format version of the path; 1 */
+    version: number;
+    /** Width of the analysed picture */
+    width: number;
+    /** Cumulative horizontal camera path, fractions of the frame width, float32 little-endian, base64 */
+    x: string;
+    /** Cumulative vertical camera path, fractions of the frame height, float32 little-endian, base64 */
+    y: string;
+};
+export type StudioStabiliseDto = {
+    clipId: string;
+    error: string | null;
+    id: string;
+    progress: number;
+    projectId: string;
+    /** Present once the job has completed: the clip's camera path, for its `stabilisation.motion` */
+    result: (StudioStabiliseMotionDto) | null;
+    /** The revision whose clip was analysed */
+    revision: number;
+    status: MediaOperationStatus;
+};
 export type StudioTranscriptionCreateDto = {
     /** A video or audio clip on the main timeline of the head revision */
     clipId: string;
@@ -16119,6 +16270,55 @@ export type StudioTranscriptionDto = {
     /** Present once the job has completed */
     result: (StudioTranscriptionResultDto) | null;
     /** The revision whose clip was transcribed */
+    revision: number;
+    status: MediaOperationStatus;
+};
+export type StudioVoiceAnalysisCreateDto = {
+    /** An audio clip on the main timeline of the head revision */
+    clipId: string;
+};
+export type StudioVoiceAnalysisDto = {
+    clipId: string;
+    /** The mains frequency of the hum found, or null */
+    humHz: (50 | 60) | null;
+    /** What the quick analysis found; the person can change it */
+    noises: StudioVoiceNoise[];
+};
+export type StudioVoiceCleanupCreateDto = {
+    /** An audio clip on the main timeline of the head revision */
+    clipId: string;
+    /** The mains frequency of the hum found, or null */
+    humHz?: (50 | 60) | null;
+    /** What to remove */
+    noises: StudioVoiceNoise[];
+    strength: StudioVoiceStrength;
+};
+export type StudioVoiceCleanupQueuedDto = {
+    /** The job id; follow it in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioVoiceCleanupResultDto = {
+    /** How long the cleaned sound is */
+    durationSeconds: number;
+    /** The mains frequency of the hum found, or null */
+    humHz: (50 | 60) | null;
+    /** The cleaned sound, kept with the project as an audio import */
+    "import": StudioProjectImportDto;
+    noises: StudioVoiceNoise[];
+    /** Where in the cleaned sound the clip's window starts (the handle before it) */
+    sourceStartSeconds: number;
+    strength: StudioVoiceStrength;
+};
+export type StudioVoiceCleanupDto = {
+    clipId: string;
+    error: string | null;
+    id: string;
+    progress: number;
+    projectId: string;
+    /** Present once the job has completed */
+    result: (StudioVoiceCleanupResultDto) | null;
+    /** The revision whose clip was cleaned */
     revision: number;
     status: MediaOperationStatus;
 };
@@ -22660,6 +22860,21 @@ export function copyAsset({ assetCopyDto }: {
     })));
 }
 /**
+ * Retrieve several assets
+ */
+export function getAssetsInfo({ assetInfoBatchDto }: {
+    assetInfoBatchDto: AssetInfoBatchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetInfoBatchResponseDto;
+    }>("/assets/info", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetInfoBatchDto
+    })));
+}
+/**
  * Run an asset job
  */
 export function runAssetJobs({ assetJobsDto }: {
@@ -24093,6 +24308,74 @@ export function setBookmarkTags({ id, bookmarkTagsDto }: {
         ...opts,
         method: "PUT",
         body: bookmarkTagsDto
+    })));
+}
+/**
+ * Sign Save to Frameleaf out
+ */
+export function signOutBrowserExtension(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/browser-extension/sign-in", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Check that Save to Frameleaf can sign in here
+ */
+export function getBrowserExtensionSignIn(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BrowserExtensionSignInInfoDto;
+    }>("/browser-extension/sign-in", {
+        ...opts
+    }));
+}
+/**
+ * Allow or cancel a Save to Frameleaf sign-in
+ */
+export function authorizeBrowserExtensionSignIn({ browserExtensionSignInAuthorizeDto }: {
+    browserExtensionSignInAuthorizeDto: BrowserExtensionSignInAuthorizeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BrowserExtensionSignInAuthorizeResponseDto;
+    }>("/browser-extension/sign-in/authorize", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: browserExtensionSignInAuthorizeDto
+    })));
+}
+/**
+ * Finish a Save to Frameleaf sign-in
+ */
+export function exchangeBrowserExtensionSignIn({ browserExtensionSignInExchangeDto }: {
+    browserExtensionSignInExchangeDto: BrowserExtensionSignInExchangeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BrowserExtensionSignInExchangeResponseDto;
+    } | {
+        status: 400;
+        data: BrowserExtensionSignInErrorDto;
+    }>("/browser-extension/sign-in/exchange", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: browserExtensionSignInExchangeDto
+    })));
+}
+/**
+ * Check a Save to Frameleaf sign-in before Allow
+ */
+export function startBrowserExtensionSignIn({ browserExtensionSignInStartDto }: {
+    browserExtensionSignInStartDto: BrowserExtensionSignInStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BrowserExtensionSignInStartResponseDto;
+    }>("/browser-extension/sign-in/start", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: browserExtensionSignInStartDto
     })));
 }
 /**
@@ -31628,6 +31911,22 @@ export function exportStudioProjectBundle({ id, studioBundleExportCreateDto }: {
     })));
 }
 /**
+ * Translate Studio captions
+ */
+export function translateStudioCaptions({ id, studioCaptionTranslationCreateDto }: {
+    id: string;
+    studioCaptionTranslationCreateDto: StudioCaptionTranslationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCaptionTranslationDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/caption-translations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioCaptionTranslationCreateDto
+    })));
+}
+/**
  * List Studio review comments
  */
 export function getStudioProjectComments({ id, skip, take }: {
@@ -32032,6 +32331,36 @@ export function resolveStudioProjectSource({ id, studioSourceResolutionRequestDt
     })));
 }
 /**
+ * Analyse the camera movement of a Studio clip
+ */
+export function createStudioStabilise({ id, studioStabiliseCreateDto }: {
+    id: string;
+    studioStabiliseCreateDto: StudioStabiliseCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioStabiliseQueuedDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/stabilisations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioStabiliseCreateDto
+    })));
+}
+/**
+ * Get a Studio clip camera movement analysis
+ */
+export function getStudioStabilise({ id, stabiliseId }: {
+    id: string;
+    stabiliseId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioStabiliseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/stabilisations/${encodeURIComponent(stabiliseId)}`, {
+        ...opts
+    }));
+}
+/**
  * Transcribe a Studio clip
  */
 export function createStudioTranscription({ id, studioTranscriptionCreateDto }: {
@@ -32073,6 +32402,52 @@ export function restoreStudioProjectFromTrash({ id }: {
     }>(`/studio/projects/${encodeURIComponent(id)}/trash/restore`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Find the noise in a Studio clip
+ */
+export function analyzeStudioVoice({ id, studioVoiceAnalysisCreateDto }: {
+    id: string;
+    studioVoiceAnalysisCreateDto: StudioVoiceAnalysisCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioVoiceAnalysisDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/voice-analysis`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioVoiceAnalysisCreateDto
+    })));
+}
+/**
+ * Clean up the voice in a Studio clip
+ */
+export function createStudioVoiceCleanup({ id, studioVoiceCleanupCreateDto }: {
+    id: string;
+    studioVoiceCleanupCreateDto: StudioVoiceCleanupCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioVoiceCleanupQueuedDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/voice-cleanups`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioVoiceCleanupCreateDto
+    })));
+}
+/**
+ * Get a Studio voice clean-up
+ */
+export function getStudioVoiceCleanup({ id, voiceCleanupId }: {
+    id: string;
+    voiceCleanupId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioVoiceCleanupDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/voice-cleanups/${encodeURIComponent(voiceCleanupId)}`, {
+        ...opts
     }));
 }
 /**
@@ -35941,6 +36316,17 @@ export enum AssetWaveformChannelMode {
     Mono = "mono",
     All = "all"
 }
+export enum BrowserExtensionClient {
+    Chrome = "chrome",
+    Edge = "edge"
+}
+export enum CodeChallengeMethod {
+    S256 = "S256"
+}
+export enum BrowserExtensionSignInErrorCode {
+    Expired = "expired",
+    Invalid = "invalid"
+}
 export enum CaptureAlbumScope {
     Design = "design"
 }
@@ -37765,6 +38151,19 @@ export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
 }
+export enum StudioCaptionLanguage {
+    En = "en",
+    Fr = "fr",
+    Es = "es",
+    De = "de",
+    It = "it",
+    Pt = "pt",
+    Nl = "nl",
+    Pl = "pl",
+    Sv = "sv",
+    Da = "da",
+    Nb = "nb"
+}
 export enum StudioReframeSubject {
     Face = "face",
     None = "none"
@@ -37795,6 +38194,17 @@ export enum DestinationId {
 export enum StudioSourceParentKind {
     ProjectImport = "project-import",
     VectorGraphic = "vector-graphic"
+}
+export enum StudioVoiceNoise {
+    Wind = "wind",
+    Hum = "hum",
+    Background = "background",
+    Echo = "echo"
+}
+export enum StudioVoiceStrength {
+    Light = "light",
+    Standard = "standard",
+    Strong = "strong"
 }
 export enum StudioWorkerCapability {
     AnalysisWorker = "analysisWorker",

@@ -12,9 +12,21 @@ import {
   type TranscriptEngineString,
 } from '@frameleaf/host/transcript-strings'
 import {
+  VOICE_CLEANUP_ENGINE_STRINGS,
+  type VoiceCleanupEngineString,
+} from '@frameleaf/host/voice-cleanup-strings'
+import {
+  STABILISE_ENGINE_STRINGS,
+  type StabiliseEngineString,
+} from '@frameleaf/host/stabilise-strings'
+import {
   CAPTION_STYLE_ENGINE_STRINGS,
   type CaptionStyleEngineString,
 } from '@frameleaf/host/caption-style-strings'
+import {
+  CAPTION_LANGUAGE_ENGINE_STRINGS,
+  type CaptionLanguageEngineString,
+} from '@frameleaf/host/caption-language-strings'
 
 type EngineI18n = {
   readonly language?: string
@@ -29,10 +41,22 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(TRANSCRIPT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<TranscriptEngineString, string>),
+  // The Stabilise card (FL-638).
+  ...(Object.fromEntries(
+    Object.entries(STABILISE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<StabiliseEngineString, string>),
   // The Caption style card (FL-640).
   ...(Object.fromEntries(
     Object.entries(CAPTION_STYLE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<CaptionStyleEngineString, string>),
+  // The "Clean up voice" card (FL-637).
+  ...(Object.fromEntries(
+    Object.entries(VOICE_CLEANUP_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<VoiceCleanupEngineString, string>),
+  // The captions Languages card (FL-641).
+  ...(Object.fromEntries(
+    Object.entries(CAPTION_LANGUAGE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<CaptionLanguageEngineString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {

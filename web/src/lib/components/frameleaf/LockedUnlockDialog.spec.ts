@@ -7,6 +7,7 @@ import { requestSessionLock } from '$lib/frameleaf/session-lock';
 // FL-34: the auth manager owns the sign-out navigation for a deleted session
 import '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { discardAuthStatusReads } from '$lib/utils/auth-status-read';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 import { watchSessionPrivacy } from '$lib/utils/session-privacy-guard';
 import en from '../../../../../i18n/en.json';
@@ -29,6 +30,7 @@ vi.mock('$lib/utils/navigation', () => ({ isAssetViewerRoute: () => false, navig
 
 beforeEach(() => {
   vi.clearAllMocks();
+  discardAuthStatusReads();
   setSessionLockPending(false);
   vi.mocked(lockAuthSession).mockResolvedValue(undefined as never);
   addMessages('dev', en);
