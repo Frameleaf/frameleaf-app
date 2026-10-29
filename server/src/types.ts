@@ -1594,6 +1594,9 @@ export type UserPreferences = {
     enabled: boolean;
     sidebarWeb: boolean;
   };
+  clients: {
+    enabled: boolean;
+  };
   memories: {
     enabled: boolean;
     duration: number;
