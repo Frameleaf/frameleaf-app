@@ -46004,22 +46004,7 @@
           "synchronize": true
         }
       ],
-      "indexes": [
-        {
-          "name": "browser_extension_access_userId_client_redirectOrigin_installat",
-          "definition": "CREATE INDEX \"browser_extension_access_userId_client_redirectOrigin_installat\" ON public.browser_extension_access USING btree (\"userId\", client, \"redirectOrigin\", \"installationId\")",
-          "tableName": "browser_extension_access",
-          "columnNames": [
-            "userId",
-            "client",
-            "redirectOrigin",
-            "installationId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
+      "indexes": [],
       "triggers": [],
       "constraints": [
         {
@@ -46037,6 +46022,19 @@
           "tableName": "browser_extension_access",
           "columnNames": [
             "apiKeyId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "browser_extension_access_installation_uq",
+          "definition": "UNIQUE (\"userId\", client, \"redirectOrigin\", \"installationId\")",
+          "tableName": "browser_extension_access",
+          "columnNames": [
+            "userId",
+            "client",
+            "redirectOrigin",
+            "installationId"
           ],
           "synchronize": true
         },
