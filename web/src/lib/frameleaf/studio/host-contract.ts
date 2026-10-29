@@ -28,6 +28,7 @@
  */
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
+import type { CaptionStyleEngineString } from './caption-style-strings';
 import type { CaptionLanguageEngineString } from './caption-language-strings';
 import type { StudioCaptionTranslationRequest, StudioCaptionTranslationResult } from './caption-languages';
 import { studioCapabilityIds } from './commands';
@@ -361,6 +362,8 @@ export type StudioAdapterString =
   | 'lockedTrackRefused'
   /** The transcript panel's words (FL-562), written over the engine's English the same way. */
   | TranscriptEngineString
+  /** The Caption style card's words (FL-640), written over the engine's English the same way. */
+  | CaptionStyleEngineString
   /** The captions Languages card's words (FL-641), the same way. */
   | CaptionLanguageEngineString;
 
