@@ -12,6 +12,10 @@ import {
   type TranscriptEngineString,
 } from '@frameleaf/host/transcript-strings'
 import {
+  STABILISE_ENGINE_STRINGS,
+  type StabiliseEngineString,
+} from '@frameleaf/host/stabilise-strings'
+import {
   CAPTION_STYLE_ENGINE_STRINGS,
   type CaptionStyleEngineString,
 } from '@frameleaf/host/caption-style-strings'
@@ -33,6 +37,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(TRANSCRIPT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<TranscriptEngineString, string>),
+  // The Stabilise card (FL-638).
+  ...(Object.fromEntries(
+    Object.entries(STABILISE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<StabiliseEngineString, string>),
   // The Caption style card (FL-640).
   ...(Object.fromEntries(
     Object.entries(CAPTION_STYLE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),

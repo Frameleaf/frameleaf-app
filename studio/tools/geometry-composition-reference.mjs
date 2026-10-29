@@ -93,14 +93,26 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
     sourceSha256 === 'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
     // FL-640 word-by-word captions (caption cues, subtitle text and caption UI) on multicam; changes no composition or raster producer.
-    sourceSha256 === 'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9' ||
-    // FL-641 caption languages (translated caption tracks, voice-over and the Languages card) on word-by-word captions; changes no composition or raster producer.
-    sourceSha256 === '7df23d69da42b0c00cf80b4133bc827f04c73d527f975ba59afe377f0370e401'
+    sourceSha256 === 'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9'
   )
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':
         'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+    }
+  // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
+  // renderer, which draws it through its correction; every other clip renders as before.
+  if (
+    sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' ||
+    // FL-641 caption languages (translated caption tracks, voice-over and the Languages card) on Stabilise; changes no composition or raster producer.
+    sourceSha256 === 'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb'
+  )
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/client-render-engine.ts':
+        'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+      'src/features/export/utils/canvas-item-renderer/gpu.ts':
+        '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
     }
   assert(legacyCompositionSources.has(sourceSha256), 'COMPOSITION_SOURCE_UNREGISTERED')
   return COMPOSITION_SOURCES
