@@ -6,6 +6,8 @@ import type {
   ClassificationRuleCriteria,
   ClassificationRuleWithAlbum,
 } from 'src/repositories/classification.repository.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   CLASSIFICATION_INLINE_LIMIT,
   CLASSIFICATION_PREVIEW_ITEMS,
@@ -30,6 +32,9 @@ import {
   ClassificationMatchDecision,
   ClassificationMediaType,
   ClassificationRuleAction,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
   MediaOperationItemStatus,
   Permission,
 } from 'src/enum.js';
@@ -38,6 +43,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { BULK_MAX_ITEMS, type BulkOperationItem } from 'src/utils/bulk-operation.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
+import { collectFilterIds, requireSourceFilterAllowed } from 'src/utils/search-filter.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 type CriteriaInput = Omit<ClassificationRuleCriteria, 'ownerId'>;
@@ -52,12 +58,19 @@ const toIso = (value: unknown): string => new Date(value as string).toISOString(
 const toIsoOrNull = (value: unknown): string | null => (value ? toIso(value) : null);
 
 const isEmptyCriteria = (criteria: CriteriaInput) =>
+  Object.keys(criteria.filter ?? {}).length === 0 &&
   criteria.personIds.length === 0 &&
   criteria.tagIds.length === 0 &&
   !criteria.takenAfter &&
   !criteria.takenBefore &&
   criteria.mediaType === ClassificationMediaType.Any &&
   criteria.visualQueries.length === 0;
+
+const validateArchiveFilter = (archive: boolean, criteria: CriteriaInput) => {
+  if (archive && [criteria.filter, ...(criteria.filter?.or ?? [])].some((branch) => branch?.visibility)) {
+    throw new BadRequestException('Archive actions cannot use visibility filters');
+  }
+};
 
 /**
  * Classification rules (FL-60): the rules people write for their own smart albums, the bounded
@@ -101,6 +114,7 @@ export class ClassificationService extends BaseService {
     const { smartAlbums } = await this.getConfig({ withCache: false });
     const criteria = this.criteriaOf(dto);
     await this.validateCriteria(auth, criteria);
+    validateArchiveFilter(dto.archive, criteria);
     if (dto.archive && dto.archiveConsent !== true) {
       throw new BadRequestException('Archiving matches needs your explicit consent');
     }
@@ -118,6 +132,7 @@ export class ClassificationService extends BaseService {
       icon: dto.icon,
       parentId: dto.parentId,
       kind: AlbumKind.Album,
+      libraryScope: criteria.filter?.libraryScope,
     });
 
     try {
@@ -145,6 +160,7 @@ export class ClassificationService extends BaseService {
   ): Promise<ClassificationRuleResponseDto> {
     const rule = await this.requireRule(auth, id);
     const criteria: CriteriaInput = {
+      filter: dto.filter === undefined ? rule.filter : dto.filter,
       personIds: dto.personIds ?? rule.personIds,
       tagIds: dto.tagIds ?? rule.tagIds,
       takenAfter: dto.takenAfter === undefined ? rule.takenAfter : dto.takenAfter,
@@ -166,7 +182,7 @@ export class ClassificationService extends BaseService {
     let tagId = rule.tagId;
     if (dto.tagName !== undefined) {
       tagId = dto.tagName ? await this.resolveTag(auth, dto.tagName, criteria) : null;
-    } else if (tagId && criteria.tagIds.includes(tagId)) {
+    } else if (tagId && [...criteria.tagIds, ...collectFilterIds(criteria.filter ?? {}, 'tagIds')].includes(tagId)) {
       throw new BadRequestException('A rule cannot match on the tag it adds');
     }
     if (action === ClassificationRuleAction.Tag && !tagId) {
@@ -174,6 +190,7 @@ export class ClassificationService extends BaseService {
     }
 
     const archive = dto.archive ?? rule.archive;
+    validateArchiveFilter(archive, criteria);
     const turningArchiveOn = archive && !rule.archive;
     if (turningArchiveOn && dto.archiveConsent !== true) {
       throw new BadRequestException('Archiving matches needs your explicit consent');
@@ -220,7 +237,7 @@ export class ClassificationService extends BaseService {
 
     if (vectors.length === 0) {
       const [sampled, matched, items] = await Promise.all([
-        this.classificationRepository.countEligible(auth.user.id),
+        this.classificationRepository.countEligible(auth.user.id, undefined, criteria.filter ?? null),
         this.classificationRepository.countMatches(rule, vectors),
         this.classificationRepository.findMatches(rule, vectors, { limit: CLASSIFICATION_PREVIEW_ITEMS }),
       ]);
@@ -230,7 +247,7 @@ export class ClassificationService extends BaseService {
 
     const { sampleSize } = dto;
     const [sampled, matched, items] = await Promise.all([
-      this.classificationRepository.countEligible(auth.user.id, sampleSize),
+      this.classificationRepository.countEligible(auth.user.id, sampleSize, criteria.filter ?? null),
       this.classificationRepository.countMatches(rule, vectors, { sampleSize }),
       this.classificationRepository.findMatches(rule, vectors, { sampleSize, limit: CLASSIFICATION_PREVIEW_ITEMS }),
     ]);
@@ -393,14 +410,29 @@ export class ClassificationService extends BaseService {
     }));
   }
 
+  @OnEvent({ name: 'JobSuccess', workers: [FrameleafWorker.Microservices] })
+  async onPalettePublished({ job, response }: ArgOf<'JobSuccess'>) {
+    if (job.name !== JobName.AssetPaletteExtract || response !== JobStatus.Success) return;
+    const asset = await this.assetRepository.getById(job.data.id);
+    // Only colour rules can change their answer once a palette is ready.
+    if (asset)
+      await this.evaluateAsset(asset.id, asset.ownerId, ({ filter }) =>
+        [filter, ...(filter?.or ?? [])].some((branch) => !!branch?.color),
+      );
+  }
+
   /**
    * Evaluate one newly processed item against every enabled rule of its owner. Background work:
    * never throws, and a rule whose visual phrases cannot be compared right now is left alone.
    */
-  async evaluateAsset(assetId: string, ownerId: string): Promise<void> {
+  async evaluateAsset(
+    assetId: string,
+    ownerId: string,
+    only: (rule: ClassificationRuleWithAlbum) => boolean = () => true,
+  ): Promise<void> {
     let rules: ClassificationRuleWithAlbum[];
     try {
-      rules = (await this.classificationRepository.getEnabledRules(ownerId)) ?? [];
+      rules = ((await this.classificationRepository.getEnabledRules(ownerId)) ?? []).filter((rule) => only(rule));
     } catch (error) {
       if (queueExecution.getStore()) throw error;
       this.logger.warn(`Classification rules unavailable for asset ${assetId}: ${String(error)}`);
@@ -518,6 +550,7 @@ export class ClassificationService extends BaseService {
 
   private criteriaOf(dto: CriteriaInput): CriteriaInput {
     return {
+      filter: dto.filter ?? null,
       personIds: [...new Set(dto.personIds)],
       tagIds: [...new Set(dto.tagIds)],
       takenAfter: dto.takenAfter ?? null,
@@ -537,6 +570,18 @@ export class ClassificationService extends BaseService {
     criteria: CriteriaInput,
     changed?: { personIds: boolean; tagIds: boolean; visualQueries: boolean },
   ) {
+    if (criteria.filter) {
+      requireSourceFilterAllowed(auth, criteria.filter);
+      for (const [field, permission] of [
+        ['albumIds', Permission.AlbumRead],
+        ['albumSubtreeIds', Permission.AlbumRead],
+        ['tagIds', Permission.TagRead],
+        ['personIds', Permission.PersonRead],
+      ] as const) {
+        const ids = collectFilterIds(criteria.filter, field);
+        if (ids.length > 0) await this.requireAccess({ auth, permission, ids });
+      }
+    }
     const check = changed ?? { personIds: true, tagIds: true, visualQueries: true };
     if (isEmptyCriteria(criteria)) {
       throw new BadRequestException('Add at least one rule');
@@ -560,7 +605,7 @@ export class ClassificationService extends BaseService {
     if (!tag) {
       throw new BadRequestException('Name the tag this rule adds');
     }
-    if (criteria.tagIds.includes(tag.id)) {
+    if ([...criteria.tagIds, ...collectFilterIds(criteria.filter ?? {}, 'tagIds')].includes(tag.id)) {
       throw new BadRequestException('A rule cannot match on the tag it adds');
     }
     return tag.id;
@@ -586,6 +631,7 @@ export class ClassificationService extends BaseService {
       albumId: rule.albumId,
       albumName: rule.albumName,
       enabled: rule.enabled,
+      filter: rule.filter ?? null,
       personIds: rule.personIds,
       tagIds: rule.tagIds,
       takenAfter: rule.takenAfter,

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -30,6 +29,7 @@ import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
+import { assetUploadRequestHeaders, writeAssetUploadHeaders } from 'src/utils/asset-upload-response.js';
 import { writeInformation } from 'src/utils/response.js';
 import { UUIDParamDto } from 'src/validation.js';
 
@@ -72,49 +72,6 @@ export class AssetUploadResourceController {
     );
   }
 
-  private requestHeaders(req: Request) {
-    const single = new Set([
-      'content-type',
-      'content-encoding',
-      'upload-draft-interop-version',
-      'upload-complete',
-      'upload-offset',
-      'upload-length',
-      'repr-digest',
-      'asset-metadata',
-    ]);
-    const seen = new Set<string>();
-    for (let index = 0; index < req.rawHeaders.length; index += 2) {
-      const name = req.rawHeaders[index].toLowerCase();
-      if (single.has(name)) {
-        if (seen.has(name)) {
-          throw new BadRequestException(`Ambiguous ${name}`);
-        }
-        seen.add(name);
-      }
-    }
-    return req.headers;
-  }
-
-  private headers(res: Response, row?: AssetUploadResource, limits?: typeof ASSET_UPLOAD_LIMITS) {
-    res.setHeader('Cache-Control', 'private, no-store');
-    res.setHeader('Upload-Draft-Interop-Version', '9');
-    const capacity = row ?? limits;
-    if (capacity) {
-      res.setHeader(
-        'Upload-Limit',
-        `max-size=${capacity.maxSize}, max-append-size=${capacity.maxAppendSize}, max-age=${ASSET_UPLOAD_LIMITS.maxAge}, min-size=1`,
-      );
-    }
-    if (row) {
-      res.setHeader('Upload-Offset', row.offset);
-      res.setHeader('Upload-Complete', row.state === 'published' && row.ingested ? '?1' : '?0');
-      if (row.expectedSize !== null) {
-        res.setHeader('Upload-Length', row.expectedSize);
-      }
-    }
-  }
-
   @Options()
   @ApiResponse({ status: 204, description: 'Resumable upload limits' })
   @Authenticated({ permission: Permission.AssetUpload })
@@ -123,7 +80,7 @@ export class AssetUploadResourceController {
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
   })
   async getAssetUploadResourceLimits(@Res() res: Response) {
-    this.headers(res, undefined, await this.service.limits());
+    writeAssetUploadHeaders(res, undefined, await this.service.limits());
     res.status(204).end();
   }
 
@@ -163,9 +120,9 @@ export class AssetUploadResourceController {
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
   })
   async createAssetUploadResource(@Auth() auth: AuthDto, @Req() req: Request, @Res() res: Response) {
-    this.headers(res);
-    const outcome = await this.service.create(auth, this.requestHeaders(req), req, (row) => {
-      this.headers(res, row);
+    writeAssetUploadHeaders(res);
+    const outcome = await this.service.create(auth, assetUploadRequestHeaders(req), req, (row) => {
+      writeAssetUploadHeaders(res, row);
       // Server-built, never derived from the request URL, so Location cannot point off-origin.
       const location = `/api/assets/uploads/${row.id}`;
       res.setHeader('Location', location);
@@ -186,7 +143,7 @@ export class AssetUploadResourceController {
     outcome: { resource: AssetUploadResource; result?: AssetUploadResultDto },
     created = false,
   ) {
-    this.headers(res, outcome.resource);
+    writeAssetUploadHeaders(res, outcome.resource);
     if (outcome.result) {
       res.status(200).json(outcome.result);
     } else {
@@ -204,7 +161,7 @@ export class AssetUploadResourceController {
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
   })
   async commitLivePhotoUpload(@Auth() auth: AuthDto, @Body() dto: LivePhotoUploadCommitDto, @Res() res: Response) {
-    this.headers(res);
+    writeAssetUploadHeaders(res);
     const result = await this.service.commitLivePhoto(auth, dto);
     if (result) {
       res.status(200).json(result);
@@ -225,8 +182,8 @@ export class AssetUploadResourceController {
   })
   @Endpoint({ summary: 'Get durable upload offset', history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0') })
   async getAssetUploadResourceOffset(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Res() res: Response) {
-    this.headers(res);
-    this.headers(res, await this.service.head(auth, id));
+    writeAssetUploadHeaders(res);
+    writeAssetUploadHeaders(res, await this.service.head(auth, id));
     res.status(204).end();
   }
 
@@ -258,9 +215,9 @@ export class AssetUploadResourceController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    this.headers(res);
+    writeAssetUploadHeaders(res);
     try {
-      const outcome = await this.service.append(auth, id, this.requestHeaders(req), req);
+      const outcome = await this.service.append(auth, id, assetUploadRequestHeaders(req), req);
       if (!res.destroyed) {
         this.respond(res, outcome);
       }
@@ -285,9 +242,9 @@ export class AssetUploadResourceController {
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
   })
   async getAssetUploadResourceResult(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Res() res: Response) {
-    this.headers(res);
+    writeAssetUploadHeaders(res);
     const outcome = await this.service.result(auth, id);
-    this.headers(res, outcome.resource);
+    writeAssetUploadHeaders(res, outcome.resource);
     if (outcome.result) {
       res.status(200).json(outcome.result);
     } else {
@@ -300,7 +257,7 @@ export class AssetUploadResourceController {
   @Authenticated({ permission: Permission.AssetUpload })
   @Endpoint({ summary: 'Cancel an unpublished upload', history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0') })
   async cancelAssetUploadResource(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Res() res: Response) {
-    this.headers(res);
+    writeAssetUploadHeaders(res);
     await this.service.cancel(auth, id);
     res.status(204).end();
   }

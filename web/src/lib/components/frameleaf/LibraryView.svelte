@@ -51,6 +51,7 @@
   import {
     activeFilterFields,
     withoutDiscoveryFilter,
+    withoutDiscoveryFilters,
     type DiscoveryDestination,
     type DiscoveryFilterSection,
     type DiscoveryQuery,
@@ -1868,6 +1869,10 @@
           <LibraryWorkInspector
             asset={inspectedAsset}
             selectedCount={session.selection.length}
+            onChooseColor={(color) => {
+              applyFilterPanelQuery({ ...session.query, filter: { ...session.query.filter, color } });
+              openFilterPanel('media');
+            }}
             onOpen={(asset) => {
               session.open(asset.id);
               session.setScrollAnchor(asset.id);
@@ -1965,7 +1970,7 @@
       message={$t('frameleaf_library_empty_filtered_message')}
       action={{
         label: $t('frameleaf_library_empty_filtered_clear'),
-        onClick: () => session.setQuery({ ...session.query, text: '', filter: {} }),
+        onClick: () => session.setQuery({ ...withoutDiscoveryFilters(session.query), text: '' }),
       }}
     />
   {:else if empty}

@@ -179,6 +179,7 @@ describe(AssetDevelopService.name, () => {
       mocks.systemMetadata as never,
       mocks.mediaOperation as never,
       mocks.machineLearning as never,
+      mocks.event as never,
     );
     mocks.media.getImageMetadata.mockResolvedValue({ width: 4, height: 4, isTransparent: false });
     vi.mocked(encodeNativeDevelopOutput).mockReset().mockResolvedValue(Buffer.from('jpeg'));
@@ -611,6 +612,7 @@ describe(AssetDevelopService.name, () => {
     it('makes the original current when no revision is named', async () => {
       await sut.revert(authStub.user1, asset.id, {});
       expect(developRepository.setCurrent).toHaveBeenCalledWith(asset.id, null);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetDevelopCurrentChanged', { assetId: asset.id });
     });
 
     it('only accepts rendered revisions', async () => {

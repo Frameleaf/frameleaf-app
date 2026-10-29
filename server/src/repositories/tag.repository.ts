@@ -292,6 +292,17 @@ export class TagRepository {
       const merged: TagMergeResult['merged'] = [];
       const tagged = new Set<string>();
       const mergeInto = async (sourceId: string, intoId: string) => {
+        await tx
+          .insertInto('bookmark_tag')
+          .columns(['tagId', 'bookmarkId'])
+          .expression((eb) =>
+            eb
+              .selectFrom('bookmark_tag as carried')
+              .select([sql<string>`${intoId}::uuid`.as('tagId'), 'carried.bookmarkId'])
+              .where('carried.tagId', '=', sourceId),
+          )
+          .onConflict((oc) => oc.doNothing())
+          .execute();
         const gained = await tx
           .insertInto('tag_asset')
           .columns(['tagId', 'assetId'])

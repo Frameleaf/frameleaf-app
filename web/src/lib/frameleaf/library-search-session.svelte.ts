@@ -1,5 +1,9 @@
 import {
   askSearch,
+  searchLibraryItems,
+  LibraryAssetItemKind,
+  type LibraryItemDto,
+  type LibraryItemSearchDto,
   AssetVisibility,
   searchAssets,
   searchSmart,
@@ -12,10 +16,15 @@ import {
 
 export type LibrarySearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
 export type LibrarySearchQuery =
-  { kind: 'ask'; query: string } | { kind: 'metadata' | 'smart'; terms: LibrarySearchTerms };
+  | { kind: 'ask'; query: string }
+  | { kind: 'metadata' | 'smart'; terms: LibrarySearchTerms }
+  | { kind: 'library'; terms: LibraryItemSearchDto };
 
 /** One route-owned result set. Neither queries nor private assets are persisted to device storage. */
 export class LibrarySearchSession {
+  items = $state<LibraryItemDto[]>([]);
+  count = $state<number | null>(null);
+  countCapped = $state(false);
   assets = $state<AssetResponseDto[]>([]);
   albums = $state<AlbumResponseDto[]>([]);
   askResponse = $state<AskSearchResponseDto>();
@@ -30,6 +39,9 @@ export class LibrarySearchSession {
     this.#request?.abort();
     this.#request = undefined;
     this.#query = query;
+    this.items = [];
+    this.count = null;
+    this.countCapped = false;
     this.assets = [];
     this.albums = [];
     this.askResponse = undefined;
@@ -53,6 +65,29 @@ export class LibrarySearchSession {
     this.#request = request;
     this.loading = true;
     try {
+      if (query.kind === 'library') {
+        const response = await searchLibraryItems(
+          { libraryItemSearchDto: { ...query.terms, cursor: this.nextCursor ?? undefined } },
+          { signal: request.signal },
+        );
+        if (this.#request !== request) {
+          return;
+        }
+        const key = (item: LibraryItemDto) =>
+          item.kind === LibraryAssetItemKind.Asset ? item.asset.id : `bookmark:${item.bookmark.id}`;
+        const known = new Set(this.items.map((item) => key(item)));
+        for (const item of response.items) {
+          if (!known.has(key(item))) {
+            known.add(key(item));
+            this.items.push(item);
+          }
+        }
+        this.count = response.count;
+        this.countCapped = response.countCapped;
+        this.nextPage = null;
+        this.nextCursor = response.nextCursor;
+        return;
+      }
       let response;
       let askResponse: AskSearchResponseDto | undefined;
       const search = query;

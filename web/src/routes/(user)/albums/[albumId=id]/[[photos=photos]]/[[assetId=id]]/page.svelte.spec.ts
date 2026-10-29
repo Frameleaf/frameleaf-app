@@ -2,13 +2,13 @@ import { AlbumKind, AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@
 import { render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
-import { invalidate } from '$app/navigation';
+import { invalidate, onNavigate } from '$app/navigation';
 import { libraryTransientKey } from '$lib/frameleaf/library-session';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-import { getAlbumAssetsActions } from '$lib/services/album.service';
+import { getAlbumAssetsActions, handleDeleteAlbum } from '$lib/services/album.service';
 import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { albumLibraryFixture } from '@test-data/components/album-library-fixture';
 import { deferredPromise } from '@test-data/deferred';
@@ -29,11 +29,17 @@ vi.mock('$app/navigation', () => ({
   invalidate: vi.fn(),
   onNavigate: vi.fn(),
 }));
-vi.mock('$app/state', () => ({ navigating: { complete: Promise.resolve() } }));
+vi.mock('$app/state', () => ({
+  navigating: { complete: Promise.resolve() },
+  page: { url: new URL('http://localhost/albums/album'), params: {}, route: { id: null }, data: {} },
+}));
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   getAlbumInfo: vi.fn(),
   getAllTags: vi.fn().mockResolvedValue([]),
+  // A collection's photos page by cursor through the album subtree filter.
+  searchAssets: vi.fn().mockResolvedValue({ assets: { items: [], nextCursor: null } }),
+  getAlbumItems: vi.fn().mockResolvedValue({ bookmarkCount: 0 }),
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { authenticated: true, user: { id: 'owner' }, captureSession: () => () => owners.current },
@@ -51,7 +57,10 @@ vi.mock('$lib/services/album.service', () => ({
 }));
 vi.mock('$lib/services/app.service', () => ({ getGlobalActions: () => ({}) }));
 vi.mock('$lib/utils', () => ({ handlePromiseError: (promise: Promise<unknown>) => promise }));
-vi.mock('$lib/utils/navigation', () => ({ isAlbumsRoute: () => true, navigate: vi.fn() }));
+vi.mock('$lib/utils/navigation', () => ({
+  isAlbumsRoute: (route?: string | null) => !!route?.startsWith('/(user)/albums/[albumId=id]'),
+  navigate: vi.fn(),
+}));
 vi.mock(
   '$lib/components/layouts/UserPageLayout.svelte',
   async () => import('@test-data/mocks/UserPageLayout.mock.svelte'),
@@ -297,4 +306,51 @@ it('ignores a retired header callback after switching albums', async () => {
   await oldSlideshow();
   expect(getAlbumInfo).not.toHaveBeenCalled();
   expect(assetViewerManager.setAssetId).not.toHaveBeenCalled();
+});
+
+describe('leaving an empty, unnamed album', () => {
+  const owned = (overrides: Partial<AlbumResponseDto>) =>
+    albumFactory.build({
+      kind: AlbumKind.Album,
+      albumName: '',
+      assetCount: 0,
+      albumUsers: [{ user: userAdminFactory.build({ id: 'owner' }), role: AlbumUserRole.Owner }],
+      ...overrides,
+    });
+  const leaveTo = async (routeId: string) => {
+    const callback = vi.mocked(onNavigate).mock.calls.at(-1)![0] as (navigation: unknown) => Promise<void>;
+    await callback({ to: { route: { id: routeId } } });
+  };
+
+  beforeEach(() => {
+    vi.mocked(onNavigate).mockClear();
+    vi.mocked(handleDeleteAlbum).mockClear();
+  });
+
+  it('deletes it when you go anywhere but another album', async () => {
+    const album = owned({ id: 'draft' });
+    render(AlbumPage, { data: data(album) as never });
+    await leaveTo('/(user)/photos');
+    expect(handleDeleteAlbum).toHaveBeenCalledWith(album, { notify: false });
+  });
+
+  it('keeps it when you open another album', async () => {
+    render(AlbumPage, { data: data(owned({ id: 'draft-2' })) as never });
+    await leaveTo('/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]');
+    expect(handleDeleteAlbum).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a named album', { albumName: 'Trip' }],
+    ['an album with items', { assetCount: 2 }],
+    ['a collection', { kind: AlbumKind.Collection }],
+    [
+      'an album someone else owns',
+      { albumUsers: [{ user: userAdminFactory.build({ id: 'jamie' }), role: AlbumUserRole.Owner }] },
+    ],
+  ])('never deletes %s', async (_name, overrides) => {
+    render(AlbumPage, { data: data(owned({ id: 'keep', ...(overrides as Partial<AlbumResponseDto>) })) as never });
+    await leaveTo('/(user)/photos');
+    expect(handleDeleteAlbum).not.toHaveBeenCalled();
+  });
 });

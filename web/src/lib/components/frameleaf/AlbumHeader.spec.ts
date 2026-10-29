@@ -169,7 +169,7 @@ describe('AlbumHeader', () => {
     expect(screen.getByRole('status')).toHaveTextContent('You can now add photos and edit this album');
   });
 
-  it('closes an open menu or icon popover on Escape before the page sees it, even with focus outside (LIB-04)', async () => {
+  it('closes an open menu on Escape before the page sees it, even with focus outside (LIB-04)', async () => {
     // The album page's "go back" is an Escape shortcut on document.body (CommandPaletteDefaultProvider).
     const pageEscape = vi.fn();
     const onBody = (event: KeyboardEvent) => event.key === 'Escape' && !event.defaultPrevented && pageEscape();
@@ -189,12 +189,6 @@ describe('AlbumHeader', () => {
       await openMore();
       await escapeFromBody();
       await waitFor(() => expect(screen.queryByRole('menu', { name: 'More actions' })).not.toBeInTheDocument());
-      expect(pageEscape).not.toHaveBeenCalled();
-
-      await fireEvent.click(screen.getByRole('button', { name: 'Change icon' }));
-      expect(await screen.findByRole('dialog', { name: /Icon for/ })).toBeInTheDocument();
-      await escapeFromBody();
-      await waitFor(() => expect(screen.queryByRole('dialog', { name: /Icon for/ })).not.toBeInTheDocument());
       expect(pageEscape).not.toHaveBeenCalled();
 
       // With nothing open, Escape is the page's again.
@@ -354,5 +348,172 @@ describe('AlbumHeader', () => {
       // said in a toast, not in the line under the toolbar
       expect(await screen.findByText(message)).toBeInTheDocument();
     });
+  });
+});
+
+it('counts bookmark items without enabling media actions for a bookmark-only album', () => {
+  render(AlbumHeader, {
+    album: albumAs(AlbumUserRole.Owner, { assetCount: 0 }),
+    assetCount: 0,
+    itemCount: 2,
+    onAlbumChange: vi.fn(),
+    onRefresh: vi.fn(),
+  });
+  expect(screen.getByText('2 items', { exact: true })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Slideshow' })).toBeDisabled();
+});
+
+/** Boards (README points 2, 8 and 22): icon and colour, the collections inside, and what Delete does. */
+describe('AlbumHeader in Boards', () => {
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.open = false;
+    };
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(Response.json({}))),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('opens "Icon and colour" from the icon tile and the menu, and saves both together', async () => {
+    const album = albumAs(AlbumUserRole.Owner, { color: null, icon: null });
+    sdkMock.updateAlbumInfo.mockResolvedValue({ ...album, color: 'purple' });
+    const onAlbumChange = vi.fn();
+    render(AlbumHeader, { album, assetCount: 3, onAlbumChange, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Change the icon and colour of Summer' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Icon and colour' }));
+    expect(dialog.getByText(/for everyone it’s shared with\. They also show in Albums\./)).toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: 'Use the plain folder' })).toBeDisabled();
+    await fireEvent.click(dialog.getByRole('radio', { name: 'Purple' }));
+    expect(dialog.getByTestId('appearance-preview')).toHaveTextContent('Shown in Purple');
+    expect(dialog.getByRole('button', { name: 'Use the plain folder' })).toBeEnabled();
+    await fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(sdkMock.updateAlbumInfo).toHaveBeenCalledWith({
+        id: 'album-1',
+        updateAlbumDto: { icon: null, color: 'purple' },
+      }),
+    );
+    expect(onAlbumChange).toHaveBeenCalledWith(expect.objectContaining({ color: 'purple' }));
+
+    const menu = await openMore();
+    expect(menu.getByRole('menuitem', { name: 'Icon and colour…' })).toBeInTheDocument();
+  });
+
+  it('clears both with "Use the plain folder"', async () => {
+    const album = albumAs(AlbumUserRole.Owner, { color: 'teal', icon: 'mdiCameraBurst' });
+    sdkMock.updateAlbumInfo.mockResolvedValue({ ...album, color: null, icon: null });
+    render(AlbumHeader, { album, assetCount: 3, onAlbumChange: vi.fn(), onRefresh: vi.fn() });
+
+    const menu = await openMore();
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Icon and colour…' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Icon and colour' }));
+    expect(dialog.getByRole('radio', { name: 'Teal' })).toBeChecked();
+    await fireEvent.click(dialog.getByRole('button', { name: 'Use the plain folder' }));
+    expect(dialog.getByRole('radio', { name: 'No colour' })).toBeChecked();
+    await fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(sdkMock.updateAlbumInfo).toHaveBeenCalledWith({
+        id: 'album-1',
+        updateAlbumDto: { icon: null, color: null },
+      }),
+    );
+  });
+
+  it('does not offer icon and colour to a viewer', async () => {
+    renderHeader(albumAs(AlbumUserRole.Viewer));
+    expect(screen.queryByRole('button', { name: /Change the icon and colour/ })).toBeNull();
+    const menu = await openMore();
+    expect(menu.queryByRole('menuitem', { name: 'Icon and colour…' })).toBeNull();
+  });
+
+  it('shows the collections inside as cards with their own mark and counts', () => {
+    const parent = albumAs(AlbumUserRole.Owner, { kind: 'collection' as never });
+    const mood = albumFactory.build({
+      id: 'mood',
+      albumName: 'Moodboard',
+      parentId: 'album-1',
+      assetCount: 4,
+      color: 'teal',
+    });
+    const deep = albumFactory.build({ id: 'deep', albumName: 'Deep', parentId: 'mood' });
+    const deeper = albumFactory.build({ id: 'deeper', albumName: 'Deeper', parentId: 'mood' });
+    render(AlbumHeader, {
+      album: parent,
+      childAlbums: [mood],
+      albums: [parent, mood, deep, deeper],
+      assetCount: 4,
+      onAlbumChange: vi.fn(),
+      onRefresh: vi.fn(),
+    });
+    const card = screen.getByTestId('sub-collection-card');
+    expect(card).toHaveAttribute('href', '/albums/mood');
+    expect(card).toHaveTextContent('Moodboard');
+    expect(card).toHaveTextContent('4 items · 2 inside');
+    expect(card.querySelector('[data-color="teal"]')).not.toBeNull();
+  });
+
+  it('spells out what Delete does: items stay, albums inside move up, people lose access', async () => {
+    const brand = albumFactory.build({ id: 'brand', albumName: 'Brand refresh' });
+    const album = albumAs(AlbumUserRole.Owner, {
+      kind: 'collection' as never,
+      parentId: 'brand',
+      hasSharedLink: false,
+    });
+    const kids = [
+      albumFactory.build({ id: 'm', albumName: 'Moodboard', parentId: 'album-1' }),
+      albumFactory.build({ id: 't', albumName: 'Type', parentId: 'album-1' }),
+    ];
+    render(AlbumHeader, {
+      album,
+      ancestors: [brand],
+      childAlbums: kids,
+      assetCount: 3,
+      itemCount: 3,
+      onAlbumChange: vi.fn(),
+      onRefresh: vi.fn(),
+    });
+    const menu = await openMore();
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Delete collection' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Delete “Summer”?' }));
+    const lines = dialog.getByTestId('delete-consequences');
+    expect(lines).toHaveTextContent('The 3 items in it stay in your library.');
+    expect(lines).toHaveTextContent('Moodboard and Type move up into Brand refresh.');
+    expect(lines).toHaveTextContent('Jamie loses access to this collection.');
+  });
+
+  it('moves the albums inside to the top level when there is no parent', async () => {
+    const album = albumAs(AlbumUserRole.Owner, {
+      albumUsers: [{ user: me, role: AlbumUserRole.Owner }],
+    });
+    render(AlbumHeader, {
+      album,
+      childAlbums: [albumFactory.build({ id: 'm', albumName: 'Moodboard', parentId: 'album-1' })],
+      assetCount: 1,
+      onAlbumChange: vi.fn(),
+      onRefresh: vi.fn(),
+    });
+    const menu = await openMore();
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Delete album' }));
+    const lines = within(await screen.findByRole('dialog')).getByTestId('delete-consequences');
+    expect(lines).toHaveTextContent('The 1 item in it stays in your library.');
+    expect(lines).toHaveTextContent('Moodboard moves up to the top level.');
+    expect(lines).not.toHaveTextContent('access');
   });
 });

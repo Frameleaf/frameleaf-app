@@ -112,12 +112,16 @@ const ADMIN_ROUTES = new Set([
 const SHARED_LINK_ROUTES = new Set([
   'DELETE assets/:id/video/stream/:sessionId',
   'GET albums/:id',
+  // Boards: a shared collection lists its files and saved links together
+  'GET albums/:id/items',
   'GET albums/:id/map-markers',
   'GET assets/:id',
   // Studio timeline filmstrips and waveforms follow the thumbnail's access
   'GET assets/:id/filmstrip',
   'GET assets/:id/filmstrip/sprite',
   'GET assets/:id/original',
+  // the viewer's colours follow the thumbnail's access
+  'GET assets/:id/palette',
   'GET assets/:id/thumbnail',
   'GET assets/:id/video/playback',
   'GET assets/:id/waveform',

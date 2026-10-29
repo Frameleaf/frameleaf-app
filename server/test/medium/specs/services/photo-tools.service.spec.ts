@@ -76,6 +76,7 @@ const setup = () => {
     new SystemMetadataRepository(database),
     new MediaOperationRepository(database),
     {} as never,
+    { emit: vi.fn().mockResolvedValue(undefined) } as never,
   );
   const presets = new PhotoToolsService(logger(), photoTools);
   return { ctx, sut, presets, job, develop, integrity: new IntegrityRepository(database) };

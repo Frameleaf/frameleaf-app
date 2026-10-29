@@ -24,6 +24,14 @@ const AvatarUpdateSchema = z
   .optional()
   .meta({ id: 'AvatarUpdate' });
 
+// Clients (the photography-studio suite) is opt-in: off, it sits under Tools; on, it joins the top bar.
+const ClientsUpdateSchema = z
+  .object({
+    enabled: z.boolean().optional().describe('Whether Clients is in use and shown in the top bar'),
+  })
+  .optional()
+  .meta({ id: 'ClientsUpdate' });
+
 const MemoriesUpdateSchema = z
   .object({
     enabled: z.boolean().optional().describe('Whether memories are enabled'),
@@ -246,6 +254,7 @@ const UserPreferencesUpdateSchema = z
     download: DownloadUpdateSchema,
     emailNotifications: EmailNotificationsUpdateSchema,
     folders: FoldersUpdateSchema,
+    clients: ClientsUpdateSchema,
     memories: MemoriesUpdateSchema,
     people: PeopleUpdateSchema,
     privacy: PrivacyUpdateSchema,
@@ -279,6 +288,12 @@ const FoldersResponseSchema = z
     sidebarWeb: z.boolean().describe('Whether folders appear in web sidebar'),
   })
   .meta({ id: 'FoldersResponse' });
+
+const ClientsResponseSchema = z
+  .object({
+    enabled: z.boolean().describe('Whether Clients is in use and shown in the top bar'),
+  })
+  .meta({ id: 'ClientsResponse' });
 
 const MemoriesResponseSchema = z
   .object({
@@ -405,6 +420,8 @@ const UserPreferencesResponseSchema = z
     notifications: NotificationLocalePreferencesSchema.optional(),
     albums: AlbumsResponseSchema,
     folders: FoldersResponseSchema,
+    // always sent; optional in the schema so clients built before Clients existed keep compiling
+    clients: ClientsResponseSchema.optional(),
     memories: MemoriesResponseSchema,
     people: PeopleResponseSchema,
     privacy: PrivacyResponseSchema,

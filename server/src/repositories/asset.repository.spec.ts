@@ -169,7 +169,8 @@ describe('Live Photo upload publication', () => {
       expect(keys.map((query) => query.parameters)).toEqual([['motion'], ['new']]);
       const insert = f.queries.findIndex((query) => query.sql.startsWith('insert into "asset"'));
       expect(f.queries.findIndex((query) => query.sql.includes('for update nowait'))).toBeLessThan(insert);
-      expect(f.queries[insert + 1].sql).toContain('update "asset"');
+      // the paired video's scope is read first, so the hide is the first update after the insert
+      expect(f.queries.slice(insert + 1).some((query) => query.sql.includes('update "asset"'))).toBe(true);
       expect(f.queries.at(-1)!.sql).toBe('commit');
     } finally {
       await f.db.destroy();

@@ -2,7 +2,6 @@
   import { shortcuts } from '$lib/actions/shortcut';
   import DevelopBatchPanel from '$lib/components/frameleaf/DevelopBatchPanel.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import BulkAlbumDialog from '$lib/components/frameleaf/BulkAlbumDialog.svelte';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import BulkDateDialog from '$lib/components/frameleaf/BulkDateDialog.svelte';
   import BulkDescriptionDialog from '$lib/components/frameleaf/BulkDescriptionDialog.svelte';
@@ -685,7 +684,9 @@
     onSubmit={(payload) => submitDialog('tag', payload)}
   />
 {:else if dialog === 'add-to-album'}
-  <BulkAlbumDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('add-to-album', payload)} />
+  {#await import('$lib/components/frameleaf/BulkAlbumDialog.svelte') then { default: BulkAlbumDialog }}
+    <BulkAlbumDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('add-to-album', payload)} />
+  {/await}
 {:else if dialog === 'delete-permanently'}
   <BulkConfirmDialog {count} bind:open={dialogOpen} onConfirm={() => submitDialog('delete-permanently')} />
 {:else if dialog === 'export-preservation'}

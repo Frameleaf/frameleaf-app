@@ -1,6 +1,6 @@
-import type { IdsFilter } from '@frameleaf/sdk';
-import { contextDiscoveryState, type DiscoveryContext } from '$lib/components/discovery/query';
-import { readLibraryView } from '$lib/frameleaf/library-session';
+import { LibraryScope, LibraryViewScope, type AlbumResponseDto, type IdsFilter } from '@frameleaf/sdk';
+import { emptyDiscoveryQuery, contextDiscoveryState, type DiscoveryContext } from '$lib/components/discovery/query';
+import { writeLibraryView, createLibrarySession, readLibraryView } from '$lib/frameleaf/library-session';
 
 /**
  * The query the top bar's search opens on (FL-48).
@@ -25,7 +25,7 @@ const requireId = (condition: IdsFilter | undefined, id: string): IdsFilter => {
 
 export const searchContextFor = (url: URL): DiscoveryContext => {
   const context = contextDiscoveryState(url);
-  if (/^\/(?:search|discover)(?:\/|$)/.test(url.pathname)) {
+  if (/^\/(?:search|discover|pro)(?:\/|$)/.test(url.pathname)) {
     return context;
   }
   const view = readLibraryView(url);
@@ -50,3 +50,31 @@ export const searchContextFor = (url: URL): DiscoveryContext => {
   }
   return { query, unsupported: [] };
 };
+
+/** Album membership remains required while the chosen workspace supplies its content scope. */
+export const albumSearchContext = (url: URL, album: Pick<AlbumResponseDto, 'id' | 'libraryScope'>) => {
+  const query = searchContextFor(url).query;
+  const libraryScope =
+    query.filter.libraryScope ??
+    (album.libraryScope === LibraryScope.Design ? LibraryViewScope.Design : LibraryViewScope.Personal);
+  return { ...query, filter: { ...query.filter, libraryScope, albumIds: requireId(query.filter.albumIds, album.id) } };
+};
+
+/** Workspace context travels through existing album routes without copying their data. */
+export const workspaceHref = (href: string, scope: LibraryViewScope | undefined, origin: string) => {
+  if (scope !== LibraryViewScope.Design) {
+    return href;
+  }
+  const url = writeLibraryView(new URL(href, origin), {
+    ...createLibrarySession().state,
+    query: { ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } },
+  });
+  return url.pathname + url.search;
+};
+
+/** New file publication uses the workspace that admitted the picker or drop. */
+export const libraryUploadScope = (url: URL, album?: Pick<AlbumResponseDto, 'libraryScope'>) =>
+  searchContextFor(url).query.filter.libraryScope === LibraryViewScope.Design ||
+  album?.libraryScope === LibraryScope.Design
+    ? LibraryScope.Design
+    : undefined;

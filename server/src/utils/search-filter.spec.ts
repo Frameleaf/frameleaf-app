@@ -1,16 +1,18 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { SearchFilter, isAlbumConfined, isFullyAlbumConfined } from 'src/dtos/search.dto.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetVisibility, Permission } from 'src/enum.js';
 import {
   applyLockedVisibilityPolicy,
   collectFilterIds,
   filterNamesPeople,
   filterUsesLocation,
   requirePetFilterAllowed,
+  requireSourceFilterAllowed,
   usesLocationFilter,
 } from 'src/utils/search-filter.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 
 const elevatedAuth = () => AuthFactory.from().session({ hasElevatedPermission: true }).build();
 const unelevatedAuth = () => AuthFactory.from().session().build();
@@ -189,4 +191,31 @@ describe(isFullyAlbumConfined.name, () => {
     expect(isFullyAlbumConfined({ or: [{ albumIds: { any: [albumId] } }, { city: { eq: 'Oslo' } }] })).toBe(false);
     expect(isFullyAlbumConfined({ or: [] })).toBe(false);
   });
+});
+
+it('treats positive subtree filters as confined and collects their root authorization IDs', () => {
+  const id = '00000000-0000-4000-8000-00000000000a';
+  expect(isAlbumConfined({ albumSubtreeIds: { any: [id] } })).toBe(true);
+  expect(isAlbumConfined({ albumSubtreeIds: { none: [id] } })).toBe(false);
+  expect(collectFilterIds({ albumSubtreeIds: { all: [id] } }, 'albumSubtreeIds')).toEqual([id]);
+});
+
+it('requires the provenance permission before allowing source filters, including OR branches', () => {
+  const filter = { or: [{ source: { contains: 'private-project' } }] };
+  expect(() => requireSourceFilterAllowed(authStub.user1, filter)).not.toThrow();
+  expect(() =>
+    requireSourceFilterAllowed(
+      { ...authStub.user1, apiKey: { id: 'key', permissions: [Permission.AssetRead] } },
+      filter,
+    ),
+  ).toThrow();
+  expect(() =>
+    requireSourceFilterAllowed(
+      { ...authStub.user1, apiKey: { id: 'key', permissions: [Permission.AssetSourceRead] } },
+      filter,
+    ),
+  ).not.toThrow();
+  expect(() =>
+    requireSourceFilterAllowed({ ...authStub.user1, sharedLink: authStub.adminSharedLink.sharedLink }, filter),
+  ).toThrow();
 });

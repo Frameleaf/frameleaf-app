@@ -19,6 +19,7 @@ import {
   AssetFileType,
   AssetOrderWithRandom,
   AssetVisibility,
+  LibraryScope,
   MemoryExportFormat,
   MemoryExportStatus,
   MemoryType,
@@ -35,6 +36,7 @@ import {
   memoryHasNoHiddenItem,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isOnTimelineWhateverLock, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 /**
  * FL-62: the owner's own curation narrows what a search returns — memories they hid, and their
@@ -101,6 +103,7 @@ const withoutPrivateOnlyMemories = (eb: ExpressionBuilder<DB, 'memory'>, options
         .select('memory_asset.memoriesId')
         .whereRef('memory_asset.memoriesId', '=', 'memory.id')
         .where(revealedLockScope(options.revealLockedOwnerId, 'asset'))
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .$if(strict, (qb) =>
           qb.where(isTimelineVisible('asset', options.revealLockedOwnerId)).where('asset.deletedAt', 'is', null),
         )
@@ -113,6 +116,7 @@ const withMemoryAssetFilters = <O>(
   options: MemoryPrivacyOptions,
 ) =>
   withHiddenContentFilter(qb, options)
+    .where(libraryScopePredicate(LibraryScope.Personal))
     .where((eb) =>
       eb.not(
         eb.exists(
@@ -491,6 +495,7 @@ export class MemoryRepository implements IBulkAsset {
         .where('asset.ownerId', '=', ownerId)
         // FL-195 follow-up: Locked items make stories too; the story is then hidden while locked
         .where(isOnTimelineWhateverLock('asset'))
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .where('asset.deletedAt', 'is', null)
         .where('asset.localDateTime', '>=', from)
         .where('asset.localDateTime', '<=', to)
@@ -866,6 +871,7 @@ export class MemoryRepository implements IBulkAsset {
       .select(['asset.id', 'asset.localDateTime'])
       .where('asset.ownerId', '=', ownerId)
       .where(isOnTimelineWhateverLock('asset'))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where((eb) =>
         eb.exists((qb) =>
@@ -941,6 +947,7 @@ export class MemoryRepository implements IBulkAsset {
         INNER JOIN asset ON asset.id = asset_face."assetId" AND asset."ownerId" = person."ownerId"
         WHERE person."ownerId" = ${ownerId}::uuid AND person."isHidden" = false AND person.name <> ''
           AND asset.visibility = ${AssetVisibility.Timeline} AND asset."deletedAt" IS NULL
+          AND ${libraryScopePredicate(LibraryScope.Personal)}
           AND asset."localDateTime" >= ${window.from} AND asset."localDateTime" < ${window.to}
         GROUP BY person."personGroupId", person.name
         UNION ALL
@@ -951,6 +958,7 @@ export class MemoryRepository implements IBulkAsset {
         INNER JOIN asset ON asset.id = pet_observation."assetId" AND asset."ownerId" = pet."ownerId"
         WHERE pet."ownerId" = ${ownerId}::uuid AND pet."isHidden" = false AND pet.name <> ''
           AND asset.visibility = ${AssetVisibility.Timeline} AND asset."deletedAt" IS NULL
+          AND ${libraryScopePredicate(LibraryScope.Personal)}
           AND asset."localDateTime" >= ${window.from} AND asset."localDateTime" < ${window.to}
         GROUP BY pet.id, pet.name
       ) subjects
