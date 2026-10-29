@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DatabaseLock, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, JobName, JobStatus, QueueJobStatus, SystemMetadataKey } from 'src/enum.js';
 import { BACKUP_SEQUENCE_CRON, BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { type BackupSequenceState, deriveBackupSchedule, effectiveBackupSchedule } from 'src/utils/backup-sequence.js';
 
@@ -11,8 +11,8 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
   const stored: { state?: BackupSequenceState } = {};
   let lockTail = Promise.resolve();
   const buddy: Place = { on: true, busy: false };
-  // The snapshot job the run queues: it finishes at once unless a test keeps it busy.
-  const local = { busy: false };
+  // The snapshot job the run queues: it finishes at once unless a test gives it another state.
+  const local: { status: QueueJobStatus } = { status: QueueJobStatus.Complete };
   const cloud: Place = { on: true, busy: false };
   const config = {
     backup: {
@@ -57,10 +57,10 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
       queue: vi.fn((item: { name: JobName }) =>
         item.name === JobName.DatabaseBackup ? mocks.snapshot() : Promise.resolve(),
       ),
-      isPaused: vi.fn().mockResolvedValue(false),
-      getJobCounts: vi.fn(() =>
-        Promise.resolve({ active: local.busy ? 1 : 0, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 }),
-      ),
+      searchJobs: vi.fn((_queue: string, dto: { status?: QueueJobStatus[] }) => {
+        const job = { id: 'snapshot-job', name: JobName.DatabaseBackup, status: local.status };
+        return Promise.resolve(!dto.status || dto.status.includes(local.status) ? [job] : []);
+      }),
     },
     buddyRepository: { state: vi.fn().mockResolvedValue({ settings: { schedule: '0 4 * * *' } }) },
     buddyBackup: {
@@ -257,30 +257,52 @@ describe('the one backup schedule (FL-362)', () => {
 
     it('makes the library data copy as the queued snapshot job and waits for it (FL-657)', async () => {
       const { sut, mocks, order, stored, local } = setup();
-      local.busy = true;
+      local.status = QueueJobStatus.Active;
 
       await sut.handleStart();
       // The same job "Take a snapshot now" queues, so its outcome is reported the same way.
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
       expect(order).toEqual(['local']);
-      expect(stored.state?.run).toMatchObject({ place: 'local', begun: true });
+      expect(stored.state?.run).toMatchObject({ place: 'local', begun: true, jobId: 'snapshot-job' });
 
       await sut.move();
       expect(order).toEqual(['local']);
 
-      local.busy = false;
+      // Waiting for its retry still holds the run.
+      local.status = QueueJobStatus.Delayed;
+      await sut.move();
+      expect(order).toEqual(['local']);
+
+      local.status = QueueJobStatus.Complete;
       await sut.move();
       expect(order).toEqual(['local', 'buddy']);
       expect(stored.state?.run).toMatchObject({ place: 'buddy', results: { local: 'done' } });
     });
 
-    it('does not wait for a snapshot held in a paused queue', async () => {
-      const { sut, mocks, order, local } = setup();
-      local.busy = true;
-      mocks.job.isPaused.mockResolvedValue(true);
-
+    it('records the snapshot job failing for good as a failed library data copy (FL-657)', async () => {
+      const { sut, order, stored, local } = setup();
+      local.status = QueueJobStatus.Active;
       await sut.handleStart();
+
+      local.status = QueueJobStatus.Failed;
+      await sut.move();
       expect(order).toEqual(['local', 'buddy']);
+      expect(stored.state?.run?.results).toEqual({ local: 'failed' });
+    });
+
+    it('waits for a snapshot being made in a paused queue, but not for one still waiting there', async () => {
+      const { sut, order, stored, local } = setup();
+      // Pausing a queue does not stop a snapshot already being made: the run waits for it.
+      local.status = QueueJobStatus.Active;
+      await sut.handleStart();
+      await sut.move();
+      expect(order).toEqual(['local']);
+
+      // One that has not started stays until the queue is resumed: the run moves on without it.
+      local.status = QueueJobStatus.Paused;
+      await sut.move();
+      expect(order).toEqual(['local', 'buddy']);
+      expect(stored.state?.run?.results).toEqual({ local: 'failed' });
     });
 
     it('moves on from a backup that is left waiting instead of holding the run up', async () => {

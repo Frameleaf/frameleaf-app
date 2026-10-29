@@ -42,8 +42,7 @@ describe('backup sequence worker serialization', () => {
           {} as never,
           {
             queue: (item: { name: JobName }) => (item.name === JobName.DatabaseBackup ? local() : Promise.resolve()),
-            isPaused: () => Promise.resolve(false),
-            getJobCounts: () => Promise.resolve({ active: 0, waiting: 0, delayed: 0 }),
+            searchJobs: () => Promise.resolve([]),
           } as never,
           {} as never,
           { sequenceStatus: () => Promise.resolve({ on: false, busy: false }) } as never,

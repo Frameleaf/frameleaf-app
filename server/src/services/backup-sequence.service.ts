@@ -4,7 +4,15 @@ import type { SystemConfig } from 'src/config.js';
 import type { BackupScheduleResponseDto } from 'src/dtos/database-backup.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { DatabaseLock, FrameleafWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
+import {
+  DatabaseLock,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
+  QueueJobStatus,
+  QueueName,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -177,7 +185,7 @@ export class BackupSequenceService {
     }
   }
 
-  /** Starts a place's backup. Each runs on its own, and the run waits for it (`isBusy`). */
+  /** Starts a place's backup. Each runs on its own, and the run waits for it (`placeOutcome`, `snapshotOutcome`). */
   private async begin(place: BackupSequencePlace): Promise<'started' | 'done'> {
     switch (place) {
       case 'local': {
@@ -198,22 +206,43 @@ export class BackupSequenceService {
     }
   }
 
-  /** Whether a place's backup is still being made. A backup left waiting or paused is not. */
-  private async isBusy(place: BackupSequencePlace): Promise<boolean> {
-    switch (place) {
-      case 'local': {
-        // A paused queue would hold the run up indefinitely; the snapshot is made when it is resumed.
-        if (await this.jobRepository.isPaused(QueueName.BackupDatabase)) {
-          return false;
-        }
-        const { active, waiting, delayed } = await this.jobRepository.getJobCounts(QueueName.BackupDatabase);
-        return active + waiting + delayed > 0;
+  /** Whether Buddy or Cloud Backup is still being made. A backup left waiting or paused is not. */
+  private async placeOutcome(place: 'buddy' | 'cloud'): Promise<'busy' | 'done'> {
+    const status =
+      place === 'buddy' ? await this.buddyBackup.sequenceStatus() : await this.cloudBackup.sequenceStatus();
+    return status.busy ? 'busy' : 'done';
+  }
+
+  /** The snapshot job waiting or running now: the one the run just queued, or the one it joined. */
+  private async snapshotJobId(): Promise<string | undefined> {
+    const jobs = await this.jobRepository.searchJobs(QueueName.BackupDatabase, {
+      status: [QueueJobStatus.Active, QueueJobStatus.Waiting, QueueJobStatus.Delayed, QueueJobStatus.Paused],
+    });
+    return jobs.find((job) => job.name === JobName.DatabaseBackup)?.id;
+  }
+
+  /**
+   * FL-657: the library data copy's own outcome, read from the snapshot job the run waits for. A job
+   * being made, or waiting for its retry, holds the run; one held in a paused queue does not, and is
+   * recorded as not finished. A job the queue no longer lists finished and was cleared away.
+   */
+  private async snapshotOutcome(jobId: string | undefined): Promise<'busy' | 'done' | 'failed'> {
+    if (!jobId) {
+      return 'done';
+    }
+    const job = (await this.jobRepository.searchJobs(QueueName.BackupDatabase, {})).find(({ id }) => id === jobId);
+    switch (job?.status) {
+      case QueueJobStatus.Active:
+      case QueueJobStatus.Waiting:
+      case QueueJobStatus.Delayed: {
+        return 'busy';
       }
-      case 'buddy': {
-        return (await this.buddyBackup.sequenceStatus()).busy;
+      case QueueJobStatus.Failed:
+      case QueueJobStatus.Paused: {
+        return 'failed';
       }
-      case 'cloud': {
-        return (await this.cloudBackup.sequenceStatus()).busy;
+      default: {
+        return 'done';
       }
     }
   }
@@ -233,15 +262,17 @@ export class BackupSequenceService {
       const place: BackupSequencePlace = run.place;
       let result: BackupSequenceRun['results'][BackupSequencePlace];
       if (run.begun) {
-        if (await this.isBusy(place)) {
+        const outcome = place === 'local' ? await this.snapshotOutcome(run.jobId) : await this.placeOutcome(place);
+        if (outcome === 'busy') {
           return;
         }
-        result = 'done';
+        result = outcome;
       } else {
         try {
           if (await this.isOn(place)) {
             if ((await this.begin(place)) === 'started') {
-              run = { ...run, begun: true };
+              const jobId = place === 'local' ? await this.snapshotJobId() : undefined;
+              run = { ...run, begun: true, ...(jobId ? { jobId } : {}) };
               state = { ...state, run };
               await this.save(state);
               continue;
