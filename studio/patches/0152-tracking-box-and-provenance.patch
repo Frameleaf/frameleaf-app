@@ -34,7 +34,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
    const [sourceId, setSourceId] = useState('')
    const [direction, setDirection] = useState<'forward' | 'backward'>('forward')
    const [progress, setProgress] = useState<string | null>(null)
-@@ -37,7 +44,11 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
+@@ -37,10 +44,21 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
    const [keepTrackedPart, setKeepTrackedPart] = useState(false)
    const [replaceExisting, setReplaceExisting] = useState(false)
    const abortRef = useRef<AbortController | null>(null)
@@ -47,7 +47,17 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
  
    if (item.type === 'audio') return null
  
-@@ -50,15 +61,31 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
++  // Changing what to track discards the result and its overlay and stops a run in progress.
++  const discardResult = () => {
++    abortRef.current?.abort()
++    if (overlaySource.current) clearMotionTrackOverlay(overlaySource.current)
++    setResult(null)
++  }
++
+   const track = async () => {
+     abortRef.current?.abort()
+     const controller = new AbortController()
+@@ -50,15 +68,33 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
      setReplaceExisting(false)
      setProgress(t('editor.motionTrack.decoding', { done: 0, total: '…' }))
      try {
@@ -59,7 +69,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
 +        boxItemId: boxId || undefined,
 +        onProgress: (done, total) => {
 +          setProgress(t('editor.motionTrack.decoding', { done, total }))
-+          showMotionTrackOverlay(sourceId, { progress: done / total })
++          showMotionTrackOverlay(sourceId, { progress: done / total }, t('editor.motionTrack.overlay.tracking'))
 +        },
        })
 -      // A superseded run (cancelled, or the source or direction changed) never writes its result.
@@ -74,7 +84,9 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
 +      }
 +      if (analysis.ok) {
 +        setResult(analysis.result)
-+        showMotionTrackOverlay(sourceId, { result: analysis.result })
++        showMotionTrackOverlay(sourceId, { result: analysis.result }, analysis.result.lostFrames.length > 0
++          ? t('editor.motionTrack.overlay.lostFrom', { frame: analysis.result.lostFrames[0] })
++          : t('editor.motionTrack.overlay.tracked'))
 +      } else {
 +        clearMotionTrackOverlay(sourceId)
 +        toast.warning(t(`editor.motionTrack.refusal.${analysis.reason}`))
@@ -84,7 +96,16 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
        if (!controller.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.motionTrack.refusal.decode-failed'))
      } finally {
        if (abortRef.current === controller) setProgress(null)
-@@ -93,6 +120,20 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
+@@ -84,7 +120,7 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
+           className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs"
+           aria-label={t('editor.motionTrack.source')}
+           value={sourceId}
+-          onChange={(event) => { abortRef.current?.abort(); setSourceId(event.target.value); setResult(null) }}
++          onChange={(event) => { discardResult(); setSourceId(event.target.value) }}
+         >
+           <option value="">{t('editor.motionTrack.chooseSource')}</option>
+           {sources.map((entry) => {
+@@ -93,12 +129,26 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
            })}
          </select>
        </PropertyRow>
@@ -93,7 +114,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
 +          className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs"
 +          aria-label={t('editor.motionTrack.box')}
 +          value={boxId}
-+          onChange={(event) => { setBoxId(event.target.value); setResult(null) }}
++          onChange={(event) => { discardResult(); setBoxId(event.target.value) }}
 +        >
 +          <option value="">{t('editor.motionTrack.thisClipBox')}</option>
 +          {boxes.map((entry) => {
@@ -105,7 +126,14 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
        <PropertyRow label={t('editor.motionTrack.direction')}>
          <div className="flex w-full gap-1" role="radiogroup" aria-label={t('editor.motionTrack.direction')}>
            {(['forward', 'backward'] as const).map((value) => (
-@@ -143,10 +184,10 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
+             <Button key={value} role="radio" aria-checked={direction === value} size="sm"
+               variant={direction === value ? 'secondary' : 'ghost'} className="h-7 flex-1 text-xs"
+-              onClick={() => { abortRef.current?.abort(); setDirection(value); setResult(null) }}>
++              onClick={() => { discardResult(); setDirection(value) }}>
+               {t(`editor.motionTrack.${value}`)}
+             </Button>
+           ))}
+@@ -143,10 +193,10 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
          </Button>
        </div>
  
@@ -165,7 +193,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
      expect(keysOf('x')).toEqual([])
      useTimelineCommandStore.getState().undo()
      expect(keysOf('x')).toHaveLength(3)
-@@ -141,6 +144,52 @@ describe('motion track actions', () => {
+@@ -141,6 +144,74 @@ describe('motion track actions', () => {
      useKeyframesStore.getState()._addKeyframes([{ itemId: 'title', property: 'x', frame: 70, value: 3 }])
      expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'stale' })
    })
@@ -191,11 +219,33 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 +    useItemsStore.getState().setItems([source(), title()])
 +    await expect(analyzeMotionTrack('v1', 'title', 20, 'forward', { boxItemId: 'v1' })).resolves.toEqual({ ok: false, reason: 'unsupported-box' })
 +    await expect(analyzeMotionTrack('v1', 'title', 20, 'forward', { boxItemId: 'missing' })).resolves.toEqual({ ok: false, reason: 'not-found' })
++    // A separate box must be on the timeline at the seed frame.
++    useItemsStore.getState().setItems([source(), title(), title({ id: 'box', from: 60 })])
++    await expect(analyzeMotionTrack('v1', 'title', 20, 'forward', { boxItemId: 'box' })).resolves.toEqual({ ok: false, reason: 'no-overlap' })
++  })
++
++  it('takes replaced frames out of older tracks, so removing one leaves the newer keys', () => {
++    const first = applyMotionTrack(resultFor(path))
++    if (!first.ok) throw new Error(first.reason)
++    const shifted = path.map((value) => ({ ...value, frame: value.frame + 1, x: value.x + 1000 }))
++    const second = applyMotionTrack(resultFor(shifted), { replaceExisting: true })
++    if (!second.ok) throw new Error(second.reason)
++    expect(listMotionTracks('title').map((track) => track.keyFrames)).toEqual([[10], [11, 12, 13]])
++    expect(removeMotionTrack('title', first.applicationId)).toBe(true)
++    expect(keysOf('x').map(([frame]) => frame)).toEqual([11, 12, 13])
++  })
++
++  it('keeps track records on the left half of a split, where the keyframes stay', () => {
++    const outcome = applyMotionTrack(resultFor(path))
++    if (!outcome.ok) throw new Error(outcome.reason)
++    const halves = useItemsStore.getState()._splitItem('title', 50)!
++    expect(listMotionTracks(halves.leftItem.id)).toHaveLength(1)
++    expect(listMotionTracks(halves.rightItem.id)).toEqual([])
 +  })
 +
 +  it('shows the lost range on the source clip and clears it on apply', () => {
 +    const result = { ...resultFor(path, [23]) }
-+    showMotionTrackOverlay('v1', { result })
++    showMotionTrackOverlay('v1', { result }, 'Lost from frame 23')
 +    expect(useTimelineItemOverlayStore.getState().overlaysByItemId['v1']).toEqual([
 +      { id: 'motion-track', label: 'Lost from frame 23', tone: 'error', ranges: [{ startRatio: 23 / 120, endRatio: 24 / 120 }] },
 +    ])
@@ -274,7 +324,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    ])
  }
  
-@@ -114,16 +130,25 @@ export async function analyzeMotionTrack(
+@@ -116,16 +132,25 @@ export async function analyzeMotionTrack(
    targetId: string,
    seedFrame: number,
    direction: 'forward' | 'backward',
@@ -302,11 +352,15 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    if (hasKeyframes(targetId, ['position', 'scale'])) return { ok: false, reason: 'vector-keys' }
    const clip = placedClip(source)
    if (typeof clip === 'string') return { ok: false, reason: clip }
-@@ -140,12 +165,16 @@ export async function analyzeMotionTrack(
+@@ -142,12 +167,20 @@ export async function analyzeMotionTrack(
    const targetPlacement = resolveItemTransformAtFrame(target, {
      canvas: canvasSize(), frame: seedFrame, keyframes: useKeyframesStore.getState().keyframesByItemId[target.id],
    })
 -  const seedBox = canvasToSource(clip, { cx: targetPlacement.x, cy: targetPlacement.y, width: targetPlacement.width, height: targetPlacement.height })
++  // A separate box must be on the timeline at the seed frame, or the tracked region is not what is shown.
++  if (boxItem.id !== target.id && (seedFrame < boxItem.from || seedFrame >= boxItem.from + boxItem.durationInFrames)) {
++    return { ok: false, reason: 'no-overlap' }
++  }
 +  // The tracking box (default: the target) as shown at the seed frame, keyframes included.
 +  const boxPlacement = boxItem.id === target.id ? targetPlacement : resolveItemTransformAtFrame(boxItem, {
 +    canvas: canvasSize(), frame: seedFrame, keyframes: useKeyframesStore.getState().keyframesByItemId[boxItem.id],
@@ -321,7 +375,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
  
    // Decode, track and drop one frame at a time: only the previous box and the template are kept.
    const samples: TrackSample[] = []
-@@ -206,6 +235,7 @@ export async function analyzeMotionTrack(
+@@ -208,6 +241,7 @@ export async function analyzeMotionTrack(
        targetId,
        binding,
        direction,
@@ -329,7 +383,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
        frames,
        samples: sourceSamples,
        values: followTrack(clip, sourceSamples, frames, targetPlacement),
-@@ -229,7 +259,9 @@ export function applyMotionTrack(
+@@ -231,7 +265,9 @@ export function applyMotionTrack(
    const items = useItemsStore.getState().items
    const source = items.find((item) => item.id === result.sourceId)
    const target = items.find((item) => item.id === result.targetId)
@@ -340,7 +394,18 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
      return { ok: false, reason: 'stale' }
    }
    if (result.lostFrames.length > 0 && !decisions.keepTrackedPart) return { ok: false, reason: 'unreviewed-lost' }
-@@ -255,33 +287,94 @@ export function applyMotionTrack(
+@@ -248,6 +284,10 @@ export function applyMotionTrack(
+       .filter((keyframe) => keyframe.frame >= low && keyframe.frame <= high)
+       .map((keyframe) => ({ property: property.property, id: keyframe.id })))
+   if (conflicting.length > 0 && !decisions.replaceExisting) return { ok: false, reason: 'conflict' }
++  // Frames this track replaces leave the older records, so removing one of those never takes this track's keys.
++  const olderTracks = ((target as TrackedItem).motionTracks ?? [])
++    .map((entry) => ({ ...entry, keyFrames: entry.keyFrames.filter((frame) => frame < low || frame > high) }))
++    .filter((entry) => entry.keyFrames.length > 0)
+ 
+   const applicationId = crypto.randomUUID()
+   const source_: AnimationKeyframeSource = {
+@@ -257,33 +297,96 @@ export function applyMotionTrack(
      itemId: target.id, property, frame: value.frame - target.from, value: Math.round(value[property] * 100) / 100,
      easing: 'linear' as const, source: source_,
    })))
@@ -357,7 +422,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
      keyframes._addKeyframes(payloads)
 +    // Provenance survives save/reopen on the item (keyframes keep only their standard fields).
 +    useItemsStore.getState()._updateItem(target.id, {
-+      motionTracks: [...((target as TrackedItem).motionTracks ?? []), trackRecord],
++      motionTracks: [...olderTracks, trackRecord],
 +    } as Partial<TimelineItem>)
 +    clearMotionTrackOverlay(result.sourceId)
      useTimelineSettingsStore.getState().markDirty()
@@ -423,16 +488,18 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
 +const OVERLAY_ID = 'motion-track'
 +
 +/** Show progress, the tracked range and any lost range on the source clip's timeline bar. */
++/** `label` is the caller's translated text for this state (see editor.motionTrack.overlay). */
 +export function showMotionTrackOverlay(
 +  sourceId: string,
 +  state: { progress: number } | { result: MotionTrackResult },
++  label: string,
 +): void {
 +  const source = useItemsStore.getState().itemById[sourceId]
 +  if (!source) return
 +  const overlays = useTimelineItemOverlayStore.getState()
 +  const ratio = (frame: number) => Math.min(1, Math.max(0, (frame - source.from) / source.durationInFrames))
 +  if ('progress' in state) {
-+    overlays.upsertOverlay(sourceId, { id: OVERLAY_ID, label: 'Tracking', tone: 'info', progress: state.progress })
++    overlays.upsertOverlay(sourceId, { id: OVERLAY_ID, label, tone: 'info', progress: state.progress })
 +    return
 +  }
 +  const { frames, lostFrames } = state.result
@@ -441,17 +508,41 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
 +  }
 +  const lost = span(lostFrames)
 +  overlays.upsertOverlay(sourceId, lost
-+    ? { id: OVERLAY_ID, label: `Lost from frame ${lostFrames[0]}`, tone: 'error', ranges: [lost] }
-+    : { id: OVERLAY_ID, label: 'Tracked', tone: 'success', ranges: [span(frames)!] })
++    ? { id: OVERLAY_ID, label, tone: 'error', ranges: [lost] }
++    : { id: OVERLAY_ID, label, tone: 'success', ranges: [span(frames)!] })
 +}
 +
 +export function clearMotionTrackOverlay(sourceId: string): void {
 +  useTimelineItemOverlayStore.getState().removeOverlay(sourceId, OVERLAY_ID)
 +}
+diff --git a/src/features/timeline/stores/items-store.ts b/src/features/timeline/stores/items-store.ts
+--- a/src/features/timeline/stores/items-store.ts
++++ b/src/features/timeline/stores/items-store.ts
+@@ -517,6 +517,8 @@ export const useItemsStore = create<ItemsState & ItemsActions>()((set, get) => (
+       from: splitAt,
+       durationInFrames: rightDuration,
+     } as TimelineItem
++    // Keyframes stay on the left half, so applied motion-track records stay there too (FL-627).
++    delete (rightItem as { motionTracks?: unknown }).motionTracks
+ 
+     // Subtitle segments own their full cue list — partition it at the split
+     // point so neither half references cues outside its window. Cues are
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -898,7 +898,7 @@
+@@ -883,6 +883,11 @@
+       "adjustmentLayerLabel": "Farbkorrektur"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "Verfolgung läuft",
++        "tracked": "Verfolgt",
++        "lostFrom": "Verloren ab Frame {{frame}}"
++      },
+       "title": "Bewegung verfolgen",
+       "source": "Zu verfolgendes Video",
+       "chooseSource": "Videoclip wählen",
+@@ -898,7 +903,7 @@
        "lost": "Ab Bild {{frame}} verloren ({{count}} Bilder). Lege diesen Clip dort über das Motiv und verfolge erneut, oder behalte den verfolgten Teil.",
        "keepTrackedPart": "Nur den verfolgten Teil behalten",
        "replaceExisting": "Vorhandene Positions- und Größen-Keyframes in diesem Bereich ersetzen",
@@ -460,7 +551,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
        "applied_one": "Verfolgung auf {{count}} Bild angewendet",
        "applied_other": "Verfolgung auf {{count}} Bilder angewendet",
        "appliedTrack": "Spur {{n}}",
-@@ -915,7 +915,9 @@
+@@ -915,7 +920,9 @@
          "no-overlap": "Setze den Abspielkopf dorthin, wo beide Clips liegen.",
          "outside-frame": "Lege diesen Clip zuerst innerhalb des Videobilds ab.",
          "low-texture": "Der Bereich unter diesem Clip hat zu wenig Details zum Verfolgen.",
@@ -471,7 +562,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "Die Clips wurden seit der Verfolgung geändert; erneut verfolgen.",
-@@ -923,7 +925,9 @@
+@@ -923,7 +930,9 @@
          "conflict": "Dieser Clip hat in dem Bereich Positions- oder Größen-Keyframes. Bestätige das Ersetzen.",
          "locked": "Der Clip liegt auf einer gesperrten Spur.",
          "nothing-tracked": "Es wurde nichts verfolgt."
@@ -485,7 +576,19 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -911,7 +911,7 @@
+@@ -896,6 +896,11 @@
+       "adjustmentLayerLabel": "Grade"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "Tracking",
++        "tracked": "Tracked",
++        "lostFrom": "Lost from frame {{frame}}"
++      },
+       "title": "Track motion",
+       "source": "Video to track",
+       "chooseSource": "Choose a video clip",
+@@ -911,7 +916,7 @@
        "lost": "Lost from frame {{frame}} ({{count}} frames). Move this clip over the subject there and track again, or keep the tracked part.",
        "keepTrackedPart": "Keep only the tracked part",
        "replaceExisting": "Replace existing position and size keyframes in this range",
@@ -494,7 +597,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
        "applied_one": "Applied tracking to {{count}} frame",
        "applied_other": "Applied tracking to {{count}} frames",
        "appliedTrack": "Track {{n}}",
-@@ -928,7 +928,9 @@
+@@ -928,7 +933,9 @@
          "no-overlap": "Move the playhead to where both clips are on the timeline.",
          "outside-frame": "Place this clip inside the video's frame first.",
          "low-texture": "The area under this clip has too little detail to track.",
@@ -505,7 +608,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "The clips changed since tracking; track again.",
-@@ -936,7 +938,9 @@
+@@ -936,7 +943,9 @@
          "conflict": "This clip has position or size keyframes in that range. Confirm replacing them.",
          "locked": "The clip is on a locked track.",
          "nothing-tracked": "Nothing was tracked."
@@ -519,7 +622,19 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -898,7 +898,7 @@
+@@ -883,6 +883,11 @@
+       "adjustmentLayerLabel": "Etalonaje"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "Siguiendo",
++        "tracked": "Seguido",
++        "lostFrom": "Perdido desde el fotograma {{frame}}"
++      },
+       "title": "Seguir movimiento",
+       "source": "Vídeo a seguir",
+       "chooseSource": "Elige un clip de vídeo",
+@@ -898,7 +903,7 @@
        "lost": "Perdido desde el fotograma {{frame}} ({{count}} fotogramas). Coloca este clip sobre el sujeto allí y vuelve a seguir, o conserva la parte seguida.",
        "keepTrackedPart": "Conservar solo la parte seguida",
        "replaceExisting": "Reemplazar los fotogramas clave de posición y tamaño en este rango",
@@ -528,7 +643,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
        "applied_one": "Seguimiento aplicado a {{count}} fotograma",
        "applied_other": "Seguimiento aplicado a {{count}} fotogramas",
        "appliedTrack": "Seguimiento {{n}}",
-@@ -915,7 +915,9 @@
+@@ -915,7 +920,9 @@
          "no-overlap": "Mueve el cabezal a donde estén ambos clips.",
          "outside-frame": "Coloca primero este clip dentro del encuadre del vídeo.",
          "low-texture": "La zona bajo este clip tiene muy poco detalle para seguirla.",
@@ -539,7 +654,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "Los clips cambiaron desde el seguimiento; vuelve a seguir.",
-@@ -923,7 +925,9 @@
+@@ -923,7 +930,9 @@
          "conflict": "Este clip tiene fotogramas clave de posición o tamaño en ese rango. Confirma el reemplazo.",
          "locked": "El clip está en una pista bloqueada.",
          "nothing-tracked": "No se siguió nada."
@@ -553,7 +668,19 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -898,7 +898,7 @@
+@@ -883,6 +883,11 @@
+       "adjustmentLayerLabel": "Étalonnage"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "Suivi en cours",
++        "tracked": "Suivi",
++        "lostFrom": "Perdu à partir de l’image {{frame}}"
++      },
+       "title": "Suivre le mouvement",
+       "source": "Vidéo à suivre",
+       "chooseSource": "Choisir un clip vidéo",
+@@ -898,7 +903,7 @@
        "lost": "Perdu à partir de l’image {{frame}} ({{count}} images). Placez ce clip sur le sujet à cet endroit et suivez à nouveau, ou gardez la partie suivie.",
        "keepTrackedPart": "Garder seulement la partie suivie",
        "replaceExisting": "Remplacer les images clés de position et de taille dans cette plage",
@@ -562,7 +689,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
        "applied_one": "Suivi appliqué à {{count}} image",
        "applied_other": "Suivi appliqué à {{count}} images",
        "appliedTrack": "Suivi {{n}}",
-@@ -915,7 +915,9 @@
+@@ -915,7 +920,9 @@
          "no-overlap": "Placez la tête de lecture là où se trouvent les deux clips.",
          "outside-frame": "Placez d’abord ce clip à l’intérieur de l’image de la vidéo.",
          "low-texture": "La zone sous ce clip a trop peu de détails pour être suivie.",
@@ -573,7 +700,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "Les clips ont changé depuis le suivi ; suivez à nouveau.",
-@@ -923,7 +925,9 @@
+@@ -923,7 +930,9 @@
          "conflict": "Ce clip a des images clés de position ou de taille dans cette plage. Confirmez le remplacement.",
          "locked": "Le clip est sur une piste verrouillée.",
          "nothing-tracked": "Rien n’a été suivi."
@@ -587,7 +714,19 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -898,7 +898,7 @@
+@@ -883,6 +883,11 @@
+       "adjustmentLayerLabel": "グレーディング"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "追跡中",
++        "tracked": "追跡済み",
++        "lostFrom": "フレーム {{frame}} から見失いました"
++      },
+       "title": "モーションを追跡",
+       "source": "追跡する動画",
+       "chooseSource": "動画クリップを選択",
+@@ -898,7 +903,7 @@
        "lost": "フレーム {{frame}} から見失いました（{{count}} フレーム）。その位置でこのクリップを被写体に重ねて再追跡するか、追跡できた部分を残してください。",
        "keepTrackedPart": "追跡できた部分だけを残す",
        "replaceExisting": "この範囲の位置とサイズのキーフレームを置き換える",
@@ -596,7 +735,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
        "applied_one": "{{count}} フレームに追跡を適用しました",
        "applied_other": "{{count}} フレームに追跡を適用しました",
        "appliedTrack": "トラック {{n}}",
-@@ -915,7 +915,9 @@
+@@ -915,7 +920,9 @@
          "no-overlap": "両方のクリップがある位置に再生ヘッドを移動してください。",
          "outside-frame": "まずこのクリップを動画の画面内に置いてください。",
          "low-texture": "このクリップの下の領域は情報が少なく追跡できません。",
@@ -607,7 +746,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "追跡後にクリップが変更されました。もう一度追跡してください。",
-@@ -923,7 +925,9 @@
+@@ -923,7 +930,9 @@
          "conflict": "この範囲に位置またはサイズのキーフレームがあります。置き換えを確認してください。",
          "locked": "クリップがロックされたトラックにあります。",
          "nothing-tracked": "何も追跡されませんでした。"
@@ -621,7 +760,19 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -898,7 +898,7 @@
+@@ -883,6 +883,11 @@
+       "adjustmentLayerLabel": "색 보정"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "추적 중",
++        "tracked": "추적됨",
++        "lostFrom": "{{frame}} 프레임부터 놓침"
++      },
+       "title": "모션 추적",
+       "source": "추적할 비디오",
+       "chooseSource": "비디오 클립 선택",
+@@ -898,7 +903,7 @@
        "lost": "프레임 {{frame}}부터 놓쳤습니다({{count}}개 프레임). 그 위치에서 이 클립을 대상 위에 놓고 다시 추적하거나 추적된 부분만 유지하세요.",
        "keepTrackedPart": "추적된 부분만 유지",
        "replaceExisting": "이 범위의 위치 및 크기 키프레임 바꾸기",
@@ -630,7 +781,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
        "applied_one": "{{count}}개 프레임에 추적을 적용했습니다",
        "applied_other": "{{count}}개 프레임에 추적을 적용했습니다",
        "appliedTrack": "트랙 {{n}}",
-@@ -915,7 +915,9 @@
+@@ -915,7 +920,9 @@
          "no-overlap": "두 클립이 모두 있는 곳으로 재생 헤드를 옮기세요.",
          "outside-frame": "먼저 이 클립을 비디오 화면 안에 두세요.",
          "low-texture": "이 클립 아래 영역은 추적하기에 정보가 너무 적습니다.",
@@ -641,7 +792,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "추적 후 클립이 변경되었습니다. 다시 추적하세요.",
-@@ -923,7 +925,9 @@
+@@ -923,7 +930,9 @@
          "conflict": "이 범위에 위치 또는 크기 키프레임이 있습니다. 바꾸기를 확인하세요.",
          "locked": "클립이 잠긴 트랙에 있습니다.",
          "nothing-tracked": "추적된 내용이 없습니다."
@@ -655,7 +806,19 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -898,7 +898,7 @@
+@@ -883,6 +883,11 @@
+       "adjustmentLayerLabel": "Correção de cor"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "Rastreando",
++        "tracked": "Rastreado",
++        "lostFrom": "Perdido a partir do quadro {{frame}}"
++      },
+       "title": "Rastrear movimento",
+       "source": "Vídeo a rastrear",
+       "chooseSource": "Escolha um clipe de vídeo",
+@@ -898,7 +903,7 @@
        "lost": "Perdido a partir do quadro {{frame}} ({{count}} quadros). Coloque este clipe sobre o objeto ali e rastreie de novo, ou mantenha a parte rastreada.",
        "keepTrackedPart": "Manter só a parte rastreada",
        "replaceExisting": "Substituir quadros-chave de posição e tamanho neste intervalo",
@@ -664,7 +827,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
        "applied_one": "Rastreamento aplicado a {{count}} quadro",
        "applied_other": "Rastreamento aplicado a {{count}} quadros",
        "appliedTrack": "Rastreamento {{n}}",
-@@ -915,7 +915,9 @@
+@@ -915,7 +920,9 @@
          "no-overlap": "Mova o cursor para onde os dois clipes estão.",
          "outside-frame": "Coloque este clipe dentro do quadro do vídeo primeiro.",
          "low-texture": "A área sob este clipe tem pouco detalhe para rastrear.",
@@ -675,7 +838,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
        },
        "applyRefusal": {
          "stale": "Os clipes mudaram desde o rastreamento; rastreie de novo.",
-@@ -923,7 +925,9 @@
+@@ -923,7 +930,9 @@
          "conflict": "Este clipe tem quadros-chave de posição ou tamanho nesse intervalo. Confirme a substituição.",
          "locked": "O clipe está em uma faixa bloqueada.",
          "nothing-tracked": "Nada foi rastreado."
@@ -689,7 +852,19 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -898,7 +898,7 @@
+@@ -883,6 +883,11 @@
+       "adjustmentLayerLabel": "Renk düzenleme"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "İzleniyor",
++        "tracked": "İzlendi",
++        "lostFrom": "{{frame}}. kareden itibaren kaybedildi"
++      },
+       "title": "Hareketi izle",
+       "source": "İzlenecek video",
+       "chooseSource": "Bir video klibi seçin",
+@@ -898,7 +903,7 @@
        "lost": "{{frame}}. kareden itibaren kaybedildi ({{count}} kare). Bu klibi oradaki öznenin üzerine koyup yeniden izleyin ya da izlenen kısmı tutun.",
        "keepTrackedPart": "Yalnızca izlenen kısmı tut",
        "replaceExisting": "Bu aralıktaki konum ve boyut anahtar karelerini değiştir",
@@ -698,7 +873,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
        "applied_one": "İzleme {{count}} kareye uygulandı",
        "applied_other": "İzleme {{count}} kareye uygulandı",
        "appliedTrack": "İz {{n}}",
-@@ -915,7 +915,9 @@
+@@ -915,7 +920,9 @@
          "no-overlap": "Oynatma kafasını iki klibin de olduğu yere taşıyın.",
          "outside-frame": "Önce bu klibi video karesinin içine yerleştirin.",
          "low-texture": "Bu klibin altındaki alanda izlemek için çok az ayrıntı var.",
@@ -709,7 +884,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "Klipler izlemeden sonra değişti; yeniden izleyin.",
-@@ -923,7 +925,9 @@
+@@ -923,7 +930,9 @@
          "conflict": "Bu klibin o aralıkta konum veya boyut anahtar kareleri var. Değiştirmeyi onaylayın.",
          "locked": "Klip kilitli bir izde.",
          "nothing-tracked": "Hiçbir şey izlenmedi."
@@ -723,7 +898,19 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -898,7 +898,7 @@
+@@ -883,6 +883,11 @@
+       "adjustmentLayerLabel": "调色"
+     },
+     "motionTrack": {
++      "overlay": {
++        "tracking": "正在跟踪",
++        "tracked": "已跟踪",
++        "lostFrom": "从第 {{frame}} 帧起丢失"
++      },
+       "title": "运动跟踪",
+       "source": "要跟踪的视频",
+       "chooseSource": "选择视频片段",
+@@ -898,7 +903,7 @@
        "lost": "从第 {{frame}} 帧起丢失（{{count}} 帧）。请在该处把此片段放到主体上重新跟踪，或保留已跟踪部分。",
        "keepTrackedPart": "仅保留已跟踪部分",
        "replaceExisting": "替换此范围内的位置和尺寸关键帧",
@@ -732,7 +919,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
        "applied_one": "已将跟踪应用到 {{count}} 帧",
        "applied_other": "已将跟踪应用到 {{count}} 帧",
        "appliedTrack": "跟踪 {{n}}",
-@@ -915,7 +915,9 @@
+@@ -915,7 +920,9 @@
          "no-overlap": "请把播放头移到两个片段都在的位置。",
          "outside-frame": "请先把此片段放在视频画面内。",
          "low-texture": "此片段下方区域细节太少，无法跟踪。",
@@ -743,7 +930,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "跟踪后片段已更改，请重新跟踪。",
-@@ -923,7 +925,9 @@
+@@ -923,7 +930,9 @@
          "conflict": "此片段在该范围内有位置或尺寸关键帧。请确认替换。",
          "locked": "片段位于锁定的轨道。",
          "nothing-tracked": "没有跟踪到任何内容。"

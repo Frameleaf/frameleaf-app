@@ -214,9 +214,9 @@ backward, up to 900 frames, by normalised cross-correlation with a small scale s
 never bridged; low-texture or out-of-frame seeds are refused. Apply writes linear x, y, width and height
 keyframes that keep the target's offset from the tracked box. Lost frames block Apply until the editor
 keeps the tracked part (or reseeds there and tracks a second segment), and existing position/size keys
-in the range block it until replacement is confirmed. Each application is one undo step, and Remove
-deletes one application's keys in this session. Saved graphs keep only the standard keyframe fields
-(protocol 13.2.4), so after reopening, tracked keys are ordinary keyframes. The synthetic 1080p path
+in the range block it until replacement is confirmed. Each application is one undo step, and in this
+patch Remove reads the keys' source tag, which saved graphs drop (protocol 13.2.4); patch 0152 adds
+item `motionTracks` records so Remove also works after saving and reopening. The synthetic 1080p path
 holds the centre within 5 px and size within 5% on at least 95% of frames, and an occlusion produces a
 lost interval. Rotation and perspective, mask-path tracking, preview/export pixel checks and browser
 journeys remain open.
