@@ -10,6 +10,11 @@ import type {
   StudioDraftResult,
   StudioEditorScope,
   StudioEditorCommitResult,
+  StudioAssetRef,
+  StudioLibraryFacets,
+  StudioLibraryQuery,
+  StudioLibraryResults,
+  StudioLibraryType,
   StudioProjectHandle,
   StudioProjectImportUpload,
   StudioProjectImportRef,
@@ -73,6 +78,38 @@ export const isStudioSourceRequest = (value: unknown): value is StudioSourceReso
   );
 };
 
+const LIBRARY_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const LIBRARY_TYPES: ReadonlySet<StudioLibraryType> = new Set(['all', 'photo', 'video']);
+/** The most ids one `addLibraryAssets` call may name: a multi-select drag, not the whole library. */
+export const STUDIO_LIBRARY_ADD_LIMIT = 50;
+
+/**
+ * Whether a Library view query from the frame has the shape the host accepts (FL-636). The frame is
+ * not trusted: unknown keys, a malformed month or person id, or an oversized text is refused before
+ * any search runs.
+ */
+export const isStudioLibraryQuery = (value: unknown): value is StudioLibraryQuery => {
+  if (!record(value) || !exact(value, ['text', 'type', 'personId', 'city', 'month', 'page'])) {
+    return false;
+  }
+  const text = (field: unknown, max: number) =>
+    field === undefined || field === null || (typeof field === 'string' && field.length <= max);
+  const absent = (field: unknown) => field === undefined || field === null;
+  return (
+    text(value.text, 500) &&
+    (value.type === undefined || LIBRARY_TYPES.has(value.type as StudioLibraryType)) &&
+    (absent(value.personId) || id(value.personId)) &&
+    text(value.city, 200) &&
+    (absent(value.month) || (typeof value.month === 'string' && LIBRARY_MONTH.test(value.month))) &&
+    (value.page === undefined || (count(value.page) && (value.page as number) >= 1 && (value.page as number) <= 1000))
+  );
+};
+export const isStudioLibraryAssetIds = (value: unknown): value is string[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.length <= STUDIO_LIBRARY_ADD_LIMIT &&
+  value.every((item) => id(item));
+
 /** Frozen names and tuple/result contract for peers built before closed source ownership. */
 export const STUDIO_FRAME_SERVICE_SCHEMA_V7 = Object.freeze({
   submitCommands: (args: unknown[]) => args.length === 1 && Array.isArray(args[0]),
@@ -92,6 +129,11 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V8 = Object.freeze({
     isPublicationEditorScope(args[2]),
   resolveStudioProjectSource: (args: unknown[]) =>
     args.length === 2 && isStudioSourceRequest(args[0]) && isStudioEditorScope(args[1]),
+  // FL-636: the bin's Library view. Additive: a frame that never calls them is unaffected, and a host
+  // without them answers that the library cannot be searched.
+  searchLibrary: (args: unknown[]) => args.length === 1 && isStudioLibraryQuery(args[0]),
+  libraryFacets: (args: unknown[]) => args.length === 0,
+  addLibraryAssets: (args: unknown[]) => args.length === 1 && isStudioLibraryAssetIds(args[0]),
 });
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
   commitEditorDraft: {
@@ -107,6 +149,9 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
     args: [request: StudioSourceResolutionRequestDto, scope: StudioEditorScope];
     result: StudioSourceResolutionDto;
   };
+  searchLibrary: { args: [query: StudioLibraryQuery]; result: StudioLibraryResults };
+  libraryFacets: { args: []; result: StudioLibraryFacets };
+  addLibraryAssets: { args: [assetIds: string[]]; result: StudioAssetRef[] };
 };
 export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V8;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };

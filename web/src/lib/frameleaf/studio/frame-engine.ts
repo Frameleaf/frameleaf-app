@@ -34,7 +34,12 @@ import {
   type StudioFrameToHostMessage,
   type StudioHostToFrameMessage,
 } from './frame-protocol';
-import { STUDIO_FRAME_SERVICE_SCHEMA_V8, isStudioFrameServiceName } from './frame-service-schema';
+import {
+  STUDIO_FRAME_SERVICE_SCHEMA_V8,
+  isStudioFrameServiceName,
+  isStudioLibraryAssetIds,
+  isStudioLibraryQuery,
+} from './frame-service-schema';
 import { storeGeneratedMedia } from './generated-media';
 import { createStudioGeneratedAccess } from './generated-media-client';
 import type {
@@ -272,6 +277,25 @@ const serviceCalls: ServiceHandlers = {
     return services.cancelProjectImportPublication(importId, publicationId, scope);
   },
   reloadProject: (services) => services.reloadProject(),
+  // FL-636: the bin's Library view. Shapes are checked here, the search scope by the server.
+  searchLibrary: (services, [query]) => {
+    if (!services.searchLibrary) {
+      return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
+    }
+    return isStudioLibraryQuery(query)
+      ? services.searchLibrary(query)
+      : Promise.reject(new Error('Invalid library search'));
+  },
+  libraryFacets: (services) =>
+    services.libraryFacets ? services.libraryFacets() : Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE')),
+  addLibraryAssets: (services, [assetIds]) => {
+    if (!services.addLibraryAssets) {
+      return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
+    }
+    return isStudioLibraryAssetIds(assetIds)
+      ? services.addLibraryAssets(assetIds)
+      : Promise.reject(new Error('Invalid library assets'));
+  },
   saveWorkspace: (services, [layout]) =>
     services.saveWorkspace ? services.saveWorkspace(layout) : Promise.resolve({ status: 'unavailable' } as const),
   // The frame is not trusted to send an upload of the right shape; the server checks the bytes.

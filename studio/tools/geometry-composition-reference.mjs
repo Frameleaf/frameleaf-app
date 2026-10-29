@@ -87,7 +87,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
     sourceSha256 === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
     // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
-    sourceSha256 === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232'
+    sourceSha256 === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+    // FL-636 the bin's Library view changes the media bin only, no composition or raster producer.
+    sourceSha256 === 'd71db024567856a664c3a8f004401cb10c0327857f5a0eb367324508b2185f95'
   )
     return {
       ...COMPOSITION_SOURCES,

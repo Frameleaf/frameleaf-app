@@ -388,6 +388,45 @@ describe('studio editor frame (FL-88)', () => {
     await instance.dispose();
   });
 
+  it('answers Library view searches and adoptions only in their shape, and says so without them (FL-636)', async () => {
+    const frame = fakeFrame();
+    const found = { items: [], nextPage: null };
+    const assetId = '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01';
+    const host = {
+      ...services(),
+      searchLibrary: vi.fn().mockResolvedValue(found),
+      addLibraryAssets: vi.fn().mockResolvedValue([]),
+    };
+    const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
+      newStage(),
+      context(),
+      host,
+    );
+    const port = frame.port()!;
+    const results: Array<{ callId?: number; ok?: boolean; value?: unknown; error?: string }> = [];
+    port.addEventListener('message', (event: MessageEvent) => {
+      results.push(event.data);
+    });
+    port.postMessage({ type: 'service', callId: 31, name: 'searchLibrary', args: [{ text: 'lake', type: 'video' }] });
+    port.postMessage({ type: 'service', callId: 32, name: 'searchLibrary', args: [{ albumIds: [assetId] }] });
+    port.postMessage({ type: 'service', callId: 33, name: 'addLibraryAssets', args: [[assetId]] });
+    port.postMessage({ type: 'service', callId: 34, name: 'addLibraryAssets', args: [['../admin']] });
+    port.postMessage({ type: 'service', callId: 35, name: 'libraryFacets', args: [] });
+    await tick();
+    await tick();
+
+    expect(host.searchLibrary).toHaveBeenCalledExactlyOnceWith({ text: 'lake', type: 'video' });
+    expect(host.addLibraryAssets).toHaveBeenCalledExactlyOnceWith([assetId]);
+    expect(results).toContainEqual({ type: 'service-result', callId: 31, ok: true, value: found });
+    expect(results).toContainEqual({ type: 'service-result', callId: 33, ok: true, value: [] });
+    expect(results).toContainEqual(expect.objectContaining({ callId: 32, ok: false, error: 'Invalid library search' }));
+    expect(results).toContainEqual(expect.objectContaining({ callId: 34, ok: false, error: 'Invalid library assets' }));
+    expect(results).toContainEqual(
+      expect.objectContaining({ callId: 35, ok: false, error: 'LIBRARY_SEARCH_UNAVAILABLE' }),
+    );
+    await instance.dispose();
+  });
+
   it('ignores malformed or hostile messages from the frame', async () => {
     const frame = fakeFrame();
     const host = services();
