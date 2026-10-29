@@ -34,6 +34,12 @@ export const AlbumIconSchema = z
   .max(80)
   .refine((value) => isValidAlbumIcon(value), { message: 'Invalid album icon: expected a Material Design Icons name' });
 
+// Album colours: the eight named colours shared with tags. Validated on write; the wire type stays `string`.
+export const ALBUM_COLORS = ['grey', 'green', 'teal', 'blue', 'purple', 'pink', 'amber', 'red'] as const;
+export const AlbumColorSchema = z.string().refine((value) => (ALBUM_COLORS as readonly string[]).includes(value), {
+  message: `Invalid album color: expected one of ${ALBUM_COLORS.join(', ')}`,
+});
+
 const AlbumUserAddSchema = z
   .object({
     userId: z.uuidv4().describe('User ID'),
@@ -81,6 +87,7 @@ const CreateAlbumSchema = z
       .optional()
       .describe('Parent album or collection (omit for top-level). Shared spaces cannot nest.'),
     icon: AlbumIconSchema.optional().describe('Optional icon: any Material Design Icons name (see GET /albums/icons)'),
+    color: AlbumColorSchema.optional().describe('Optional colour: grey, green, teal, blue, purple, pink, amber or red'),
     kind: AlbumKindSchema.default(AlbumKind.Album)
       .optional()
       .describe('What to create: an album (default), a collection of albums or a shared space'),
@@ -141,6 +148,9 @@ const UpdateAlbumSchema = z
     icon: AlbumIconSchema.nullable()
       .optional()
       .describe('Icon: any Material Design Icons name (null = clear / use default icon)'),
+    color: AlbumColorSchema.nullable()
+      .optional()
+      .describe('Colour: grey, green, teal, blue, purple, pink, amber or red (null = no colour)'),
     sortOrder: z
       .number()
       .meta({ format: 'double' })
@@ -257,6 +267,7 @@ export const AlbumResponseSchema = z
     // (or written directly to the DB) must not break album reads. Writes are
     // constrained via AlbumIconSchema on create/update.
     icon: z.string().nullable().describe('Icon: a Material Design Icons name or legacy key (null = default icon)'),
+    color: z.string().nullable().describe('Colour name (grey, green, teal, blue, purple, pink, amber, red) or null'),
     kind: AlbumKindSchema,
     isSmart: z
       .boolean()
@@ -444,6 +455,7 @@ export type MapAlbumDto = {
   order: AssetOrder;
   parentId: string | null;
   icon: string | null;
+  color?: string | null;
   sortOrder: number | null;
   kind: AlbumKind | string;
 };
@@ -497,6 +509,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     order: entity.order,
     parentId: entity.parentId,
     icon: entity.icon,
+    color: entity.color ?? null,
     sortOrder: entity.sortOrder,
     kind: asAlbumKind(entity.kind),
   };

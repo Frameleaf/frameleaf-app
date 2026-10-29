@@ -46,6 +46,10 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 // Mirrors the CHECK created in migration 2100000000080. The constraint comparer
 // strips parens before comparing, so the postgres-normalized expression matches.
 @Check({
+  name: 'album_color_check',
+  expression: `color IS NULL OR color = ANY (ARRAY['grey'::text, 'green'::text, 'teal'::text, 'blue'::text, 'purple'::text, 'pink'::text, 'amber'::text, 'red'::text])`,
+})
+@Check({
   name: 'album_kind_check',
   expression: `kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text])`,
 })
@@ -82,6 +86,10 @@ export class AlbumTable {
 
   @Column({ type: 'character varying', nullable: true, default: null })
   icon!: string | null;
+
+  /** One of the eight collection colours shared with tags' palette; null = no colour. */
+  @Column({ type: 'text', nullable: true, default: null })
+  color!: string | null;
 
   @Column({ type: 'double precision', nullable: true, default: null })
   sortOrder!: number | null;

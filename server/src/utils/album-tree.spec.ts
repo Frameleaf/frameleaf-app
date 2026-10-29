@@ -16,6 +16,7 @@ const album = (overrides: Partial<AlbumResponseDto> & { id: string }): AlbumResp
   isActivityEnabled: true,
   parentId: null,
   icon: null,
+  color: null,
   sortOrder: null,
   kind: AlbumKind.Album,
   ...overrides,

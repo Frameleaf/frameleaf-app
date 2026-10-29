@@ -388,6 +388,7 @@ describe(AlbumService.name, () => {
           albumThumbnailAssetId: assetId,
           parentId: null,
           icon: null,
+          color: null,
           kind: AlbumKind.Album,
           libraryScope: LibraryScope.Personal,
         },
@@ -448,6 +449,7 @@ describe(AlbumService.name, () => {
           albumThumbnailAssetId: assetId,
           parentId: null,
           icon: null,
+          color: null,
           kind: AlbumKind.Album,
           libraryScope: LibraryScope.Personal,
         },
@@ -504,6 +506,7 @@ describe(AlbumService.name, () => {
           albumThumbnailAssetId: assetId,
           parentId: null,
           icon: null,
+          color: null,
           kind: AlbumKind.Album,
           libraryScope: LibraryScope.Personal,
         },
@@ -1169,11 +1172,17 @@ describe(AlbumService.name, () => {
         albumName: 'Family',
         kind: AlbumKind.Collection,
         icon: 'mdiFolderMultipleOutline',
+        color: 'teal',
       });
 
       expect(result.kind).toBe(AlbumKind.Collection);
       expect(mocks.album.create).toHaveBeenCalledWith(
-        expect.objectContaining({ albumName: 'Family', kind: AlbumKind.Collection, icon: 'mdiFolderMultipleOutline' }),
+        expect.objectContaining({
+          albumName: 'Family',
+          kind: AlbumKind.Collection,
+          icon: 'mdiFolderMultipleOutline',
+          color: 'teal',
+        }),
         [],
         [{ userId: owner.id, role: AlbumUserRole.Owner }],
         owner.id,

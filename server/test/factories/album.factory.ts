@@ -34,6 +34,7 @@ export class AlbumFactory {
       order: AssetOrder.Desc,
       parentId: null,
       icon: null,
+      color: null,
       sortOrder: null,
       kind: AlbumKind.Album,
       updatedAt: newDate(),
