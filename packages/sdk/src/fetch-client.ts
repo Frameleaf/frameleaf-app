@@ -6233,6 +6233,18 @@ export type BookmarkCreateDto = {
     title: string;
     url: string;
 };
+export type BookmarkPreviewRequestDto = {
+    url: string;
+};
+export type BookmarkPreviewResponseDto = {
+    /** The page's picture, to upload as the link's preview */
+    image: {
+        contentType: string;
+        /** Base64 image bytes */
+        data: string;
+    } | null;
+    title: string | null;
+};
 export type BookmarkUpdateDto = {
     isArchived?: boolean;
     isLocked?: boolean;
@@ -23918,6 +23930,21 @@ export function createBookmark({ bookmarkCreateDto }: {
         ...opts,
         method: "POST",
         body: bookmarkCreateDto
+    })));
+}
+/**
+ * Read a public page's title and picture
+ */
+export function previewBookmark({ bookmarkPreviewRequestDto }: {
+    bookmarkPreviewRequestDto: BookmarkPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BookmarkPreviewResponseDto;
+    }>("/bookmarks/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: bookmarkPreviewRequestDto
     })));
 }
 /**

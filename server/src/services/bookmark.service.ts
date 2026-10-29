@@ -1,12 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { BookmarkCreateDto, BookmarkResponseDto, BookmarkUpdateDto } from 'src/dtos/bookmark.dto.js';
+import {
+  BookmarkCreateDto,
+  BookmarkPreviewRequestDto,
+  BookmarkPreviewResponseDto,
+  BookmarkResponseDto,
+  BookmarkUpdateDto,
+} from 'src/dtos/bookmark.dto.js';
 import { LibraryItemSearchDto } from 'src/dtos/library-search.dto.js';
 import { Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { Bookmark, BookmarkRepository } from 'src/repositories/bookmark.repository.js';
 import { checkAccess, isGranted, requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { readLinkPreview } from 'src/utils/link-preview.js';
+import { PublicFetchError } from 'src/utils/public-fetch.js';
 import { requireSourceFilterAllowed } from 'src/utils/search-filter.js';
 
 @Injectable()
@@ -22,6 +30,25 @@ export class BookmarkService {
     if (dto.previewAssetId)
       await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [dto.previewAssetId] });
     return this.map(auth, await this.bookmarks.create(auth.user.id, dto));
+  }
+
+  async preview(auth: AuthDto, dto: BookmarkPreviewRequestDto): Promise<BookmarkPreviewResponseDto> {
+    this.requirePrivateSession(auth);
+    try {
+      const { title, image } = await readLinkPreview(dto.url);
+      return { title, image: image && { contentType: image.contentType, data: image.data.toString('base64') } };
+    } catch (error) {
+      // undici reports a refused lookup as a TypeError whose cause is ours
+      const reason = error instanceof TypeError && error.cause instanceof PublicFetchError ? error.cause : error;
+      if (
+        reason instanceof PublicFetchError ||
+        reason instanceof TypeError ||
+        (reason as Error)?.name === 'TimeoutError'
+      ) {
+        throw new BadRequestException('That page could not be read');
+      }
+      throw error;
+    }
   }
 
   async get(auth: AuthDto, id: string): Promise<BookmarkResponseDto> {

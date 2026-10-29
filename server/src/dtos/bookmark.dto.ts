@@ -59,6 +59,21 @@ export const BookmarkResponseSchema = z
   .meta({ id: 'BookmarkResponseDto' });
 export class BookmarkResponseDto extends createZodDto(BookmarkResponseSchema) {}
 
+export class BookmarkPreviewRequestDto extends createZodDto(
+  z.object({ url: referenceUrl }).meta({ id: 'BookmarkPreviewRequestDto' }),
+) {}
+export class BookmarkPreviewResponseDto extends createZodDto(
+  z
+    .object({
+      title: z.string().nullable(),
+      image: z
+        .object({ contentType: z.string(), data: z.string().describe('Base64 image bytes') })
+        .nullable()
+        .describe("The page's picture, to upload as the link's preview"),
+    })
+    .meta({ id: 'BookmarkPreviewResponseDto' }),
+) {}
+
 export class BookmarkTagsDto extends createZodDto(
   z.object({ ids: z.array(z.uuidv4()).max(500) }).meta({ id: 'BookmarkTagsDto' }),
 ) {}
