@@ -200,6 +200,8 @@ export class StudioTranscriptionService {
     while (!this.stopping) {
       const job = await this.operations.claimNext({
         kinds: [MediaOperationKind.StudioTranscription],
+        // Other Studio clip jobs share this kind (FL-637, FL-638); take only transcriptions.
+        snapshotKinds: ['studio-transcription'],
         workerId: this.workerId,
         leaseMs: LEASE_MS,
       });

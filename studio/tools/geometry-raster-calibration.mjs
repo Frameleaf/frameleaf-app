@@ -207,7 +207,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
           // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232')),
+            'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+          // FL-638 Stabilise: only a stabilised video clip draws differently (through its correction).
+          binding.sourceSha256 ===
+            '1388b37e8090b121d885180965c6386c10896c420f1d7c28e925e9fc634b3c9a')),
     'SOURCE_BROWSER',
   )
   check(

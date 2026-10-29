@@ -29,6 +29,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { changeAppLanguage, i18n, i18nReady } from '@/i18n'
 import { applyHostEngineStrings } from './host-engine-strings'
+import { registerStabiliseHost } from './shims/stabilise-service'
 import './editor.css'
 import { routeTree } from '@/routeTree.gen'
 import { ErrorBoundary } from '@/app/error-boundary'
@@ -998,6 +999,8 @@ async function mount(context: StudioHostContext): Promise<void> {
       </StrictMode>,
     )
   state.render()
+  // FL-638: Stabilise queues its analysis for the project this editor is showing.
+  state.unsubscribe.push(registerStabiliseHost(() => (state.disposed ? null : state.mount.projectId)))
   watchDrafts(state)
   watchImports(state)
   watchLocalImportsFor(state)

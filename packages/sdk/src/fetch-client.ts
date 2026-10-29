@@ -15996,6 +15996,51 @@ export type StudioSourceResolutionDto = {
     revision: number;
     selection: StudioSourceSelectionDto;
 };
+export type StudioStabiliseCreateDto = {
+    /** A video clip on the main timeline of the head revision */
+    clipId: string;
+};
+export type StudioStabiliseQueuedDto = {
+    /** The job id; follow it in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioStabiliseMotionDto = {
+    /** Cumulative camera turn in radians, float32 little-endian, base64 */
+    a: string;
+    /** Samples in each path */
+    count: number;
+    /** Share of frames whose movement was found */
+    found: number;
+    /** Height of the analysed picture */
+    height: number;
+    /** How the movement was estimated, such as `block-similarity-v1` */
+    method: string;
+    /** Samples a second */
+    rate: number;
+    /** Source seconds of the first sample */
+    start: number;
+    /** Format version of the path; 1 */
+    version: number;
+    /** Width of the analysed picture */
+    width: number;
+    /** Cumulative horizontal camera path, fractions of the frame width, float32 little-endian, base64 */
+    x: string;
+    /** Cumulative vertical camera path, fractions of the frame height, float32 little-endian, base64 */
+    y: string;
+};
+export type StudioStabiliseDto = {
+    clipId: string;
+    error: string | null;
+    id: string;
+    progress: number;
+    projectId: string;
+    /** Present once the job has completed: the clip's camera path, for its `stabilisation.motion` */
+    result: (StudioStabiliseMotionDto) | null;
+    /** The revision whose clip was analysed */
+    revision: number;
+    status: MediaOperationStatus;
+};
 export type StudioTranscriptionCreateDto = {
     /** A video or audio clip on the main timeline of the head revision */
     clipId: string;
@@ -31863,6 +31908,36 @@ export function resolveStudioProjectSource({ id, studioSourceResolutionRequestDt
         method: "POST",
         body: studioSourceResolutionRequestDto
     })));
+}
+/**
+ * Analyse the camera movement of a Studio clip
+ */
+export function createStudioStabilise({ id, studioStabiliseCreateDto }: {
+    id: string;
+    studioStabiliseCreateDto: StudioStabiliseCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioStabiliseQueuedDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/stabilisations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioStabiliseCreateDto
+    })));
+}
+/**
+ * Get a Studio clip camera movement analysis
+ */
+export function getStudioStabilise({ id, stabiliseId }: {
+    id: string;
+    stabiliseId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioStabiliseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/stabilisations/${encodeURIComponent(stabiliseId)}`, {
+        ...opts
+    }));
 }
 /**
  * Transcribe a Studio clip
