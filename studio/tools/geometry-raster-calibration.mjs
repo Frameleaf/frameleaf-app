@@ -208,9 +208,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-598 loudness: streamed meter, export length cutoff
           binding.sourceSha256 ===
             'ba3a4877d25762b942453aa282e7a666aa3397bdda2c1efa7ad098c5187c9fd6' ||
+          // FL-598 loudness: memory budget, abort settles, fps binding
+          binding.sourceSha256 ===
+            'af8162ff61c503bd7ea7defa3dbe9fc60c0dce1bb3433d353104ba7a7e4f635c' ||
           // FL-623 master true-peak limiter
           binding.sourceSha256 ===
-            '9b075e282769cfde80f956c7182ae5e943735ed9665ae71b6e6867080ac5ca63')),
+            'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa')),
     'SOURCE_BROWSER',
   )
   check(

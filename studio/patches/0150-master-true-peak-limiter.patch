@@ -53,7 +53,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
    const [results, setResults] = useState<ClipLoudnessResult[] | null>(null)
    const [busy, setBusy] = useState(false)
    const abortRef = useRef<AbortController | null>(null)
-@@ -86,7 +105,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+@@ -88,7 +107,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
            <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
              aria-label={t('editor.audioSection.loudness.target')} value={targetText}
              onChange={(event) => setTargetText(event.target.value)}
@@ -62,7 +62,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
            <span className="text-xs text-muted-foreground">LUFS</span>
          </div>
        </PropertyRow>
-@@ -95,11 +114,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+@@ -97,11 +116,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
            <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
              aria-label={t('editor.audioSection.loudness.ceiling')} value={ceilingText}
              onChange={(event) => setCeilingText(event.target.value)}
@@ -132,7 +132,7 @@ diff --git a/src/features/export/components/export-loudness-report.tsx b/src/fea
  /** Reported tolerance for the integrated level and the true-peak reading. */
  const TARGET_TOLERANCE_LU = 1
  const PEAK_TOLERANCE_DB = 0.2
-@@ -43,6 +44,9 @@ async function decodeDeliverable(blob: Blob): Promise<AudioBuffer> {
+@@ -44,6 +45,9 @@ async function decodeDeliverable(blob: Blob): Promise<AudioBuffer> {
   */
  export function ExportLoudnessReport({ blob }: { blob: Blob | null | undefined }) {
    const { t } = useTranslation()
@@ -860,7 +860,7 @@ diff --git a/src/shared/utils/true-peak-limiter.test.ts b/src/shared/utils/true-
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/true-peak-limiter.test.ts
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,64 @@
 +import { describe, expect, it } from 'vite-plus/test'
 +import { measureLoudness } from './loudness'
 +import { limitTruePeak } from './true-peak-limiter'
@@ -920,12 +920,16 @@ new file mode 100644
 +    }
 +    expect(worst).toBeLessThan(1e-6)
 +  })
++
++  it('fails instead of skipping when the ceiling is not a number', () => {
++    expect(() => limitTruePeak(burstySignal(1), RATE, Number.NaN)).toThrow(/true-peak ceiling/)
++  })
 +})
 diff --git a/src/shared/utils/true-peak-limiter.ts b/src/shared/utils/true-peak-limiter.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/true-peak-limiter.ts
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,86 @@
 +import { samplePeaks } from './loudness'
 +
 +/**
@@ -949,6 +953,8 @@ new file mode 100644
 +  ceilingDbtp: number,
 +  chunkSize = 1 << 16,
 +): void {
++  // An invalid ceiling would silently skip limiting; fail the export instead.
++  if (!Number.isFinite(ceilingDbtp)) throw new Error(`Invalid true-peak ceiling: ${ceilingDbtp}`)
 +  const length = channels[0]?.length ?? 0
 +  if (length === 0) return
 +  const ceiling = 10 ** (ceilingDbtp / 20)

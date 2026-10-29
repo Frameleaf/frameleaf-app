@@ -88,8 +88,10 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === '7423283e576bff16bdc54221cff8d87bd7b3bb26dc3e516b635e12dce3f3bd72' ||
     // FL-598 loudness: streamed meter, export length cutoff
     sourceSha256 === 'ba3a4877d25762b942453aa282e7a666aa3397bdda2c1efa7ad098c5187c9fd6' ||
+    // FL-598 loudness: memory budget, abort settles, fps binding
+    sourceSha256 === 'af8162ff61c503bd7ea7defa3dbe9fc60c0dce1bb3433d353104ba7a7e4f635c' ||
     // FL-623 master true-peak limiter
-    sourceSha256 === '9b075e282769cfde80f956c7182ae5e943735ed9665ae71b6e6867080ac5ca63'
+    sourceSha256 === 'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa'
   )
     return {
       ...COMPOSITION_SOURCES,
