@@ -197,7 +197,7 @@ export interface StudioLibraryServiceOptions {
   offered: () => readonly StudioAssetRef[];
   /** Add library records to what the host offers; resolves once `offered` includes them. */
   adopt: (records: AssetResponseDto[]) => Promise<void>;
-  /** Read assets as this session, at the moment they are adopted (a normal caller bulk read, FL-647). */
+  /** Read assets as this session, at the moment they are adopted (a normal caller read, in bulk). */
   lookup?: (ids: string[]) => Promise<AssetResponseDto[]>;
   personThumbnailUrl: (personId: string) => string;
   api?: StudioLibrarySearchApi;

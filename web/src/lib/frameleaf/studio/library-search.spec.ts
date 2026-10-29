@@ -3,6 +3,7 @@ import {
   AssetVisibility,
   SearchFacetField,
   SearchHistogramGranularity,
+  getAssetsInfo,
   type AssetResponseDto,
   type SearchResponseDto,
 } from '@frameleaf/sdk';
@@ -10,6 +11,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import type { StudioAssetRef } from './host-contract';
 
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
+  getAssetsInfo: vi.fn(),
+}));
 vi.mock('$lib/frameleaf/restoration', () => ({ restorationFileUrl: () => '' }));
 vi.mock('$lib/utils', () => ({
   getAssetMediaUrl: ({ id, size }: { id: string; size?: string }) => `/api/assets/${id}/thumbnail?size=${size}`,
@@ -213,11 +218,13 @@ describe('FL-636 Studio library search', () => {
   });
 });
 
+// asset ids are UUIDs: the bulk read drops anything else before asking the server
+const SMART = '00000000-0000-4000-8000-0000000000a1';
+const HANDOFF = '00000000-0000-4000-8000-0000000000a2';
+const OTHER = '00000000-0000-4000-8000-0000000000a3';
+const LOCKED = '00000000-0000-4000-8000-0000000000a4';
+
 describe('FL-636 adopting library results into the session', () => {
-  const SMART = '0a1b2c3d-0000-4000-8000-000000000001';
-  const HANDOFF = '0a1b2c3d-0000-4000-8000-000000000002';
-  const OTHER = '0a1b2c3d-0000-4000-8000-000000000003';
-  const LOCKED = '0a1b2c3d-0000-4000-8000-000000000004';
   const setup = (sdk = api(), offered: StudioAssetRef[] = []) => {
     const adopted: AssetResponseDto[] = [];
     const lookup = vi.fn((ids: string[]) => Promise.resolve(ids.map((id) => asset(id))));
@@ -251,6 +258,26 @@ describe('FL-636 adopting library results into the session', () => {
     lookup.mockRejectedValueOnce(new Error('403'));
     expect(await services.addLibraryAssets([SMART])).toEqual([]);
     expect(adopted).toEqual([]);
+  });
+
+  it('reads through the bulk asset read by default and adopts only what it returns', async () => {
+    vi.mocked(getAssetsInfo).mockResolvedValue({ assets: [asset(SMART)] } as never);
+    const adopted: AssetResponseDto[] = [];
+    const services = createStudioLibraryServices({
+      language: () => 'en',
+      elevated: () => false,
+      offered: () => adopted.map((item) => toStudioAsset(item)),
+      adopt: (records) => {
+        adopted.push(...records);
+        return Promise.resolve();
+      },
+      personThumbnailUrl: (id) => `/people/${id}`,
+      api: api() as never,
+    });
+    const refs = await services.addLibraryAssets([SMART.toUpperCase(), OTHER]);
+    expect(getAssetsInfo).toHaveBeenCalledExactlyOnceWith({ assetInfoBatchDto: { ids: [SMART, OTHER] } });
+    expect(adopted.map((item) => item.id)).toEqual([SMART]);
+    expect(refs.map((item) => item.id)).toEqual([SMART]);
   });
 
   it('does not read or adopt what is already offered', async () => {
