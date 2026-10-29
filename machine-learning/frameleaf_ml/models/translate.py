@@ -3,7 +3,7 @@
 The server sends a project's caption lines, as text only, and asks for `frameleaf-translate` from one
 language into another. The model is the int8 CTranslate2 conversion of M2M100 418M (MIT), run by the
 CTranslate2 runtime the worker already has for faster-whisper. Its files come from the model source
-(`frameleaf/m2m100-418m/text/*`) and are pinned by SHA-256 in `translation-models.json`.
+(`frameleaf/m2m100-418m/textual/*`) and are pinned by SHA-256 in `translation-models.json`.
 
 Lines keep their order and their count: line N of the answer is the translation of line N of the
 request, so the caller keeps each line's timing. Blank lines stay blank.
@@ -47,7 +47,7 @@ BATCH_LINES = 32
 
 
 class TranslateModelFile(NamedTuple):
-    """Where a translation model lives on the model source: CTranslate2 files under `text/` in
+    """Where a translation model lives on the model source: CTranslate2 files under `textual/` in
     `frameleaf/<repo>`, each pinned by SHA-256."""
 
     repo: str

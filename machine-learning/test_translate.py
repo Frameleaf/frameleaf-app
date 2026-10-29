@@ -68,10 +68,10 @@ class TestManifest:
         assert source.repo == "m2m100-418m"
         paths = {path for path, _ in source.files}
         assert paths == {
-            "text/model.bin",
-            "text/config.json",
-            "text/shared_vocabulary.json",
-            "text/sentencepiece.bpe.model",
+            "textual/model.bin",
+            "textual/config.json",
+            "textual/shared_vocabulary.json",
+            "textual/sentencepiece.bpe.model",
         }
         assert all(len(digest) == 64 for _, digest in source.files)
         assert source.source.endswith("@7c1b2620a4e58dacecbd8bf89cfd6da7eb9eb7b0")
@@ -171,7 +171,7 @@ class TestDownload:
 
     def test_accepts_files_that_match(self, tmp_path: Path, mocker: MockerFixture) -> None:
         model = TranslateModel(TRANSLATE_MODEL_ALIAS, cache_dir=tmp_path)
-        contents = {"text/model.bin": b"a", "text/config.json": b"b"}
+        contents = {"textual/model.bin": b"a", "textual/config.json": b"b"}
         fake = SimpleNamespace(
             repo="m2m100-418m",
             files=tuple((path, hashlib.sha256(data).hexdigest()) for path, data in contents.items()),
