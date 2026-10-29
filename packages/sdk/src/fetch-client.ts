@@ -5157,6 +5157,14 @@ export type AssetCopyDto = {
     /** Target asset ID */
     targetId: string;
 };
+export type AssetInfoBatchDto = {
+    /** Asset IDs to read, at most 200 */
+    ids: string[];
+};
+export type AssetInfoBatchResponseDto = {
+    /** Each requested asset the caller may read, as the single-asset read returns it, in request order; ids the caller may not read or that do not exist are left out */
+    assets: AssetResponseDto[];
+};
 export type AssetJobsDto = {
     /** Asset IDs */
     assetIds: string[];
@@ -22779,6 +22787,21 @@ export function copyAsset({ assetCopyDto }: {
         ...opts,
         method: "PUT",
         body: assetCopyDto
+    })));
+}
+/**
+ * Retrieve several assets
+ */
+export function getAssetsInfo({ assetInfoBatchDto }: {
+    assetInfoBatchDto: AssetInfoBatchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetInfoBatchResponseDto;
+    }>("/assets/info", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetInfoBatchDto
     })));
 }
 /**

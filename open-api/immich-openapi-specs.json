@@ -13795,6 +13795,57 @@
         "x-immich-state": "Stable"
       }
     },
+    "/assets/info": {
+      "post": {
+        "description": "Retrieve detailed information about up to 200 assets in one request, each exactly as the single-asset read returns it and with the same access check. Assets the caller may not read, or that do not exist, are left out instead of failing the request.",
+        "operationId": "getAssetsInfo",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetInfoBatchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetInfoBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve several assets",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/assets/jobs": {
       "post": {
         "description": "Run a specific job on a set of assets.",
@@ -70727,6 +70778,40 @@
           "assetId",
           "description",
           "nsfwDetection"
+        ],
+        "type": "object"
+      },
+      "AssetInfoBatchDto": {
+        "properties": {
+          "ids": {
+            "description": "Asset IDs to read, at most 200",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "AssetInfoBatchResponseDto": {
+        "properties": {
+          "assets": {
+            "description": "Each requested asset the caller may read, as the single-asset read returns it, in request order; ids the caller may not read or that do not exist are left out",
+            "items": {
+              "$ref": "#/components/schemas/AssetResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assets"
         ],
         "type": "object"
       },
