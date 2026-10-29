@@ -200,6 +200,8 @@ export const libraryAssetIdsIn = (graph: unknown): string[] => {
 
 /** The most ids one bulk asset read takes (the server's `POST /assets/info` cap). */
 export const STUDIO_ASSET_READ_BATCH = 200;
+/** Pages read at once, so one Studio visit asks the server for at most this many pages together. */
+const STUDIO_ASSET_READ_PARALLEL = 2;
 
 /**
  * Normal caller reads, a page of ids per request (FL-647: one bulk read instead of one request per
@@ -216,12 +218,16 @@ export const resolveStudioAssets = async (
   for (let at = 0; at < wanted.length; at += STUDIO_ASSET_READ_BATCH) {
     pages.push(wanted.slice(at, at + STUDIO_ASSET_READ_BATCH));
   }
-  const results = await Promise.allSettled(pages.map((page) => lookup(page)));
   const byId = new Map<string, AssetResponseDto>();
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      for (const asset of result.value) {
-        byId.set(asset.id.toLowerCase(), asset);
+  for (let at = 0; at < pages.length; at += STUDIO_ASSET_READ_PARALLEL) {
+    const results = await Promise.allSettled(
+      pages.slice(at, at + STUDIO_ASSET_READ_PARALLEL).map((page) => lookup(page)),
+    );
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        for (const asset of result.value) {
+          byId.set(asset.id.toLowerCase(), asset);
+        }
       }
     }
   }

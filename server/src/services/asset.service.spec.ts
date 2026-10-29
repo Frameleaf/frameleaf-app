@@ -211,6 +211,22 @@ describe(AssetService.name, () => {
       expect(mocks.asset.getById).toHaveBeenCalledWith(mine.id, expect.anything());
     });
 
+    it('reads an uppercase id like its stored lowercase form, once', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      const result = await sut.getMany(authStub.admin, { ids: [asset.id.toUpperCase(), asset.id] });
+
+      expect(result.assets.map(({ id }) => id)).toEqual([asset.id]);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set([asset.id]),
+        undefined,
+      );
+      expect(mocks.asset.getById).toHaveBeenCalledTimes(1);
+    });
+
     it('leaves out an asset that disappeared after the access check', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));

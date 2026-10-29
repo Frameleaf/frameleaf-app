@@ -169,7 +169,8 @@ export class AssetService extends BaseService {
    * Unreadable or missing ids are left out rather than failing the list.
    */
   async getMany(auth: AuthDto, dto: AssetInfoBatchDto): Promise<AssetInfoBatchResponseDto> {
-    const ids = [...new Set(dto.ids)];
+    // ids compare as stored (lowercase): an uppercase spelling of a readable asset is still read, once
+    const ids = [...new Set(dto.ids.map((id) => id.toLowerCase()))];
     const allowed = await this.checkAccess({ auth, permission: Permission.AssetRead, ids });
     const readable = ids.filter((id) => allowed.has(id));
     const assets: AssetResponseDto[] = [];

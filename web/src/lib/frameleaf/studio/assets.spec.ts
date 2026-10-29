@@ -284,4 +284,19 @@ describe('stored project library hydration', () => {
     expect(await resolveStudioAssets([], lookup)).toEqual([]);
     expect(lookup).toHaveBeenCalledTimes(3);
   });
+
+  it('asks for at most two pages at once', async () => {
+    let active = 0;
+    let maximum = 0;
+    const ids = Array.from({ length: 1000 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    const found = await resolveStudioAssets(ids, async (page: string[]) => {
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active--;
+      return page.map((id) => asset({ id }));
+    });
+    expect(maximum).toBe(2);
+    expect(found.map((a) => a.id)).toEqual(ids);
+  });
 });
