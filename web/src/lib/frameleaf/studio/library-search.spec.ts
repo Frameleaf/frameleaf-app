@@ -3,6 +3,7 @@ import {
   AssetVisibility,
   SearchFacetField,
   SearchHistogramGranularity,
+  getAssetsInfo,
   type AssetResponseDto,
   type SearchResponseDto,
 } from '@frameleaf/sdk';
@@ -10,6 +11,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import type { StudioAssetRef } from './host-contract';
 
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
+  getAssetsInfo: vi.fn(),
+}));
 vi.mock('$lib/frameleaf/restoration', () => ({ restorationFileUrl: () => '' }));
 vi.mock('$lib/utils', () => ({
   getAssetMediaUrl: ({ id, size }: { id: string; size?: string }) => `/api/assets/${id}/thumbnail?size=${size}`,
@@ -253,6 +258,26 @@ describe('FL-636 adopting library results into the session', () => {
     lookup.mockRejectedValueOnce(new Error('403'));
     expect(await services.addLibraryAssets([SMART])).toEqual([]);
     expect(adopted).toEqual([]);
+  });
+
+  it('reads through the bulk asset read by default and adopts only what it returns', async () => {
+    vi.mocked(getAssetsInfo).mockResolvedValue({ assets: [asset(SMART)] } as never);
+    const adopted: AssetResponseDto[] = [];
+    const services = createStudioLibraryServices({
+      language: () => 'en',
+      elevated: () => false,
+      offered: () => adopted.map((item) => toStudioAsset(item)),
+      adopt: (records) => {
+        adopted.push(...records);
+        return Promise.resolve();
+      },
+      personThumbnailUrl: (id) => `/people/${id}`,
+      api: api() as never,
+    });
+    const refs = await services.addLibraryAssets([SMART.toUpperCase(), OTHER]);
+    expect(getAssetsInfo).toHaveBeenCalledExactlyOnceWith({ assetInfoBatchDto: { ids: [SMART, OTHER] } });
+    expect(adopted.map((item) => item.id)).toEqual([SMART]);
+    expect(refs.map((item) => item.id)).toEqual([SMART]);
   });
 
   it('does not read or adopt what is already offered', async () => {
