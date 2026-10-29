@@ -81,6 +81,8 @@ type EventMap = {
   AssetLocalEffects: [AssetLocalEffectBundle];
   AssetCreate: [{ asset: Pick<Asset, 'id' | 'ownerId'>; file?: UploadFile }];
   AssetChanged: [{ assetId: string; causation?: string[] }];
+  /** Many assets changed at once (a bulk edit or an album add); each owner's workflows are read once. */
+  AssetsChanged: [{ assetIds: string[] }];
   PersonChanged: [{ ownerId: string; personGroupId: string }];
   AssetTag: [{ assetId: string; userId: string }];
   AssetUntag: [{ assetId: string }];

@@ -21,7 +21,9 @@ export const load = (async ({ parent, url }) => {
   const setupOpen = server.isInitialized && !server.isOnboarded;
 
   if (!authManager.authenticated) {
-    if (!setupOpen) {
+    // "Frameleaf found your existing library" is only true of an existing library: a new server
+    // partway through setup just needs its administrator to sign in again
+    if (!setupOpen || server.isNewServerSetup) {
       redirect(307, Route.login({ continue: url.pathname + url.search }));
     }
     return {

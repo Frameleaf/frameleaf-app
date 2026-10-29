@@ -34,6 +34,42 @@ const elevatedTabStorage = () => {
   }
 };
 
+// Every tab of this browser shares the session, so a new tab's loaders can run while another tab is
+// unlocked and that tab can lock before this one checks. Tabs record how long they were elevated;
+// a load that starts within this margin of it revalidates its route data.
+const ELEVATED_BROWSER_KEY = 'frameleaf:session:elevated-until';
+const RECENT_ELEVATION_MS = 15 * 60_000;
+const browserStorage = () => {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Whether route loaders that ran before the first status check could have read an unlocked session.
+ * Anything unreadable counts as yes: revalidating is the fail-closed answer.
+ */
+const loadersCouldHaveSeenElevation = (status: { isElevated: boolean; pinExpiresAt?: string }) => {
+  if (status.isElevated || status.pinExpiresAt) {
+    return true;
+  }
+  try {
+    if (elevatedTabStorage()?.getItem(ELEVATED_TAB_KEY)) {
+      return true;
+    }
+    const storage = browserStorage();
+    if (!storage) {
+      return true;
+    }
+    const until = Number(storage.getItem(ELEVATED_BROWSER_KEY) ?? 0);
+    return !Number.isFinite(until) || until > Date.now() - RECENT_ELEVATION_MS;
+  } catch {
+    return true;
+  }
+};
+
 /**
  * FL-34 (ported from PR131 bebfed12ff and 25990c373c): keeps what an elevated (PIN-unlocked) session
  * shows in step with the server.
@@ -81,6 +117,8 @@ export const watchSessionPrivacy = (
   let wallDeadline: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inFlight: Promise<void> | undefined;
+  // a lock still settling when this view loaded: the session was unlocked while its loaders ran
+  let lockSeenBeforeVerified = false;
 
   const revoke = () => {
     if (stopped) {
@@ -141,6 +179,9 @@ export const watchSessionPrivacy = (
   const revalidate = () => inFlight ?? refresh();
 
   const check = async () => {
+    if (sessionAccess.lockPending && !verified) {
+      lockSeenBeforeVerified = true;
+    }
     if (stopped || sessionAccess.lockPending) {
       return;
     }
@@ -179,6 +220,8 @@ export const watchSessionPrivacy = (
       // and the entire request duration; a slow or changed client clock cannot
       // extend elevation. Fail closed if the server time cannot be established.
       const remaining = expiresAt - serverTime - 1000 - (performance.now() - started);
+      // decided before anything below clears this tab's records
+      const revalidateLoaders = lockSeenBeforeVerified || loadersCouldHaveSeenElevation(status);
       let isElevated = status.isElevated;
       if (
         isElevated &&
@@ -224,13 +267,20 @@ export const watchSessionPrivacy = (
       // Wall elapsed time also covers platforms that suspend their monotonic
       // clock during device sleep. Clock changes can clear early, never extend.
       wallDeadline = active ? Date.now() + remaining : undefined;
+      if (wallDeadline !== undefined) {
+        try {
+          browserStorage()?.setItem(ELEVATED_BROWSER_KEY, String(wallDeadline));
+        } catch {
+          // a tab that cannot record it leaves other tabs to their own checks
+        }
+      }
       clearTimeout(timer);
       if (active) {
         // Other requests can extend the server deadline. A conservative full
         // reload at our last confirmed deadline reauthorizes all displayed data.
         timer = setTimeout(revoke, Math.min(remaining, 2_147_483_647));
       }
-      if (!verified && !active) {
+      if (!verified && !active && revalidateLoaders) {
         // Layout loaders can have completed while the session was elevated.
         // Do not mount those results merely because the first status is locked.
         const result = await revalidatePreloadedData();

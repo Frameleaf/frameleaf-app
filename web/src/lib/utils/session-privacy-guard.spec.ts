@@ -1,5 +1,6 @@
 import { getAuthStatus, lockAuthSession } from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { sessionAccess, setSessionLockPending, trackSessionUnlock } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -71,6 +72,8 @@ describe('watchSessionPrivacy', () => {
   });
 
   it('does not release preloaded elevated route data when its first status is locked', async () => {
+    // another tab of this browser was unlocked moments ago, so this tab's loaders may have read that
+    localStorage.setItem('frameleaf:session:elevated-until', String(Date.now() - 1000));
     const gate = vi.fn();
     const revalidate = vi.fn().mockRejectedValue(new Error('preloaded asset is no longer authorized'));
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
@@ -82,6 +85,7 @@ describe('watchSessionPrivacy', () => {
   });
 
   it('waits for locked route data to be fetched again before releasing the initial gate', async () => {
+    localStorage.setItem('frameleaf:session:elevated-until', String(Date.now() - 1000));
     const gate = vi.fn();
     let finish!: () => void;
     const reloading = new Promise<void>((resolve) => (finish = resolve));
@@ -96,6 +100,40 @@ describe('watchSessionPrivacy', () => {
     finish();
     await vi.advanceTimersByTimeAsync(0);
     expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
+  it('releases a first view at once when nothing could have loaded it unlocked', async () => {
+    const gate = vi.fn();
+    const revalidate = vi.fn();
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true, gate, revalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revalidate).not.toHaveBeenCalled();
+    expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
+  it.each([
+    ['the server reports an elevation that ended', () => ({ pinExpiresAt: new Date(Date.now() - 5000).toISOString() })],
+    ['this tab was unlocked before', () => (sessionStorage.setItem('frameleaf:session:elevated-tab', '1'), {})],
+    [
+      'another tab was unlocked within 15 minutes',
+      () => (localStorage.setItem('frameleaf:session:elevated-until', String(Date.now() - 14 * 60_000)), {}),
+    ],
+  ])('revalidates a locked first view when %s', async (_, arrange) => {
+    const revalidate = vi.fn();
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond({ ...status(false), ...arrange() }));
+    guard = watchSessionPrivacy(() => true, vi.fn(), revalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revalidate).toHaveBeenCalledOnce();
+  });
+
+  it('records the elevation for other tabs where a lock does not erase it', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(Number(localStorage.getItem('frameleaf:session:elevated-until'))).toBeGreaterThan(Date.now());
+    clearPrivateBrowserState();
+    expect(localStorage.getItem('frameleaf:session:elevated-until')).not.toBeNull();
   });
 
   it('clears an expired elevated tab before releasing a locked first view', async () => {
@@ -172,6 +210,7 @@ describe('watchSessionPrivacy', () => {
 
   // Review P2-1: the caller left the page (the asset in the URL is not the caller's to see)
   it('releases nothing when re-checking the preloaded data replaced the page', async () => {
+    localStorage.setItem('frameleaf:session:elevated-until', String(Date.now() - 1000));
     const gate = vi.fn();
     vi.mocked(getAuthStatus).mockImplementation(respond(status(false)));
     guard = watchSessionPrivacy(

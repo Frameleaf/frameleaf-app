@@ -1133,6 +1133,36 @@ describe('workflow change causation', () => {
     await sut.onAssetChanged({ assetId, causation: [`${workflowId}:${assetId}`] });
     expect(mocks.job.queueAll.mock.calls.at(-1)?.[0]).toEqual([]);
   });
+  it('reads each owner and their workflows once for a batch of changed photos', async () => {
+    const { sut, mocks } = newTestService(WorkflowExecutionService);
+    const [first, second, other] = [newUuid(), newUuid(), newUuid()];
+    const [owner, otherOwner] = [newUuid(), newUuid()];
+    mocks.workflow.getAssetOwners.mockResolvedValue([
+      { id: first, ownerId: owner },
+      { id: second, ownerId: owner },
+      { id: other, ownerId: otherOwner },
+    ]);
+    mocks.workflow.search.mockImplementation(({ userId }) =>
+      Promise.resolve(
+        userId === owner
+          ? ([
+              {
+                id: newUuid(),
+                definition: { version: 1, trigger: 'AssetChanged', source: { filter: {} }, extra: {}, steps: [] },
+              },
+            ] as never)
+          : [],
+      ),
+    );
+    await sut.onAssetsChanged({ assetIds: [first, second, other] });
+    expect(mocks.workflow.getAssetOwners).toHaveBeenCalledOnce();
+    expect(mocks.workflow.search).toHaveBeenCalledTimes(2);
+    expect(mocks.job.queueAll).toHaveBeenCalledOnce();
+    expect(mocks.job.queueAll.mock.calls[0][0].map((job) => (job.data as { assetId: string }).assetId)).toEqual([
+      first,
+      second,
+    ]);
+  });
   it('does not execute plugins from a changed frozen definition', async () => {
     const { sut, mocks } = newTestService(WorkflowExecutionService);
     mocks.workflow.getForWorkflowRun.mockResolvedValue({

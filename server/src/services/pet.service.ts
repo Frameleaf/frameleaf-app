@@ -102,9 +102,9 @@ export class PetService {
       )
     ) {
       const observations = await this.petRepository.getObservations(auth.user.id, id, { withLocked: true });
-      for (const assetId of new Set(observations.map((item) => item.assetId))) {
-        await this.eventRepository.emit('AssetChanged', { assetId });
-      }
+      await this.eventRepository.emit('AssetsChanged', {
+        assetIds: [...new Set(observations.map((item) => item.assetId))],
+      });
     }
 
     return mapPet(await this.findOrFail(auth, id));
@@ -114,8 +114,9 @@ export class PetService {
     await this.findOrFail(auth, id);
     const observations = await this.petRepository.getObservations(auth.user.id, id, { withLocked: true });
     await this.petRepository.delete(auth.user.id, id);
-    for (const assetId of new Set(observations.map((item) => item.assetId)))
-      await this.eventRepository.emit('AssetChanged', { assetId });
+    await this.eventRepository.emit('AssetsChanged', {
+      assetIds: [...new Set(observations.map((item) => item.assetId))],
+    });
   }
 
   /**
@@ -154,8 +155,9 @@ export class PetService {
       });
     }
 
-    for (const assetId of new Set(observations.map((item) => item.assetId)))
-      await this.eventRepository.emit('AssetChanged', { assetId });
+    await this.eventRepository.emit('AssetsChanged', {
+      assetIds: [...new Set(observations.map((item) => item.assetId))],
+    });
     return mapPet(await this.findOrFail(auth, id));
   }
 

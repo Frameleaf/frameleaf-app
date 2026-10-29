@@ -100,6 +100,22 @@ const loadAllPeople = async (signal?: AbortSignal): Promise<PersonResponseDto[]>
   }
 };
 
+const inFlightSuggestions = new Map<SearchSuggestionType, Promise<string[]>>();
+
+/**
+ * One request per suggestion list while it is in flight: opening the palette loads the filter panel's
+ * places and the command palette's places at the same moment. Not cached once settled, so it never
+ * outlives a sign-out. The callers' signals only decide whether they use the answer.
+ */
+export const sharedSearchSuggestions = (type: SearchSuggestionType): Promise<string[]> => {
+  let request = inFlightSuggestions.get(type);
+  if (!request) {
+    request = getSearchSuggestions({ $type: type }).finally(() => inFlightSuggestions.delete(type));
+    inFlightSuggestions.set(type, request);
+  }
+  return request;
+};
+
 const settle = async <T>(work: Promise<T>, fallback: T, signal?: AbortSignal): Promise<T> => {
   try {
     return await work;
@@ -122,9 +138,9 @@ export const loadFilterPanelOptions = async (
     settle<PetResponseDto[]>(getAllPets({ withHidden: false }, { signal }), [], signal),
     settle(getAllTags({ signal }), [], signal),
     settle(getAllAlbums(libraryScope ? { libraryScope } : {}, { signal }), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.City }, { signal }), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.State }, { signal }), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.Country }, { signal }), [], signal),
+    settle(sharedSearchSuggestions(SearchSuggestionType.City), [], signal),
+    settle(sharedSearchSuggestions(SearchSuggestionType.State), [], signal),
+    settle(sharedSearchSuggestions(SearchSuggestionType.Country), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraMake }, { signal }), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraModel }, { signal }), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraLensModel }, { signal }), [], signal),

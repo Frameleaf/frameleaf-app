@@ -14333,6 +14333,8 @@ export type ServerConfigDto = {
     frameleaf: ServerFrameleafConfigDto;
     /** Whether the server has been initialized */
     isInitialized: boolean;
+    /** Whether first-run setup in progress is for a new server rather than an existing library */
+    isNewServerSetup: boolean;
     /** Whether the admin has completed onboarding */
     isOnboarded: boolean;
     /** Login page message */

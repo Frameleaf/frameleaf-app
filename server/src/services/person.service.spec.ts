@@ -1393,7 +1393,7 @@ describe(PersonService.name, () => {
       const assetId = AssetFactory.create().id;
       mocks.person.getAssetIdsForPeople.mockResolvedValue([assetId]);
       await sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
-      expect(mocks.event.emit).toHaveBeenCalledWith('AssetChanged', { assetId });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [assetId] });
     });
 
     it('preserves the mapping when identity-refresh admission fails', async () => {

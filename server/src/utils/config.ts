@@ -37,6 +37,7 @@ const asyncLock = new AsyncLock();
 type Epoch = import('src/types.js').SystemMetadata[SystemMetadataKey.EffectiveConfigEpoch];
 const fileSnapshots = new WeakMap<ConfigRepository, { epoch: number; digest: string; config: SystemConfig }>();
 let config: SystemConfig | null = null;
+let configEpoch: number | undefined;
 let configVersion = 0;
 
 export const clearConfigCache = () => {
@@ -47,8 +48,11 @@ export const clearConfigCache = () => {
 export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boolean }): Promise<SystemConfig> => {
   // A missed ConfigUpdate must not keep a previous activated file epoch authoritative.
   if (repos.configRepo.getEnv().configFile) return readConfig(repos);
-  if ((await repos.metadataRepo.getEffectiveConfigEpoch())?.recoveryMlBinding) return readConfig(repos);
-  if (withCache && config) {
+  const epoch = await repos.metadataRepo.getEffectiveConfigEpoch();
+  if (epoch?.recoveryMlBinding) return readConfig(repos);
+  // Every saved change moves the epoch in its own transaction, so a change made by another process
+  // (the CLI, another worker whose ConfigUpdate was missed) is seen here without trusting the broadcast.
+  if (withCache && config && configEpoch === epoch?.epoch) {
     return config;
   }
   const requestedVersion = configVersion;
@@ -58,11 +62,14 @@ export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boo
     }
     while (true) {
       const version = configVersion;
+      // read before the settings: a save in between leaves an older epoch, so the next read reloads
+      const loadedEpoch = (await repos.metadataRepo.getEffectiveConfigEpoch())?.epoch;
       const loaded = await readConfig(repos);
       if (version !== configVersion) {
         continue;
       }
       config = loaded;
+      configEpoch = loadedEpoch;
       configVersion++;
       return loaded;
     }

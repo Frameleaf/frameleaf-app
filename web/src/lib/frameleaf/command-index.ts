@@ -1,7 +1,6 @@
 import {
   getAlbumTree,
   getAllPeople,
-  getSearchSuggestions,
   searchPerson,
   SearchSuggestionType,
   type AlbumTreeResponseDto,
@@ -59,6 +58,7 @@ import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { buildAlbumTree, type FrameleafAlbumNode } from '$lib/frameleaf/album-tree';
 import type { CommandIndexInput, CommandInput } from '$lib/frameleaf/command-palette';
 import { buildPrimaryDestinations, buildRailSections, type RailCapabilities } from '$lib/frameleaf/navigation';
+import { sharedSearchSuggestions } from '$lib/frameleaf/search-options';
 import { areaForSection, commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { Route } from '$lib/route';
 
@@ -586,7 +586,8 @@ export const loadCommandCatalogue = async (term: string, signal?: AbortSignal): 
 
   const settle = async <T>(work: Promise<T>, fallback: T): Promise<T> => {
     try {
-      return await work;
+      // an empty body during a server hiccup resolves to null rather than rejecting
+      return (await work) ?? fallback;
     } catch (error) {
       if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
         throw error;
@@ -605,9 +606,9 @@ export const loadCommandCatalogue = async (term: string, signal?: AbortSignal): 
       [],
     ),
     settle<AlbumTreeResponseDto>(getAlbumTree({}, { signal }), { albums: [], collections: [], spaces: [] }),
-    settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.City }, { signal }), []),
-    settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.State }, { signal }), []),
-    settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.Country }, { signal }), []),
+    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.City), []),
+    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.State), []),
+    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.Country), []),
   ]);
 
   const tree = buildAlbumTree(albums);

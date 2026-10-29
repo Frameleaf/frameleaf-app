@@ -135,7 +135,7 @@ describe(LanDiscoveryService.name, () => {
       await sut.onBootstrap();
 
       expect(publish).toHaveBeenCalledWith({
-        name: 'My Server',
+        name: 'My Server (server-1)',
         type: 'frameleaf',
         protocol: 'tcp',
         port: 2283,

@@ -128542,6 +128542,10 @@
             "description": "Whether the server has been initialized",
             "type": "boolean"
           },
+          "isNewServerSetup": {
+            "description": "Whether first-run setup in progress is for a new server rather than an existing library",
+            "type": "boolean"
+          },
           "isOnboarded": {
             "description": "Whether the admin has completed onboarding",
             "type": "boolean"
@@ -128610,6 +128614,7 @@
           "externalDomain",
           "frameleaf",
           "isInitialized",
+          "isNewServerSetup",
           "isOnboarded",
           "loginPageMessage",
           "loginPageMessageFormat",

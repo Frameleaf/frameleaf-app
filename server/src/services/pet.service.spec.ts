@@ -222,7 +222,7 @@ describe(PetService.name, () => {
     it('rechecks affected photos once after a real pet edit, independently of recognition', async () => {
       (petRepository.getObservations as AnyMock).mockResolvedValue([observation(), observation()]);
       await sut.update(authStub.user1, petId, { name: 'New name' });
-      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('AssetChanged', { assetId });
+      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('AssetsChanged', { assetIds: [assetId] });
       mocks.event.emit.mockClear();
       await sut.update(authStub.user1, petId, { name: 'Biscuit' });
       expect(mocks.event.emit).not.toHaveBeenCalled();
@@ -700,13 +700,13 @@ describe(PetService.name, () => {
   it('reevaluates affected photos after deleting a pet', async () => {
     (petRepository.getObservations as AnyMock).mockResolvedValue([observation()]);
     await sut.remove(authStub.user1, petId);
-    expect(mocks.event.emit).toHaveBeenCalledWith('AssetChanged', { assetId });
+    expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [assetId] });
   });
   it('reevaluates affected photos after merging a pet', async () => {
     (petRepository.getByIds as AnyMock).mockResolvedValue([pet({ id: otherPetId })]);
     (petRepository.getObservations as AnyMock).mockResolvedValue([observation()]);
     await sut.merge(authStub.user1, petId, { ids: [otherPetId] });
-    expect(mocks.event.emit).toHaveBeenCalledWith('AssetChanged', { assetId });
+    expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [assetId] });
   });
   describe('merge', () => {
     it('refuses to merge a pet into itself', async () => {

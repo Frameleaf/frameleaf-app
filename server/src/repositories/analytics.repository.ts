@@ -601,12 +601,21 @@ export class AnalyticsRepository {
         select
           count(*) filter (where items.latitude is not null and items.longitude is not null) as geotagged,
           count(distinct items.country) as countries,
-          count(distinct items.city) as cities
+          count(distinct (items.city, items.country)) filter (where items.city is not null) as cities
         from items`),
-      run<{ name: string | null; count: string }>(
-        sql`select items.city as name, count(*) as count from items group by 1`,
+      // Paris, France and Paris, Texas are two places, not one
+      run<{ name: string | null; country: string | null; count: string }>(
+        sql`select items.city as name, case when items.city is not null then items.country end as country,
+          count(*) as count from items group by 1, 2`,
       ),
     ]);
+
+    const seen = new Set<string>();
+    const sharedCityNames = new Set<string>();
+    for (const { name } of cities) {
+      if (name && seen.has(name)) sharedCityNames.add(name);
+      if (name) seen.add(name);
+    }
 
     return {
       faces: num(faceCounts[0]?.faces),
@@ -617,7 +626,10 @@ export class AnalyticsRepository {
       geotagged: num(placeCounts[0]?.geotagged),
       countries: num(placeCounts[0]?.countries),
       cities: num(placeCounts[0]?.cities),
-      places: cities.map((row) => ({ name: row.name, count: num(row.count) })),
+      places: cities.map((row) => ({
+        name: row.name && row.country && sharedCityNames.has(row.name) ? `${row.name}, ${row.country}` : row.name,
+        count: num(row.count),
+      })),
     };
   }
 

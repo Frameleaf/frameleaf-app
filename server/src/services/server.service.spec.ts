@@ -628,6 +628,7 @@ describe(ServerService.name, () => {
         userDeleteDelay: 7,
         isInitialized: false,
         isOnboarded: false,
+        isNewServerSetup: false,
         externalDomain: '',
         publicUsers: true,
         mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',

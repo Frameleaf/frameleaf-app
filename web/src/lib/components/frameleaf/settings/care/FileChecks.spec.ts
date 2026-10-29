@@ -58,10 +58,7 @@ const newStore = () => {
 };
 
 const idle = {
-  integrityCheck: {
-    jobCounts: { active: 0, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
-    queueStatus: { isActive: false, isPaused: false },
-  },
+  statistics: { active: 0, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
 } as never;
 
 const counts = (missing = 0, damaged = 0, stray = 0) => ({
@@ -99,7 +96,7 @@ describe('File checks (FL-366)', () => {
     sdkMock.getIntegrityCheckRuns.mockResolvedValue({ missing_file: ran, checksum_mismatch: ran, untracked_file: ran });
     sdkMock.getIntegrityReport.mockResolvedValue({ items: [] });
     sdkMock.getSummary.mockResolvedValue({ recoveryAvailable: false } as never);
-    sdkMock.getQueuesLegacy.mockResolvedValue(idle);
+    sdkMock.getQueue.mockResolvedValue(idle);
     sdkMock.getIntegrityOverview.mockResolvedValue(overview());
     confirmFrameleaf.mockResolvedValue(false);
   });
@@ -214,11 +211,8 @@ describe('File checks (FL-366)', () => {
   });
 
   it('shows a running check’s progress and stops it, keeping what was found (FL-520)', async () => {
-    sdkMock.getQueuesLegacy.mockResolvedValue({
-      integrityCheck: {
-        jobCounts: { active: 1, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
-        queueStatus: { isActive: true, isPaused: false },
-      },
+    sdkMock.getQueue.mockResolvedValue({
+      statistics: { active: 1, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
     } as never);
     const running = overview({
       running: [{ type: IntegrityReport.ChecksumMismatch, startedAt: ran, done: 37, total: 100 }],

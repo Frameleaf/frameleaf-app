@@ -127,7 +127,16 @@ export class LanDiscoveryService extends BaseService {
     }
 
     this.bonjour ??= new Bonjour();
-    this.service = this.bonjour.publish({ name, type: 'frameleaf', protocol: 'tcp', port: advertised.port, txt });
+    // two servers with the same name would collide on the mDNS instance name and bonjour-service silently
+    // withdraws the second record; apps show the TXT name, so the instance name carries part of the id
+    const instance = `${name.slice(0, 50)} (${id.slice(0, 8)})`;
+    this.service = this.bonjour.publish({
+      name: instance,
+      type: 'frameleaf',
+      protocol: 'tcp',
+      port: advertised.port,
+      txt,
+    });
     this.published = JSON.stringify(txt);
     this.watch ??= setInterval(() => void this.refresh(), LanDiscoveryService.REFRESH_MS);
     this.watch.unref?.();

@@ -601,6 +601,12 @@ export class MapRepository {
       }
     }
 
+    // an empty file (dev stacks without real geodata) would send INSERT ... VALUES () and fail the import
+    if (entities.length === 0) {
+      this.logger.warn('No Natural Earth countries to import');
+      return;
+    }
+
     await this.db.transaction().execute(async (manager) => {
       await manager.deleteFrom('naturalearth_countries').execute();
       await manager.insertInto('naturalearth_countries').values(entities).execute();

@@ -257,7 +257,7 @@
           >
         </li>
       </ul>
-      <p class="fc-muted">{$t('frameleaf_cloud_unlinked_how', { values: { host: status.cloudHost } })}</p>
+      <p class="fc-muted">{$t('frameleaf_cloud_unlinked_how')}</p>
       <div class="fc-actions">
         <Button
           variant="primary"
