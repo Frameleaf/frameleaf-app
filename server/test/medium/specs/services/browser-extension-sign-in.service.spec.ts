@@ -28,6 +28,7 @@ const allow = (overrides: Partial<BrowserExtensionSignInAuthorizeDto> = {}) =>
     codeChallengeMethod: 'S256',
     state: 'state-0123456789abcdef',
     client: 'chrome',
+    installationId: 'installation-one-0123',
     allow: true,
     ...overrides,
   });
@@ -108,6 +109,28 @@ describe(`${BrowserExtensionSignInService.name} (database)`, () => {
 
     expect((await keys.getAll(auth)).map((key) => key.id)).toEqual([two.apiKeyId]);
     expect(two.apiKeyId).not.toBe(one.apiKeyId);
+  });
+
+  it('keeps each installation’s access apart', async () => {
+    const { sut, keys, signedIn } = setup();
+    const auth = await signedIn();
+    const first = await sut.authorize(auth, allow());
+    const one = await sut.exchange({ code: codeOf(first.redirectUrl), codeVerifier: verifier, redirectUri: REDIRECT });
+    const second = await sut.authorize(auth, allow({ installationId: 'installation-two-4567' }));
+    const two = await sut.exchange({ code: codeOf(second.redirectUrl), codeVerifier: verifier, redirectUri: REDIRECT });
+
+    expect((await keys.getAll(auth)).map((key) => key.id).toSorted()).toEqual([one.apiKeyId, two.apiKeyId].toSorted());
+    const stored = await database
+      .selectFrom('browser_extension_access')
+      .select(['apiKeyId', 'installationId'])
+      .where('userId', '=', auth.user.id)
+      .execute();
+    expect(stored).toEqual(
+      expect.arrayContaining([
+        { apiKeyId: one.apiKeyId, installationId: 'installation-one-0123' },
+        { apiKeyId: two.apiKeyId, installationId: 'installation-two-4567' },
+      ]),
+    );
   });
 
   it('removing the key in API keys removes the access, and sign out removes it too', async () => {

@@ -10,6 +10,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "codeChallenge" character varying NOT NULL,
   "redirectUri" character varying NOT NULL,
   "client" character varying NOT NULL,
+  "installationId" character varying NOT NULL,
   "serverId" character varying NOT NULL,
   "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
   "expiresAt" timestamp with time zone NOT NULL,
@@ -33,13 +34,14 @@ export async function up(db: Kysely<any>): Promise<void> {
   "userId" uuid NOT NULL,
   "client" character varying NOT NULL,
   "redirectOrigin" character varying NOT NULL,
+  "installationId" character varying NOT NULL,
   "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "browser_extension_access_apiKeyId_fkey" FOREIGN KEY ("apiKeyId") REFERENCES "api_key" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "browser_extension_access_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "browser_extension_access_client_check" CHECK ("client" IN ('chrome', 'edge')),
   CONSTRAINT "browser_extension_access_pkey" PRIMARY KEY ("apiKeyId")
 );`.execute(db);
-  await sql`CREATE INDEX "browser_extension_access_userId_client_redirectOrigin_idx" ON "browser_extension_access" ("userId", "client", "redirectOrigin");`.execute(
+  await sql`CREATE INDEX "browser_extension_access_userId_client_redirectOrigin_installationId_idx" ON "browser_extension_access" ("userId", "client", "redirectOrigin", "installationId");`.execute(
     db,
   );
 }

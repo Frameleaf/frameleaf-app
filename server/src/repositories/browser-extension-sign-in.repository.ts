@@ -17,6 +17,7 @@ export type BrowserExtensionAccessGrant = {
   userId: string;
   client: BrowserExtensionClient;
   redirectOrigin: string;
+  installationId: string;
   name: string;
   /** The SHA-256 of the new key. */
   key: Buffer;
@@ -46,9 +47,9 @@ export class BrowserExtensionSignInRepository {
       .executeTakeFirst();
   }
 
-  /** This extension's access to the account, when it still has one. */
-  @GenerateSql({ params: [DummyValue.UUID, 'chrome', DummyValue.STRING] })
-  getAccess(userId: string, client: BrowserExtensionClient, redirectOrigin: string) {
+  /** This installation's access to the account, when it still has one. */
+  @GenerateSql({ params: [DummyValue.UUID, 'chrome', DummyValue.STRING, DummyValue.STRING] })
+  getAccess(userId: string, client: BrowserExtensionClient, redirectOrigin: string, installationId: string) {
     return this.db
       .selectFrom('browser_extension_access')
       .innerJoin('api_key', 'api_key.id', 'browser_extension_access.apiKeyId')
@@ -56,6 +57,7 @@ export class BrowserExtensionSignInRepository {
       .where('browser_extension_access.userId', '=', userId)
       .where('browser_extension_access.client', '=', client)
       .where('browser_extension_access.redirectOrigin', '=', redirectOrigin)
+      .where('browser_extension_access.installationId', '=', installationId)
       .executeTakeFirst();
   }
 
@@ -81,8 +83,8 @@ export class BrowserExtensionSignInRepository {
   }
 
   /**
-   * One access per browser: the new key replaces this extension's previous access to the account,
-   * in one transaction, and is recorded as added by signing in.
+   * One access per installation: the new key replaces this installation's previous access to the
+   * account (never another browser's), in one transaction, and is recorded as added by signing in.
    */
   async replaceAccess(grant: BrowserExtensionAccessGrant) {
     return this.db.transaction().execute(async (trx) => {
@@ -92,6 +94,7 @@ export class BrowserExtensionSignInRepository {
         .where('userId', '=', grant.userId)
         .where('client', '=', grant.client)
         .where('redirectOrigin', '=', grant.redirectOrigin)
+        .where('installationId', '=', grant.installationId)
         .execute();
       if (previous.length > 0) {
         await trx
@@ -116,6 +119,7 @@ export class BrowserExtensionSignInRepository {
           userId: grant.userId,
           client: grant.client,
           redirectOrigin: grant.redirectOrigin,
+          installationId: grant.installationId,
         })
         .execute();
       return apiKey;

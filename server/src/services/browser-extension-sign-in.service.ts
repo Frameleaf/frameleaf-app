@@ -68,7 +68,7 @@ export class BrowserExtensionSignInService {
   /** `POST browser-extension/sign-in/start`: checks the request behind the Allow page. */
   async start(auth: AuthDto, dto: BrowserExtensionSignInStartDto): Promise<BrowserExtensionSignInStartResponseDto> {
     const { origin } = this.check(auth, dto);
-    const existing = await this.repository.getAccess(auth.user.id, dto.client, origin);
+    const existing = await this.repository.getAccess(auth.user.id, dto.client, origin, dto.installationId);
     return { accessName: accessName(dto.client), alreadyAllowed: !!existing };
   }
 
@@ -92,6 +92,7 @@ export class BrowserExtensionSignInService {
       codeChallenge: dto.codeChallenge,
       redirectUri,
       client: dto.client,
+      installationId: dto.installationId,
       serverId: await stableServerId({ systemMetadataRepository: this.systemMetadataRepository }),
       expiresAt: new Date(Date.now() + SIGN_IN_CODE_TTL_SECONDS * 1000),
     });
@@ -130,6 +131,7 @@ export class BrowserExtensionSignInService {
       userId: user.id,
       client: found.client,
       redirectOrigin: redirect.origin,
+      installationId: found.installationId,
       name,
       key: this.cryptoRepository.hashSha256(secret),
       permissions: BROWSER_EXTENSION_PERMISSIONS,

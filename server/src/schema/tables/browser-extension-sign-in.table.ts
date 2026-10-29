@@ -24,6 +24,7 @@ export class BrowserExtensionSignInCodeTable {
   @Column() codeChallenge!: string;
   @Column() redirectUri!: string;
   @Column() client!: BrowserExtensionClient;
+  @Column() installationId!: string;
   @Column() serverId!: string;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
   @Column({ type: 'timestamp with time zone' }) expiresAt!: Timestamp;
@@ -32,11 +33,12 @@ export class BrowserExtensionSignInCodeTable {
 /**
  * FL-655: an API key that Save to Frameleaf received by signing in, rather than one made by hand.
  * It is listed in API keys as "Save to Frameleaf · Chrome" (or Edge) with "Added by signing in";
- * deleting the key deletes this row. `redirectOrigin` is the extension's own return address, so
- * signing in again skips the Allow page only for the same extension in the same browser.
+ * deleting the key deletes this row. `redirectOrigin` is the extension's own return address and
+ * `installationId` a random id the extension made once, so signing in again replaces (and skips the
+ * Allow page for) only the same installation, never another browser signed in to the account.
  */
 @Table('browser_extension_access')
-@Index({ columns: ['userId', 'client', 'redirectOrigin'] })
+@Index({ columns: ['userId', 'client', 'redirectOrigin', 'installationId'] })
 @Check({ name: 'browser_extension_access_client_check', expression: `"client" IN ('chrome', 'edge')` })
 export class BrowserExtensionAccessTable {
   @ForeignKeyColumn(() => ApiKeyTable, { primary: true, onDelete: 'CASCADE', onUpdate: 'CASCADE', index: false })
@@ -44,5 +46,6 @@ export class BrowserExtensionAccessTable {
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', index: false }) userId!: string;
   @Column() client!: BrowserExtensionClient;
   @Column() redirectOrigin!: string;
+  @Column() installationId!: string;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
 }

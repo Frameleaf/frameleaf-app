@@ -37,9 +37,13 @@ class FakeSignInRepository {
     this.codes.delete(codeHash.toString('hex'));
     return Promise.resolve(found);
   }
-  getAccess(userId: string, client: string, redirectOrigin: string) {
+  getAccess(userId: string, client: string, redirectOrigin: string, installationId: string) {
     const found = this.accesses.find(
-      (access) => access.userId === userId && access.client === client && access.redirectOrigin === redirectOrigin,
+      (access) =>
+        access.userId === userId &&
+        access.client === client &&
+        access.redirectOrigin === redirectOrigin &&
+        access.installationId === installationId,
     );
     return Promise.resolve(found && { apiKeyId: found.apiKeyId, name: found.name });
   }
@@ -49,7 +53,8 @@ class FakeSignInRepository {
         !(
           access.userId === grant.userId &&
           access.client === grant.client &&
-          access.redirectOrigin === grant.redirectOrigin
+          access.redirectOrigin === grant.redirectOrigin &&
+          access.installationId === grant.installationId
         ),
     );
     const apiKeyId = randomUUID();
@@ -98,6 +103,7 @@ const request = (verifier: string, overrides: Partial<BrowserExtensionSignInAuth
     codeChallengeMethod: 'S256',
     state: 'state-0123456789abcdef',
     client: 'chrome',
+    installationId: 'installation-one-0123',
     allow: true,
     ...overrides,
   });
@@ -338,6 +344,33 @@ describe(BrowserExtensionSignInService.name, () => {
     const second = await server.service.authorize(taylor, request(verifier));
     await server.service.exchange(exchange(codeFrom(second.redirectUrl), verifier));
     expect(server.repository.accesses).toHaveLength(1);
+  });
+
+  it('keeps another installation’s access when a second browser signs in', async () => {
+    const first = await server.service.authorize(taylor, request(verifier));
+    const one = await server.service.exchange(exchange(codeFrom(first.redirectUrl), verifier));
+    // the same extension, installed on another computer, has its own installation id
+    const other = { installationId: 'installation-two-4567' };
+    await expect(server.service.start(taylor, request(verifier, other))).resolves.toEqual(
+      expect.objectContaining({ alreadyAllowed: false }),
+    );
+    const second = await server.service.authorize(taylor, request(verifier, other));
+    const two = await server.service.exchange(exchange(codeFrom(second.redirectUrl), verifier));
+
+    expect(server.repository.accesses.map((access) => access.apiKeyId).toSorted()).toEqual(
+      [one.apiKeyId, two.apiKeyId].toSorted(),
+    );
+    // signing in again from the first installation replaces only its own access
+    const again = await server.service.authorize(taylor, request(verifier));
+    const three = await server.service.exchange(exchange(codeFrom(again.redirectUrl), verifier));
+    expect(server.repository.accesses.map((access) => access.apiKeyId).toSorted()).toEqual(
+      [two.apiKeyId, three.apiKeyId].toSorted(),
+    );
+  });
+
+  it('refuses a missing or malformed installation id', () => {
+    expect(() => request(verifier, { installationId: 'short' })).toThrow();
+    expect(() => request(verifier, { installationId: 'has spaces in it, too long' })).toThrow();
   });
 
   it('signs out only its own access', async () => {

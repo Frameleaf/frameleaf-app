@@ -21,6 +21,10 @@ const SignInRequestShape = {
   codeChallengeMethod: z.literal('S256').describe('Only S256 is accepted'),
   state: z.string().min(16).max(512).describe('Returned unchanged to the extension'),
   client: BrowserExtensionClientSchema,
+  installationId: z
+    .string()
+    .regex(/^[\w-]{16,128}$/)
+    .describe('A random id this installation of the extension made once; its access replaces only its own'),
 };
 
 const BrowserExtensionSignInStartSchema = z
