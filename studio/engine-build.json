@@ -756,10 +756,15 @@
       "sha256": "e95e06fb8f85485b43b08cdf5fdd953b4a70f310fdeebfdab418954af5ca3eae"
     },
     {
+      "path": "patches/0168-word-by-word-captions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c1728386c5702a182af284678aa74ff3330583dc2779959540ae2b299ec99722"
+    },
+    {
       "path": "patches/0162-voice-cleanup.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "4cb05221a3ac60bc853a4377647e33985a130d098c61c4b403868888a395daa5"
+      "sha256": "74fea2283d9c53a2c5644c89fbad23033bd5774d2ea388e1d1eaf75b94df4ed7"
     }
   ],
-  "sourceSha256": "f1c27d1a0b1a60b3b117bacfcf2b11c6d93315e45d927dadf74f16a062de38ab"
+  "sourceSha256": "050cc08b84d62f8d15ca8fdcd3219953608795466a98927215fafe8b4546b1f4"
 }

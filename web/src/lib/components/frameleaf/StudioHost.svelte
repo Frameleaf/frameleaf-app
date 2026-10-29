@@ -131,6 +131,7 @@
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
   import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
+  import { captionStyleEngineStrings } from '$lib/frameleaf/studio/caption-style-strings';
   import { voiceCleanupEngineStrings } from '$lib/frameleaf/studio/voice-cleanup-strings';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
   import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@frameleaf/sdk';
@@ -553,6 +554,7 @@
       relinkSaved: $t('frameleaf_studio_relink_saved'),
       lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
       ...transcriptEngineStrings($t),
+      ...captionStyleEngineStrings($t),
       ...voiceCleanupEngineStrings($t),
     },
   });
