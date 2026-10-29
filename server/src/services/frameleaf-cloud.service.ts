@@ -722,9 +722,14 @@ export class FrameleafCloudService extends BaseService {
     }
 
     switch (result.error) {
+      // the cloud answered, so an earlier failed check (a timeout, a 5xx) is no longer shown while waiting
       case 'authorization_pending': {
         await this.saveLink(
-          { ...link, pending: { ...pending, nextPollAt: this.after(now, pending.intervalSeconds) } },
+          {
+            ...link,
+            lastError: undefined,
+            pending: { ...pending, nextPollAt: this.after(now, pending.intervalSeconds) },
+          },
           null,
           { expected: link },
         );
@@ -733,7 +738,11 @@ export class FrameleafCloudService extends BaseService {
       case 'slow_down': {
         const intervalSeconds = pending.intervalSeconds + SLOW_DOWN_SECONDS;
         await this.saveLink(
-          { ...link, pending: { ...pending, intervalSeconds, nextPollAt: this.after(now, intervalSeconds) } },
+          {
+            ...link,
+            lastError: undefined,
+            pending: { ...pending, intervalSeconds, nextPollAt: this.after(now, intervalSeconds) },
+          },
           null,
           { expected: link },
         );

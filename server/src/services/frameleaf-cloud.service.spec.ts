@@ -378,6 +378,24 @@ describe(FrameleafCloudService.name, () => {
       expect(Date.parse(storedLink()!.pending!.nextPollAt)).toBeGreaterThan(Date.now());
     });
 
+    it('clears a failed check once the cloud answers again while waiting', async () => {
+      let answer = { status: 503, body: { code: 'unavailable', message: 'down', retryable: true } } as {
+        status: number;
+        body: unknown;
+      };
+      serveLinking(() => answer);
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      expect(storedLink()?.lastError).toBeTruthy();
+      expect(storedLink()?.status).toBe('pending');
+
+      answer = { status: 400, body: { error: 'authorization_pending' } };
+      makeDue();
+      await expect(sut.getLink()).resolves.toMatchObject({ state: 'pending', lastError: null });
+      expect(storedLink()?.lastError).toBeUndefined();
+    });
+
     it('adds five seconds to the interval on slow_down', async () => {
       serveLinking(() => ({ status: 400, body: { error: 'slow_down' } }));
       await sut.startLink(authStub.admin);
