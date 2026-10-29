@@ -832,8 +832,9 @@ export class TakeoutRepository {
   }
   /**
    * Of the items still to import, how many are already in the owner's library (matched by either
-   * digest, trash included) and how many are new. One index probe per item, so only asked for when
-   * the wizard shows it, never while a job is running.
+   * digest, trash included) and how many are new. Both count unique photos by checksum, the identity
+   * the importer dedups on, so an album's copy of a photo is not counted twice (FL-658). One index
+   * probe per item, so only asked for when the wizard shows it, never while a job is running.
    */
   async matchSummary(
     ownerId: string,
@@ -847,10 +848,10 @@ export class TakeoutRepository {
       fresh: string;
     }>`
       select
-        count(*) filter (where found) as matched,
-        count(*) filter (where not found) as fresh
+        count(distinct checksum) filter (where found) as matched,
+        count(distinct checksum) filter (where not found) as fresh
       from (
-        select exists (
+        select file.checksum, exists (
           select 1 from asset
           where asset."ownerId" = ${ownerId}::uuid
             and asset.checksum in (file.checksum, file."legacyChecksum")

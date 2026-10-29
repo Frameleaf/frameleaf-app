@@ -46,6 +46,9 @@ import {
 import { isEqualObject } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
+/** The notice, and its dedupe key, for a library data snapshot that didn't finish (FL-657). */
+const LIBRARY_SNAPSHOT_FAILED = 'library-snapshot-failed';
+
 @Injectable()
 export class NotificationService extends BaseService {
   private static albumUpdateEmailDelayMs = 300_000;
@@ -106,18 +109,25 @@ export class NotificationService extends BaseService {
     this.logger.error(`Unable to run job handler (${job.name}): ${error}`, error?.stack, data);
 
     switch (job.name) {
+      // FL-657: retail wording; the error itself stays in the log above. A click opens Backup › On this server.
+      // The queue retries a failed snapshot once and this event comes on every attempt, so the notice
+      // replaces any earlier one, and a snapshot that then succeeds removes it (`onJobSuccess`).
       case JobName.DatabaseBackup: {
-        const errorMessage = error instanceof Error ? error.message : error;
+        await this.notificationRepository.deleteByDedupeKey(admin.id, LIBRARY_SNAPSHOT_FAILED);
         const text = await this.localText(
           admin.id,
-          { version: 1, key: 'job-failed', args: { jobName: job.name, error: String(errorMessage) } },
-          { title: 'Job Failed', body: `Job ${[job.name]} failed with error: ${errorMessage}` },
+          { version: 1, key: 'library-snapshot-failed', args: {} },
+          {
+            title: 'Library data snapshot didn’t finish',
+            body: 'The snapshot of your albums, people, edits and settings didn’t finish. Open Backup › On this server to try again.',
+          },
         );
         const item = await this.notificationRepository.create({
           userId: admin.id,
-          type: NotificationType.JobFailed,
+          type: NotificationType.BackupFailed,
           level: NotificationLevel.Error,
           ...text,
+          data: { kind: LIBRARY_SNAPSHOT_FAILED, dedupeKey: LIBRARY_SNAPSHOT_FAILED },
         });
 
         this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));
@@ -127,6 +137,23 @@ export class NotificationService extends BaseService {
       default: {
         return;
       }
+    }
+  }
+
+  /** FL-657: a library data snapshot that finished makes an earlier "didn't finish" notice stale. */
+  @OnEvent({ name: 'JobSuccess' })
+  async onJobSuccess({ job }: ArgOf<'JobSuccess'>) {
+    if (job.name !== JobName.DatabaseBackup) {
+      return;
+    }
+    const admin = await this.userRepository.getAdmin();
+    if (!admin) {
+      return;
+    }
+    const [removed] = await this.notificationRepository.deleteByDedupeKey(admin.id, LIBRARY_SNAPSHOT_FAILED);
+    if (removed) {
+      // Open notification lists read the list again on this event, so the stale notice leaves them too.
+      this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(removed));
     }
   }
 

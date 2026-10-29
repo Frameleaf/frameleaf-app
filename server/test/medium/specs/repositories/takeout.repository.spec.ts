@@ -412,6 +412,24 @@ describe(TakeoutRepository.name, () => {
     await expect(sut.matchSummary(user.id, row.id)).resolves.toEqual({ matchedOriginals: 1, newAssets: 2 });
   });
 
+  it('counts an album copy of a photo once, as the importer adds it once (FL-658)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    // Google Photos exports a photo in its year folder and again in each album that holds it.
+    const fresh = randomBytes(32);
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_1.jpg', checksum: fresh });
+    await seedItem(sut, row.id, source.id, { folder: 'Beach', name: 'IMG_1.jpg', checksum: fresh });
+    await seedItem(sut, row.id, source.id, { folder: 'Summer', name: 'IMG_1(1).jpg', checksum: fresh });
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_2.jpg' });
+    const owned = randomBytes(32);
+    await ctx.newAsset({ ownerId: user.id, checksum: owned });
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_3.jpg', checksum: owned });
+    await seedItem(sut, row.id, source.id, { folder: 'Beach', name: 'IMG_3.jpg', checksum: owned });
+
+    await expect(sut.matchSummary(user.id, row.id)).resolves.toEqual({ matchedOriginals: 1, newAssets: 2 });
+  });
+
   it('reuses the album a folder became only while the owner still has it', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

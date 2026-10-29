@@ -13,6 +13,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { motionFlip } from '$lib/frameleaf/motion';
+  import { backupPageUrl } from '$lib/frameleaf/settings-areas';
 
   /**
    * The notifications panel, in the prototype's design (`SystemPanels.jsx` NotificationsPanel).
@@ -114,6 +115,16 @@
             ? Route.viewSharedSpaceAsset({ spaceId: data.albumId, assetId: data.assetId })
             : `${Route.viewSharedSpace({ id: data.albumId })}?panel=activity`,
         );
+        break;
+      }
+
+      // FL-657: a library data snapshot that didn't finish opens Backup › On this server, with its retry.
+      case NotificationType.BackupFailed: {
+        const data: unknown = notification.data;
+        const kind = data && typeof data === 'object' ? (data as { kind?: unknown }).kind : undefined;
+        if (kind === 'library-snapshot-failed') {
+          await goto(backupPageUrl('local'));
+        }
         break;
       }
 
