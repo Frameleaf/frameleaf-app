@@ -222,16 +222,52 @@ describe('EagleImportRun', () => {
   it('stops before the next item once another account is signed in', async () => {
     const server = fakeApi();
     let signedIn = true;
-    const importing = run(server.api, { isCurrent: () => signedIn });
-    const upload = server.api.upload;
-    server.api.upload = (file, checksums) => {
+    // The account changes once the first item is in Boards.
+    const saveOutcome = store.saveOutcome;
+    store.saveOutcome = (key, itemId, outcome) => {
       signedIn = false;
-      return upload(file, checksums);
+      return saveOutcome(key, itemId, outcome);
     };
+    const importing = run(server.api, { isCurrent: () => signedIn });
     await importing.start();
     expect(importing.state).toBe('stopped');
     expect(server.uploads).toHaveLength(1);
     expect(importing.done).toBe(1);
+  });
+
+  it('writes nothing for an item once the account changes while its file is being sent', async () => {
+    const server = fakeApi();
+    let signedIn = true;
+    const importing = run(server.api, { isCurrent: () => signedIn });
+    const upload = server.api.upload;
+    server.api.upload = async (file, checksums) => {
+      const sent = await upload(file, checksums);
+      signedIn = false;
+      return sent;
+    };
+    await importing.start();
+    expect(importing.state).toBe('stopped');
+    expect(server.uploads).toHaveLength(1);
+    expect(server.api.addToCollections).not.toHaveBeenCalled();
+    expect(server.api.tag).not.toHaveBeenCalled();
+    expect(server.api.update).not.toHaveBeenCalled();
+    expect(importing.done).toBe(0);
+    expect(importing.failed.size).toBe(0);
+  });
+
+  it('makes no tags once the account changes', async () => {
+    const server = fakeApi();
+    let signedIn = true;
+    const createCollection = server.api.createCollection;
+    server.api.createCollection = (input) => {
+      signedIn = false;
+      return createCollection(input);
+    };
+    const importing = run(server.api, { isCurrent: () => signedIn });
+    await importing.start();
+    expect(importing.state).toBe('stopped');
+    expect(server.api.upsertTags).not.toHaveBeenCalled();
+    expect(server.uploads).toHaveLength(0);
   });
 
   it('keeps importing when the record cannot be written', async () => {

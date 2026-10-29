@@ -55,6 +55,14 @@ export interface EagleImportRunOptions {
 const TAG_BATCH = 100;
 const RECENT = 3;
 
+/** The signed-in account changed part-way through an item. */
+class AccountChangedError extends Error {
+  constructor() {
+    super('The signed-in account changed');
+    this.name = 'AccountChangedError';
+  }
+}
+
 /**
  * Runs an Eagle import in this tab. Collections are made first, parents before children, then each
  * item is sent and filed with its tags, rating and note. Every step is written to the record as it
@@ -174,6 +182,17 @@ export class EagleImportRun implements EagleRunStatus {
     }
   }
 
+  /**
+   * Before each write that belongs to one item: if the signed-in account changed, the import stops
+   * and this item is left unrecorded. A stop the user asked for lets the item being sent finish.
+   */
+  #assertCurrent() {
+    if (this.#options.isCurrent && !this.#options.isCurrent()) {
+      this.#stopRequested = true;
+      throw new AccountChangedError();
+    }
+  }
+
   #stillCurrent() {
     if (this.#options.isCurrent && !this.#options.isCurrent()) {
       this.#stopRequested = true;
@@ -243,6 +262,9 @@ export class EagleImportRun implements EagleRunStatus {
       (name) => !Object.hasOwn(this.#record.tagIds, name),
     );
     for (let index = 0; index < missing.length; index += TAG_BATCH) {
+      if (!this.#stillCurrent()) {
+        return;
+      }
       Object.assign(this.#record.tagIds, await this.#options.api.upsertTags(missing.slice(index, index + TAG_BATCH)));
       await this.#save();
     }
@@ -269,6 +291,7 @@ export class EagleImportRun implements EagleRunStatus {
         return;
       }
       const { assetId, duplicate } = sent;
+      this.#assertCurrent();
       const filed = item.folders.filter((id) => record.albums[id]);
       const albumIds = filed.map((id) => record.albums[id]);
       if (albumIds.length === 0 && target.mode === 'inside' && record.rootAlbumId) {
@@ -279,12 +302,15 @@ export class EagleImportRun implements EagleRunStatus {
       }
       const tagIds = item.tags.map((name) => record.tagIds[name]).filter(Boolean);
       if (tagIds.length > 0) {
+        this.#assertCurrent();
         await api.tag(assetId, tagIds);
       }
+      this.#assertCurrent();
       await this.#describe(item, assetId, duplicate);
       if ((this.#options.annotations ?? EAGLE_ANNOTATIONS_AVAILABLE) && api.annotate) {
         const annotations = eagleAnnotations(item);
         if (annotations.length > 0) {
+          this.#assertCurrent();
           await api.annotate(assetId, annotations);
         }
       }
@@ -303,8 +329,11 @@ export class EagleImportRun implements EagleRunStatus {
         },
         ...this.recent,
       ].slice(0, RECENT);
-    } catch {
-      this.failed.add(item.id);
+    } catch (error) {
+      // An account change leaves the item unrecorded, not failed: the next run finds it and files it.
+      if (!(error instanceof AccountChangedError)) {
+        this.failed.add(item.id);
+      }
     }
   }
 
