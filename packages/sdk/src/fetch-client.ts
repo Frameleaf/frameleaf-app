@@ -4536,6 +4536,8 @@ export type SanitizedAssetResponseDto = {
     localDateTime: string;
     /** Original MIME type */
     originalMimeType?: string;
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting. */
     thumbhash: string | null;
     "type": AssetTypeEnum;
