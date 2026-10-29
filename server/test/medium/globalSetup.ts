@@ -47,8 +47,7 @@ const globalSetup = async () => {
   process.env.IMMICH_TEST_POSTGRES_URL = postgresUrl;
 
   // Stop the container when the run ends instead of relying on the Ryuk reaper, which is often
-  // unavailable locally (Docker Desktop socket overrides, TESTCONTAINERS_RYUK_DISABLED) and left
-  // one Postgres container behind per run.
+  // unavailable or disabled locally and left one Postgres container behind per run.
   const teardown = async () => {
     await postgresContainer.stop({ remove: true, removeVolumes: true });
   };

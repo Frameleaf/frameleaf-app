@@ -43,11 +43,11 @@ Medium tests (`server/test/medium`) run against a real PostgreSQL container star
 
 Building Frameleaf's Postgres image (`docker/postgres`) pulls the PostgreSQL base image from Docker Hub and downloads the pgvector source from `codeload.github.com` (checked against a pinned SHA-256). Docker Hub rate-limits anonymous pulls, so a busy machine or network can hit `toomanyrequests` errors. CI avoids this with Google's Docker Hub mirror, and you can do the same locally:
 
-| What                                          | Setting                                                                                                                                                         |
-| :-------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Postgres base image (medium tests, e2e stack) | `export FRAMELEAF_CI_POSTGRES_IMAGE=mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06`                     |
+| What                                          | Setting                                                                                                                                                          |
+| :-------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres base image (medium tests, e2e stack) | `export FRAMELEAF_CI_POSTGRES_IMAGE=mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06`                      |
 | Postgres base image (manual build)            | `docker build --build-arg POSTGRES_IMAGE=mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06 docker/postgres` |
-| testcontainers reaper (Ryuk)                  | `export RYUK_CONTAINER_IMAGE=mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0`                         |
+| testcontainers reaper (Ryuk)                  | `export RYUK_CONTAINER_IMAGE=mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0`                          |
 | Any other Docker Hub image                    | Add `"registry-mirrors": ["https://mirror.gcr.io"]` to the Docker daemon settings (Docker Desktop: Settings → Docker Engine)                                     |
 
 The digests match the ones pinned in `docker/postgres/Dockerfile` and `.github/workflows/test.yml`; use the values from those files if they have changed since this page was written.
