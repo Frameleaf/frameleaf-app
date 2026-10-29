@@ -361,7 +361,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,289 @@
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import type { AnimationKeyframeSource } from '@/types/keyframe'
 +import { useItemsStore } from '../../items-store'
@@ -453,7 +453,9 @@ new file mode 100644
 +
 +function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
 +  const sourceFps = item.sourceFps ?? fps
-+  return ((item.sourceStart ?? 0) + timelineToSourceFrames(frame - item.from, item.speed ?? 1, fps, sourceFps)) / sourceFps
++  // Older clips carry the trim as trimStart; playback reads it the same way.
++  const sourceStart = item.sourceStart ?? item.trimStart ?? 0
++  return (sourceStart + timelineToSourceFrames(frame - item.from, item.speed ?? 1, fps, sourceFps)) / sourceFps
 +}
 +
 +function toGray(canvas: OffscreenCanvas | HTMLCanvasElement): GrayFrame {
