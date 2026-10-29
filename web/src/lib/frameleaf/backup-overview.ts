@@ -195,9 +195,10 @@ export const localSnapshots = (backups: readonly DatabaseBackupDto[]) =>
  * The newest snapshot that failed for good (every retry used up), with the reason the server gave,
  * from the failed jobs of the database backup queue (FL-657). Null when none failed.
  *
- * Its moment is when the job was queued, which `localPlaceState` compares with a snapshot's start.
- * That order is exact because snapshot jobs run one at a time (the server deduplicates them): a
- * snapshot that started after a failed job was queued was made after that job failed for good.
+ * Its moment is when the job was queued, which `localPlaceState` compares with a snapshot's name
+ * (when its dump started). The server writes snapshots one at a time, queued or made by the backup
+ * run (`DatabaseLock.DatabaseBackupDump`), so the comparison follows the order they finished in: a
+ * dump that started after the failed job was queued waited for it, and finished after it.
  */
 export const lastSnapshotFailure = (jobs: readonly QueueJobResponseDto[] | null) => {
   let newest: { at: Date; reason: string } | null = null;

@@ -9,7 +9,7 @@ import { createGunzip, createGzip, gzipSync } from 'node:zlib';
 import type { Stats } from 'node:fs';
 import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { FrameleafWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, FrameleafWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { queueExecution } from 'src/queue/context.js';
 import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
@@ -341,6 +341,40 @@ describe(DatabaseBackupService.name, () => {
       const result = await sut.handleBackupDatabase();
       expect(result).toBe(JobStatus.Success);
       expect(mocks.storage.createWriteStream).toHaveBeenCalled();
+    });
+
+    it('writes one snapshot at a time, whichever path starts it, in the order they finish (FL-657)', async () => {
+      // A real lock: the second caller waits until the first has finished.
+      let tail = Promise.resolve();
+      mocks.database.withLock.mockImplementation((_lock, work) => {
+        const run = tail.then(work);
+        tail = run.then(() => {}).catch(() => {});
+        return run;
+      });
+      const events: string[] = [];
+      const first = Promise.withResolvers<void>();
+      vi.spyOn(sut, 'cleanupDatabaseBackups').mockResolvedValue();
+      vi.spyOn(sut, 'createDatabaseBackup')
+        .mockImplementationOnce(async () => {
+          events.push('scheduled start');
+          await first.promise;
+          events.push('scheduled end');
+          return '/backups/scheduled.sql.gz';
+        })
+        .mockImplementationOnce(() => {
+          events.push('manual start');
+          return Promise.reject(new Error('pg_dump failed'));
+        });
+
+      const scheduled = sut.handleBackupDatabase();
+      const manual = sut.handleBackupDatabase();
+      await vi.waitFor(() => expect(events).toEqual(['scheduled start']));
+      first.resolve();
+
+      await expect(scheduled).resolves.toBe(JobStatus.Success);
+      await expect(manual).rejects.toThrow('pg_dump failed');
+      expect(events).toEqual(['scheduled start', 'scheduled end', 'manual start']);
+      for (const [lock] of mocks.database.withLock.mock.calls) expect(lock).toBe(DatabaseLock.DatabaseBackupDump);
     });
 
     it('should rename file on success', async () => {

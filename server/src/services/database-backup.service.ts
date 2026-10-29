@@ -109,19 +109,22 @@ export class DatabaseBackupService {
   // what "Take a snapshot now" queues.
   @OnJob({ name: JobName.DatabaseBackup, queue: QueueName.BackupDatabase })
   async handleBackupDatabase(): Promise<JobStatus> {
-    try {
-      // An interrupted attempt may already have published a verified dump. Never overwrite it on replay.
-      await this.createDatabaseBackup('', { label: randomUUID() });
-    } catch (error) {
-      if (error instanceof UnsupportedPostgresError) {
-        return JobStatus.Failed;
+    // FL-657: the queued job and the backup run both come here; their dumps never overlap.
+    return this.databaseRepository.withLock(DatabaseLock.DatabaseBackupDump, async () => {
+      try {
+        // An interrupted attempt may already have published a verified dump. Never overwrite it on replay.
+        await this.createDatabaseBackup('', { label: randomUUID() });
+      } catch (error) {
+        if (error instanceof UnsupportedPostgresError) {
+          return JobStatus.Failed;
+        }
+
+        throw error;
       }
 
-      throw error;
-    }
-
-    await this.cleanupDatabaseBackups();
-    return JobStatus.Success;
+      await this.cleanupDatabaseBackups();
+      return JobStatus.Success;
+    });
   }
 
   async buildPostgresLaunchArguments(

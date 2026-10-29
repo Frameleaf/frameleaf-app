@@ -142,6 +142,32 @@ describe('a place a backup is kept (FL-362)', () => {
     expect(fixed.status.key).toBe('frameleaf_backup_state_up_to_date');
     expect(localPlaceState([], false, now, undefined, failure!.at)).toMatchObject({ on: false, tone: 'off' });
   });
+
+  it('follows the order an overlapping scheduled and manual snapshot finished in (FL-657)', () => {
+    // Snapshots are written one at a time, so a dump started after the manual job was queued waited for it.
+    const manual = (queuedAt: string) =>
+      lastSnapshotFailure([{ name: 'DatabaseBackup', timestamp: Date.parse(queuedAt), data: {} }] as never)!.at;
+
+    // The scheduled dump was running when "Take a snapshot now" was pressed; the manual one ran next and failed.
+    const scheduledFirst = localPlaceState(
+      [snapshot('20261010T020000')],
+      true,
+      now,
+      undefined,
+      manual('2026-10-10T02:01:00Z'),
+    );
+    expect(scheduledFirst.status.key).toBe('frameleaf_backup_state_failed');
+
+    // The manual dump ran first and failed; the scheduled one waited for it, then finished.
+    const manualFirst = localPlaceState(
+      [snapshot('20261010T020500')],
+      true,
+      now,
+      undefined,
+      manual('2026-10-10T02:01:00Z'),
+    );
+    expect(manualFirst.status.key).toBe('frameleaf_backup_state_up_to_date');
+  });
 });
 
 describe('the one answer (FL-362)', () => {
