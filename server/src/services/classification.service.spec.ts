@@ -82,7 +82,16 @@ describe(ClassificationService.name, () => {
       job: { name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev' } },
       response: JobStatus.Success,
     });
-    expect(evaluate).toHaveBeenCalledWith('asset', auth.user.id);
+    expect(evaluate).toHaveBeenCalledWith('asset', auth.user.id, expect.any(Function));
+    // Only rules that filter by colour can change once the palette is ready.
+    const only = evaluate.mock.calls[0][2]!;
+    const rule = (filter: unknown) => ({ filter }) as never;
+    expect([
+      only(rule({ color: { hex: '#336699' } })),
+      only(rule({ or: [{ color: { hex: '#336699' } }] })),
+      only(rule(null)),
+      only(rule({ tagIds: { any: ['tag'] } })),
+    ]).toEqual([true, true, false, false]);
   });
   it('rejects an empty shared query as an accidental whole-library rule', async () => {
     await expect(sut.preview(factory.auth(), { ...criteria, filter: {}, sampleSize: 100 })).rejects.toThrow(

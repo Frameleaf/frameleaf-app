@@ -414,17 +414,25 @@ export class ClassificationService extends BaseService {
   async onPalettePublished({ job, response }: ArgOf<'JobSuccess'>) {
     if (job.name !== JobName.AssetPaletteExtract || response !== JobStatus.Success) return;
     const asset = await this.assetRepository.getById(job.data.id);
-    if (asset) await this.evaluateAsset(asset.id, asset.ownerId);
+    // Only colour rules can change their answer once a palette is ready.
+    if (asset)
+      await this.evaluateAsset(asset.id, asset.ownerId, ({ filter }) =>
+        [filter, ...(filter?.or ?? [])].some((branch) => !!branch?.color),
+      );
   }
 
   /**
    * Evaluate one newly processed item against every enabled rule of its owner. Background work:
    * never throws, and a rule whose visual phrases cannot be compared right now is left alone.
    */
-  async evaluateAsset(assetId: string, ownerId: string): Promise<void> {
+  async evaluateAsset(
+    assetId: string,
+    ownerId: string,
+    only: (rule: ClassificationRuleWithAlbum) => boolean = () => true,
+  ): Promise<void> {
     let rules: ClassificationRuleWithAlbum[];
     try {
-      rules = (await this.classificationRepository.getEnabledRules(ownerId)) ?? [];
+      rules = ((await this.classificationRepository.getEnabledRules(ownerId)) ?? []).filter((rule) => only(rule));
     } catch (error) {
       if (queueExecution.getStore()) throw error;
       this.logger.warn(`Classification rules unavailable for asset ${assetId}: ${String(error)}`);
