@@ -173,19 +173,20 @@ export class StudioCutoutService {
     let folder: string | undefined;
     const controller = new AbortController();
     try {
-      folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-cutout-'));
+      const frameFolder = await mkdtemp(path.join(tmpdir(), 'frameleaf-cutout-'));
+      folder = frameFolder;
       const { plan } = input;
       await this.clips.extractFrames(
         input.path,
-        folder,
+        frameFolder,
         { startSeconds: plan.startSeconds.toFixed(6), durationSeconds: plan.durationSeconds.toFixed(6) },
         { fps: plan.fps, frames: plan.frames, width: plan.frameWidth, height: plan.frameHeight },
         controller.signal,
       );
-      const framePaths = (await readdir(folder))
+      const framePaths = (await readdir(frameFolder))
         .filter((name) => /^\d{5}\.jpg$/.test(name))
         .sort()
-        .map((name) => path.join(folder, name));
+        .map((name) => path.join(frameFolder, name));
       if (framePaths.length === 0) {
         throw new BadRequestException('No pictures could be read from the clip');
       }

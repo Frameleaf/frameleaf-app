@@ -1089,6 +1089,12 @@
       "code": "const own = canvas.getContext('2d')",
       "class": "canvas2d-legacy",
       "reason": "Cut-out staging (FL-639) on the legacy Canvas2D route, for a target canvas of another size than the pool's."
+    },
+    {
+      "file": "features/timeline/stores/actions/edit/motion-track-actions.ts",
+      "code": "const context = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context reading a decoded SDR frame for analysis (Studio next features); not a render route."
     }
   ]
 }

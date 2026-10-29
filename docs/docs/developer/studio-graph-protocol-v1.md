@@ -1342,6 +1342,8 @@ Each reference is `{ x, y, width, height, rotation }`: a pose at the child's fir
 - A request that changes nothing is refused as `failed`, unlike every other command in this part (`clip.setTransformParent/same-parent`, `…/detach-unparented`). **Native rule:** do not send one.
 - For a child or parent that is keyframed, driven by an expression or a modifier, or already has a `transformParent`, the poses are the resolved, composed transforms at that frame. Their computation uses floating-point matrix arithmetic with rotations. It is engine arithmetic (13.1), and fixtures `clip.setTransformParent/detach`, `…/reparent` and `…/animated-parent` are marked so. **Native rule:** attach only clips that have none of those, and do not detach, unless the implementation reproduces the marked fixtures bit for bit.
 
+**Motion track records (FL-627).** The web editor's motion tracking writes ordinary `x`, `y`, `width` and `height` keyframes and records each application on the target item as `motionTracks: [{ applicationId, algorithm, sourceId, keyFrames, lostFrames }]` (items allow additional properties). `keyFrames` are the item-relative frames it keyed. Playback ignores the record. **Native rule:** preserve it; a client that removes a track deletes those four properties' keys at `keyFrames` and drops the entry.
+
 ### 12.7 Tracks
 
 #### 12.7.1 `track.add`
