@@ -703,7 +703,7 @@
           }
           comparison[id] = URL.createObjectURL(blob);
         } catch (error_) {
-          if (!disposed && current === generation && request === compareRequest) {
+          if (!disposed && current === generation && request === compareRequest && compareOpen) {
             failure(error_);
           }
         }
