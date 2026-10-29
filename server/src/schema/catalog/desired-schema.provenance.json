@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "484073eab2430383b3fd91a4f54a45ff621ef4c2",
+  "sourceCommit": "859bece250776d206cfc420014fab34b5c93a56f",
   "sourceHashes": {
     "src/enum.ts": "d34b6a42251d64c2b8f690255cde86cfda0c7103d58658aba1ef73c85c100197",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -41,7 +41,7 @@
     "src/schema/tables/asset-ocr.table.ts": "758a063b9864bdf63407454c2741b01ea36aef8fb2e3f2f2aefb61db04d60662",
     "src/schema/tables/asset-palette.table.ts": "580f0edd7f4f1a13fa2a3a218d9246d26087faeb6a6973f7b93980d7caf77550",
     "src/schema/tables/asset-restoration.table.ts": "46e87861f5610b0354eeb3739e2aad4264e2dd764e527a248668b859194a456f",
-    "src/schema/tables/asset-source.table.ts": "ef7826eb4c7fcc2d04dd49880ffb7daf31a457d54fb479bd6c77c288c974939e",
+    "src/schema/tables/asset-source.table.ts": "35e869979a6c4f6371e07f33e987bcf4b95a0409879985eeeca61ee5fab4d8cb",
     "src/schema/tables/asset-upload-resource.table.ts": "74a352d564053c96c4502d8fc77e1d5c0870ef0c662033235be65f52d07e426a",
     "src/schema/tables/asset-video-duplicate-frame.table.ts": "78268c571f126dedc814313ecfb53e962c59750280d6dea72929443afa6468f5",
     "src/schema/tables/asset.table.ts": "4d418386ca30b5db2b33c9d0a6aa6652ab4f54a39e364d9cb920711b649cc73c",
@@ -152,6 +152,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "f8b84d0e2c40184b313b2a8604db1e108d1017ac71030d6ce7f0835c0ad67b68",
-  "rawMetadataSha256": "54e50361003408ba13a20fc0c66ebb44d7a919c4d5acbeada0664ce9837910e2"
+  "dumpSha256": "be74063071c2cd1325a2e18271cf23b082a7fd8d86f683b4689d8be4311e6064",
+  "rawMetadataSha256": "4f1d5d6f63cb880ac6ebb49316cdf68cd66c47c232d62c76f363d991f52ec8fd"
 }

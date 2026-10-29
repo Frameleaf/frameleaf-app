@@ -136,6 +136,7 @@ describe('the check before importing', () => {
       rated: 3,
       notes: 2,
       sources: 3,
+      notWebAddresses: 1,
       annotations: 0,
       areaCommentsWaiting: 1,
       colouredFolders: 4,

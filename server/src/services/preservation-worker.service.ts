@@ -50,7 +50,7 @@ import {
   executionSignal,
   settleOperationExecution,
 } from 'src/utils/execution-signal.js';
-import { portableCaptureSource } from 'src/utils/library-manifest.js';
+import { portableAssetSource, portableCaptureSource } from 'src/utils/library-manifest.js';
 import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import {
   GENERATED_DESCRIPTION_MARK,
@@ -624,7 +624,7 @@ export class PreservationWorkerService {
     const sidecar: PreservationSidecar = {
       schemaVersion: PRESERVATION_SCHEMA_VERSION,
       libraryScope: asset.libraryScope ?? LibraryScope.Personal,
-      sources: sources.map((source) => portableCaptureSource(source)),
+      sources: sources.map((source) => portableAssetSource(source)),
       sourceAssetId: asset.id,
       originalFileName: asset.originalFileName,
       type: asset.type as PreservationSidecar['type'],
@@ -635,6 +635,8 @@ export class PreservationWorkerService {
         localDateTime: iso(asset.localDateTime),
         dateTimeOriginal: iso(asset.dateTimeOriginal),
         timeZone: asset.timeZone ?? null,
+        // Only a Boards-only item's Added date can be restored (FL-653), so only it is written.
+        ...(asset.libraryScope === LibraryScope.Design && asset.createdAt && { addedAt: iso(asset.createdAt)! }),
       },
       isFavorite: asset.isFavorite,
       visibility:
@@ -1890,6 +1892,12 @@ export class PreservationWorkerService {
     }
     if (comparison?.conflicts.some((conflict) => !fields.has(conflict.field))) {
       findings.push('library_values_kept');
+    }
+
+    // FL-653: a Boards-only item restored as new gets back its Added date (such as from an Eagle
+    // import), under the Added-date API's rule. Last, so nothing above reads the moved date.
+    if (created && sidecar.dates.addedAt && sidecar.libraryScope === LibraryScope.Design) {
+      await this.repository.restoreAddedDate(context.ownerId, assetId, new Date(sidecar.dates.addedAt));
     }
     return findings;
   }
