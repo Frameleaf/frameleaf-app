@@ -192,6 +192,24 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0148 (FL-596) adds motion tracking. The clip panel's Track motion section (one selected visual
+clip: title, shape, image or video overlay) uses that clip's own box at the playhead as the tracking box:
+the editor places it over the subject first. It is mapped into the chosen video's source pixels through
+the video's resolved transform. Videos that are rotated, cropped, corner-pinned, flipped, reversed or
+have animated transforms are refused, and so are targets with vector position/scale keys. Frames are
+decoded at 480 px wide from each timeline frame's mapped source time (VFR-safe) and tracked forward or
+backward, up to 900 frames, by normalised cross-correlation with a small scale search
+(`ncc-scale-search-v1`). The first frame below 0.6 confidence and every later frame are marked lost,
+never bridged; low-texture or out-of-frame seeds are refused. Apply writes linear x, y, width and height
+keyframes that keep the target's offset from the tracked box. Lost frames block Apply until the editor
+keeps the tracked part (or reseeds there and tracks a second segment), and existing position/size keys
+in the range block it until replacement is confirmed. Each application is one undo step, and Remove
+deletes one application's keys in this session. Saved graphs keep only the standard keyframe fields
+(protocol 13.2.4), so after reopening, tracked keys are ordinary keyframes. The synthetic 1080p path
+holds the centre within 5 px and size within 5% on at least 95% of frames, and an occlusion produces a
+lost interval. Rotation and perspective, mask-path tracking, preview/export pixel checks and browser
+journeys remain open.
+
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.

@@ -6853,8 +6853,10 @@
           "0027-effect-frame-clock-and-animation.patch",
           "0037-renderable-opacity.patch",
           "0059-mask-path-keyframes.patch",
-          "19e9aded35"
+          "19e9aded35",
+          "0148-motion-tracking.patch"
         ],
+        "note": "FL-596 adds motion tracking that writes x, y, width and height keyframes.",
         "status": "shipped"
       },
       "id": "readme.keyframe-animation.6",

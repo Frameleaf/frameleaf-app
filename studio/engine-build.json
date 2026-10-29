@@ -709,7 +709,12 @@
       "path": "patches/0144-transcript-editing.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "73362d1a65af63134f396e20e89e5b9ab5133db7155ec449b8b3e92a53de897f"
+    },
+    {
+      "path": "patches/0148-motion-tracking.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "542f8a97e1fb95c2af6e8b3eb89a1301825b032e6060682c313d21c96608cb55"
     }
   ],
-  "sourceSha256": "d13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b"
+  "sourceSha256": "785955db15f491d27bd1c85383eb425bbb2fc20f08182bf82a82e91c1039cf90"
 }
