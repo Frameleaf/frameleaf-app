@@ -500,9 +500,6 @@ export const clearLocalSetup = (storage = browserStorage()) => {
 
 // ----------------------------------------------------------- estimates
 
-export const TB = 1e12;
-export const formatTb = (bytes: number) => `${(Math.max(0, bytes || 0) / TB).toFixed(1)} TB`;
-
 /** Items an hour this hardware indexes at the recommended tier. */
 export const itemsPerHour = (gpu: boolean, embeddingMs?: number | null) =>
   embeddingMs && embeddingMs > 0 ? Math.max(300, Math.round(3_600_000 / (embeddingMs * 4))) : gpu ? 5400 : 1200;

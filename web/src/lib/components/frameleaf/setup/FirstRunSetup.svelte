@@ -35,7 +35,6 @@
     clearLocalSetup,
     firstInvalidStep,
     flowSteps,
-    formatTb,
     goToStep,
     itemsPerHour,
     KEEP_LAYOUT,
@@ -218,15 +217,22 @@
         library = null;
       }
     })();
-    const [storageResult, configResult, , summary, hardwareResult, usersResult] = await Promise.allSettled([
-      getFrameleafSetupStorage(),
+    // The storage check is a quick disk probe; it must not wait for the hardware benchmark either.
+    const storageRequest = (async () => {
+      try {
+        storage = await getFrameleafSetupStorage();
+      } catch {
+        storage = null;
+      }
+    })();
+    const [configResult, , , summary, hardwareResult, usersResult] = await Promise.allSettled([
       getConfig(),
+      storageRequest,
       libraryRequest,
       setup.flow === 'existing' ? getSummary({ allAccounts: true }) : Promise.resolve(null),
       getHardwareCheck(),
       setup.flow === 'existing' ? searchUsersAdmin({}) : Promise.resolve([]),
     ]);
-    storage = storageResult.status === 'fulfilled' ? storageResult.value : null;
     config = configResult.status === 'fulfilled' ? configResult.value : null;
     if (summary.status === 'fulfilled' && summary.value) {
       const queues = summary.value.queues;
@@ -1110,7 +1116,7 @@
                       [$t('frameleaf_setup_found_server'), backup.server],
                       [$t('frameleaf_setup_found_last'), new Date(backup.date).toLocaleString($locale)],
                       [$t('frameleaf_setup_stat_items'), formatCount(backup.items)],
-                      [$t('size'), formatTb(backup.bytes)],
+                      [$t('size'), formatSize(Math.max(0, backup.bytes))],
                     ])}
                     <div class="frs-choices two" role="radiogroup" aria-label={$t('frameleaf_setup_found_title')}>
                       <SetupChoiceCard
@@ -1241,7 +1247,7 @@
                       )}
                     {:else if storage.writable}
                       <Icon icon={mdiCheckCircle} size="16" aria-hidden={true} />{$t('frameleaf_setup_storage_ok', {
-                        values: { free: formatTb(storage.freeBytes) },
+                        values: { free: formatSize(Math.max(0, storage.freeBytes)) },
                       })}
                     {:else}
                       <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />{$t(
