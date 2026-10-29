@@ -34,6 +34,11 @@
     localErrors = $state<Record<number, string>>({}),
     completed = $state(0);
   let stop = false;
+  const rendering = (value: DevelopBatchResponseDto) =>
+    value.status === 'open' &&
+    value.items.some((item) =>
+      item.returns.some((returned) => returned.status === 'confirmed' || returned.status === 'imported'),
+    );
   const reason = (code: string | null | undefined) => $t(`frameleaf_batch.reason_${batchReason(code)}` as Translations);
   const prepared = $derived(
     batch?.items.filter((item) => item.available && item.preparationStatus === 'prepared').length ?? 0,
@@ -97,12 +102,23 @@
         await selectBatch(initialBatchId);
       }
     });
+    // Only returns the server is still rendering change on their own; a settled, hidden or
+    // already-refreshing batch is not polled, so an idle page makes no requests.
+    let polling = false;
     const timer = setInterval(() => {
-      if (batch && !busy && !uploading) {
-        void getDevelopBatch({ id: batch.id })
-          .then((value) => (batch = value))
-          .catch(showError);
+      if (!batch || busy || uploading || polling || document.hidden || !rendering(batch)) {
+        return;
       }
+      const id = batch.id;
+      polling = true;
+      void getDevelopBatch({ id })
+        .then((value) => {
+          if (!stop && batch?.id === id && !busy && !uploading) {
+            batch = value;
+          }
+        })
+        .catch(showError)
+        .finally(() => (polling = false));
     }, 2500);
     return () => {
       stop = true;
