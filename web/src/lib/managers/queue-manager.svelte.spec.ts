@@ -46,3 +46,30 @@ it('keeps polling for another listener when an earlier cleanup is called twice',
   }
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it('does not poll a hidden tab or stack a poll on one still waiting', async () => {
+  const manager = new QueueManager();
+  let answer: (value: never[]) => void = () => {};
+  sdkMock.getQueues.mockImplementation(() => new Promise((resolve) => (answer = resolve)) as never);
+  const stop = manager.listen();
+  try {
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(1);
+    // the first answer is still waiting: the ticks add nothing
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(1);
+    answer([]);
+    await vi.advanceTimersByTimeAsync(0);
+    sdkMock.getQueues.mockResolvedValue([]);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(2);
+
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(2);
+    hidden.mockRestore();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(3);
+  } finally {
+    stop();
+  }
+});

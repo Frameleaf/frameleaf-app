@@ -133,7 +133,9 @@
     }
     const timer = setInterval(() => {
       now = new Date();
-      void load();
+      if (!document.hidden) {
+        void load();
+      }
     }, ACTIVE_POLL_MS);
     return () => clearInterval(timer);
   });

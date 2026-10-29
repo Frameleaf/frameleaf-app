@@ -12,6 +12,7 @@ export class QueueManager {
 
   #interval?: ReturnType<typeof setInterval>;
   #listenerCount = 0;
+  #refreshing = false;
 
   get snapshots() {
     return this.#snapshots;
@@ -53,11 +54,21 @@ export class QueueManager {
   }
 
   async refresh(tick = false) {
-    this.#snapshots.push({
-      timestamp: DateTime.now().toMillis(),
-      snapshot: this.#listenerCount > 0 || !tick ? await getQueues().catch(() => undefined) : undefined,
-    });
-    this.#snapshots = this.#snapshots.slice(-30);
+    // A timer tick skips a hidden tab and never stacks a request on one still waiting: on a busy
+    // server every queue's counts can take longer than the poll interval.
+    if (tick && (this.#refreshing || document.hidden)) {
+      return;
+    }
+    this.#refreshing = true;
+    try {
+      this.#snapshots.push({
+        timestamp: DateTime.now().toMillis(),
+        snapshot: this.#listenerCount > 0 || !tick ? await getQueues().catch(() => undefined) : undefined,
+      });
+      this.#snapshots = this.#snapshots.slice(-30);
+    } finally {
+      this.#refreshing = false;
+    }
   }
 }
 

@@ -105,7 +105,11 @@
     if (!status?.activeRun && !status?.activeRestore) {
       return;
     }
-    const timer = setInterval(() => void load(), ACTIVE_POLL_MS);
+    const timer = setInterval(() => {
+      if (!document.hidden) {
+        void load();
+      }
+    }, ACTIVE_POLL_MS);
     return () => clearInterval(timer);
   });
 
