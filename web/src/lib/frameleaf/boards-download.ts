@@ -1,6 +1,5 @@
-import { AlbumUserRole, getAlbumItems, LibraryAssetItemKind, type AlbumResponseDto } from '@frameleaf/sdk';
+import { getAlbumItems, LibraryAssetItemKind, type AlbumResponseDto } from '@frameleaf/sdk';
 import { downloadArchive, ignoreCancelledDownload } from '$lib/utils/asset-utils';
-import { handleError } from '$lib/utils/handle-error';
 
 /**
  * Boards' Download (FL-660, prototype `ExportDialog`, README point 10): the originals as a .zip,
@@ -27,58 +26,69 @@ export const downloadBoardsItems = ({ fileName, assetIds, bookmarkIds, includeLi
     ignoreCancelledDownload,
   );
 
-/**
- * A library file lists only the account's own items: the server refuses one for anything shared
- * with them. A collection qualifies when this person owns it and nobody else can add to it.
- */
-export const canIncludeLibraryForCollection = (album: AlbumResponseDto, userId: string) =>
-  album.albumUsers.some(({ role, user }) => role === AlbumUserRole.Owner && user.id === userId) &&
-  album.albumUsers.every(({ role }) => role !== AlbumUserRole.Editor);
+export type CollectionItems = {
+  assetIds: string[];
+  bookmarkIds: string[];
+  /** Every file and link read belongs to this person. */
+  owned: boolean;
+  /** Every page was read: reading stops once there are more than a library file can list. */
+  complete: boolean;
+};
 
-/** Every file and saved link in a collection, read a page at a time. */
-export const collectionItems = async (albumId: string, signal?: AbortSignal) => {
+/**
+ * Every file and saved link in a collection, read a page at a time, and whether they are all this
+ * person's own. A collection they own can still hold items that the people it is shared with added.
+ */
+export const collectionItems = async (
+  albumId: string,
+  userId: string,
+  signal?: AbortSignal,
+): Promise<CollectionItems> => {
   const assetIds: string[] = [];
   const bookmarkIds: string[] = [];
+  let owned = true;
   let cursor: { afterId: string; afterKind: import('@frameleaf/sdk').LibraryItemKind } | undefined;
   do {
     const page = await getAlbumItems({ id: albumId, limit: ITEMS_PAGE, ...cursor }, { signal });
     for (const item of page.items) {
       if (item.kind === LibraryAssetItemKind.Asset) {
         assetIds.push(item.asset.id);
+        owned &&= 'ownerId' in item.asset && item.asset.ownerId === userId;
       } else {
         bookmarkIds.push(item.bookmark.id);
+        owned &&= item.bookmark.ownerId === userId;
       }
     }
     cursor = page.nextCursor ? { afterId: page.nextCursor.id, afterKind: page.nextCursor.kind } : undefined;
   } while (cursor && assetIds.length + bookmarkIds.length <= LIBRARY_FILE_LIMIT);
-  return { assetIds, bookmarkIds };
+  return { assetIds, bookmarkIds, owned, complete: !cursor };
 };
 
 /**
- * A collection's Download. Without the library file the server reads the collection itself; with
- * it, every file and saved link is listed first so the library file can name them all.
+ * The server makes a library file only for the account's own items, at most `LIBRARY_FILE_LIMIT`
+ * of them. Until a collection's items are read (`null`) the answer is no.
  */
-export const downloadBoardsCollection = async ({
+export const canIncludeLibrary = (items: CollectionItems | null) =>
+  !!items && items.owned && items.complete && items.assetIds.length + items.bookmarkIds.length <= LIBRARY_FILE_LIMIT;
+
+/**
+ * A collection's Download. With the library file it downloads the items that were read, so the
+ * file can name them all; otherwise the server reads the collection itself.
+ */
+export const downloadBoardsCollection = ({
   album,
   fileName,
+  items,
   includeLibrary,
-  errorMessage,
 }: {
   album: AlbumResponseDto;
   fileName: string;
+  items: CollectionItems | null;
   includeLibrary: boolean;
-  /** Shown when the collection's items cannot be read. */
-  errorMessage: string;
 }) => {
-  if (!includeLibrary) {
-    return downloadArchive(fileName, { albumId: album.id }, { originals: true }).catch(ignoreCancelledDownload);
+  if (includeLibrary && items && canIncludeLibrary(items)) {
+    const { assetIds, bookmarkIds } = items;
+    return downloadBoardsItems({ fileName, assetIds, bookmarkIds, includeLibrary: true });
   }
-  let items: Awaited<ReturnType<typeof collectionItems>>;
-  try {
-    items = await collectionItems(album.id);
-  } catch (error) {
-    handleError(error, errorMessage);
-    return;
-  }
-  return downloadBoardsItems({ fileName, ...items, includeLibrary: true });
+  return downloadArchive(fileName, { albumId: album.id }, { originals: true }).catch(ignoreCancelledDownload);
 };
