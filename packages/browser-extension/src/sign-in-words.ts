@@ -110,6 +110,19 @@ export const SIGN_IN_PROBLEMS: Record<SignInProblem, Problem> = {
     title: 'A sign-in window is already open',
     body: () => 'Finish signing in there, or close it and try again.',
   },
+  window: {
+    tone: 'warn',
+    title: 'The sign-in window didn’t open',
+    body: () =>
+      'This browser couldn’t show the sign-in window. Try again, or use a key from Frameleaf instead.',
+    key: true,
+  },
+  'sign-out': {
+    tone: 'warn',
+    title: 'Couldn’t sign out of your current server',
+    body: () =>
+      'You stay signed in to it until it can be reached. Check that it’s turned on, then try again.',
+  },
   failed: {
     tone: 'warn',
     title: 'Signing in didn’t finish',

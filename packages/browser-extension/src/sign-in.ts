@@ -49,6 +49,7 @@ export function allowPageUrl(
     codeChallenge: string;
     state: string;
     client: BrowserClient;
+    installationId: string;
   },
 ) {
   const url = new URL(
@@ -60,9 +61,19 @@ export function allowPageUrl(
     code_challenge_method: 'S256',
     state: request.state,
     client: request.client,
+    installation: request.installationId,
   }).toString();
   return url.href;
 }
+
+/**
+ * Whether the sign-in window was closed by the person (Chrome's message for it), rather than
+ * failing to open or load at all.
+ */
+export const windowClosed = (error: unknown) =>
+  /did not approve|cancel|closed/i.test(
+    error instanceof Error ? error.message : String(error),
+  );
 
 /** Reads the code from where the sign-in window ended, checking it is ours and for this sign-in. */
 export function readReturn(

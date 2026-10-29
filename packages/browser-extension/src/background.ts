@@ -49,6 +49,7 @@ import {
   removeAccess,
   SIGN_IN_WINDOW_MS,
   SignInFailure,
+  windowClosed,
 } from './sign-in';
 import {
   browserClient,
@@ -66,6 +67,7 @@ import {
 import {
   accessFor,
   connectionStatus,
+  installationId,
   credentialFor,
   disconnect,
   recentServers,
@@ -434,13 +436,18 @@ export function handleMessage(
             );
           return { ok: true, connection: current, preview };
         }
-        case 'disconnect':
+        case 'disconnect': {
           stopDelivery();
           stopScreenshot();
           clearPreview();
-          await signOutCurrent();
+          // FL-655: "Sign out of this browser only" leaves the access in Frameleaf on purpose
+          const localOnly =
+            'localOnly' in message && message.localOnly === true;
+          if (!(await signOutCurrent(localOnly)))
+            throw new CaptureFailure('signOut');
           await setSignInNotice(null);
           break;
+        }
         case 'sign-in-state':
           return {
             ok: true,
@@ -530,21 +537,29 @@ export function handleMessage(
  * server, so it leaves API keys too; a key pasted by hand is only forgotten here. Waiting items
  * are kept either way, for when you sign in to that server again.
  */
-async function signOutCurrent() {
+async function signOutCurrent(localOnly = false): Promise<boolean> {
   const current = await connectionStatus().catch(() => null);
   if (current) {
     const access = await accessFor(current.binding).catch(() => null);
-    if (
-      access?.method === 'sign-in' &&
-      (await hasServerAccess(current.binding.origin))
-    )
-      await removeAccess(
-        current.binding.origin,
-        access.token,
-        globalThis.fetch.bind(globalThis),
-      ).catch(() => false);
+    if (access?.method === 'sign-in' && !localOnly) {
+      // nothing more is sent with the key while it is being removed
+      stopDelivery();
+      const removed =
+        (await hasServerAccess(current.binding.origin)) &&
+        (await removeAccess(
+          current.binding.origin,
+          access.token,
+          globalThis.fetch.bind(globalThis),
+        ).catch(() => false));
+      if (!removed) {
+        // still signed in: keep the key, and carry on saving with it
+        wake();
+        return false;
+      }
+    }
   }
   await disconnect();
+  return true;
 }
 let signingIn = false;
 /**
@@ -580,6 +595,9 @@ async function signIn(message: object): Promise<ExtensionReply> {
     };
   signingIn = true;
   const transport = globalThis.fetch.bind(globalThis);
+  /** An access the server made that this browser has not kept yet, removed again if it isn't. */
+  let exchanged: { secret: string } | undefined;
+  let saved = false;
   try {
     if (!(await hasServerAccess(origin))) throw new SignInFailure('permission');
     await checkServer(origin, transport);
@@ -589,7 +607,7 @@ async function signIn(message: object): Promise<ExtensionReply> {
         stopDelivery();
         stopScreenshot();
         clearPreview();
-        await signOutCurrent();
+        if (!(await signOutCurrent())) throw new SignInFailure('sign-out');
       });
     const verifier = randomText(48);
     const state = randomText(24);
@@ -603,12 +621,18 @@ async function signIn(message: object): Promise<ExtensionReply> {
           codeChallenge: await codeChallenge(verifier),
           state,
           client: browserClient(),
+          installationId: await installationId(),
         }),
       );
-    } catch {
-      // closing the window is cancelling; a window left open too long has expired
+    } catch (error) {
+      // closing the window is cancelling; a window left open too long has expired; a window that
+      // could not open at all offers the key instead
       throw new SignInFailure(
-        Date.now() - started > SIGN_IN_WINDOW_MS ? 'expired' : 'cancelled',
+        Date.now() - started > SIGN_IN_WINDOW_MS
+          ? 'expired'
+          : windowClosed(error)
+            ? 'cancelled'
+            : 'window',
       );
     }
     if (Date.now() - started > SIGN_IN_WINDOW_MS)
@@ -619,6 +643,7 @@ async function signIn(message: object): Promise<ExtensionReply> {
       { code, codeVerifier: verifier, redirectUri },
       transport,
     );
+    exchanged = access;
     await serialize(async () => {
       stopDelivery();
       stopScreenshot();
@@ -637,6 +662,7 @@ async function signIn(message: object): Promise<ExtensionReply> {
         method: 'sign-in',
         apiKeyId: access.apiKeyId,
       });
+      saved = true;
       await rememberServer(origin, binding.userName);
       await setSignInNotice({ kind: 'welcome' });
       await refresh().catch(() => {});
@@ -644,6 +670,10 @@ async function signIn(message: object): Promise<ExtensionReply> {
     });
     return { ok: true, connection: await connectionStatus() };
   } catch (error) {
+    if (exchanged && !saved)
+      await removeAccess(origin, exchanged.secret, transport).catch(
+        () => false,
+      );
     const problem: SignInProblem =
       error instanceof SignInFailure ? error.problem : 'failed';
     await setSignInNotice({ kind: 'problem', problem, origin }).catch(() => {});

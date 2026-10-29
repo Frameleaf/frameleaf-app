@@ -38,6 +38,7 @@ const request = {
   codeChallengeMethod: CodeChallengeMethod.S256,
   state: 'state-0123456789abcdef',
   client: BrowserExtensionClient.Chrome,
+  installationId: 'installation-one-0123',
 };
 const replace = vi.fn();
 

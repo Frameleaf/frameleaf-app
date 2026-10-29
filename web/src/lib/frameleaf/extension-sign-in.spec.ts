@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { extensionSignInRequest, isReturnFor } from '$lib/frameleaf/extension-sign-in';
+import {
+  extensionSignInRequest,
+  isReturnFor,
+  keepExtensionContinue,
+  takeExtensionContinue,
+} from '$lib/frameleaf/extension-sign-in';
 
 const REDIRECT = 'https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/';
 const query = (overrides: Record<string, string> = {}) =>
@@ -9,6 +14,7 @@ const query = (overrides: Record<string, string> = {}) =>
     code_challenge_method: 'S256',
     state: 'state-0123456789abcdef',
     client: 'edge',
+    installation: 'installation-one-0123',
     ...overrides,
   });
 
@@ -20,6 +26,7 @@ describe('the Allow page request (FL-655)', () => {
       codeChallengeMethod: 'S256',
       state: 'state-0123456789abcdef',
       client: 'edge',
+      installationId: 'installation-one-0123',
     });
   });
 
@@ -30,6 +37,8 @@ describe('the Allow page request (FL-655)', () => {
     { code_challenge: 'short' },
     { state: 'short' },
     { client: 'firefox' },
+    { installation: 'short' },
+    { installation: '' },
   ])('refuses %o', (overrides) => {
     expect(extensionSignInRequest(query(overrides))).toBeNull();
   });
@@ -38,5 +47,18 @@ describe('the Allow page request (FL-655)', () => {
     expect(isReturnFor(`${REDIRECT}?code=c`, REDIRECT)).toBe(true);
     expect(isReturnFor('https://ponmlkjihgfedcbaponmlkjihgfedcba.chromiumapp.org/?code=c', REDIRECT)).toBe(false);
     expect(isReturnFor('not a url', REDIRECT)).toBe(false);
+  });
+});
+
+describe('Not you? through a provider’s sign-out (FL-655)', () => {
+  it('keeps the Allow page to come back to, once', () => {
+    keepExtensionContinue('/auth/allow-extension?client=chrome');
+    expect(takeExtensionContinue()).toBe('/auth/allow-extension?client=chrome');
+    expect(takeExtensionContinue()).toBeNull();
+  });
+  it('keeps nothing else', () => {
+    keepExtensionContinue('/photos');
+    keepExtensionContinue('https://evil.example/auth/allow-extension');
+    expect(takeExtensionContinue()).toBeNull();
   });
 });

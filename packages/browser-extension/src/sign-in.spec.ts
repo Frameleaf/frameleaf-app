@@ -43,6 +43,7 @@ describe('signing in with your Frameleaf account (FL-655)', () => {
         codeChallenge: 'c'.repeat(43),
         state: 's'.repeat(32),
         client: 'edge',
+        installationId: 'installation-one-0123',
       }),
     );
     expect(url.origin + url.pathname).toBe(
@@ -54,6 +55,7 @@ describe('signing in with your Frameleaf account (FL-655)', () => {
       code_challenge_method: 'S256',
       state: 's'.repeat(32),
       client: 'edge',
+      installation: 'installation-one-0123',
     });
   });
 
@@ -124,17 +126,15 @@ describe('signing in with your Frameleaf account (FL-655)', () => {
   });
 
   it('exchanges the code and says when it took too long', async () => {
-    const transport = vi
-      .fn()
-      .mockResolvedValue(
-        json({
-          secret: 'k',
-          apiKeyId: 'a',
-          userId: 'u',
-          serverId: 's',
-          name: 'Save to Frameleaf · Chrome',
-        }),
-      );
+    const transport = vi.fn().mockResolvedValue(
+      json({
+        secret: 'k',
+        apiKeyId: 'a',
+        userId: 'u',
+        serverId: 's',
+        name: 'Save to Frameleaf · Chrome',
+      }),
+    );
     await expect(
       exchangeCode(
         'https://photos.example',

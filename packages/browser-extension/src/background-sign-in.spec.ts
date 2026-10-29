@@ -149,6 +149,109 @@ describe('Sign in with your Frameleaf account (FL-655)', () => {
     );
   });
 
+  it('sends one installation id, made once, with every sign-in', async () => {
+    const { handleMessage } = await import('./background');
+    await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example' },
+      popup,
+    );
+    await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example' },
+      popup,
+    );
+
+    const ids = launch.mock.calls.map(([{ url }]) =>
+      new URL(url).searchParams.get('installation'),
+    );
+    expect(ids[0]).toMatch(/^[\da-f]{48}$/);
+    expect(ids[1]).toBe(ids[0]);
+    expect(values.frameleafInstallationV1).toBe(ids[0]);
+  });
+
+  it('a window that cannot open offers the key, unlike closing it', async () => {
+    launch.mockRejectedValue(
+      new Error('Authorization page could not be loaded.'),
+    );
+    const { handleMessage } = await import('./background');
+
+    const reply = await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example' },
+      popup,
+    );
+
+    expect(reply).toEqual(
+      expect.objectContaining({ ok: false, problem: 'window' }),
+    );
+  });
+
+  it('removes the access again when it can’t be kept here', async () => {
+    vi.mocked(connectServer).mockResolvedValue({
+      ...binding,
+      serverId: 'another-server',
+    });
+    const { handleMessage } = await import('./background');
+
+    const reply = await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example' },
+      popup,
+    );
+
+    expect(reply).toEqual(
+      expect.objectContaining({ ok: false, problem: 'failed' }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://photos.example/api/browser-extension/sign-in',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: { 'x-api-key': 'access-key' },
+      }),
+    );
+    expect(values.frameleafConnectionV1).toBeUndefined();
+  });
+
+  it('stays signed in when the server can’t be reached to sign out, unless told to sign out here only', async () => {
+    const { handleMessage } = await import('./background');
+    await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example' },
+      popup,
+    );
+    const reachable = fetchMock.getMockImplementation() as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') throw new TypeError('offline');
+      return reachable(url, init);
+    });
+
+    const failed = await handleMessage({ type: 'disconnect' }, popup);
+    expect(failed).toEqual(expect.objectContaining({ ok: false }));
+    expect(values.frameleafConnectionV1).toEqual(
+      expect.objectContaining({ token: 'access-key' }),
+    );
+
+    // switching servers stops before the sign-in window opens
+    launch.mockClear();
+    const switched = await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example', switching: true },
+      popup,
+    );
+    expect(switched).toEqual(
+      expect.objectContaining({ ok: false, problem: 'sign-out' }),
+    );
+    expect(launch).not.toHaveBeenCalled();
+    expect(values.frameleafConnectionV1).toEqual(
+      expect.objectContaining({ token: 'access-key' }),
+    );
+
+    const local = await handleMessage(
+      { type: 'disconnect', localOnly: true },
+      popup,
+    );
+    expect(local).toEqual(expect.objectContaining({ ok: true }));
+    expect(values.frameleafConnectionV1).toBeUndefined();
+  });
+
   it('closing the window is cancelling, and nothing is saved', async () => {
     launch.mockRejectedValue(new Error('The user did not approve access.'));
     const { handleMessage } = await import('./background');

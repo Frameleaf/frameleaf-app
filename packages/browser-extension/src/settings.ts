@@ -215,6 +215,8 @@ export type SignInProblem =
   | 'old-server'
   | 'permission'
   | 'busy'
+  | 'window'
+  | 'sign-out'
   | 'failed';
 export type SignInNotice =
   | { kind: 'welcome' }
@@ -228,6 +230,8 @@ const PROBLEMS: SignInProblem[] = [
   'old-server',
   'permission',
   'busy',
+  'window',
+  'sign-out',
   'failed',
 ];
 export async function signInNotice(): Promise<SignInNotice | null> {
@@ -248,4 +252,22 @@ export async function setSignInNotice(notice: SignInNotice | null) {
   await initializeStorage();
   if (notice) await trustedStorage().set({ [noticeKey]: notice });
   else await trustedStorage().remove(noticeKey);
+}
+
+/**
+ * FL-655: a random id this installation of the extension makes once. Signing in sends it, so the
+ * server replaces only this installation's access, never another browser's.
+ */
+const installationKey = 'frameleafInstallationV1';
+export async function installationId(): Promise<string> {
+  await initializeStorage();
+  const stored = (await trustedStorage().get(installationKey))[installationKey];
+  if (typeof stored === 'string' && /^[\w-]{16,128}$/.test(stored))
+    return stored;
+  const values = crypto.getRandomValues(new Uint8Array(24));
+  const id = Array.from(values, (value) =>
+    value.toString(16).padStart(2, '0'),
+  ).join('');
+  await trustedStorage().set({ [installationKey]: id });
+  return id;
 }

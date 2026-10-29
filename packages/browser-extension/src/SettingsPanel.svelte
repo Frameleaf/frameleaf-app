@@ -25,17 +25,24 @@
 
   let working = $state(false);
   let error = $state("");
+  /** Sign out failed on the server: offer signing out of this browser only, said plainly. */
+  let stuck = $state(false);
   const server = $derived(hostOf(connection.binding.origin));
   const signedIn = $derived(connection.method === "sign-in");
   const browser = /\bEdg\//.test(navigator.userAgent) ? "Edge" : "Chrome";
 
-  async function signOut() {
+  async function signOut(localOnly = false) {
     if (working) return;
     working = true;
     error = "";
     try {
-      const reply = await sendRequest({ type: "disconnect" });
-      if (!reply.ok) error = reply.error;
+      const reply = await sendRequest(
+        localOnly ? { type: "disconnect", localOnly: true } : { type: "disconnect" },
+      );
+      if (!reply.ok) {
+        error = reply.error;
+        stuck = signedIn;
+      }
     } catch {
       error = "Could not sign out. Reopen the extension and try again.";
     } finally {
@@ -94,9 +101,22 @@
     {/if}
   </p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if stuck}
+    <p class="hint">
+      You can sign out of this browser only. Its access then stays valid in
+      Frameleaf until you remove “Save to Frameleaf · {browser}” in Settings ›
+      API keys.
+    </p>
+    <button
+      type="button"
+      class="small"
+      disabled={working}
+      onclick={() => signOut(true)}>Sign out of this browser only</button
+    >
+  {/if}
 </div>
 <footer class="sheet-foot">
-  <button type="button" class="danger" disabled={working} onclick={signOut}
+  <button type="button" class="danger" disabled={working} onclick={() => signOut()}
     ><Icon name="logout" size={16} />{working ? "Signing out…" : "Sign out"}</button
   >
 </footer>

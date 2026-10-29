@@ -9,13 +9,16 @@ export const extensionSignInRequest = (query: URLSearchParams): BrowserExtension
   const codeChallenge = query.get('code_challenge') ?? '';
   const state = query.get('state') ?? '';
   const client = (query.get('client') ?? 'chrome').toLowerCase();
+  // which installation of the extension is signing in, so only its own access is replaced
+  const installationId = query.get('installation') ?? '';
   if (
     !isExtensionReturnAddress(redirectUri) ||
     !/^[\w-]{43}$/.test(codeChallenge) ||
     query.get('code_challenge_method') !== 'S256' ||
     state.length < 16 ||
     state.length > 512 ||
-    (client !== 'chrome' && client !== 'edge')
+    (client !== 'chrome' && client !== 'edge') ||
+    !/^[\w-]{16,128}$/.test(installationId)
   ) {
     return null;
   }
@@ -25,6 +28,7 @@ export const extensionSignInRequest = (query: URLSearchParams): BrowserExtension
     codeChallengeMethod: CodeChallengeMethod.S256,
     state,
     client: client === 'edge' ? BrowserExtensionClient.Edge : BrowserExtensionClient.Chrome,
+    installationId,
   };
 };
 
@@ -61,3 +65,29 @@ export const isReturnFor = (redirectUrl: string, redirectUri: string) => {
 /** How the browser is named on the page. */
 export const extensionBrowserName = (client: BrowserExtensionClient) =>
   client === BrowserExtensionClient.Edge ? 'Edge' : 'Chrome';
+
+/**
+ * "Not you?" through a provider's sign-out page: the provider returns to the plain sign-in page, so
+ * the Allow page to come back to is kept in this tab until then. Only the Allow page is kept.
+ */
+const CONTINUE_KEY = 'frameleaf.extensionSignInContinue';
+const isAllowPage = (path: string) => /^\/auth\/allow-extension(?:\?|$)/.test(path);
+export const keepExtensionContinue = (path: string) => {
+  if (!isAllowPage(path)) {
+    return;
+  }
+  try {
+    sessionStorage.setItem(CONTINUE_KEY, path);
+  } catch {
+    // without storage, signing in again starts from the extension
+  }
+};
+export const takeExtensionContinue = (): string | null => {
+  try {
+    const path = sessionStorage.getItem(CONTINUE_KEY);
+    sessionStorage.removeItem(CONTINUE_KEY);
+    return path && isAllowPage(path) ? path : null;
+  } catch {
+    return null;
+  }
+};

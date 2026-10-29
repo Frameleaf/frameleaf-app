@@ -44,7 +44,9 @@ export type ExtensionRequest =
       allowLocalhost?: boolean;
       switching?: boolean;
     }
-  | { type: 'sign-in-state' | 'dismiss-notice' };
+  | { type: 'sign-in-state' | 'dismiss-notice' }
+  // FL-655: sign out of this browser only, leaving the access listed in Frameleaf
+  | { type: 'disconnect'; localOnly: true };
 export interface QueueItem {
   id: string;
   label: string;
