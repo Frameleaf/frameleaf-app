@@ -47,6 +47,7 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
     },
     cron: { create: vi.fn(), update: vi.fn() },
     job: { queue: vi.fn().mockResolvedValue(undefined) },
+    event: { emit: vi.fn().mockResolvedValue(undefined) },
     buddyRepository: { state: vi.fn().mockResolvedValue({ settings: { schedule: '0 4 * * *' } }) },
     databaseBackup: {
       handleBackupDatabase: vi.fn(() => {
@@ -83,6 +84,7 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
       mocks.databaseBackup as never,
       mocks.buddyBackup as never,
       mocks.cloudBackup as never,
+      mocks.event as never,
     );
     (sut as unknown as { readConfig: () => Promise<unknown> }).readConfig = () => Promise.resolve(config);
     return sut;
@@ -245,6 +247,33 @@ describe('the one backup schedule (FL-362)', () => {
       await sut.handleStart();
       expect(order).toEqual(['buddy']);
       expect(stored.state?.run?.results).toEqual({ local: 'failed' });
+      // FL-657: tried again as the queued snapshot job, whose failure the Backup page and the notice report
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('queues the snapshot job again when the library data copy reports a failure (FL-657)', async () => {
+      const { sut, mocks, stored, buddy, cloud } = setup();
+      buddy.on = false;
+      cloud.on = false;
+      mocks.databaseBackup.handleBackupDatabase.mockResolvedValue(JobStatus.Failed);
+
+      await sut.handleStart();
+      expect(stored.state?.run).toBeNull();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
+    });
+
+    it('reports a scheduled library data copy that finished like a queued one (FL-657)', async () => {
+      const { sut, mocks, buddy, cloud } = setup();
+      buddy.on = false;
+      cloud.on = false;
+
+      await sut.handleStart();
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobSuccess', {
+        job: { name: JobName.DatabaseBackup, data: {} },
+        response: JobStatus.Success,
+      });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
     });
 
     it('moves on from a backup that is left waiting instead of holding the run up', async () => {

@@ -9,6 +9,7 @@ import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -68,6 +69,7 @@ export class BackupSequenceService {
     private databaseBackup: DatabaseBackupService,
     private buddyBackup: BuddyBackupService,
     private cloudBackup: CloudBackupService,
+    private eventRepository: EventRepository,
   ) {
     this.logger.setContext(BackupSequenceService.name);
   }
@@ -181,9 +183,22 @@ export class BackupSequenceService {
   private async begin(place: BackupSequencePlace): Promise<'started' | 'done'> {
     switch (place) {
       case 'local': {
-        if ((await this.databaseBackup.handleBackupDatabase()) !== JobStatus.Success) {
+        let status: JobStatus | undefined;
+        try {
+          status = await this.databaseBackup.handleBackupDatabase();
+        } catch (error) {
+          await this.retryLocal();
+          throw error;
+        }
+        if (status !== JobStatus.Success) {
+          await this.retryLocal();
           throw new Error('The library data copy did not finish');
         }
+        // FL-657: the same outcome a queued snapshot reports, so an earlier "didn't finish" notice goes.
+        await this.eventRepository.emit('JobSuccess', {
+          job: { name: JobName.DatabaseBackup, data: {} },
+          response: JobStatus.Success,
+        });
         return 'done';
       }
       case 'buddy': {
@@ -194,6 +209,20 @@ export class BackupSequenceService {
         await this.cloudBackup.handleSchedule();
         return 'started';
       }
+    }
+  }
+
+  /**
+   * FL-657: a scheduled library data copy that failed is tried again as the queued snapshot job, the
+   * one "Take a snapshot now" uses. That job has the queue's retry, and if it fails for good its
+   * failed state and failure notice are what the Backup page and the notification read. The run does
+   * not wait for it: the next place still gets its turn.
+   */
+  private async retryLocal() {
+    try {
+      await this.jobRepository.queue({ name: JobName.DatabaseBackup, data: {} });
+    } catch (error) {
+      this.logger.warn(`Backup run: could not queue another library data copy: ${error}`);
     }
   }
 

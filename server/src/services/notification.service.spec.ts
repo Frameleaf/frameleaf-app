@@ -351,7 +351,7 @@ describe(NotificationService.name, () => {
   describe('onJobError (FL-71)', () => {
     beforeEach(() => {
       mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
-      mocks.notification.deleteByDedupeKey.mockResolvedValue();
+      mocks.notification.deleteByDedupeKey.mockResolvedValue([]);
     });
 
     it.each([
@@ -409,6 +409,17 @@ describe(NotificationService.name, () => {
 
       await sut.onJobSuccess({ job: { name: JobName.DatabaseBackup, data: {} } } as never);
       expect(mocks.notification.deleteByDedupeKey).toHaveBeenCalledWith(admin.id, 'library-snapshot-failed');
+      // Nothing was removed, so open lists need not read again.
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+
+      // A stale notice was removed: open lists are told to read again, so it leaves them too.
+      mocks.notification.deleteByDedupeKey.mockResolvedValue([notificationStub.albumEvent] as never);
+      await sut.onJobSuccess({ job: { name: JobName.DatabaseBackup, data: {} } } as never);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_notification',
+        admin.id,
+        expect.objectContaining({ id: notificationStub.albumEvent.id }),
+      );
     });
 
     it('still logs the data of other jobs', async () => {

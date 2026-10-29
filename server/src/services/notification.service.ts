@@ -147,8 +147,13 @@ export class NotificationService extends BaseService {
       return;
     }
     const admin = await this.userRepository.getAdmin();
-    if (admin) {
-      await this.notificationRepository.deleteByDedupeKey(admin.id, LIBRARY_SNAPSHOT_FAILED);
+    if (!admin) {
+      return;
+    }
+    const [removed] = await this.notificationRepository.deleteByDedupeKey(admin.id, LIBRARY_SNAPSHOT_FAILED);
+    if (removed) {
+      // Open notification lists read the list again on this event, so the stale notice leaves them too.
+      this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(removed));
     }
   }
 

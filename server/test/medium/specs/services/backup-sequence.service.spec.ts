@@ -48,6 +48,7 @@ describe('backup sequence worker serialization', () => {
             sequenceStatus: () => Promise.resolve({ on: true, busy: true }),
             handleSchedule: () => Promise.resolve(JobStatus.Success),
           } as never,
+          { emit: vi.fn() } as never,
         );
         vi.spyOn(service as unknown as { readConfig: () => Promise<unknown> }, 'readConfig').mockResolvedValue({
           backup: { database: { enabled: true } },
