@@ -332,29 +332,6 @@ export function eagleAddedDate(item: Pick<EagleItem, 'modificationTime'>, now = 
   return time > 0 && time < now ? new Date(time) : undefined;
 }
 
-/**
- * The item's web address as Boards records it (Source › Page): an http(s) address without a
- * sign-in in it, as the server takes. Anything else (a file path, a note in the address field) is
- * not a web address and doesn't come over.
- */
-export function eagleSourceUrl(item: Pick<EagleItem, 'url'>) {
-  const value = item.url.trim();
-  if (!value || value.length > 8192 || !URL.canParse(value)) {
-    return;
-  }
-  const url = new URL(value);
-  return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? value : undefined;
-}
-
-/**
- * The Added date an item gets: when it was last changed in Eagle, if that is a time in the past.
- * Eagle's times are milliseconds since 1970.
- */
-export function eagleAddedDate(item: Pick<EagleItem, 'modificationTime'>, now = Date.now()) {
-  const time = item.modificationTime;
-  return time > 0 && time < now ? new Date(time) : undefined;
-}
-
 /** Area comments on a picture: the ones that can become annotations. */
 export const areaComments = (item: EagleItem) =>
   VIDEO_EXTENSIONS.has(item.ext) ? [] : item.comments.filter((comment) => comment.width > 0 && comment.height > 0);
