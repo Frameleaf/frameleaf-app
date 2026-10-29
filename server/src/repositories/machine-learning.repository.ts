@@ -498,6 +498,41 @@ export const musicStreamItemSchema = z.discriminatedUnion('type', [
 const MUSIC_LINE_BYTES = 1024 * 1024;
 const MUSIC_TOTAL_BYTES = 64 * 1024 * 1024;
 
+/** The speech clean-up model Studio's "Clean up voice" asks for (FL-637: DeepFilterNet3 on the CPU). */
+export const VOICE_CLEANUP_MODEL_NAME = 'frameleaf-voice-cleanup';
+
+/** The worker cannot clean up voices: no `/voice-cleanup` route (an older worker) or no model. */
+export class VoiceCleanupUnavailableError extends Error {}
+
+const VoiceNoiseSchema = z.enum(['wind', 'hum', 'background', 'echo']);
+
+/** One line of a worker's `/voice-cleanup` stream (machine-learning/frameleaf_ml/main.py). */
+export const voiceCleanupStreamItemSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('progress'),
+    done: z.int().min(0).max(1e8),
+    total: z.int().min(1).max(1e8),
+  }),
+  z.object({
+    type: z.literal('analysis'),
+    noises: z.array(VoiceNoiseSchema).max(4),
+    humHz: z.union([z.literal(50), z.literal(60)]).nullable(),
+  }),
+  z.object({
+    type: z.literal('info'),
+    sampleRate: z.literal(48_000),
+    seconds: z.number().min(0).max(1200),
+  }),
+  z.object({ type: z.literal('audio'), data: z.string().max(1024 * 1024) }),
+  z.object({ type: z.literal('done') }),
+  z.object({ type: z.literal('error'), message: z.string().max(512) }),
+]);
+export type VoiceCleanupAnalysis = { noises: Array<z.infer<typeof VoiceNoiseSchema>>; humHz: 50 | 60 | null };
+
+/** Ten minutes and two seconds of 48 kHz mono 16-bit WAV, as base64, bounds a clean-up answer. */
+const VOICE_LINE_BYTES = 1024 * 1024;
+const VOICE_TOTAL_BYTES = 80 * 1024 * 1024;
+
 /** The inpainting model the Clean Up Remove fill asks for: LaMa big-lama on the ML worker (owner decision 2026-10-08). */
 export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 
@@ -934,6 +969,167 @@ export class MachineLearningRepository implements RestorationInference {
     }
     record('success');
     return { seconds };
+  }
+
+  /** Clean up voice (FL-637): what is in the sound of `wavPath` (48 kHz mono 16-bit WAV). */
+  async analyzeVoice(selection: MlSelection, wavPath: string, signal: AbortSignal): Promise<VoiceCleanupAnalysis> {
+    let analysis: VoiceCleanupAnalysis | undefined;
+    await this.voiceCleanup(
+      selection,
+      wavPath,
+      { mode: 'analyze' },
+      null,
+      signal,
+      () => {},
+      (found) => {
+        analysis = found;
+      },
+    );
+    if (!analysis) {
+      throw new Error('The voice clean-up worker sent no analysis');
+    }
+    return analysis;
+  }
+
+  /**
+   * Clean up voice (FL-637): the cleaned sound of `wavPath` (48 kHz mono 16-bit WAV), written to
+   * `outPath` as the 48 kHz mono 16-bit WAV the worker sends. Progress is the worker's frames done;
+   * aborting `signal` closes the connection, which stops the worker at its next run of the model.
+   */
+  async cleanVoice(
+    selection: MlSelection,
+    wavPath: string,
+    options: { strength: string; noises: string[]; humHz: 50 | 60 | null },
+    outPath: string,
+    signal: AbortSignal,
+    onProgress: (done: number, total: number) => void,
+  ): Promise<{ seconds: number }> {
+    const entryOptions = {
+      mode: 'clean',
+      strength: options.strength,
+      noises: options.noises,
+      ...(options.humHz && { humHz: options.humHz }),
+    };
+    const seconds = await this.voiceCleanup(selection, wavPath, entryOptions, outPath, signal, onProgress, () => {});
+    if (seconds === undefined) {
+      throw new Error('The voice clean-up worker sent no audio');
+    }
+    return { seconds };
+  }
+
+  private async voiceCleanup(
+    selection: MlSelection,
+    wavPath: string,
+    options: Record<string, unknown>,
+    outPath: string | null,
+    signal: AbortSignal,
+    onProgress: (done: number, total: number) => void,
+    onAnalysis: (analysis: VoiceCleanupAnalysis) => void,
+  ): Promise<number | undefined> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    const { size: bytesSent } = await stat(wavPath);
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({ 'voice-cleanup': { audio: { modelName: VOICE_CLEANUP_MODEL_NAME, options } } }),
+    );
+    form.append('audio', await openAsBlob(wavPath, { type: 'audio/wav' }), 'audio.wav');
+    const file = outPath ? await open(outPath, 'w') : null;
+    let seconds: number | undefined;
+    let finished = false;
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('voice-cleanup', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new VoiceCleanupUnavailableError(`The worker cannot clean up voices (${response.status})`);
+        }
+        throw new Error(`The voice clean-up worker answered ${response.status}`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('The voice clean-up worker sent no answer');
+      }
+      let pending = Buffer.alloc(0);
+      const handle = async (line: Buffer) => {
+        if (line.length > VOICE_LINE_BYTES * 2) throw new Error('A voice clean-up line is too long');
+        if (line.length === 0) {
+          return;
+        }
+        const item = voiceCleanupStreamItemSchema.parse(JSON.parse(line.toString('utf8')));
+        switch (item.type) {
+          case 'progress': {
+            onProgress(item.done, item.total);
+            break;
+          }
+          case 'analysis': {
+            onAnalysis({ noises: item.noises, humHz: item.humHz });
+            break;
+          }
+          case 'info': {
+            seconds = item.seconds;
+            break;
+          }
+          case 'audio': {
+            if (seconds === undefined || !file) throw new Error('The voice clean-up worker sent audio out of turn');
+            await file.write(Buffer.from(item.data, 'base64'));
+            break;
+          }
+          case 'error': {
+            throw new Error(`The voice clean-up worker failed: ${item.message}`);
+          }
+          default: {
+            finished = true;
+          }
+        }
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > VOICE_TOTAL_BYTES) throw new Error('The cleaned sound is too large');
+          pending = Buffer.concat([pending, value]);
+          let newline = pending.indexOf(10);
+          while (newline !== -1 && !finished) {
+            await handle(pending.subarray(0, newline));
+            pending = pending.subarray(newline + 1);
+            newline = pending.indexOf(10);
+          }
+          if (pending.length > VOICE_LINE_BYTES * 2) throw new Error('A voice clean-up line is too long');
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      if (!finished) {
+        throw new Error('The voice clean-up worker stopped before it finished');
+      }
+    } catch (error) {
+      if (!(error instanceof VoiceCleanupUnavailableError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    } finally {
+      await file?.close();
+    }
+    record('success');
+    return seconds;
   }
 
   /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */

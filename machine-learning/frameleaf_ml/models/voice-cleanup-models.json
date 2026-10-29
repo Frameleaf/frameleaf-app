@@ -1,0 +1,16 @@
+{
+  "deepfilternet3": {
+    "repo": "deepfilternet3",
+    "license": "MIT OR Apache-2.0",
+    "source": {
+      "project": "Rikorose/DeepFilterNet",
+      "archive": "models/DeepFilterNet3_onnx.tar.gz",
+      "sha256": "c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616"
+    },
+    "files": {
+      "audio/enc.onnx": "7c5399d3da8a50ebef1c1a0ae421b33376aa5e45d0e92df16da7e83c9c131916",
+      "audio/erb_dec.onnx": "ab669a1d10afe20911728b33053a452071042317a90581092b325da7b2f9d895",
+      "audio/df_dec.onnx": "23114ce3b0f6464b763ee62f7bb8aab6b2a129a21eabd5bcfe59413db05f278a"
+    }
+  }
+}

@@ -146,7 +146,12 @@ export class StudioTranscriptionService {
   /** The job and, once it completed, its cues. Owner only; anyone else is told it does not exist. */
   async get(auth: AuthDto, projectId: string, id: string): Promise<StudioTranscriptionDto> {
     const operation = auth.sharedLink ? undefined : await this.operations.getForOwner(id, auth.user.id);
-    if (!operation || operation.kind !== MediaOperationKind.StudioTranscription || operation.projectId !== projectId) {
+    if (
+      !operation ||
+      operation.kind !== MediaOperationKind.StudioTranscription ||
+      (operation.snapshot as { kind?: unknown } | null)?.kind !== 'studio-transcription' ||
+      operation.projectId !== projectId
+    ) {
       throw new NotFoundException('Transcription not found');
     }
     await this.studio.requireOwnedProject(auth, projectId, 'Only the project owner can read its transcriptions');
@@ -200,6 +205,8 @@ export class StudioTranscriptionService {
     while (!this.stopping) {
       const job = await this.operations.claimNext({
         kinds: [MediaOperationKind.StudioTranscription],
+        // Other Studio AI clip jobs share the kind (FL-637); a transcription worker takes only its own.
+        snapshotKinds: ['studio-transcription'],
         workerId: this.workerId,
         leaseMs: LEASE_MS,
       });
