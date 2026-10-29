@@ -216,7 +216,13 @@ export function validateBaseRaster(capture, envelope, binding) {
             'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
           // FL-640 word-by-word captions (caption cues, subtitle text and caption UI) on multicam; changes no composition or raster producer.
           binding.sourceSha256 ===
-            'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9')),
+            'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9' ||
+          // FL-638 Stabilise: only a stabilised video clip draws differently (through its correction).
+          binding.sourceSha256 ===
+            '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' ||
+          // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
+          binding.sourceSha256 ===
+            'b75f35884e7b63572c0920bdd2e810a1fd6b7d6402f1c2e76c0cc1f6a9a939b5')),
     'SOURCE_BROWSER',
   )
   check(

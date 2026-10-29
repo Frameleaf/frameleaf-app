@@ -491,26 +491,53 @@ diff --git a/src/features/export/utils/canvas-item-renderer/render-item.ts b/src
  } from './shared'
  import { renderVideoItem } from './video'
 +import { hasActiveSubjectCutout, renderVideoWithSubjectCutout } from '../subject-cutout'
- import { renderImageItem } from './image'
- import { renderLottieItem } from './lottie'
- import { getTextRasterCacheKey, renderSubtitleSegmentItem, renderTextItem } from './text'
-@@ -200,15 +201,22 @@
- 
-   switch (effectiveItem.type) {
-     case 'video': {
--      const videoFrameDrawn = await renderVideoItem(
--        ctx,
--        effectiveItem as VideoItem,
--        transform,
--        frame,
--        rctx,
--        sourceFrameOffset,
--        renderSpan,
--      )
-+      const videoItem = effectiveItem as VideoItem
-+      const drawVideo = (target: OffscreenCanvasRenderingContext2D) =>
-+        renderVideoItem(target, videoItem, transform, frame, rctx, sourceFrameOffset, renderSpan)
-+      // Frameleaf (FL-639): a cut-out draws the clip through its subject matte.
+ import { calculateContainedMediaDrawLayout } from './media-draw'
+ import { getItemRenderTimelineSpan, resolveVideoRenderSourceTimeSeconds } from '../render-span'
+ import {
+@@ -252,32 +253,35 @@
+       // Stabilise (FL-638): draw the clip through its per-frame correction, clipped to where the
+       // media shows, so the moving edges stay outside the frame. Preview and export both pass here.
+       const stabilised = hasStabilisation(videoItem)
+-      if (stabilised) {
+-        ctx.save()
+-        applyVideoStabilisation(
+-          ctx,
+-          videoItem,
+-          transform,
+-          frame,
+-          rctx,
+-          sourceFrameOffset,
+-          renderSpan,
+-        )
++      const stabilise = (target: OffscreenCanvasRenderingContext2D) => {
++        if (stabilised) {
++          applyVideoStabilisation(target, videoItem, transform, frame, rctx, sourceFrameOffset, renderSpan)
++        }
+       }
+-      let videoFrameDrawn: boolean
+-      try {
+-        videoFrameDrawn = await renderVideoItem(
+-          ctx,
+-          videoItem,
+-          transform,
+-          frame,
+-          rctx,
+-          sourceFrameOffset,
+-          renderSpan,
+-        )
+-      } finally {
+-        if (stabilised) ctx.restore()
++      const drawVideo = async (target: OffscreenCanvasRenderingContext2D) => {
++        if (stabilised) target.save()
++        try {
++          stabilise(target)
++          return await renderVideoItem(target, videoItem, transform, frame, rctx, sourceFrameOffset, renderSpan)
++        } finally {
++          if (stabilised) target.restore()
++        }
+       }
++      // Frameleaf (FL-639): a cut-out draws the clip through its subject matte, which follows the
++      // same stabilisation so the subject and its matte stay together.
 +      const videoFrameDrawn = hasActiveSubjectCutout(videoItem)
 +        ? await renderVideoWithSubjectCutout(
 +            ctx,
@@ -521,6 +548,7 @@ diff --git a/src/features/export/utils/canvas-item-renderer/render-item.ts b/src
 +            sourceFrameOffset,
 +            renderSpan,
 +            drawVideo,
++            stabilise,
 +          )
 +        : await drawVideo(ctx)
        if (!videoFrameDrawn) {
@@ -799,7 +827,7 @@ diff --git a/src/features/export/utils/subject-cutout.ts b/src/features/export/u
 new file mode 100644
 --- /dev/null
 +++ b/src/features/export/utils/subject-cutout.ts
-@@ -0,0 +1,300 @@
+@@ -0,0 +1,303 @@
 +/**
 + * Frameleaf (FL-639): Cut out the subject in a video clip.
 + *
@@ -973,6 +1001,8 @@ new file mode 100644
 +  sourceFrameOffset: number,
 +  renderSpan: RenderTimelineSpan | undefined,
 +  drawClip: (target: OffscreenCanvasRenderingContext2D) => Promise<boolean>,
++  /** Applies to the matte what `drawClip` applies to the clip beyond its transform (stabilisation). */
++  alignMatte?: (target: OffscreenCanvasRenderingContext2D) => void,
 +): Promise<boolean> {
 +  const cutout = item.subjectCutout
 +  const { matte } = cutout
@@ -1009,6 +1039,7 @@ new file mode 100644
 +    const sourceWidth = item.sourceWidth && item.sourceWidth > 0 ? item.sourceWidth : matte.frameWidth
 +    const sourceHeight = item.sourceHeight && item.sourceHeight > 0 ? item.sourceHeight : matte.frameHeight
 +    const layout = calculateContainedMediaDrawLayout(sourceWidth, sourceHeight, transform, rctx.canvasSettings, item.crop)
++    alignMatte?.(mask.ctx)
 +    mask.ctx.filter = blur.edge >= 0.5 ? `blur(${blur.edge.toFixed(2)}px)` : 'none'
 +    const cells: Array<[number, number]> = sample.weight > 0 && sample.second !== sample.first
 +      ? [[sample.first, 1 - sample.weight], [sample.second, sample.weight]]
@@ -1972,7 +2003,7 @@ new file mode 100644
 diff --git a/src/types/timeline.ts b/src/types/timeline.ts
 --- a/src/types/timeline.ts
 +++ b/src/types/timeline.ts
-@@ -190,9 +190,42 @@
+@@ -196,9 +196,42 @@
  }
  
  // Discriminated union types for different item types

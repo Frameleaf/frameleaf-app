@@ -35,6 +35,7 @@ import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } f
 import type { CutoutEngineString } from './cutout-strings';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
+import type { StabiliseEngineString } from './stabilise-strings';
 import type { TranscriptEngineString } from './transcript-strings';
 
 /* ------------------------------------------------------------------ */
@@ -364,6 +365,8 @@ export type StudioAdapterString =
   | TranscriptEngineString
   /** The cut-out card's words (FL-639), the same way. */
   | CutoutEngineString
+  /** The Stabilise card's words (FL-638), the same way. */
+  | StabiliseEngineString
   /** The Caption style card's words (FL-640), written over the engine's English the same way. */
   | CaptionStyleEngineString;
 

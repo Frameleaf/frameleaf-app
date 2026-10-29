@@ -192,6 +192,25 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0164 (FL-638) adds Stabilise. The Motion tab of one video clip has a Stabilise card: an
+Original / Stabilised preview, Smoothness (Gentle, Smooth, Locked off, cropping in 4, 7 and 12 percent),
+Stabilise clip, progress while the camera movement is analysed, then the level and crop with Turn off.
+The analysis is a job on the Frameleaf server, in Activity (`POST /studio/projects/{id}/stabilisations`;
+the card module is substituted by the adapter's `shims/stabilise-service.ts`). It decodes the clip's
+source window at up to 30 frames a second into 160-pixel grey pictures and measures each frame's shift
+and turn by block matching and a robust fit (`block-similarity-v1`), on the CPU, never on Frameleaf
+Cloud. The cumulative camera path is written into the clip as `stabilisation.motion` (protocol 2.4,
+schema `item.stabilisation`). The engine smooths it for the level (Gaussian, 0.33 s and 1 s; Locked off
+holds the mean) and draws the clip through the smoothed-minus-measured shift and turn, scaled by the
+crop and clipped to where the picture shows; a correction that would uncover an edge is reduced just
+enough that none shows (no edge fill). The canvas item renderer draws it in export and the canvas
+preview, and the live preview applies the same correction as a CSS transform; stabilised clips leave
+the GPU-direct paths for the canvas renderer. Changing the level applies at once with no new analysis,
+and each of apply, level and Turn off is one undo step. HDR clips are not offered Stabilise. Tests
+cover path smoothing, the crop coverage maths, the renderer transform at the clip's source time and
+the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
+path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
+parity and speed-ramp spans in the live preview remain open.
 Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
 the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
 embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the

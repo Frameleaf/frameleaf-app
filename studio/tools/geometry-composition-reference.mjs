@@ -100,10 +100,22 @@ export function compositionSourcesFor(sourceSha256) {
       'src/features/export/utils/client-render-engine.ts':
         'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
     }
-  // FL-639 cut out the subject on multicam, motion tracking, colour match, loudness and speed ramps; client-render-engine.ts refuses cut-outs on the linear HDR route, raster unchanged.
-  if (sourceSha256 === '8c198309e4368dea3779cc88c718def0b82c9bbd2dfad13963b9cf8ddfdee0a5')
+  // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
+  // renderer, which draws it through its correction; every other clip renders as before.
+  if (sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a')
     return {
       ...COMPOSITION_SOURCES,
+      'src/features/export/utils/client-render-engine.ts':
+        'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+      'src/features/export/utils/canvas-item-renderer/gpu.ts':
+        '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
+    }
+  // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
+  if (sourceSha256 === 'b75f35884e7b63572c0920bdd2e810a1fd6b7d6402f1c2e76c0cc1f6a9a939b5')
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/canvas-item-renderer/gpu.ts':
+        '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
       'src/features/export/utils/client-render-engine.ts':
         '0e2d3bfc84f9871d4ca39155e9f851e391c083bf368cbd1eafd9ae11b85b4ae4',
     }

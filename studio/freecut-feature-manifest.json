@@ -4031,8 +4031,10 @@
           "0059-mask-path-keyframes.patch",
           "0113-crop-rotation-keyboard-entry.patch",
           "0138-number-input-text-commit-lifecycle.patch",
-          "e6bca4d7d8"
+          "e6bca4d7d8",
+          "0164-stabilise-shaky-clips.patch"
         ],
+        "note": "FL-638 adds Stabilise: a clip's camera path, measured once on the server, is smoothed for the chosen level and drawn as a per-frame shift, turn and crop-in in preview and export.",
         "status": "shipped"
       },
       "id": "readme.preview-playback.1",
