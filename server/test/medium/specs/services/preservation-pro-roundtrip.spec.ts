@@ -148,6 +148,12 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         note: 'My attribution note',
       })
       .execute();
+    // FL-653: the Added date an Eagle import set comes back with the item.
+    await db
+      .updateTable('asset')
+      .set({ createdAt: new Date('2024-03-01T12:00:00.000Z') })
+      .where('id', '=', asset.id)
+      .execute();
     // FL-653: a source an Eagle import brought over keeps saying so after a restore.
     await db
       .insertInto('asset_source')
@@ -261,6 +267,7 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
       const byPage = new Map(sidecar.sources?.map((source) => [source.pageUrl, source]));
       expect(byPage.get('https://example.com/art')).not.toHaveProperty('importedFrom');
       expect(byPage.get('https://eagle.example.com/board')).toMatchObject({ importedFrom: 'eagle' });
+      expect(new Date(sidecar.dates.addedAt!).toISOString()).toBe('2024-03-01T12:00:00.000Z');
       const imported = await repo.createPackage({
         ownerId: target.id,
         origin: 'import',
@@ -324,6 +331,7 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
       const restored = await db.selectFrom('asset').selectAll().where('ownerId', '=', target.id).execute();
       expect(restored).toHaveLength(1);
       expect(restored[0].libraryScope).toBe(LibraryScope.Design);
+      expect(new Date(restored[0].createdAt).toISOString()).toBe('2024-03-01T12:00:00.000Z');
       expect(await readFile(restored[0].originalPath)).toEqual(bytes);
       expect(await readFile(original)).toEqual(bytes);
       const memberships = await db

@@ -482,6 +482,8 @@ export const PreservationSidecarSchema = z
         localDateTime: isoDate.nullable(),
         dateTimeOriginal: isoDate.nullable(),
         timeZone: z.string().max(64).nullable(),
+        /** FL-653: when a Boards-only item was added (an import may have set it). Absent in older packages. */
+        addedAt: isoDate.optional(),
       })
       .strict(),
     isFavorite: z.boolean(),
