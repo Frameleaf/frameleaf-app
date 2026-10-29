@@ -86249,6 +86249,15 @@
             "format": "double",
             "type": "number"
           },
+          "earlierImport": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EagleImportResponseDto"
+              }
+            ],
+            "description": "Your earlier import of this library that has more to do, to carry on",
+            "nullable": true
+          },
           "fingerprint": {
             "type": "string"
           },
@@ -86289,6 +86298,7 @@
           }
         },
         "required": [
+          "earlierImport",
           "fingerprint",
           "folders",
           "items",

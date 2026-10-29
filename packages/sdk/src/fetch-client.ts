@@ -7947,6 +7947,8 @@ export type EagleItemDto = {
 export type EagleLibraryResponseDto = {
     /** When Eagle last changed the library (ms) */
     changed?: number;
+    /** Your earlier import of this library that has more to do, to carry on */
+    earlierImport: (EagleImportResponseDto) | null;
     fingerprint: string;
     /** Every folder, parents before their children */
     folders: EagleFolderDto[];
