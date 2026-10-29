@@ -659,32 +659,41 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
 diff --git a/src/runtime/composition-runtime/utils/preview-master-bus.ts b/src/runtime/composition-runtime/utils/preview-master-bus.ts
 --- a/src/runtime/composition-runtime/utils/preview-master-bus.ts
 +++ b/src/runtime/composition-runtime/utils/preview-master-bus.ts
-@@ -35,6 +35,33 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
+@@ -35,6 +35,42 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
    mute.channelInterpretation = 'discrete'
    mute.gain.value = 0
    mute.connect(context.destination)
 +  // FL-623: while the project limiter is on, the mix passes a compressor set as a limiter at the
 +  // ceiling. Web Audio limits sample peaks with about 6 ms lookahead; export limits true peaks.
++  // The compressor is stereo at most, so a surround output skips it rather than being downmixed.
 +  let limiter: DynamicsCompressorNode | null = null
++  // Cancels the compressor's fixed makeup gain, (1 / curve(1.0))^0.6, so preview is not louder than export.
++  let limiterTrim: GainNode | null = null
 +  let limiterRouted = false
 +  const routeLimiter = () => {
 +    if (!processor) return
 +    const loudness = usePlaybackStore.getState().masterLoudness
-+    const wanted = loudness?.limiter === true
++    const wanted = loudness?.limiter === true && !(context.destination.channelCount > 2)
 +    if (wanted && !limiter) {
 +      limiter = context.createDynamicsCompressor()
 +      limiter.knee.value = 0
 +      limiter.ratio.value = 20
 +      limiter.attack.value = 0.001
 +      limiter.release.value = 0.05
++      limiterTrim = context.createGain()
++      limiter.connect(limiterTrim)
 +    }
-+    if (limiter && loudness) limiter.threshold.value = loudness.ceilingDbtp
++    if (limiter && limiterTrim && loudness) {
++      limiter.threshold.value = loudness.ceilingDbtp
++      // knee 0, ratio 20: curve(1.0) = 0.95 * ceiling dB, so the makeup is -0.57 * ceiling dB.
++      limiterTrim.gain.value = 10 ** ((0.6 * loudness.ceilingDbtp * (1 - 1 / 20)) / 20)
++    }
 +    if (wanted === limiterRouted) return
 +    processor.disconnect()
-+    limiter?.disconnect()
++    limiterTrim?.disconnect()
 +    if (wanted) {
 +      processor.connect(limiter!)
-+      limiter!.connect(mute)
++      limiterTrim!.connect(mute)
 +    } else {
 +      processor.connect(mute)
 +    }
@@ -693,7 +702,7 @@ diff --git a/src/runtime/composition-runtime/utils/preview-master-bus.ts b/src/r
    let disposed = false
    let failed = false
    let processor: AudioWorkletNode | null = null
-@@ -106,6 +133,8 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
+@@ -106,6 +142,8 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
        }
        input.connect(processor)
        processor.connect(mute)
@@ -702,7 +711,7 @@ diff --git a/src/runtime/composition-runtime/utils/preview-master-bus.ts b/src/r
      }
      const state = usePlaybackStore.getState()
      pendingClockGeneration = anchor.generation
-@@ -129,6 +158,7 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
+@@ -129,6 +167,7 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
      processor.port.postMessage(pending)
    }
    const unsubscribe = usePlaybackStore.subscribe((state, previous) => {
@@ -710,11 +719,12 @@ diff --git a/src/runtime/composition-runtime/utils/preview-master-bus.ts b/src/r
      if (
        state.masterBusDb !== previous.masterBusDb ||
        state.masterBusMuted !== previous.masterBusMuted ||
-@@ -149,6 +179,7 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
+@@ -149,6 +188,8 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
        mute.gain.setValueAtTime(0, context.currentTime)
        input.disconnect()
        processor?.disconnect()
 +      limiter?.disconnect()
++      limiterTrim?.disconnect()
        if (processor) {
          processor.port.onmessage = null
          processor.port.close()

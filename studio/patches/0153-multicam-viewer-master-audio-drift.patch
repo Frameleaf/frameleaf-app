@@ -120,7 +120,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
              </div>
            </PropertyRow>
          )
-@@ -125,6 +150,31 @@ function CutControls({ groupId }: { groupId: string }) {
+@@ -125,6 +150,33 @@ function CutControls({ groupId }: { groupId: string }) {
    const angles = group?.record.angles ?? []
    const labels = useTimelineStore((s) => angles.map((angle) => s.items.find((item) => item.id === angle.itemId)?.label ?? '?').join('\u0000')).split('\u0000')
  
@@ -143,6 +143,8 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
 +  const thumbnail = (item: TimelineItem | undefined): string | undefined => {
 +    const frames = item?.mediaId ? strips[item.mediaId]?.frames : undefined
 +    if (!item || !frames?.length || item.type !== 'video') return undefined
++    // An angle with no picture at the playhead shows the placeholder, as a cut there is refused.
++    if (frame < item.from || frame >= item.from + item.durationInFrames) return undefined
 +    const seconds = (item.sourceStart ?? 0) / (item.sourceFps ?? fps) + ((frame - item.from) / fps) * (item.speed ?? 1)
 +    let best = frames[0]!
 +    for (const candidate of frames) if (Math.abs(candidate.timestamp - seconds) < Math.abs(best.timestamp - seconds)) best = candidate
@@ -152,7 +154,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
    const cut = (index: number) => {
      const outcome = cutToAngle(groupId, index, usePlaybackStore.getState().currentFrame)
      if (!outcome.ok) {
-@@ -147,14 +197,19 @@ function CutControls({ groupId }: { groupId: string }) {
+@@ -147,14 +199,19 @@ function CutControls({ groupId }: { groupId: string }) {
          }
        }}
      >
@@ -180,17 +182,20 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
        <p className="col-span-2 text-xs text-muted-foreground">{t('editor.multicam.cutNote')}</p>
      </div>
    )
-@@ -167,6 +222,9 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+@@ -166,7 +223,12 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+   const programGroupId = items.length === 1
      ? (tracks.find((track) => track.id === items[0]!.trackId) as { multicam?: { role: string; groupId: string } } | undefined)?.multicam
      : undefined
++  const timelineItems = useTimelineStore((s) => s.items)
    const videos = items.filter((item) => item.type === 'video')
-+  // Selected audio clips not linked to a selected video can be the master audio (FL-628).
-+  const videoLinks = new Set(videos.map((item) => item.linkedGroupId).filter(Boolean))
++  // Selected audio clips not linked to any video can be the master audio (FL-628); one linked to an
++  // unselected video would drag that video along.
++  const videoLinks = new Set(timelineItems.filter((item) => item.type === 'video').map((item) => item.linkedGroupId).filter(Boolean))
 +  const audios = items.filter((item) => item.type === 'audio' && !(item.linkedGroupId && videoLinks.has(item.linkedGroupId)))
    const canCreate = videos.length >= 2 && videos.length <= 4 && videos.length === items.filter((item) => item.type !== 'audio').length
    if (!canCreate && programGroupId?.role !== 'program') return null
  
-@@ -174,7 +232,7 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+@@ -174,7 +236,7 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
      <PropertySection title={t('editor.multicam.title')} icon={Clapperboard} defaultOpen={true}>
        {programGroupId?.role === 'program'
          ? <CutControls groupId={programGroupId.groupId} />
@@ -227,7 +232,25 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
    it('cuts the picture between angles at the playhead with source ranges from the alignment', () => {
      const outcome = createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
      if (!outcome.ok) throw new Error(outcome.reason)
-@@ -159,4 +168,34 @@ describe('multicam', () => {
+@@ -106,6 +115,17 @@ describe('multicam', () => {
+       useItemsStore.getState()._addItem({ ...camera(9, 400, 0)[0], id: 'other', linkedGroupId: undefined, trackId: 'v2' } as VideoItem)
+       return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
+     }],
++    ['shared-track', () => {
++      // Two angles' sound on one track.
++      useItemsStore.getState()._updateItem('a2', { trackId: 'a1' })
++      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
++    }],
++    ['master-linked-video', () => {
++      // A recorder clip linked to an unselected video would drag that video along.
++      useItemsStore.getState().setTracks([...useItemsStore.getState().tracks, track('v9', 6), track('a9', 7)])
++      for (const item of camera(9, 0, 0)) useItemsStore.getState()._addItem(item)
++      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'a9' })
++    }],
+     ['locked', () => {
+       useItemsStore.getState().setTracks([track('v1', 0), track('v2', 1, true), track('v3', 2), track('a1', 3), track('a2', 4), track('a3', 5)])
+       return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
+@@ -159,4 +179,34 @@ describe('multicam', () => {
      expect(outcome.ok).toBe(true)
      expect([byId('a1').muted, byId('a2').muted, byId('a3').muted]).toEqual([true, false, true])
    })
@@ -277,7 +300,15 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  }
  
  export interface MulticamGroupRecord {
-@@ -112,18 +114,22 @@ export async function analyzeMulticamSync(
+@@ -57,6 +59,7 @@ export type MulticamRefusal =
+   | 'shared-track'
+   | 'locked'
+   | 'master-needs-audio-clip'
++  | 'master-linked-video'
+   | 'decode-failed'
+   | 'no-group'
+   | 'no-program-clip'
+@@ -112,18 +115,22 @@ export async function analyzeMulticamSync(
    itemIds: readonly string[],
    referenceId: string,
    signal?: AbortSignal,
@@ -301,7 +332,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
        if (signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError')
        if (id === referenceId) continue
        const item = items.find((candidate) => candidate.id === id)!
-@@ -150,12 +156,19 @@ const sourceSeconds = (item: VideoItem | AudioItem, fps: number) => (item.source
+@@ -150,12 +157,19 @@ const sourceSeconds = (item: VideoItem | AudioItem, fps: number) => (item.source
   * Create the multicamera edit in one undo step. `angles` gives each angle's
   * approved offset (the reference's is 0; manual offsets are allowed for
   * angles whose analysis failed). The master audio is the linked audio of
@@ -323,7 +354,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  }): { ok: true; groupId: string } | { ok: false; reason: MulticamRefusal } {
    const { items, tracks } = useItemsStore.getState()
    const ids = params.angles.map((angle) => angle.itemId)
-@@ -163,17 +176,23 @@ export function createMulticamEdit(params: {
+@@ -163,17 +177,26 @@ export function createMulticamEdit(params: {
    if (refusal) return { ok: false, reason: refusal }
    const angleItems = ids.map((id) => items.find((item) => item.id === id) as VideoItem)
    const reference = angleItems.find((item) => item.id === params.referenceId)
@@ -344,18 +375,21 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
 +  // Each angle (and a standalone master) with its audio must own its tracks, so hiding or muting a
 +  // track affects only that angle.
 +  const members = (item: TimelineItem) => [item, ...getLinkedItems(items, item.id).filter((l) => l.id !== item.id)]
++  // A standalone master linked to a video would move that video along with it.
++  if (standalone && members(standalone).some((item) => item.type === 'video')) return { ok: false, reason: 'master-linked-video' }
 +  const participants = [...angleItems.flatMap(members), ...(standalone ? members(standalone) : [])]
    const participantIds = new Set(participants.map((item) => item.id))
    const angleTrackIds = angleItems.map((item) => item.trackId)
 -  if (new Set(angleTrackIds).size !== angleTrackIds.length
 -    || items.some((item) => angleTrackIds.includes(item.trackId) && !participantIds.has(item.id))) {
-+  const ownTrackIds = [...angleTrackIds, ...(standalone ? [standalone.trackId] : [])]
++  // Every participant, linked audio included: two angles' sound on one track would otherwise pass.
++  const ownTrackIds = participants.map((item) => item.trackId)
 +  if (new Set(ownTrackIds).size !== ownTrackIds.length
 +    || items.some((item) => ownTrackIds.includes(item.trackId) && !participantIds.has(item.id))) {
      return { ok: false, reason: 'shared-track' }
    }
    // An angle already in a group would be claimed twice, leaving the first group stale. Program records
-@@ -188,19 +207,29 @@ export function createMulticamEdit(params: {
+@@ -188,19 +211,29 @@ export function createMulticamEdit(params: {
  
    const fps = useTimelineSettingsStore.getState().fps
    const groupId = crypto.randomUUID()
@@ -394,7 +428,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  
    const programTrackId = `multicam-program-${groupId}`
    const topOrder = Math.min(...tracks.map((track) => track.order))
-@@ -211,13 +240,16 @@ export function createMulticamEdit(params: {
+@@ -211,13 +244,16 @@ export function createMulticamEdit(params: {
        groupId, role: 'program',
        algorithm: params.angles.some((angle) => angle.manual) ? 'manual' : MULTICAM_SYNC_ALGORITHM,
        referenceItemId: reference.id, masterAudioItemId: masterAudio.id,
@@ -413,7 +447,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      const angleTrackSet = new Set(angleTrackIds)
      store.setTracks([
        programTrack,
-@@ -225,10 +257,11 @@ export function createMulticamEdit(params: {
+@@ -225,10 +261,11 @@ export function createMulticamEdit(params: {
          ? { ...track, visible: false, multicam: { groupId, role: 'angle' } }
          : track),
      ])
@@ -426,7 +460,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      }
      // The chosen master is the edit's sound, so it is heard even if it was muted before.
      if (masterAudio.muted) store._updateItem(masterAudio.id, { muted: false })
-@@ -239,10 +272,10 @@ export function createMulticamEdit(params: {
+@@ -239,10 +276,10 @@ export function createMulticamEdit(params: {
    return { ok: true, groupId }
  }
  
@@ -439,7 +473,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
    return {
      ...angle,
      id: crypto.randomUUID(),
-@@ -250,7 +283,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
+@@ -250,7 +287,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
      from,
      durationInFrames: duration,
      sourceStart,
@@ -459,6 +493,14 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
        "cancel": "Abbrechen",
        "create": "Multicam-Schnitt erstellen",
        "created": "Multicam-Schnitt erstellt",
+@@ -1066,6 +1067,7 @@
+         "shared-track": "Lege jeden Winkel und seinen Ton zuerst auf eigene Spuren.",
+         "locked": "Ein Winkel liegt auf einer gesperrten Spur.",
+         "master-needs-audio-clip": "Die Master-Ton-Kamera braucht einen verknüpften Audioclip.",
++        "master-linked-video": "Der Master-Ton ist mit einem Video verknüpft. Mach dieses Video zu einem Winkel oder heb zuerst die Verknüpfung auf.",
+         "decode-failed": "Der Ton der Clips konnte nicht gelesen werden.",
+         "no-group": "Diesem Multicam-Schnitt fehlen die Winkel.",
+         "no-program-clip": "Setze den Abspielkopf über die Clips der Multicam-Spur.",
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
@@ -470,6 +512,14 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
        "cancel": "Cancel",
        "create": "Create multicam edit",
        "created": "Multicam edit created",
+@@ -1079,6 +1080,7 @@
+         "shared-track": "Put each angle and its audio on their own tracks first.",
+         "locked": "An angle is on a locked track.",
+         "master-needs-audio-clip": "The master audio camera needs a linked audio clip.",
++        "master-linked-video": "The master audio is linked to a video. Make that video an angle, or unlink the audio first.",
+         "decode-failed": "Couldn't read the clips' audio.",
+         "no-group": "This multicam edit is missing its angles.",
+         "no-program-clip": "Move the playhead over the Multicam track's clips.",
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
@@ -481,6 +531,14 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
        "cancel": "Cancelar",
        "create": "Crear edición multicámara",
        "created": "Edición multicámara creada",
+@@ -1066,6 +1067,7 @@
+         "shared-track": "Coloca primero cada ángulo y su audio en pistas propias.",
+         "locked": "Un ángulo está en una pista bloqueada.",
+         "master-needs-audio-clip": "La cámara del audio principal necesita un clip de audio vinculado.",
++        "master-linked-video": "El audio maestro está vinculado a un vídeo. Convierte ese vídeo en un ángulo o desvincula antes el audio.",
+         "decode-failed": "No se pudo leer el audio de los clips.",
+         "no-group": "A esta edición multicámara le faltan ángulos.",
+         "no-program-clip": "Mueve el cabezal sobre los clips de la pista Multicámara.",
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
@@ -492,6 +550,14 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
        "cancel": "Annuler",
        "create": "Créer un montage multicam",
        "created": "Montage multicam créé",
+@@ -1066,6 +1067,7 @@
+         "shared-track": "Placez d’abord chaque angle et son son sur leurs propres pistes.",
+         "locked": "Un angle est sur une piste verrouillée.",
+         "master-needs-audio-clip": "La caméra du son principal a besoin d’un clip audio lié.",
++        "master-linked-video": "L’audio principal est lié à une vidéo. Faites de cette vidéo un angle ou dissociez d’abord l’audio.",
+         "decode-failed": "Impossible de lire le son des clips.",
+         "no-group": "Il manque les angles de ce montage multicam.",
+         "no-program-clip": "Placez la tête de lecture sur les clips de la piste Multicam.",
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
@@ -503,6 +569,14 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
        "cancel": "キャンセル",
        "create": "マルチカム編集を作成",
        "created": "マルチカム編集を作成しました",
+@@ -1066,6 +1067,7 @@
+         "shared-track": "まず各アングルとその音声を専用のトラックに置いてください。",
+         "locked": "アングルがロックされたトラックにあります。",
+         "master-needs-audio-clip": "メイン音声のカメラにはリンクされた音声クリップが必要です。",
++        "master-linked-video": "マスター音声が動画にリンクされています。その動画をアングルにするか、先に音声のリンクを解除してください。",
+         "decode-failed": "クリップの音声を読み取れませんでした。",
+         "no-group": "このマルチカム編集にはアングルがありません。",
+         "no-program-clip": "再生ヘッドをマルチカムトラックのクリップ上に移動してください。",
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
@@ -514,6 +588,14 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
        "cancel": "취소",
        "create": "멀티캠 편집 만들기",
        "created": "멀티캠 편집을 만들었습니다",
+@@ -1066,6 +1067,7 @@
+         "shared-track": "먼저 각 앵글과 오디오를 각자의 트랙에 두세요.",
+         "locked": "앵글이 잠긴 트랙에 있습니다.",
+         "master-needs-audio-clip": "메인 오디오 카메라에 연결된 오디오 클립이 필요합니다.",
++        "master-linked-video": "마스터 오디오가 비디오에 연결되어 있습니다. 그 비디오를 앵글로 만들거나 먼저 오디오 연결을 해제하세요.",
+         "decode-failed": "클립의 오디오를 읽을 수 없습니다.",
+         "no-group": "이 멀티캠 편집에 앵글이 없습니다.",
+         "no-program-clip": "재생 헤드를 멀티캠 트랙의 클립 위로 옮기세요.",
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
@@ -525,6 +607,14 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
        "cancel": "Cancelar",
        "create": "Criar edição multicâmera",
        "created": "Edição multicâmera criada",
+@@ -1066,6 +1067,7 @@
+         "shared-track": "Coloque primeiro cada ângulo e seu áudio em faixas próprias.",
+         "locked": "Um ângulo está em uma faixa bloqueada.",
+         "master-needs-audio-clip": "A câmera do áudio principal precisa de um clipe de áudio vinculado.",
++        "master-linked-video": "O áudio principal está vinculado a um vídeo. Transforme esse vídeo em um ângulo ou desvincule o áudio antes.",
+         "decode-failed": "Não foi possível ler o áudio dos clipes.",
+         "no-group": "Esta edição multicâmera está sem ângulos.",
+         "no-program-clip": "Mova o cursor sobre os clipes da faixa Multicâmera.",
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
@@ -536,6 +626,14 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
        "cancel": "İptal",
        "create": "Çoklu kamera kurgusu oluştur",
        "created": "Çoklu kamera kurgusu oluşturuldu",
+@@ -1066,6 +1067,7 @@
+         "shared-track": "Önce her açıyı ve sesini kendi izlerine koyun.",
+         "locked": "Bir açı kilitli bir izde.",
+         "master-needs-audio-clip": "Ana ses kamerasının bağlı bir ses klibi olmalı.",
++        "master-linked-video": "Ana ses bir videoya bağlı. O videoyu bir açı yapın ya da önce sesin bağlantısını kaldırın.",
+         "decode-failed": "Kliplerin sesi okunamadı.",
+         "no-group": "Bu çoklu kamera kurgusunun açıları eksik.",
+         "no-program-clip": "Oynatma kafasını Çoklu kamera izinin kliplerinin üzerine getirin.",
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
@@ -547,6 +645,14 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
        "cancel": "取消",
        "create": "创建多机位剪辑",
        "created": "已创建多机位剪辑",
+@@ -1066,6 +1067,7 @@
+         "shared-track": "请先把每个机位及其音频放到各自的轨道上。",
+         "locked": "某个机位位于锁定的轨道。",
+         "master-needs-audio-clip": "主音频所在的机位需要一个链接的音频片段。",
++        "master-linked-video": "主音频已链接到一个视频。请将该视频设为机位，或先取消音频链接。",
+         "decode-failed": "无法读取片段的音频。",
+         "no-group": "此多机位剪辑缺少机位。",
+         "no-program-clip": "请把播放头移到多机位轨道的片段上。",
 diff --git a/src/shared/utils/multicam-sync.test.ts b/src/shared/utils/multicam-sync.test.ts
 --- a/src/shared/utils/multicam-sync.test.ts
 +++ b/src/shared/utils/multicam-sync.test.ts

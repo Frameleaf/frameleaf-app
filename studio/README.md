@@ -230,7 +230,7 @@ the editor places it over the subject first. It is mapped into the chosen video'
 the video's resolved transform. Videos that are rotated, cropped, corner-pinned, flipped, reversed or
 have animated transforms are refused, and so are targets with vector position/scale keys. Frames are
 decoded at 480 px wide from each timeline frame's mapped source time (VFR-safe) and tracked forward or
-backward, up to 900 frames, by normalised cross-correlation with a small scale search
+backward, up to 900 frames, by normalised cross-correlation with a small-scale search
 (`ncc-scale-search-v1`). The first frame below 0.6 confidence and every later frame are marked lost,
 never bridged; low-texture or out-of-frame seeds are refused. Apply writes linear x, y, width and height
 keyframes that keep the target's offset from the tracked box. Lost frames block Apply until the editor
@@ -247,7 +247,7 @@ frames, each clip is rendered alone through the export renderer at a small size 
 (`renderWorkingFrame`). The reference keeps all of its effects, and the target leaves out only its own
 match, so the match lands after the grade and approximates the graded reference. SDR projects read the
 sRGB-encoded working values. HDR projects read the GPU float route's PQ BT.2020 signal, decoded to linear
-BT.709 in reference-white units; there exposure and temperature/tint are still linear, so the same exact
+BT.709 in reference-white units; there exposure and temperature/tint are still linear, so the same
 solve applies, with values above reference white kept. HDR analysis without WebGPU is refused with an
 explanation. Results are now bound to the reference's source, timing and full grade and to the
 project's colour management as well as the target's, so changing any of them makes a proposal stale.
