@@ -964,7 +964,7 @@
             <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} />
           {/snippet}
           {#if projectAvailable && onImportRetention}
-            <MenuItem onSelect={onImportRetention}>Import receipts</MenuItem>
+            <MenuItem onSelect={onImportRetention}>{$t('frameleaf_studio_receipts_title')}</MenuItem>
           {/if}
           {#if editorUp && onExportBundle}
             <MenuItem onSelect={onExportBundle}>
