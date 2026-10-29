@@ -713,8 +713,8 @@
     {
       "path": "patches/0149-multicam-editing.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "46c1e7c6c14f186a368a2adb58e75ade45bac9960f133c30382d31755b54c087"
+      "sha256": "3955dc7ccb291f43b7a2f5f908033007288e17471f9f56b6db37b6b596043de0"
     }
   ],
-  "sourceSha256": "4cd592b6f8fef4211afd5947eff79fd2c33ebc6db6b01d264a64ce12d540931c"
+  "sourceSha256": "1705779f7c7de23bf9417fce0769a5a5b6dcfbbfc1bc2424a1e3211d2ecf3033"
 }

@@ -81,7 +81,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-562 transcript editing changes no geometry/composition producer.
     sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
     // FL-595 multicam editing arranges ordinary clips and tracks; it changes no producer.
-    sourceSha256 === '4cd592b6f8fef4211afd5947eff79fd2c33ebc6db6b01d264a64ce12d540931c'
+    sourceSha256 === '4cd592b6f8fef4211afd5947eff79fd2c33ebc6db6b01d264a64ce12d540931c' ||
+    // FL-595 multicam: superseded sync results are discarded
+    sourceSha256 === '1705779f7c7de23bf9417fce0769a5a5b6dcfbbfc1bc2424a1e3211d2ecf3033'
   )
     return {
       ...COMPOSITION_SOURCES,
