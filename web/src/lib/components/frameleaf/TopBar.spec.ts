@@ -12,6 +12,7 @@ import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
+import { discardAuthStatusReads } from '$lib/utils/auth-status-read';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import PrivatePreviewModal from '@test-data/frameleaf/PrivatePreviewModal.svelte';
@@ -45,6 +46,7 @@ const deferred = <T>() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  discardAuthStatusReads();
   addMessages('dev', en);
   setSessionLockPending(false);
   sessionAccess.isElevated = false;
