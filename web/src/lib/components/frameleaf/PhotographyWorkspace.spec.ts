@@ -191,4 +191,15 @@ describe('PhotographyWorkspace', () => {
     expect(screen.getByRole('button', { name: '5 stars for one.CR3' })).toHaveAttribute('aria-pressed', 'true');
     await waitFor(() => expect(screen.queryByText('Rating not saved.')).toBeNull());
   });
+
+  it('appends the next page of a shoot without repeating a photograph already listed', async () => {
+    vi.mocked(loadPhotos)
+      .mockResolvedValueOnce({ photos: [photo('one'), photo('two')], nextCursor: 'next' })
+      .mockResolvedValueOnce({ photos: [photo('two'), photo('three')], nextCursor: null });
+    await open();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Load more photos' }));
+    await screen.findByRole('button', { name: 'Show three.CR3' });
+    expect(loadPhotos).toHaveBeenLastCalledWith('shoot', 'next');
+    expect(screen.getAllByRole('button', { name: 'Show two.CR3' })).toHaveLength(1);
+  });
 });

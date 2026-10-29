@@ -37,6 +37,13 @@ describe(TimelineService.name, () => {
       );
     });
 
+    it('should refuse a favourites filter through a shared link', async () => {
+      await expect(sut.getTimeBuckets(authStub.adminSharedLink, { isFavorite: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+    });
+
     it('should exclude NSFW assets when privacy hiding is active', async () => {
       const auth = { ...authStub.admin, hideNsfwAssets: true };
       mocks.asset.getTimeBuckets.mockResolvedValue([{ timeBucket: 'bucket', count: 1 }]);

@@ -817,6 +817,12 @@ export class SqlQueueStore {
     return rows[0]?.paused ?? false;
   }
 
+  /** The names of every paused queue, in one round trip. */
+  async pausedQueues() {
+    const { rows } = await sql<{ name: string }>`select name from job_queue where paused`.execute(this.db);
+    return new Set(rows.map(({ name }) => name));
+  }
+
   async counts(name: string) {
     const {
       rows: [row],

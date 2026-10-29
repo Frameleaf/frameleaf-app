@@ -935,6 +935,27 @@ describe(DatabaseBackupService.name, () => {
       });
     });
 
+    it("should list uploaded backups after this server's own, newest first, whatever the directory order", async () => {
+      const files = [
+        'uploaded-frameleaf-db-backup-20250101T000000-v1.234.5-pg19.1.sql.gz',
+        'frameleaf-db-backup-20250727T110116-v1.234.5-pg19.1.sql.gz',
+        'uploaded-frameleaf-db-backup-20250601T000000-v1.234.5-pg19.1.sql.gz',
+        'frameleaf-db-backup-20250729T110116-v1.234.5-pg19.1.sql.gz',
+      ];
+      const expected = [
+        'frameleaf-db-backup-20250729T110116-v1.234.5-pg19.1.sql.gz',
+        'frameleaf-db-backup-20250727T110116-v1.234.5-pg19.1.sql.gz',
+        'uploaded-frameleaf-db-backup-20250601T000000-v1.234.5-pg19.1.sql.gz',
+        'uploaded-frameleaf-db-backup-20250101T000000-v1.234.5-pg19.1.sql.gz',
+      ];
+      mocks.storage.stat.mockResolvedValue({ size: 1024 } as any);
+      for (const listing of [files, files.toReversed()]) {
+        mocks.storage.readdir.mockResolvedValue(listing);
+        const { backups } = await sut.listBackups();
+        expect(backups.map(({ filename }) => filename)).toEqual(expected);
+      }
+    });
+
     // FL-81: a server that never made a backup has no backups folder yet; that is an empty list,
     // not an error that hides the Maintenance area or the emergency restore flow.
     it('should list no backups when the backups folder does not exist yet', async () => {

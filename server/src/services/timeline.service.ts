@@ -154,6 +154,12 @@ export class TimelineService extends BaseService {
       dto.userId = auth.user.id;
     }
 
+    // a shared link reads as its owner, whose favourites the visitor never sees: filtering on them
+    // would reveal which items are favourites even though each item reports isFavorite false
+    if (auth.sharedLink && dto.isFavorite !== undefined) {
+      throw new BadRequestException('isFavorite is not available through a shared link');
+    }
+
     // LIB-P3: Best Photos are the caller's own, as on the Best Photos page: never a partner's, an album
     // member's or a shared link owner's, and never the Locked view
     if (dto.bestPhotos) {

@@ -5,7 +5,7 @@ import net, { type AddressInfo } from 'node:net';
 import tls from 'node:tls';
 import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
-import { EdgeRelayService, type EdgeRelayTarget } from 'src/edge/edge-relay.service.js';
+import { EdgeRelayService, type EdgeRelayTarget, RELAY_STABLE_TUNNEL_MS } from 'src/edge/edge-relay.service.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -674,6 +674,59 @@ describe(EdgeRelayService.name, () => {
       await connected;
       expect(delays).toEqual([500]);
       expect(selects()).toBe(1);
+    });
+
+    it('keeps backing off while each tunnel closes right after it opened', async () => {
+      let connected = relay.nextTunnel();
+      await sut.ensure(target);
+      for (let index = 0; index < 3; index++) {
+        const tunnel = await connected;
+        connected = relay.nextTunnel();
+        tunnel.goaway('replaced');
+      }
+      await connected;
+      await sut.stop();
+      expect(delays.slice(0, 3)).toEqual([500, 1000, 2000]);
+    });
+
+    it('from the shortest wait again after a tunnel that stayed up a minute', async () => {
+      let clock = 1_000_000;
+      sut.now = () => clock;
+      let connected = relay.nextTunnel();
+      await sut.ensure(target);
+      let tunnel = await connected;
+      connected = relay.nextTunnel();
+      tunnel.goaway('replaced');
+      tunnel = await connected;
+      // uptime counts from READY: the clock moves only once the server has it
+      await until(() => sut.status().connected);
+      clock += RELAY_STABLE_TUNNEL_MS;
+      connected = relay.nextTunnel();
+      tunnel.goaway('replaced');
+      await connected;
+      await sut.stop();
+      expect(delays.slice(0, 2)).toEqual([500, 500]);
+    });
+
+    it('counts a tunnel as up from READY, not from before its handshake', async () => {
+      let clock = 1_000_000;
+      sut.now = () => clock;
+      const dial = sut.dial;
+      // a slow handshake: the clock moves a minute while the tunnel is still being set up
+      sut.dial = (options) => {
+        clock += RELAY_STABLE_TUNNEL_MS;
+        return dial(options);
+      };
+      let connected = relay.nextTunnel();
+      await sut.ensure(target);
+      for (let index = 0; index < 2; index++) {
+        const tunnel = await connected;
+        connected = relay.nextTunnel();
+        tunnel.goaway('replaced');
+      }
+      await connected;
+      await sut.stop();
+      expect(delays.slice(0, 2)).toEqual([500, 1000]);
     });
   });
 

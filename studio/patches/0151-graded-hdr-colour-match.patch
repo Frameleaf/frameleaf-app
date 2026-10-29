@@ -158,7 +158,21 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
  import {
    analyzeColourMatch,
    applyColourMatches,
-@@ -91,14 +93,48 @@ describe('colour match actions', () => {
+@@ -63,6 +65,13 @@ describe('colour match actions', () => {
+     })
+   })
+ 
++  it('reports nothing and adds no undo step for strength 0 on a clip without a match', () => {
++    const item = video({ effects: [blur] })
++    useItemsStore.getState().setItems([item, referenceClip()])
++    expect(applyColourMatches([{ result: result(item), strength: 0 }]).applied).toEqual([])
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++
+   it('changes strength and removes the match exactly at zero, each in one undo step', () => {
+     const item = video({ effects: [blur] })
+     useItemsStore.getState().setItems([item, referenceClip()])
+@@ -91,14 +100,48 @@ describe('colour match actions', () => {
      expect(useTimelineCommandStore.getState().canUndo).toBe(false)
    })
  
@@ -214,7 +228,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
    })
  
    it('treats a result as stale when the reference or either clip direction changes', () => {
-@@ -109,18 +145,24 @@ describe('colour match actions', () => {
+@@ -109,18 +152,24 @@ describe('colour match actions', () => {
      expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
      useItemsStore.getState().setItems([item])
      expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
@@ -497,15 +511,21 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    for (const { result, strength } of approvals) {
      const item = items.find((candidate) => candidate.id === result.itemId)
      const reference = items.find((candidate) => candidate.id === result.provenance.referenceItemId)
-@@ -244,7 +280,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+@@ -242,10 +278,10 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+       continue
+     }
      const effects = item.effects ?? []
-     updates.push({
-       itemId: item.id,
+-    updates.push({
+-      itemId: item.id,
 -      effects: withMatch(effects, colourMatchEffects(result.proposal.params, strength, result.provenance, matchIds(effects))),
-+      effects: withMatch(effects, colourMatchEffects(result.proposal.params, strength, result.provenance, matchIds(effects)), true),
-     })
+-    })
++    const next = withMatch(effects, colourMatchEffects(result.proposal.params, strength, result.provenance, matchIds(effects)), true)
++    // Strength 0 on a clip without a match changes nothing: no undo step, no "matched" report.
++    if (next.length === effects.length && next.every((effect, index) => effect === effects[index])) continue
++    updates.push({ itemId: item.id, effects: next })
    }
    if (updates.length > 0) {
+     execute('APPLY_COLOUR_MATCH', () => {
 @@ -287,9 +323,9 @@ export function setColourMatchStrength(itemId: string, strength: number): boolea
    const item = useItemsStore.getState().itemById[itemId]
    const current = item ? readColourMatch(item) : null

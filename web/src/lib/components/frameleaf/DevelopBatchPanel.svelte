@@ -34,6 +34,11 @@
     localErrors = $state<Record<number, string>>({}),
     completed = $state(0);
   let stop = false;
+  let disposed = false;
+  // only an imported return changes on its own (the server renders it); a confirmed one waits for its file
+  const rendering = (value: DevelopBatchResponseDto) =>
+    value.status === 'open' &&
+    value.items.some((item) => item.returns.some((returned) => returned.status === 'imported'));
   const reason = (code: string | null | undefined) => $t(`frameleaf_batch.reason_${batchReason(code)}` as Translations);
   const prepared = $derived(
     batch?.items.filter((item) => item.available && item.preparationStatus === 'prepared').length ?? 0,
@@ -60,7 +65,10 @@
       batch = await getDevelopBatch({ id: batch.id });
     }
   };
+  // Bumped by every operation: a poll that started before one (a cancel, say) is older than its answer.
+  let operations = 0;
   const perform = async (operation: () => Promise<void>) => {
+    operations++;
     busy = true;
     error = '';
     try {
@@ -68,6 +76,7 @@
     } catch (error_) {
       showError(error_);
     } finally {
+      operations++;
       busy = false;
     }
   };
@@ -97,15 +106,33 @@
         await selectBatch(initialBatchId);
       }
     });
+    // Only returns the server is still rendering change on their own; a settled, hidden or
+    // already-refreshing batch is not polled, so an idle page makes no requests.
+    let polling = false;
     const timer = setInterval(() => {
-      if (batch && !busy && !uploading) {
-        void getDevelopBatch({ id: batch.id })
-          .then((value) => (batch = value))
-          .catch(showError);
+      if (!batch || busy || uploading || polling || document.hidden || !rendering(batch)) {
+        return;
       }
+      const id = batch.id;
+      const operation = operations;
+      polling = true;
+      void getDevelopBatch({ id })
+        .then((value) => {
+          if (!disposed && batch?.id === id && operation === operations && !uploading) {
+            batch = value;
+          }
+        })
+        .catch((error_) => {
+          // a poll for a batch no longer shown, or overtaken by an operation, has nothing to say about it
+          if (!disposed && batch?.id === id && operation === operations) {
+            showError(error_);
+          }
+        })
+        .finally(() => (polling = false));
     }, 2500);
     return () => {
       stop = true;
+      disposed = true;
       clearInterval(timer);
     };
   });

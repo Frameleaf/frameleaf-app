@@ -1340,7 +1340,7 @@ Each reference is `{ x, y, width, height, rotation }`: a pose at the child's fir
 - A request that changes nothing is refused as `failed`, unlike every other command in this part (`clip.setTransformParent/same-parent`, `…/detach-unparented`). **Native rule:** do not send one.
 - For a child or parent that is keyframed, driven by an expression or a modifier, or already has a `transformParent`, the poses are the resolved, composed transforms at that frame. Their computation uses floating-point matrix arithmetic with rotations. It is engine arithmetic (13.1), and fixtures `clip.setTransformParent/detach`, `…/reparent` and `…/animated-parent` are marked so. **Native rule:** attach only clips that have none of those, and do not detach, unless the implementation reproduces the marked fixtures bit for bit.
 
-**Motion track records (FL-627).** The web editor's motion tracking writes ordinary `x`, `y`, `width` and `height` keyframes and records each application on the target item as `motionTracks: [{ applicationId, algorithm, sourceId, keyFrames, lostFrames }]` (items allow additional properties). `keyFrames` are the item-relative frames it keyed. Playback ignores the record. **Native rule:** preserve it; a client that removes a track deletes those four properties' keys at `keyFrames` and drops the entry.
+**Motion track records (FL-627).** The web editor's motion tracking writes ordinary `x`, `y`, `width` and `height` keyframes and records each application on the target item as `motionTracks: [{ applicationId, algorithm, sourceId, keyFrames, keys, lostFrames }]` (items allow additional properties). `keyFrames` are the item-relative frames it keyed in any of the four properties; `keys` maps each property to the frames it received, since pins beside a partial track go only to properties that hold a value there. Playback ignores the record. **Native rule:** preserve it; a client that removes a track deletes, for each property in `keys`, that property's keys at its listed frames, and drops the entry. A record without `keys` (written before it existed) falls back to deleting all four properties' keys at `keyFrames`.
 
 ### 12.7 Tracks
 
@@ -1488,6 +1488,16 @@ Payload: `markerId`. **Refusal:** it names no marker: `invalid`. **Effect:** the
 #### 12.8.4 `music.add`
 
 `music.add` is an engine command that is **always refused** as `failed` at this revision, before it reads its payload: the bundled music catalogue is rights-blocked (FL-86), so no `musicId` resolves. It changes nothing, and so has no linked, lock, sync-lock, overlap or transition consequence. **Native rule:** do not offer bundled music and never record `music.add` in a save. Fixtures `music.add/rejects-always`, `music.add/rejects-before-reading-payload`.
+
+### 12.9 Multicam records (FL-595, FL-628)
+
+The web editor's multicam edit is not a command; it writes ordinary clips and tracks plus two fields that tracks and items already allow (`additionalProperties`):
+
+- A **program track** carries `multicam: { groupId, role: "program", algorithm, referenceItemId, masterAudioItemId, angles }`. `algorithm` is `onset-xcorr-1ms-v1` or `manual`; each entry of `angles` is `{ trackId, itemId, mediaId, offsetSeconds, clockRatio? }`, where the angle's source time is `clockRatio` × the reference source time + `offsetSeconds` (`clockRatio` absent means 1). An angle with a `clockRatio` corrects clock drift: it and its linked audio play at `speed` = `clockRatio` (0.99–1.01) with durations scaled to match. `masterAudioItemId` names an angle's linked audio clip or a standalone audio clip, which is moved into sync the same way; with a standalone master, every camera's sound is muted. Each **angle track** carries `multicam: { groupId, role: "angle" }` and is hidden (`visible: false`).
+- Each clip on the program track is a video-only copy of an angle (`muted: true`, `embeddedAudioMuted: true`, no `linkedGroupId`) with `multicam: { groupId, angle }`, the index into `angles`. It has the angle's `speed`, and its source range starts at the angle's source frame under the playhead.
+- The angle clips keep their media, source ranges and links; they are moved so that one sequence frame shows the same moment in every angle. Only the master audio clip stays audible; the other angles' audio clips get `muted: true`.
+
+Playback and export read only the ordinary fields. **Native rule:** play and export the graph as usual; preserve both `multicam` fields when editing, and when changing a program clip keep its source range consistent with its angle's alignment or drop the clip's `multicam` field.
 
 ## 13. Part 3: effects, transitions, keyframes and animation
 
