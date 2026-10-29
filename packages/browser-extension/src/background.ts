@@ -587,11 +587,14 @@ async function runWholeScreenshot(
   controller: AbortController,
   binding: ServerBinding,
 ) {
+  // A failure in the fallback the person chose is an ordinary screenshot failure, not a whole-page one.
+  let failure: 'whole' | 'screenshot' = 'whole';
   try {
     // Give the popup a moment to close before the page starts to scroll.
     await new Promise((done) => setTimeout(done, 300));
     const outcome = await takeWholePage(controller.signal);
     if (outcome.kind === 'cancelled') return;
+    if (outcome.kind === 'fallback') failure = 'screenshot';
     const result =
       outcome.kind === 'fallback'
         ? await takeScreenshot(outcome.mode, controller.signal)
@@ -600,7 +603,7 @@ async function runWholeScreenshot(
   } catch {
     if (!controller.signal.aborted)
       await chrome.tabs
-        .create({ url: chrome.runtime.getURL('capture.html?error=whole') })
+        .create({ url: chrome.runtime.getURL(`capture.html?error=${failure}`) })
         .catch(() => {});
   } finally {
     if (screenshotController === controller) screenshotController = undefined;
