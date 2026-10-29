@@ -27,7 +27,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,150 @@
 +import { useEffect, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Gauge } from 'lucide-react'
@@ -45,6 +45,7 @@ new file mode 100644
 +  useTimelineStore,
 +  type ClipLoudnessResult,
 +} from '@/features/editor/deps/timeline-store'
++import { parseClamped } from '@/shared/utils/parse-clamped'
 +import { PropertyRow, PropertySection } from '../components'
 +
 +const format = (value: number | null | undefined, unit: string) =>
@@ -58,8 +59,11 @@ new file mode 100644
 +  const { t } = useTranslation()
 +  const timelineItems = useTimelineStore((s) => s.items)
 +  const fps = useTimelineStore((s) => s.fps)
-+  const [target, setTarget] = useState(DEFAULT_TARGET_LUFS)
-+  const [ceiling, setCeiling] = useState(DEFAULT_CEILING_DBTP)
++  // Draft text stays editable (an intermediate "-" is kept); matching uses parsed, clamped values.
++  const [targetText, setTargetText] = useState(String(DEFAULT_TARGET_LUFS))
++  const [ceilingText, setCeilingText] = useState(String(DEFAULT_CEILING_DBTP))
++  const target = parseClamped(targetText, -36, -6, DEFAULT_TARGET_LUFS)
++  const ceiling = parseClamped(ceilingText, -12, 0, DEFAULT_CEILING_DBTP)
 +  const [results, setResults] = useState<ClipLoudnessResult[] | null>(null)
 +  const [busy, setBusy] = useState(false)
 +  const abortRef = useRef<AbortController | null>(null)
@@ -109,17 +113,19 @@ new file mode 100644
 +    <PropertySection title={t('editor.audioSection.loudness.title')} icon={Gauge} defaultOpen={false}>
 +      <PropertyRow label={t('editor.audioSection.loudness.target')}>
 +        <div className="flex items-center gap-1 w-full">
-+          <Input type="number" className="h-7 min-w-0 flex-1 px-2 text-xs" step={0.5} min={-36} max={-6}
-+            aria-label={t('editor.audioSection.loudness.target')} value={target}
-+            onChange={(event) => setTarget(Number(event.target.value))} />
++          <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
++            aria-label={t('editor.audioSection.loudness.target')} value={targetText}
++            onChange={(event) => setTargetText(event.target.value)}
++            onBlur={() => setTargetText(String(target))} />
 +          <span className="text-xs text-muted-foreground">LUFS</span>
 +        </div>
 +      </PropertyRow>
 +      <PropertyRow label={t('editor.audioSection.loudness.ceiling')}>
 +        <div className="flex items-center gap-1 w-full">
-+          <Input type="number" className="h-7 min-w-0 flex-1 px-2 text-xs" step={0.1} min={-12} max={0}
-+            aria-label={t('editor.audioSection.loudness.ceiling')} value={ceiling}
-+            onChange={(event) => setCeiling(Number(event.target.value))} />
++          <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
++            aria-label={t('editor.audioSection.loudness.ceiling')} value={ceilingText}
++            onChange={(event) => setCeilingText(event.target.value)}
++            onBlur={() => setCeilingText(String(ceiling))} />
 +          <span className="text-xs text-muted-foreground">dBTP</span>
 +        </div>
 +      </PropertyRow>
@@ -1467,4 +1473,32 @@ new file mode 100644
 +    const buffers = input.channels.map((channel) => channel.slice().buffer)
 +    worker.postMessage({ id, sampleRate: input.sampleRate, channels: buffers }, buffers)
 +  })
++}
+diff --git a/src/shared/utils/parse-clamped.test.ts b/src/shared/utils/parse-clamped.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/parse-clamped.test.ts
+@@ -0,0 +1,13 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { parseClamped } from './parse-clamped'
++
++describe('loudness inputs', () => {
++  it('keep the last valid value while the draft is not a number, and clamp to the range', () => {
++    expect(parseClamped('-', -36, -6, -16)).toBe(-16)
++    expect(parseClamped('', -36, -6, -16)).toBe(-16)
++    expect(parseClamped('-23', -36, -6, -16)).toBe(-23)
++    expect(parseClamped('-3', -36, -6, -16)).toBe(-6)
++    expect(parseClamped('-50', -36, -6, -16)).toBe(-36)
++    expect(parseClamped('2', -12, 0, -1)).toBe(0)
++  })
++})
+diff --git a/src/shared/utils/parse-clamped.ts b/src/shared/utils/parse-clamped.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/parse-clamped.ts
+@@ -0,0 +1,5 @@
++/** A finite number read from draft text, clamped to [min, max]; the fallback while the text is not a number. */
++export function parseClamped(text: string, min: number, max: number, fallback: number): number {
++  const value = Number.parseFloat(text)
++  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
 +}
