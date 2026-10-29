@@ -107,6 +107,7 @@ import { StorageMigrationAdminController } from 'src/controllers/storage-migrati
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
 import { StudioCaptionTranslationController } from 'src/controllers/studio-caption-translation.controller.js';
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
+import { StudioCutoutController } from 'src/controllers/studio-cutout.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
 import { StudioMovieController } from 'src/controllers/studio-movie.controller.js';
@@ -251,6 +252,7 @@ export const controllers = [
   StudioVoiceCleanupController,
   StudioBundleController,
   StudioExportController,
+  StudioCutoutController,
   StudioReframeController,
   StudioPreviewController,
   StudioPreviewStreamController,

@@ -15952,6 +15952,71 @@ export type StudioCommentUpdateDto = {
     resolved?: boolean;
     text?: string;
 };
+export type StudioCutoutPointDto = {
+    /** 1 adds to the subject, 0 takes away */
+    label: 0 | 1;
+    /** When in the source video the point was painted, in seconds */
+    sourceSeconds: number;
+    /** Across the picture, 0 at the left edge and 1 at the right */
+    x: number;
+    /** Down the picture, 0 at the top and 1 at the bottom */
+    y: number;
+};
+export type StudioCutoutCreateDto = {
+    /** A video clip on the main timeline of the head revision */
+    clipId: string;
+    /** The person to cut out, or null for the main subject */
+    personId: string | null;
+    /** Add to subject and Take away points, followed through the shot from where they were painted */
+    points?: StudioCutoutPointDto[];
+};
+export type StudioCutoutMatteDto = {
+    /** Matte frames in each row of the file */
+    columns: number;
+    /** How long the followed part is, in seconds */
+    durationSeconds: number;
+    /** Matte frames a second */
+    fps: number;
+    /** Height of one matte frame in pixels */
+    frameHeight: number;
+    /** Width of one matte frame in pixels */
+    frameWidth: number;
+    /** Matte frames in the file */
+    frames: number;
+    /** The matte, kept with the project as a file: frames side by side, row after row */
+    importId: string;
+    /** Where the followed part of the source starts, in seconds */
+    startSeconds: number;
+};
+export type StudioCutoutSubjectDto = {
+    kind: StudioCutoutSubjectKind;
+    /** The person’s name, for a person subject */
+    name: string | null;
+    /** The person, for a person subject */
+    personId: string | null;
+};
+export type StudioCutoutDto = {
+    /** The video clip */
+    clipId: string;
+    /** Why it failed, in words a person can read */
+    error: string | null;
+    /** For a refusal a client words itself: faceDetectionOff (a person needs face recognition) or personNotInFirstFrame */
+    errorCode: string | null;
+    /** The cut-out job */
+    id: string;
+    /** Once completed: the matte to name on the clip */
+    matte: (StudioCutoutMatteDto) | null;
+    /** Frames followed so far, in percent */
+    progress: number;
+    /** The Studio project */
+    projectId: string;
+    status: StudioCutoutStatus;
+    subject: StudioCutoutSubjectDto;
+};
+export type StudioCutoutSubjectsDto = {
+    /** The named people face recognition found in the clip’s video, or just the main subject */
+    subjects: StudioCutoutSubjectDto[];
+};
 export type StudioProjectDuplicateDto = {
     /** Name of the copy; the client supplies the translated default */
     name?: string;
@@ -18683,6 +18748,10 @@ export type SmartAlbumKindParamDto = {
 export type StackSearchDto = {
     /** Filter by primary asset ID */
     primaryAssetId?: string;
+};
+export type StudioCutoutSubjectsQueryDto = {
+    /** A video clip on the main timeline of the head revision */
+    clipId: string;
 };
 export type StudioExportSearchDto = {
     skip?: number;
@@ -32250,6 +32319,52 @@ export function updateStudioProjectComment({ commentId, id, studioCommentUpdateD
     })));
 }
 /**
+ * Cut out the subject in a Studio clip
+ */
+export function createStudioCutout({ id, studioCutoutCreateDto }: {
+    id: string;
+    studioCutoutCreateDto: StudioCutoutCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 202;
+        data: StudioCutoutDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/cutouts`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioCutoutCreateDto
+    })));
+}
+/**
+ * List who a Studio cut-out can follow in a clip
+ */
+export function getStudioCutoutSubjects({ clipId, id }: {
+    clipId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCutoutSubjectsDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/cutouts/subjects${QS.query(QS.explode({
+        clipId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get a Studio cut-out
+ */
+export function getStudioCutout({ cutoutId, id }: {
+    cutoutId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCutoutDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/cutouts/${encodeURIComponent(cutoutId)}`, {
+        ...opts
+    }));
+}
+/**
  * Duplicate a Studio project
  */
 export function duplicateStudioProject({ id, studioProjectDuplicateDto }: {
@@ -38453,6 +38568,16 @@ export enum StudioCaptionLanguage {
     Sv = "sv",
     Da = "da",
     Nb = "nb"
+}
+export enum StudioCutoutStatus {
+    Queued = "queued",
+    Running = "running",
+    Completed = "completed",
+    Failed = "failed"
+}
+export enum StudioCutoutSubjectKind {
+    Person = "person",
+    Subject = "subject"
 }
 export enum StudioReframeSubject {
     Face = "face",

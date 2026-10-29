@@ -150,6 +150,7 @@ import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioCaptionTranslationService } from 'src/services/studio-caption-translation.service.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
+import { StudioCutoutService } from 'src/services/studio-cutout.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
@@ -338,6 +339,7 @@ export const services = [
   ZeroShotTaggingService,
   StackService,
   StudioExportService,
+  StudioCutoutService,
   StudioReframeService,
   StudioPreviewService,
   StudioPreviewStreamService,

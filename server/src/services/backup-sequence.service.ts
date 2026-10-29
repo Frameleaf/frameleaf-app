@@ -4,7 +4,15 @@ import type { SystemConfig } from 'src/config.js';
 import type { BackupScheduleResponseDto } from 'src/dtos/database-backup.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { DatabaseLock, FrameleafWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
+import {
+  DatabaseLock,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
+  QueueJobStatus,
+  QueueName,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -14,7 +22,6 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
-import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import {
   BACKUP_SEQUENCE,
   type BackupSequencePlace,
@@ -41,8 +48,10 @@ const WATCH_INTERVAL_MS = 30_000;
  *   chosen one keeps running at the time it stored before (`effectiveBackupSchedule`).
  * - **A run.** The schedule's tick queues `JobName.BackupSequence`, which starts a run: for each place,
  *   leave it out if it is off, otherwise start its backup and wait for it. The library data copy is
- *   made inside the job; Buddy Backup and Cloud Backup are operations of their own, so the run is kept
- *   in system metadata and a watch moves it on when the operation it waits for has ended.
+ *   the queued snapshot job, the one "Take a snapshot now" uses (FL-657), so every snapshot is made one
+ *   at a time and reports its outcome the same way; Buddy Backup and Cloud Backup are operations of
+ *   their own. The run is kept in system metadata and a watch moves it on when the snapshot or
+ *   operation it waits for has ended.
  * - **A failure never stops the run.** A place that fails, cannot start or is left waiting (a buddy
  *   that cannot be reached, a full plan, a paused upload) is recorded and the next place starts.
  * - **One run at a time.** A tick during a run is remembered and starts another when the run ends.
@@ -65,7 +74,6 @@ export class BackupSequenceService {
     private cronRepository: CronRepository,
     private jobRepository: JobRepository,
     private buddyRepository: BuddyBackupRepository,
-    private databaseBackup: DatabaseBackupService,
     private buddyBackup: BuddyBackupService,
     private cloudBackup: CloudBackupService,
   ) {
@@ -177,14 +185,15 @@ export class BackupSequenceService {
     }
   }
 
-  /** Starts a place's backup. The library data copy is made here and now; the others run on their own. */
+  /** Starts a place's backup. Each runs on its own, and the run waits for it (`placeOutcome`, `snapshotOutcome`). */
   private async begin(place: BackupSequencePlace): Promise<'started' | 'done'> {
     switch (place) {
       case 'local': {
-        if ((await this.databaseBackup.handleBackupDatabase()) !== JobStatus.Success) {
-          throw new Error('The library data copy did not finish');
-        }
-        return 'done';
+        // FL-657: the snapshot job is single-flight (a snapshot already queued or being made is the one
+        // waited for), it retries, and its success or final failure is what the Backup page and the
+        // notification report, for a scheduled snapshot as for one taken by hand.
+        await this.jobRepository.queue({ name: JobName.DatabaseBackup, data: {} });
+        return 'started';
       }
       case 'buddy': {
         await this.buddyBackup.startScheduled();
@@ -197,17 +206,43 @@ export class BackupSequenceService {
     }
   }
 
-  /** Whether a place's backup is still being made. A backup left waiting or paused is not. */
-  private async isBusy(place: BackupSequencePlace): Promise<boolean> {
-    switch (place) {
-      case 'local': {
-        return false;
+  /** Whether Buddy or Cloud Backup is still being made. A backup left waiting or paused is not. */
+  private async placeOutcome(place: 'buddy' | 'cloud'): Promise<'busy' | 'done'> {
+    const status =
+      place === 'buddy' ? await this.buddyBackup.sequenceStatus() : await this.cloudBackup.sequenceStatus();
+    return status.busy ? 'busy' : 'done';
+  }
+
+  /** The snapshot job waiting or running now: the one the run just queued, or the one it joined. */
+  private async snapshotJobId(): Promise<string | undefined> {
+    const jobs = await this.jobRepository.searchJobs(QueueName.BackupDatabase, {
+      status: [QueueJobStatus.Active, QueueJobStatus.Waiting, QueueJobStatus.Delayed, QueueJobStatus.Paused],
+    });
+    return jobs.find((job) => job.name === JobName.DatabaseBackup)?.id;
+  }
+
+  /**
+   * FL-657: the library data copy's own outcome, read from the snapshot job the run waits for. A job
+   * being made, or waiting for its retry, holds the run; one held in a paused queue does not, and is
+   * recorded as not finished. A job the queue no longer lists finished and was cleared away.
+   */
+  private async snapshotOutcome(jobId: string | undefined): Promise<'busy' | 'done' | 'failed'> {
+    if (!jobId) {
+      return 'done';
+    }
+    const job = (await this.jobRepository.searchJobs(QueueName.BackupDatabase, {})).find(({ id }) => id === jobId);
+    switch (job?.status) {
+      case QueueJobStatus.Active:
+      case QueueJobStatus.Waiting:
+      case QueueJobStatus.Delayed: {
+        return 'busy';
       }
-      case 'buddy': {
-        return (await this.buddyBackup.sequenceStatus()).busy;
+      case QueueJobStatus.Failed:
+      case QueueJobStatus.Paused: {
+        return 'failed';
       }
-      case 'cloud': {
-        return (await this.cloudBackup.sequenceStatus()).busy;
+      default: {
+        return 'done';
       }
     }
   }
@@ -227,15 +262,17 @@ export class BackupSequenceService {
       const place: BackupSequencePlace = run.place;
       let result: BackupSequenceRun['results'][BackupSequencePlace];
       if (run.begun) {
-        if (await this.isBusy(place)) {
+        const outcome = place === 'local' ? await this.snapshotOutcome(run.jobId) : await this.placeOutcome(place);
+        if (outcome === 'busy') {
           return;
         }
-        result = 'done';
+        result = outcome;
       } else {
         try {
           if (await this.isOn(place)) {
             if ((await this.begin(place)) === 'started') {
-              run = { ...run, begun: true };
+              const jobId = place === 'local' ? await this.snapshotJobId() : undefined;
+              run = { ...run, begun: true, ...(jobId ? { jobId } : {}) };
               state = { ...state, run };
               await this.save(state);
               continue;

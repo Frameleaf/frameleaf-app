@@ -132,6 +132,7 @@
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
   import { stabiliseEngineStrings } from '$lib/frameleaf/studio/stabilise-strings';
   import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
+  import { cutoutEngineStrings } from '$lib/frameleaf/studio/cutout-strings';
   import { captionStyleEngineStrings } from '$lib/frameleaf/studio/caption-style-strings';
   import { voiceCleanupEngineStrings } from '$lib/frameleaf/studio/voice-cleanup-strings';
   import { captionLanguageEngineStrings } from '$lib/frameleaf/studio/caption-language-strings';
@@ -557,6 +558,7 @@
       relinkSaved: $t('frameleaf_studio_relink_saved'),
       lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
       ...transcriptEngineStrings($t),
+      ...cutoutEngineStrings($t),
       ...stabiliseEngineStrings($t),
       ...captionStyleEngineStrings($t),
       ...voiceCleanupEngineStrings($t),
