@@ -96,9 +96,16 @@ def test_model_tags_keep_their_order_after_signal_tags_and_are_cut_at_twenty(tmp
 
     # The model's own tags are used as given (not filtered from the text), after the signal tags,
     # de-duplicated case-insensitively, and the list is cut at 20.
-    assert response["tags"][:7] == ["naked", "nsfw", "medical", "hospital", "zebra", "yacht", "thinga"]
+    assert response["tags"] == [
+        "naked",
+        "nsfw",
+        "medical",
+        "hospital",
+        "zebra",
+        "yacht",
+        *(f"thing{letter}" for letter in "abcdefghijklmn"),
+    ]
     assert len(response["tags"]) == TAG_LIMIT
-    assert len(set(response["tags"])) == TAG_LIMIT
 
 
 def test_drops_words_with_digits_whole_and_contractions():
