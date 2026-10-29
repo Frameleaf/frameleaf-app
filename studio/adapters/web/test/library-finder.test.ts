@@ -72,7 +72,15 @@ beforeEach(() => {
   document.body.append(element)
   root = createRoot(element)
 })
+/** Finders a test made; each is disposed after it, so no registration leaks into the next test. */
+const finders: Array<ReturnType<typeof createLibraryFinder>> = []
+const makeFinder = () => {
+  const finder = createLibraryFinder(host as unknown as LibraryFinderHost)
+  finders.push(finder)
+  return finder
+}
 afterEach(async () => {
+  for (const finder of finders.splice(0)) finder.dispose()
   await act(async () => root.unmount())
   element.remove()
   clearMediaDragData()
@@ -80,7 +88,7 @@ afterEach(async () => {
 
 const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, LIBRARY_SEARCH_DEBOUNCE_MS + 50)))
 const show = async () => {
-  const finder = createLibraryFinder(host as unknown as LibraryFinderHost)
+  const finder = makeFinder()
   finder.update(context)
   await act(async () => root.render(createElement(LibraryFinderPanel, { host: host as unknown as LibraryFinderHost })))
   await settle()
@@ -93,7 +101,7 @@ const button = (label: string) =>
 
 describe('FL-636 the bin Library view', () => {
   it('offers itself in the bin under the host label, and withdraws on dispose', () => {
-    const finder = createLibraryFinder(host as unknown as LibraryFinderHost)
+    const finder = makeFinder()
     finder.update(context)
     expect(getLibraryPanel()?.label).toBe('[Library]')
     finder.dispose()
@@ -114,7 +122,7 @@ describe('FL-636 the bin Library view', () => {
   })
 
   it('offers no Library view to a host without the Library services', () => {
-    const finder = createLibraryFinder(host as unknown as LibraryFinderHost)
+    const finder = makeFinder()
     finder.update({ strings, auth: { locale: 'en' }, online: true } as never)
     expect(getLibraryPanel()).toBeNull()
     finder.update(context)
