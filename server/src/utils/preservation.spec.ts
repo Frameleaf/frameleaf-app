@@ -247,6 +247,9 @@ describe('sidecars', () => {
     };
     const v2 = { ...sidecarOf(), sources: [source] };
     expect(PreservationSidecarSchema.parse(v2).sources?.[0]).not.toHaveProperty('importedFrom');
+    const dated = { ...sidecarOf(), dates: { ...sidecarOf().dates, addedAt: '2024-03-01T12:00:00.000Z' } };
+    expect(PreservationSidecarSchema.parse(dated).dates.addedAt).toBe('2024-03-01T12:00:00.000Z');
+    expect(PreservationSidecarSchema.parse(sidecarOf()).dates).not.toHaveProperty('addedAt');
     const imported = { ...sidecarOf(), sources: [{ ...source, importedFrom: 'eagle' }] };
     const written = PreservationSidecarSchema.parse(JSON.parse(preservationJson(imported).toString('utf8')));
     expect(written.sources?.[0]).toMatchObject({ importedFrom: 'eagle' });

@@ -635,6 +635,8 @@ export class PreservationWorkerService {
         localDateTime: iso(asset.localDateTime),
         dateTimeOriginal: iso(asset.dateTimeOriginal),
         timeZone: asset.timeZone ?? null,
+        // Only a Boards-only item's Added date can be restored (FL-653), so only it is written.
+        ...(asset.libraryScope === LibraryScope.Design && asset.createdAt && { addedAt: iso(asset.createdAt)! }),
       },
       isFavorite: asset.isFavorite,
       visibility:
@@ -1890,6 +1892,12 @@ export class PreservationWorkerService {
     }
     if (comparison?.conflicts.some((conflict) => !fields.has(conflict.field))) {
       findings.push('library_values_kept');
+    }
+
+    // FL-653: a Boards-only item restored as new gets back its Added date (such as from an Eagle
+    // import), under the Added-date API's rule. Last, so nothing above reads the moved date.
+    if (created && sidecar.dates.addedAt && sidecar.libraryScope === LibraryScope.Design) {
+      await this.repository.restoreAddedDate(context.ownerId, assetId, new Date(sidecar.dates.addedAt));
     }
     return findings;
   }
