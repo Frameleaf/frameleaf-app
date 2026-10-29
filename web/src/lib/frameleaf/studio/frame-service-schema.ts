@@ -82,6 +82,8 @@ const LIBRARY_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const LIBRARY_TYPES: ReadonlySet<StudioLibraryType> = new Set(['all', 'photo', 'video']);
 /** The most ids one `addLibraryAssets` call may name: a multi-select drag, not the whole library. */
 export const STUDIO_LIBRARY_ADD_LIMIT = 50;
+/** The longest search text the host accepts; the Library view's box stops typing there. */
+export const STUDIO_LIBRARY_TEXT_LIMIT = 500;
 
 /**
  * Whether a Library view query from the frame has the shape the host accepts (FL-636). The frame is
@@ -96,7 +98,7 @@ export const isStudioLibraryQuery = (value: unknown): value is StudioLibraryQuer
     field === undefined || field === null || (typeof field === 'string' && field.length <= max);
   const absent = (field: unknown) => field === undefined || field === null;
   return (
-    text(value.text, 500) &&
+    text(value.text, STUDIO_LIBRARY_TEXT_LIMIT) &&
     (value.type === undefined || LIBRARY_TYPES.has(value.type as StudioLibraryType)) &&
     (absent(value.personId) || id(value.personId)) &&
     text(value.city, 200) &&

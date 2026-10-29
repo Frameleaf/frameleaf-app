@@ -26,6 +26,7 @@ import type {
   StudioLibraryResults,
   StudioLibraryType,
 } from '@frameleaf/host/host-contract'
+import { STUDIO_LIBRARY_TEXT_LIMIT } from '@frameleaf/host/frame-service-schema'
 import { fillLibraryString, type LibraryPanelString } from '@frameleaf/host/library-strings'
 import { registerLibraryPanel } from '@/features/media-library/library-panel-registry'
 import { setMediaDragData } from '@/features/media-library/utils/drag-data-cache'
@@ -388,6 +389,7 @@ export function LibraryFinderPanel({ host, className }: { host: LibraryFinderHos
           <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <input
             type="search"
+            maxLength={STUDIO_LIBRARY_TEXT_LIMIT}
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder={libraryText(strings, 'librarySearch')}

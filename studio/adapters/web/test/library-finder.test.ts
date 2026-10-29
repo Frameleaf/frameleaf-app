@@ -128,6 +128,8 @@ describe('FL-636 the bin Library view', () => {
     expect(element.textContent).toContain('[2 results]')
     expect(element.textContent).toContain('[note]')
     expect(element.querySelector('input')?.getAttribute('aria-label')).toBe('[Search your library]')
+    // The box stops where the host's query check does, so a long paste is never refused as an outage.
+    expect(element.querySelector('input')?.maxLength).toBe(500)
   })
 
   it('runs a smart search for typed words, once typing stops', async () => {
