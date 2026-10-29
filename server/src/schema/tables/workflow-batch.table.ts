@@ -30,7 +30,7 @@ export class WorkflowBatchTable {
   @PrimaryGeneratedColumn() id!: Generated<string>;
   @ForeignKeyColumn(() => WorkflowTable, { onDelete: 'CASCADE', index: false }) workflowId!: string;
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', index: false }) ownerId!: string;
-  @Column({ type: 'text', default: "'pending'" }) status!: Generated<string>;
+  @Column({ type: 'text', default: 'pending' }) status!: Generated<string>;
   @Column({ type: 'text' }) reason!: string;
   @Column({ type: 'jsonb' }) definition!: WorkflowDefinitionDocument;
   @Column({ type: 'jsonb' }) source!: WorkflowSource;
@@ -55,7 +55,7 @@ export class WorkflowBatchItemTable {
   @PrimaryGeneratedColumn() id!: Generated<string>;
   @ForeignKeyColumn(() => WorkflowBatchTable, { onDelete: 'CASCADE', index: false }) batchId!: string;
   @Column({ type: 'uuid' }) assetId!: string;
-  @Column({ type: 'text', default: "'pending'" }) status!: Generated<string>;
+  @Column({ type: 'text', default: 'pending' }) status!: Generated<string>;
   @Column({ type: 'integer', default: 0 }) attempt!: Generated<number>;
   @Column({ type: 'uuid', nullable: true }) fromStepId!: string | null;
 }

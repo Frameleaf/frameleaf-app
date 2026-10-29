@@ -28,7 +28,13 @@ from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
 from frameleaf_ml.models.musicgen import MusicGenModel
-from frameleaf_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav, wav_memory_bytes
+from frameleaf_ml.models.transcribe import (
+    AudioFormatError,
+    TranscribeModel,
+    read_wav,
+    transcription_identity,
+    wav_memory_bytes,
+)
 from frameleaf_ml.models.transforms import decode_pil
 from frameleaf_ml.sessions.ort import flush_denormals
 
@@ -456,6 +462,19 @@ async def predict(
             raise HTTPException(400, "The mask must be the same size as the image")
     response = await run_inference(inputs, entries, decoded_mask)
     return ORJSONResponse(response)
+
+
+@app.get("/transcribe/info")
+def transcribe_info() -> ORJSONResponse:
+    try:
+        identity = transcription_identity()
+        # Without downloads the identity is only real once its verified files are staged; otherwise the server
+        # would advance its index to a model /transcribe cannot load.
+        if not settings.model_downloads and not TranscribeModel(identity["model"]).cached:
+            raise ModelUnavailableError("Transcription model is not staged")
+        return ORJSONResponse(identity)
+    except ModelUnavailableError as error:
+        raise HTTPException(503, "Transcription model unavailable") from error
 
 
 @app.post("/transcribe")

@@ -120,6 +120,31 @@ def resolve_transcribe_model(model_name: str) -> str:
     return default_transcribe_model(gpu=cuda_device_count() > 0)
 
 
+def transcription_identity(model_name: str = TRANSCRIBE_MODEL_ALIAS) -> dict[str, str]:
+    model = resolve_transcribe_model(model_name)
+    source = get_transcribe_model_file(model)
+    if source is None:
+        raise ModelUnavailableError("No pinned transcription model is configured")
+    digest = hashlib.sha256("\n".join(f"{path}:{sha}" for path, sha in sorted(source.files)).encode()).hexdigest()
+    return {"model": model, "fingerprint": digest}
+
+
+# ponytail: memo keyed by (path, size, mtime) so the multi-GB model.bin is hashed once per change, not per call.
+_verified_digests: dict[tuple[str, int, int], str] = {}
+
+
+def file_sha256(file: Path) -> str:
+    stat = file.stat()
+    key = (str(file), stat.st_size, stat.st_mtime_ns)
+    if key not in _verified_digests:
+        digest = hashlib.sha256()
+        with file.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1 << 20), b""):
+                digest.update(chunk)
+        _verified_digests[key] = digest.hexdigest()
+    return _verified_digests[key]
+
+
 class TranscribeModel(InferenceModel):
     depends = []
     identity = (ModelType.AUDIO, ModelTask.TRANSCRIBE)
@@ -133,8 +158,19 @@ class TranscribeModel(InferenceModel):
 
     @property
     def cached(self) -> bool:
+        """Every pinned file is present and matches its pin; a stale file from an older pin is removed as a miss,
+        so the reported fingerprint always describes the files that load."""
         source = get_transcribe_model_file(self.model_name)
-        return source is not None and all((self.cache_dir / path).is_file() for path, _ in source.files)
+        if source is None:
+            return False
+        for path, expected in source.files:
+            file = self.cache_dir / path
+            if not file.is_file():
+                return False
+            if file_sha256(file) != expected:
+                file.unlink()
+                return False
+        return True
 
     def _download(self) -> None:
         source = get_transcribe_model_file(self.model_name)
@@ -149,11 +185,7 @@ class TranscribeModel(InferenceModel):
             file = self.cache_dir / path
             if not file.is_file():
                 raise self._unavailable(repo_id, model_source_url(), reason=f"has no {path}")
-            digest = hashlib.sha256()
-            with file.open("rb") as stream:
-                for chunk in iter(lambda: stream.read(1 << 20), b""):
-                    digest.update(chunk)
-            if digest.hexdigest() != expected:
+            if file_sha256(file) != expected:
                 file.unlink()
                 raise self._unavailable(repo_id, model_source_url(), reason=f"failed the checksum of {path}")
 
@@ -196,7 +228,7 @@ class TranscribeModel(InferenceModel):
         )
         yield {
             "type": "info",
-            "model": self.model_name,
+            **transcription_identity(self.model_name),
             "language": info.language,
             "languageProbability": round(float(info.language_probability), 4),
             "duration": round(float(info.duration), 3),

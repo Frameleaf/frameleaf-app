@@ -31,6 +31,7 @@ import {
   MEDIA_OPERATION_AUTO_RETRIES,
   MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
   PAUSABLE_MEDIA_OPERATION_STATUSES,
+  PUBLIC_MEDIA_OPERATION_KINDS,
   SAFE_MEDIA_OPERATION_REPLAY_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
@@ -116,6 +117,8 @@ export type MediaOperationChange = {
 };
 export type MediaOperationListOptions = {
   ownerId: string;
+  /** Exclude internal-only jobs before selecting a page or counting public Activity results. */
+  publicOnly?: boolean;
   kind?: MediaOperationKind;
   statuses?: readonly MediaOperationStatus[];
   /** Finished jobs the owner cleared from Activity are hidden unless explicitly asked for. */
@@ -414,7 +417,10 @@ export class MediaOperationRepository {
     items: MediaOperation[];
     total: number;
   }> {
-    let query = this.db.selectFrom('media_operation').where('ownerId', '=', options.ownerId);
+    let query = this.db
+      .selectFrom('media_operation')
+      .where('ownerId', '=', options.ownerId)
+      .$if(!!options.publicOnly, (qb) => qb.where('kind', 'in', PUBLIC_MEDIA_OPERATION_KINDS));
     if (options.kind) {
       query = query.where('kind', '=', options.kind);
     }
@@ -2697,9 +2703,10 @@ export class MediaOperationRepository {
    * path: an administrator can see that eleven renders are queued on Frameleaf Cloud without learning
    * whose media they are.
    */
-  async getAggregates(): Promise<MediaOperationAggregateRow[]> {
+  async getAggregates(options: { publicOnly?: boolean } = {}): Promise<MediaOperationAggregateRow[]> {
     const rows = await this.db
       .selectFrom('media_operation')
+      .$if(!!options.publicOnly, (qb) => qb.where('kind', 'in', PUBLIC_MEDIA_OPERATION_KINDS))
       .select((eb) => [
         'kind',
         'status',

@@ -138,10 +138,7 @@ describe('mixed library search universe', () => {
             await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', asset.id).execute();
             break;
           }
-          case 'design': {
-            wanted.push({ id: asset.id, kind: 'asset' });
-            break;
-          }
+          // a link's picture shows on its card only, never as an item of its own (FL-632)
           // No default
         }
       }
@@ -319,6 +316,23 @@ describe('mixed library search universe', () => {
       name: [link.id, photo.asset.id, unrated.id, rejected.asset.id],
       rating: [link.id, photo.asset.id, unrated.id, rejected.asset.id],
     });
+  });
+  it('shows a saved link’s picture on its card, never as an item of its own (FL-632)', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    const { asset: picture } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+    const { asset: file } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+    const link = await repo.create(user.id, {
+      url: 'https://example.org/board',
+      title: 'Board',
+      previewAssetId: picture.id,
+      libraryScope: LibraryScope.Design,
+    });
+    const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' } });
+    const result = await repo.searchLibrary({ user }, request, scope(user.id), ALL);
+    expect(result.count).toBe(2);
+    expect(result.candidates.map(({ id }) => id).toSorted()).toEqual([file.id, link.id].toSorted());
   });
   it('lists only saved links when media is left out, without scanning past them', async () => {
     const ctx = setup();

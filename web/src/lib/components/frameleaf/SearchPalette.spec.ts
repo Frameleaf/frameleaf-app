@@ -135,6 +135,41 @@ describe('SearchPalette', () => {
 
   const type = (input: HTMLElement, value: string) => fireEvent.input(input, { target: { value } });
 
+  it('replaces settled Filename answers with neutral spoken guidance and submits the literal query', async () => {
+    sdkMock.getSpeechCapabilities.mockResolvedValue({ version: 1 } as never);
+    sdkMock.searchAssetStatistics.mockResolvedValue({ total: 2 });
+    sdkMock.searchFacets.mockResolvedValue({
+      total: 2,
+      facets: [{ fieldName: SearchFacetField.Type, counts: [{ value: 'IMAGE', count: 2 }] }],
+    });
+    const { input } = setup({ ...emptyDiscoveryQuery(), mode: 'text', text: 'IMG', filter: { city: { eq: 'Banff' } } });
+    await screen.findAllByText('2 matches');
+    await screen.findByRole('option', { name: 'IMG_0001.jpg' });
+    expect(screen.getByRole('complementary', { name: 'Refine' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Search mode: Filename' }));
+    await fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Spoken words' }));
+    await type(input, '"ask not"');
+    expect((await screen.findAllByText('Open full results to search spoken words.')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Searching…')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('2 matches')).toHaveLength(0);
+    expect(screen.queryByRole('complementary', { name: 'Refine' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox', { name: 'Search results' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/No matches/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save search' })).toBeDisabled();
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    for (const scope of screen.getAllByRole('radio')) {
+      expect(scope.textContent).not.toMatch(/2|…/);
+    }
+    await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+    const url = new URL(String(vi.mocked(goto).mock.calls[0][0]), 'http://localhost');
+    expect(JSON.parse(url.searchParams.get('dq')!)).toMatchObject({
+      mode: 'speech',
+      text: '"ask not"',
+      filter: { city: { eq: 'Banff' } },
+    });
+    expect(sdkMock.searchSpokenWords).not.toHaveBeenCalled();
+  });
+
   it('starts Pro in mixed All text even when semantic models are available', () => {
     setup({ ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } });
     expect(screen.getByRole('button', { name: 'Search mode: All text' })).toBeInTheDocument();

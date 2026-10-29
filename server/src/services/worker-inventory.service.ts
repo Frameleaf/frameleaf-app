@@ -27,6 +27,7 @@ import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-d
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { getConfig } from 'src/utils/config.js';
+import { isPublicMediaOperationKind } from 'src/utils/media-operation.js';
 import {
   CloudModelChoices,
   ML_BUDGET_WINDOW_DAYS,
@@ -297,6 +298,7 @@ export class WorkerInventoryService {
   ): WorkerRunnerDto[] {
     const byWorker = new Map<string, WorkerRunnerDto>();
     for (const claimant of claimants) {
+      if (!isPublicMediaOperationKind(claimant.kind)) continue;
       const current = byWorker.get(claimant.workerId) ?? {
         workerId: claimant.workerId,
         kinds: [],
