@@ -105,8 +105,8 @@ export class DatabaseBackupService {
   }
 
   // FL-362: the library data copy has no timer of its own any more. The one backup schedule
-  // (`BackupSequenceService`) makes it first, then Buddy Backup, then Cloud Backup. This job is still
-  // what "Take a snapshot now" queues.
+  // (`BackupSequenceService`) queues this job first and waits for it, then Buddy Backup, then Cloud
+  // Backup. It is also what "Take a snapshot now" queues, so every snapshot is made here (FL-657).
   @OnJob({ name: JobName.DatabaseBackup, queue: QueueName.BackupDatabase })
   async handleBackupDatabase(): Promise<JobStatus> {
     try {

@@ -46,6 +46,16 @@ describe(TagService.name, () => {
   });
 
   describe('getAll', () => {
+    it('narrows the list for a search-as-you-type picker (FL-647)', async () => {
+      mocks.tag.getAll.mockResolvedValue([tagStub.tag]);
+      await sut.getAll(authStub.admin, { search: 'Trip', take: 20 });
+      expect(mocks.tag.getAll).toHaveBeenCalledWith(authStub.admin.user.id, {
+        hideLocked: true,
+        search: 'Trip',
+        take: 20,
+      });
+    });
+
     it('should return all tags for a user', async () => {
       mocks.tag.getAll.mockResolvedValue([tagStub.tag]);
       await expect(sut.getAll(authStub.admin)).resolves.toEqual([tagResponseStub.tag1]);

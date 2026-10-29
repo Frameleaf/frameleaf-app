@@ -340,6 +340,11 @@ export class AlbumRepository {
       isOwned?: boolean;
       isShared?: boolean;
       name?: string;
+      /** FL-647: only albums whose name contains this text, ignoring case */
+      search?: string;
+      take?: number;
+      /** albums to leave out before `take` applies (smart albums the person hid) */
+      excludeIds?: string[];
       libraryScope?: LibraryViewScope;
     } = {},
   ): Promise<MapAlbumDto[]> {
@@ -349,6 +354,10 @@ export class AlbumRepository {
       .select(withSharedLink)
       .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
       .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
+      .$if(!!options.excludeIds?.length, (qb) => qb.where('album.id', 'not in', options.excludeIds!))
+      .$if(!!options.search, (qb) =>
+        qb.where(sql<boolean>`strpos(lower("album"."albumName"), lower(${options.search})) > 0`),
+      )
       .$if(!!options.libraryScope, (qb) =>
         qb.where((eb) =>
           eb.or([
@@ -369,6 +378,7 @@ export class AlbumRepository {
       )
       .orderBy('album.sortOrder', sql`asc nulls last`)
       .orderBy('album.createdAt', 'desc')
+      .$if(!!options.take, (qb) => qb.limit(options.take!))
       .execute();
     const albums = rows;
     return albums.sort((left, right) => {

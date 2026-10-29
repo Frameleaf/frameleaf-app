@@ -17871,8 +17871,12 @@ export type GetAlbumsDto = {
     libraryScope?: LibraryViewScope;
     /** Album name (exact match) */
     name?: string;
+    /** Only albums whose name contains this text, ignoring case (a search-as-you-type picker) */
+    search?: string;
     /** Return album metadata for suppressed content only */
     suppressedOnly?: boolean;
+    /** At most this many albums */
+    take?: number;
 };
 export type KnownAssetDevelopCrop = {
     /** Crop height as a fraction of the frame */
@@ -19264,6 +19268,12 @@ export type SyncUserV1 = {
     name: string;
     /** User profile changed at */
     profileChangedAt: string;
+};
+export type TagSearchDto = {
+    /** Only tags whose full value contains this text, ignoring case */
+    search?: string;
+    /** At most this many tags */
+    take?: number;
 };
 export type TimeBucketAssetDto = {
     /** Filter assets belonging to a specific album */
@@ -22164,14 +22174,16 @@ export function addAlbumSourceAssets({ id, bulkIdsDto }: {
 /**
  * List all albums
  */
-export function getAllAlbums({ assetId, id, isOwned, isShared, libraryScope, name, suppressedOnly }: {
+export function getAllAlbums({ assetId, id, isOwned, isShared, libraryScope, name, search, suppressedOnly, take }: {
     assetId?: string;
     id?: string;
     isOwned?: boolean;
     isShared?: boolean;
     libraryScope?: LibraryViewScope;
     name?: string;
+    search?: string;
     suppressedOnly?: boolean;
+    take?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -22183,7 +22195,9 @@ export function getAllAlbums({ assetId, id, isOwned, isShared, libraryScope, nam
         isShared,
         libraryScope,
         name,
-        suppressedOnly
+        search,
+        suppressedOnly,
+        take
     }))}`, {
         ...opts
     }));
@@ -32871,6 +32885,23 @@ export function bulkTagAssets({ tagBulkAssetsDto }: {
         method: "PUT",
         body: tagBulkAssetsDto
     })));
+}
+/**
+ * Search tags
+ */
+export function searchTags({ search, take }: {
+    search?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TagResponseDto[];
+    }>(`/tags/search${QS.query(QS.explode({
+        search,
+        take
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Retrieve tag statistics

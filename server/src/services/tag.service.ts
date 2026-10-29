@@ -12,6 +12,7 @@ import {
   TagCreateDto,
   TagMergeDto,
   TagResponseDto,
+  TagSearchDto,
   TagStatisticsResponseDto,
   TagUpdateDto,
   TagUpsertDto,
@@ -37,10 +38,12 @@ import { upsertTags } from 'src/utils/tag.js';
 
 @Injectable()
 export class TagService extends BaseService {
-  async getAll(auth: AuthDto) {
+  async getAll(auth: AuthDto, { search, take }: Partial<TagSearchDto> = {}) {
     const tags = await this.tagRepository.getAll(auth.user.id, {
       ...getHiddenContentQueryOptions(auth),
       hideLocked: !getLockedOwnerId(auth),
+      ...(search ? { search } : {}),
+      ...(take ? { take } : {}),
     });
     return tags.map((tag) => mapTag(tag));
   }
