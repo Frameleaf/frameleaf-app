@@ -29,6 +29,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { changeAppLanguage, i18n, i18nReady } from '@/i18n'
 import { applyHostEngineStrings } from './host-engine-strings'
+import { registerStabiliseHost } from './shims/stabilise-service'
 import './editor.css'
 import { routeTree } from '@/routeTree.gen'
 import { ErrorBoundary } from '@/app/error-boundary'
@@ -138,6 +139,10 @@ const graphVersionOf = (context: StudioHostContext): number => {
   return Number.isSafeInteger(version) && (version as number) >= 0 ? (version as number) : 0
 }
 
+/** The Studio project's UUID, or null for an unsaved draft (FL-638 Stabilise routes take a UUID). */
+const studioProjectUuidOf = (context: StudioHostContext): string | null =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.project.id) ? context.project.id : null
+
 /** The Freecut project id inside the stored graph, or a stable one for a project that has none. */
 const engineProjectIdOf = (context: StudioHostContext): string => {
   const graph = context.project.graph as { id?: unknown } | null
@@ -199,6 +204,11 @@ interface Session extends DraftSendState {
   retiredProjectIds: Set<string>
   /** The mount generation whose editor instance is on screen; a remount renders a new one last. */
   renderedGeneration: number
+  /**
+   * FL-638: the Studio project (UUID) of the editor instance on screen, recorded when it renders.
+   * Stabilise queues its analysis for this one, never for a project a remount is still loading.
+   */
+  stabiliseProjectId?: string | null
   /** Files imported here, sent to the host to keep with the project (FL-103 / FL-105). */
   localImports?: LocalImportWatch
   relinkController?: AbortController
@@ -827,6 +837,7 @@ async function remount(state: Session, context: StudioHostContext, incoming: str
   )
     notifySuperseded(state)
   state.renderedGeneration = mount.generation
+  state.stabiliseProjectId = studioProjectUuidOf(context)
   reconcileVectors(state)
   state.render()
 }
@@ -1011,6 +1022,18 @@ async function mount(context: StudioHostContext): Promise<void> {
       </StrictMode>,
     )
   state.render()
+  // FL-638: Stabilise queues its analysis for the project this editor is showing.
+  // The route takes the Studio project's id (a UUID), not the engine's; an unsaved draft has none.
+  // While a remount loads another graph the old instance stays editable, so nothing is queued until
+  // the new instance renders with its own project.
+  state.stabiliseProjectId = studioProjectUuidOf(context)
+  state.unsubscribe.push(
+    registerStabiliseHost(() =>
+      state.disposed || state.mount.generation !== state.renderedGeneration
+        ? null
+        : (state.stabiliseProjectId ?? null),
+    ),
+  )
   watchDrafts(state)
   watchImports(state)
   watchLocalImportsFor(state)
@@ -1054,6 +1077,9 @@ async function update(context: StudioHostContext): Promise<void> {
       })
     : 'hold'
   if (outcome !== 'remount' && !context.draftHeld) reconcileVectors(state)
+  // FL-638: the instance on screen keeps editing this context's project (a save as a copy can echo
+  // without a remount), so Stabilise follows it; a remount records its own project when it renders.
+  if (outcome !== 'remount') state.stabiliseProjectId = studioProjectUuidOf(context)
   if (outcome === 'remount') {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
     // command applied by the host. A fresh editor instance loads it.

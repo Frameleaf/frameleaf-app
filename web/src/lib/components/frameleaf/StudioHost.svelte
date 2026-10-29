@@ -130,6 +130,7 @@
     type StudioProjectStatus,
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
+  import { stabiliseEngineStrings } from '$lib/frameleaf/studio/stabilise-strings';
   import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
   import { captionStyleEngineStrings } from '$lib/frameleaf/studio/caption-style-strings';
   import { libraryPanelStrings } from '$lib/frameleaf/studio/library-strings';
@@ -554,6 +555,7 @@
       relinkSaved: $t('frameleaf_studio_relink_saved'),
       lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
       ...transcriptEngineStrings($t),
+      ...stabiliseEngineStrings($t),
       ...captionStyleEngineStrings($t),
       ...libraryPanelStrings($t),
     },
