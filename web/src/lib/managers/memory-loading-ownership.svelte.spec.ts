@@ -74,6 +74,19 @@ describe('memory page ownership', () => {
     expect(manager.hasNextPage).toBe(false);
   });
 
+  it('never asks for a page past the end when the memories are opened again', async () => {
+    vi.mocked(searchMemories).mockResolvedValueOnce([memory('only')]);
+    vi.mocked(memoriesStatistics).mockResolvedValue({ total: 1 });
+    await manager.refresh();
+    expect(manager.hasNextPage).toBe(false);
+
+    await manager.applyPreferences();
+    await manager.refresh();
+
+    expect(vi.mocked(searchMemories).mock.calls.map(([query]) => query.page)).toEqual([1]);
+    expect(manager.memories.map(({ id }) => id)).toEqual(['only']);
+  });
+
   it.each([false, true])('discards a response after logout without another request (queued=%s)', async (queued) => {
     const first = deferredPromise<MemoryResponseDto[]>();
     vi.mocked(searchMemories).mockReturnValueOnce(first.promise);

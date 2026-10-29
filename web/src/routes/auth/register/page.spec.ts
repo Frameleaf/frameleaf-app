@@ -71,7 +71,7 @@ describe('new server setup (FL-176)', () => {
     expect(firstSave).toBeLessThan(vi.mocked(authManager.load).mock.invocationCallOrder[0]);
     expect(firstSave).toBeLessThan(sdkMock.getFrameleafSetupStorage.mock.invocationCallOrder[0]);
     expect(await screen.findByRole('heading', { name: en.frameleaf_setup_library_title })).toBeInTheDocument();
-    expect(await screen.findByText('Writable, 2.0 TB free')).toBeInTheDocument();
+    expect(await screen.findByText('Writable, 2 TB free')).toBeInTheDocument();
     await waitFor(() => expect(sdkMock.updateFrameleafSetup).toHaveBeenCalled());
     const saved = JSON.stringify(sdkMock.updateFrameleafSetup.mock.calls);
     expect(saved).not.toContain('Correct-Horse-9');

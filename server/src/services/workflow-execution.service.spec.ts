@@ -1075,15 +1075,45 @@ describe('workflow change causation', () => {
     const ownerId = newUuid(),
       personGroupId = newUuid();
     const ids = Array.from({ length: 501 }, () => newUuid());
+    const workflowId = newUuid();
+    mocks.workflow.search.mockResolvedValue([
+      {
+        id: workflowId,
+        definition: { version: 1, trigger: 'AssetChanged', source: { filter: {} }, extra: {}, steps: [] },
+      },
+    ] as never);
     mocks.person.getAssetIdsForPeople.mockResolvedValueOnce(ids.slice(0, 500)).mockResolvedValueOnce(ids.slice(500));
-    const changed = vi.spyOn(sut, 'onAssetChanged').mockResolvedValue();
     await sut.onPersonChanged({ ownerId, personGroupId });
-    expect(changed).toHaveBeenCalledTimes(501);
-    expect(changed).toHaveBeenLastCalledWith({ assetId: ids[500] });
+    // The owner's workflows are read once and each page is queued together, not one query per photo.
+    expect(mocks.workflow.search).toHaveBeenCalledOnce();
+    expect(mocks.workflow.search).toHaveBeenCalledWith({
+      userId: ownerId,
+      trigger: WorkflowTrigger.AssetChanged,
+      enabled: true,
+    });
+    expect(mocks.workflow.getAssetOwner).not.toHaveBeenCalled();
+    expect(mocks.job.queueAll).toHaveBeenCalledTimes(2);
+    const queued = mocks.job.queueAll.mock.calls.flatMap(([jobs]) => jobs as { data: { assetId: string } }[]);
+    expect(queued.map((job) => job.data.assetId)).toEqual(ids);
+    expect(queued[500]).toMatchObject({
+      name: JobName.WorkflowAssetTrigger,
+      data: {
+        workflowId,
+        assetId: ids[500],
+        causation: [expect.stringMatching(/^chain:/), `${workflowId}:${ids[500]}`],
+      },
+    });
     expect(mocks.person.getAssetIdsForPeople).toHaveBeenLastCalledWith(ownerId, [personGroupId], {
       after: ids[499],
       limit: 500,
     });
+  });
+  it('does not page through a person whose owner has no change workflows', async () => {
+    const { sut, mocks } = newTestService(WorkflowExecutionService);
+    mocks.workflow.search.mockResolvedValue([]);
+    await sut.onPersonChanged({ ownerId: newUuid(), personGroupId: newUuid() });
+    expect(mocks.person.getAssetIdsForPeople).not.toHaveBeenCalled();
+    expect(mocks.job.queueAll).not.toHaveBeenCalled();
   });
   it('queues each independent matching change and never the same workflow in its own chain', async () => {
     const { sut, mocks } = newTestService(WorkflowExecutionService);

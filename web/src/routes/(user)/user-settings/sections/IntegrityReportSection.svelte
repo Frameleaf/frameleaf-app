@@ -34,9 +34,10 @@
   import {
     getIntegrityCheckRuns,
     getIntegrityReport,
-    getQueuesLegacy,
+    getQueue,
     IntegrityReport,
     ManualJobName,
+    QueueName,
     type IntegrityReportResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -125,10 +126,10 @@
     while (running) {
       // One failed poll (a server restart, a dropped connection) is retried on the next one, not fatal.
       try {
-        const { integrityCheck } = await getQueuesLegacy();
+        // Only the integrity queue is read, not every queue's counts.
+        const { active, waiting, delayed } = (await getQueue({ name: QueueName.IntegrityCheck })).statistics;
         // A queued refresh is not active yet, so waiting and delayed work counts as running too.
-        const { active, waiting, delayed } = integrityCheck.jobCounts;
-        if (integrityCheck.queueStatus.isActive || active + waiting + delayed > 0) {
+        if (active + waiting + delayed > 0) {
           expectingUpdate = true;
         } else if (expectingUpdate) {
           integrityReport = await getIntegrityReport({

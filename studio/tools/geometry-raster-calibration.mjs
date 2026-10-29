@@ -210,7 +210,13 @@ export function validateBaseRaster(capture, envelope, binding) {
             'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
           // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f')),
+            'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
+          // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
+          binding.sourceSha256 ===
+            'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
+          // FL-639 cut out the subject on multicam, motion tracking, colour match, loudness and speed ramps; client-render-engine.ts refuses cut-outs on the linear HDR route, raster unchanged.
+          binding.sourceSha256 ===
+            '308e10ee96992b0da5f967281c51fbe3ea90f714a52d688c1a19d33eaf87097b')),
     'SOURCE_BROWSER',
   )
   check(

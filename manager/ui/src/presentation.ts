@@ -161,6 +161,8 @@ const refusals: Record<string, string> = {
   database_connection_ambiguous:
     'Manager could not tell which container holds this Immich database. Its DB_HOSTNAME must name or address the database container.',
   unsupported_database_connection: 'This Immich database connection is not supported yet: it needs a password.',
+  manager_unexpected_response:
+    'Manager sent an unexpected answer. It may be restarting, or a proxy in front of it may have failed. Wait a moment, then try again.',
   operation_failed:
     'This step stopped with an unexpected error. The Manager container log has the details. Completed steps are kept, so you can resume.',
 };

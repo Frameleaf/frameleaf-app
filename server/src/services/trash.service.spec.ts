@@ -228,10 +228,7 @@ describe(TrashService.name, () => {
         pendingDeletion: 0,
         oldestDeletedAt: new Date('2026-10-01T00:00:00.000Z'),
       });
-      mocks.trash.getReviewRows.mockResolvedValue([
-        reviewRow('asset-1', { fileSizeInByte: 1000 }),
-        reviewRow('asset-2', { fileSizeInByte: 2000, sharesOriginal: true }),
-      ]);
+      mocks.trash.getFreedBytes.mockResolvedValue(1000);
       mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 30 } });
 
       await expect(sut.getSummary(authStub.user1)).resolves.toEqual({
@@ -242,6 +239,9 @@ describe(TrashService.name, () => {
         nextGoesAt: '2026-10-31T00:00:00.000Z',
         freesBytes: 1000,
       });
+      // counted in the database, never by reading every row of the trash
+      expect(mocks.trash.getFreedBytes).toHaveBeenCalledWith('user-id', TrashReviewAction.Empty, { privacy: {} });
+      expect(mocks.trash.getReviewRows).not.toHaveBeenCalled();
     });
 
     it('should never widen an ordinary session to Locked media', async () => {

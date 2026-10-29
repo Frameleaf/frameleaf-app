@@ -89,12 +89,21 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
     sourceSha256 === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
     // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
-    sourceSha256 === 'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f'
+    sourceSha256 === 'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
+    // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47'
   )
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':
         'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+    }
+  // FL-639 cut out the subject on multicam, motion tracking, colour match, loudness and speed ramps; client-render-engine.ts refuses cut-outs on the linear HDR route, raster unchanged.
+  if (sourceSha256 === '308e10ee96992b0da5f967281c51fbe3ea90f714a52d688c1a19d33eaf87097b')
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/client-render-engine.ts':
+        '0e2d3bfc84f9871d4ca39155e9f851e391c083bf368cbd1eafd9ae11b85b4ae4',
     }
   assert(legacyCompositionSources.has(sourceSha256), 'COMPOSITION_SOURCE_UNREGISTERED')
   return COMPOSITION_SOURCES
