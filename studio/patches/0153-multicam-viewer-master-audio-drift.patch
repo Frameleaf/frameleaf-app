@@ -42,15 +42,22 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
        // A superseded run (cancelled, or the reference changed) never writes its results.
        if (controller.signal.aborted) return
        if (!analysis.ok) {
-@@ -44,6 +50,7 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+@@ -43,8 +49,12 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+         return
        }
        setProposals(analysis.proposals)
-       // Only reliable matches prefill an offset; failed ones stay manual (0 until edited).
-+      setDriftFix(Object.fromEntries(analysis.proposals.map((p) => [p.itemId, p.sync.clock !== undefined])))
-       setOffsets(Object.fromEntries(analysis.proposals.map((p) => [p.itemId, p.sync.flags.length === 0 ? Math.round(p.sync.offsetSeconds * fps) : 0])))
+-      // Only reliable matches prefill an offset; failed ones stay manual (0 until edited).
+-      setOffsets(Object.fromEntries(analysis.proposals.map((p) => [p.itemId, p.sync.flags.length === 0 ? Math.round(p.sync.offsetSeconds * fps) : 0])))
++      // Matches (drifting ones included: their anchor offset still holds at the start) prefill an
++      // offset; failed ones stay manual (0 until edited). Drift is corrected only on video angles.
++      setDriftFix(Object.fromEntries(analysis.proposals.map((p) => [p.itemId,
++        p.sync.clock !== undefined && items.some((item) => item.id === p.itemId && item.type === 'video')])))
++      setOffsets(Object.fromEntries(analysis.proposals.map((p) => [p.itemId,
++        p.sync.flags.every((flag) => flag === 'drift') ? Math.round(p.sync.offsetSeconds * fps) : 0])))
      } catch (error) {
        if (!controller.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.multicam.refusal.decode-failed'))
-@@ -56,9 +63,12 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+     } finally {
+@@ -56,9 +66,12 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
      const outcome = createMulticamEdit({
        referenceId,
        masterItemId: masterId,
@@ -63,7 +70,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
          return {
            itemId: item.id,
            offsetSeconds: frames / fps,
-@@ -72,10 +82,10 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+@@ -72,10 +85,10 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
      else toast.warning(t(`editor.multicam.refusal.${outcome.reason}`))
    }
  
@@ -76,7 +83,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
      </select>
    )
  
-@@ -85,14 +95,19 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+@@ -85,14 +98,19 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
          {/* Offsets are relative to the reference: a new reference discards them and the sync results. */}
          {select(t('editor.multicam.reference'), referenceId, (id) => { abortRef.current?.abort(); setReferenceId(id); setProposals(null); setOffsets({}) })}
        </PropertyRow>
@@ -99,7 +106,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
                    aria-label={t('editor.multicam.offset', { label: item.label })}
                    value={offsets[item.id] ?? 0}
                    onChange={(event) => setOffsets((current) => ({ ...current, [item.id]: Math.round(Number(event.target.value)) }))} />
-@@ -101,6 +116,13 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+@@ -101,6 +119,13 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
                {proposal && (proposal.sync.flags.length === 0
                  ? <span className="text-xs">{t('editor.multicam.matched', { score: Math.round(proposal.sync.score * 100) })}</span>
                  : proposal.sync.flags.map((flag) => <span key={flag} className="text-xs text-amber-500">{t(`editor.multicam.flag.${flag}`)}</span>))}
@@ -113,13 +120,15 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
              </div>
            </PropertyRow>
          )
-@@ -125,6 +147,29 @@ function CutControls({ groupId }: { groupId: string }) {
+@@ -125,6 +150,31 @@ function CutControls({ groupId }: { groupId: string }) {
    const angles = group?.record.angles ?? []
    const labels = useTimelineStore((s) => angles.map((angle) => s.items.find((item) => item.id === angle.itemId)?.label ?? '?').join('\u0000')).split('\u0000')
  
 +  const frame = usePlaybackStore((s) => s.currentFrame)
 +  const fps = useTimelineStore((s) => s.fps)
-+  const angleItems = useTimelineStore((s) => angles.map((angle) => s.items.find((item) => item.id === angle.itemId)))
++  // Select the stable items array; a mapped array would be a new snapshot on every read.
++  const timelineItems = useTimelineStore((s) => s.items)
++  const angleItems = angles.map((angle) => timelineItems.find((item) => item.id === angle.itemId))
 +  const [strips, setStrips] = useState<Record<string, Filmstrip | null>>({})
 +  const mediaKey = angleItems.map((item) => item?.mediaId ?? '').join(',')
 +  useEffect(() => {
@@ -143,7 +152,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
    const cut = (index: number) => {
      const outcome = cutToAngle(groupId, index, usePlaybackStore.getState().currentFrame)
      if (!outcome.ok) {
-@@ -147,14 +192,19 @@ function CutControls({ groupId }: { groupId: string }) {
+@@ -147,14 +197,19 @@ function CutControls({ groupId }: { groupId: string }) {
          }
        }}
      >
@@ -171,7 +180,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
        <p className="col-span-2 text-xs text-muted-foreground">{t('editor.multicam.cutNote')}</p>
      </div>
    )
-@@ -167,6 +217,9 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+@@ -167,6 +222,9 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
      ? (tracks.find((track) => track.id === items[0]!.trackId) as { multicam?: { role: string; groupId: string } } | undefined)?.multicam
      : undefined
    const videos = items.filter((item) => item.type === 'video')
@@ -181,7 +190,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
    const canCreate = videos.length >= 2 && videos.length <= 4 && videos.length === items.filter((item) => item.type !== 'audio').length
    if (!canCreate && programGroupId?.role !== 'program') return null
  
-@@ -174,7 +227,7 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+@@ -174,7 +232,7 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
      <PropertySection title={t('editor.multicam.title')} icon={Clapperboard} defaultOpen={true}>
        {programGroupId?.role === 'program'
          ? <CutControls groupId={programGroupId.groupId} />
@@ -202,7 +211,23 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
    const angles = [
      { itemId: 'v1', offsetSeconds: 0 },
      { itemId: 'v2', offsetSeconds: -1.5 },
-@@ -159,4 +159,34 @@ describe('multicam', () => {
+@@ -69,6 +69,15 @@ describe('multicam', () => {
+     expect(useItemsStore.getState().tracks.every((t) => t.visible)).toBe(true)
+   })
+ 
++  it('moves a linked companion by its own offset, even when it already sits where the angle lands', () => {
++    // Camera 2's sound sits 15 frames after its picture, exactly where the picture lands (frame 45).
++    useItemsStore.getState()._updateItem('v2', { from: 30 })
++    useItemsStore.getState()._updateItem('a2', { from: 45 })
++    expect(createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' }).ok).toBe(true)
++    expect(byId('v2').from).toBe(45)
++    expect(byId('a2').from).toBe(60)
++  })
++
+   it('cuts the picture between angles at the playhead with source ranges from the alignment', () => {
+     const outcome = createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
+     if (!outcome.ok) throw new Error(outcome.reason)
+@@ -159,4 +168,34 @@ describe('multicam', () => {
      expect(outcome.ok).toBe(true)
      expect([byId('a1').muted, byId('a2').muted, byId('a3').muted]).toEqual([true, false, true])
    })
@@ -330,7 +355,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      return { ok: false, reason: 'shared-track' }
    }
    // An angle already in a group would be claimed twice, leaving the first group stale. Program records
-@@ -188,19 +207,28 @@ export function createMulticamEdit(params: {
+@@ -188,19 +207,29 @@ export function createMulticamEdit(params: {
  
    const fps = useTimelineSettingsStore.getState().fps
    const groupId = crypto.randomUUID()
@@ -357,7 +382,8 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
 +      const retime = ratio !== 1
 +        ? { speed: ratio, durationInFrames: Math.max(1, Math.round(member.durationInFrames / ratio)) }
 +        : {}
-+      if (from !== member.from || ratio !== 1) updates.push({ id: member.id, from: from + (member.from - item.from), ...retime })
++      const target = from + (member.from - item.from)
++      if (target !== member.from || ratio !== 1) updates.push({ id: member.id, from: target, ...retime })
      }
    }
 +  for (const item of angleItems) place(item, offsets.get(item.id)!, ratios.get(item.id)!)
@@ -368,7 +394,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  
    const programTrackId = `multicam-program-${groupId}`
    const topOrder = Math.min(...tracks.map((track) => track.order))
-@@ -211,13 +239,16 @@ export function createMulticamEdit(params: {
+@@ -211,13 +240,16 @@ export function createMulticamEdit(params: {
        groupId, role: 'program',
        algorithm: params.angles.some((angle) => angle.manual) ? 'manual' : MULTICAM_SYNC_ALGORITHM,
        referenceItemId: reference.id, masterAudioItemId: masterAudio.id,
@@ -387,7 +413,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      const angleTrackSet = new Set(angleTrackIds)
      store.setTracks([
        programTrack,
-@@ -225,10 +256,11 @@ export function createMulticamEdit(params: {
+@@ -225,10 +257,11 @@ export function createMulticamEdit(params: {
          ? { ...track, visible: false, multicam: { groupId, role: 'angle' } }
          : track),
      ])
@@ -400,7 +426,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      }
      // The chosen master is the edit's sound, so it is heard even if it was muted before.
      if (masterAudio.muted) store._updateItem(masterAudio.id, { muted: false })
-@@ -239,10 +271,10 @@ export function createMulticamEdit(params: {
+@@ -239,10 +272,10 @@ export function createMulticamEdit(params: {
    return { ok: true, groupId }
  }
  
@@ -413,7 +439,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
    return {
      ...angle,
      id: crypto.randomUUID(),
-@@ -250,7 +282,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
+@@ -250,7 +283,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
      from,
      durationInFrames: duration,
      sourceStart,

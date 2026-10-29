@@ -2263,9 +2263,10 @@
           "0127-persisted-lottie-discriminator.patch",
           "0128-persisted-subtitle-discriminator.patch",
           "0131-canonical-dotlottie-owned-source.patch",
-          "0149-multicam-editing.patch"
+          "0149-multicam-editing.patch",
+          "0153-multicam-viewer-master-audio-drift.patch"
         ],
-        "note": "All item kinds are reachable in the editor; Lottie and subtitle persistence fixed by patches. FL-595 adds multicam editing: angles synced by sound, a program track of cuts and one master audio.",
+        "note": "All item kinds are reachable in the editor; Lottie and subtitle persistence fixed by patches. FL-595 adds multicam editing: angles synced by sound, a program track of cuts and one master audio; FL-628 adds angle previews, a standalone master audio and clock-drift correction.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.1",
