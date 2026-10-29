@@ -773,8 +773,8 @@
     {
       "path": "patches/0166-subject-cutout.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "a7b9acbeb137ec78f3eb9672426f4b619b7750208a100c5be76d444b24041f10"
+      "sha256": "2bea6c0895e3804d0cbe17856b9f21aaa92d2a0c4952e2eb207604f44cbc80e6"
     }
   ],
-  "sourceSha256": "81cd71b8c0925546cd17979960a4d34463768231cdab7060deb4091d863da192"
+  "sourceSha256": "848ba71c8f8f7977337bc05284f951dba7c65729f357c802521ea340a72279ad"
 }

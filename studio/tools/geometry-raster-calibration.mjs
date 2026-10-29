@@ -225,7 +225,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb' ||
           // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
           binding.sourceSha256 ===
-            '81cd71b8c0925546cd17979960a4d34463768231cdab7060deb4091d863da192')),
+            '848ba71c8f8f7977337bc05284f951dba7c65729f357c802521ea340a72279ad')),
     'SOURCE_BROWSER',
   )
   check(

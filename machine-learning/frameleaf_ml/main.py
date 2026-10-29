@@ -673,7 +673,8 @@ async def subject_matte(
                 try:
                     item = await run(next, items, None)
                 except ValueError as error:
-                    yield orjson.dumps({"type": "error", "message": str(error)}) + b"\n"
+                    # The server reads at most 512 characters of a message (its stream schema).
+                    yield orjson.dumps({"type": "error", "message": str(error)[:512]}) + b"\n"
                     return
                 except Exception as error:
                     log.error(f"Cut-out failed: {error}")

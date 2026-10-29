@@ -287,6 +287,16 @@ class TestEndpoint:
         )
         assert lines(response.text)[-1] == {"type": "error", "message": "No subject found in the first frame"}
 
+    def test_a_long_error_is_cut_to_what_the_server_reads(
+        self, served: SubjectMatteModel, deployed_app: TestClient, mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(served, "propose", side_effect=ValueError("x" * 2000))
+        response = deployed_app.post(
+            "http://localhost:3003/subject-matte", data={"entries": entries()}, files=frame_parts(synthetic_clip(2))
+        )
+        last = lines(response.text)[-1]
+        assert last["type"] == "error" and len(last["message"]) == 512
+
     def test_a_worker_without_the_pinned_snapshots_answers_503(
         self, tmp_path: Path, mocker: MockerFixture, deployed_app: TestClient
     ) -> None:

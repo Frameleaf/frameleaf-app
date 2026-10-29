@@ -13,7 +13,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.test.tsx
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,194 @@
 +import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import type { ReactNode } from 'react'
@@ -130,6 +130,16 @@ new file mode 100644
 +    expect(screen.getByRole('button', { name: 'cutout.remove' })).toBeInTheDocument()
 +  })
 +
++  it('commits edge softness from the slider', async () => {
++    const found: SubjectCutout = { subject: { kind: 'subject' }, background: 'blur', softness: 40, matte }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: found }], fps: 30 })
++    registerSubjectCutoutHost(host([]))
++    render(<SubjectCutoutSection item={current()} />)
++    const thumb = await screen.findByRole('slider')
++    fireEvent.keyDown(thumb, { key: 'ArrowRight' })
++    await waitFor(() => expect(current().subjectCutout?.softness).toBe(41))
++  })
++
 +  it('keeps a background chosen while the subject is being found', async () => {
 +    const fake = host([
 +      { id: 'job', status: 'running', progress: 40, error: null, matte: null },
@@ -202,7 +212,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.tsx
-@@ -0,0 +1,313 @@
+@@ -0,0 +1,320 @@
 +import { useEffect, useMemo, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Brush, Eraser, UserSquare } from 'lucide-react'
@@ -273,6 +283,9 @@ new file mode 100644
 +  const [chosen, setChosen] = useState<string | null>(cutout?.subject.personId ?? null)
 +  const [progress, setProgress] = useState<number | null>(null)
 +  const [refining, setRefining] = useState(false)
++  // The slider's value while it is dragged; the clip keeps its softness until the drag ends.
++  const [softnessDraft, setSoftnessDraft] = useState<number | null>(null)
++  const softness = softnessDraft ?? cutout?.softness ?? DEFAULT_SOFTNESS
 +  const abortRef = useRef<AbortController | null>(null)
 +  // Only a clip with no cut-out yet gets a person chosen for it when the people load.
 +  const hasCutout = useRef(!!cutout)
@@ -483,14 +496,18 @@ new file mode 100644
 +            )}
 +
 +            <label className="block space-y-1">
-+              <span>{t('cutout.softness', { value: cutout!.softness })}</span>
++              <span>{t('cutout.softness', { value: softness })}</span>
 +              <Slider
 +                min={0}
 +                max={100}
 +                step={1}
-+                value={[cutout!.softness]}
++                value={[softness]}
 +                aria-label={t('cutout.softnessLabel')}
-+                onValueCommit={([value]) => updateSubjectCutout(item.id, { softness: value ?? DEFAULT_SOFTNESS })}
++                onValueChange={([value]) => setSoftnessDraft(value ?? DEFAULT_SOFTNESS)}
++                onValueCommit={([value]) => {
++                  setSoftnessDraft(null)
++                  updateSubjectCutout(item.id, { softness: value ?? DEFAULT_SOFTNESS })
++                }}
 +              />
 +            </label>
 +

@@ -115,7 +115,7 @@ export function compositionSourcesFor(sourceSha256) {
         '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
     }
   // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
-  if (sourceSha256 === '81cd71b8c0925546cd17979960a4d34463768231cdab7060deb4091d863da192')
+  if (sourceSha256 === '848ba71c8f8f7977337bc05284f951dba7c65729f357c802521ea340a72279ad')
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/canvas-item-renderer/gpu.ts':
