@@ -73,6 +73,13 @@ export const AssetAnnotationItemsSchema = z
 export const AssetAnnotationsUpdateSchema = z
   .strictObject({
     version: AssetAnnotationsVersionSchema,
+    sourceRevision: z
+      .string()
+      .min(1)
+      .max(64)
+      .describe(
+        'The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved; read the annotations again.',
+      ),
     items: AssetAnnotationItemsSchema,
   })
   .meta({ id: 'AssetAnnotationsUpdateDto' });

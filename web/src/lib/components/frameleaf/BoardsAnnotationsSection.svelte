@@ -65,6 +65,9 @@
     {:else}
       <p class="muted">{$t('frameleaf_boards_annotations_none')}</p>
     {/if}
+    {#if annotations.reloaded}
+      <p class="notice" role="alert">{$t('frameleaf_boards_annotations_reloaded')}</p>
+    {/if}
     {#if annotations.saveFailed}
       <InlineError
         compact
@@ -108,6 +111,11 @@
   }
   .switch strong {
     font-weight: 600;
+  }
+  .notice {
+    margin: 0;
+    color: var(--fl-warning);
+    font-size: var(--fl-font-small);
   }
   .muted {
     margin: 0;

@@ -19,7 +19,7 @@ const setup = async (startMode: 'view' | 'annotate' = 'annotate', show = true) =
     items,
     updatedAt: null,
   } as never);
-  sdkMock.replaceAssetAnnotations.mockResolvedValue({} as never);
+  sdkMock.replaceAssetAnnotations.mockResolvedValue({ sourceRevision: 'rev' } as never);
   const annotations = new BoardsAnnotationsState('asset-1');
   await annotations.load();
   const onShowChange = vi.fn();
@@ -89,6 +89,7 @@ describe('BoardsViewer', () => {
       id: 'asset-1',
       assetAnnotationsUpdateDto: {
         version: 1,
+        sourceRevision: 'rev',
         items: expect.arrayContaining([expect.objectContaining({ kind: 'rect' })]),
       },
     });
@@ -155,6 +156,27 @@ describe('BoardsViewer', () => {
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
     await fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('reads the annotations again when the picture changed, says so and starts undo afresh', async () => {
+    const { annotations } = await setup();
+    sdkMock.replaceAssetAnnotations.mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409 }));
+    sdkMock.getAssetAnnotations.mockResolvedValue({
+      version: 1,
+      sourceRevision: 'rev-2',
+      sourceChanged: false,
+      canEdit: true,
+      items: items.slice(0, 1),
+      updatedAt: null,
+    } as never);
+    await fireEvent.keyDown(document.body, { key: 'r' });
+    await fireEvent.keyDown(document.body, { key: 'Enter' });
+    expect(screen.getByRole('button', { name: 'undo' })).toBeEnabled();
+    await vi.advanceTimersByTimeAsync(700);
+
+    await vi.waitFor(() => expect(annotations.items.map(({ id }) => id)).toEqual(['a1']));
+    expect(await screen.findByText('frameleaf_boards_annotations_reloaded')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'undo' })).toBeDisabled();
   });
 
   it('keeps keys from reaching the workspace behind it', async () => {

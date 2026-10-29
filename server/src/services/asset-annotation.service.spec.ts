@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AssetType, LibraryScope } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetAnnotationRepository } from 'src/repositories/asset-annotation.repository.js';
@@ -95,8 +95,8 @@ describe('Boards annotations', () => {
 
   describe('saving', () => {
     it('replaces the whole document and nothing else', async () => {
-      const result = await service.replace(owner, 'asset', { version: 1, items });
-      expect(annotations.replace).toHaveBeenCalledWith('asset', items);
+      const result = await service.replace(owner, 'asset', { version: 1, sourceRevision: 'rev-1', items });
+      expect(annotations.replace).toHaveBeenCalledWith('asset', items, 'rev-1');
       expect(result).toMatchObject({ items, canEdit: true, sourceChanged: false });
       // the annotation repository is the only writer: no asset update, edit or job is involved
       expect(mocks.asset.update).not.toHaveBeenCalled();
@@ -104,40 +104,60 @@ describe('Boards annotations', () => {
     });
 
     it('removes the document when the list is emptied', async () => {
-      await expect(service.replace(owner, 'asset', { version: 1, items: [] })).resolves.toMatchObject({
+      await expect(
+        service.replace(owner, 'asset', { version: 1, sourceRevision: 'rev-1', items: [] }),
+      ).resolves.toMatchObject({
         items: [],
         updatedAt: null,
       });
-      expect(annotations.replace).toHaveBeenCalledWith('asset', []);
+      expect(annotations.replace).toHaveBeenCalledWith('asset', [], 'rev-1');
     });
 
     it('never lets a shared link write, even with the owner’s identity', async () => {
       const auth = { ...owner, sharedLink: authStub.adminSharedLink.sharedLink };
-      await expect(service.replace(auth, 'asset', { version: 1, items })).rejects.toThrow(ForbiddenException);
+      await expect(service.replace(auth, 'asset', { version: 1, sourceRevision: 'rev-1', items })).rejects.toThrow(
+        ForbiddenException,
+      );
       expect(annotations.replace).not.toHaveBeenCalled();
     });
 
     it('never lets anyone but the owner write', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set(['asset']));
-      await expect(service.replace(authStub.admin, 'asset', { version: 1, items })).rejects.toThrow();
+      await expect(
+        service.replace(authStub.admin, 'asset', { version: 1, sourceRevision: 'rev-1', items }),
+      ).rejects.toThrow();
       annotations.getAsset.mockResolvedValue(picture({ ownerId: 'someone-else' }));
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset']));
-      await expect(service.replace(owner, 'asset', { version: 1, items })).rejects.toThrow(ForbiddenException);
+      await expect(service.replace(owner, 'asset', { version: 1, sourceRevision: 'rev-1', items })).rejects.toThrow(
+        ForbiddenException,
+      );
       expect(annotations.replace).not.toHaveBeenCalled();
     });
 
     it('refuses a picture outside Boards and videos', async () => {
       for (const asset of [picture({ libraryScope: LibraryScope.Personal }), picture({ type: AssetType.Video })]) {
         annotations.getAsset.mockResolvedValue(asset);
-        await expect(service.replace(owner, 'asset', { version: 1, items })).rejects.toThrow(BadRequestException);
+        await expect(service.replace(owner, 'asset', { version: 1, sourceRevision: 'rev-1', items })).rejects.toThrow(
+          BadRequestException,
+        );
       }
       expect(annotations.replace).not.toHaveBeenCalled();
     });
 
+    it('refuses positions read before the picture changed, saving nothing', async () => {
+      annotations.replace.mockResolvedValue('conflict');
+      await expect(service.replace(owner, 'asset', { version: 1, sourceRevision: 'rev-0', items })).rejects.toThrow(
+        ConflictException,
+      );
+      expect(annotations.replace).toHaveBeenCalledWith('asset', items, 'rev-0');
+    });
+
     it('is not found when the picture goes while saving', async () => {
       annotations.replace.mockResolvedValue(undefined);
-      await expect(service.replace(owner, 'asset', { version: 1, items })).rejects.toThrow(NotFoundException);
+      await expect(service.replace(owner, 'asset', { version: 1, sourceRevision: 'rev-1', items })).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

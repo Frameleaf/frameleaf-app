@@ -114,7 +114,7 @@
     border-radius: var(--fl-radius-control);
     background: var(--fl-raised);
     color: var(--fl-text);
-    text-align: left;
+    text-align: start;
     font-size: 13px;
     line-height: 1.4;
     cursor: pointer;

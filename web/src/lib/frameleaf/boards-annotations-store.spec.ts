@@ -25,6 +25,15 @@ describe('BoardsAnnotationsState saving', () => {
     vi.resetAllMocks();
   });
 
+  const read = (sourceRevision = 'rev-1', ids = ['a']) =>
+    sdkMock.getAssetAnnotations.mockResolvedValue({
+      version: 1,
+      sourceRevision,
+      sourceChanged: false,
+      canEdit: true,
+      items: ids.map((id) => item(id)),
+      updatedAt: null,
+    } as never);
   const ready = () => {
     const state = new BoardsAnnotationsState('asset-1');
     state.canEdit = true;
@@ -79,5 +88,69 @@ describe('BoardsAnnotationsState saving', () => {
     await state.flush();
     expect(sentIds(1)).toEqual(['a']);
     expect(state.saveFailed).toBe(false);
+  });
+
+  it('sends the revision it read and keeps the one each save returns', async () => {
+    read('rev-1');
+    sdkMock.replaceAssetAnnotations
+      .mockResolvedValueOnce({ sourceRevision: 'rev-1' } as never)
+      .mockResolvedValueOnce({ sourceRevision: 'rev-1' } as never);
+    const state = new BoardsAnnotationsState('asset-rev');
+    await state.load();
+    state.change([item('a'), item('b')]);
+    await state.flush();
+    state.change([item('b')]);
+    await state.flush();
+    for (const call of sdkMock.replaceAssetAnnotations.mock.calls) {
+      expect(call[0].assetAnnotationsUpdateDto.sourceRevision).toBe('rev-1');
+    }
+  });
+
+  it('reads again and says so when the picture changed, instead of retrying stale positions', async () => {
+    read('rev-1', ['a']);
+    const state = new BoardsAnnotationsState('asset-conflict');
+    await state.load();
+    const generation = state.generation;
+    sdkMock.replaceAssetAnnotations.mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409 }));
+    read('rev-2', ['a', 'c']);
+    state.change([item('a'), item('b')]);
+    await state.flush();
+    expect(state.reloaded).toBe(true);
+    expect(state.saveFailed).toBe(false);
+    expect(state.items.map(({ id }) => id)).toEqual(['a', 'c']);
+    expect(state.generation).toBe(generation + 1);
+    // nothing stale is left to send, and the next change uses the new revision
+    await state.flush();
+    expect(sdkMock.replaceAssetAnnotations).toHaveBeenCalledTimes(1);
+    sdkMock.replaceAssetAnnotations.mockResolvedValue({ sourceRevision: 'rev-2' } as never);
+    state.change([item('c')]);
+    expect(state.reloaded).toBe(false);
+    await state.flush();
+    expect(sdkMock.replaceAssetAnnotations.mock.lastCall?.[0].assetAnnotationsUpdateDto.sourceRevision).toBe('rev-2');
+  });
+
+  it('reads a reopened picture only after the save from closing it has landed', async () => {
+    read('rev-1');
+    const saving = deferred();
+    sdkMock.replaceAssetAnnotations.mockReturnValueOnce(saving.promise);
+    const first = new BoardsAnnotationsState('asset-reopen');
+    await first.load();
+    first.change([item('a'), item('b')]);
+    const closed = first.close();
+
+    const second = new BoardsAnnotationsState('asset-reopen');
+    const loading = second.load();
+    await vi.waitFor(() => expect(sdkMock.replaceAssetAnnotations).toHaveBeenCalledTimes(1));
+    expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(1);
+    // closing again before the first close landed still waits for it
+    const third = new BoardsAnnotationsState('asset-reopen');
+    void second.close();
+    const loadingThird = third.load();
+
+    read('rev-1', ['a', 'b']);
+    saving.resolve();
+    await Promise.all([closed, loading, loadingThird]);
+    expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(3);
+    expect(third.items.map(({ id }) => id)).toEqual(['a', 'b']);
   });
 });

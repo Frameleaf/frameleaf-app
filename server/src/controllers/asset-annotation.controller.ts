@@ -32,7 +32,7 @@ export class AssetAnnotationController {
   @Endpoint({
     summary: 'Replace the Boards annotations drawn over a picture',
     description:
-      'Replaces the whole annotation document for a picture the caller owns; an empty list removes them. The original file is never changed and no edit runs.',
+      'Replaces the whole annotation document for a picture the caller owns; an empty list removes them. Send the sourceRevision you read: if the picture changed since then the request is refused with 409 and nothing is saved. The original file is never changed and no edit runs.',
     history: new HistoryBuilder().added('v3'),
   })
   replaceAssetAnnotations(

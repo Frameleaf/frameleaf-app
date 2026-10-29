@@ -15035,7 +15035,7 @@
         "x-immich-permission": "asset.read"
       },
       "put": {
-        "description": "Replaces the whole annotation document for a picture the caller owns; an empty list removes them. The original file is never changed and no edit runs.",
+        "description": "Replaces the whole annotation document for a picture the caller owns; an empty list removes them. Send the sourceRevision you read: if the picture changed since then the request is refused with 409 and nothing is saved. The original file is never changed and no edit runs.",
         "operationId": "replaceAssetAnnotations",
         "parameters": [
           {
@@ -68212,12 +68212,19 @@
             "maxItems": 200,
             "type": "array"
           },
+          "sourceRevision": {
+            "description": "The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved; read the annotations again.",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
           "version": {
             "$ref": "#/components/schemas/AssetAnnotationsVersion"
           }
         },
         "required": [
           "items",
+          "sourceRevision",
           "version"
         ],
         "type": "object"

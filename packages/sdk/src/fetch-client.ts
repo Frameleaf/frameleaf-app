@@ -5323,6 +5323,8 @@ export type AssetAnnotationsDto = {
 };
 export type AssetAnnotationsUpdateDto = {
     items: AssetAnnotationItem[];
+    /** The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved; read the annotations again. */
+    sourceRevision: string;
     version: AssetAnnotationsVersion;
 };
 export type CastMediaUrlCreateDto = {

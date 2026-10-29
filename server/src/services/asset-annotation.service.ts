@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AssetAnnotationsDto, AssetAnnotationsUpdateDto } from 'src/dtos/asset-annotation.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetType, Permission } from 'src/enum.js';
@@ -52,11 +58,15 @@ export class AssetAnnotationService {
     if (!isAnnotatable(asset)) {
       throw new BadRequestException('Annotations are for pictures in Boards');
     }
-    const stored = await this.annotations.replace(id, dto.items);
+    const stored = await this.annotations.replace(id, dto.items, dto.sourceRevision);
+    if (stored === 'conflict') {
+      // the picture changed after these positions were read: never stamp them as fitting the new one
+      throw new ConflictException('The picture changed after its annotations were read');
+    }
     if (!stored && dto.items.length > 0) {
       throw new NotFoundException('Asset not found');
     }
-    return this.toDto(auth, { ...asset, sourceRevision: stored?.sourceRevision ?? asset.sourceRevision }, stored);
+    return this.toDto(auth, asset, stored);
   }
 
   private toDto(auth: AuthDto, asset: AnnotatedAsset, stored?: StoredAnnotations): AssetAnnotationsDto {

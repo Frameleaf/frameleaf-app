@@ -19,16 +19,19 @@ it('reads and replaces a picture’s annotations, refusing malformed documents b
     expect(read.body).toEqual(document);
     expect(read.headers['cache-control']).toBe('private, no-store');
 
-    const saved = await request(http.getHttpServer()).put(`/assets/${id}/annotations`).send({ version: 1, items });
+    const saved = await request(http.getHttpServer())
+      .put(`/assets/${id}/annotations`)
+      .send({ version: 1, sourceRevision: 'rev', items });
     expect(saved.status).toBe(200);
-    expect(replace).toHaveBeenCalledWith(undefined, id, { version: 1, items });
+    expect(replace).toHaveBeenCalledWith(undefined, id, { version: 1, sourceRevision: 'rev', items });
 
     replace.mockClear();
     for (const body of [
-      { version: 2, items },
+      { version: 2, sourceRevision: 'rev', items },
+      { version: 1, items },
       { items },
-      { version: 1, items: [{ ...items[0], geometry: { x: 0.3, y: 0.6 } }] },
-      { version: 1, items: [{ ...items[0], kind: 'circle' }] },
+      { version: 1, sourceRevision: 'rev', items: [{ ...items[0], geometry: { x: 0.3, y: 0.6 } }] },
+      { version: 1, sourceRevision: 'rev', items: [{ ...items[0], kind: 'circle' }] },
     ]) {
       expect((await request(http.getHttpServer()).put(`/assets/${id}/annotations`).send(body)).status).toBe(400);
     }

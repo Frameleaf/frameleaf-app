@@ -46,6 +46,16 @@
   let moving = false;
   let closeButton = $state<HTMLButtonElement>();
 
+  // When the annotations are read again (the picture changed under them), undo starts from what was read.
+  let seenGeneration = untrack(() => annotations.generation);
+  $effect(() => {
+    const generation = annotations.generation;
+    if (generation !== seenGeneration) {
+      seenGeneration = generation;
+      undoState = history(untrack(() => annotations.items));
+    }
+  });
+
   const annotating = $derived(mode === 'annotate');
   const list = $derived(annotations.items);
   const selected = $derived(annotations.selected);
@@ -355,6 +365,9 @@
     {#if annotating}
       <p class="muted" aria-live="polite">{hint}</p>
     {/if}
+    {#if annotations.reloaded}
+      <p class="error" role="alert">{$t('frameleaf_boards_annotations_reloaded')}</p>
+    {/if}
     {#if annotations.saveFailed}
       <p class="error" role="alert">
         {$t('frameleaf_boards_annotations_save_failed')}
@@ -480,7 +493,7 @@
     min-height: 0;
     overflow: auto;
     padding: 24px;
-    border-left: 1px solid var(--fl-border);
+    border-inline-start: 1px solid var(--fl-border);
     background: var(--fl-panel);
   }
   h2 {
@@ -540,7 +553,7 @@
     }
     .side {
       max-height: 40vh;
-      border-left: 0;
+      border-inline-start: 0;
       border-top: 1px solid var(--fl-border);
     }
   }

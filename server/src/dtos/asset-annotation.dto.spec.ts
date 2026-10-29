@@ -4,7 +4,8 @@ import { LibraryManifestDto } from 'src/dtos/library-manifest.dto.js';
 const rect = { id: 'a1', kind: 'rect', geometry: { x: 0.05, y: 0.27, width: 0.45, height: 0.2 }, note: 'Headline' };
 const arrow = { id: 'a2', kind: 'arrow', geometry: { x: 0.36, y: 0.66, endX: 0.2, endY: 0.56 } };
 const text = { id: 'a3', kind: 'text', geometry: { x: 0.44, y: 0.93 }, text: 'v2 · check with Jamie' };
-const parse = (items: unknown[]) => AssetAnnotationsUpdateDto.schema.safeParse({ version: 1, items });
+const parse = (items: unknown[]) =>
+  AssetAnnotationsUpdateDto.schema.safeParse({ version: 1, sourceRevision: 'rev', items });
 
 describe('Boards annotation documents', () => {
   it('accepts rectangles, arrows and text in normalized coordinates, with an Eagle origin', () => {
@@ -33,8 +34,12 @@ describe('Boards annotation documents', () => {
   it('refuses duplicate ids, too many items and other versions', () => {
     expect(parse([rect, { ...arrow, id: 'a1' }]).success).toBe(false);
     expect(parse(Array.from({ length: 201 }, (_, index) => ({ ...text, id: `t${index}` }))).success).toBe(false);
-    expect(AssetAnnotationsUpdateDto.schema.safeParse({ version: 2, items: [] }).success).toBe(false);
-    expect(AssetAnnotationsUpdateDto.schema.safeParse({ version: 1, sourceRevision: 'x', items: [] }).success).toBe(
+    expect(AssetAnnotationsUpdateDto.schema.safeParse({ version: 2, sourceRevision: 'x', items: [] }).success).toBe(
+      false,
+    );
+    // the revision the caller read is required, so a stale list can be refused
+    expect(AssetAnnotationsUpdateDto.schema.safeParse({ version: 1, items: [] }).success).toBe(false);
+    expect(AssetAnnotationsUpdateDto.schema.safeParse({ version: 1, sourceRevision: '', items: [] }).success).toBe(
       false,
     );
   });

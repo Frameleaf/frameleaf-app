@@ -167,7 +167,7 @@
     const next = new BoardsAnnotationsState(id);
     annotations = next;
     void next.load();
-    return () => next.close();
+    return () => void next.close();
   });
 
   const rate = async (next: number | null) => {

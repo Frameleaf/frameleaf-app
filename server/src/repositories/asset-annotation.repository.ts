@@ -66,10 +66,19 @@ export class AssetAnnotationRepository {
   }
 
   /**
-   * Replaces the whole document, stamped with the picture's current revision. An empty list removes
-   * it. Only this table is written: the asset row, its file and its edits are never touched.
+   * Replaces the whole document. `expected` is the picture revision the caller's positions were drawn
+   * on, as it read it. It must be the picture's current revision, or the revision of the document
+   * already stored when the caller is editing annotations it knows were drawn on an older picture;
+   * those stay marked as drawn on that older picture. Anything else means the picture changed after
+   * the caller read it, and nothing is written (`'conflict'`), so stale positions are never stamped
+   * as fitting the new picture. An empty list removes the document. Only this table is written: the
+   * asset row, its file and its edits are never touched.
    */
-  replace(assetId: string, items: AssetAnnotationItem[]): Promise<StoredAnnotations | undefined> {
+  replace(
+    assetId: string,
+    items: AssetAnnotationItem[],
+    expected: string,
+  ): Promise<StoredAnnotations | 'conflict' | undefined> {
     return this.db.transaction().execute(async (tx) => {
       const asset = await tx
         .selectFrom('asset')
@@ -78,22 +87,30 @@ export class AssetAnnotationRepository {
         .where('deletedAt', 'is', null)
         .forUpdate()
         .executeTakeFirst();
-      if (!asset) {
+      const current = asset ? await this.getAsset(assetId, tx) : undefined;
+      if (!current) {
         return;
+      }
+      const existing = await tx
+        .selectFrom('asset_annotation')
+        .select('sourceRevision')
+        .where('assetId', '=', assetId)
+        .forUpdate()
+        .executeTakeFirst();
+      const sourceRevision =
+        expected === current.sourceRevision
+          ? current.sourceRevision
+          : existing && expected === existing.sourceRevision
+            ? existing.sourceRevision
+            : undefined;
+      if (!sourceRevision) {
+        return 'conflict';
       }
       if (items.length === 0) {
         await tx.deleteFrom('asset_annotation').where('assetId', '=', assetId).execute();
         return;
       }
-      const current = await this.getAsset(assetId, tx);
-      if (!current) {
-        return;
-      }
-      const values = {
-        version: 1 as const,
-        sourceRevision: current.sourceRevision,
-        items,
-      };
+      const values = { version: 1 as const, sourceRevision, items };
       const row = await tx
         .insertInto('asset_annotation')
         .values({ assetId, ...values })
