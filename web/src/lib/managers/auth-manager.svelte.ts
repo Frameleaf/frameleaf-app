@@ -87,6 +87,9 @@ class AuthManager {
       } else {
         // FL-156: a server supporter key (not a Frameleaf Cloud plan) gives everyone the badge
         const features = await getServerFeatures().catch(() => {});
+        if (features) {
+          eventManager.emit('ServerFeaturesLoaded', features);
+        }
         if (!isCurrentUser()) {
           return;
         }

@@ -41,7 +41,7 @@ describe(TagService.name, () => {
     expect(mocks.tag.update).not.toHaveBeenCalled();
     expect(mocks.tag.merge).not.toHaveBeenCalled();
     expect(mocks.tag.delete).not.toHaveBeenCalled();
-    expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+    expect(mocks.asset.updateTagsForAssets).not.toHaveBeenCalled();
     expect(mocks.event.emit).not.toHaveBeenCalled();
   });
 
@@ -275,7 +275,6 @@ describe(TagService.name, () => {
   it('propagates renamed subtree tags through the existing asset edit path', async () => {
     mocks.tag.update.mockResolvedValue(tagStub.colorCreate);
     mocks.tag.getSubtreeAssetIds.mockResolvedValue(['photo', 'child-photo']);
-    mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [{ value: 'Renamed/Child' }] } as never);
     mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue(['photo', 'child-photo']);
 
     await sut.update(authStub.admin, 'tag-1', { name: 'Renamed' });
@@ -293,7 +292,7 @@ describe(TagService.name, () => {
         data: { kind: 'asset', sourceId, fields: ['tags'] },
       })),
     );
-    expect(mocks.asset.upsertExif).toHaveBeenCalledTimes(2);
+    expect(mocks.asset.updateTagsForAssets).toHaveBeenCalledWith(['photo', 'child-photo']);
   });
 
   describe('upsert', () => {
@@ -343,14 +342,10 @@ describe(TagService.name, () => {
   describe('remove', () => {
     it('rebuilds deleted tag metadata and records the recipient override before notifying', async () => {
       mocks.tag.delete.mockResolvedValue(['asset-1']);
-      mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [] });
 
       await sut.remove(authStub.admin, 'tag-1');
 
-      expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
-        exif: { assetId: 'asset-1', tags: [], lockedProperties: ['tags'] },
-        lockedPropertiesBehavior: 'append',
-      });
+      expect(mocks.asset.updateTagsForAssets).toHaveBeenCalledWith(['asset-1']);
       expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
         'asset',
         ['asset-1'],
@@ -386,7 +381,6 @@ describe(TagService.name, () => {
       // each tag is checked on its own, and the check answers exactly the ids it allows
       mocks.access.tag.checkOwnerAccess.mockImplementation((_, ids) => Promise.resolve(new Set(ids)));
       mocks.user.getMetadata.mockResolvedValue([]);
-      mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [{ value: 'Tag2' }] });
       mocks.tag.merge.mockResolvedValue({
         tag: merged,
         merged: [{ id: 'tag-1', targetId: 'tag-2' }],
@@ -444,19 +438,14 @@ describe(TagService.name, () => {
         BadRequestException,
       );
       expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
-      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.updateTagsForAssets).not.toHaveBeenCalled();
       expect(mocks.event.emit).not.toHaveBeenCalled();
     });
 
     it('should bring every item involved up to date as tagging and untagging do', async () => {
       await sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-2' });
 
-      for (const assetId of ['asset-1', 'asset-2']) {
-        expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
-          exif: { assetId, lockedProperties: ['tags'], tags: ['Tag2'] },
-          lockedPropertiesBehavior: 'append',
-        });
-      }
+      expect(mocks.asset.updateTagsForAssets).toHaveBeenCalledWith(['asset-1', 'asset-2']);
       // gained the tag: "tagged"; only lost one, or carries one under a new path: its sidecar alone
       expect(mocks.event.emit.mock.calls).toEqual([
         ['AssetTag', { assetId: 'asset-1', userId: authStub.admin.user.id }],
@@ -579,7 +568,6 @@ describe(TagService.name, () => {
         mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
         mocks.tag.getAssetIds.mockResolvedValue(new Set(action === 'remove' ? ['asset-1'] : []));
         mocks.tag.upsertAssetIds.mockResolvedValue([{ tagId: 'tag-1', assetId: 'asset-1', updateId: 'update-1' }]);
-        mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [] });
         mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
 
         await expect(
@@ -593,7 +581,7 @@ describe(TagService.name, () => {
         expect(mocks.tag.addAssetIds).not.toHaveBeenCalled();
         expect(mocks.tag.removeAssetIds).not.toHaveBeenCalled();
         expect(mocks.tag.upsertAssetIds).not.toHaveBeenCalled();
-        expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+        expect(mocks.asset.updateTagsForAssets).not.toHaveBeenCalled();
         expect(mocks.event.emit).not.toHaveBeenCalled();
       },
     );
@@ -610,7 +598,6 @@ describe(TagService.name, () => {
     it('should upsert records', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1', 'tag-2']));
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2', 'asset-3']));
-      mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [{ value: 'tag-1' }, { value: 'tag-2' }] });
       mocks.tag.upsertAssetIds.mockResolvedValue([
         { tagId: 'tag-1', assetId: 'asset-1', updateId: 'update-id' },
         { tagId: 'tag-1', assetId: 'asset-2', updateId: 'update-id' },
@@ -624,24 +611,7 @@ describe(TagService.name, () => {
       ).resolves.toEqual({
         count: 6,
       });
-      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
-        expect.objectContaining({
-          exif: { assetId: 'asset-1', lockedProperties: ['tags'], tags: ['tag-1', 'tag-2'] },
-          lockedPropertiesBehavior: 'append',
-        }),
-      );
-      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
-        expect.objectContaining({
-          exif: { assetId: 'asset-2', lockedProperties: ['tags'], tags: ['tag-1', 'tag-2'] },
-          lockedPropertiesBehavior: 'append',
-        }),
-      );
-      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
-        expect.objectContaining({
-          exif: { assetId: 'asset-3', lockedProperties: ['tags'], tags: ['tag-1', 'tag-2'] },
-          lockedPropertiesBehavior: 'append',
-        }),
-      );
+      expect(mocks.asset.updateTagsForAssets).toHaveBeenCalledWith(['asset-1', 'asset-2', 'asset-3']);
       expect(mocks.tag.upsertAssetIds).toHaveBeenCalledWith([
         { tagId: 'tag-1', assetId: 'asset-1' },
         { tagId: 'tag-1', assetId: 'asset-2' },
@@ -667,7 +637,6 @@ describe(TagService.name, () => {
       mocks.tag.get.mockResolvedValue(tagStub.tag);
       mocks.tag.getAssetIds.mockResolvedValue(new Set(['asset-1']));
       mocks.tag.addAssetIds.mockResolvedValue();
-      mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [{ value: 'tag-1' }] });
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-2']));
 
       await expect(
@@ -679,18 +648,7 @@ describe(TagService.name, () => {
         { id: 'asset-2', success: true },
       ]);
 
-      expect(mocks.asset.upsertExif).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          exif: { assetId: 'asset-1', lockedProperties: ['tags'], tags: ['tag-1'] },
-          lockedPropertiesBehavior: 'append',
-        }),
-      );
-      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
-        expect.objectContaining({
-          exif: { assetId: 'asset-2', lockedProperties: ['tags'], tags: ['tag-1'] },
-          lockedPropertiesBehavior: 'append',
-        }),
-      );
+      expect(mocks.asset.updateTagsForAssets).toHaveBeenCalledWith(['asset-2']);
       expect(mocks.tag.getAssetIds).toHaveBeenCalledWith('tag-1', ['asset-1', 'asset-2']);
       expect(mocks.tag.addAssetIds).toHaveBeenCalledWith('tag-1', ['asset-2']);
     });
@@ -700,7 +658,6 @@ describe(TagService.name, () => {
     it('should throw an error for an invalid id', async () => {
       mocks.tag.getAssetIds.mockResolvedValue(new Set());
       mocks.tag.removeAssetIds.mockResolvedValue();
-      mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [] });
 
       await expect(sut.removeAssets(authStub.admin, 'tag-1', { ids: ['asset-1'] })).resolves.toEqual([
         { id: 'asset-1', success: false, error: 'not_found' },
@@ -711,7 +668,6 @@ describe(TagService.name, () => {
       mocks.tag.get.mockResolvedValue(tagStub.tag);
       mocks.tag.getAssetIds.mockResolvedValue(new Set(['asset-1']));
       mocks.tag.removeAssetIds.mockResolvedValue();
-      mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [] });
 
       await expect(
         sut.removeAssets(authStub.admin, 'tag-1', {

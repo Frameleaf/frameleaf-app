@@ -552,8 +552,12 @@ export class DatabaseBackupService {
     const validFiles = files
       // FL-160: a cloud backup run's own temporary dump is never offered for a restore
       .filter((fn) => isValidDatabaseBackupName(fn) && !isCloudBackupDumpName(fn))
-      .toSorted((a, b) => (a.startsWith('uploaded-') === b.startsWith('uploaded-') ? a.localeCompare(b) : 1))
-      .toReversed();
+      // Newest first by name, with uploaded files after the backups this server made. The comparator
+      // must be consistent both ways round, or the order depends on the directory listing.
+      .toSorted((a, b) => {
+        const uploaded = Number(a.startsWith('uploaded-')) - Number(b.startsWith('uploaded-'));
+        return uploaded === 0 ? b.localeCompare(a) : uploaded;
+      });
 
     const backups = await Promise.all(
       validFiles.map(async (filename) => {

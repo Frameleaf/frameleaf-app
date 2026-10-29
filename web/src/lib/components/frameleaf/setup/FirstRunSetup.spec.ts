@@ -107,6 +107,21 @@ describe('FirstRunSetup (FL-176)', () => {
     expect(screen.queryByRole('link', { name: /Library Care/ })).toBeNull();
   });
 
+  it('shows the library location check without waiting for the hardware benchmark, in the unit that fits', async () => {
+    sdkMock.getHardwareCheck.mockReturnValue(new Promise(() => {}) as never);
+    sdkMock.getFrameleafSetupStorage.mockResolvedValue({
+      path: '/library',
+      writable: true,
+      freeBytes: 18_644_967_424,
+      totalBytes: 270_553_174_016,
+    } as never);
+    const state = createSetup('new');
+    const library = flowSteps('new').findIndex((entry) => entry.id === 'library');
+    render(FirstRunSetup, { initial: { ...state, step: library, reached: library }, authenticated: true });
+    expect(await screen.findByText('Writable, 19 GB free')).toBeInTheDocument();
+    expect(screen.queryByText(/0\.0 TB/)).toBeNull();
+  });
+
   describe('the welcome figures after an Immich import', () => {
     const welcome = () => {
       const state = createSetup('existing');

@@ -35,6 +35,10 @@ class ActivityManager {
 
   isLoading = $state(false);
   #viewVersion = 0;
+  #viewFailed = false;
+  /** The current view's load, which a repeated `init` for the same view waits on. */
+  #viewLoad: Promise<void> | undefined;
+  #viewPending = false;
   #refreshVersion = 0;
   #cacheIsCurrent: (() => boolean) | undefined;
 
@@ -88,21 +92,39 @@ class ActivityManager {
 
   async init(albumId: string, assetId?: string) {
     this.#prepareSession();
-    if (albumId === this.#albumId && assetId && assetId === this.#assetId) {
-      return;
+    // The same view (an album's own activity, or one of its items) is already loaded or loading. The
+    // album page asks again whenever its effect re-runs, which used to fetch the album's activity
+    // twice on every visit and drop the first answer.
+    // A view whose load failed, or whose cached answer a new reaction has since dropped, is asked for again.
+    // A caller asking again while the first load is still running waits for that same load.
+    if (
+      albumId === this.#albumId &&
+      assetId === this.#assetId &&
+      !this.#viewFailed &&
+      (this.#viewPending || this.#cache.has(this.#getCacheKey(albumId, assetId)))
+    ) {
+      return this.#viewLoad;
     }
 
     this.#viewVersion++;
     this.#albumId = albumId;
     this.#assetId = assetId;
+    this.#viewFailed = false;
     const isCurrent = this.#captureView();
-    try {
-      await this.refreshActivities(albumId, assetId);
-    } catch (error) {
-      if (isCurrent()) {
-        handleError(error, get(t)('errors.unable_to_get_comments_number'));
-      }
-    }
+    this.#viewPending = true;
+    this.#viewLoad = this.refreshActivities(albumId, assetId)
+      .catch((error: unknown) => {
+        if (isCurrent()) {
+          this.#viewFailed = true;
+          handleError(error, get(t)('errors.unable_to_get_comments_number'));
+        }
+      })
+      .finally(() => {
+        if (isCurrent()) {
+          this.#viewPending = false;
+        }
+      });
+    await this.#viewLoad;
   }
 
   #invalidateCache(albumId: string, assetId?: string) {
@@ -246,6 +268,8 @@ class ActivityManager {
 
   reset() {
     this.#viewVersion++;
+    this.#viewFailed = false;
+    this.#viewLoad = undefined;
     this.#refreshVersion++;
     this.isLoading = false;
     this.#isLiked = null;

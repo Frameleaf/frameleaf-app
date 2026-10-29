@@ -123,6 +123,31 @@ describe(QueueService.name, () => {
       expect(mocks.job.hasUnfinishedWork).toHaveBeenCalledExactlyOnceWith(QueueName.Library);
     });
 
+    it('reads paused and unfinished state once for every queue, not once per queue', async () => {
+      const statistics = factory.queueStatistics();
+      mocks.job.getJobCounts.mockResolvedValue(statistics);
+      mocks.job.getPausedQueues.mockResolvedValue(new Set([QueueName.Library]));
+      mocks.job.getQueuesWithUnfinishedWork.mockResolvedValue(new Set([QueueName.SmartSearch]));
+
+      const queues = await sut.getAll(factory.auth());
+
+      expect(queues).toHaveLength(Object.values(QueueName).length);
+      expect(queues.find(({ name }) => name === QueueName.Library)).toEqual({
+        name: QueueName.Library,
+        isPaused: true,
+        statistics,
+        hasUnfinishedWork: false,
+      });
+      expect(queues.find(({ name }) => name === QueueName.SmartSearch)).toMatchObject({
+        isPaused: false,
+        hasUnfinishedWork: true,
+      });
+      expect(mocks.job.getPausedQueues).toHaveBeenCalledOnce();
+      expect(mocks.job.getQueuesWithUnfinishedWork).toHaveBeenCalledExactlyOnceWith(Object.values(QueueName));
+      expect(mocks.job.isPaused).not.toHaveBeenCalled();
+      expect(mocks.job.hasUnfinishedWork).not.toHaveBeenCalled();
+    });
+
     it('bounds queue snapshots to four and retains queue order', async () => {
       const names = Object.values(QueueName);
       const releases: (() => void)[] = [];
@@ -184,7 +209,7 @@ describe(QueueService.name, () => {
       const expected = { jobCounts: stats, queueStatus: { isActive: true, isPaused: true } };
 
       mocks.job.getJobCounts.mockResolvedValue(stats);
-      mocks.job.isPaused.mockResolvedValue(true);
+      mocks.job.getPausedQueues.mockResolvedValue(new Set(Object.values(QueueName)));
 
       await expect(sut.getAllLegacy(factory.auth())).resolves.toEqual({
         [QueueName.BackgroundTask]: expected,
