@@ -237,3 +237,39 @@ class TestRoute:
         entries = json.dumps({"transcribe": {"audio": {"modelName": "frameleaf-transcribe", "options": {}}}})
         response = client.post("/translate", data={"entries": entries, "lines": json.dumps(["hi"])})
         assert response.status_code == 400
+
+    def test_takes_the_largest_request_the_server_sends(self, client: TestClient) -> None:
+        # 2000 lines of 1000 characters, escaped as JSON (`é`), is about 12 MB: far past Starlette's
+        # default 1 MiB form part limit. Sent as multipart, as the server's FormData does.
+        lines = [("é" * 999) + str(n % 10) for n in range(MAX_LINES)]
+        response = client.post(
+            "/translate",
+            files={"entries": (None, self.entries(source="fr", target="en")), "lines": (None, json.dumps(lines))},
+        )
+        assert response.status_code == 200
+        assert len(response.json()["translations"]) == MAX_LINES
+
+    def test_needs_both_fields(self, client: TestClient) -> None:
+        assert client.post("/translate", data={"entries": self.entries(source="en", target="fr")}).status_code == 400
+        assert client.post("/translate", data={"lines": json.dumps(["hi"])}).status_code == 422
+
+    def test_a_model_that_keeps_failing_to_load_is_unavailable(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        from fastapi import HTTPException
+
+        from frameleaf_ml import main
+
+        model, _ = loaded_model(tmp_path)
+
+        async def get(*_: Any, **__: Any) -> TranslateModel:
+            return model
+
+        async def failing_load(_: Any) -> Any:
+            raise HTTPException(500, "Failed to load model 'm2m100-418m'")
+
+        mocker.patch.object(main.model_cache, "get", side_effect=get)
+        mocker.patch.object(main, "load", side_effect=failing_load)
+        response = TestClient(main.app).post(
+            "/translate", data={"entries": self.entries(source="en", target="fr"), "lines": json.dumps(["hi"])}
+        )
+        # 503 tells the server to try the next place in the processing order.
+        assert response.status_code == 503

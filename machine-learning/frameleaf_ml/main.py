@@ -625,8 +625,14 @@ async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingRe
     return StreamingResponse(body(), media_type="application/x-ndjson")
 
 
+# The largest `lines` field the server can send: MAX_LINES lines of MAX_LINE_CHARS characters, each
+# character at most 6 bytes once JSON-escaped (`\uXXXX`), plus quotes, commas and brackets. Starlette's
+# default 1 MiB form part limit would refuse a long project's captions.
+TRANSLATE_FORM_PART_BYTES = MAX_LINES * (MAX_LINE_CHARS * 6 + 3) + 2
+
+
 @app.post("/translate")
-async def translate(entries: InferenceEntries = Depends(get_entries), lines: str = Form()) -> ORJSONResponse:
+async def translate(request: Request) -> ORJSONResponse:
     """Studio captions in other languages (FL-641): caption lines translated with M2M100 418M.
 
     The request names one entry, `{"translate": {"textual": {"modelName": "frameleaf-translate", "options":
@@ -634,7 +640,13 @@ async def translate(entries: InferenceEntries = Depends(get_entries), lines: str
     answer is `{"model", "translations"}`: one translation per line, in order. Problems are HTTP errors (400
     bad lines or language, 422 bad options, 503 no model or runtime).
     """
-    without_deps, with_deps = entries
+    async with request.form(max_files=0, max_fields=2, max_part_size=TRANSLATE_FORM_PART_BYTES) as form:
+        raw_entries, lines = form.get("entries"), form.get("lines")
+    if not isinstance(raw_entries, str):
+        raise HTTPException(422, "Invalid request format.")
+    if not isinstance(lines, str):
+        raise HTTPException(400, "The lines must be a JSON array of text")
+    without_deps, with_deps = get_entries(raw_entries)
     if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.TRANSLATE:
         raise HTTPException(400, "A translation request names exactly one translate entry")
     entry = without_deps[0]
@@ -650,7 +662,14 @@ async def translate(entries: InferenceEntries = Depends(get_entries), lines: str
         raise HTTPException(400, f"Send at most {MAX_LINES} lines of at most {MAX_LINE_CHARS} characters")
     options = dict(entry["options"])
     model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
-    model = await load(model)
+    try:
+        model = await load(model)
+    except HTTPException as error:
+        # After repeated failed loads `load` answers 500; for translation that still means "this worker
+        # cannot translate now" (503), so the server tries the next place in the processing order.
+        if error.status_code == 500:
+            raise HTTPException(503, error.detail) from error
+        raise
     assert isinstance(model, TranslateModel)
     global active_requests, last_called
     active_requests += 1
