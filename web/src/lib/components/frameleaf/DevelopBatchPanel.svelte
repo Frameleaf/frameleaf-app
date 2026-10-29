@@ -117,7 +117,12 @@
             batch = value;
           }
         })
-        .catch(showError)
+        .catch((error_) => {
+          // a poll for a batch no longer shown has nothing to say about the one that is
+          if (!disposed && batch?.id === id) {
+            showError(error_);
+          }
+        })
         .finally(() => (polling = false));
     }, 2500);
     return () => {
