@@ -46,14 +46,26 @@ const globalSetup = async () => {
 
   process.env.IMMICH_TEST_POSTGRES_URL = postgresUrl;
 
+  // Stop the container when the run ends instead of relying on the Ryuk reaper, which is often
+  // unavailable or disabled locally and left one Postgres container behind per run.
+  const teardown = async () => {
+    await postgresContainer.stop({ remove: true, removeVolumes: true });
+  };
+
   const db = new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url: postgresUrl }));
+  try {
+    const configRepository = new ConfigRepository();
+    const logger = LoggingRepository.create();
+    const databaseRepository = new DatabaseRepository(db, logger, configRepository);
+    await databaseRepository.runMigrations();
+    await db.destroy();
+  } catch (error) {
+    await db.destroy();
+    await teardown();
+    throw error;
+  }
 
-  const configRepository = new ConfigRepository();
-  const logger = LoggingRepository.create();
-  const databaseRepository = new DatabaseRepository(db, logger, configRepository);
-  await databaseRepository.runMigrations();
-
-  await db.destroy();
+  return teardown;
 };
 
 export default globalSetup;

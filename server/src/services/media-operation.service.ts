@@ -274,7 +274,7 @@ const STUDIO_WORK_BY_SNAPSHOT_KIND: Readonly<Record<string, string>> = {
   'studio-voice-cleanup': 'voice-cleanup',
 };
 
-const studioWorkOf = (operation: MediaOperation): string | null => {
+export const studioWorkOf = (operation: MediaOperation): string | null => {
   if (operation.kind !== MediaOperationKind.StudioTranscription) {
     return null;
   }

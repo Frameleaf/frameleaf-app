@@ -52,6 +52,7 @@
   import { withFilterCondition } from '$lib/frameleaf/search-filters';
   import { shouldIgnoreEvent } from '$lib/actions/shortcut';
   import { downloadArchive, ignoreCancelledDownload } from '$lib/utils/asset-utils';
+  import { downloadBoardsItems, LIBRARY_FILE_LIMIT } from '$lib/frameleaf/boards-download';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     mdiAspectRatio,
@@ -92,6 +93,7 @@
     onSaveLink,
     kinds,
     onGetExtension,
+    bookmark,
   }: {
     title: string;
     query: DiscoveryQuery;
@@ -110,6 +112,8 @@
     kinds?: import('@frameleaf/sdk').LibraryItemSearchKind[];
     /** Opens "Get the browser extension". Without it, the first-run state does not offer it. */
     onGetExtension?: () => void;
+    /** A saved link to open in the inspector when the view first loads (Boards' `?bookmark=<id>`). */
+    bookmark?: string;
   } = $props();
   /** Boards opens its own save-link and extension dialogs unless the host passes its own. */
   let linkDialog = $state<{ url?: string } | null>(null);
@@ -129,11 +133,13 @@
   let filterSection = $state<DiscoveryFilterSection | null>(null);
   let inspectorOpen = $state(true);
   let activeBookmark = $state<string | null>(null);
+  /** The link a deep link opened. Its inspector loads it by id even before the grid reaches it. */
+  let linkedBookmark = $state<string | null>(null);
   let sort = $state<LibraryItemSort>('added');
   let popover = $state<'color' | 'shape' | null>(null);
   let colorTrigger: HTMLButtonElement | undefined = $state();
   let shapeTrigger: HTMLButtonElement | undefined = $state();
-  let dialog = $state<'album' | 'tags' | 'save' | null>(null);
+  let dialog = $state<'album' | 'tags' | 'save' | 'download' | null>(null);
   let lastExternal = '';
   let requestIdentity = '';
   const assets = $derived(
@@ -330,7 +336,12 @@
       results.reset(body ? { kind: 'library', terms: body } : null);
       const identity = key;
       if (identity !== requestIdentity) {
-        activeBookmark = null;
+        // The first request opens the link a deep link names; any later change of request closes it.
+        linkedBookmark = requestIdentity === '' ? (bookmark ?? null) : null;
+        activeBookmark = linkedBookmark;
+        if (linkedBookmark) {
+          inspectorOpen = true;
+        }
       }
       requestIdentity = identity;
       failed = !body;
@@ -465,13 +476,32 @@
       (keys, owner, current) => trashLibraryItems(results.items, keys, owner, current),
       (count) => toastManager.primary($t('frameleaf_boards_trashed', { values: { count } })),
     );
+  const downloadName = $derived(album?.albumName || 'frameleaf');
+  const selectedBookmarkIds = $derived(
+    session.selection.filter((key) => key.startsWith('bookmark:')).map((key) => key.slice(9)),
+  );
+  /** Boards asks what goes in the .zip (FL-660); elsewhere a download starts at once. */
   const download = () => {
-    if (selectedAssetIds.length > 0) {
-      void downloadArchive(album?.albumName || 'frameleaf', { assetIds: [...selectedAssetIds] }).catch(
-        ignoreCancelledDownload,
-      );
+    if (selectedAssetIds.length === 0) {
+      return;
     }
+    if (workspace === 'design') {
+      dialog = 'download';
+      return;
+    }
+    void downloadArchive(downloadName, { assetIds: [...selectedAssetIds] }).catch(ignoreCancelledDownload);
   };
+  /** The library file lists only the account's own items, up to the server's limit. */
+  const libraryAvailable = $derived(
+    ownsSelection && selectedAssetIds.length + selectedBookmarkIds.length <= LIBRARY_FILE_LIMIT,
+  );
+  const downloadSelection = (includeLibrary: boolean) =>
+    void downloadBoardsItems({
+      fileName: downloadName,
+      assetIds: [...selectedAssetIds],
+      bookmarkIds: [...selectedBookmarkIds],
+      includeLibrary,
+    });
   const closeBookmark = () => {
     const key = selectedBookmark ? `bookmark:${selectedBookmark}` : undefined;
     activeBookmark = null;
@@ -707,11 +737,11 @@
           onClose={() => (filterSection = null)}
         />
       </div>
-    {:else if inspectorOpen && selectedBookmark && bookmarkRecord?.kind === 'bookmark'}
+    {:else if inspectorOpen && selectedBookmark && (bookmarkRecord?.kind === 'bookmark' || selectedBookmark === linkedBookmark)}
       <div class="fl-items-panel">
         <BookmarkInspector
           id={selectedBookmark}
-          bookmark={bookmarkRecord.bookmark}
+          bookmark={bookmarkRecord?.kind === 'bookmark' ? bookmarkRecord.bookmark : undefined}
           onClose={closeBookmark}
           onChange={reload}
         />
@@ -849,6 +879,22 @@
   {/await}{/if}
 {#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
     <BoardsExtensionDialog bind:open={extensionOpen} />
+  {/await}{/if}
+{#if dialog === 'download'}{#await import('$lib/components/frameleaf/BoardsDownloadDialog.svelte') then { default: BoardsDownloadDialog }}
+    <BoardsDownloadDialog
+      bind:open={
+        () => dialog === 'download',
+        (open) => {
+          if (!open) {
+            dialog = null;
+          }
+        }
+      }
+      count={session.selection.length}
+      name={album ? collectionName : title}
+      {libraryAvailable}
+      onDownload={downloadSelection}
+    />
   {/await}{/if}
 
 <style>

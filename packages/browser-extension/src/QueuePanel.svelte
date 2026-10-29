@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import Icon from "./Icon.svelte";
   import { collectionPath, type CollectionChoice } from "./collections";
+  import { receiptLink } from "./receipt-link";
   import {
     sendRequest,
     watchConnection,
@@ -13,8 +14,6 @@
     unfinished = $bindable(0),
   }: { collections?: CollectionChoice[]; unfinished?: number } = $props();
   const empty: QueueProgress = { items: [], unfinished: 0, hasMore: false };
-  const uuid =
-    /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
   let queue = $state<QueueProgress>(empty);
   let origin = $state("");
   let error = $state("");
@@ -113,11 +112,6 @@
       return "attention";
     return item.state;
   }
-  function openUrl(item: QueueItem): string | null {
-    if (!origin || !item.itemId || !uuid.test(item.itemId)) return null;
-    if (item.itemKind === "asset") return `${origin}/pro/photos/${item.itemId}`;
-    return uuid.test(item.albumId) ? `${origin}/albums/${item.albumId}` : null;
-  }
 </script>
 
 <section aria-label="Saving and saved" class="capture-queue">
@@ -127,7 +121,7 @@
       </p>{/if}
     <ul class="queue-list">
       {#each queue.items as item (item.id)}
-        {@const link = openUrl(item)}
+        {@const link = receiptLink(origin, item)}
         <li class={tone(item)}>
           <span class="queue-thumb" aria-hidden="true"
             ><Icon

@@ -1,7 +1,11 @@
 import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const sdk = vi.hoisted(() => ({ getAssetInfo: vi.fn(), getStudioProject: vi.fn(), getStudioRestoredVersion: vi.fn() }));
+const sdk = vi.hoisted(() => ({
+  getAssetsInfo: vi.fn(),
+  getStudioProject: vi.fn(),
+  getStudioRestoredVersion: vi.fn(),
+}));
 vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), ...sdk }));
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn(async () => undefined) }));
 vi.mock('$lib/utils/i18n', () => ({ getFormatter: vi.fn(async () => (key: string) => key) }));
@@ -27,21 +31,24 @@ const open = (query: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   sdk.getStudioProject.mockResolvedValue({ envelope: { graph: { timeline: { items: [{ mediaId: assetId }] } } } });
-  sdk.getAssetInfo.mockResolvedValue(asset);
+  sdk.getAssetsInfo.mockImplementation(async ({ assetInfoBatchDto }) => ({
+    assets: assetInfoBatchDto.ids.includes(assetId) ? [asset] : [],
+  }));
 });
 
 describe('actual Studio route source bootstrap', () => {
   it('resolves stored project media before returning mount data without an assets query', async () => {
     const data = await open(`project=${projectId}`);
     expect(sdk.getStudioProject).toHaveBeenCalledWith({ id: projectId });
-    expect(sdk.getAssetInfo).toHaveBeenCalledWith({ id: assetId });
+    // FL-647: one bulk read, not one request per asset
+    expect(sdk.getAssetsInfo).toHaveBeenCalledExactlyOnceWith({ assetInfoBatchDto: { ids: [assetId] } });
     expect(data.assets).toEqual([asset]);
   });
 
   it('dedupes explicit handoff and stored graph references', async () => {
     const data = await open(`project=${projectId}&assets=${assetId.toUpperCase()}`);
     expect(data.assets).toEqual([asset]);
-    expect(sdk.getAssetInfo).toHaveBeenCalledTimes(1);
+    expect(sdk.getAssetsInfo).toHaveBeenCalledExactlyOnceWith({ assetInfoBatchDto: { ids: [assetId] } });
     expect(data.unavailableAssetCount).toBe(0);
   });
 
@@ -56,7 +63,9 @@ describe('actual Studio route source bootstrap', () => {
           })
         : Promise.resolve({ envelope: { graph: { items: [{ mediaId: otherAsset }] } } }),
     );
-    sdk.getAssetInfo.mockImplementation(async ({ id }) => ({ ...asset, id }));
+    sdk.getAssetsInfo.mockImplementation(async ({ assetInfoBatchDto }) => ({
+      assets: assetInfoBatchDto.ids.map((id: string) => ({ ...asset, id })),
+    }));
     const older = open(`project=${projectId}`);
     await vi.waitFor(() => expect(finish).toBeDefined());
     const newer = await open(`project=${otherProject}`);
@@ -71,13 +80,11 @@ describe('actual Studio route source bootstrap', () => {
   it('does not query sources from a refused project or expose refused/Locked metadata', async () => {
     sdk.getStudioProject.mockRejectedValueOnce(new Error('403'));
     expect((await open(`project=${projectId}`)).assets).toEqual([]);
-    expect(sdk.getAssetInfo).not.toHaveBeenCalled();
-    sdk.getAssetInfo.mockRejectedValueOnce(new Error('404'));
+    expect(sdk.getAssetsInfo).not.toHaveBeenCalled();
+    sdk.getAssetsInfo.mockRejectedValueOnce(new Error('offline'));
     expect((await open(`project=${projectId}`)).assets).toEqual([]);
-    sdk.getAssetInfo.mockResolvedValueOnce({
-      ...asset,
-      visibility: AssetVisibility.Locked,
-      originalFileName: 'private-locked',
+    sdk.getAssetsInfo.mockResolvedValueOnce({
+      assets: [{ ...asset, visibility: AssetVisibility.Locked, originalFileName: 'private-locked' }],
     });
     expect((await open(`project=${projectId}`)).assets).toEqual([]);
   });

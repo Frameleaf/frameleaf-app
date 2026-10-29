@@ -220,6 +220,76 @@ describe('downloadArchive', () => {
   });
 });
 
+describe('downloadArchive with a library file (FL-660)', () => {
+  it('asks for the originals and frameleaf-library.json, with the saved links in the first part only', async () => {
+    vi.mocked(getDownloadInfo).mockResolvedValue(plan(10, 20));
+    vi.mocked(requestArchive).mockResolvedValue(new Blob(['zip']));
+
+    expect(
+      await settle(
+        downloadArchive('boards', { assetIds: ['asset-0', 'asset-1'] }, { library: { bookmarkIds: ['link-1'] } }),
+      ),
+    ).toBe('resolved');
+
+    const archives = vi.mocked(requestArchive).mock.calls.map(([request]) => request.downloadArchiveDto);
+    expect(archives).toEqual([
+      {
+        assetIds: ['asset-0'],
+        archiveName: expect.any(String),
+        edited: false,
+        includeLibraryMetadata: true,
+        includeSources: true,
+        bookmarkIds: ['link-1'],
+      },
+      {
+        assetIds: ['asset-1'],
+        archiveName: expect.any(String),
+        edited: false,
+        includeLibraryMetadata: true,
+        includeSources: true,
+      },
+    ]);
+  });
+
+  it('sends the library file fields with a streamed archive', async () => {
+    vi.mocked(getDownloadInfo).mockResolvedValue(plan(bufferLimit() + 1));
+
+    await settle(downloadArchive('boards', { assetIds: ['asset-0'] }, { library: { bookmarkIds: ['a', 'b'] } }));
+    const [key, row] = rows()[0];
+    downloadManager.save(key, vi.fn());
+
+    expect(downloadUrlPost).toHaveBeenCalledWith(
+      expect.stringMatching(/\/download\/archive$/),
+      ['asset-0'],
+      row.archiveName,
+      false,
+      { includeLibraryMetadata: 'true', includeSources: 'true', bookmarkIds: 'a,b' },
+    );
+  });
+
+  it('leaves out the saved links when there are none', async () => {
+    vi.mocked(getDownloadInfo).mockResolvedValue(plan(10));
+    vi.mocked(requestArchive).mockResolvedValue(new Blob(['zip']));
+
+    await settle(downloadArchive('boards', { assetIds: ['asset-0'] }, { library: { bookmarkIds: [] } }));
+
+    expect(vi.mocked(requestArchive).mock.calls[0][0].downloadArchiveDto).not.toHaveProperty('bookmarkIds');
+  });
+
+  it('can ask for the originals without a library file', async () => {
+    vi.mocked(getDownloadInfo).mockResolvedValue(plan(10));
+    vi.mocked(requestArchive).mockResolvedValue(new Blob(['zip']));
+
+    await settle(downloadArchive('boards', { albumId: 'album-1' }, { originals: true }));
+
+    expect(vi.mocked(requestArchive).mock.calls[0][0].downloadArchiveDto).toEqual({
+      assetIds: ['asset-0'],
+      archiveName: expect.any(String),
+      edited: false,
+    });
+  });
+});
+
 describe('downloadArchive, what the tab holds (review)', () => {
   it('streams a later part that would take the held total over the limit', async () => {
     const part = Math.floor(bufferLimit() * 0.6);

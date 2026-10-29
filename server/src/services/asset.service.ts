@@ -13,6 +13,8 @@ import {
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
+  AssetInfoBatchDto,
+  AssetInfoBatchResponseDto,
   AssetJobName,
   AssetJobsDto,
   AssetMetadataBulkDeleteDto,
@@ -68,6 +70,9 @@ import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
+
+/** FL-647: assets a bulk read loads at once, so one request cannot hold every database connection. */
+const ASSET_INFO_READ_CONCURRENCY = 8;
 
 const imageEditActions = new Set<AssetEditAction>([
   AssetEditAction.Crop,
@@ -151,6 +156,42 @@ export class AssetService extends BaseService {
   async get(auth: AuthDto, id: string): Promise<AssetResponseDto | SanitizedAssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
 
+    const data = await this.readAsset(auth, id);
+    if (!data) {
+      throw new BadRequestException('Asset not found');
+    }
+    return data;
+  }
+
+  /**
+   * FL-647: several assets in one request (Studio opening a large project). The same access check
+   * as `get`, once for the whole list, and each readable asset mapped exactly as `get` maps it.
+   * Unreadable or missing ids are left out rather than failing the list.
+   */
+  async getMany(auth: AuthDto, dto: AssetInfoBatchDto): Promise<AssetInfoBatchResponseDto> {
+    // ids compare as stored (lowercase): an uppercase spelling of a readable asset is still read, once
+    const ids = [...new Set(dto.ids.map((id) => id.toLowerCase()))];
+    const allowed = await this.checkAccess({ auth, permission: Permission.AssetRead, ids });
+    const readable = ids.filter((id) => allowed.has(id));
+    const assets: AssetResponseDto[] = [];
+    for (let at = 0; at < readable.length; at += ASSET_INFO_READ_CONCURRENCY) {
+      const batch = await Promise.all(
+        readable.slice(at, at + ASSET_INFO_READ_CONCURRENCY).map((id) => this.readAsset(auth, id)),
+      );
+      for (const asset of batch) {
+        if (asset) {
+          assets.push(asset as AssetResponseDto);
+        }
+      }
+    }
+    return { assets };
+  }
+
+  /** What `get` returns for an asset the caller may read, or undefined when it does not exist. */
+  private async readAsset(
+    auth: AuthDto,
+    id: string,
+  ): Promise<AssetResponseDto | SanitizedAssetResponseDto | undefined> {
     const asset = await this.assetRepository.getById(id, {
       exifInfo: true,
       owner: true,
@@ -164,7 +205,7 @@ export class AssetService extends BaseService {
     });
 
     if (!asset) {
-      throw new BadRequestException('Asset not found');
+      return undefined;
     }
 
     if (auth.hideNsfwAssets && asset.livePhotoVideoId) {

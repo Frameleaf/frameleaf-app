@@ -1,9 +1,10 @@
-import { getAuthStatus, isHttpError, lockAuthSession } from '@frameleaf/sdk';
+import { isHttpError, lockAuthSession } from '@frameleaf/sdk';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { hasPendingSessionUnlocks, sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
+import { discardAuthStatusReads, readAuthStatus } from '$lib/utils/auth-status-read';
 import { isFrameleafSignInRequired } from '$lib/utils/handle-error';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
@@ -89,7 +90,8 @@ const loadersCouldHaveSeenElevation = (status: { isElevated: boolean; pinExpires
  * - A first check that finds the session elevated but cannot establish how long for (no usable
  *   server `Date`) ends the elevation on the server and continues locked, instead of reloading:
  *   a reload would find the same answer and loop.
- * - Passive rechecks (navigation, focus, visibility) share a check already in flight; the status
+ * - Passive rechecks (navigation, focus, visibility) share a status read already in flight, the
+ *   guard's own or the top bar's (FL-647); every event-driven check sends its own. The status
  *   read never extends the elevation itself (`refreshElevation: false` on the server).
  * - FL-80/FL-83: a PIN unlock that was requested (`SessionAccessChanged`) but not yet verified is
  *   treated as elevated, so a lock, reset or failed check while it settles fails closed instead of
@@ -166,8 +168,10 @@ export const watchSessionPrivacy = (
     }
   };
 
-  const refresh = () => {
-    const current = check().finally(() => {
+  // A passive recheck may share a status read another reader (the top bar) has in flight; every
+  // event-driven check sends its own (FL-647).
+  const refresh = (passive = false) => {
+    const current = check(passive).finally(() => {
       if (inFlight === current) {
         inFlight = undefined;
       }
@@ -177,9 +181,9 @@ export const watchSessionPrivacy = (
   };
 
   // navigation, focus and visibility carry no news of their own: join a check already running
-  const revalidate = () => inFlight ?? refresh();
+  const revalidate = () => inFlight ?? refresh(true);
 
-  const check = async () => {
+  const check = async (passive = false) => {
     if (sessionAccess.lockPending && !verified) {
       loadedUnderOtherAccess = true;
     }
@@ -203,16 +207,7 @@ export const watchSessionPrivacy = (
     }
     const request = ++generation;
     try {
-      const started = performance.now();
-      let serverTime = NaN;
-      const status = await getAuthStatus({
-        cache: 'no-store',
-        fetch: async (input, init) => {
-          const response = await fetch(input, init);
-          serverTime = Date.parse(response.headers.get('Date') ?? '');
-          return response;
-        },
-      });
+      const { status, serverTime, started } = await readAuthStatus(passive ? 'passive' : 'fresh');
       if (stopped || request !== generation || sessionAccess.lockPending) {
         return;
       }
@@ -237,6 +232,8 @@ export const watchSessionPrivacy = (
       ) {
         // An elevation this view cannot bound: end it rather than reload into the same answer.
         await lockAuthSession();
+        // the read that found it elevated no longer describes this session
+        discardAuthStatusReads();
         if (stopped || request !== generation) {
           return;
         }
@@ -333,7 +330,7 @@ export const watchSessionPrivacy = (
       wallDeadline = undefined;
       onInitialStatus('ready');
     },
-    WebsocketConnect: refresh,
+    WebsocketConnect: () => refresh(),
     SessionAccessChanged: ({ isElevated }) => {
       if (isElevated) {
         elevationRequested = true;
@@ -354,7 +351,7 @@ export const watchSessionPrivacy = (
   void refresh();
 
   return {
-    refresh,
+    refresh: () => refresh(),
     revalidate,
     dispose: () => {
       stopped = true;
