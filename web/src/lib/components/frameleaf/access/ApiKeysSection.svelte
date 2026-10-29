@@ -4,6 +4,9 @@
    * key, and for each key its name, what it is for, when it was last used (FL-367) and when it was
    * made, with Edit, Replace and Delete.
    * Creating or rotating shows the new value once; rotating stops the old value at once.
+   *
+   * FL-655: the access Save to Frameleaf added by signing in (`signedInFrom`) is listed with the other
+   * keys as "Added by signing in", with Manage only: it has no value to copy or replace.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
@@ -51,6 +54,13 @@
     return more > 0 ? $t('frameleaf_access_key_permissions_more', { values: { list, count: more } }) : list;
   };
 
+  /** FL-655: the Manage dialog of an access added by signing in, loaded when it is opened. */
+  const manage = async (key: ApiKeyResponseDto) => {
+    const { default: ExtensionAccessDialog } =
+      await import('$lib/components/frameleaf/access/ExtensionAccessDialog.svelte');
+    await modalManager.show(ExtensionAccessDialog, { apiKey: key });
+  };
+
   const rotate = async (key: ApiKeyResponseDto) => {
     const response = await handleRotateApiKey(key);
     if (response) {
@@ -82,14 +92,25 @@
           <div>
             <strong>{key.name}</strong>
             <small>{permissionText(key)}</small>
-            <small>{lastUsed(key)} · {$t('frameleaf_access_key_made', { values: { date: made(key) } })}</small>
+            {#if key.signedInFrom}
+              <small>{lastUsed(key)}</small>
+              <small>{$t('frameleaf_access_key_added_by_sign_in', { values: { date: made(key) } })}</small>
+            {:else}
+              <small>{lastUsed(key)} · {$t('frameleaf_access_key_made', { values: { date: made(key) } })}</small>
+            {/if}
           </div>
           <div class="fl-access-actions">
-            <Button onclick={() => modalManager.show(ApiKeyDialog, { apiKey: key })}>
-              {$t('frameleaf_access_key_edit_short')}
-            </Button>
-            <Button onclick={() => rotate(key)}>{$t('frameleaf_access_key_rotate')}</Button>
-            <Button onclick={() => handleDeleteApiKey(key)}>{$t('frameleaf_access_key_delete')}</Button>
+            {#if key.signedInFrom}
+              <Button label={`${$t('frameleaf_access_key_manage')} ${key.name}`} onclick={() => manage(key)}>
+                {$t('frameleaf_access_key_manage')}
+              </Button>
+            {:else}
+              <Button onclick={() => modalManager.show(ApiKeyDialog, { apiKey: key })}>
+                {$t('frameleaf_access_key_edit_short')}
+              </Button>
+              <Button onclick={() => rotate(key)}>{$t('frameleaf_access_key_rotate')}</Button>
+              <Button onclick={() => handleDeleteApiKey(key)}>{$t('frameleaf_access_key_delete')}</Button>
+            {/if}
           </div>
         </li>
       {/each}

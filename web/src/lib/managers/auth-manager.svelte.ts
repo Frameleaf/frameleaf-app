@@ -145,9 +145,10 @@ class AuthManager {
     this.#preferences = withoutLockedRuleIds(preferences);
   }
 
-  async logout() {
+  /** `continue`: where the sign-in page goes once someone signs in again (FL-655: "Not you?"). */
+  async logout(options: { continue?: string } = {}) {
     retireStudioImportSessions();
-    let redirectUri = Route.login();
+    let redirectUri = Route.login(options.continue ? { continue: options.continue } : undefined);
 
     try {
       const response = await logout();
