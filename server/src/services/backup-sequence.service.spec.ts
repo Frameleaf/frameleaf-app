@@ -263,6 +263,34 @@ describe('the one backup schedule (FL-362)', () => {
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
     });
 
+    it('reports the failed copy itself when the retry cannot be queued (FL-657)', async () => {
+      const { sut, mocks, stored, buddy, cloud } = setup();
+      buddy.on = false;
+      cloud.on = false;
+      const failure = new Error('disk full');
+      mocks.databaseBackup.handleBackupDatabase.mockRejectedValue(failure);
+      mocks.job.queue.mockRejectedValueOnce(new Error('queue unavailable'));
+
+      await sut.handleStart();
+      expect(stored.state?.run).toBeNull();
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobError', {
+        job: { name: JobName.DatabaseBackup, data: {} },
+        error: failure,
+      });
+    });
+
+    it('keeps a finished copy finished when reporting it fails (FL-657)', async () => {
+      const { sut, mocks, stored, buddy, cloud } = setup();
+      buddy.on = false;
+      cloud.on = false;
+      mocks.event.emit.mockRejectedValueOnce(new Error('listener failed'));
+
+      await sut.handleStart();
+      expect(stored.state?.run).toBeNull();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('reporting it failed'));
+      expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
+    });
+
     it('reports a scheduled library data copy that finished like a queued one (FL-657)', async () => {
       const { sut, mocks, buddy, cloud } = setup();
       buddy.on = false;

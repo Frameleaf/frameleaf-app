@@ -187,18 +187,24 @@ export class BackupSequenceService {
         try {
           status = await this.databaseBackup.handleBackupDatabase();
         } catch (error) {
-          await this.retryLocal();
+          await this.retryLocal(error);
           throw error;
         }
         if (status !== JobStatus.Success) {
-          await this.retryLocal();
-          throw new Error('The library data copy did not finish');
+          const error = new Error('The library data copy did not finish');
+          await this.retryLocal(error);
+          throw error;
         }
         // FL-657: the same outcome a queued snapshot reports, so an earlier "didn't finish" notice goes.
-        await this.eventRepository.emit('JobSuccess', {
-          job: { name: JobName.DatabaseBackup, data: {} },
-          response: JobStatus.Success,
-        });
+        // The copy is made either way: a listener that fails must not turn it into a failed backup.
+        try {
+          await this.eventRepository.emit('JobSuccess', {
+            job: { name: JobName.DatabaseBackup, data: {} },
+            response: JobStatus.Success,
+          });
+        } catch (error) {
+          this.logger.warn(`Backup run: the library data copy finished, but reporting it failed: ${error}`);
+        }
         return 'done';
       }
       case 'buddy': {
@@ -216,13 +222,20 @@ export class BackupSequenceService {
    * FL-657: a scheduled library data copy that failed is tried again as the queued snapshot job, the
    * one "Take a snapshot now" uses. That job has the queue's retry, and if it fails for good its
    * failed state and failure notice are what the Backup page and the notification read. The run does
-   * not wait for it: the next place still gets its turn.
+   * not wait for it: the next place still gets its turn. When even the retry cannot be queued, the
+   * failure is reported here, as a failed snapshot job would, so the notice still goes out.
    */
-  private async retryLocal() {
+  private async retryLocal(failure: unknown) {
     try {
       await this.jobRepository.queue({ name: JobName.DatabaseBackup, data: {} });
+      return;
     } catch (error) {
       this.logger.warn(`Backup run: could not queue another library data copy: ${error}`);
+    }
+    try {
+      await this.eventRepository.emit('JobError', { job: { name: JobName.DatabaseBackup, data: {} }, error: failure });
+    } catch (error) {
+      this.logger.error(`Backup run: could not report the failed library data copy: ${error}`);
     }
   }
 
