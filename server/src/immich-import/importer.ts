@@ -391,6 +391,12 @@ export class ImmichImportService {
       WHERE key='ml-enrichment' AND value #>> '{nsfwDetection,review,isNsfw}'='true' ON CONFLICT DO NOTHING`,
       [AssetLockReason.Marked],
     );
+    // A live photo locks as a whole from either part: video to still here (before the stack pass, so the
+    // still's stack locks too), still to video after it.
+    await this.destination.query(`INSERT INTO public.asset_lock("assetId",reason,"lockedAt","lockedBy")
+      SELECT still.id,l.reason,l."lockedAt",l."lockedBy" FROM public.asset_lock l
+      JOIN public.asset still ON still."livePhotoVideoId"=l."assetId"
+      ON CONFLICT DO NOTHING`);
     await this.destination.query(`INSERT INTO public.asset_lock("assetId",reason,"lockedAt","lockedBy")
       SELECT member.id,source.reason,source."lockedAt",source."lockedBy" FROM public.asset member
       JOIN (SELECT DISTINCT ON (a."stackId") a."stackId",l.reason,l."lockedAt",l."lockedBy"

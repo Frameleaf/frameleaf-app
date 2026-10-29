@@ -430,6 +430,37 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
     ]);
   }, 30_000);
 
+  it('locks a live photo still when only its video part was in the Locked folder', async () => {
+    configure('3.0.0');
+    addLibrary();
+    const stillId = '6a1d2c3b-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+    const still = Buffer.from('live-photo-still');
+    await writeFile(join(directory, 'source', 'still.jpg'), still);
+    await writeFile(join(directory, 'destination', 'still.jpg'), still);
+    content.asset.push({
+      ...content.asset[0],
+      id: stillId,
+      originalPath: join(directory, 'source', 'still.jpg'),
+      originalFileName: 'still.jpg',
+      checksum: String.raw`\x${createHash('sha256').update(still).digest('hex')}`,
+      visibility: 'timeline',
+      deletedAt: null,
+      livePhotoVideoId: assetId,
+    });
+    await importer.run();
+    await importer.verify(acknowledgeWork);
+    expect(await connection.db.query('SELECT "assetId",reason FROM public.asset_lock ORDER BY "assetId"')).toEqual(
+      [assetId, stillId].sort().map((id) => ({ assetId: id, reason: 'frameleaf-locked-folder' })),
+    );
+    // The video part of a live photo never shows on its own.
+    expect(await connection.db.query('SELECT id,visibility FROM public.asset ORDER BY id')).toEqual(
+      [
+        { id: assetId, visibility: 'hidden' },
+        { id: stillId, visibility: 'timeline' },
+      ].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+  }, 30_000);
+
   it('activates a 3.1.0 Manager import with unchanged media locations and access associations', async () => {
     configure('3.1.0', {
       mode: 'manager-in-place',
