@@ -19469,6 +19469,57 @@
         "x-immich-permission": "bookmark.create"
       }
     },
+    "/bookmarks/preview": {
+      "post": {
+        "description": "For Save a link. Only public http(s) addresses are read; private, loopback and link-local addresses are refused, also after redirects. Nothing is stored.",
+        "operationId": "previewBookmark",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookmarkPreviewRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read a public page's title and picture",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.create"
+      }
+    },
     "/bookmarks/{id}": {
       "delete": {
         "operationId": "trashBookmark",
@@ -73119,6 +73170,50 @@
         },
         "required": [
           "ids"
+        ],
+        "type": "object"
+      },
+      "BookmarkPreviewRequestDto": {
+        "properties": {
+          "url": {
+            "format": "uri",
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "BookmarkPreviewResponseDto": {
+        "properties": {
+          "image": {
+            "description": "The page's picture, to upload as the link's preview",
+            "nullable": true,
+            "properties": {
+              "contentType": {
+                "type": "string"
+              },
+              "data": {
+                "description": "Base64 image bytes",
+                "type": "string"
+              }
+            },
+            "required": [
+              "contentType",
+              "data"
+            ],
+            "type": "object"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "image",
+          "title"
         ],
         "type": "object"
       },
