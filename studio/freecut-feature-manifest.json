@@ -2262,9 +2262,11 @@
           "e6bca4d7d8",
           "0127-persisted-lottie-discriminator.patch",
           "0128-persisted-subtitle-discriminator.patch",
-          "0131-canonical-dotlottie-owned-source.patch"
+          "0131-canonical-dotlottie-owned-source.patch",
+          "0149-multicam-editing.patch",
+          "0153-multicam-viewer-master-audio-drift.patch"
         ],
-        "note": "All item kinds are reachable in the editor; Lottie and subtitle persistence fixed by patches.",
+        "note": "All item kinds are reachable in the editor; Lottie and subtitle persistence fixed by patches. FL-595 adds multicam editing: angles synced by sound, a program track of cuts and one master audio; FL-628 adds angle previews, a standalone master audio and clock-drift correction.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.1",
@@ -5056,9 +5058,11 @@
           "0069-persisted-track-pan.patch",
           "0076-master-gain-envelope.patch",
           "0087-preview-track-gain.patch",
-          "0090-track-gain-automation.patch"
+          "0090-track-gain-automation.patch",
+          "0145-dialogue-loudness-match-and-export-report.patch",
+          "0150-master-true-peak-limiter.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter.",
         "status": "shipped"
       },
       "id": "readme.audio.1",
@@ -6854,8 +6858,11 @@
           "0027-effect-frame-clock-and-animation.patch",
           "0037-renderable-opacity.patch",
           "0059-mask-path-keyframes.patch",
-          "19e9aded35"
+          "19e9aded35",
+          "0148-motion-tracking.patch",
+          "0152-tracking-box-and-provenance.patch"
         ],
+        "note": "FL-596 adds motion tracking that writes x, y, width and height keyframes; FL-627 adds a separate tracking box, timeline lost ranges and saved track records.",
         "status": "shipped"
       },
       "id": "readme.keyframe-animation.6",
@@ -12784,9 +12791,11 @@
         "evidence": [
           "0031-managed-color-working-range.patch",
           "0136-project-colour-policy-disclosure.patch",
-          "e6bca4d7d8"
+          "e6bca4d7d8",
+          "0147-colour-match-between-shots.patch",
+          "0151-graded-hdr-colour-match.patch"
         ],
-        "note": "FL-97 closeout: managed floating-point colour.",
+        "note": "FL-97 closeout: managed floating-point colour. FL-599 adds colour matching to a reference shot as an editable exposure and temperature/tint pair; FL-626 matches graded clips and HDR projects from frames rendered in the working space.",
         "status": "shipped"
       },
       "id": "extra.color-workspace",

@@ -65,6 +65,9 @@ export class ViewRepository {
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
   async getAssetsByOriginalPath(userId: string, partialPath: string, options?: HiddenContentQueryOptions) {
     const normalizedPath = escapeLikeTerm(partialPath.replaceAll(/\/$/g, ''));
+    // An absolute path names one folder: anchored, so `/photos` never lists `/backup/photos`. A
+    // relative one keeps matching a folder of that name wherever it is.
+    const prefix = partialPath.startsWith('/') ? '' : '%';
 
     return (
       this.db
@@ -79,8 +82,8 @@ export class ViewRepository {
         .where('fileCreatedAt', 'is not', null)
         .where('fileModifiedAt', 'is not', null)
         .where('localDateTime', 'is not', null)
-        .where(displayPathSql(), 'like', `%${normalizedPath}/%`)
-        .where(displayPathSql(), 'not like', `%${normalizedPath}/%/%`)
+        .where(displayPathSql(), 'like', `${prefix}${normalizedPath}/%`)
+        .where(displayPathSql(), 'not like', `${prefix}${normalizedPath}/%/%`)
         .$call((qb) => withHiddenContentFilter(qb, options))
         .orderBy((eb) => eb.fn('regexp_replace', [displayPathSql(), eb.val('.*/(.+)'), eb.val(String.raw`\1`)]), 'asc')
         .execute()

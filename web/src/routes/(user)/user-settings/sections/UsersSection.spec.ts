@@ -2,6 +2,7 @@ import { getServerStatistics, searchUsersAdmin, type UserAdminResponseDto } from
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
+import { requestServerInfo } from '$lib/utils/auth';
 import en from '../../../../../../i18n/en.json';
 import UsersSection from './UsersSection.svelte';
 
@@ -63,5 +64,11 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
     await waitFor(() =>
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' }),
     );
+  });
+  it('reads the accounts without waiting for the disk check', async () => {
+    state.url = new URL('http://localhost/user-settings?area=users&section=accounts');
+    vi.mocked(requestServerInfo).mockReturnValueOnce(new Promise(() => {}));
+    render(UsersSection);
+    await waitFor(() => expect(searchUsersAdmin).toHaveBeenCalledWith({ withDeleted: true }));
   });
 });

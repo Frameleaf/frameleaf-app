@@ -11,6 +11,7 @@ import type {
   ReleaseEventV1,
   SharedLinkResponseDto,
   AdminConfigDto,
+  ServerFeaturesDto,
   TagResponseDto,
   UserAdminResponseDto,
 } from '@frameleaf/sdk';
@@ -18,6 +19,7 @@ import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
 
 export type Events = {
+  SpeechIndexChange: [];
   AppInit: [];
   AppNavigate: [];
 
@@ -102,6 +104,8 @@ export type Events = {
   SessionDelete: [];
 
   SystemConfigUpdate: [AdminConfigDto];
+  /** The server's feature flags, read by someone other than the feature flags manager. */
+  ServerFeaturesLoaded: [ServerFeaturesDto];
 
   IntegrityReportDeleteStatus: [{ type?: IntegrityReport; id?: string; isDeleting: boolean }];
   IntegrityReportDeleted: [{ type?: IntegrityReport; id?: string }];
@@ -117,6 +121,7 @@ export type Events = {
   FrameleafCloudUpdate: [{ topic: 'link' | 'license' | 'account' }];
 
   WebsocketConnect: [];
+  WebsocketDisconnect: [];
 };
 
 export const eventManager = new BaseEventManager<Events>();

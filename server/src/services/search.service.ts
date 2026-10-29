@@ -119,20 +119,25 @@ export class SearchService extends BaseService {
   async getExploreData(auth: AuthDto) {
     const options = { ...getHiddenContentQueryOptions(auth), maxFields: 12, minAssetsPerField: 5 };
 
-    const cities = await this.assetRepository.getAssetIdByCity(auth.user.id, options);
-    const cityAssets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
-      cities.items.map(({ data }) => data),
-      auth.user.id,
-      { ...options, ownerId: auth.user.id },
-    );
-    const cityItems = cityAssets.map((asset) => ({ value: asset.exifInfo!.city!, data: mapAsset(asset, { auth }) }));
-
-    const recents = await this.assetRepository.getRecentlyCreatedAssetIds(auth.user.id, options);
-    const recentAssets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
-      recents.items.map((item) => item.data),
-      auth.user.id,
-      { ...options, ownerId: auth.user.id },
-    );
+    // the two sections are independent: read them side by side, not one after the other
+    const loadField = async (field: Promise<{ fieldName: string; items: Array<{ data: string }> }>) => {
+      const { fieldName, items } = await field;
+      const assets = await this.assetRepository.getByIdsWithAllRelationsButStacks(
+        items.map(({ data }) => data),
+        auth.user.id,
+        { ...options, ownerId: auth.user.id },
+      );
+      return { fieldName, assets };
+    };
+    const [cities, recents] = await Promise.all([
+      loadField(this.assetRepository.getAssetIdByCity(auth.user.id, options)),
+      loadField(this.assetRepository.getRecentlyCreatedAssetIds(auth.user.id, options)),
+    ]);
+    const cityItems = cities.assets.map((asset) => ({
+      value: asset.exifInfo!.city!,
+      data: mapAsset(asset, { auth }),
+    }));
+    const recentAssets = recents.assets;
     const recentItems = recentAssets.map((asset) => ({
       value: asset.createdAt.toISOString(),
       data: mapAsset(asset, { auth }),

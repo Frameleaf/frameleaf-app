@@ -500,9 +500,6 @@ export const clearLocalSetup = (storage = browserStorage()) => {
 
 // ----------------------------------------------------------- estimates
 
-export const TB = 1e12;
-export const formatTb = (bytes: number) => `${(Math.max(0, bytes || 0) / TB).toFixed(1)} TB`;
-
 /** Items an hour this hardware indexes at the recommended tier. */
 export const itemsPerHour = (gpu: boolean, embeddingMs?: number | null) =>
   embeddingMs && embeddingMs > 0 ? Math.max(300, Math.round(3_600_000 / (embeddingMs * 4))) : gpu ? 5400 : 1200;
@@ -569,14 +566,16 @@ export const needsReindex = (config: AdminConfigDto, state: SetupState) => {
  * other accounts keep using the library.
  */
 export const setupRedirect = (
-  pathname: string,
+  pathname: string | (() => string),
   user: { isAdmin: boolean } | undefined,
   server: { isInitialized: boolean; isOnboarded: boolean },
 ) => {
   if (!user?.isAdmin || !server.isInitialized || server.isOnboarded) {
     return null;
   }
-  if (pathname.startsWith('/auth/') || pathname.startsWith('/maintenance') || pathname.startsWith('/link')) {
+  // Read only now: a route `load` that reads `url.pathname` runs again on every path change
+  const path = typeof pathname === 'function' ? pathname() : pathname;
+  if (path.startsWith('/auth/') || path.startsWith('/maintenance') || path.startsWith('/link')) {
     return null;
   }
   return '/auth/onboarding';

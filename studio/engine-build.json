@@ -714,7 +714,47 @@
       "path": "patches/0145-speed-ramps-and-linked-freeze-frames.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e9cc60f8e795da201025e9ba35de8895853d48d796edc68f6f00e0967df86c5e"
+    },
+    {
+      "path": "patches/0145-dialogue-loudness-match-and-export-report.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8b347a4145cfffadecf7ed4fe08d0a00ba0ac216b83d374f3c97537197cf4e1c"
+    },
+    {
+      "path": "patches/0150-master-true-peak-limiter.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7489e68d8e55ac725045010f596540edf2823bc329958ef78f08cb2d16c4da89"
+    },
+    {
+      "path": "patches/0147-colour-match-between-shots.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ae96b82653b8ee73bcd37f70f6391b1de186d46d91b279a0e9f9ba608b2d8b60"
+    },
+    {
+      "path": "patches/0151-graded-hdr-colour-match.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "afb0f36913fe0e4ee64d7e26fabb8a46efeacad62e6365568133f36b31fb0ada"
+    },
+    {
+      "path": "patches/0148-motion-tracking.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "82a3a26004fc6755984a280cdd07258f5046d3e18d747a68cbd576cd07114bfd"
+    },
+    {
+      "path": "patches/0152-tracking-box-and-provenance.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "df3a49b76f1c245b2c35472e9f425e1e9d1fabce9436841f1f157d76e4aa2f21"
+    },
+    {
+      "path": "patches/0149-multicam-editing.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0602afffef54cda4296f15ca192db2a5ae308ff5c426becf3abc6963651f1247"
+    },
+    {
+      "path": "patches/0153-multicam-viewer-master-audio-drift.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e95e06fb8f85485b43b08cdf5fdd953b4a70f310fdeebfdab418954af5ca3eae"
     }
   ],
-  "sourceSha256": "82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e"
+  "sourceSha256": "ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47"
 }

@@ -77,6 +77,30 @@ def fake_model(tmp_path: Path) -> TranscribeModel:
 
 
 class TestModel:
+    def test_speech_identity_is_available_without_loading_model(self, mocker: MockerFixture) -> None:
+        from frameleaf_ml.main import app
+
+        mocker.patch.object(settings, "transcription_model", "whisper-small")
+        response = TestClient(app).get("/transcribe/info")
+        assert response.status_code == 200
+        identity = response.json()
+        assert identity["model"] == "whisper-small"
+        assert len(identity["fingerprint"]) == 64
+        mocker.patch.object(settings, "transcription_model", "whisper-large-v3-turbo")
+        assert TestClient(app).get("/transcribe/info").json()["fingerprint"] != identity["fingerprint"]
+
+    def test_speech_identity_is_unavailable_until_the_model_is_staged_when_downloads_are_off(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        from frameleaf_ml.main import app
+
+        mocker.patch.object(settings, "transcription_model", "whisper-small")
+        mocker.patch.object(settings, "model_downloads", False)
+        mocker.patch.object(TranscribeModel, "cached", new_callable=mocker.PropertyMock, return_value=False)
+        assert TestClient(app).get("/transcribe/info").status_code == 503
+        mocker.patch.object(TranscribeModel, "cached", new_callable=mocker.PropertyMock, return_value=True)
+        assert TestClient(app).get("/transcribe/info").status_code == 200
+
     def test_routes_the_transcribe_task_to_whisper(self) -> None:
         assert get_model_class(TRANSCRIBE_MODEL_ALIAS, ModelType.AUDIO, ModelTask.TRANSCRIBE) is TranscribeModel
 
@@ -111,6 +135,7 @@ class TestModel:
         assert items[0] == {
             "type": "info",
             "model": "whisper-small",
+            "fingerprint": "74e53dc16856b9772f1896b6b6421b5a05b9dab636ea690351022efd8f53fabc",
             "language": "en",
             "languageProbability": 0.9877,
             "duration": 4.0,
@@ -184,6 +209,26 @@ class TestModel:
             sut.download()
         assert not sut.cached
 
+    def test_a_cached_file_from_an_older_pin_is_a_miss_and_is_removed(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        sut = TranscribeModel("whisper-small", cache_dir=tmp_path)
+        source = get_transcribe_model_file("whisper-small")
+        assert source is not None
+        pinned = {path: hashlib.sha256(path.encode()).hexdigest() for path, _ in source.files}
+        mocker.patch(
+            "frameleaf_ml.models.transcribe.get_transcribe_model_file",
+            return_value=source._replace(files=tuple(pinned.items())),
+        )
+        for path in pinned:
+            (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / path).write_bytes(path.encode())
+        assert sut.cached
+        stale = next(iter(pinned))
+        (tmp_path / stale).write_bytes(b"an older model")
+        assert not sut.cached
+        assert not (tmp_path / stale).exists()
+
     def test_an_unknown_model_name_is_unavailable(self, tmp_path: Path, mocker: MockerFixture) -> None:
         sut = TranscribeModel("whisper-enormous", cache_dir=tmp_path)
         download = mocker.patch.object(sut, "_download_from_source")
@@ -222,6 +267,27 @@ class TestEndpoint:
         assert [item["type"] for item in body] == ["info", "segment", "segment", "done"]
         assert body[0]["language"] == "en" and body[0]["model"] == "whisper-small"
         assert fake(served).calls[0]["samples"] == 64_000
+
+    def test_speech_identity_survives_memory_pressure_and_reuses_the_transcription_session(
+        self, served: TranscribeModel, deployed_app: TestClient, mocker: MockerFixture
+    ) -> None:
+        from frameleaf_ml import main
+        from frameleaf_ml.transcription_memory import AudioMemoryBudget
+
+        mocker.patch.object(settings, "transcription_model", "whisper-small")
+        mocker.patch.object(main, "audio_memory_budget", AudioMemoryBudget(1))
+        session = served.session
+        active = main.active_requests
+        identity = deployed_app.get("/transcribe/info").json()
+        assert main.active_requests == active
+        busy = deployed_app.post("/transcribe", data={"entries": entries()}, files={"audio": wav()})
+        assert busy.status_code == 503 and busy.json()["detail"] == "ml_worker_busy"
+        assert not fake(served).calls
+        mocker.patch.object(main, "audio_memory_budget", AudioMemoryBudget(16000 * 6))
+        answer = deployed_app.post("/transcribe", data={"entries": entries()}, files={"audio": wav()})
+        assert answer.status_code == 200
+        assert lines(answer.text)[0]["fingerprint"] == identity["fingerprint"]
+        assert served.session is session and main.active_requests == active
 
     def test_refuses_audio_that_is_not_16khz_mono_pcm(self, served: TranscribeModel, deployed_app: TestClient) -> None:
         response = deployed_app.post(

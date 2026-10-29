@@ -83,7 +83,15 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-597 speed ramps and freeze frames change timeline edits only.
     sourceSha256 === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
     // FL-597 speed ramps: captions follow their segments, mismatched companions refused
-    sourceSha256 === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e'
+    sourceSha256 === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+    // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
+    sourceSha256 === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
+    // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+    // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
+    // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -24,7 +24,7 @@ import {
  * opened in — the similar-photo reference, the text field, the shared space, the view and grouping —
  * survives every hop between the URL, the session, the search dialog, the chips and the server DTO.
  */
-export type DiscoveryMode = 'text' | 'smart';
+export type DiscoveryMode = 'text' | 'smart' | 'speech';
 export type DiscoveryGrouping = 'all' | 'months' | 'years';
 export type DiscoveryView = 'photos' | 'map' | 'moments';
 
@@ -70,7 +70,7 @@ export const DISCOVERY_QUERY_VERSION = 1;
 /** The URL parameter that carries a serialized query. */
 export const DISCOVERY_QUERY_PARAMETER = 'dq';
 
-export const DISCOVERY_MODES: readonly DiscoveryMode[] = ['text', 'smart'];
+export const DISCOVERY_MODES: readonly DiscoveryMode[] = ['text', 'smart', 'speech'];
 export const DISCOVERY_GROUPINGS: readonly DiscoveryGrouping[] = ['all', 'months', 'years'];
 export const DISCOVERY_VIEWS: readonly DiscoveryView[] = ['photos', 'map', 'moments'];
 export const DISCOVERY_TEXT_FIELDS: readonly DiscoveryTextField[] = [
@@ -1239,7 +1239,7 @@ export const toSearchDto = (query: DiscoveryQuery, textField?: keyof DiscoverySe
   if (query.queryAssetId) {
     dto.queryAssetId = query.queryAssetId;
   }
-  if (text) {
+  if (text && query.mode !== 'speech') {
     Object.assign(dto, { [query.mode === 'smart' ? 'query' : (textField ?? discoveryTextField(query))]: text });
   }
   return dto;

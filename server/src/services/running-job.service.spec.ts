@@ -139,6 +139,8 @@ describe(RunningJobService.name, () => {
         includeDismissed: false,
         take: RUNNING_OPERATIONS_LIMIT,
         skip: 0,
+        // Internal kinds (spoken-word transcription) never reach the public Activity list.
+        publicOnly: true,
       });
       expect(ACTIVE_MEDIA_OPERATION_STATUSES).toContain(MediaOperationStatus.Paused);
       expect(result.operations.map((operation) => operation.status)).toEqual([
