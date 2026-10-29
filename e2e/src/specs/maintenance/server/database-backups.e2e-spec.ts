@@ -287,7 +287,7 @@ describe('/admin/database-backups', () => {
 
     it(
       'refuses a noncanonical source before changing the current database',
-      { concurrent: false, timeout: 60_000 },
+      { concurrent: false, timeout: 90_000 },
       async () => {
         const filename = 'noncanonical.sql';
         await utils.putTextFile('SELECT 1;\n-- PostgreSQL database dump complete\n', `/data/backups/${filename}`);
@@ -321,7 +321,8 @@ describe('/admin/database-backups', () => {
               expect(answer.status).toBe(200);
               return answer.body.id;
             },
-            { interval: 500, timeout: 10_000 },
+            // Leaving maintenance restarts the server: the same restart budget as the other restore tests.
+            { interval: 500, timeout: 60_000 },
           )
           .toBe(admin.userId);
       },
