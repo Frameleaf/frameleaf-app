@@ -589,7 +589,7 @@
     untrack(() => {
       const scope = scopeForDestination(session.state.scope, destination?.kind);
       if (scope) {
-        session.setScope(scope);
+        session.normalizeScope(scope);
       }
     });
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather

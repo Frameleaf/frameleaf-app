@@ -571,6 +571,16 @@ describe('LibrarySessionStore', () => {
     expect(store.refusedView).toBeNull();
   });
 
+  it("keeps a refused link through the page's own scope normalization (FL-48)", () => {
+    const newer = new URL('https://example.test/photos');
+    newer.searchParams.set('fl', JSON.stringify({ ...viewState(), version: 2, somethingNew: true }));
+    store.restore(newer, 'user-1');
+    store.normalizeScope({ kind: 'library' });
+    expect(store.viewUrl(newer).href).toBe(newer.href);
+    store.patchView({ sort: 'filename' });
+    expect(store.viewUrl(newer).searchParams.get('fl')).toContain('filename');
+  });
+
   it('keeps every part of the query through the URL, including its search context (FL-48)', () => {
     store.patchView(
       viewPatch({
