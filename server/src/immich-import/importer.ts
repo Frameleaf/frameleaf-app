@@ -44,18 +44,29 @@ const LOST_REASON_TEXT: Record<LostOriginalReason, string> = {
   changed: 'changed since the source library recorded them',
   unmapped: 'outside the imported media folders',
 };
-const lockedFace = `EXISTS (SELECT 1 FROM public.asset_face f JOIN public.asset_lock l ON l."assetId"=f."assetId" WHERE f.id=s."faceAssetId")`;
-/** Columns `convertLocks` rewrites. Verification accepts a changed value only where a lock explains it. */
+const unlocked = (asset: string) => `NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=${asset})`;
+const lockedFace = `NOT ${unlocked('(SELECT f."assetId" FROM public.asset_face f WHERE f.id=s."faceAssetId")')}`;
+/** Columns `convertLocks` rewrites. Verification accepts a changed value only where a lock explains it, and
+ * only a value the conversion could have written. */
 const LOCK_REWRITES: Record<string, Record<string, string>> = {
   asset: {
-    visibility: `s.visibility='locked' AND EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=d.id)
+    visibility: `s.visibility='locked' AND NOT ${unlocked('d.id')}
       AND d.visibility=CASE WHEN EXISTS (SELECT 1 FROM public.asset still WHERE still."livePhotoVideoId"=d.id)
         THEN 'hidden' ELSE 'timeline' END::asset_visibility_enum`,
   },
   album: {
-    albumThumbnailAssetId: `EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=s."albumThumbnailAssetId")`,
+    // Replaced by an unlocked, undeleted photo of the same album, or none.
+    albumThumbnailAssetId: `NOT ${unlocked('s."albumThumbnailAssetId"')} AND (d."albumThumbnailAssetId" IS NULL
+      OR EXISTS (SELECT 1 FROM public.album_asset aa JOIN public.asset a ON a.id=aa."assetId" AND a."deletedAt" IS NULL
+        WHERE aa."albumId"=d.id AND aa."assetId"=d."albumThumbnailAssetId" AND ${unlocked('a.id')}))`,
   },
-  person: { faceAssetId: lockedFace, thumbnailPath: lockedFace },
+  person: {
+    // Replaced by a visible face of the same person on unlocked media, or none, with a thumbnail to regenerate.
+    faceAssetId: `${lockedFace} AND (d."faceAssetId" IS NULL OR EXISTS (SELECT 1 FROM public.asset_face f
+      WHERE f.id=d."faceAssetId" AND f."personGroupId"=d."personGroupId" AND f."deletedAt" IS NULL
+        AND f."isVisible" IS TRUE AND ${unlocked('f."assetId"')}))`,
+    thumbnailPath: `${lockedFace} AND d."thumbnailPath"=''`,
+  },
 };
 
 // Serialized row/checkpoint parameters enter as text so postgres.js does not JSON-encode them again.
