@@ -41,6 +41,75 @@ beforeEach(async () => {
 });
 afterEach(() => vi.useRealTimers());
 describe('durable capture queue', () => {
+  it('bounds completed local history without deleting pending originals or other accounts', async () => {
+    const original = await queue.enqueueCapture(file());
+    const bookmark = await queue.enqueueCapture({
+      binding,
+      albumId,
+      tagIds: [],
+      source,
+      bookmark: { title: 'Reference', url: 'https://page.example/' },
+    });
+    const [{ name }] = await indexedDB.databases();
+    const database = await new Promise<IDBDatabase>((resolve) => {
+      const opening = indexedDB.open(name!);
+      opening.onsuccess = () => resolve(opening.result);
+    });
+    const tx = database.transaction('tasks', 'readwrite');
+    const committed = new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error);
+    });
+    const ids: string[] = [];
+    for (let i = 0; i < 202; i++) {
+      const id = crypto.randomUUID();
+      ids.push(id);
+      tx.objectStore('tasks').put({
+        ...bookmark,
+        id,
+        captureId: id,
+        state: 'cancelled',
+        updatedAt: i,
+      });
+    }
+    const otherId = crypto.randomUUID();
+    const otherBinding = { ...binding, userId: albumId };
+    tx.objectStore('tasks').put({
+      ...bookmark,
+      id: otherId,
+      captureId: otherId,
+      binding: otherBinding,
+      state: 'cancelled',
+      updatedAt: 0,
+    });
+    // A damaged terminal record must not orphan its retained original.
+    tx.objectStore('tasks').put({
+      ...original,
+      state: 'cancelled',
+      updatedAt: 0,
+    });
+    await committed;
+    database.close();
+    await queue.pruneCaptureHistory(binding);
+    const remaining = await queue.listCaptures(binding);
+    expect(remaining).toHaveLength(202);
+    expect(remaining.map((task) => task.id)).not.toContain(ids[0]);
+    expect(remaining.map((task) => task.id)).not.toContain(ids[1]);
+    expect(remaining).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: original.id }),
+        expect.objectContaining({ id: bookmark.id, state: 'queued' }),
+      ]),
+    );
+    expect(await (await queue.captureBlob(original.id))?.text()).toBe('abc');
+    expect(await queue.listCaptures(otherBinding)).toHaveLength(1);
+    await queue.cancelQueuedCapture(bookmark.id, binding, 1000);
+    expect(await queue.listCaptures(binding)).toHaveLength(201);
+    expect(
+      (await queue.listCaptures(binding)).map((task) => task.id),
+    ).not.toContain(ids[2]);
+    expect(await (await queue.captureBlob(original.id))?.text()).toBe('abc');
+  });
   it('persists cancellation intent without stealing a claim or dropping originals', async () => {
     const task = await queue.enqueueCapture(file());
     await queue.claimCapture(binding, 'worker', 1000);

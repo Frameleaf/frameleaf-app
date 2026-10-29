@@ -2,7 +2,7 @@ import { CaptureFailure, sameBinding, type ServerBinding } from './api';
 import { hasServerAccess } from './platform';
 import { connectionStatus, credentialFor } from './settings';
 import { resumeQueue } from './runner';
-import { QueueFailure, listCaptures } from './queue';
+import { QueueFailure, listCaptures, pruneCaptureHistory } from './queue';
 
 let running: Promise<void> | undefined;
 let controller: AbortController | undefined;
@@ -48,6 +48,7 @@ export function wakeDelivery(
         if (!(await hasServerAccess(binding.origin)))
           throw new CaptureFailure('permission');
         const token = await credentialFor(binding);
+        if (!ownController.signal.aborted) await pruneCaptureHistory(binding);
         if (!ownController.signal.aborted)
           await resumeQueue(binding, token, ownController.signal);
         if (!ownController.signal.aborted) {

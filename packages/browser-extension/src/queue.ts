@@ -346,6 +346,26 @@ function checkTask(task: CaptureTask): CaptureTask {
 async function allTasks(tx: IDBTransaction): Promise<CaptureTask[]> {
   return (await request(tx.objectStore('tasks').getAll())).map(checkTask);
 }
+async function pruneHistory(tx: IDBTransaction, binding: ServerBinding) {
+  const completed = (await allTasks(tx))
+    .filter(
+      (task) =>
+        sameDestination(task.binding, binding) &&
+        ['saved', 'duplicate', 'cancelled'].includes(task.state),
+    )
+    .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+  let retained = 0;
+  for (const task of completed) {
+    // Preserve metadata whenever original bytes remain, even for damaged history.
+    if (await request(tx.objectStore('blobs').getKey(task.id))) continue;
+    if (++retained > 200)
+      await request(tx.objectStore('tasks').delete(task.id));
+  }
+}
+export const pruneCaptureHistory = (binding: ServerBinding): Promise<void> =>
+  transaction(['tasks', 'blobs'], 'readwrite', (tx) =>
+    pruneHistory(tx, binding),
+  );
 async function ownedTask(
   tx: IDBTransaction,
   id: string,
@@ -616,6 +636,7 @@ async function recordReceipt(
   delete task.retryAt;
   delete task.cancelRequested;
   await request(tx.objectStore('tasks').put(task));
+  await pruneHistory(tx, task.binding);
 }
 export const finishCapture = (
   id: string,
@@ -680,6 +701,7 @@ export const finishCaptureCancellation = (
     delete task.retryAt;
     delete task.cancelRequested;
     await request(tx.objectStore('tasks').put(task));
+    await pruneHistory(tx, task.binding);
   });
 export const cancelQueuedCapture = (
   id: string,
@@ -704,6 +726,7 @@ export const cancelQueuedCapture = (
     delete task.error;
     delete task.retryAt;
     await request(tx.objectStore('tasks').put(task));
+    await pruneHistory(tx, task.binding);
   });
 
 // Only after GET reported missing and creation/recovery confirmed the same UUID again.

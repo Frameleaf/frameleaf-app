@@ -6,6 +6,7 @@ import { listCaptures } from './queue';
 vi.mock('./queue', async (original) => ({
   ...(await original<typeof import('./queue')>()),
   listCaptures: vi.fn(),
+  pruneCaptureHistory: vi.fn().mockResolvedValue(undefined),
 }));
 import { resumeQueue } from './runner';
 import { deliveryError, stopDelivery, wakeDelivery } from './delivery';
