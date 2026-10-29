@@ -19469,6 +19469,57 @@
         "x-immich-permission": "bookmark.create"
       }
     },
+    "/bookmarks/preview": {
+      "post": {
+        "description": "For Save a link. Only public http(s) addresses are read; private, loopback and link-local addresses are refused, also after redirects. Nothing is stored.",
+        "operationId": "previewBookmark",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookmarkPreviewRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read a public page's title and picture",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.create"
+      }
+    },
     "/bookmarks/{id}": {
       "delete": {
         "operationId": "trashBookmark",
@@ -47710,6 +47761,311 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/speech": {
+      "delete": {
+        "operationId": "deleteSpeechIndex",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRevisionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Disable speech indexing and delete your stored transcripts",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "operationId": "getSpeechStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get your speech indexing scope and progress",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "operationId": "updateSpeechSettings",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechSettingsUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set your speech indexing opt-in and scope",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/speech/capabilities": {
+      "get": {
+        "operationId": "getSpeechCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechCapabilitiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get spoken words indexing capabilities",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/speech/retry": {
+      "post": {
+        "operationId": "retrySpeechIndexing",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRevisionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry failed speech indexing within your current scope",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/speech/search": {
+      "post": {
+        "operationId": "searchSpokenWords",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechSearchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechSearchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search literal spoken words and quoted phrases in your videos",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/stacks": {
       "delete": {
         "description": "Delete multiple stacks by providing a list of stack IDs.",
@@ -73185,6 +73541,50 @@
         },
         "required": [
           "ids"
+        ],
+        "type": "object"
+      },
+      "BookmarkPreviewRequestDto": {
+        "properties": {
+          "url": {
+            "format": "uri",
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "BookmarkPreviewResponseDto": {
+        "properties": {
+          "image": {
+            "description": "The page's picture, to upload as the link's preview",
+            "nullable": true,
+            "properties": {
+              "contentType": {
+                "type": "string"
+              },
+              "data": {
+                "description": "Base64 image bytes",
+                "type": "string"
+              }
+            },
+            "required": [
+              "contentType",
+              "data"
+            ],
+            "type": "object"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "image",
+          "title"
         ],
         "type": "object"
       },
@@ -131515,6 +131915,284 @@
           "manual"
         ],
         "type": "string"
+      },
+      "SpeechCapabilitiesDto": {
+        "properties": {
+          "version": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "SpeechHit": {
+        "properties": {
+          "endMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "endMs",
+          "startMs",
+          "text"
+        ],
+        "type": "object"
+      },
+      "SpeechIndexError": {
+        "enum": [
+          "unavailable",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "SpeechRevisionDto": {
+        "properties": {
+          "expectedGeneration": {
+            "description": "The generation last read; null only before the first configuration. Stale writes return 409.",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedGeneration"
+        ],
+        "type": "object"
+      },
+      "SpeechScope": {
+        "enum": [
+          "library",
+          "albums"
+        ],
+        "type": "string"
+      },
+      "SpeechSearchDto": {
+        "properties": {
+          "assetId": {
+            "description": "Restrict to one matching video, including when loading its next occurrence page.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Video keyset cursor bound to this owner, literal query, filters, scope, model and index version. Stale cursors return 409 with code speech_cursor_stale. Newly completed videos may appear on later pages.",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/SearchFilter"
+          },
+          "hitCursor": {
+            "description": "The item nextHitCursor; requires assetId and the same query and filters. Separate from video pagination; binds the completed transcript identity. Stale cursors return 409 with code speech_cursor_stale.",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
+          "query": {
+            "description": "Literal Unicode letter/number tokens, case insensitive, no stemming. Terms are ANDed; straight or smart double quotes require consecutive tokens. Unspaced Chinese/Japanese/Korean characters are indexed individually and contiguous input remains consecutive. Between 1 and 64 normalized tokens total; each token at most 2046 UTF-8 bytes.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "size": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "SpeechSearchItem": {
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/AssetResponseDto"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/SpeechHit"
+            },
+            "type": "array"
+          },
+          "hitsTotal": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "nextHitCursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "transcriptId": {
+            "description": "Completed index identity. Revalidate the same query restricted to assetId before playback; reject a changed transcriptId.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "hits",
+          "hitsTotal",
+          "nextHitCursor",
+          "transcriptId"
+        ],
+        "type": "object"
+      },
+      "SpeechSearchResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SpeechSearchItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total"
+        ],
+        "type": "object"
+      },
+      "SpeechSettingsUpdateDto": {
+        "properties": {
+          "albumIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "destinationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expectedGeneration": {
+            "description": "The generation last read; null only before the first configuration. Stale writes return 409.",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/SpeechScope"
+          }
+        },
+        "required": [
+          "albumIds",
+          "destinationId",
+          "enabled",
+          "expectedGeneration",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "SpeechStatusDto": {
+        "properties": {
+          "albumIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "destinationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "error": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SpeechIndexError"
+              }
+            ],
+            "nullable": true
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "generation": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "indexed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pending": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/SpeechScope"
+          },
+          "workerAvailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "albumIds",
+          "destinationId",
+          "enabled",
+          "error",
+          "failed",
+          "generation",
+          "indexed",
+          "pending",
+          "scope",
+          "workerAvailable"
+        ],
+        "type": "object"
       },
       "SpeedParameters": {
         "properties": {

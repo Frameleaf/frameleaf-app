@@ -6233,6 +6233,18 @@ export type BookmarkCreateDto = {
     title: string;
     url: string;
 };
+export type BookmarkPreviewRequestDto = {
+    url: string;
+};
+export type BookmarkPreviewResponseDto = {
+    /** The page's picture, to upload as the link's preview */
+    image: {
+        contentType: string;
+        /** Base64 image bytes */
+        data: string;
+    } | null;
+    title: string | null;
+};
 export type BookmarkUpdateDto = {
     isArchived?: boolean;
     isLocked?: boolean;
@@ -15024,6 +15036,64 @@ export type SourceGrantDto = {
     serverId: string;
     sourceId: string;
     sourceToken: string;
+};
+export type SpeechRevisionDto = {
+    /** The generation last read; null only before the first configuration. Stale writes return 409. */
+    expectedGeneration: string | null;
+};
+export type SpeechStatusDto = {
+    albumIds: string[];
+    destinationId: string | null;
+    enabled: boolean;
+    error: (SpeechIndexError) | null;
+    failed: number;
+    generation: string | null;
+    indexed: number;
+    pending: number;
+    scope: SpeechScope;
+    workerAvailable: boolean;
+};
+export type SpeechSettingsUpdateDto = {
+    albumIds: string[];
+    destinationId: string | null;
+    enabled: boolean;
+    /** The generation last read; null only before the first configuration. Stale writes return 409. */
+    expectedGeneration: string | null;
+    scope: SpeechScope;
+};
+export type SpeechCapabilitiesDto = {
+    version: number;
+};
+export type SpeechSearchDto = {
+    /** Restrict to one matching video, including when loading its next occurrence page. */
+    assetId?: string;
+    /** Video keyset cursor bound to this owner, literal query, filters, scope, model and index version. Stale cursors return 409 with code speech_cursor_stale. Newly completed videos may appear on later pages. */
+    cursor?: string;
+    filter?: SearchFilter;
+    /** The item nextHitCursor; requires assetId and the same query and filters. Separate from video pagination; binds the completed transcript identity. Stale cursors return 409 with code speech_cursor_stale. */
+    hitCursor?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
+    /** Literal Unicode letter/number tokens, case insensitive, no stemming. Terms are ANDed; straight or smart double quotes require consecutive tokens. Unspaced Chinese/Japanese/Korean characters are indexed individually and contiguous input remains consecutive. Between 1 and 64 normalized tokens total; each token at most 2046 UTF-8 bytes. */
+    query: string;
+    size?: number;
+};
+export type SpeechHit = {
+    endMs: number;
+    startMs: number;
+    text: string;
+};
+export type SpeechSearchItem = {
+    asset: AssetResponseDto;
+    hits: SpeechHit[];
+    hitsTotal: number;
+    nextHitCursor: string | null;
+    /** Completed index identity. Revalidate the same query restricted to assetId before playback; reject a changed transcriptId. */
+    transcriptId: string;
+};
+export type SpeechSearchResponseDto = {
+    items: SpeechSearchItem[];
+    nextCursor: string | null;
+    total: number;
 };
 export type StackResponseDto = {
     assets: AssetResponseDto[];
@@ -23939,6 +24009,21 @@ export function createBookmark({ bookmarkCreateDto }: {
     })));
 }
 /**
+ * Read a public page's title and picture
+ */
+export function previewBookmark({ bookmarkPreviewRequestDto }: {
+    bookmarkPreviewRequestDto: BookmarkPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BookmarkPreviewResponseDto;
+    }>("/bookmarks/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: bookmarkPreviewRequestDto
+    })));
+}
+/**
  * Move an owned bookmark to trash
  */
 export function trashBookmark({ id }: {
@@ -30939,6 +31024,88 @@ export function createSourceResourceGrant({ sourceGrantRequestDto }: {
     })));
 }
 /**
+ * Disable speech indexing and delete your stored transcripts
+ */
+export function deleteSpeechIndex({ speechRevisionDto }: {
+    speechRevisionDto: SpeechRevisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SpeechStatusDto;
+    }>("/speech", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: speechRevisionDto
+    })));
+}
+/**
+ * Get your speech indexing scope and progress
+ */
+export function getSpeechStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SpeechStatusDto;
+    }>("/speech", {
+        ...opts
+    }));
+}
+/**
+ * Set your speech indexing opt-in and scope
+ */
+export function updateSpeechSettings({ speechSettingsUpdateDto }: {
+    speechSettingsUpdateDto: SpeechSettingsUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SpeechStatusDto;
+    }>("/speech", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: speechSettingsUpdateDto
+    })));
+}
+/**
+ * Get spoken words indexing capabilities
+ */
+export function getSpeechCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SpeechCapabilitiesDto;
+    }>("/speech/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * Retry failed speech indexing within your current scope
+ */
+export function retrySpeechIndexing({ speechRevisionDto }: {
+    speechRevisionDto: SpeechRevisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SpeechStatusDto;
+    }>("/speech/retry", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: speechRevisionDto
+    })));
+}
+/**
+ * Search literal spoken words and quoted phrases in your videos
+ */
+export function searchSpokenWords({ speechSearchDto }: {
+    speechSearchDto: SpeechSearchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SpeechSearchResponseDto;
+    }>("/speech/search", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: speechSearchDto
+    })));
+}
+/**
  * Delete stacks
  */
 export function deleteStacks({ bulkIdsDto }: {
@@ -37492,6 +37659,14 @@ export enum SharedSpaceEventType {
 }
 export enum SourceResourceScope {
     SourceOriginalRead = "source-original-read"
+}
+export enum SpeechIndexError {
+    Unavailable = "unavailable",
+    Failed = "failed"
+}
+export enum SpeechScope {
+    Library = "library",
+    Albums = "albums"
 }
 export enum StudioMediaColorTransfer {
     Sdr = "sdr",

@@ -123,7 +123,11 @@ export const discoveryContextChips = (query: DiscoveryQuery): SearchContextChip[
     chips.push({
       key: 'text',
       labelKey:
-        query.mode === 'smart' ? 'frameleaf_search_chip_text' : TEXT_FIELD_LABEL_KEYS[discoveryTextField(query)],
+        query.mode === 'speech'
+          ? 'frameleaf_speech_title'
+          : query.mode === 'smart'
+            ? 'frameleaf_search_chip_text'
+            : TEXT_FIELD_LABEL_KEYS[discoveryTextField(query)],
       value: text,
     });
   }

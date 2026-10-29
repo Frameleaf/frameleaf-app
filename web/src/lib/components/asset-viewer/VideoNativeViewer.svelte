@@ -94,6 +94,7 @@
   let videoPlayer: HTMLVideoElement | undefined = $state();
   let isLoading = $state(true);
   let hasLoadedMetadata = $state(false);
+  let metadataSource = $state('');
   let playbackFailed = $state(false);
   let playbackFailure = $state<VideoFailure>('load');
   let retryCount = $state(0);
@@ -356,7 +357,12 @@
 
   // FL-59: a moment chosen in the moments panel or in moment search starts the video there.
   $effect(() => {
-    if (!hasLoadedMetadata || !videoPlayer || videoSeek.pending?.assetId !== assetId) {
+    if (
+      !hasLoadedMetadata ||
+      !videoPlayer ||
+      videoSeek.pending?.assetId !== assetId ||
+      (videoSeek.pending.original && (!playOriginalVideo || metadataSource !== assetFileUrl))
+    ) {
       return;
     }
     const seconds = videoSeek.take(assetId);
@@ -614,7 +620,10 @@
             class="h-full object-contain"
             oncanplay={(e: Event) => handleCanPlay(e.currentTarget as HTMLVideoElement)}
             onerror={handlePlaybackError}
-            onloadedmetadata={() => (hasLoadedMetadata = true)}
+            onloadedmetadata={() => {
+              metadataSource = assetFileUrl;
+              hasLoadedMetadata = true;
+            }}
             onended={onVideoEnded}
             onseeking={onSeeking}
             onplaying={(e: Event) => {
@@ -641,7 +650,10 @@
             class="h-full object-contain"
             oncanplay={(e) => handleCanPlay(e.currentTarget)}
             onerror={handlePlaybackError}
-            onloadedmetadata={() => (hasLoadedMetadata = true)}
+            onloadedmetadata={() => {
+              metadataSource = assetFileUrl;
+              hasLoadedMetadata = true;
+            }}
             onended={onVideoEnded}
             onseeking={onSeeking}
             onplaying={(e) => {

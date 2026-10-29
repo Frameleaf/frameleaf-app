@@ -274,6 +274,10 @@ export class BookmarkRepository {
         : sql<number>`0::double precision`;
     const assets = this.libraryAssets(auth, query, scope)
       .where(sql<boolean>`${include.assets}`)
+      // A saved link's picture shows on its card, never as an item of its own (FL-632).
+      .where(
+        sql<boolean>`not exists (select 1 from bookmark preview where preview."previewAssetId" = asset.id and preview."ownerId" = asset."ownerId")`,
+      )
       .clearSelect()
       .select([
         'asset.id',

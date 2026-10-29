@@ -449,6 +449,10 @@ export const transcriptStreamItemSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('info'),
     model: z.string().max(128),
+    fingerprint: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     language: z.string().max(16),
     languageProbability: z.number().min(0).max(1),
     duration: z.number().min(0).max(1e6),
@@ -725,6 +729,25 @@ export class MachineLearningRepository implements RestorationInference {
    * called as each segment arrives, so the caller can report progress; aborting `signal` closes the
    * connection, which stops the worker at its next segment. Answers the stream's `info` and segments.
    */
+  async transcriptionIdentity(selection: MlSelection): Promise<{ model: string; fingerprint: string }> {
+    if (selection.endpoint.cloud) throw new TranscriptionUnavailableError('Speech requires a local or LAN worker');
+    await this.authorize(selection.endpoint);
+    const response = await fetch(new URL('transcribe/info', selection.endpoint.url), {
+      headers: this.authHeaders(selection.endpoint),
+      redirect: 'error',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new TranscriptionUnavailableError('The worker cannot report its speech model');
+    }
+    const identity = z
+      .object({ model: z.string().max(128), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) })
+      .parse(await this.readDiagnosticJson(response));
+    await this.authorize(selection.endpoint);
+    return identity;
+  }
+
   async transcribe(
     selection: MlSelection,
     wavPath: string,

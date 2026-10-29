@@ -192,6 +192,27 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
+the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
+embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the
+FFT cross-correlation (`onset-xcorr-1ms-v1`), reported only when it clearly beats every other lag. Silent,
+unrelated and ambiguous recordings are flagged, never matched, and stay manually alignable in frames. The
+first and last thirds are aligned separately, so clock drift beyond one frame is reported instead of
+being hidden by one offset. Each window needs more than 10 s of sound, so recordings of 30 s or less are not checked for drift (one frame over 30 s would need a clock error above about 1,100 ppm). Create moves each angle (with its audio) so one frame shows the same moment
+everywhere, hides the angle tracks, mutes every camera's audio except the master's, and adds a Multicam
+program track on top with a video-only copy of the reference, all in one undo step. Selecting a program
+clip shows angle buttons (number keys 1–4 while focused). A cut replaces the program from the playhead to
+the next cut with that angle's matching source range, and is refused where the angle has no picture, with
+the missing range shown. Cuts are ordinary clips that can be trimmed. The group, offsets, reference and
+master audio are stored in `multicam` records on the tracks and program clips (protocol 12.9). Angles must
+play forward at normal speed and own their tracks. 
+Patch 0153 (FL-628) adds the follow-ups. Sync fits each drifting angle's clock (ratio and offset from the
+two windows), and Correct drift plays that angle and its audio at the fitted speed (within ±1%), so it stays
+within a frame across the recording. A selected audio clip that is not a camera's own can be the master
+audio: it is synced like an angle and every camera's sound is muted. The angle buttons show each angle's
+picture at the playhead from the cached filmstrip. Auditioning angles with sound and decoded export
+checks at cuts remain open.
+
 Patch 0152 (FL-627) extends motion tracking. The tracking box can be a separate clip, typically a
 rectangle drawn on the preview with the shape tool, while the target (a title, overlay or mask shape,
 which moves a blur region) keeps its own offset from that box. Parented targets are refused, because
@@ -209,7 +230,7 @@ the editor places it over the subject first. It is mapped into the chosen video'
 the video's resolved transform. Videos that are rotated, cropped, corner-pinned, flipped, reversed or
 have animated transforms are refused, and so are targets with vector position/scale keys. Frames are
 decoded at 480 px wide from each timeline frame's mapped source time (VFR-safe) and tracked forward or
-backward, up to 900 frames, by normalised cross-correlation with a small scale search
+backward, up to 900 frames, by normalised cross-correlation with a small-scale search
 (`ncc-scale-search-v1`). The first frame below 0.6 confidence and every later frame are marked lost,
 never bridged; low-texture or out-of-frame seeds are refused. Apply writes linear x, y, width and height
 keyframes that keep the target's offset from the tracked box. Lost frames block Apply until the editor
@@ -226,7 +247,7 @@ frames, each clip is rendered alone through the export renderer at a small size 
 (`renderWorkingFrame`). The reference keeps all of its effects, and the target leaves out only its own
 match, so the match lands after the grade and approximates the graded reference. SDR projects read the
 sRGB-encoded working values. HDR projects read the GPU float route's PQ BT.2020 signal, decoded to linear
-BT.709 in reference-white units; there exposure and temperature/tint are still linear, so the same exact
+BT.709 in reference-white units; there exposure and temperature/tint are still linear, so the same
 solve applies, with values above reference white kept. HDR analysis without WebGPU is refused with an
 explanation. Results are now bound to the reference's source, timing and full grade and to the
 project's colour management as well as the target's, so changing any of them makes a proposal stale.

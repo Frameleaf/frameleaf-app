@@ -52,6 +52,7 @@ import {
   MediaOperationCheckpointState,
   MediaOperationDestination,
   MediaOperationKind,
+  MediaOperationKindSchema,
   MediaOperationStatus,
   RenderWorkerAuditEvent,
   RenderWorkerRefusalReason,
@@ -93,6 +94,7 @@ import {
   RENDER_WORKER_MEDIA_OPERATION_KINDS,
   StoredChunk,
   canReuseChunk,
+  isPublicMediaOperationKind,
   isRenderWorkerMediaOperationKind,
 } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -181,7 +183,7 @@ const mapWorker = (worker: RenderWorker, activeOperations: number): RenderWorker
   name: worker.name,
   destination: worker.destination as MediaOperationDestination,
   status: worker.status as RenderWorkerStatus,
-  kinds: worker.kinds as MediaOperationKind[],
+  kinds: worker.kinds.filter(isPublicMediaOperationKind),
   engineDigest: worker.engineDigest,
   conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
   maxConcurrentOperations: worker.maxConcurrentOperations,
@@ -369,14 +371,15 @@ export class RenderWorkerService {
         }),
       })),
     );
-    const qualified = RENDER_WORKER_MEDIA_OPERATION_KINDS.filter((kind) =>
+    const publicRenderKinds = RENDER_WORKER_MEDIA_OPERATION_KINDS.filter(isPublicMediaOperationKind);
+    const qualified = publicRenderKinds.filter((kind) =>
       evaluated.some(
         ({ worker, session, budget }) => budget.valid && worker.kinds.includes(kind) && session.scopes.includes(kind),
       ),
     );
     return {
       qualified: [...qualified],
-      unavailable: RENDER_WORKER_MEDIA_OPERATION_KINDS.filter((kind) => !qualified.includes(kind)),
+      unavailable: publicRenderKinds.filter((kind) => !qualified.includes(kind)),
     };
   }
 
@@ -586,7 +589,7 @@ export class RenderWorkerService {
       workerId: session.workerId,
       sessionToken,
       expiresAt: new Date(session.expiresAt).toISOString(),
-      scopes: session.scopes,
+      scopes: session.scopes.filter(isPublicMediaOperationKind),
       gpuMemoryBytes: session.gpuMemoryBytes,
       gpuWorkingBudgetEvidence: session.gpuWorkingBudgetEvidence,
       leaseMs: RENDER_WORKER_LEASE_MS,
@@ -813,7 +816,7 @@ export class RenderWorkerService {
 
         return {
           operationId: operation.id,
-          kind: operation.kind as MediaOperationKind,
+          kind: MediaOperationKindSchema.parse(operation.kind),
           claimToken: claimed.claimToken,
           leaseMs: RENDER_WORKER_LEASE_MS,
           projectId: operation.projectId,

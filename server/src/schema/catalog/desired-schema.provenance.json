@@ -1,13 +1,13 @@
 {
-  "sourceCommit": "94bdc4464dd4845f4ed6ab70358c6f27fd475e4d",
+  "sourceCommit": "9f9a0b8d08d2d79d3a5afc93664d9e36a202a33d",
   "sourceHashes": {
-    "src/enum.ts": "b55367c1df94c38ec6b2084d82199d5f2fbb0dc4dac278f8d80dec8335fca90e",
+    "src/enum.ts": "d34b6a42251d64c2b8f690255cde86cfda0c7103d58658aba1ef73c85c100197",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "97580740af21afbf5abc0617b1110b3700223694584e6e109ef8b3ceb63d1818",
-    "src/schema/index.ts": "74884d457805d77e4797a611fd914a8991ca2777cd7dd0a5617d0e453f2f2d22",
+    "src/schema/index.ts": "260d6152e45ba422e164131083c39f2edd95a0f34c5764328406c0e61803fa98",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -61,7 +61,7 @@
     "src/schema/tables/desktop-worker-challenge.table.ts": "61676827da731356c280bea2958feaccf0b2124563ae1d5c6bb2137cffd93c5a",
     "src/schema/tables/desktop-worker-qualification.table.ts": "3291ad28e62d41af662aa50124c30cb0a31afb471b0376f2c10c42e4c533b84d",
     "src/schema/tables/desktop-worker-session.table.ts": "b3954a978e49bcc37946cdcd0a668e06f5fae2fdb02d91645f798543081e0fcd",
-    "src/schema/tables/develop-batch.table.ts": "9ab2e188291bfd3dd912efcc60be5781a6f605594f45ba1300e9dfdada79f72e",
+    "src/schema/tables/develop-batch.table.ts": "f3b3cd6db414b659b6ee97444b34b6c347f863786f212a47dc795fb9702f5f4b",
     "src/schema/tables/duplicate-decision.table.ts": "40e198b76121bafe69c17f282136a480e78658c2f3efcc884987fe56c4cd4316",
     "src/schema/tables/face-search.table.ts": "dcf3d20474ef65a7fc155081d9b04a5151be688268cfd113df1cf2e040f0bde9",
     "src/schema/tables/geodata-places.table.ts": "2c0be153c56497bfa21053ce9834ae8a6e4c6ae3c7677643302f44ce5d0c333e",
@@ -119,6 +119,7 @@
     "src/schema/tables/smart-search.table.ts": "fd8811bd6a4eaeb94073e4af42d8b42ca0ef3d95b950e6fcd733b98cc86e50f2",
     "src/schema/tables/source-resource-read.table.ts": "0a8add85873edc03434d56cdad39a78f8c755e707767520863f8c7177f05d748",
     "src/schema/tables/source-resource.table.ts": "7ed73669f874473c06033206069335260d596ef0d1920960796a0cac945f4011",
+    "src/schema/tables/speech.table.ts": "58c64fbb30913cbd78eaf6b9fa096e678f3fb870b5c4eea49852e14edd8ae1e9",
     "src/schema/tables/stack-audit.table.ts": "c0f1a2202dabba97fc270ac95c0510dad8f18597abe94a488ba248454076aff1",
     "src/schema/tables/stack.table.ts": "d4aaadc5c5bcd1b25d49172c7e4d77fb03ed96b558709d3257863e86e0a3c1d5",
     "src/schema/tables/studio-export.table.ts": "a19caf2aa0fe338904669a8d0e3f45451d2813e59f94e80e131e87ecee7ffb31",
@@ -140,7 +141,7 @@
     "src/schema/tables/version-history.table.ts": "b290931697aea4e4e917927e1e547d894d40a1b768dc0e51c8d9325704bdc91f",
     "src/schema/tables/video-moment.table.ts": "bb202390870bb23b50a161d0637d713335cf413e1d9e40d2df87a1a2d665a1cd",
     "src/schema/tables/video-stream.table.ts": "9b737a5664583eac3d8c657111c7e9a2bbc9f9fd7691e8f70aac841eaa59f254",
-    "src/schema/tables/workflow-batch.table.ts": "8003a8def38d58540a8a088ac936c5d414b6e8bc1119fa0f6a667a53f363a92a",
+    "src/schema/tables/workflow-batch.table.ts": "fe571a460b05e70ed664229e8a14e62395ea27c1effd3639fcdb88bd99d10129",
     "src/schema/tables/workflow-definition.table.ts": "ba3022de8c42c4a6116efa08fde1230f72fbbd4dec7284821f8eb5122c372125",
     "src/schema/tables/workflow-log-detail.table.ts": "afb7b1a8dbb79d5ac66f93a74d67a83e2835ef8cd89f91bf470c5406e4989a76",
     "src/schema/tables/workflow-log.table.ts": "9e81736a0ed01cc809058d3a08dd13042a84ac09b187a698fd4460925cfc1b8a",
@@ -150,6 +151,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "f84b87c95d89c9999854acfc01c84414acbf4595b54cbcab347ff6d2b04c646d",
-  "rawMetadataSha256": "6cc4492347ebcdc7b1d98bd4b527c28b10743f0471f4862eac69a7440c738aba"
+  "dumpSha256": "d5c4d5e5ea0d6aef5d6b46749dd71ff11df217a09a238ddd71d18c511f330841",
+  "rawMetadataSha256": "dba407206767bcc9a8c1fa7324c8dbd625fe1abf91eb67ff5b5686453d4238f9"
 }

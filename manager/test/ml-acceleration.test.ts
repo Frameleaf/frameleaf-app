@@ -139,7 +139,8 @@ test('existing Unraid stacks refresh video devices without changing storage or M
   try {
     const path = join(directory, 'compose.json');
     const ml = { labels: { 'app.frameleaf.manager': 'a'.repeat(12) }, devices: ['/dev/kfd:/dev/kfd'], image: 'fixture/rocm' };
-    await writeFile(path, JSON.stringify({ name: 'frameleaf-' + 'a'.repeat(12), services: { 'frameleaf-server': server, 'frameleaf-machine-learning': ml } }));
+    await writeFile(path, JSON.stringify({ name: 'frameleaf-' + 'a'.repeat(12), services: { 'frameleaf-server': server, 'frameleaf-machine-learning': ml,
+      'frameleaf-lan-discovery': { labels: { 'app.frameleaf.manager': 'a'.repeat(12) }, healthcheck: { disable: true } } } }));
     for (const hardware of [{}, { devices: ['/dev/dri:/dev/dri'] }, {
       deploy: { resources: { reservations: { devices: [{ driver: 'nvidia', count: 1, capabilities: ['gpu', 'compute', 'video'] }] } } },
     }]) {
@@ -152,6 +153,8 @@ test('existing Unraid stacks refresh video devices without changing storage or M
       assert.deepEqual(actual.volumes, server.volumes);
       assert.deepEqual(actual.environment, server.environment);
       assert.deepEqual(compose.services['frameleaf-machine-learning'].devices, ml.devices);
+      assert.deepEqual(compose.services['frameleaf-lan-discovery'].healthcheck,
+        { test: ['CMD', 'node', '-e', ''], interval: '30s', timeout: '10s', retries: 3 });
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
