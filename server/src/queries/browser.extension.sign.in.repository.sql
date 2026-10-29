@@ -18,6 +18,7 @@ where
   "browser_extension_access"."userId" = $1
   and "browser_extension_access"."client" = $2
   and "browser_extension_access"."redirectOrigin" = $3
+  and "browser_extension_access"."installationId" = $4
 
 -- BrowserExtensionSignInRepository.getAccessByUser
 select
