@@ -15,6 +15,8 @@
       ? [LibraryItemSearchKind.Bookmark]
       : undefined,
   );
+  /** The extension's "Open" for a saved link: `?bookmark=<id>` opens that link in the inspector. */
+  const bookmark = $derived(page.url.searchParams.get('bookmark') ?? undefined);
   /** Filtering inside Links stays in Links. */
   const withKinds = (href: string) => {
     if (!kinds) {
@@ -35,6 +37,7 @@
     title={data.meta.title}
     {query}
     {kinds}
+    {bookmark}
     onQueryChange={(next) => void goto(withKinds(discoveryUrl(next)), { replace: true, reset: false })}
   />
 </UserPageLayout>
