@@ -83,7 +83,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-599 colour matching adds effects through existing effect definitions; it changes no producer.
     sourceSha256 === '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185' ||
     // FL-599 colour match: binding covers clip timing and cadence
-    sourceSha256 === 'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba'
+    sourceSha256 === 'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba' ||
+    // FL-599 colour match: matched references refused, superseded runs discarded
+    sourceSha256 === '5e7b4f122a6f76379925b6a5d7be8ea5b304acdde2b14d1ff5674ab916ae0183'
   )
     return {
       ...COMPOSITION_SOURCES,

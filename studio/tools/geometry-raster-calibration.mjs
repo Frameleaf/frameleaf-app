@@ -201,7 +201,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185' ||
           // FL-599 colour match: binding covers clip timing and cadence
           binding.sourceSha256 ===
-            'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba')),
+            'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba' ||
+          // FL-599 colour match: matched references refused, superseded runs discarded
+          binding.sourceSha256 ===
+            '5e7b4f122a6f76379925b6a5d7be8ea5b304acdde2b14d1ff5674ab916ae0183')),
     'SOURCE_BROWSER',
   )
   check(

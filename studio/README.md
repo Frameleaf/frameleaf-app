@@ -202,8 +202,8 @@ three values from identity; zero removes the effects. The effects carry `colour-
 `matchStrength`/`matchSource` parameters (protocol 13.3.3), so a new match replaces the old one in place and
 reopens with its provenance. Results are bound to the clip's source, timing, sampled time and non-match
 effects, so stale results are skipped; apply, strength and remove are each one undo step. HDR projects,
-graded clips (enabled colour effects other than the match) and reverse playback are refused. Calibrated
-chart tests require mean CIEDE2000 error to fall by at least half (sRGB to CIELAB D65). Matching through an
+graded clips (enabled colour effects other than the match), a reference that is itself matched and reverse
+playback are refused. Synthetic 24-patch chart tests of the solve (not the renderer) require mean CIEDE2000 error to fall by at least half (sRGB to CIELAB D65). Matching through an
 existing grade, HDR working space, scope before/after review and browser/worker export parity remain open.
 
 
