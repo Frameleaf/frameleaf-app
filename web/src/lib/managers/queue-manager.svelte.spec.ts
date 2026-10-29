@@ -73,3 +73,29 @@ it('does not poll a hidden tab or stack a poll on one still waiting', async () =
     stop();
   }
 });
+
+it('keeps ticks back while any of two overlapping refreshes is still waiting', async () => {
+  const manager = new QueueManager();
+  const answers: ((value: never[]) => void)[] = [];
+  sdkMock.getQueues.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        answers.push(resolve);
+      }) as never,
+  );
+  const first = manager.listen();
+  const second = manager.listen();
+  try {
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(2);
+    // the first settles while the second still waits: a tick still adds nothing
+    answers[0]([]);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(2);
+    answers[1]([]);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(3);
+  } finally {
+    first();
+    second();
+  }
+});
