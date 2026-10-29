@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import { MetadataSearchDto } from 'src/dtos/search.dto.js';
 import {
   AlbumUserRole,
@@ -14,9 +15,11 @@ import { ClassificationRepository } from 'src/repositories/classification.reposi
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { rgbToOklab } from 'src/utils/asset-palette.js';
+import { TrashReviewAction } from 'src/utils/trash-review.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
@@ -203,6 +206,54 @@ describe('shared color and subtree search', () => {
     await db.updateTable('asset').set({ deletedAt: null, isOffline: true }).where('id', '=', asset.id).execute();
     const offline = await repo.searchStatisticsV3({ filter }, scope(user.id));
     expect([trashed.total, offline.total]).toEqual([0, 0]);
+  });
+  it('returns a trashed Design item to its scope, source and color match when it is restored', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { session } = await ctx.newSession({ userId: user.id });
+    const auth = { user, session: { ...session, hasElevatedPermission: false } } as AuthDto;
+    const { asset } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+    await db
+      .insertInto('asset_source')
+      .values({
+        assetId: asset.id,
+        captureId: randomUUID(),
+        pageUrl: 'https://example.org/lodge',
+        title: 'Lodge',
+        capturedAt: new Date(),
+        note: 'restored-reference',
+      })
+      .execute();
+    await palette(asset.id, '#609060');
+    const filter = (extra: object) =>
+      MetadataSearchDto.schema.parse({
+        // Callers exclude Trash themselves, as the Pro library search does.
+        filter: { id: { eq: asset.id }, libraryScope: LibraryScope.Design, trashedAt: { eq: null }, ...extra },
+      }).filter!;
+    const search = new SearchRepository(db);
+    const totals = () =>
+      Promise.all(
+        [{ color: { hex: '#609060' } }, { source: { contains: 'restored-reference' } }].map(async (extra) => {
+          const { total } = await search.searchStatisticsV3({ filter: filter(extra) }, scope(user.id));
+          return total;
+        }),
+      );
+    const trash = new TrashRepository(db);
+    expect(await trash.applyReviewed(user.id, TrashReviewAction.Trash, [asset.id], {}, () => true, auth)).toEqual([
+      asset.id,
+    ]);
+    const trashed = await totals();
+    expect(await trash.restoreAll([asset.id], auth)).toEqual([asset.id]);
+    const restored = await db
+      .selectFrom('asset')
+      .select(['libraryScope', 'deletedAt'])
+      .where('id', '=', asset.id)
+      .executeTakeFirstOrThrow();
+    expect({ trashed, restored: await totals(), row: restored }).toEqual({
+      trashed: [0, 0],
+      restored: [1, 1],
+      row: { libraryScope: LibraryScope.Design, deletedAt: null },
+    });
   });
   it('searches private provenance only for its owner, without exposing it through shared counts', async () => {
     const ctx = setup();
