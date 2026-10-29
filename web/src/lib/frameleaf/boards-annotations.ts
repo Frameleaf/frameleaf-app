@@ -125,14 +125,17 @@ export function createAnnotation(
   const dragged = Math.abs(b.x - a.x) >= 0.02 && Math.abs(b.y - a.y) >= 0.02;
   const x = dragged ? Math.min(a.x, b.x) : Math.min(a.x, 0.8);
   const y = dragged ? Math.min(a.y, b.y) : Math.min(a.y, 0.86);
+  // the size is bounded by the rounded origin, so rounding can never push the shape past the edge
+  const left = round(x);
+  const top = round(y);
   return {
     id,
     kind,
     geometry: {
-      x: round(x),
-      y: round(y),
-      width: round(dragged ? Math.abs(b.x - a.x) : 0.2),
-      height: round(dragged ? Math.abs(b.y - a.y) : 0.14),
+      x: left,
+      y: top,
+      width: Math.min(round(dragged ? Math.abs(b.x - a.x) : 0.2), round(1 - left)),
+      height: Math.min(round(dragged ? Math.abs(b.y - a.y) : 0.14), round(1 - top)),
     },
     note: '',
   };

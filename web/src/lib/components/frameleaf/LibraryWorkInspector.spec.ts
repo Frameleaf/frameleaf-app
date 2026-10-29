@@ -13,6 +13,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import userEvent from '@testing-library/user-event';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
+import { resetAnnotationsRegistry } from '$lib/frameleaf/boards-annotations-store.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -63,6 +64,7 @@ const detailOf = (id: string, patch: Partial<AssetResponseDto> = {}) =>
 describe('LibraryWorkInspector', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    resetAnnotationsRegistry();
     access.listeners.clear();
     sdkMock.getAssetPalette.mockRejectedValue(new Error('not indexed'));
     sdkMock.getAssetSources.mockResolvedValue([]);
@@ -434,6 +436,52 @@ describe('LibraryWorkInspector', () => {
         ).toEqual(['a2']);
         await waitFor(() =>
           expect(within(section).queryByText('frameleaf_boards_annotations_save_failed')).not.toBeInTheDocument(),
+        );
+      });
+
+      it('keeps an unsaved change across moving to another picture and back, with Retry', async () => {
+        const a = timelineAssetFactory.build();
+        const b = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockImplementation(({ id }) => Promise.resolve(picture(id)));
+        sdkMock.getAssetAnnotations.mockImplementation(({ id }) =>
+          Promise.resolve(id === a.id ? document() : document({ items: [] })),
+        );
+        // saving fails until the person presses Retry
+        let online = false;
+        sdkMock.replaceAssetAnnotations.mockImplementation(() =>
+          online ? Promise.resolve({ sourceRevision: 'rev' } as never) : Promise.reject(new Error('offline')),
+        );
+        const view = render(LibraryWorkInspector, { asset: a, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+
+        await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_boards_viewer_view_large_name' }));
+        const viewer = await screen.findByTestId('boards-viewer');
+        await fireEvent.click(within(viewer).getByRole('button', { name: /frameleaf_boards_annotate$/ }));
+        await fireEvent.click(
+          within(viewer).getAllByRole('button', { name: 'frameleaf_boards_annotation_delete_number' })[0],
+        );
+
+        // move to B while A's save fails
+        await view.rerender({ asset: b, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        await waitFor(() => expect(sdkMock.replaceAssetAnnotations).toHaveBeenCalled());
+        const onB = await screen.findByTestId('boards-annotations');
+        expect(within(onB).getByText('frameleaf_boards_annotations_none')).toBeInTheDocument();
+        expect(within(onB).queryByText('frameleaf_boards_annotations_save_failed')).not.toBeInTheDocument();
+
+        // back to A: the unsaved change is shown with the notice, and Retry saves it for A
+        await view.rerender({ asset: a, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        const onA = await screen.findByTestId('boards-annotations');
+        expect(await within(onA).findByText('frameleaf_boards_annotations_save_failed')).toBeInTheDocument();
+        await waitFor(() => expect(within(onA).getAllByRole('listitem')).toHaveLength(1));
+        const before = sdkMock.replaceAssetAnnotations.mock.calls.length;
+        online = true;
+        await fireEvent.click(within(onA).getByRole('button', { name: /retry|try/i }));
+        await waitFor(() => expect(sdkMock.replaceAssetAnnotations.mock.calls.length).toBeGreaterThan(before));
+        expect(sdkMock.replaceAssetAnnotations.mock.calls.every(([call]) => call.id === a.id)).toBe(true);
+        expect(
+          sdkMock.replaceAssetAnnotations.mock.lastCall?.[0].assetAnnotationsUpdateDto.items.map(({ id }) => id),
+        ).toEqual(['a2']);
+        await waitFor(() =>
+          expect(within(onA).queryByText('frameleaf_boards_annotations_save_failed')).not.toBeInTheDocument(),
         );
       });
 

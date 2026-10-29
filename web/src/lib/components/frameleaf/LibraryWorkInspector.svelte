@@ -19,7 +19,11 @@
   import AssetPalette from '$lib/components/frameleaf/AssetPalette.svelte';
   import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
   import BoardsRating from '$lib/components/frameleaf/BoardsRating.svelte';
-  import { BoardsAnnotationsState } from '$lib/frameleaf/boards-annotations-store.svelte';
+  import {
+    acquireAnnotations,
+    releaseAnnotations,
+    type BoardsAnnotationsState,
+  } from '$lib/frameleaf/boards-annotations-store.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { onDestroy } from 'svelte';
   import { getExifRating } from '$lib/frameleaf/rating';
@@ -164,10 +168,11 @@
       annotations = null;
       return;
     }
-    const next = new BoardsAnnotationsState(id);
+    // shared with every other view of this picture, so a save that failed earlier shows here with Retry
+    const next = acquireAnnotations(id);
     annotations = next;
     void next.load();
-    return () => void next.close();
+    return () => void releaseAnnotations(next);
   });
 
   const rate = async (next: number | null) => {

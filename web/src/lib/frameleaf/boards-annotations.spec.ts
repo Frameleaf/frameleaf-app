@@ -89,6 +89,11 @@ describe('Boards annotation geometry', () => {
       endX: 0.7,
       endY: 0.2,
     });
+    // rounding the origin never pushes the far edge past the picture (the server refuses that)
+    const wide = createAnnotation(AssetAnnotationKind.Rect, { x: 1 / 32, y: 1 / 32 }, { x: 1, y: 1 }, 'n8').geometry;
+    expect(wide.x + wide.width!).toBeLessThanOrEqual(1);
+    expect(wide.y + wide.height!).toBeLessThanOrEqual(1);
+    expect(wide).toEqual({ x: 0.0313, y: 0.0313, width: 0.9687, height: 0.9687 });
     expect(keyboardAnnotation(AssetAnnotationKind.Rect, 'n4').geometry).toEqual({
       x: 0.4,
       y: 0.4,
