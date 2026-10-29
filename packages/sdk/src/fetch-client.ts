@@ -4115,6 +4115,8 @@ export type AlbumResponseDto = {
     albumUsers: AlbumUserResponseDto[];
     /** Number of assets */
     assetCount: number;
+    /** Colour name (grey, green, teal, blue, purple, pink, amber, red) or null */
+    color: string | null;
     contributorCounts?: ContributorCountResponseDto[];
     /** True when the cover always follows the newest item. Populated by GET /albums/{id} and PATCH /albums/{id}. */
     coverFollowsNewest?: boolean;
@@ -4170,6 +4172,8 @@ export type CreateAlbumDto = {
     albumUsers?: AlbumUserCreateDto[];
     /** Initial asset IDs */
     assetIds?: string[];
+    /** Optional colour: grey, green, teal, blue, purple, pink, amber or red */
+    color?: string;
     /** Album description */
     description?: string | null;
     /** Optional icon: any Material Design Icons name (see GET /albums/icons) */
@@ -4257,6 +4261,8 @@ export type UpdateAlbumDto = {
     albumName?: string;
     /** Album thumbnail asset ID. Picking an item stops the cover following the newest item. */
     albumThumbnailAssetId?: string;
+    /** Colour: grey, green, teal, blue, purple, pink, amber or red (null = no colour) */
+    color?: string | null;
     /** Always use the newest item as the cover (true), or keep the current cover from now on (false). Cannot be true together with albumThumbnailAssetId. */
     coverFollowsNewest?: boolean;
     /** Album description */

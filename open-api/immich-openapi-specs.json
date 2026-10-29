@@ -63791,6 +63791,11 @@
             "minimum": 0,
             "type": "integer"
           },
+          "color": {
+            "description": "Colour name (grey, green, teal, blue, purple, pink, amber, red) or null",
+            "nullable": true,
+            "type": "string"
+          },
           "contributorCounts": {
             "items": {
               "$ref": "#/components/schemas/ContributorCountResponseDto"
@@ -63916,6 +63921,7 @@
           "albumThumbnailAssetId",
           "albumUsers",
           "assetCount",
+          "color",
           "createdAt",
           "description",
           "hasSharedLink",
@@ -80051,6 +80057,10 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "color": {
+            "description": "Optional colour: grey, green, teal, blue, purple, pink, amber or red",
+            "type": "string"
           },
           "description": {
             "description": "Album description",
@@ -142941,6 +142951,11 @@
             "description": "Album thumbnail asset ID. Picking an item stops the cover following the newest item.",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "color": {
+            "description": "Colour: grey, green, teal, blue, purple, pink, amber or red (null = no colour)",
+            "nullable": true,
             "type": "string"
           },
           "coverFollowsNewest": {
