@@ -13,6 +13,8 @@ export class QueueManager {
   #interval?: ReturnType<typeof setInterval>;
   #listenerCount = 0;
   #refreshing = 0;
+  /** Bumped when the last listener leaves: a refresh from before then no longer holds back the ticks. */
+  #session = 0;
 
   get snapshots() {
     return this.#snapshots;
@@ -49,6 +51,8 @@ export class QueueManager {
       if (--this.#listenerCount === 0) {
         clearInterval(this.#interval);
         this.#interval = undefined;
+        this.#session++;
+        this.#refreshing = 0;
       }
     };
   }
@@ -61,6 +65,7 @@ export class QueueManager {
     }
     // a count, not a flag: a direct refresh (a new listener, a queue update) may overlap another, and
     // the first to settle must not clear the guard while the other is still waiting
+    const session = this.#session;
     this.#refreshing++;
     try {
       this.#snapshots.push({
@@ -69,7 +74,9 @@ export class QueueManager {
       });
       this.#snapshots = this.#snapshots.slice(-30);
     } finally {
-      this.#refreshing--;
+      if (session === this.#session) {
+        this.#refreshing--;
+      }
     }
   }
 }

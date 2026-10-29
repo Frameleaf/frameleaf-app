@@ -99,3 +99,20 @@ it('keeps ticks back while any of two overlapping refreshes is still waiting', a
     second();
   }
 });
+
+it('lets a new listener poll even if a refresh from before the last listener left never answers', async () => {
+  const manager = new QueueManager();
+  sdkMock.getQueues.mockImplementationOnce(() => new Promise(() => {}) as never);
+  const first = manager.listen();
+  first();
+  sdkMock.getQueues.mockResolvedValue([]);
+  const second = manager.listen();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sdkMock.getQueues).toHaveBeenCalledTimes(3);
+  } finally {
+    second();
+  }
+});
