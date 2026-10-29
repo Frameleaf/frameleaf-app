@@ -38,6 +38,7 @@ import type { LibraryPanelString } from './library-strings';
 import type { StudioPreviewView } from './preview';
 import type { StabiliseEngineString } from './stabilise-strings';
 import type { TranscriptEngineString } from './transcript-strings';
+import type { VoiceCleanupEngineString } from './voice-cleanup-strings';
 
 /* ------------------------------------------------------------------ */
 /* What the host tells the engine                                       */
@@ -418,6 +419,8 @@ export type StudioAdapterString =
   | StabiliseEngineString
   /** The Caption style card's words (FL-640), written over the engine's English the same way. */
   | CaptionStyleEngineString
+  /** The "Clean up voice" card's words (FL-637), the same way. */
+  | VoiceCleanupEngineString
   /** The captions Languages card's words (FL-641), the same way. */
   | CaptionLanguageEngineString
   /** The bin's Library view (FL-636), drawn by the adapter. */

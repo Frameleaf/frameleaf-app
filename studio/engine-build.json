@@ -774,7 +774,12 @@
       "path": "patches/0160-library-view-in-media-bin.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "120d336ee47621b17a8266c380e1de04a6419377cf597e107c0bed06b023e5b7"
+    },
+    {
+      "path": "patches/0162-voice-cleanup.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b3ddc71c841bbf1601db70d2f220e16131f321c51e68568cec97ce7278a2f29e"
     }
   ],
-  "sourceSha256": "7e7728db01aed01e9871c27c5439255e9eb25bf82b5d9dbfe220ef06474c30e6"
+  "sourceSha256": "4e403256d5f1722d890776b9d374d9b6e8f28aad82c02deef110b5fe1d45a9ad"
 }

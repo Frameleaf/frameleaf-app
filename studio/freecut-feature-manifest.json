@@ -5062,9 +5062,10 @@
           "0087-preview-track-gain.patch",
           "0090-track-gain-automation.patch",
           "0145-dialogue-loudness-match-and-export-report.patch",
-          "0150-master-true-peak-limiter.patch"
+          "0150-master-true-peak-limiter.patch",
+          "0162-voice-cleanup.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter. FL-637 adds Clean up voice: one clip at a time, the cleaned sound a project audio import the clip plays in preview and export, with the original kept.",
         "status": "shipped"
       },
       "id": "readme.audio.1",

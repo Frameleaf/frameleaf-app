@@ -52439,6 +52439,204 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/voice-analysis": {
+      "post": {
+        "description": "Owner only. A quick look at up to the first minute of one audio clip on the main timeline of the head revision: wind, hum and buzz (with its mains frequency), background noise and room echo. It runs on this server or a computer at home, never on Frameleaf Cloud. Nothing is kept.",
+        "operationId": "analyzeStudioVoice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioVoiceAnalysisCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioVoiceAnalysisDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Find the noise in a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/voice-cleanups": {
+      "post": {
+        "description": "Owner only. Queues a clean-up of one audio clip on the main timeline of the head revision: the chosen noises are removed at the chosen strength, on this server or a computer at home (never Frameleaf Cloud). A clip cleaned before is cleaned again from its original. The cleaned sound is kept with the project as an audio import; the original is never changed and the graph is not edited. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`).",
+        "operationId": "createStudioVoiceCleanup",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioVoiceCleanupCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioVoiceCleanupQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clean up the voice in a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/voice-cleanups/{voiceCleanupId}": {
+      "get": {
+        "description": "Owner only. The job status and progress, and once it has completed the cleaned sound’s project import and where the clip’s window starts in it.",
+        "operationId": "getStudioVoiceCleanup",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "voiceCleanupId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioVoiceCleanupDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio voice clean-up",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/resources": {
       "get": {
         "description": "Every font, LUT, audio track, model, voice and tool the Studio engine can reach that has a reviewed rights decision: its licence, whether it may be redistributed, run on this server or run on Frameleaf Cloud, why a use was withheld, and the worker capability that runs it. A resource not listed is refused.",
@@ -138318,6 +138516,253 @@
           "refusal"
         ],
         "type": "object"
+      },
+      "StudioVoiceAnalysisCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "An audio clip on the main timeline of the head revision",
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clipId"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceAnalysisDto": {
+        "properties": {
+          "clipId": {
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "humHz": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  50
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              }
+            ],
+            "description": "The mains frequency of the hum found, or null",
+            "nullable": true
+          },
+          "noises": {
+            "description": "What the quick analysis found; the person can change it",
+            "items": {
+              "$ref": "#/components/schemas/StudioVoiceNoise"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clipId",
+          "humHz",
+          "noises"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceCleanupCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "An audio clip on the main timeline of the head revision",
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "humHz": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  50
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              }
+            ],
+            "description": "The mains frequency of the hum found, or null",
+            "nullable": true
+          },
+          "noises": {
+            "description": "What to remove",
+            "items": {
+              "$ref": "#/components/schemas/StudioVoiceNoise"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          },
+          "strength": {
+            "$ref": "#/components/schemas/StudioVoiceStrength"
+          }
+        },
+        "required": [
+          "clipId",
+          "noises",
+          "strength"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceCleanupDto": {
+        "properties": {
+          "clipId": {
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioVoiceCleanupResultDto"
+              }
+            ],
+            "description": "Present once the job has completed",
+            "nullable": true
+          },
+          "revision": {
+            "description": "The revision whose clip was cleaned",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "clipId",
+          "error",
+          "id",
+          "progress",
+          "projectId",
+          "result",
+          "revision",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceCleanupQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; follow it in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceCleanupResultDto": {
+        "properties": {
+          "durationSeconds": {
+            "description": "How long the cleaned sound is",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "humHz": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  50
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              }
+            ],
+            "description": "The mains frequency of the hum found, or null",
+            "nullable": true
+          },
+          "import": {
+            "$ref": "#/components/schemas/StudioProjectImportDto",
+            "description": "The cleaned sound, kept with the project as an audio import"
+          },
+          "noises": {
+            "items": {
+              "$ref": "#/components/schemas/StudioVoiceNoise"
+            },
+            "type": "array"
+          },
+          "sourceStartSeconds": {
+            "description": "Where in the cleaned sound the clip's window starts (the handle before it)",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "strength": {
+            "$ref": "#/components/schemas/StudioVoiceStrength"
+          }
+        },
+        "required": [
+          "durationSeconds",
+          "humHz",
+          "import",
+          "noises",
+          "sourceStartSeconds",
+          "strength"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceNoise": {
+        "description": "Wind, hum and buzz, background noise or room echo",
+        "enum": [
+          "wind",
+          "hum",
+          "background",
+          "echo"
+        ],
+        "type": "string"
+      },
+      "StudioVoiceStrength": {
+        "description": "Light keeps the room's sound, Standard removes most noise, Strong leaves the voice only",
+        "enum": [
+          "light",
+          "standard",
+          "strong"
+        ],
+        "type": "string"
       },
       "StudioWorkerCapability": {
         "description": "A Studio worker capability, as the command catalogue names it",

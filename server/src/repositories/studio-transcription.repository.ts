@@ -8,13 +8,15 @@ import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 export class StudioTranscriptionRepository {
   /**
    * Write `[start, start + duration)` seconds of the first audio stream of `input` as the 16 kHz mono
-   * 16-bit PCM WAV Whisper reads. Pictures, subtitles, data and metadata are dropped.
+   * 16-bit PCM WAV Whisper reads. Pictures, subtitles, data and metadata are dropped. Clean up voice
+   * (FL-637) reads the same window at 48 kHz, the rate its speech model works at.
    */
   async extractAudio(
     input: string,
     output: string,
     window: { startSeconds: string; durationSeconds: string },
     signal: AbortSignal,
+    sampleRate: 16_000 | 48_000 = 16_000,
   ): Promise<void> {
     signal.throwIfAborted();
     const extraction = promisify(execFile)(
@@ -41,7 +43,7 @@ export class StudioTranscriptionRepository {
         '-ac',
         '1',
         '-ar',
-        '16000',
+        String(sampleRate),
         '-c:a',
         'pcm_s16le',
         '-f',

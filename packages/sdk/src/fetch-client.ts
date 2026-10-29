@@ -16195,6 +16195,55 @@ export type StudioTranscriptionDto = {
     revision: number;
     status: MediaOperationStatus;
 };
+export type StudioVoiceAnalysisCreateDto = {
+    /** An audio clip on the main timeline of the head revision */
+    clipId: string;
+};
+export type StudioVoiceAnalysisDto = {
+    clipId: string;
+    /** The mains frequency of the hum found, or null */
+    humHz: (50 | 60) | null;
+    /** What the quick analysis found; the person can change it */
+    noises: StudioVoiceNoise[];
+};
+export type StudioVoiceCleanupCreateDto = {
+    /** An audio clip on the main timeline of the head revision */
+    clipId: string;
+    /** The mains frequency of the hum found, or null */
+    humHz?: (50 | 60) | null;
+    /** What to remove */
+    noises: StudioVoiceNoise[];
+    strength: StudioVoiceStrength;
+};
+export type StudioVoiceCleanupQueuedDto = {
+    /** The job id; follow it in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioVoiceCleanupResultDto = {
+    /** How long the cleaned sound is */
+    durationSeconds: number;
+    /** The mains frequency of the hum found, or null */
+    humHz: (50 | 60) | null;
+    /** The cleaned sound, kept with the project as an audio import */
+    "import": StudioProjectImportDto;
+    noises: StudioVoiceNoise[];
+    /** Where in the cleaned sound the clip's window starts (the handle before it) */
+    sourceStartSeconds: number;
+    strength: StudioVoiceStrength;
+};
+export type StudioVoiceCleanupDto = {
+    clipId: string;
+    error: string | null;
+    id: string;
+    progress: number;
+    projectId: string;
+    /** Present once the job has completed */
+    result: (StudioVoiceCleanupResultDto) | null;
+    /** The revision whose clip was cleaned */
+    revision: number;
+    status: MediaOperationStatus;
+};
 export type StudioResourceApprovalDto = {
     approvedBy: string;
     approvedOn: string;
@@ -32195,6 +32244,52 @@ export function restoreStudioProjectFromTrash({ id }: {
     }));
 }
 /**
+ * Find the noise in a Studio clip
+ */
+export function analyzeStudioVoice({ id, studioVoiceAnalysisCreateDto }: {
+    id: string;
+    studioVoiceAnalysisCreateDto: StudioVoiceAnalysisCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioVoiceAnalysisDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/voice-analysis`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioVoiceAnalysisCreateDto
+    })));
+}
+/**
+ * Clean up the voice in a Studio clip
+ */
+export function createStudioVoiceCleanup({ id, studioVoiceCleanupCreateDto }: {
+    id: string;
+    studioVoiceCleanupCreateDto: StudioVoiceCleanupCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioVoiceCleanupQueuedDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/voice-cleanups`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioVoiceCleanupCreateDto
+    })));
+}
+/**
+ * Get a Studio voice clean-up
+ */
+export function getStudioVoiceCleanup({ id, voiceCleanupId }: {
+    id: string;
+    voiceCleanupId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioVoiceCleanupDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/voice-cleanups/${encodeURIComponent(voiceCleanupId)}`, {
+        ...opts
+    }));
+}
+/**
  * List the Studio resources this server may use
  */
 export function getStudioResources(opts?: Oazapfts.RequestOpts) {
@@ -37927,6 +38022,17 @@ export enum DestinationId {
 export enum StudioSourceParentKind {
     ProjectImport = "project-import",
     VectorGraphic = "vector-graphic"
+}
+export enum StudioVoiceNoise {
+    Wind = "wind",
+    Hum = "hum",
+    Background = "background",
+    Echo = "echo"
+}
+export enum StudioVoiceStrength {
+    Light = "light",
+    Standard = "standard",
+    Strong = "strong"
 }
 export enum StudioWorkerCapability {
     AnalysisWorker = "analysisWorker",

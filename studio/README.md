@@ -317,6 +317,18 @@ untouched and channels in step, and cover save, undo and serialization. Native c
 export a graph with the limiter on unless they apply it. Browser, worker and codec-overshoot checks
 remain open.
 
+Patch 0162 (FL-637) adds Clean up voice at the end of the Audio tab: one audio clip at a time, "Found
+in this clip" (wind, hum and buzz, background noise, room echo) from a quick look by the server, Light,
+Standard or Strong, a Before / After listen, and "Use the original sound". The work runs on the
+project's server: the ML server's `voice-cleanup` task (DeepFilterNet3 for wind, noise and echo; notches
+for mains hum) on this server or a computer at home, never Frameleaf Cloud. The cleaned window (with a
+second of handle each side) is kept with the project as an audio import, and the clip plays it by its
+media id, so preview and export need nothing new. What the clip played before is kept on the item as
+`voiceCleanup.original` (its `mediaId` stays a graph reference the resolver checks), so cleaning again
+always starts from the original. Apply and restore are one undo step each. The card's host lives in
+`studio/adapters/web/src/shims/voice-cleanup-service.ts`, substituted like the export dialogs; it calls
+the project's own Studio routes with the session cookie, so the frame protocol is unchanged.
+
 Patch 0145 (FL-598) adds dialogue loudness matching and an export loudness report. One BS.1770-4
 meter (K-weighting derived for any sample rate, 400 ms blocks with EBU R128 absolute and relative
 gates, true peak by 4x polyphase oversampling; `bs1770-4/r128-gating/tp-4x-v1`) runs in a worker for

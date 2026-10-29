@@ -37,6 +37,13 @@ from frameleaf_ml.models.transcribe import (
 )
 from frameleaf_ml.models.transforms import decode_pil
 from frameleaf_ml.models.translate import MAX_LINE_CHARS, MAX_LINES, TranslateModel
+from frameleaf_ml.models.voice_cleanup import (
+    MODEL_NOISES,
+    VoiceAudioError,
+    VoiceCleanupModel,
+    read_voice_wav,
+    voice_memory_bytes,
+)
 from frameleaf_ml.sessions.ort import flush_denormals
 
 from .config import PreloadModelData, log, model_source, settings
@@ -623,6 +630,95 @@ async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingRe
             active_requests -= 1
 
     return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+@app.post("/voice-cleanup")
+async def voice_cleanup(
+    entries: InferenceEntries = Depends(get_entries),
+    audio: UploadFile = File(),
+) -> StreamingResponse:
+    """Studio "Clean up voice" (FL-637): look at or clean one clip's sound (48 kHz mono 16-bit PCM WAV).
+
+    The request names one entry, `{"voice-cleanup": {"audio": {"modelName": "frameleaf-voice-cleanup",
+    "options": {"mode", "strength"?, "noises"?, "humHz"?}}}}`. Problems found before any work starts are
+    HTTP errors (400 bad audio, 422 bad options, 503 no model). Otherwise the answer is newline-delimited
+    JSON. For `analyze`: one `analysis` line (`noises`, `humHz`), then `done`. For `clean`: `progress`
+    lines, `info` (sample rate, seconds), the cleaned WAV as base64 `audio` lines in order, then `done`
+    (or `error`). Closing the connection stops the work at the next 30-second run of the model.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.VOICE_CLEANUP:
+        raise HTTPException(400, "A voice clean-up request names exactly one voice-cleanup entry")
+    entry = without_deps[0]
+    try:
+        size = await run(voice_memory_bytes, audio.file)
+        reservation = audio_memory_budget.reserve(size)
+    except VoiceAudioError as error:
+        raise HTTPException(400, str(error)) from error
+    global active_requests, last_called
+    active_requests += 1
+    last_called = time.time()
+    released = False
+
+    def release_request() -> None:
+        nonlocal released
+        global active_requests
+        if not released:
+            released = True
+            active_requests -= 1
+            reservation.release()
+
+    try:
+        samples = await reservation.run(thread_pool, read_voice_wav, audio.file)
+        model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
+        # Only the noises the model removes load it, so a worker without it can still analyse and remove hum.
+        if entry["options"].get("mode") != "analyze" and MODEL_NOISES & set(entry["options"].get("noises", [])):
+            model = await load(model)
+        assert isinstance(model, VoiceCleanupModel)
+        items = model.stream(samples, **entry["options"])
+        reservation.set_cleanup(items.close)
+    except VoiceAudioError as error:
+        release_request()
+        raise HTTPException(400, str(error)) from error
+    except BaseException:
+        release_request()
+        raise
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global last_called
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await reservation.run(thread_pool, next, items, None)
+                except Exception as error:
+                    log.error(f"Voice clean-up failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Voice clean-up failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                if item["type"] != "audio":
+                    yield orjson.dumps(item) + b"\n"
+                    continue
+                wav: bytes = item["wav"]
+                yield (
+                    orjson.dumps({"type": "info", "sampleRate": item["sampleRate"], "seconds": item["seconds"]}) + b"\n"
+                )
+                for start in range(0, len(wav), MUSIC_CHUNK_BYTES):
+                    chunk = base64.b64encode(wav[start : start + MUSIC_CHUNK_BYTES]).decode("ascii")
+                    yield orjson.dumps({"type": "audio", "data": chunk}) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
+            release_request()
+
+    class ReservedAudioStream(StreamingResponse):
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            try:
+                await super().__call__(scope, receive, send)
+            finally:
+                release_request()
+
+    return ReservedAudioStream(body(), media_type="application/x-ndjson")
 
 
 # The largest `lines` field the server can send: MAX_LINES lines of MAX_LINE_CHARS characters, each
