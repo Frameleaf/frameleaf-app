@@ -1675,6 +1675,15 @@ export class AssetRepository {
         if (group.some((asset) => asset.ownerId !== motion.ownerId)) throw new BadRequestException('Asset not found');
       }
       const created = await assets.create({ ...asset, id });
+      // The paired video follows its stills' workspace, as setLibraryScope keeps it.
+      const stills = await assets.db
+        .selectFrom('asset')
+        .select('libraryScope')
+        .where('livePhotoVideoId', '=', motionId)
+        .execute();
+      const scopes = new Set(stills.map((row) => row.libraryScope));
+      const scope = scopes.size > 1 || scopes.has(LibraryScope.Both) ? LibraryScope.Both : created.libraryScope;
+      if (scope !== motion.libraryScope) await assets.update({ id: motionId, libraryScope: scope });
       const hiddenId = motion.visibility === AssetVisibility.Timeline ? motion.id : undefined;
       if (hiddenId) await assets.update({ id: hiddenId, visibility: AssetVisibility.Hidden });
       const lockedIds = lock ? await assets.lock([id], lock.reason, lock.lockedBy) : [];
