@@ -83,7 +83,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-595 multicam editing arranges ordinary clips and tracks; it changes no producer.
     sourceSha256 === '4cd592b6f8fef4211afd5947eff79fd2c33ebc6db6b01d264a64ce12d540931c' ||
     // FL-595 multicam: superseded sync results are discarded
-    sourceSha256 === '1705779f7c7de23bf9417fce0769a5a5b6dcfbbfc1bc2424a1e3211d2ecf3033'
+    sourceSha256 === '1705779f7c7de23bf9417fce0769a5a5b6dcfbbfc1bc2424a1e3211d2ecf3033' ||
+    // FL-595 multicam: generated and already-grouped angles refused
+    sourceSha256 === 'c47b6b1facd2f0faa7343899fd42cc28e62d65e8b6b1efc5817a637f7095c8ea'
   )
     return {
       ...COMPOSITION_SOURCES,
