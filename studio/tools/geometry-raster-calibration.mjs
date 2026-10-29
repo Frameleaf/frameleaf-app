@@ -216,7 +216,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '0570f1bad5f49930c62c06b5731236632671b5e32c3639f6aec8424cafb32ebb' ||
           // FL-596 motion tracking: removable pins only where values hold
           binding.sourceSha256 ===
-            'b58035f0157f2216c3004669fce6345fbe1d429d1dcdb21bb400a5cb71e380a6')),
+            'b58035f0157f2216c3004669fce6345fbe1d429d1dcdb21bb400a5cb71e380a6' ||
+          // FL-596 motion tracking: spanned animation needs confirmation
+          binding.sourceSha256 ===
+            '56d2c5603b9dfca47ad644106929a995f4ba37800e18445c8205165399a2a682')),
     'SOURCE_BROWSER',
   )
   check(
