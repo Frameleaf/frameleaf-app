@@ -83,7 +83,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-598 loudness matching changes clip volume, the audio panel and the export report only.
     sourceSha256 === '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf' ||
     // FL-598 loudness match: binding covers link state
-    sourceSha256 === 'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d'
+    sourceSha256 === 'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d' ||
+    // FL-598 loudness: layout-specific channel weights
+    sourceSha256 === '7423283e576bff16bdc54221cff8d87bd7b3bb26dc3e516b635e12dce3f3bd72'
   )
     return {
       ...COMPOSITION_SOURCES,
