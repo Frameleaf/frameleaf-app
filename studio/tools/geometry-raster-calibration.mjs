@@ -198,7 +198,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
           // FL-598 loudness matching changes clip volume, the audio panel and the export report only.
           binding.sourceSha256 ===
-            '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf')),
+            '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf' ||
+          // FL-598 loudness match: binding covers link state
+          binding.sourceSha256 ===
+            'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d')),
     'SOURCE_BROWSER',
   )
   check(

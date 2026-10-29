@@ -311,7 +311,7 @@ diff --git a/src/features/timeline/stores/actions/edit/loudness-match-actions.te
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/loudness-match-actions.test.ts
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,102 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -396,6 +396,9 @@ new file mode 100644
 +    const trimmed = audio()
 +    const silent = audio({ id: 'a2' })
 +    const locked = audio({ id: 'a3', trackId: 't2' })
++    // Measured while linked to a video, now unlinked: a different clip may be heard.
++    useItemsStore.getState().setItems([trimmed])
++    expect(applyLoudnessMatch([measured({ ...trimmed, linkedGroupId: 'g1' } as AudioItem, -20)], -16, -1).stale).toEqual(['a1'])
 +    useItemsStore.getState().setItems([{ ...trimmed, sourceEnd: 200 } as AudioItem, silent, locked])
 +    const outcome = applyLoudnessMatch([measured(trimmed, -20), measured(silent, null, null), measured(locked, -20)], -16, -1)
 +    expect(outcome).toEqual({ applied: [], stale: ['a1'], locked: ['a3'] })
@@ -481,7 +484,7 @@ diff --git a/src/features/timeline/utils/loudness-match.ts b/src/features/timeli
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/utils/loudness-match.ts
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,154 @@
 +import type { AudioItem, TimelineItem, VideoItem } from '@/types/timeline'
 +import { getOrDecodeAudioSliceForPlayback } from '@/features/timeline/deps/composition-runtime'
 +import { resolveMediaUrl } from '@/features/timeline/deps/media-library-resolver'
@@ -553,6 +556,8 @@ new file mode 100644
 +  return JSON.stringify([
 +    item.mediaId, item.sourceStart ?? 0, item.sourceEnd ?? null, item.sourceFps ?? null,
 +    item.speed ?? 1, item.volume ?? 0, item.muted === true, item.durationInFrames,
++    // Unlinking or unmuting embedded sound changes which clip is heard.
++    item.linkedGroupId ?? null, item.type === 'video' && item.embeddedAudioMuted === true,
 +  ])
 +}
 +
