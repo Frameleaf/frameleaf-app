@@ -193,6 +193,14 @@ describe('FL-636 adopting a library result', () => {
     expect(host.addLibraryAssets).toHaveBeenCalledTimes(1)
   })
 
+  it('reports a failed seed at once rather than waiting out the timeout', async () => {
+    host.seed.mockRejectedValueOnce(new Error('workspace closed'))
+    const adopt = createAdopter(host as unknown as LibraryFinderHost)
+    const started = Date.now()
+    await expect(adopt(LAKE)).rejects.toThrow('workspace closed')
+    expect(Date.now() - started).toBeLessThan(1000)
+  })
+
   it('fails when the host no longer offers the item, and asks again next time', async () => {
     host.addLibraryAssets.mockResolvedValueOnce([])
     const adopt = createAdopter(host as unknown as LibraryFinderHost)

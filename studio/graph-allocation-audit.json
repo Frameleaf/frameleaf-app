@@ -1071,6 +1071,12 @@
       "code": "const context = canvas.getContext('2d')",
       "class": "canvas2d-context",
       "reason": "Colour-match working-frame readback (FL-626): SDR projects read the rendered 8-bit canvas; HDR projects read the float route signal instead."
+    },
+    {
+      "file": "features/timeline/stores/actions/edit/motion-track-actions.ts",
+      "code": "const context = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context reading a decoded SDR frame for analysis (Studio next features); not a render route."
     }
   ]
 }

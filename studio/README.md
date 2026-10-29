@@ -192,6 +192,35 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0152 (FL-627) extends motion tracking. The tracking box can be a separate clip, typically a
+rectangle drawn on the preview with the shape tool, while the target (a title, overlay or mask shape,
+which moves a blur region) keeps its own offset from that box. Parented targets are refused, because
+tracking writes canvas positions. During tracking the source clip's timeline bar shows progress; the
+result marks the tracked range, or the lost range in red, until it is applied or discarded. Each applied
+track is recorded on the target as `motionTracks` (`{ applicationId, algorithm, sourceId, keyFrames,
+lostFrames }`; protocol 12.6 note), so Remove still works after save and reopen, when keyframes have
+lost their tags: it deletes x, y, width and height keys at the recorded frames, leaving other keys
+alone. Tests cover the separate box, parented and invalid boxes, the lost-range overlay and
+remove-after-reopen. Preview/export pixel comparisons and browser journeys remain open.
+
+Patch 0148 (FL-596) adds motion tracking. The clip panel's Track motion section (one selected visual
+clip: title, shape, image or video overlay) uses that clip's own box at the playhead as the tracking box:
+the editor places it over the subject first. It is mapped into the chosen video's source pixels through
+the video's resolved transform. Videos that are rotated, cropped, corner-pinned, flipped, reversed or
+have animated transforms are refused, and so are targets with vector position/scale keys. Frames are
+decoded at 480 px wide from each timeline frame's mapped source time (VFR-safe) and tracked forward or
+backward, up to 900 frames, by normalised cross-correlation with a small scale search
+(`ncc-scale-search-v1`). The first frame below 0.6 confidence and every later frame are marked lost,
+never bridged; low-texture or out-of-frame seeds are refused. Apply writes linear x, y, width and height
+keyframes that keep the target's offset from the tracked box. Lost frames block Apply until the editor
+keeps the tracked part (or reseeds there and tracks a second segment), and existing position/size keys
+in the range block it until replacement is confirmed. Each application is one undo step, and in this
+patch Remove reads the keys' source tag, which saved graphs drop (protocol 13.2.4); patch 0152 adds
+item `motionTracks` records so Remove also works after saving and reopening. The synthetic 1080p path
+holds the centre within 5 px and size within 5% on at least 95% of frames, and an occlusion produces a
+lost interval. Rotation and perspective, mask-path tracking, preview/export pixel checks and browser
+journeys remain open.
+
 Patch 0151 (FL-626) matches colour through existing grades and in HDR. Instead of decoding source
 frames, each clip is rendered alone through the export renderer at a small size of its own aspect
 (`renderWorkingFrame`). The reference keeps all of its effects, and the target leaves out only its own

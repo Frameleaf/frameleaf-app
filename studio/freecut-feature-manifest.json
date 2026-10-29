@@ -6856,8 +6856,11 @@
           "0027-effect-frame-clock-and-animation.patch",
           "0037-renderable-opacity.patch",
           "0059-mask-path-keyframes.patch",
-          "19e9aded35"
+          "19e9aded35",
+          "0148-motion-tracking.patch",
+          "0152-tracking-box-and-provenance.patch"
         ],
+        "note": "FL-596 adds motion tracking that writes x, y, width and height keyframes; FL-627 adds a separate tracking box, timeline lost ranges and saved track records.",
         "status": "shipped"
       },
       "id": "readme.keyframe-animation.6",

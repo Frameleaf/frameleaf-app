@@ -159,8 +159,11 @@ export function createAdopter(host: Pick<LibraryFinderHost, 'addLibraryAssets' |
     const adoption = (async () => {
       const [ref] = await host.addLibraryAssets([asset.id])
       if (!ref) throw new Error('LIBRARY_ADOPT_REFUSED')
-      void host.seed([ref])
-      return waitForBinMedia(ref.id)
+      // Seeding also probes the media, which can take seconds for a video; the bin holds the item as
+      // soon as its record exists. So the first of the two wins, but a failed seed is never dropped:
+      // it rejects at once instead of waiting out the adoption timeout.
+      const seeding = host.seed([ref])
+      return Promise.race([waitForBinMedia(ref.id), seeding.then(() => waitForBinMedia(ref.id))])
     })()
     pending.set(asset.id, adoption)
     adoption.catch(() => pending.delete(asset.id))
