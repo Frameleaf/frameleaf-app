@@ -433,11 +433,17 @@
           target.width = from.videoWidth;
           target.height = from.videoHeight;
         }
+        // while seeking, currentTime is already the new time but the frame may not be decoded yet
         const unchanged =
-          !resized && from.paused && drawn?.from === from && drawn.target === target && drawn.at === from.currentTime;
+          !resized &&
+          !from.seeking &&
+          from.paused &&
+          drawn?.from === from &&
+          drawn.target === target &&
+          drawn.at === from.currentTime;
         if (!unchanged) {
           target.getContext('2d')?.drawImage(from, 0, 0);
-          drawn = { from, target, at: from.currentTime };
+          drawn = from.seeking ? null : { from, target, at: from.currentTime };
         }
       }
       frame = requestAnimationFrame(draw);

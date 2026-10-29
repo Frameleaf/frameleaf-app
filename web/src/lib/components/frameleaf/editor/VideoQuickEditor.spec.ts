@@ -482,9 +482,11 @@ describe('HDR and Dolby Vision clips (FL-113)', () => {
     await opened();
     const element = await waitFor(() => document.querySelector('video')!);
     let at = 0;
+    let seeking = false;
     Object.defineProperties(element, {
       readyState: { configurable: true, get: () => 4 },
       paused: { configurable: true, get: () => true },
+      seeking: { configurable: true, get: () => seeking },
       videoWidth: { configurable: true, get: () => 1920 },
       videoHeight: { configurable: true, get: () => 1080 },
       currentTime: { configurable: true, get: () => at, set: (value: number) => (at = value) },
@@ -498,5 +500,15 @@ describe('HDR and Dolby Vision clips (FL-113)', () => {
     at = 3;
     frames.shift()?.(0);
     expect(drawImage).toHaveBeenCalledTimes(2);
+    // a paused seek: the time moves before the frame is decoded, so drawing goes on until it settles
+    seeking = true;
+    at = 5;
+    frames.shift()?.(0);
+    frames.shift()?.(0);
+    expect(drawImage).toHaveBeenCalledTimes(4);
+    seeking = false;
+    frames.shift()?.(0);
+    frames.shift()?.(0);
+    expect(drawImage).toHaveBeenCalledTimes(5);
   });
 });
