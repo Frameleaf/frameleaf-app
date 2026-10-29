@@ -1096,8 +1096,9 @@ async function update(context: StudioHostContext): Promise<void> {
   if (context.auth.locale !== previous.auth.locale)
     await changeAppLanguage(context.auth.locale).catch(() => undefined)
   applyHostEngineStrings(i18n, context.strings)
-  // An update can resume after dispose; a disposed finder must not register the view again.
-  if (!state.disposed) state.libraryFinder?.update(context)
+  // An update can resume after dispose, when the finder must not register the view again, or after a
+  // newer update ran during the awaits above, so the finder follows the latest context, not this one.
+  if (!state.disposed) state.libraryFinder?.update(state.context)
   await state.media.seed([...context.assets, ...(context.generatedMedia ?? [])])
   await state.media.seedImports(context.projectImports ?? [])
   // A project saved for the first time (or a host that can keep files again) takes what was

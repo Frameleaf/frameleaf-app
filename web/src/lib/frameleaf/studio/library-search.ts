@@ -186,28 +186,6 @@ export const studioLibraryFacets = async ({
   };
 };
 
-/**
- * Remember what searches returned, so adopting a result reuses the record the server just authorized
- * instead of reading it again. Bounded: a long session of searching must not grow without end.
- */
-export const createStudioLibraryCache = (limit = 600) => {
-  const items = new Map<string, AssetResponseDto>();
-  return {
-    remember(found: readonly AssetResponseDto[]) {
-      for (const asset of found) {
-        items.delete(asset.id);
-        items.set(asset.id, asset);
-      }
-      while (items.size > limit) {
-        items.delete(items.keys().next().value!);
-      }
-    },
-    get(id: string): AssetResponseDto | undefined {
-      return items.get(id) ?? items.get(id.toLowerCase());
-    },
-  };
-};
-
 export interface StudioLibraryServiceOptions {
   /** The shell's language now, for smart search. */
   language: () => string;
@@ -217,7 +195,7 @@ export interface StudioLibraryServiceOptions {
   offered: () => readonly StudioAssetRef[];
   /** Add library records to what the host offers; resolves once `offered` includes them. */
   adopt: (records: AssetResponseDto[]) => Promise<void>;
-  /** Read one asset the session has not seen in a search (a normal caller read). */
+  /** Read one asset as this session, at the moment it is adopted (a normal caller read). */
   lookup?: (id: string) => Promise<AssetResponseDto>;
   personThumbnailUrl: (personId: string) => string;
   api?: StudioLibrarySearchApi;
@@ -235,17 +213,15 @@ export const createStudioLibraryServices = ({
 }: StudioLibraryServiceOptions): Required<
   Pick<StudioHostServices, 'searchLibrary' | 'libraryFacets' | 'addLibraryAssets'>
 > => {
-  const cache = createStudioLibraryCache();
   let facets: Promise<StudioLibraryFacets> | null = null;
   return {
     async searchLibrary(query) {
-      const { found, ...results } = await searchStudioLibrary(query, {
+      const { items, nextPage } = await searchStudioLibrary(query, {
         language: language(),
         elevated: elevated(),
         api,
       });
-      cache.remember(found);
-      return results;
+      return { items, nextPage };
     },
     libraryFacets() {
       facets ??= studioLibraryFacets({ api, personThumbnailUrl }).catch((error: unknown) => {
@@ -257,21 +233,12 @@ export const createStudioLibraryServices = ({
     async addLibraryAssets(assetIds) {
       const wanted = [...new Set(assetIds.map((id) => id.toLowerCase()))];
       const present = new Set(offered().map((asset) => asset.id.toLowerCase()));
-      const records: AssetResponseDto[] = [];
-      const unseen: string[] = [];
-      for (const id of wanted) {
-        if (present.has(id)) {
-          continue;
-        }
-        const hit = cache.get(id);
-        if (hit) {
-          records.push(hit);
-        } else {
-          unseen.push(id);
-        }
-      }
-      records.push(...(await resolveStudioAssets(unseen, lookup)));
-      // Decided now, not when it was found: a Locked result is not adopted after the session locks.
+      // Read again now rather than trusting what a search returned: access can be revoked, an item
+      // moved to Locked or trashed, and the session locked, since the search ran.
+      const records = await resolveStudioAssets(
+        wanted.filter((id) => !present.has(id)),
+        lookup,
+      );
       const eligible = records.filter((asset) => isStudioEligibleAsset(asset));
       if (eligible.length > 0) {
         await adopt(eligible);

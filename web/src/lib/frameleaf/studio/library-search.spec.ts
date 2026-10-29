@@ -216,16 +216,24 @@ describe('FL-636 adopting library results into the session', () => {
     return { services, adopted, lookup };
   };
 
-  it('adopts a search result from what the search returned, and answers with its bin ref', async () => {
+  it('reads a search result again as this session before adopting it, and answers with its bin ref', async () => {
     const { services, adopted, lookup } = setup();
     await services.searchLibrary({ text: 'lake' });
-    const refs = await services.addLibraryAssets(['SMART'.toLowerCase()]);
-    expect(lookup).not.toHaveBeenCalled();
+    const refs = await services.addLibraryAssets(['SMART']);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith('smart');
     expect(adopted.map((item) => item.id)).toEqual(['smart']);
     expect(refs).toEqual([toStudioAsset(asset('smart'))]);
   });
 
-  it('reads an unseen id with a normal caller read and does not adopt what is already offered', async () => {
+  it('does not adopt a result whose access was revoked after the search', async () => {
+    const { services, adopted, lookup } = setup();
+    await services.searchLibrary({ text: 'lake' });
+    lookup.mockRejectedValueOnce(new Error('403'));
+    expect(await services.addLibraryAssets(['smart'])).toEqual([]);
+    expect(adopted).toEqual([]);
+  });
+
+  it('does not read or adopt what is already offered', async () => {
     const present = toStudioAsset(asset('handoff'));
     const { services, adopted, lookup } = setup(api(), [present]);
     const refs = await services.addLibraryAssets(['handoff', 'other']);
@@ -242,7 +250,8 @@ describe('FL-636 adopting library results into the session', () => {
         Promise.resolve(page(metadataSearchDto.visibility === AssetVisibility.Locked ? [locked] : [])),
       ),
     });
-    const { services, adopted } = setup(sdk);
+    const { services, adopted, lookup } = setup(sdk);
+    lookup.mockResolvedValue(locked);
     expect((await services.searchLibrary({})).items.map((item) => item.id)).toEqual(['locked']);
     sessionAccess.isElevated = false;
     expect(await services.addLibraryAssets(['locked'])).toEqual([]);
