@@ -2999,6 +2999,8 @@ export type MediaOperationDto = {
     };
     startedAt: string | null;
     status: MediaOperationStatus;
+    /** Which Studio clip job this is, when the kind is shared (`voice-cleanup`); null for every other job. A plain string, so new values never break a strict client (FL-637) */
+    studioWork?: string | null;
     totalUnits: string | null;
     updatedAt: string;
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
@@ -9502,6 +9504,8 @@ export type MediaOperationDetailDto = {
     };
     startedAt: string | null;
     status: MediaOperationStatus;
+    /** Which Studio clip job this is, when the kind is shared (`voice-cleanup`); null for every other job. A plain string, so new values never break a strict client (FL-637) */
+    studioWork?: string | null;
     totalUnits: string | null;
     updatedAt: string;
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */

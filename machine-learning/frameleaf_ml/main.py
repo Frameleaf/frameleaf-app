@@ -30,7 +30,13 @@ from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.transcribe import AudioFormatError, TranscribeModel, read_wav, wav_memory_bytes
 from frameleaf_ml.models.transforms import decode_pil
-from frameleaf_ml.models.voice_cleanup import VoiceAudioError, VoiceCleanupModel, read_voice_wav, voice_memory_bytes
+from frameleaf_ml.models.voice_cleanup import (
+    MODEL_NOISES,
+    VoiceAudioError,
+    VoiceCleanupModel,
+    read_voice_wav,
+    voice_memory_bytes,
+)
 from frameleaf_ml.sessions.ort import flush_denormals
 
 from .config import PreloadModelData, log, model_source, settings
@@ -645,7 +651,8 @@ async def voice_cleanup(
     try:
         samples = await reservation.run(thread_pool, read_voice_wav, audio.file)
         model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
-        if entry["options"].get("mode") != "analyze":
+        # Only the noises the model removes load it, so a worker without it can still analyse and remove hum.
+        if entry["options"].get("mode") != "analyze" and MODEL_NOISES & set(entry["options"].get("noises", [])):
             model = await load(model)
         assert isinstance(model, VoiceCleanupModel)
         items = model.stream(samples, **entry["options"])

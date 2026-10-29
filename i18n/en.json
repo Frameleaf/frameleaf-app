@@ -2500,6 +2500,7 @@
   "frameleaf_activity_kind_studio_preview_stream": "Preview playback",
   "frameleaf_activity_kind_studio_reverse_conform": "Source reversal",
   "frameleaf_activity_kind_studio_transcription": "Captions",
+  "frameleaf_activity_kind_studio_voice_cleanup": "Clean up voice",
   "frameleaf_activity_kind_takeout_import": "Google Photos import",
   "frameleaf_activity_kind_upload": "Upload",
   "frameleaf_activity_kind_video_edit": "Video edit",

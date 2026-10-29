@@ -147,7 +147,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/voice-
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.tsx
-@@ -0,0 +1,304 @@
+@@ -0,0 +1,305 @@
 +import { useEffect, useMemo, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { CheckCircle2, Home, Mic, Play, Square, Wand2 } from 'lucide-react'
@@ -208,6 +208,7 @@ new file mode 100644
 +  const { t } = useTranslation()
 +  const host = getVoiceCleanupHost()
 +  const timelineItems = useTimelineStore((s) => s.items)
++  const projectFps = useTimelineStore((s) => s.fps)
 +  const clips = useMemo(
 +    () =>
 +      timelineItems
@@ -317,7 +318,7 @@ new file mode 100644
 +  const play = async () => {
 +    stop()
 +    const original = voiceCleanupOriginal(clip)
-+    const fps = clip.sourceFps ?? 30
++    const fps = clip.sourceFps ?? projectFps
 +    const after = listen === 'after' && !!done
 +    const mediaId = after ? done.importId : original.mediaId
 +    const start = (after ? clip.sourceStart ?? 0 : original.sourceStart) / fps
@@ -515,7 +516,7 @@ diff --git a/src/features/timeline/stores/actions/edit/voice-cleanup-actions.tes
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/voice-cleanup-actions.test.ts
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,104 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -524,7 +525,7 @@ new file mode 100644
 +import { useTimelineCommandStore } from '../../timeline-command-store'
 +import { useTimelineSettingsStore } from '../../timeline-settings-store'
 +import { buildTimelineFromStores } from '../../timeline-persistence'
-+import { applyVoiceCleanup, restoreOriginalSound, type VoiceCleanupResult } from './voice-cleanup-actions'
++import { applyVoiceCleanup, restoreOriginalSound, voiceCleanupOriginal, type VoiceCleanupResult } from './voice-cleanup-actions'
 +
 +const track = (id: string, locked = false) => ({
 +  id, name: id, order: 0, height: 80, locked, syncLock: true, visible: true, muted: false,
@@ -591,6 +592,27 @@ new file mode 100644
 +    })
 +  })
 +
++  it('maps a trim made after the clean-up back onto the original', () => {
++    useItemsStore.getState().setItems([audio()])
++    applyVoiceCleanup('a1', cleaned)
++    // Trim 10 frames off the start and 20 off the end of the cleaned clip.
++    useItemsStore.getState()._updateItem('a1', { sourceStart: 40, sourceEnd: 130, from: 100, durationInFrames: 90 })
++    expect(voiceCleanupOriginal(item())).toMatchObject({ mediaId: 'm1', sourceStart: 310, sourceEnd: 400 })
++    expect(restoreOriginalSound('a1')).toBe('applied')
++    expect(item()).toMatchObject({ mediaId: 'm1', sourceStart: 310, sourceEnd: 400, from: 100, durationInFrames: 90 })
++  })
++
++  it('keeps a trim when the clip is cleaned again', () => {
++    useItemsStore.getState().setItems([audio()])
++    applyVoiceCleanup('a1', cleaned)
++    useItemsStore.getState()._updateItem('a1', { sourceStart: 40, sourceEnd: 130, durationInFrames: 90 })
++    applyVoiceCleanup('a1', { ...cleaned, importId: 'cleaned-2' })
++    expect(item()).toMatchObject({
++      mediaId: 'cleaned-2', sourceStart: 30, sourceEnd: 120,
++      voiceCleanup: { cleanedStart: 30, original: { mediaId: 'm1', sourceStart: 310, sourceEnd: 400 } },
++    })
++  })
++
 +  it('refuses a locked track and a clip that is gone', () => {
 +    useItemsStore.getState().setItems([audio({ trackId: 't2' })])
 +    expect(applyVoiceCleanup('a1', cleaned)).toBe('locked')
@@ -603,7 +625,7 @@ diff --git a/src/features/timeline/stores/actions/edit/voice-cleanup-actions.ts 
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/voice-cleanup-actions.ts
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,131 @@
 +import type { AudioItem, VoiceCleanupNoise, VoiceCleanupRecord, VoiceCleanupStrength } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
 +import { useTimelineSettingsStore } from '../../timeline-settings-store'
@@ -628,19 +650,39 @@ new file mode 100644
 +  return item?.type === 'audio' ? item : null
 +}
 +
-+/** What the clip plays now, or what it played before an earlier clean-up. */
++/**
++ * What the clip plays now, or, for a cleaned clip, the same window of what it played before. A trim
++ * made after the clean-up moves the window in the cleaned sound; it is mapped back onto the original by
++ * the same number of frames (`cleanedStart` is where the original window began in the cleaned sound),
++ * so the original sound plays in sync and a new clean-up keeps the trim.
++ */
 +export function voiceCleanupOriginal(item: AudioItem): NonNullable<VoiceCleanupRecord['original']> {
-+  return (
-+    item.voiceCleanup?.original ?? {
++  const start = item.sourceStart ?? 0
++  const end = item.sourceEnd ?? start + item.durationInFrames
++  const record = item.voiceCleanup
++  if (!record) {
++    return {
 +      mediaId: item.mediaId!,
-+      sourceStart: item.sourceStart ?? 0,
-+      sourceEnd: item.sourceEnd ?? (item.sourceStart ?? 0) + item.durationInFrames,
++      sourceStart: start,
++      sourceEnd: end,
 +      ...(item.sourceDuration !== undefined && { sourceDuration: item.sourceDuration }),
 +      ...(item.trimStart !== undefined && { trimStart: item.trimStart }),
 +      ...(item.trimEnd !== undefined && { trimEnd: item.trimEnd }),
 +      ...(item.offset !== undefined && { offset: item.offset }),
 +    }
-+  )
++  }
++  const { original } = record
++  const sourceStart = Math.max(0, original.sourceStart + (start - (record.cleanedStart ?? start)))
++  const sourceEnd = sourceStart + (end - start)
++  return {
++    ...original,
++    sourceStart,
++    sourceEnd,
++    ...(original.trimStart !== undefined && { trimStart: sourceStart }),
++    ...(original.offset !== undefined && { offset: sourceStart }),
++    ...(original.trimEnd !== undefined &&
++      original.sourceDuration !== undefined && { trimEnd: Math.max(0, original.sourceDuration - sourceEnd) }),
++  }
 +}
 +
 +/**
@@ -662,6 +704,7 @@ new file mode 100644
 +    strength: result.strength,
 +    noises: [...result.noises],
 +    humHz: result.humHz,
++    cleanedStart: sourceStart,
 +    original,
 +  }
 +  execute(
@@ -690,8 +733,8 @@ new file mode 100644
 +/** "Use the original sound": the clip plays what it played before the clean-up, as one undoable edit. */
 +export function restoreOriginalSound(itemId: string): VoiceCleanupOutcome {
 +  const item = audioItem(itemId)
-+  const original = item?.voiceCleanup?.original
-+  if (!item || !original) return 'missing'
++  if (!item?.voiceCleanup) return 'missing'
++  const original = voiceCleanupOriginal(item)
 +  if (hasLockedEditParticipants([item])) return 'locked'
 +  execute(
 +    'USE_ORIGINAL_SOUND',
@@ -769,7 +812,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/types/timeline.ts b/src/types/timeline.ts
 --- a/src/types/timeline.ts
 +++ b/src/types/timeline.ts
-@@ -202,11 +202,36 @@
+@@ -202,11 +202,38 @@
    sourceHeight?: number
  }
  
@@ -786,6 +829,8 @@ diff --git a/src/types/timeline.ts b/src/types/timeline.ts
 +  strength: VoiceCleanupStrength
 +  noises: VoiceCleanupNoise[]
 +  humHz: 50 | 60 | null
++  /** Where `original.sourceStart` sits in the cleaned sound, in source frames; a later trim moves from it. */
++  cleanedStart?: number
 +  original: {
 +    mediaId: string
 +    sourceStart: number

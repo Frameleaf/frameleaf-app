@@ -287,6 +287,9 @@ export class StudioVoiceCleanupService {
     let total = operation.totalUnits === null ? 0 : Number(operation.totalUnits);
     let progress = 0;
     let writing: Promise<void> | undefined;
+    // The encoded file waits outside `folder`, in the import service's incoming folder.
+    let incoming: string | undefined;
+    let uploadStarted = false;
     const monitor = async () => {
       const held = await this.operations.getForWorker(operation.id);
       if (
@@ -364,7 +367,7 @@ export class StudioVoiceCleanupService {
       // Kept with the project as an audio import, like music someone adds in Studio.
       const name = fileSafe(resolved.clip.label) || 'Clip';
       const fileName = `${name.slice(0, 120)} (cleaned voice).m4a`;
-      const incoming = join(studioImportIncomingFolder(operation.ownerId), `voice-${operation.id}-${randomUUID()}.m4a`);
+      incoming = join(studioImportIncomingFolder(operation.ownerId), `voice-${operation.id}-${randomUUID()}.m4a`);
       this.storage.mkdirSync(studioImportIncomingFolder(operation.ownerId));
       await this.movies.encodeMusic(cleanedPath, incoming, cleaned.seconds + 1, controller.signal);
       const { size } = await this.storage.stat(incoming);
@@ -374,6 +377,8 @@ export class StudioVoiceCleanupService {
       if (!(await this.operations.beginValidation(operation.id, claimToken))) {
         throw new Error('Claim lost');
       }
+      // From here the import service owns the file, and removes it if it refuses it.
+      uploadStarted = true;
       const kept = await this.imports.upload(auth, snapshot.projectId, randomUUID(), {
         path: incoming,
         size,
@@ -426,6 +431,9 @@ export class StudioVoiceCleanupService {
         this.abort = undefined;
       }
       await this.storage.unlinkDir(folder, { recursive: true, force: true }).catch(() => {});
+      if (incoming && !uploadStarted) {
+        await this.storage.unlink(incoming).catch(() => {});
+      }
     }
   }
 

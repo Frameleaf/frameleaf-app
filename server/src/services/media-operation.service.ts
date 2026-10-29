@@ -205,6 +205,24 @@ const bulkItems = (operation: MediaOperation) =>
     ? parseBulkResult(operation.result, Number(operation.totalUnits ?? 0)).items
     : [];
 
+/**
+ * Studio clip jobs that share the `studio_transcription` kind (FL-637, FL-638), by their snapshot:
+ * Activity names them by this, not by the shared kind. Anything else is null.
+ */
+const STUDIO_WORK_BY_SNAPSHOT_KIND: Readonly<Record<string, string>> = {
+  'studio-stabilise': 'stabilise',
+  'studio-voice-cleanup': 'voice-cleanup',
+};
+export const studioWorkOf = (operation: MediaOperation): string | null => {
+  if (operation.kind !== MediaOperationKind.StudioTranscription) {
+    return null;
+  }
+  const kind = (operation.snapshot as { kind?: unknown } | null)?.kind;
+  return typeof kind === 'string' && Object.hasOwn(STUDIO_WORK_BY_SNAPSHOT_KIND, kind)
+    ? STUDIO_WORK_BY_SNAPSHOT_KIND[kind]
+    : null;
+};
+
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 const mapBulkItems = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()) =>
   bulkItems(operation)
@@ -282,6 +300,7 @@ export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<stri
     estimate: privateWeekly ? null : mapEstimate(operation.estimate),
     bulk: privateWeekly ? null : mapBulkSummary(operation),
     cloudJob: privateWeekly ? null : cloudMlJobActivity(operation),
+    studioWork: privateWeekly ? null : studioWorkOf(operation),
     progress: privateWeekly ? 0 : operation.progress,
     processedUnits: privateWeekly ? '0' : String(operation.processedUnits ?? 0),
     totalUnits:

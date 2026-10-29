@@ -188,6 +188,12 @@ class TestManifestAndOptions:
 
 
 class TestWav:
+    def test_accepts_the_longest_window_the_server_sends(self) -> None:
+        # Ten minutes and a second of handle each side, silent.
+        assert voice_wav_frames(to_voice_wav(np.zeros(602 * SAMPLE_RATE, dtype=np.float32))) == 602 * SAMPLE_RATE
+        with pytest.raises(VoiceAudioError, match="longer than"):
+            voice_wav_frames(to_voice_wav(np.zeros(603 * SAMPLE_RATE, dtype=np.float32)))
+
     def test_reads_the_fixture(self, fixture_wav: bytes) -> None:
         assert voice_wav_frames(fixture_wav) == 4 * SAMPLE_RATE
         samples = read_voice_wav(fixture_wav)
@@ -467,6 +473,20 @@ class TestEndpoint:
         mocker.patch.object(served.session["enc"], "run", side_effect=RuntimeError("out of memory"))  # type: ignore[index]
         response = self.post(deployed_app, fixture_wav, mode="clean", noises=["background"])
         assert lines(response.text)[-1] == {"type": "error", "message": "Voice clean-up failed"}
+
+    def test_hum_alone_never_needs_the_model(
+        self, tmp_path: Path, mocker: MockerFixture, deployed_app: TestClient, fixture_wav: bytes
+    ) -> None:
+        sut = VoiceCleanupModel(VOICE_CLEANUP_MODEL_ALIAS, cache_dir=tmp_path)
+        mocker.patch.object(sut, "_download", side_effect=ModelUnavailableError("not on the mirror"))
+
+        async def get(*args: Any, **kwargs: Any) -> VoiceCleanupModel:
+            return sut
+
+        mocker.patch("frameleaf_ml.main.model_cache.get", side_effect=get)
+        response = self.post(deployed_app, fixture_wav, mode="clean", noises=["hum"], humHz=60)
+        assert response.status_code == 200
+        assert lines(response.text)[-1] == {"type": "done"}
 
     def test_a_worker_without_the_model_answers_503(
         self, tmp_path: Path, mocker: MockerFixture, deployed_app: TestClient, fixture_wav: bytes

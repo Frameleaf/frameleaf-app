@@ -97487,6 +97487,11 @@
           "status": {
             "$ref": "#/components/schemas/MediaOperationStatus"
           },
+          "studioWork": {
+            "description": "Which Studio clip job this is, when the kind is shared (`voice-cleanup`); null for every other job. A plain string, so new values never break a strict client (FL-637)",
+            "nullable": true,
+            "type": "string"
+          },
           "totalUnits": {
             "nullable": true,
             "type": "string"
@@ -97712,6 +97717,11 @@
           },
           "status": {
             "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "studioWork": {
+            "description": "Which Studio clip job this is, when the kind is shared (`voice-cleanup`); null for every other job. A plain string, so new values never break a strict client (FL-637)",
+            "nullable": true,
+            "type": "string"
           },
           "totalUnits": {
             "nullable": true,

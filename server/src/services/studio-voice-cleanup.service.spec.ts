@@ -126,6 +126,7 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
     mkdirSync: vi.fn(),
     unlinkDir: vi.fn().mockResolvedValue(undefined),
     stat: vi.fn().mockResolvedValue({ size: 1234 }),
+    unlink: vi.fn().mockResolvedValue(undefined),
   };
   const audio = { extractAudio: vi.fn().mockResolvedValue(undefined) };
   const movies = { encodeMusic: vi.fn().mockResolvedValue(undefined) };
@@ -380,6 +381,21 @@ describe(StudioVoiceCleanupService.name, () => {
         },
         { retry: true },
       );
+    });
+
+    it('removes the encoded file when it never reached the import service', async () => {
+      const { sut, operation, operations, imports, storage } = setup();
+      operations.beginValidation.mockResolvedValue(false);
+      await sut.run({ operation, claimToken });
+      expect(imports.upload).not.toHaveBeenCalled();
+      expect(storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/voice-.+\.m4a$/));
+    });
+
+    it('leaves the encoded file to the import service once the upload started', async () => {
+      const { sut, operation, imports, storage } = setup();
+      imports.upload.mockRejectedValue(new Error('quota'));
+      await sut.run({ operation, claimToken });
+      expect(storage.unlink).not.toHaveBeenCalled();
     });
 
     it('acknowledges a cancel', async () => {

@@ -480,6 +480,17 @@ const asPlanName = (value: unknown): string | null =>
  * `progress` is null while the job is queued and nothing has been counted: an empty bar is honest
  * where a bar sitting at zero looks stalled.
  */
+/** Studio clip jobs that share a kind (`studioWork`, FL-637, FL-638), named by the work they do. */
+const STUDIO_WORK_KIND_KEY: Readonly<Record<string, Translations>> = {
+  'voice-cleanup': 'frameleaf_activity_kind_studio_voice_cleanup',
+};
+
+/** The Activity name of a job: its kind, or for a Studio clip job that shares a kind, the work it does. */
+export const mediaOperationKindKey = (operation: Pick<MediaOperationDto, 'kind' | 'studioWork'>): Translations =>
+  (operation.studioWork && Object.hasOwn(STUDIO_WORK_KIND_KEY, operation.studioWork)
+    ? STUDIO_WORK_KIND_KEY[operation.studioWork]
+    : undefined) ?? (`frameleaf_activity_kind_${operation.kind}` as Translations);
+
 export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem => {
   if (operation.kind === MediaOperationKind.Bulk) {
     return fromBulkMediaOperation(operation);
@@ -515,7 +526,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     id: `job:${operation.id}`,
     source: 'job',
     operationId: operation.id,
-    kindKey: edit ? EDIT_KIND_KEY[edit] : `frameleaf_activity_kind_${operation.kind}`,
+    kindKey: edit ? EDIT_KIND_KEY[edit] : mediaOperationKindKey(operation),
     statusKey: pause.pausePending
       ? 'frameleaf_activity_status_pausing'
       : waiting

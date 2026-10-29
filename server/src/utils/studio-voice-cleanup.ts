@@ -88,10 +88,23 @@ export const voiceCleanupClipOf = (graph: unknown, clipId: string): VoiceCleanup
   if (typeof mediaId !== 'string' || !isStudioIdentifier(mediaId) || clip.generatedId !== undefined) {
     throw new BadRequestException('The clip does not play media this server holds');
   }
-  const start = played.sourceStart === undefined ? 0 : played.sourceStart;
-  const end = played.sourceEnd;
-  if (!safeInteger(start, 0) || !safeInteger(end, 1) || end <= start) {
+  const clipStart = clip.sourceStart === undefined ? 0 : clip.sourceStart;
+  const clipEnd = clip.sourceEnd;
+  if (!safeInteger(clipStart, 0) || !safeInteger(clipEnd, 1) || clipEnd <= clipStart) {
     throw new BadRequestException('The clip has no exact source window');
+  }
+  let start = clipStart;
+  let end = clipEnd;
+  if (played !== clip) {
+    // A trim after the clean-up moves the window in the cleaned sound; the same move applies to the
+    // original (`cleanedStart` is where the original window began in the cleaned sound), as the editor does.
+    const cleanedStart = record(clip.voiceCleanup).cleanedStart;
+    const originalStart = played.sourceStart === undefined ? 0 : played.sourceStart;
+    if (!safeInteger(originalStart, 0) || (cleanedStart !== undefined && !safeInteger(cleanedStart, 0))) {
+      throw new BadRequestException('The clip has no exact source window');
+    }
+    start = Math.max(0, originalStart + clipStart - ((cleanedStart as number | undefined) ?? clipStart));
+    end = start + (clipEnd - clipStart);
   }
   const sourceCadence = clip.sourceFps === undefined ? cadence : cadenceFromDecimal(clip.sourceFps);
   if (!sourceCadence) {

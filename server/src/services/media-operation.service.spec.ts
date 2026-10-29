@@ -9,7 +9,7 @@ import {
   Permission,
 } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { MediaOperationService, studioWorkOf } from 'src/services/media-operation.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -1782,5 +1782,18 @@ describe(MediaOperationService.name, () => {
         expect(bucket).not.toHaveProperty('assetId');
       }
     });
+  });
+});
+
+describe('studioWorkOf (FL-637)', () => {
+  const job = (kind: string, snapshot: unknown) => ({ kind, snapshot }) as unknown as MediaOperation;
+
+  it('names a Studio clip job that shares the transcription kind by its snapshot', () => {
+    expect(studioWorkOf(job('studio_transcription', { kind: 'studio-voice-cleanup' }))).toBe('voice-cleanup');
+    expect(studioWorkOf(job('studio_transcription', { kind: 'studio-stabilise' }))).toBe('stabilise');
+    expect(studioWorkOf(job('studio_transcription', { kind: 'studio-transcription' }))).toBeNull();
+    expect(studioWorkOf(job('studio_transcription', null))).toBeNull();
+    expect(studioWorkOf(job('studio_export', { kind: 'studio-voice-cleanup' }))).toBeNull();
+    expect(studioWorkOf(job('studio_transcription', { kind: 'toString' }))).toBeNull();
   });
 });

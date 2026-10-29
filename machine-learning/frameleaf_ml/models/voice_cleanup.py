@@ -43,7 +43,8 @@ from frameleaf_ml.schemas import ModelFormat, ModelTask, ModelType
 SAMPLE_RATE = 48_000
 # Ten minutes: cleaning holds about 48 bytes per sample, inside the default 1.5 GB audio budget. The
 # server refuses longer clips before it sends them.
-MAX_SECONDS = 10 * 60
+# The server's longest clip is ten minutes, read with up to a second of handle on each side.
+MAX_SECONDS = 10 * 60 + 2
 FFT_SIZE = 960
 HOP = 480
 FREQS = FFT_SIZE // 2 + 1
@@ -61,6 +62,8 @@ WARMUP_FRAMES = 300
 TAIL_FRAMES = 8
 
 NOISES = ("wind", "hum", "background", "echo")
+# The noises the model removes; hum alone is notches and needs no model.
+MODEL_NOISES = frozenset({"wind", "background", "echo"})
 # The attenuation limit for each strength, in dB; None is no limit.
 STRENGTH_LIMIT_DB: dict[str, float | None] = {"light": 12.0, "standard": 24.0, "strong": None}
 # Room echo asks the model for 6 dB more than the strength alone (the model reduces reverberation
@@ -119,7 +122,7 @@ def voice_wav_frames(file: BinaryIO | bytes) -> int:
     if frames <= 0:
         raise VoiceAudioError("The audio is empty")
     if frames > MAX_SECONDS * SAMPLE_RATE:
-        raise VoiceAudioError(f"The audio is longer than {MAX_SECONDS // 60} minutes")
+        raise VoiceAudioError(f"The audio is longer than {MAX_SECONDS} seconds")
     return frames
 
 
@@ -530,7 +533,7 @@ class VoiceCleanupModel(InferenceModel):
             return
         chosen = [noise for noise in NOISES if noise in (noises or [])]
         hum = (humHz or detect_hum(audio) or 50.0) if "hum" in chosen else None
-        model_noises = {"wind", "background", "echo"} & set(chosen)
+        model_noises = MODEL_NOISES & set(chosen)
         frames = math.ceil(len(audio) / HOP) + 1
         total = frames + 1
         yield {"type": "progress", "done": 0, "total": total}

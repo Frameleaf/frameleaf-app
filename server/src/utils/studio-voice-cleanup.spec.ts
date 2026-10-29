@@ -36,6 +36,21 @@ describe('voiceCleanupClipOf', () => {
     expect(voiceSeconds(clip.sourceStart)).toBe(10);
   });
 
+  it('maps a trim made after the clean-up back onto the original', () => {
+    const clip = voiceCleanupClipOf(
+      graphOf({
+        mediaId: imported,
+        sourceStart: 40,
+        sourceEnd: 85,
+        voiceCleanup: { cleanedStart: 30, original: { mediaId: asset, sourceStart: 300, sourceEnd: 360 } },
+      }),
+      'voice',
+    );
+    // Ten frames later and 45 long, in the original as in the cleaned sound.
+    expect(voiceSeconds(clip.sourceStart)).toBeCloseTo(310 / 30, 3);
+    expect(voiceSeconds(clip.sourceEnd)).toBeCloseTo(355 / 30, 3);
+  });
+
   it('refuses what it cannot clean', () => {
     expect(() => voiceCleanupClipOf(graphOf({ type: 'video', mediaId: asset, sourceEnd: 30 }), 'voice')).toThrow(
       'Only a clip with sound',
