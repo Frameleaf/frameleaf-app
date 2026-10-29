@@ -1540,6 +1540,18 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
 
+    it('queues no sidecar rewrite for a change the sidecar does not hold', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1', 'asset-2'], isFavorite: true });
+      await sut.updateAll(authStub.admin, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Archive });
+
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], { isFavorite: true });
+      expect(mocks.job.queueAll).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: JobName.SidecarWrite })]),
+      );
+    });
+
     it('should update Assets table if visibility field is provided', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
 
