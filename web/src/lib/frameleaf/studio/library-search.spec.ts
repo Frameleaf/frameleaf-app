@@ -3,6 +3,7 @@ import {
   AssetVisibility,
   SearchFacetField,
   SearchHistogramGranularity,
+  getAssetsInfo,
   type AssetResponseDto,
   type SearchResponseDto,
 } from '@frameleaf/sdk';
@@ -10,6 +11,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import type { StudioAssetRef } from './host-contract';
 
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
+  getAssetsInfo: vi.fn(),
+}));
 vi.mock('$lib/frameleaf/restoration', () => ({ restorationFileUrl: () => '' }));
 vi.mock('$lib/utils', () => ({
   getAssetMediaUrl: ({ id, size }: { id: string; size?: string }) => `/api/assets/${id}/thumbnail?size=${size}`,
@@ -22,12 +27,6 @@ const { createStudioLibraryServices, histogramMonths, monthRange, searchStudioLi
 const { toStudioAsset } = await import('./assets');
 
 const PERSON = '11111111-1111-4111-8111-111111111111';
-// asset reads skip anything that is not a UUID (FL-647), so the ids are real ones
-const SMART = '00000000-0000-4000-8000-000000000001';
-const HANDOFF = '00000000-0000-4000-8000-000000000002';
-const OTHER = '00000000-0000-4000-8000-000000000003';
-const LOCKED = '00000000-0000-4000-8000-000000000004';
-
 const asset = (id: string, overrides: Partial<AssetResponseDto> = {}): AssetResponseDto =>
   ({
     id,
@@ -46,7 +45,7 @@ const page = (items: AssetResponseDto[], nextPage: string | null = null) =>
     albums: { items: [], count: 0, total: 0, facets: [] },
   }) as SearchResponseDto;
 const api = (overrides: Record<string, unknown> = {}) => ({
-  searchSmart: vi.fn().mockResolvedValue(page([asset(SMART)])),
+  searchSmart: vi.fn().mockResolvedValue(page([asset('smart')])),
   searchAssets: vi.fn().mockResolvedValue(page([asset('recent')])),
   searchFacets: vi.fn().mockResolvedValue({ facets: [], total: 0 }),
   searchHistogram: vi.fn().mockResolvedValue({ buckets: [], granularity: SearchHistogramGranularity.Month, total: 0 }),
@@ -83,7 +82,7 @@ describe('FL-636 Studio library search', () => {
       },
       { signal: undefined },
     );
-    expect(result.items.map((item) => item.id)).toEqual([SMART]);
+    expect(result.items.map((item) => item.id)).toEqual(['smart']);
   });
 
   it('lists the library newest first when there are no words, and reports the next page', async () => {
@@ -106,7 +105,7 @@ describe('FL-636 Studio library search', () => {
   });
 
   it('asks for Locked items only while the session is unlocked, and keeps them only then', async () => {
-    const locked = asset(LOCKED, { visibility: AssetVisibility.Locked });
+    const locked = asset('locked', { visibility: AssetVisibility.Locked });
     const sdk = api({
       searchAssets: vi.fn(({ metadataSearchDto }) =>
         Promise.resolve(page(metadataSearchDto.visibility === AssetVisibility.Locked ? [locked] : [asset('plain')])),
@@ -123,7 +122,7 @@ describe('FL-636 Studio library search', () => {
       { metadataSearchDto: expect.objectContaining({ visibility: AssetVisibility.Locked }) },
       { signal: undefined },
     );
-    expect(open.items.map((item) => item.id)).toEqual(['plain', LOCKED]);
+    expect(open.items.map((item) => item.id)).toEqual(['plain', 'locked']);
   });
 
   it('pages through Locked items too while the session is unlocked', async () => {
@@ -151,7 +150,7 @@ describe('FL-636 Studio library search', () => {
             asset('ok'),
             asset('trashed', { isTrashed: true }),
             asset('audio', { type: AssetTypeEnum.Audio }),
-            asset(LOCKED, { visibility: AssetVisibility.Locked }),
+            asset('locked', { visibility: AssetVisibility.Locked }),
           ]),
         ),
     });
@@ -219,6 +218,12 @@ describe('FL-636 Studio library search', () => {
   });
 });
 
+// asset ids are UUIDs: the bulk read drops anything else before asking the server
+const SMART = '00000000-0000-4000-8000-0000000000a1';
+const HANDOFF = '00000000-0000-4000-8000-0000000000a2';
+const OTHER = '00000000-0000-4000-8000-0000000000a3';
+const LOCKED = '00000000-0000-4000-8000-0000000000a4';
+
 describe('FL-636 adopting library results into the session', () => {
   const setup = (sdk = api(), offered: StudioAssetRef[] = []) => {
     const adopted: AssetResponseDto[] = [];
@@ -241,7 +246,6 @@ describe('FL-636 adopting library results into the session', () => {
   it('reads a search result again as this session before adopting it, and answers with its bin ref', async () => {
     const { services, adopted, lookup } = setup();
     await services.searchLibrary({ text: 'lake' });
-    // ids are matched case-insensitively
     const refs = await services.addLibraryAssets([SMART.toUpperCase()]);
     expect(lookup).toHaveBeenCalledExactlyOnceWith([SMART]);
     expect(adopted.map((item) => item.id)).toEqual([SMART]);
@@ -254,6 +258,26 @@ describe('FL-636 adopting library results into the session', () => {
     lookup.mockRejectedValueOnce(new Error('403'));
     expect(await services.addLibraryAssets([SMART])).toEqual([]);
     expect(adopted).toEqual([]);
+  });
+
+  it('reads through the bulk asset read by default and adopts only what it returns', async () => {
+    vi.mocked(getAssetsInfo).mockResolvedValue({ assets: [asset(SMART)] } as never);
+    const adopted: AssetResponseDto[] = [];
+    const services = createStudioLibraryServices({
+      language: () => 'en',
+      elevated: () => false,
+      offered: () => adopted.map((item) => toStudioAsset(item)),
+      adopt: (records) => {
+        adopted.push(...records);
+        return Promise.resolve();
+      },
+      personThumbnailUrl: (id) => `/people/${id}`,
+      api: api() as never,
+    });
+    const refs = await services.addLibraryAssets([SMART.toUpperCase(), OTHER]);
+    expect(getAssetsInfo).toHaveBeenCalledExactlyOnceWith({ assetInfoBatchDto: { ids: [SMART, OTHER] } });
+    expect(adopted.map((item) => item.id)).toEqual([SMART]);
+    expect(refs.map((item) => item.id)).toEqual([SMART]);
   });
 
   it('does not read or adopt what is already offered', async () => {
