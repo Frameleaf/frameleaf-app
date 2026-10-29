@@ -489,7 +489,7 @@ describe(SharedLinkService.name, () => {
       const newAsset = AssetFactory.create();
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
       mocks.sharedLink.create.mockResolvedValue(getForSharedLink(sharedLink));
-      mocks.sharedLink.addAssets.mockResolvedValue([]);
+      mocks.sharedLink.addAssets.mockResolvedValue([{ assetId: newAsset.id }]);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([newAsset.id]));
 
       await expect(
@@ -509,7 +509,7 @@ describe(SharedLinkService.name, () => {
       const sharedLink = SharedLinkFactory.from().build();
       const newAsset = AssetFactory.create();
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
-      mocks.sharedLink.addAssets.mockResolvedValue([]);
+      mocks.sharedLink.addAssets.mockResolvedValue([{ assetId: newAsset.id }]);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([newAsset.id]));
 
       await expect(
@@ -519,6 +519,18 @@ describe(SharedLinkService.name, () => {
         { assetId: newAsset.id, success: false, error: AssetIdErrorReason.DUPLICATE },
       ]);
       expect(mocks.sharedLink.addAssets).toHaveBeenCalledWith(sharedLink.id, [newAsset.id]);
+    });
+    it('reports an item another request added meanwhile as a duplicate', async () => {
+      const sharedLink = SharedLinkFactory.from().build();
+      const newAsset = AssetFactory.create();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      // the insert added nothing: the item was already in the link by then
+      mocks.sharedLink.addAssets.mockResolvedValue([]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([newAsset.id]));
+
+      await expect(sut.addAssets(authStub.admin, sharedLink.id, { assetIds: [newAsset.id] })).resolves.toEqual([
+        { assetId: newAsset.id, success: false, error: AssetIdErrorReason.DUPLICATE },
+      ]);
     });
   });
 
@@ -660,7 +672,7 @@ describe(SharedLinkService.name, () => {
         .build();
       const [locked, plain] = [AssetFactory.create(), AssetFactory.create()];
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
-      mocks.sharedLink.addAssets.mockResolvedValue([]);
+      mocks.sharedLink.addAssets.mockResolvedValue([{ assetId: plain.id }]);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id, plain.id]));
       mocks.asset.getLockedAssetIds.mockResolvedValue(new Set([locked.id]));
 

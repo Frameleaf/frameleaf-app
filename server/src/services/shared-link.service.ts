@@ -267,9 +267,14 @@ export class SharedLinkService extends BaseService {
 
     // Only the new rows are written: rewriting the whole link from this earlier read could undo an edit
     // (a new password, expiry or slug) saved while the assets were being checked.
-    await this.sharedLinkRepository.addAssets(id, [...added]);
+    const inserted = new Set((await this.sharedLinkRepository.addAssets(id, [...added])).map(({ assetId }) => assetId));
 
-    return results;
+    // another request may have added an item between this one's read and its insert: that one is a duplicate too
+    return results.map((result) =>
+      result.success && !inserted.has(result.assetId)
+        ? { assetId: result.assetId, success: false, error: AssetIdErrorReason.DUPLICATE }
+        : result,
+    );
   }
 
   async removeAssets(auth: AuthDto, id: string, dto: AssetIdsDto): Promise<AssetIdsResponseDto[]> {
