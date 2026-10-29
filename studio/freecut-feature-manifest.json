@@ -2706,6 +2706,7 @@
           "0130-native-roll-transient-lock-cancellation.patch",
           "0134-shared-edit-effective-lock-refusal.patch",
           "0135-shared-speed-gap-effective-lock-refusal.patch",
+          "0145-speed-ramps-and-linked-freeze-frames.patch",
           "4d29c52c91",
           "cd365017c8",
           "1accc156fc",
@@ -2717,7 +2718,7 @@
           "PR #260",
           "PR #262"
         ],
-        "note": "FL-94 closeout 2026-10-14.",
+        "note": "FL-94 closeout 2026-10-14. FL-597 adds speed ramps, written as linked constant-speed segments, and freeze frames that split linked audio.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.3",
@@ -5055,9 +5056,11 @@
           "0069-persisted-track-pan.patch",
           "0076-master-gain-envelope.patch",
           "0087-preview-track-gain.patch",
-          "0090-track-gain-automation.patch"
+          "0090-track-gain-automation.patch",
+          "0145-dialogue-loudness-match-and-export-report.patch",
+          "0150-master-true-peak-limiter.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter.",
         "status": "shipped"
       },
       "id": "readme.audio.1",

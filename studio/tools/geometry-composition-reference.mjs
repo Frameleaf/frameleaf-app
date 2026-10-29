@@ -80,20 +80,14 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
     // FL-562 transcript editing changes no geometry/composition producer.
     sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
-    // FL-599 colour matching adds effects through existing effect definitions; it changes no producer.
-    sourceSha256 === '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185' ||
-    // FL-599 colour match: binding covers clip timing and cadence
-    sourceSha256 === 'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba' ||
-    // FL-599 colour match: matched references refused, superseded runs discarded
-    sourceSha256 === '5e7b4f122a6f76379925b6a5d7be8ea5b304acdde2b14d1ff5674ab916ae0183' ||
-    // FL-599 colour match: binding uses the sampled frame rate
-    sourceSha256 === 'e5e6e1f2c0089e1c61489213944110a3e68d8595805dc1c8c0bfd87a21309dc4' ||
-    // FL-599 colour match: zero-strength removal, HDR strength refusal
-    sourceSha256 === '700f4566c68163ab92916dfbbdcd11a247918d57d762738f2419c3834c5b6929' ||
-    // FL-599 colour match: sampling clamped to the source range
-    sourceSha256 === '8ece08158d4468085d711b2d83d4529c6bba729a8ec9f98ac7e3d739f095b2af' ||
-    // FL-626 graded and HDR colour match
-    sourceSha256 === '6a779671af62562b6238dbc3c639c85c36203c499cf08c4426b774e8322c8078'
+    // FL-597 speed ramps and freeze frames change timeline edits only.
+    sourceSha256 === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
+    // FL-597 speed ramps: captions follow their segments, mismatched companions refused
+    sourceSha256 === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+    // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
+    sourceSha256 === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
+    // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232'
   )
     return {
       ...COMPOSITION_SOURCES,

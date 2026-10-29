@@ -68,7 +68,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/colour
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -32,6 +32,7 @@ export {
+@@ -49,6 +49,7 @@ export {
    setColourMatchStrength,
    type ColourMatchTargetResult,
  } from '@/features/timeline/stores/actions/edit/colour-match-actions'
@@ -641,7 +641,7 @@ diff --git a/src/features/timeline/utils/colour-match.ts b/src/features/timeline
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -911,12 +911,15 @@
+@@ -976,12 +976,15 @@
          "not-found": "Wähle Clips auf der Zeitleiste.",
          "unsupported-clip": "Farbangleichung funktioniert mit Videoclips.",
          "same-clip": "Wähle eine andere Referenz als die anzugleichenden Clips.",
@@ -664,7 +664,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -924,12 +924,15 @@
+@@ -989,12 +989,15 @@
          "not-found": "Choose clips on the timeline.",
          "unsupported-clip": "Colour matching works on video clips.",
          "same-clip": "Choose a reference other than the clips being matched.",
@@ -687,7 +687,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -911,12 +911,15 @@
+@@ -976,12 +976,15 @@
          "not-found": "Elige clips en la línea de tiempo.",
          "unsupported-clip": "La igualación de color funciona con clips de vídeo.",
          "same-clip": "Elige una referencia distinta de los clips que se igualan.",
@@ -710,7 +710,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -911,12 +911,15 @@
+@@ -976,12 +976,15 @@
          "not-found": "Choisissez des clips dans la timeline.",
          "unsupported-clip": "L’harmonisation des couleurs fonctionne avec les clips vidéo.",
          "same-clip": "Choisissez une référence différente des clips à harmoniser.",
@@ -733,7 +733,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -911,12 +911,15 @@
+@@ -976,12 +976,15 @@
          "not-found": "タイムラインのクリップを選択してください。",
          "unsupported-clip": "色合わせは動画クリップで使えます。",
          "same-clip": "合わせるクリップとは別の参照を選んでください。",
@@ -756,7 +756,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -911,12 +911,15 @@
+@@ -976,12 +976,15 @@
          "not-found": "타임라인에서 클립을 선택하세요.",
          "unsupported-clip": "색 맞추기는 비디오 클립에서 동작합니다.",
          "same-clip": "맞출 클립과 다른 기준을 선택하세요.",
@@ -779,7 +779,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -911,12 +911,15 @@
+@@ -976,12 +976,15 @@
          "not-found": "Escolha clipes na linha do tempo.",
          "unsupported-clip": "A igualação de cor funciona em clipes de vídeo.",
          "same-clip": "Escolha uma referência diferente dos clipes a igualar.",
@@ -802,7 +802,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -911,12 +911,15 @@
+@@ -976,12 +976,15 @@
          "not-found": "Zaman çizelgesinde klip seçin.",
          "unsupported-clip": "Renk eşleştirme video kliplerinde çalışır.",
          "same-clip": "Eşleştirilen kliplerden farklı bir referans seçin.",
@@ -825,7 +825,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -911,12 +911,15 @@
+@@ -976,12 +976,15 @@
          "not-found": "请在时间线上选择片段。",
          "unsupported-clip": "颜色匹配适用于视频片段。",
          "same-clip": "请选择与被匹配片段不同的参考。",

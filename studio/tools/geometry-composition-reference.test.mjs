@@ -269,23 +269,21 @@ test('composition source bindings preserve every admitted legacy row and refuse 
   const admitted = [...raster.matchAll(/binding\.sourceSha256 ===\s*'([a-f0-9]{64})'/g)].map(
     (row) => row[1],
   )
-  assert.equal(admitted.length, 47)
-  assert.equal(new Set(admitted).size, 47)
+  assert.equal(admitted.length, 44)
+  assert.equal(new Set(admitted).size, 44)
   for (const source of admitted) {
     const a = fixture()
     a.contract.binding.sourceSha256 = source
-    if (source === current || source === '97a4849a08c1e36746c7761ffbce788c8580b70644e4f00d50caf3c2b5369628' || source === '8ece08158d4468085d711b2d83d4529c6bba729a8ec9f98ac7e3d739f095b2af' || source === '700f4566c68163ab92916dfbbdcd11a247918d57d762738f2419c3834c5b6929' || source === 'e5e6e1f2c0089e1c61489213944110a3e68d8595805dc1c8c0bfd87a21309dc4' || source === '5e7b4f122a6f76379925b6a5d7be8ea5b304acdde2b14d1ff5674ab916ae0183' || source === 'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba' || source === '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185' || source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' || source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' || source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' || source === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' || source === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' || source === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' || source === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9')
+    if (source === current || source === '6a779671af62562b6238dbc3c639c85c36203c499cf08c4426b774e8322c8078' || source === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' || source === 'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa' || source === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' || source === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' || source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' || source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' || source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' || source === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' || source === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' || source === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' || source === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9')
       a.contract.binding.browser = '156.0.8078.4'
     a.contract.sourceHashes = compositionSourcesFor(source)
     if (
       source === current ||
-      source === '97a4849a08c1e36746c7761ffbce788c8580b70644e4f00d50caf3c2b5369628' ||
-      source === '8ece08158d4468085d711b2d83d4529c6bba729a8ec9f98ac7e3d739f095b2af' ||
-      source === '700f4566c68163ab92916dfbbdcd11a247918d57d762738f2419c3834c5b6929' ||
-      source === 'e5e6e1f2c0089e1c61489213944110a3e68d8595805dc1c8c0bfd87a21309dc4' ||
-      source === '5e7b4f122a6f76379925b6a5d7be8ea5b304acdde2b14d1ff5674ab916ae0183' ||
-      source === 'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba' ||
-      source === '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185' ||
+      source === '6a779671af62562b6238dbc3c639c85c36203c499cf08c4426b774e8322c8078' ||
+      source === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
+      source === 'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa' ||
+      source === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+      source === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
       source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
       source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
       source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' ||

@@ -159,17 +159,17 @@ new file mode 100644
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
 --- a/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
-@@ -28,6 +28,7 @@ import {
-   resolveAnimatedCrop,
+@@ -29,6 +29,7 @@ import {
  } from '@/features/editor/deps/keyframes'
  import { PropertySection, PropertyRow, SliderInput } from '../components'
+ import { SpeedRampSection } from './speed-ramp-section'
 +import { ColourMatchSection } from './colour-match-section'
  import { getMixedValue } from '../utils'
  import {
    cropPixelsToRatio,
-@@ -617,6 +618,8 @@ export function VideoSection({ items }: VideoSectionProps) {
-         </PropertySection>
-       )}
+@@ -620,6 +621,8 @@ export function VideoSection({ items }: VideoSectionProps) {
+ 
+       {videoItems.length === 1 && items.length <= 2 && <SpeedRampSection itemId={videoItems[0]!.id} />}
  
 +      {videoItems.length > 0 && <ColourMatchSection key={videoItemIds.join(',')} items={videoItems} />}
 +
@@ -179,10 +179,10 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/video-
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -25,6 +25,13 @@ export {
-   type RetimePolicy,
- } from '@/features/timeline/utils/project-retime'
- export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
+@@ -42,6 +42,13 @@ export {
+   suggestLoudnessMatch,
+   type ClipLoudnessResult,
+ } from '@/features/timeline/utils/loudness-match'
 +export {
 +  analyzeColourMatch,
 +  applyColourMatches,
@@ -905,7 +905,7 @@ new file mode 100644
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -881,6 +881,42 @@
+@@ -946,6 +946,42 @@
      "colorPanel": {
        "emptyState": "Wähle einen Clip für die Farbkorrektur aus",
        "adjustmentLayerLabel": "Farbkorrektur"
@@ -951,7 +951,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -894,6 +894,42 @@
+@@ -959,6 +959,42 @@
        "dockTitle": "Color",
        "emptyState": "Select a clip to grade",
        "adjustmentLayerLabel": "Grade"
@@ -997,7 +997,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -881,6 +881,42 @@
+@@ -946,6 +946,42 @@
      "colorPanel": {
        "emptyState": "Selecciona un clip para etalonar",
        "adjustmentLayerLabel": "Etalonaje"
@@ -1043,7 +1043,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -881,6 +881,42 @@
+@@ -946,6 +946,42 @@
      "colorPanel": {
        "emptyState": "Sélectionnez un clip à étalonner",
        "adjustmentLayerLabel": "Étalonnage"
@@ -1089,7 +1089,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -881,6 +881,42 @@
+@@ -946,6 +946,42 @@
      "colorPanel": {
        "emptyState": "グレーディングするクリップを選択してください",
        "adjustmentLayerLabel": "グレーディング"
@@ -1135,7 +1135,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -881,6 +881,42 @@
+@@ -946,6 +946,42 @@
      "colorPanel": {
        "emptyState": "색 보정할 클립을 선택하세요",
        "adjustmentLayerLabel": "색 보정"
@@ -1181,7 +1181,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -881,6 +881,42 @@
+@@ -946,6 +946,42 @@
      "colorPanel": {
        "emptyState": "Selecione um clipe para corrigir as cores",
        "adjustmentLayerLabel": "Correção de cor"
@@ -1227,7 +1227,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -881,6 +881,42 @@
+@@ -946,6 +946,42 @@
      "colorPanel": {
        "emptyState": "Renk düzenlemek için bir klip seçin",
        "adjustmentLayerLabel": "Renk düzenleme"
@@ -1273,7 +1273,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -881,6 +881,42 @@
+@@ -946,6 +946,42 @@
      "colorPanel": {
        "emptyState": "选择要调色的剪辑",
        "adjustmentLayerLabel": "调色"
