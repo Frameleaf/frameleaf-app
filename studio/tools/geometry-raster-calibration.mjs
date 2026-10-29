@@ -195,7 +195,13 @@ export function validateBaseRaster(capture, envelope, binding) {
             '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
           // FL-562 transcript editing changes the transcript panel and timeline edits only.
           binding.sourceSha256 ===
-            'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b')),
+            'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
+          // FL-598 loudness matching changes clip volume, the audio panel and the export report only.
+          binding.sourceSha256 ===
+            '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf' ||
+          // FL-623 adds an audio master limiter and loudness settings; it changes no picture producer.
+          binding.sourceSha256 ===
+            '6c40d5eb52f678068e75e4fb72baac81689f5ba16fd134e5b0beb778abdbf001')),
     'SOURCE_BROWSER',
   )
   check(

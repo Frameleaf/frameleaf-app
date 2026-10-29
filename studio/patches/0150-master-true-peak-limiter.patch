@@ -6,7 +6,7 @@ The immutable vendor snapshot is unchanged.
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
 --- a/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
-@@ -12,9 +12,11 @@ import {
+@@ -12,10 +12,12 @@ import {
    DEFAULT_TARGET_LUFS,
    resolveAudibleItems,
    suggestLoudnessMatch,
@@ -14,46 +14,52 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
    useTimelineStore,
    type ClipLoudnessResult,
  } from '@/features/editor/deps/timeline-store'
+ import { parseClamped } from '@/shared/utils/parse-clamped'
 +import { usePlaybackStore } from '@/shared/state/playback'
  import { PropertyRow, PropertySection } from '../components'
  
  const format = (value: number | null | undefined, unit: string) =>
-@@ -28,8 +30,18 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+@@ -29,11 +31,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
    const { t } = useTranslation()
    const timelineItems = useTimelineStore((s) => s.items)
    const fps = useTimelineStore((s) => s.fps)
--  const [target, setTarget] = useState(DEFAULT_TARGET_LUFS)
--  const [ceiling, setCeiling] = useState(DEFAULT_CEILING_DBTP)
-+  // The target, ceiling and limiter are project settings (FL-623), saved and undoable.
+-  // Draft text stays editable (an intermediate "-" is kept); matching uses parsed, clamped values.
+-  const [targetText, setTargetText] = useState(String(DEFAULT_TARGET_LUFS))
+-  const [ceilingText, setCeilingText] = useState(String(DEFAULT_CEILING_DBTP))
+-  const target = parseClamped(targetText, -36, -6, DEFAULT_TARGET_LUFS)
+-  const ceiling = parseClamped(ceilingText, -12, 0, DEFAULT_CEILING_DBTP)
++  // Target, ceiling and limiter are project settings (FL-623), saved and undoable. Draft text stays
++  // editable (an intermediate "-" is kept); matching uses parsed, clamped values, saved on blur.
 +  const saved = usePlaybackStore((s) => s.masterLoudness)
 +  const loudness = saved ?? { targetLufs: DEFAULT_TARGET_LUFS, ceilingDbtp: DEFAULT_CEILING_DBTP, limiter: false }
-+  const target = loudness.targetLufs
-+  const ceiling = loudness.ceilingDbtp
++  const [targetText, setTargetText] = useState(String(loudness.targetLufs))
++  const [ceilingText, setCeilingText] = useState(String(loudness.ceilingDbtp))
++  const target = parseClamped(targetText, -36, -6, loudness.targetLufs)
++  const ceiling = parseClamped(ceilingText, -12, 0, loudness.ceilingDbtp)
 +  const save = (change: Partial<typeof loudness>) => {
 +    const next = { ...loudness, ...change }
-+    if (Number.isFinite(next.targetLufs) && next.targetLufs >= -36 && next.targetLufs <= -6
-+      && Number.isFinite(next.ceilingDbtp) && next.ceilingDbtp >= -12 && next.ceilingDbtp <= 0) {
++    if (next.targetLufs !== loudness.targetLufs || next.ceilingDbtp !== loudness.ceilingDbtp || next.limiter !== loudness.limiter) {
 +      setMasterLoudness(next)
 +    }
 +  }
    const [results, setResults] = useState<ClipLoudnessResult[] | null>(null)
    const [busy, setBusy] = useState(false)
    const abortRef = useRef<AbortController | null>(null)
-@@ -81,7 +93,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
-         <div className="flex items-center gap-1 w-full">
-           <Input type="number" className="h-7 min-w-0 flex-1 px-2 text-xs" step={0.5} min={-36} max={-6}
-             aria-label={t('editor.audioSection.loudness.target')} value={target}
--            onChange={(event) => setTarget(Number(event.target.value))} />
-+            onChange={(event) => save({ targetLufs: Number(event.target.value) })} />
+@@ -86,7 +97,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+           <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
+             aria-label={t('editor.audioSection.loudness.target')} value={targetText}
+             onChange={(event) => setTargetText(event.target.value)}
+-            onBlur={() => setTargetText(String(target))} />
++            onBlur={() => { setTargetText(String(target)); save({ targetLufs: target }) }} />
            <span className="text-xs text-muted-foreground">LUFS</span>
          </div>
        </PropertyRow>
-@@ -89,11 +101,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
-         <div className="flex items-center gap-1 w-full">
-           <Input type="number" className="h-7 min-w-0 flex-1 px-2 text-xs" step={0.1} min={-12} max={0}
-             aria-label={t('editor.audioSection.loudness.ceiling')} value={ceiling}
--            onChange={(event) => setCeiling(Number(event.target.value))} />
-+            onChange={(event) => save({ ceilingDbtp: Number(event.target.value) })} />
+@@ -95,11 +106,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+           <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
+             aria-label={t('editor.audioSection.loudness.ceiling')} value={ceilingText}
+             onChange={(event) => setCeilingText(event.target.value)}
+-            onBlur={() => setCeilingText(String(ceiling))} />
++            onBlur={() => { setCeilingText(String(ceiling)); save({ ceilingDbtp: ceiling }) }} />
            <span className="text-xs text-muted-foreground">dBTP</span>
          </div>
        </PropertyRow>
