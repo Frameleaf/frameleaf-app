@@ -391,22 +391,25 @@ export class ImmichImportService {
       WHERE key='ml-enrichment' AND value #>> '{nsfwDetection,review,isNsfw}'='true' ON CONFLICT DO NOTHING`,
       [AssetLockReason.Marked],
     );
-    // A live photo locks as a whole from either part: video to still here (before the stack pass, so the
-    // still's stack locks too), still to video after it.
-    await this.destination.query(`INSERT INTO public.asset_lock("assetId",reason,"lockedAt","lockedBy")
-      SELECT still.id,l.reason,l."lockedAt",l."lockedBy" FROM public.asset_lock l
-      JOIN public.asset still ON still."livePhotoVideoId"=l."assetId"
-      ON CONFLICT DO NOTHING`);
-    await this.destination.query(`INSERT INTO public.asset_lock("assetId",reason,"lockedAt","lockedBy")
-      SELECT member.id,source.reason,source."lockedAt",source."lockedBy" FROM public.asset member
-      JOIN (SELECT DISTINCT ON (a."stackId") a."stackId",l.reason,l."lockedAt",l."lockedBy"
-        FROM public.asset_lock l JOIN public.asset a ON a.id=l."assetId" JOIN public.stack s ON s.id=a."stackId"
-        ORDER BY a."stackId",(a.id=s."primaryAssetId") DESC,l."lockedAt") source ON source."stackId"=member."stackId"
-      ON CONFLICT DO NOTHING`);
-    await this.destination.query(`INSERT INTO public.asset_lock("assetId",reason,"lockedAt","lockedBy")
-      SELECT still."livePhotoVideoId",l.reason,l."lockedAt",l."lockedBy" FROM public.asset_lock l
-      JOIN public.asset still ON still.id=l."assetId" WHERE still."livePhotoVideoId" IS NOT NULL
-      ON CONFLICT DO NOTHING`);
+    // Stacks and live photos lock as a whole, from any member or either part. Repeat until no lock is added,
+    // so a lock reached through one relationship spreads through the others.
+    for (let added = true; added;) {
+      added = false;
+      for (const select of [
+        `SELECT still.id,l.reason,l."lockedAt",l."lockedBy" FROM public.asset_lock l
+          JOIN public.asset still ON still."livePhotoVideoId"=l."assetId"`,
+        `SELECT member.id,source.reason,source."lockedAt",source."lockedBy" FROM public.asset member
+          JOIN (SELECT DISTINCT ON (a."stackId") a."stackId",l.reason,l."lockedAt",l."lockedBy"
+            FROM public.asset_lock l JOIN public.asset a ON a.id=l."assetId" JOIN public.stack s ON s.id=a."stackId"
+            ORDER BY a."stackId",(a.id=s."primaryAssetId") DESC,l."lockedAt") source ON source."stackId"=member."stackId"`,
+        `SELECT still."livePhotoVideoId",l.reason,l."lockedAt",l."lockedBy" FROM public.asset_lock l
+          JOIN public.asset still ON still.id=l."assetId" WHERE still."livePhotoVideoId" IS NOT NULL`,
+      ]) {
+        const rows = await this.destination.query(`INSERT INTO public.asset_lock("assetId",reason,"lockedAt","lockedBy")
+          ${select} ON CONFLICT DO NOTHING RETURNING 1`);
+        added ||= rows.length > 0;
+      }
+    }
     await this.destination.query(`UPDATE public.album SET "albumThumbnailAssetId"=(
         SELECT aa."assetId" FROM public.album_asset aa JOIN public.asset a ON a.id=aa."assetId" AND a."deletedAt" IS NULL
           AND NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id)
