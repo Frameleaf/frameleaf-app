@@ -1,4 +1,5 @@
 import {
+  eagleLibraryFingerprint,
   parseEagleItem,
   parseEagleLibraryMetadata,
   unreadableEagleItem,
@@ -97,7 +98,8 @@ export async function readEagleLibrary(
     return file ? { ...item, file } : item;
   });
 
-  return { name, ...library, items };
+  const fingerprint = eagleLibraryFingerprint(metadata, library.folders, folders.length);
+  return { name, ...library, items, fingerprint };
 }
 
 /** The item's own file: `<name>.<ext>`, or the one other file of that type beside its metadata. */

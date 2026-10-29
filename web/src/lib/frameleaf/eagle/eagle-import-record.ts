@@ -10,6 +10,8 @@ export interface EagleImportRecord {
   key: string;
   ownerId: string;
   libraryName: string;
+  /** Which library this is (`EagleLibrary.fingerprint`); another library with the same name never carries it on. */
+  fingerprint?: string;
   target: EagleTarget;
   /** The collection the import went into, when it went inside one. */
   rootAlbumId?: string;

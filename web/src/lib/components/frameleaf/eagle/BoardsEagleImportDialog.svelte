@@ -42,7 +42,7 @@
   } from '$lib/frameleaf/eagle/eagle-import';
   import { frameleafEagleImportApi } from '$lib/frameleaf/eagle/eagle-import-api';
   import { eagleImportStore, type EagleImportSaved } from '$lib/frameleaf/eagle/eagle-import-record';
-  import { EagleImportRun as Run } from '$lib/frameleaf/eagle/eagle-import-run.svelte';
+  import { EagleImportRun as Run, isSameLibrary } from '$lib/frameleaf/eagle/eagle-import-run.svelte';
   import { eagleImportUi, eaglePercent } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import {
     EagleLibraryError,
@@ -235,8 +235,14 @@
     const current = library;
     try {
       const earlier = await store.get(eagleImportKey(ownerId, current.name)).catch(() => undefined);
+      // Carry on only into the same library: another one with the same folder name starts afresh.
       saved =
-        earlier && earlier.record.status !== 'finished' && earlier.record.ownerId === ownerId ? earlier : undefined;
+        earlier &&
+        earlier.record.status !== 'finished' &&
+        earlier.record.ownerId === ownerId &&
+        isSameLibrary(earlier, current)
+          ? earlier
+          : undefined;
       const toCheck = current.items.filter(
         (item) => isComing(item, supported) && !(saved && Object.hasOwn(saved.outcomes, item.id)),
       );

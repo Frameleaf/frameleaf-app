@@ -1,6 +1,7 @@
 import { eagleAnnotations } from '$lib/frameleaf/eagle/eagle-annotations';
 import {
   eagleColour,
+  eagleLibraryFingerprint,
   importResult,
   parseEagleItem,
   planEagleImport,
@@ -37,6 +38,21 @@ describe('reading an Eagle library', () => {
     expect(hero.file?.name).toBe('hero.jpg');
     expect(library.items.find(({ id }) => id === 'I10')!.file).toBeUndefined();
     expect(library.items.find(({ id }) => id === 'I11')!.unreadable).toBe(true);
+  });
+
+  it('tells two libraries with the same name apart', async () => {
+    const first = await readFixture();
+    const again = await readFixture();
+    const other = await readEagleLibrary(FIXTURE_LIBRARY_NAME, fixtureLibraryEntries({ folderPrefix: 'G' }));
+    expect(first.fingerprint).toMatch(/^hash:[\da-f]{28}$/);
+    expect(again.fingerprint).toBe(first.fingerprint);
+    expect(other.name).toBe(first.name);
+    expect(other.fingerprint).not.toBe(first.fingerprint);
+  });
+
+  it('uses Eagle’s own library id when the metadata has one', () => {
+    expect(eagleLibraryFingerprint({ id: 'LIB-1' }, [], 3)).toBe('eagle:id:LIB-1');
+    expect(eagleLibraryFingerprint({}, [], 3)).not.toBe(eagleLibraryFingerprint({}, [], 4));
   });
 
   it('refuses a folder that is not an Eagle library', async () => {

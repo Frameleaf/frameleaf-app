@@ -89,11 +89,24 @@ export const FIXTURE_ITEMS: FixtureItem[] = [
   { id: 'I11', name: 'broken', ext: 'jpg', broken: true },
 ];
 
+/** Folder ids are written with this prefix: another library can have the same name and item ids. */
+let folderPrefix = 'F';
 const json = (value: unknown, path: string) =>
-  new File([JSON.stringify(value)], path.split('/').pop()!, { type: 'application/json' });
+  new File(
+    [JSON.stringify(value).replaceAll(/"F(\d+)"/g, (_match, id: string) => `"${folderPrefix}${id}"`)],
+    path.split('/').pop()!,
+    {
+      type: 'application/json',
+    },
+  );
 
 /** The library's files, as the reader is given them (paths below the `.library` folder). */
-export function fixtureLibraryEntries(): LibraryEntry[] {
+/**
+ * `folderPrefix` gives a different library with the same name, items and folder names: only its
+ * folder ids differ, as they would for a second Eagle library made from the same files.
+ */
+export function fixtureLibraryEntries(options: { folderPrefix?: string } = {}): LibraryEntry[] {
+  folderPrefix = options.folderPrefix ?? 'F';
   const entries: LibraryEntry[] = [
     {
       path: 'metadata.json',

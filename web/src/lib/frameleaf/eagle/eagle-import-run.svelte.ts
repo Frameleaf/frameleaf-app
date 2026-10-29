@@ -55,6 +55,10 @@ export interface EagleImportRunOptions {
 const TAG_BATCH = 100;
 const RECENT = 3;
 
+/** Whether a saved import came from this library, not just one with the same folder name. */
+export const isSameLibrary = (saved: EagleImportSaved, library: Pick<EagleLibrary, 'fingerprint'>) =>
+  !!saved.record.fingerprint && saved.record.fingerprint === library.fingerprint;
+
 /** The signed-in account changed part-way through an item. */
 class AccountChangedError extends Error {
   constructor() {
@@ -92,8 +96,11 @@ export class EagleImportRun implements EagleRunStatus {
   #collectionNames = new Map<string, string>();
 
   constructor(options: EagleImportRunOptions) {
-    this.#options = options;
-    const { library, ownerId, target, saved, supported } = options;
+    const { library, ownerId, target, supported } = options;
+    // A record carries on only into the library it came from. One from a different library with the
+    // same name is ignored, and starting replaces it, so its items and collections are never reused.
+    const saved = options.saved && isSameLibrary(options.saved, library) ? options.saved : undefined;
+    this.#options = { ...options, saved };
     this.key = eagleImportKey(ownerId, library.name);
     const now = (options.now?.() ?? new Date()).toISOString();
     const coming = library.items.filter((item) => isComing(item, supported));
@@ -104,6 +111,7 @@ export class EagleImportRun implements EagleRunStatus {
           key: this.key,
           ownerId,
           libraryName: library.name,
+          fingerprint: library.fingerprint,
           target,
           albums: {},
           tagIds: {},

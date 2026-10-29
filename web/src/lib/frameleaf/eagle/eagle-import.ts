@@ -112,6 +112,11 @@ export interface EagleLibrary {
   items: EagleItem[];
   /** When Eagle last changed the library (ms), if it says. */
   changed?: number;
+  /**
+   * Tells this library apart from another with the same folder name, so a saved import is only
+   * carried on into the library it came from. See `eagleLibraryFingerprint`.
+   */
+  fingerprint: string;
 }
 
 export interface FlatFolder extends EagleFolder {
@@ -164,6 +169,41 @@ export function parseEagleFolders(value: unknown, depth = 0): EagleFolder[] {
       },
     ];
   });
+}
+
+const FINGERPRINT_FIELDS = ['id', 'libraryId', 'createdAt', 'creationTime', 'btime'] as const;
+
+/** cyrb53: a fast 53-bit string hash. Not for security; it only tells libraries apart. */
+function cyrb53(text: string, seed: number) {
+  let h1 = 0xde_ad_be_ef ^ seed;
+  let h2 = 0x41_c6_ce_57 ^ seed;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.codePointAt(index) ?? 0;
+    h1 = Math.imul(h1 ^ code, 2_654_435_761);
+    h2 = Math.imul(h2 ^ code, 1_597_334_677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2_246_822_507) ^ Math.imul(h2 ^ (h2 >>> 13), 3_266_489_909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2_246_822_507) ^ Math.imul(h1 ^ (h1 >>> 13), 3_266_489_909);
+  return (4_294_967_296 * (2_097_151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+}
+
+/**
+ * A stable identity for one Eagle library. Eagle's own id or creation time when its `metadata.json`
+ * has one; otherwise a hash of every folder's id and name (Eagle's folder ids are random per
+ * library) and the number of items. Two libraries that share a folder name get different ones.
+ * The hash is computed in plain script, because `crypto.subtle` is missing on a server reached over
+ * plain HTTP on the home network.
+ */
+export function eagleLibraryFingerprint(metadata: unknown, folders: EagleFolder[], itemCount: number) {
+  const fields = record(metadata);
+  for (const field of FINGERPRINT_FIELDS) {
+    const value = fields[field];
+    if ((typeof value === 'string' && value.trim()) || (typeof value === 'number' && Number.isFinite(value))) {
+      return `eagle:${field}:${String(value).trim()}`;
+    }
+  }
+  const source = JSON.stringify([flatten(folders).map(({ id, name }) => [id, name]), itemCount]);
+  return `hash:${cyrb53(source, 1)}${cyrb53(source, 2)}`;
 }
 
 /** The library's own `metadata.json`: folders, smart folders, tag groups. */

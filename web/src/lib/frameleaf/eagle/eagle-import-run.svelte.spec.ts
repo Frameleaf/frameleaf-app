@@ -1,7 +1,7 @@
 import { importResult, planEagleImport, reconciles, type EagleLibrary } from '$lib/frameleaf/eagle/eagle-import';
 import type { EagleImportApi } from '$lib/frameleaf/eagle/eagle-import-api';
 import { memoryEagleImportStore, type EagleImportStore } from '$lib/frameleaf/eagle/eagle-import-record';
-import { EagleImportRun } from '$lib/frameleaf/eagle/eagle-import-run.svelte';
+import { EagleImportRun, isSameLibrary } from '$lib/frameleaf/eagle/eagle-import-run.svelte';
 import { readEagleLibrary } from '$lib/frameleaf/eagle/eagle-library-reader';
 import { FIXTURE_LIBRARY_NAME, fixtureLibraryEntries } from '$lib/frameleaf/eagle/eagle-library.fixture';
 
@@ -373,6 +373,39 @@ describe('EagleImportRun', () => {
         expect(importing.failed.size).toBe(0);
       }
     });
+  });
+
+  it('does not carry on into another library with the same name', async () => {
+    const server = fakeApi();
+    const first = run(server.api);
+    let sent = 0;
+    const upload = server.api.upload;
+    server.api.upload = (file, checksums) => {
+      if (++sent === 2) {
+        first.stop();
+      }
+      return upload(file, checksums);
+    };
+    await first.start();
+    const saved = await store.get(first.key);
+    expect(Object.keys(saved!.outcomes)).toHaveLength(2);
+
+    const other = await readEagleLibrary(FIXTURE_LIBRARY_NAME, fixtureLibraryEntries({ folderPrefix: 'G' }));
+    expect(isSameLibrary(saved!, other)).toBe(false);
+    expect(isSameLibrary(saved!, library)).toBe(true);
+    const fresh = fakeApi();
+    const second = run(fresh.api, { library: other, saved });
+    // Nothing from the first library is reused: no items are counted done, no collections reused.
+    expect(second.done).toBe(0);
+    await second.start();
+    expect(second.state).toBe('finished');
+    expect(fresh.uploads).toHaveLength(6);
+    expect(fresh.collections).toHaveLength(8);
+    const replaced = await store.get(second.key);
+    expect(replaced?.record.fingerprint).toBe(other.fingerprint);
+    expect(Object.values(replaced!.outcomes).every(({ assetId }) => assetId.startsWith('asset-'))).toBe(true);
+    expect(replaced!.record.albums.G1).toBeDefined();
+    expect(replaced!.record.albums.F1).toBeUndefined();
   });
 
   it('keeps importing when the record cannot be written', async () => {
