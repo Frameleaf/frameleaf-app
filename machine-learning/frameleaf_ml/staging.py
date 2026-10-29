@@ -145,7 +145,7 @@ def main() -> None:
     action.add_argument("--rollback", action="store_true")
     args = parser.parse_args()
     task, model_type = ModelTask(args.task), ModelType(args.type)
-    if task == ModelTask.SEMANTIC_MASK:
+    if task in (ModelTask.SEMANTIC_MASK, ModelTask.SUBJECT_MATTE):
         parser.error("Use scripts/provision-semantic-models.py for the pinned Florence/SAM snapshots")
     options: Any = json.loads(args.options)
     if not isinstance(options, dict):

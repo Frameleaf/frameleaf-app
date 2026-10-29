@@ -19,6 +19,10 @@ def get_model_class(model_name: str, model_type: ModelType, model_task: ModelTas
         from frameleaf_ml.models.semantic_mask import SemanticMaskModel
 
         return SemanticMaskModel
+    if model_task == ModelTask.SUBJECT_MATTE and model_type == ModelType.VISUAL:
+        from frameleaf_ml.models.subject_matte import SubjectMatteModel
+
+        return SubjectMatteModel
     if model_task == ModelTask.INPAINT and model_type == ModelType.VISUAL:
         from frameleaf_ml.models.inpaint import InpaintModel
 
