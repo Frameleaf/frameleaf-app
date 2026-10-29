@@ -48,6 +48,21 @@ export interface AlbumAssetCount {
  * session, the viewer as `lockedOwnerId` so their own Locked media is included. See `withAlbumVisibility`.
  */
 export type AlbumReadOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
+
+/**
+ * Which albums a cover sweep looks at: the given albums, or every album a person owns or is a member
+ * of (an owner has an `album_user` row too). Left out, every album on the server.
+ */
+export type AlbumCoverScope = string[] | { userId: string };
+
+const inCoverScope = (eb: ExpressionBuilder<DB, 'album'>, scope: AlbumCoverScope) =>
+  Array.isArray(scope)
+    ? eb('album.id', '=', anyUuid(scope))
+    : eb(
+        'album.id',
+        'in',
+        eb.selectFrom('album_user').select('album_user.albumId').where('album_user.userId', '=', scope.userId),
+      );
 export interface AlbumInfoOptions extends AlbumReadOptions {
   withAssets: boolean;
 }
@@ -869,15 +884,19 @@ export class AlbumRepository {
    *
    * @returns Amount of updated album thumbnails or undefined when unknown
    */
-  async updateThumbnails(): Promise<number | undefined> {
+  async updateThumbnails(scope?: AlbumCoverScope): Promise<number | undefined> {
+    if (Array.isArray(scope) && scope.length === 0) {
+      return 0;
+    }
     // Albums whose cover follows the newest item (FL-83) take it first; the rules below then only
     // touch albums that have no valid cover.
-    await this.updateNewestCovers();
+    await this.updateNewestCovers(scope);
     // Subquery for getting a new thumbnail.
     const scores = await getBestPhotoScoreTable(this.db);
     const result = await this.db
       .updateTable('album')
       .set((eb) => ({ albumThumbnailAssetId: albumCoverReplacement(eb, scores) }))
+      .$if(scope !== undefined, (qb) => qb.where((eb) => inCoverScope(eb, scope!)))
       .where((eb) =>
         eb.or([
           eb.and([
@@ -935,8 +954,8 @@ export class AlbumRepository {
    * its newest item (`albumNewestCover`); an album left without a possible cover gets none. Albums
    * whose cover is already right are not written.
    */
-  async updateNewestCovers(albumIds?: string[], kysely: Kysely<DB> = this.db): Promise<void> {
-    if (albumIds?.length === 0) {
+  async updateNewestCovers(scope?: AlbumCoverScope, kysely: Kysely<DB> = this.db): Promise<void> {
+    if (Array.isArray(scope) && scope.length === 0) {
       return;
     }
     await kysely
@@ -950,7 +969,7 @@ export class AlbumRepository {
             .where(sql.ref('newest.albumId'), '=', sql.ref('album.id')),
         ),
       )
-      .$if(albumIds !== undefined, (qb) => qb.where('album.id', '=', anyUuid(albumIds!)))
+      .$if(scope !== undefined, (qb) => qb.where((eb) => inCoverScope(eb, scope!)))
       .where((eb) => eb('album.albumThumbnailAssetId', 'is distinct from', albumNewestCover(eb)))
       .execute();
   }

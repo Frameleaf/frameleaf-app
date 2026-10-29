@@ -81,7 +81,8 @@ export class AlbumService extends BaseService {
   }
 
   async getAll(auth: AuthDto, { assetId, suppressedOnly, ...rest }: GetAlbumsDto): Promise<AlbumResponseDto[]> {
-    await this.albumRepository.updateThumbnails();
+    // only the albums this list can show, not every album on the server, on each request
+    await this.albumRepository.updateThumbnails({ userId: auth.user.id });
 
     const ownerId = auth.user.id;
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
@@ -168,7 +169,7 @@ export class AlbumService extends BaseService {
    * link rules are unchanged (neither grants album listing).
    */
   async getTree(auth: AuthDto): Promise<AlbumTreeResponseDto> {
-    await this.albumRepository.updateThumbnails();
+    await this.albumRepository.updateThumbnails({ userId: auth.user.id });
 
     const privacyOptions = this.nsfwOptions(auth);
     let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {});
@@ -284,7 +285,7 @@ export class AlbumService extends BaseService {
 
   async get(auth: AuthDto, id: string, { suppressedOnly }: GetAlbumInfoDto = {}): Promise<AlbumResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
-    await this.albumRepository.updateThumbnails();
+    await this.albumRepository.updateThumbnails([id]);
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
     const album = await this.findOrFail(id, auth, { withAssets: false });
     const [albumMetadataForIds] = await this.albumRepository.getMetadataForIds([album.id], privacyOptions);
@@ -823,7 +824,7 @@ export class AlbumService extends BaseService {
     await this.recordSmartAlbumRemovals(id, removedIds, auth.user.id, isOwner);
     if (removedIds.length > 0) {
       if (album.albumThumbnailAssetId && removedIds.includes(album.albumThumbnailAssetId)) {
-        await this.albumRepository.updateThumbnails();
+        await this.albumRepository.updateThumbnails([id]);
       }
 
       await this.eventRepository.emit('AlbumUpdate', {
