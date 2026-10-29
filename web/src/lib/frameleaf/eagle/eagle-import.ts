@@ -177,8 +177,9 @@ const FINGERPRINT_FIELDS = ['id', 'libraryId', 'createdAt', 'creationTime', 'bti
 function cyrb53(text: string, seed: number) {
   let h1 = 0xde_ad_be_ef ^ seed;
   let h2 = 0x41_c6_ce_57 ^ seed;
-  for (let index = 0; index < text.length; index++) {
-    const code = text.codePointAt(index) ?? 0;
+  // one step per code point, so a character outside the BMP (an emoji in a folder name) counts once
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
     h1 = Math.imul(h1 ^ code, 2_654_435_761);
     h2 = Math.imul(h2 ^ code, 1_597_334_677);
   }
