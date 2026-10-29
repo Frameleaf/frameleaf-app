@@ -52,7 +52,7 @@ Building Frameleaf's Postgres image (`docker/postgres`) pulls the PostgreSQL bas
 
 The digests match the ones pinned in `docker/postgres/Dockerfile` and `.github/workflows/test.yml`; use the values from those files if they have changed since this page was written.
 
-To skip the pgvector download entirely, use the published image instead of building one. `docker/postgres/image-lock.json` names the current image and digest (for example `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7`); pull it and tag it with the name the stack expects, such as `docker tag ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7 frameleaf-postgres:local` for `docker/docker-compose.dev.yml`. Compose and testcontainers still rebuild when the source changes, so only do this when your branch does not change `docker/postgres`.
+For the Compose stacks you can skip the pgvector download entirely by using the published image instead of building one. `docker/postgres/image-lock.json` names the current image and digest (for example `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7`). Pull it and tag it with the name the stack expects: `frameleaf-postgres:local` for `docker/docker-compose.dev.yml`, or `frameleaf-postgres:e2e` for `e2e/docker-compose.yml`. Compose then uses the tagged image and builds only when you pass `--build`, so do this only when your branch does not change `docker/postgres`. Medium tests always build `frameleaf-postgres:medium` from `docker/postgres` (Docker's layer cache makes later runs fast), so for them only the base-image mirror (`FRAMELEAF_CI_POSTGRES_IMAGE` above) applies; the first build still downloads pgvector.
 
 ## Memory for server checks
 
