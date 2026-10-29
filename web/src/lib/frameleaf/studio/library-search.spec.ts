@@ -214,9 +214,13 @@ describe('FL-636 Studio library search', () => {
 });
 
 describe('FL-636 adopting library results into the session', () => {
+  const SMART = '0a1b2c3d-0000-4000-8000-000000000001';
+  const HANDOFF = '0a1b2c3d-0000-4000-8000-000000000002';
+  const OTHER = '0a1b2c3d-0000-4000-8000-000000000003';
+  const LOCKED = '0a1b2c3d-0000-4000-8000-000000000004';
   const setup = (sdk = api(), offered: StudioAssetRef[] = []) => {
     const adopted: AssetResponseDto[] = [];
-    const lookup = vi.fn((id: string) => Promise.resolve(asset(id)));
+    const lookup = vi.fn((ids: string[]) => Promise.resolve(ids.map((id) => asset(id))));
     const services = createStudioLibraryServices({
       language: () => 'en',
       elevated: () => sessionAccess.isElevated,
@@ -235,42 +239,42 @@ describe('FL-636 adopting library results into the session', () => {
   it('reads a search result again as this session before adopting it, and answers with its bin ref', async () => {
     const { services, adopted, lookup } = setup();
     await services.searchLibrary({ text: 'lake' });
-    const refs = await services.addLibraryAssets(['SMART']);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith('smart');
-    expect(adopted.map((item) => item.id)).toEqual(['smart']);
-    expect(refs).toEqual([toStudioAsset(asset('smart'))]);
+    const refs = await services.addLibraryAssets([SMART.toUpperCase()]);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith([SMART]);
+    expect(adopted.map((item) => item.id)).toEqual([SMART]);
+    expect(refs).toEqual([toStudioAsset(asset(SMART))]);
   });
 
   it('does not adopt a result whose access was revoked after the search', async () => {
     const { services, adopted, lookup } = setup();
     await services.searchLibrary({ text: 'lake' });
     lookup.mockRejectedValueOnce(new Error('403'));
-    expect(await services.addLibraryAssets(['smart'])).toEqual([]);
+    expect(await services.addLibraryAssets([SMART])).toEqual([]);
     expect(adopted).toEqual([]);
   });
 
   it('does not read or adopt what is already offered', async () => {
-    const present = toStudioAsset(asset('handoff'));
+    const present = toStudioAsset(asset(HANDOFF));
     const { services, adopted, lookup } = setup(api(), [present]);
-    const refs = await services.addLibraryAssets(['handoff', 'other']);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith('other');
-    expect(adopted.map((item) => item.id)).toEqual(['other']);
-    expect(refs.map((item) => item.id)).toEqual(['handoff', 'other']);
+    const refs = await services.addLibraryAssets([HANDOFF, OTHER]);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith([OTHER]);
+    expect(adopted.map((item) => item.id)).toEqual([OTHER]);
+    expect(refs.map((item) => item.id)).toEqual([HANDOFF, OTHER]);
   });
 
   it('does not adopt a Locked result once the session has locked again', async () => {
     sessionAccess.isElevated = true;
-    const locked = asset('locked', { visibility: AssetVisibility.Locked });
+    const locked = asset(LOCKED, { visibility: AssetVisibility.Locked });
     const sdk = api({
       searchAssets: vi.fn(({ metadataSearchDto }) =>
         Promise.resolve(page(metadataSearchDto.visibility === AssetVisibility.Locked ? [locked] : [])),
       ),
     });
     const { services, adopted, lookup } = setup(sdk);
-    lookup.mockResolvedValue(locked);
-    expect((await services.searchLibrary({})).items.map((item) => item.id)).toEqual(['locked']);
+    lookup.mockResolvedValue([locked]);
+    expect((await services.searchLibrary({})).items.map((item) => item.id)).toEqual([LOCKED]);
     sessionAccess.isElevated = false;
-    expect(await services.addLibraryAssets(['locked'])).toEqual([]);
+    expect(await services.addLibraryAssets([LOCKED])).toEqual([]);
     expect(adopted).toEqual([]);
   });
 
