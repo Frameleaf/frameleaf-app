@@ -38,9 +38,9 @@ try {
       id: 'clip', type: 'video', trackId: 'v1', from: 0, durationInFrames: 6, label: 'Clip', src: '', mediaId: 'media',
       sourceStart: 0, sourceFps: 30, sourceWidth: 1920, sourceHeight: 1080,
     };
-    const run = async ({ background, frame = 0, rotation = 0, colour }) => {
+    const run = async ({ background, frame = 0, rotation = 0, colour, noPhoto = false }) => {
       const cutoutItem = { ...item, subjectCutout: {
-        subject: { kind: 'subject' }, background, softness: 0, matte, colour, photo: { mediaId: 'photo' },
+        subject: { kind: 'subject' }, background, softness: 0, matte, colour, ...(noPhoto ? {} : { photo: { mediaId: 'photo' } }),
       } };
       const imageElements = new Map([
         [cutoutImageItem(cutoutItem, 'matte', 'matte').id, { source: atlas, width: 32, height: 9 }],
@@ -76,6 +76,8 @@ try {
       colour: await run({ background: 'colour', colour: '#1f6feb' }),
       photo: await run({ background: 'photo' }),
       blur: await run({ background: 'blur' }),
+      // Photo chosen but no photo picked: drawn as Blur, in export too (no error, never see-through).
+      photoWithout: await run({ background: 'photo', noPhoto: true }),
       // Frame 1 is 1/30 s in: one third of the way from matte frame 0 to matte frame 1.
       between: await run({ background: 'remove', frame: 1 }),
       rotated: await run({ background: 'remove', rotation: 180 }),
@@ -93,6 +95,8 @@ try {
   near(results.photo.right, [0, 200, 0, 255], 'photo background');
   // Blur of a uniform clip stays the clip, inside its own frame.
   near(results.blur.right, [255, 0, 0, 255], 'blur background');
+  near(results.photoWithout.right, [255, 0, 0, 255], 'photo without a photo falls back to blur');
+  near(results.photoWithout.left, [255, 0, 0, 255], 'photo without a photo keeps the subject');
   // Two thirds of frame 0 (subject at x=24) and one third of frame 1 (background there).
   near(results.between.quarter, [Math.round(255 * 2 / 3), 0, Math.round(255 / 3), 255], 'blend between matte frames', 8);
   // Turned half a turn, the subject (the clip's left half) is on the right of the canvas.
