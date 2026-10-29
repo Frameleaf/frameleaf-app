@@ -3522,6 +3522,7 @@
   "frameleaf_backup_local_enabled": "Take a snapshot with every backup",
   "frameleaf_backup_local_enabled_help": "It goes first and takes a minute or two.",
   "frameleaf_backup_local_failed": "The snapshot didn’t finish. Try again in a moment.",
+  "frameleaf_backup_local_failed_space": "The snapshot didn’t finish because this server’s disk is full. Free up some space, then try again.",
   "frameleaf_backup_local_keep": "Keep the last",
   "frameleaf_backup_local_keep_help": "Older snapshots are removed only after a new one succeeds.",
   "frameleaf_backup_local_keep_label": "Snapshots to keep",

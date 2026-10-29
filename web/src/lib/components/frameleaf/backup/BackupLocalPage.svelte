@@ -7,7 +7,8 @@
    *
    * "Take a snapshot now" queues the server's own `backup-database` job, then re-reads the list
    * until the new snapshot appears; it stops and offers to try again when the job fails, when the
-   * queue goes idle without a new file, or after `timeoutMs`.
+   * queue goes idle without a new file, or after `timeoutMs`. A snapshot that failed for good since
+   * the newest one finished is shown with a retry, also after a reload (FL-657).
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -20,17 +21,20 @@
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
-  import { localPlaceState } from '$lib/frameleaf/backup-overview';
+  import { lastSnapshotFailure, localPlaceState, snapshotFailureKey } from '$lib/frameleaf/backup-overview';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleCreateJob } from '$lib/services/job.service';
   import {
     getQueue,
+    getQueueJobs,
     getServerVersion,
     listDatabaseBackups,
     ManualJobName,
+    QueueJobStatus,
     QueueName,
     type DatabaseBackupDto,
+    type QueueJobResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiPlayOutline } from '@mdi/js';
@@ -50,6 +54,8 @@
   let loadFailed = $state(false);
   let creating = $state(false);
   let failed = $state(false);
+  /** The queue's failed snapshot jobs; null when they cannot be read, which then shows no failure. */
+  let failedJobs = $state<QueueJobResponseDto[] | null>(null);
   let alive = true;
   onDestroy(() => (alive = false));
 
@@ -61,6 +67,14 @@
         backups = result.backups;
       })
       .catch(() => (loadFailed = true));
+    void loadFailures();
+  };
+  const loadFailures = async () => {
+    try {
+      failedJobs = await getQueueJobs({ name: QueueName.BackupDatabase, status: [QueueJobStatus.Failed] });
+    } catch {
+      failedJobs = null;
+    }
   };
   onMount(load);
 
@@ -68,9 +82,18 @@
   const settingsDraft = getSystemConfigDraft();
   const database = $derived(settingsDraft?.draft.backup.database);
   const configDisabled = $derived(featureFlagsManager.value.configFile);
+  const lastFailure = $derived(lastSnapshotFailure(failedJobs));
   const placeState = $derived(
-    localPlaceState(backups ?? null, settingsDraft?.baseline.backup.database.enabled ?? true, new Date()),
+    localPlaceState(
+      backups ?? null,
+      settingsDraft?.baseline.backup.database.enabled ?? true,
+      new Date(),
+      undefined,
+      lastFailure?.at ?? null,
+    ),
   );
+  /** The last snapshot failed: just now while this page waited, or earlier and not made good since. */
+  const showFailure = $derived(failed || placeState.status.key === 'frameleaf_backup_state_failed');
 
   /** The backup queue, or undefined when it cannot be read. */
   /** The database backup queue alone; reading every queue's counts on each poll is far more work. */
@@ -95,6 +118,7 @@
     const stop = (didFail: boolean) => {
       creating = false;
       failed = didFail;
+      void loadFailures();
     };
     const poll = async () => {
       if (!alive) {
@@ -152,8 +176,8 @@
   <p class="running" role="status">
     <progress aria-label={$t('frameleaf_backup_local_running')}></progress>
   </p>
-{:else if failed}
-  <InlineError compact message={$t('frameleaf_backup_local_failed')} onRetry={takeSnapshot} />
+{:else if showFailure}
+  <InlineError compact message={$t(snapshotFailureKey(lastFailure?.reason ?? ''))} onRetry={takeSnapshot} />
 {/if}
 
 <Notice title={$t('frameleaf_backup_local_not_photos')}>{$t('frameleaf_backup_local_not_photos_body')}</Notice>

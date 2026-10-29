@@ -374,6 +374,26 @@ describe(NotificationService.name, () => {
       expect(JSON.stringify(mocks.logger.error.mock.calls)).not.toContain('hunter2-secret');
     });
 
+    it('tells the admin a library data snapshot did not finish, in plain words that open Backup (FL-657)', async () => {
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+      const error = new Error('spawn /usr/lib/postgresql/19/bin/pg_dump ENOENT');
+
+      await sut.onJobError({ job: { name: JobName.DatabaseBackup, data: {} }, error });
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: NotificationType.BackupFailed,
+          level: NotificationLevel.Error,
+          title: 'Library data snapshot didn’t finish',
+          data: JSON.stringify({ kind: 'library-snapshot-failed' }),
+        }),
+      );
+      const notice = JSON.stringify(mocks.notification.create.mock.calls);
+      expect(notice).not.toContain('pg_dump');
+      expect(notice).not.toContain('DatabaseBackup');
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('pg_dump'), expect.any(String), '{}');
+    });
+
     it('still logs the data of other jobs', async () => {
       const job = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } as const;
       await sut.onJobError({ job, error: new Error('Input file is missing') });

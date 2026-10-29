@@ -54,6 +54,44 @@ describe('Backup › On this server (FL-362)', () => {
     expect(sdkMock.getQueuesLegacy).not.toHaveBeenCalled();
   });
 
+  it('still says the last snapshot failed after a reload, until a newer one finishes (FL-657)', async () => {
+    sdkMock.listDatabaseBackups.mockResolvedValue({
+      backups: [{ filename: 'frameleaf-db-backup-20260924T070000-v1.0.0-pg19.sql.gz', filesize: 10, timezone: 'UTC' }],
+    });
+    sdkMock.getQueueJobs.mockResolvedValue([
+      {
+        name: 'DatabaseBackup',
+        timestamp: Date.parse('2026-09-25T07:00:00Z'),
+        failedReason: 'spawn /usr/lib/postgresql/19/bin/pg_dump ENOENT',
+        data: {},
+      },
+    ] as never);
+    render(BackupLocalPage);
+
+    expect(await screen.findByText(en.frameleaf_backup_local_failed)).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_backup_state_failed)).toBeInTheDocument();
+    expect(screen.queryByText(/pg_dump/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
+    expect(sdkMock.getQueueJobs).toHaveBeenCalledWith({ name: 'backupDatabase', status: ['failed'] });
+  });
+
+  it('says a full disk stopped the snapshot, and forgets a failure an older one had', async () => {
+    sdkMock.getQueueJobs.mockResolvedValue([
+      { name: 'DatabaseBackup', timestamp: 1, failedReason: 'ENOSPC: no space left on device', data: {} },
+    ] as never);
+    const { unmount } = render(BackupLocalPage);
+    expect(await screen.findByText(en.frameleaf_backup_local_failed_space)).toBeInTheDocument();
+    unmount();
+
+    sdkMock.listDatabaseBackups.mockResolvedValue({
+      backups: [{ filename: 'frameleaf-db-backup-20260924T070000-v1.0.0-pg19.sql.gz', filesize: 10, timezone: 'UTC' }],
+    });
+    render(BackupLocalPage);
+    await waitFor(() => expect(sdkMock.getQueueJobs).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/days behind/)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_backup_local_failed_space)).not.toBeInTheDocument();
+  });
+
   it('offers to try again when the saved snapshots cannot be listed', async () => {
     sdkMock.listDatabaseBackups.mockRejectedValue(new Error('500'));
     render(BackupLocalPage);

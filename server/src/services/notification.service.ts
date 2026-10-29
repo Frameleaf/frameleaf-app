@@ -106,18 +106,22 @@ export class NotificationService extends BaseService {
     this.logger.error(`Unable to run job handler (${job.name}): ${error}`, error?.stack, data);
 
     switch (job.name) {
+      // FL-657: retail wording; the error itself stays in the log above. A click opens Backup › On this server.
       case JobName.DatabaseBackup: {
-        const errorMessage = error instanceof Error ? error.message : error;
         const text = await this.localText(
           admin.id,
-          { version: 1, key: 'job-failed', args: { jobName: job.name, error: String(errorMessage) } },
-          { title: 'Job Failed', body: `Job ${[job.name]} failed with error: ${errorMessage}` },
+          { version: 1, key: 'library-snapshot-failed', args: {} },
+          {
+            title: 'Library data snapshot didn’t finish',
+            body: 'The snapshot of your albums, people, edits and settings didn’t finish. Open Backup › On this server to try again.',
+          },
         );
         const item = await this.notificationRepository.create({
           userId: admin.id,
-          type: NotificationType.JobFailed,
+          type: NotificationType.BackupFailed,
           level: NotificationLevel.Error,
           ...text,
+          data: JSON.stringify({ kind: 'library-snapshot-failed' }),
         });
 
         this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));

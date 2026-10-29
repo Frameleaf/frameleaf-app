@@ -9,9 +9,11 @@ import {
   CloudBackupLastRunStatus,
   CloudBackupRunState,
   CloudBackupTask,
+  JobName,
   type BuddyStatusDto,
   type CloudBackupStatusResponseDto,
   type DatabaseBackupDto,
+  type QueueJobResponseDto,
 } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { backupStamp, backupTime } from '$lib/components/frameleaf/settings/backup-time';
@@ -189,17 +191,51 @@ export const localSnapshots = (backups: readonly DatabaseBackupDto[]) =>
     .map((backup) => ({ ...backup, at: backupTime(backup.filename, { timezone: backup.timezone })?.at.toJSDate() }))
     .sort((a, b) => (backupStamp(b.filename) ?? '').localeCompare(backupStamp(a.filename) ?? ''));
 
-/** The library data copy on this server: on when its setting is, and as recent as its newest snapshot. */
+/**
+ * The newest snapshot that failed for good (every retry used up), with the reason the server gave,
+ * from the failed jobs of the database backup queue (FL-657). Null when none failed.
+ */
+export const lastSnapshotFailure = (jobs: readonly QueueJobResponseDto[] | null) => {
+  let newest: { at: Date; reason: string } | null = null;
+  for (const job of jobs ?? []) {
+    if (job.name === JobName.DatabaseBackup && (!newest || job.timestamp > newest.at.getTime())) {
+      newest = { at: new Date(job.timestamp), reason: job.failedReason ?? '' };
+    }
+  }
+  return newest;
+};
+
+/** Why a snapshot failed, in plain words: a full disk is the one reason the owner can act on directly. */
+export const snapshotFailureKey = (reason: string): Translations =>
+  /ENOSPC|no space left/i.test(reason) ? 'frameleaf_backup_local_failed_space' : 'frameleaf_backup_local_failed';
+
+/**
+ * The library data copy on this server: on when its setting is, and as recent as its newest snapshot.
+ * A snapshot that failed after the newest one finished says so, rather than "first backup not
+ * finished" or "up to date" (FL-657).
+ */
 export const localPlaceState = (
   backups: readonly DatabaseBackupDto[] | null,
   enabled: boolean,
   now: Date,
   behindAfterMs = BEHIND_AFTER_MS,
+  failedAt: Date | null = null,
 ): BackupPlaceState => {
   const newest = localSnapshots(backups ?? []).find((backup) => backup.at && isScheduledSnapshot(backup.filename));
   const lastAt = newest?.at ?? null;
   if (!enabled) {
     return { ...off('local'), lastAt };
+  }
+  if (failedAt && (!lastAt || failedAt > lastAt)) {
+    return {
+      id: 'local',
+      on: true,
+      lastAt,
+      running: false,
+      tone: 'warn',
+      status: { key: 'frameleaf_backup_state_failed' },
+      current: fresh(lastAt, now, behindAfterMs),
+    };
   }
   return { id: 'local', on: true, lastAt, running: false, ...byAge(lastAt, now, behindAfterMs) };
 };

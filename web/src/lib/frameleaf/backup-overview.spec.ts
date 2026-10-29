@@ -5,7 +5,9 @@ import {
   backupWhen,
   buddyPlaceState,
   cloudPlaceState,
+  lastSnapshotFailure,
   localPlaceState,
+  snapshotFailureKey,
   type BackupPlaces,
   type BackupSayings,
 } from '$lib/frameleaf/backup-overview';
@@ -117,6 +119,28 @@ describe('a place a backup is kept (FL-362)', () => {
     expect(state.current).toBe(true);
     expect(localPlaceState(saved, false, now)).toMatchObject({ on: false, tone: 'off' });
     expect(localPlaceState([], true, now).status.key).toBe('frameleaf_backup_state_first');
+  });
+
+  it('says the last snapshot failed until a newer one finishes, never "first backup not finished" (FL-657)', () => {
+    const jobs = [
+      { name: 'DatabaseBackup', timestamp: Date.parse('2026-10-09T03:00:00Z'), failedReason: 'ENOSPC', data: {} },
+      { name: 'DatabaseBackup', timestamp: Date.parse('2026-10-10T03:00:00Z'), failedReason: 'spawn ENOENT', data: {} },
+    ] as never;
+    const failure = lastSnapshotFailure(jobs);
+    expect(failure).toEqual({ at: new Date('2026-10-10T03:00:00Z'), reason: 'spawn ENOENT' });
+    expect(lastSnapshotFailure(null)).toBeNull();
+    expect(snapshotFailureKey(failure!.reason)).toBe('frameleaf_backup_local_failed');
+    expect(snapshotFailureKey('ENOSPC: no space left on device')).toBe('frameleaf_backup_local_failed_space');
+
+    const never = localPlaceState([], true, now, undefined, failure!.at);
+    expect(never).toMatchObject({ tone: 'warn', status: { key: 'frameleaf_backup_state_failed' }, current: false });
+    // An older snapshot that is still recent keeps counting as a copy while the newest attempt failed.
+    const older = localPlaceState([snapshot('20261009T020000')], true, now, undefined, failure!.at);
+    expect(older).toMatchObject({ status: { key: 'frameleaf_backup_state_failed' }, current: true });
+    // A snapshot made after the failure puts it right.
+    const fixed = localPlaceState([snapshot('20261010T040000')], true, now, undefined, failure!.at);
+    expect(fixed.status.key).toBe('frameleaf_backup_state_up_to_date');
+    expect(localPlaceState([], false, now, undefined, failure!.at)).toMatchObject({ on: false, tone: 'off' });
   });
 });
 
