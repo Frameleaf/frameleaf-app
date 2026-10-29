@@ -349,9 +349,10 @@
 
   const setPlayOriginalVideo = (value: boolean) => {
     requestedOriginalVideo = value;
-    // "Play encoded" must win over a spoken-word seek still waiting for the original: keep its moment, drop its source.
-    if (!value && speechOriginal && videoSeek.pending) {
-      videoSeek.pending = { assetId: videoSeek.pending.assetId, seconds: videoSeek.pending.seconds };
+    // "Play encoded" must win over a spoken-word seek still waiting for the original. Its moment is on the
+    // original's timeline, which a trimmed encoded video doesn't share, so drop the seek rather than land wrong.
+    if (!value && speechOriginal) {
+      videoSeek.pending = null;
     }
   };
 
