@@ -86,7 +86,7 @@ export class LibraryProgressService {
   }
 
   async getMediaCopies(): Promise<MediaCopiesResponseDto> {
-    const [{ videoMs, copyMs, ...counts }, samples, redo, card] = await Promise.all([
+    const [{ videoMs, copyMs, copyBytes, unsizedCopies, ...counts }, samples, redo, card] = await Promise.all([
       this.assetJobRepository.countMediaCopies(),
       this.analyticsRepository.getLatestHostSamples([
         AnalyticsSeriesId.HostThumbnailBytes,
@@ -103,12 +103,17 @@ export class LibraryProgressService {
         .filter((sample) => series.includes(sample.series as AnalyticsSeriesId))
         .toSorted((a, b) => b.observedAt.getTime() - a.observedAt.getTime())[0];
     const previews = newest(AnalyticsSeriesId.HostThumbnailBytes, AnalyticsSeriesId.HostThumbnailOtherDiskBytes);
-    const playback = newest(AnalyticsSeriesId.HostEncodedVideoBytes, AnalyticsSeriesId.HostEncodedVideoOtherDiskBytes);
+    // FL-630: the copies' own sizes, read now. The nightly folder reading also counts files that are
+    // not copies (the folder's marker file), so it is used only while some copies have no recorded size.
+    const playback =
+      unsizedCopies > 0
+        ? newest(AnalyticsSeriesId.HostEncodedVideoBytes, AnalyticsSeriesId.HostEncodedVideoOtherDiskBytes)
+        : undefined;
     const observed = [previews, playback].flatMap((sample) => (sample ? [sample.observedAt.getTime()] : []));
     return {
       ...counts,
       previewsBytes: previews ? Math.round(previews.value) : null,
-      playbackBytes: playback ? Math.round(playback.value) : null,
+      playbackBytes: unsizedCopies > 0 ? (playback ? Math.round(playback.value) : null) : Math.round(copyBytes),
       measuredAt: observed.length > 0 ? new Date(Math.min(...observed)).toISOString() : null,
       tonight: this.tonight(redo?.queues),
       videoMinutes: minutes(videoMs),

@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { ChildProcess, fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { AssetFileType, AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
+import { AssetFileType, AssetType, AssetVisibility, JobName, PhysicalFileType, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueClaim } from 'src/queue/types.js';
@@ -77,7 +77,28 @@ describe(AssetJobRepository.name, () => {
       // FL-537: how long the videos are, for "about N MB a minute"
       videoMs: 90_000,
       copyMs: 90_000,
+      // FL-630: a copy with no recorded file has no size yet
+      copyBytes: 0,
+      unsizedCopies: 1,
     });
+
+    // FL-630: once the copy's file is recorded, its size is the space copies take, counted once
+    // however many copies share the file (here the edited copy of the same video)
+    await ctx.newAssetFile({
+      assetId: video.id,
+      type: AssetFileType.EncodedVideo,
+      path: `/v/${video.id}.mp4`,
+      isEdited: true,
+    });
+    await sql`insert into "physical_file" ("type", "checksum", "sizeInBytes", "path", "canonicalAssetId")
+      values (${PhysicalFileType.EncodedVideo}, ${Buffer.from('copy')}, 5000, ${`/v/${video.id}.mp4`}, ${video.id})`.execute(
+      ctx.database,
+    );
+    await sql`update "asset_file" f set "physicalFileId" = p.id from "physical_file" p
+      where p.path = f.path and f."assetId" = ${video.id}`.execute(ctx.database);
+    await expect(sut.countMediaCopies()).resolves.toEqual(
+      expect.objectContaining({ withCopy: 1, copyBytes: 5000, unsizedCopies: 0 }),
+    );
   });
 
   it('backfills only uninspected non-RAW images through the existing metadata selection', async () => {

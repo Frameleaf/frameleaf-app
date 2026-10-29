@@ -90,7 +90,12 @@
   } from '$lib/frameleaf/studio/project-session';
   import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
   import { readEditorContinuity, reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
-  import { getPeopleThumbnailUrl, getProfileImageUrl } from '$lib/utils';
+  import { downloadBlob, getPeopleThumbnailUrl, getProfileImageUrl } from '$lib/utils';
+  import {
+    studioCaptionExportSidecars,
+    studioCaptionLanguageTracks,
+    studioCaptionSidecarName,
+  } from '$lib/frameleaf/studio/caption-languages';
   import { handleError } from '$lib/utils/handle-error';
   import { createStudioLibraryServices } from '$lib/frameleaf/studio/library-search';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
@@ -103,6 +108,8 @@
     resolveStudioProjectSource,
     getStudioRestoredVersion,
     isHttpError,
+    StudioExportSubtitleMode,
+    translateStudioCaptions,
     type StudioRestoredVersionDto,
   } from '@frameleaf/sdk';
   import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
@@ -1005,6 +1012,16 @@
       }
     },
     cancelProjectImportPublication: cancelPublication,
+    // FL-641: caption lines, as text, translated on the processing order (this server, then home computers).
+    translateCaptions: async (request) => {
+      const { lines } = await translateStudioCaptions({
+        id: project.id,
+        studioCaptionTranslationCreateDto: request as Parameters<
+          typeof translateStudioCaptions
+        >[0]['studioCaptionTranslationCreateDto'],
+      });
+      return { lines };
+    },
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
       if (canExportVideo) {
@@ -1137,6 +1154,41 @@
     }
   };
   const canExportVideo = $derived(canExportBundle && writable);
+  /** FL-641: the language names Studio shows, in the person's own language. */
+  const captionLanguageName = (code: string) => {
+    try {
+      const name = new Intl.DisplayNames([$locale ?? 'en'], { type: 'language' }).of(code) ?? code;
+      return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+    } catch {
+      return code;
+    }
+  };
+  /** FL-641: the other languages ticked "Subtitle track in the export", named for the export dialog. */
+  const captionExportLanguages = $derived(
+    studioCaptionLanguageTracks(project.graph)
+      .filter((track) => track.subtitle)
+      .map((track) => captionLanguageName(track.language)),
+  );
+  /**
+   * FL-641: each ticked language travels with a video export as its own subtitle file (SRT), saved next
+   * to it when the export is queued. The picture carries the language "In the picture".
+   */
+  const saveCaptionSidecars = (choice: StudioExportChoice) => {
+    if (!choice.subtitleMode || choice.subtitleMode === StudioExportSubtitleMode.Off) {
+      return;
+    }
+    const sidecars = studioCaptionExportSidecars(project.graph, choice.range);
+    for (const sidecar of sidecars) {
+      downloadBlob(
+        new Blob([sidecar.srt], { type: 'application/x-subrip' }),
+        studioCaptionSidecarName(project.name, sidecar.language),
+      );
+    }
+    if (sidecars.length > 0) {
+      const languages = sidecars.map((sidecar) => captionLanguageName(sidecar.language)).join(', ');
+      toastManager.primary($t('frameleaf_studio_export_caption_languages_saved', { values: { languages } }));
+    }
+  };
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
       try {
@@ -1164,6 +1216,7 @@
       exportJob = operation;
       followExport(operation.id);
       toastManager.primary($t('frameleaf_studio_export_queued', { values: { name: project.name } }));
+      saveCaptionSidecars(choice);
     } catch (error) {
       // A 409 studio_export_unsupported names why no qualified render worker can take it (FL-42).
       const refusal = isHttpError(error) ? studioRenderRefusalFromError(error.data) : null;
@@ -1440,6 +1493,7 @@
   busy={exporting}
   {renderEvidence}
   projectId={storedRevision === null ? null : project.id}
+  captionLanguages={captionExportLanguages}
   onExport={(choice) => void onExportVideo(choice)}
 />
 

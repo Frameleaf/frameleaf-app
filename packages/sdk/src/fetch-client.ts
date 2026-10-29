@@ -4499,6 +4499,8 @@ export type AssetResponseDto = {
     /** Owner user ID */
     ownerId: string;
     people?: PersonResponseDto[];
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Is resized */
     resized?: boolean;
     stack?: (AssetStackResponseDto) | null;
@@ -4536,6 +4538,8 @@ export type SanitizedAssetResponseDto = {
     localDateTime: string;
     /** Original MIME type */
     originalMimeType?: string;
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting. */
     thumbhash: string | null;
     "type": AssetTypeEnum;
@@ -6206,6 +6210,8 @@ export type BestPhotoAssetResponseDto = {
     /** Owner user ID */
     ownerId: string;
     people?: PersonResponseDto[];
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Is resized */
     resized?: boolean;
     stack?: (AssetStackResponseDto) | null;
@@ -15683,6 +15689,24 @@ export type StudioBundleExportCreateDto = {
     requestKey?: string;
     /** Export only these sequences, with every sequence they nest. `main` names the Main timeline. Leave out for the whole project. */
     sequenceIds?: string[];
+};
+export type StudioCaptionTranslationCreateDto = {
+    /** The caption lines, in order, as plain text. Timing stays with the caller. */
+    lines: string[];
+    /** The language the captions are in */
+    source: StudioCaptionLanguage;
+    /** The language to translate them into */
+    target: StudioCaptionLanguage;
+};
+export type StudioCaptionTranslationDto = {
+    /** The machine-learning destination that translated the lines */
+    destinationId: string;
+    /** One translation per line asked for, in the same order */
+    lines: string[];
+    /** The translation model the worker used */
+    model: string;
+    source: StudioCaptionLanguage;
+    target: StudioCaptionLanguage;
 };
 export type StudioTimeDto = {
     /** Denominator */
@@ -31677,6 +31701,22 @@ export function exportStudioProjectBundle({ id, studioBundleExportCreateDto }: {
     })));
 }
 /**
+ * Translate Studio captions
+ */
+export function translateStudioCaptions({ id, studioCaptionTranslationCreateDto }: {
+    id: string;
+    studioCaptionTranslationCreateDto: StudioCaptionTranslationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCaptionTranslationDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/caption-translations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioCaptionTranslationCreateDto
+    })));
+}
+/**
  * List Studio review comments
  */
 export function getStudioProjectComments({ id, skip, take }: {
@@ -37843,6 +37883,19 @@ export enum StudioProjectSort {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum StudioCaptionLanguage {
+    En = "en",
+    Fr = "fr",
+    Es = "es",
+    De = "de",
+    It = "it",
+    Pt = "pt",
+    Nl = "nl",
+    Pl = "pl",
+    Sv = "sv",
+    Da = "da",
+    Nb = "nb"
 }
 export enum StudioReframeSubject {
     Face = "face",

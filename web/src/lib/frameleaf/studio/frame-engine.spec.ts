@@ -147,7 +147,7 @@ describe('studio engine manifest', () => {
   });
 
   it('requires protocol8 and refuses a held protocol7 build', async () => {
-    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(8);
+    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(9);
     await expect(resolveStudioFrameManifest(async () => json({ ...manifest, protocolVersion: 7 }))).rejects.toThrow(
       /protocol 7/,
     );
@@ -182,6 +182,8 @@ describe('studio editor frame (FL-88)', () => {
     expect(stage.querySelector('iframe')).not.toBeNull();
     expect(received[0]).toMatchObject({ type: 'mount', protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION });
     expect(JSON.stringify(received[0])).not.toMatch(/"(accessToken|token|apiBase\w*|baseUrl|sdk)":/i);
+    // FL-636: a host without the Library services is told so, and the frame offers no Library view.
+    expect(received[0]).toMatchObject({ context: { librarySearch: false } });
 
     instance.update({ ...context(), online: false });
     await tick();
@@ -397,6 +399,7 @@ describe('studio editor frame (FL-88)', () => {
       searchLibrary: vi.fn().mockResolvedValue(found),
       addLibraryAssets: vi.fn().mockResolvedValue([]),
     };
+    // Without libraryFacets the host cannot answer the whole view, so libraryFacets reports unavailable.
     const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
       newStage(),
       context(),

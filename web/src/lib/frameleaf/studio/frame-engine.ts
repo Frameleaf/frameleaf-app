@@ -17,6 +17,7 @@
  * - **Complete disposal.** `dispose` asks the editor to release what it holds, then removes the
  *   frame, which ends every AudioContext, GPU device, worker and object URL it created.
  */
+import { isStudioCaptionTranslationRequest } from './caption-languages';
 import type { StudioCommandEnvelope } from './commands';
 import { registerStudioEngine, StudioEngineNotBuiltError } from './engine-loader';
 import {
@@ -36,6 +37,7 @@ import {
 } from './frame-protocol';
 import {
   STUDIO_FRAME_SERVICE_SCHEMA_V8,
+  STUDIO_FRAME_SERVICE_SCHEMA_V9,
   isStudioFrameServiceName,
   isStudioLibraryAssetIds,
   isStudioLibraryQuery,
@@ -276,6 +278,15 @@ const serviceCalls: ServiceHandlers = {
     }
     return services.cancelProjectImportPublication(importId, publicationId, scope);
   },
+  // FL-641: only two offered languages and caption text reach the host; the server checks again.
+  translateCaptions: (services, [request]) => {
+    if (!services.translateCaptions) {
+      return Promise.reject(new Error('Caption translation unavailable'));
+    }
+    return isStudioCaptionTranslationRequest(request)
+      ? services.translateCaptions(request)
+      : Promise.reject(new Error('Invalid caption translation'));
+  },
   reloadProject: (services) => services.reloadProject(),
   // FL-636: the bin's Library view. Shapes are checked here, the search scope by the server.
   // The whole tuple is checked, so a call with extra arguments is refused rather than trimmed.
@@ -283,7 +294,7 @@ const serviceCalls: ServiceHandlers = {
     if (!services.searchLibrary) {
       return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
     }
-    return STUDIO_FRAME_SERVICE_SCHEMA_V8.searchLibrary(args) && isStudioLibraryQuery(args[0])
+    return STUDIO_FRAME_SERVICE_SCHEMA_V9.searchLibrary(args) && isStudioLibraryQuery(args[0])
       ? services.searchLibrary(args[0])
       : Promise.reject(new Error('Invalid library search'));
   },
@@ -291,7 +302,7 @@ const serviceCalls: ServiceHandlers = {
     if (!services.libraryFacets) {
       return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
     }
-    return STUDIO_FRAME_SERVICE_SCHEMA_V8.libraryFacets(args)
+    return STUDIO_FRAME_SERVICE_SCHEMA_V9.libraryFacets(args)
       ? services.libraryFacets()
       : Promise.reject(new Error('Invalid library facets'));
   },
@@ -299,7 +310,7 @@ const serviceCalls: ServiceHandlers = {
     if (!services.addLibraryAssets) {
       return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
     }
-    return STUDIO_FRAME_SERVICE_SCHEMA_V8.addLibraryAssets(args) && isStudioLibraryAssetIds(args[0])
+    return STUDIO_FRAME_SERVICE_SCHEMA_V9.addLibraryAssets(args) && isStudioLibraryAssetIds(args[0])
       ? services.addLibraryAssets(args[0])
       : Promise.reject(new Error('Invalid library assets'));
   },
@@ -342,10 +353,13 @@ export const createFrameStudioEngine = ({
       pendingRevocation = error;
       revoke(error);
     });
+    // FL-636: the frame offers the Library view only when this host can answer all three of its calls.
+    const librarySearch = !!(services.searchLibrary && services.libraryFacets && services.addLibraryAssets);
     let current: StudioHostContext;
     try {
       current = {
         ...context,
+        librarySearch,
         generatedMedia: await access.admit(context.project.id, context.project.graph, context.project.revision),
       };
     } catch (error) {
@@ -597,7 +611,7 @@ export const createFrameStudioEngine = ({
             if (disposed || revoking || disposing) {
               return;
             }
-            current = { ...next, generatedMedia };
+            current = { ...next, generatedMedia, librarySearch };
             send({ type: 'update', context: toFrameData(current) });
           })
           .catch((error) => revoke(error instanceof Error ? error : new Error(String(error))));

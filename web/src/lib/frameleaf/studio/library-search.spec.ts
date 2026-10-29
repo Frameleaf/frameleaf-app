@@ -120,6 +120,22 @@ describe('FL-636 Studio library search', () => {
     expect(open.items.map((item) => item.id)).toEqual(['plain', 'locked']);
   });
 
+  it('pages through Locked items too while the session is unlocked', async () => {
+    const sdk = api({
+      searchAssets: vi.fn(({ metadataSearchDto }) =>
+        Promise.resolve(
+          metadataSearchDto.visibility === AssetVisibility.Locked
+            ? page([asset(`locked-${metadataSearchDto.page}`, { visibility: AssetVisibility.Locked })], '3')
+            : page([]),
+        ),
+      ),
+    });
+    sessionAccess.isElevated = true;
+    const second = await searchStudioLibrary({ page: 2 }, { language: 'en', elevated: true, api: sdk as never });
+    expect(second.items.map((item) => item.id)).toEqual(['locked-2']);
+    expect(second.nextPage).toBe(3);
+  });
+
   it('never hands the editor trashed, audio or (while locked) Locked items, even if a search returns them', async () => {
     const sdk = api({
       searchAssets: vi

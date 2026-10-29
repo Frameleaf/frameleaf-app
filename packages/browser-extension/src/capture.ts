@@ -1,11 +1,14 @@
 import { parseDiscovery, type PageDiscovery } from './discovery';
 import { selectScreenshotArea } from './screenshot-selection';
+import { CAPTURE_INTERVAL_MS, type WholePageInfo } from './whole-page';
 export type Rectangle = { x: number; y: number; width: number; height: number };
 export interface ScreenshotPreview {
-  mode: 'visible' | 'area';
+  mode: 'visible' | 'area' | 'whole';
   dataUrl: string | null;
   viewport: { width: number; height: number };
   selection?: Rectangle;
+  /** Present for a whole-page picture; says whether it was cut short. */
+  whole?: WholePageInfo;
 }
 export class ScreenshotFailure extends Error {
   constructor() {
@@ -16,7 +19,53 @@ export class ScreenshotFailure extends Error {
 }
 const fail = () => new ScreenshotFailure();
 const maxScreenshotBytes = 24 * 1024 * 1024;
-async function within<T>(
+let lastFrameAt = 0;
+/**
+ * Takes a picture of the visible tab. Whole-page frames are spaced out to respect
+ * Chrome's limit of two captures per second, and a screenshot taken straight after one
+ * waits its turn too.
+ */
+export async function captureVisible(
+  windowId: number,
+  signal: AbortSignal,
+  frame = false,
+): Promise<string> {
+  const wait = lastFrameAt + CAPTURE_INTERVAL_MS - Date.now();
+  if (wait > 0)
+    await within(new Promise((done) => setTimeout(done, wait)), signal);
+  try {
+    return await within(
+      chrome.tabs.captureVisibleTab(windowId, { format: 'png' }),
+      signal,
+    );
+  } finally {
+    if (frame) lastFrameAt = Date.now();
+  }
+}
+/** Reads a PNG's width and height from its header, before anything is decoded. */
+export async function readPngSize(
+  blob: Blob,
+  maxBytes = maxScreenshotBytes,
+): Promise<{ width: number; height: number }> {
+  if (blob.size > maxBytes || blob.type !== 'image/png') throw fail();
+  const header = new Uint8Array(await blob.slice(0, 24).arrayBuffer());
+  if (
+    header.length !== 24 ||
+    ![137, 80, 78, 71, 13, 10, 26, 10].every(
+      (value, index) => header[index] === value,
+    ) ||
+    ![73, 72, 68, 82].every((value, index) => header[index + 12] === value)
+  )
+    throw fail();
+  const fields = new DataView(
+    header.buffer,
+    header.byteOffset,
+    header.byteLength,
+  );
+  if (fields.getUint32(8) !== 13) throw fail();
+  return { width: fields.getUint32(16), height: fields.getUint32(20) };
+}
+export async function within<T>(
   operation: Promise<T>,
   signal: AbortSignal,
   timeout = 15000,
@@ -90,25 +139,9 @@ export async function cropCapture(
   viewport: { width: number; height: number },
   selection?: Rectangle,
 ): Promise<Blob> {
-  if (blob.size > maxScreenshotBytes || blob.type !== 'image/png') throw fail();
-  const header = new Uint8Array(await blob.slice(0, 24).arrayBuffer());
-  if (
-    header.length !== 24 ||
-    ![137, 80, 78, 71, 13, 10, 26, 10].every(
-      (value, index) => header[index] === value,
-    ) ||
-    ![73, 72, 68, 82].every((value, index) => header[index + 12] === value)
-  )
-    throw fail();
-  const fields = new DataView(
-    header.buffer,
-    header.byteOffset,
-    header.byteLength,
-  );
-  if (fields.getUint32(8) !== 13) throw fail();
   // Admit PNG dimensions before allocating its decoded pixel buffer.
   cropRectangle(
-    { width: fields.getUint32(16), height: fields.getUint32(20) },
+    await readPngSize(blob),
     viewport,
     selection ?? { x: 0, y: 0, ...viewport },
   );
@@ -305,10 +338,7 @@ export async function takeScreenshot(
     };
     same(await readFrame(tabId, overlay, signal, documentId));
     await active();
-    const dataUrl = await within(
-      chrome.tabs.captureVisibleTab(windowId, { format: 'png' }),
-      signal,
-    );
+    const dataUrl = await captureVisible(windowId, signal);
     same(await readFrame(tabId, overlay, signal, documentId));
     await active();
     if (

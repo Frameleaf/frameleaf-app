@@ -28,6 +28,8 @@
  */
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
+import type { CaptionLanguageEngineString } from './caption-language-strings';
+import type { StudioCaptionTranslationRequest, StudioCaptionTranslationResult } from './caption-languages';
 import type { CaptionStyleEngineString } from './caption-style-strings';
 import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
@@ -363,6 +365,12 @@ export interface StudioHostContext {
    */
   strings?: Readonly<Partial<Record<StudioAdapterString, string>>>;
   /**
+   * The host answers the bin's Library view (FL-636): `searchLibrary`, `libraryFacets` and
+   * `addLibraryAssets` are all present. Set by the frame engine from the services it was given; absent
+   * or false means the bin offers no Library view.
+   */
+  librarySearch?: boolean;
+  /**
    * Where the quick editor that opened Studio had its playhead (FL-113), as exact seconds. The engine
    * starts there once, when it mounts; later updates never move the playhead.
    */
@@ -410,6 +418,8 @@ export type StudioAdapterString =
   | StabiliseEngineString
   /** The Caption style card's words (FL-640), written over the engine's English the same way. */
   | CaptionStyleEngineString
+  /** The captions Languages card's words (FL-641), the same way. */
+  | CaptionLanguageEngineString
   /** The bin's Library view (FL-636), drawn by the adapter. */
   | LibraryPanelString;
 
@@ -566,6 +576,12 @@ export interface StudioHostServices {
    * job followed in Activity (FL-104, FL-106); the editor never renders or saves an export itself.
    */
   requestExport?(kind: 'video'): void;
+  /**
+   * Captions in other languages (FL-641): translate caption lines, sent as text only, on the processing
+   * order ("Where work runs"). One translation per line comes back, in order; the editor keeps the
+   * timing. Optional: without it the editor says translation is not available.
+   */
+  translateCaptions?(request: StudioCaptionTranslationRequest): Promise<StudioCaptionTranslationResult>;
   /**
    * Search the whole library for the bin's Library view (FL-636), with the scope and privacy of the
    * library's Search. Optional: without it the bin offers only `assets`.

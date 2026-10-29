@@ -27,6 +27,8 @@ dependencies = [
     "rapidocr>=3.10.0",
     # Studio captions (owner decision 2026-10-09): Whisper through CTranslate2. See dependency-metadata.
     "faster-whisper==1.2.1",
+    # Studio captions in other languages (FL-641): M2M100's SentencePiece tokenizer for CTranslate2.
+    "sentencepiece>=0.2.0,<1.0",
 ]
 
 [dependency-groups]

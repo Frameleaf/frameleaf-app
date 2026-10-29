@@ -111,7 +111,7 @@ export const searchStudioLibrary = async (
   // server returns only to the owner of an elevated session.
   const [timeline, locked] = await Promise.all([
     run(AssetVisibility.Timeline, STUDIO_LIBRARY_PAGE_SIZE),
-    elevated && page === 1 ? run(AssetVisibility.Locked, STUDIO_LIBRARY_PAGE_SIZE).catch(() => null) : null,
+    elevated ? run(AssetVisibility.Locked, STUDIO_LIBRARY_PAGE_SIZE).catch(() => null) : null,
   ]);
   const seen = new Set<string>();
   const found: AssetResponseDto[] = [];
@@ -124,7 +124,9 @@ export const searchStudioLibrary = async (
   return {
     items: found.map((asset) => toStudioAsset(asset)),
     // The frame may not ask past the last page it is allowed, so none is offered after it.
-    nextPage: timeline.assets.nextPage && page < STUDIO_LIBRARY_PAGE_LIMIT ? page + 1 : null,
+    // Either list may go on: later Locked items are reached through the same pages.
+    nextPage:
+      (timeline.assets.nextPage || locked?.assets.nextPage) && page < STUDIO_LIBRARY_PAGE_LIMIT ? page + 1 : null,
     found,
   };
 };

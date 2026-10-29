@@ -381,7 +381,8 @@ export class SystemConfigDraftStore {
   }
 
   /**
-   * Saves only the given groups of the draft (the email delivery test saves the email settings).
+   * Saves only the given groups of the draft (the email delivery test saves the email settings,
+   * Video playback copies saves `ffmpeg`).
    * Every other pending change stays in the draft, carried onto the saved result.
    */
   async saveKeys(keys: readonly (keyof AdminConfigDto)[]): Promise<boolean> {
@@ -407,7 +408,8 @@ export class SystemConfigDraftStore {
       this.revision = response.revision;
       this.latest = null;
       this.conflicts = [];
-      this.notice = { code: 'partial_saved' };
+      // The page that saved says what was saved; this line only points at what is still pending.
+      this.notice = this.dirty ? { code: 'partial_saved' } : null;
       this.#updated();
       return true;
     } catch (error) {

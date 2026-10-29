@@ -578,8 +578,14 @@ export function createLibraryFinder(host: LibraryFinderHost) {
   let disposed = false
   const Panel = ({ className }: { className?: string }) => <LibraryFinderPanel host={host} className={className} />
   return {
-    update(context: Pick<StudioHostContext, 'strings' | 'auth' | 'online'>) {
+    update(context: Pick<StudioHostContext, 'strings' | 'auth' | 'online' | 'librarySearch'>) {
       if (disposed) return
+      // A host that cannot answer the Library calls gets no Library view, rather than one that only fails.
+      if (!context.librarySearch) {
+        withdraw?.()
+        withdraw = null
+        return
+      }
       view = { strings: { ...context.strings }, locale: context.auth.locale, online: context.online }
       for (const listener of viewListeners) listener()
       const next = libraryText(view.strings, 'libraryTab')

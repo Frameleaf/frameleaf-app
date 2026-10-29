@@ -45,7 +45,7 @@ const strings = {
   libraryClearFilters: '[Clear filters]',
   libraryAddAtPlayhead: '[Add {{name}}]',
 }
-const context = { strings, auth: { locale: 'en' }, online: true } as never
+const context = { strings, auth: { locale: 'en' }, online: true, librarySearch: true } as never
 
 const media = (id: string): MediaMetadata =>
   ({ id, fileName: `${id}.jpg`, mimeType: 'image/jpeg', duration: 0 }) as MediaMetadata
@@ -111,6 +111,17 @@ describe('FL-636 the bin Library view', () => {
     await settle()
     expect(element.querySelectorAll('[data-library-result]')).toHaveLength(0)
     expect(element.textContent).toContain('can’t be searched right now')
+  })
+
+  it('offers no Library view to a host without the Library services', () => {
+    const finder = createLibraryFinder(host as unknown as LibraryFinderHost)
+    finder.update({ strings, auth: { locale: 'en' }, online: true } as never)
+    expect(getLibraryPanel()).toBeNull()
+    finder.update(context)
+    expect(getLibraryPanel()?.label).toBe('[Library]')
+    finder.update({ strings, auth: { locale: 'en' }, online: true, librarySearch: false } as never)
+    expect(getLibraryPanel()).toBeNull()
+    finder.dispose()
   })
 
   it('searches the whole library through the host and shows the results, count and privacy note', async () => {

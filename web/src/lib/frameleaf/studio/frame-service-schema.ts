@@ -1,4 +1,9 @@
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
+import {
+  isStudioCaptionTranslationRequest,
+  type StudioCaptionTranslationRequest,
+  type StudioCaptionTranslationResult,
+} from './caption-languages';
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
 import {
   isStudioProjectImportUpload,
@@ -134,13 +139,19 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V8 = Object.freeze({
     isPublicationEditorScope(args[2]),
   resolveStudioProjectSource: (args: unknown[]) =>
     args.length === 2 && isStudioSourceRequest(args[0]) && isStudioEditorScope(args[1]),
-  // FL-636: the bin's Library view. Additive: a frame that never calls them is unaffected, and a host
+});
+/** Protocol 9: translate caption lines on the processing order (FL-641), and the bin's Library view (FL-636). */
+export const STUDIO_FRAME_SERVICE_SCHEMA_V9 = Object.freeze({
+  ...STUDIO_FRAME_SERVICE_SCHEMA_V8,
+  translateCaptions: (args: unknown[]) => args.length === 1 && isStudioCaptionTranslationRequest(args[0]),
+  // Protocol 9 also carries the bin's Library view (FL-636). Additive: a frame that never calls them is unaffected, and a host
   // without them answers that the library cannot be searched.
   searchLibrary: (args: unknown[]) => args.length === 1 && isStudioLibraryQuery(args[0]),
   libraryFacets: (args: unknown[]) => args.length === 0,
   addLibraryAssets: (args: unknown[]) => args.length === 1 && isStudioLibraryAssetIds(args[0]),
 });
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
+  translateCaptions: { args: [request: StudioCaptionTranslationRequest]; result: StudioCaptionTranslationResult };
   commitEditorDraft: {
     args: [graph: unknown, baseRevision: number, scope: StudioEditorScope];
     result: StudioEditorCommitResult;
@@ -158,7 +169,7 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
   libraryFacets: { args: []; result: StudioLibraryFacets };
   addLibraryAssets: { args: [assetIds: string[]]; result: StudioAssetRef[] };
 };
-export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V8;
+export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V9;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };
 export const isStudioFrameServiceName = (name: unknown): name is StudioFrameServiceName =>
-  typeof name === 'string' && Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, name);
+  typeof name === 'string' && Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V9, name);
