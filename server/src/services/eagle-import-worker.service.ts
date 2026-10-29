@@ -159,15 +159,26 @@ export class EagleImportWorkerService {
     this.running = controller;
     // The lease is kept alive while a large file is copied; once it is lost, the copy is cut short
     // and nothing more is written (every write below checks `throwIfReleased` or the lease itself).
+    // A renewal that fails (the database unreachable) keeps the run going only while the last
+    // confirmed lease has more than one heartbeat left; after that the run stops, before the lease
+    // can run out and another worker take the import.
+    let confirmedUntil = Date.now() + EAGLE_IMPORT_LEASE_MS;
     const heartbeat = setInterval(() => {
+      const asked = Date.now();
       void this.repository
         .renew(row.id, this.workerId, EAGLE_IMPORT_LEASE_MS)
         .then((status) => {
-          if (!status) {
+          if (status) {
+            confirmedUntil = asked + EAGLE_IMPORT_LEASE_MS;
+          } else {
             controller.abort(new EagleRunReleased('Another worker has this import'));
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (Date.now() + EAGLE_IMPORT_HEARTBEAT_MS >= confirmedUntil) {
+            controller.abort(new EagleRunReleased('The lease could not be renewed'));
+          }
+        });
     }, EAGLE_IMPORT_HEARTBEAT_MS);
     try {
       const run = await this.prepare(row, controller.signal);
@@ -271,6 +282,7 @@ export class EagleImportWorkerService {
     const { library, target, auth } = run;
     if (target.mode === 'inside') {
       if (target.inside === 'new' && !run.rootAlbumId) {
+        this.throwIfReleased(run);
         const album = await this.albums.create(auth, {
           albumName: EAGLE_DEFAULT_COLLECTION,
           libraryScope: LibraryScope.Design,
@@ -435,12 +447,14 @@ export class EagleImportWorkerService {
       ...(note && !current?.exifInfo?.description?.trim() && { description: note }),
     };
     if (Object.keys(changes).length > 0) {
+      this.throwIfReleased(run);
       await this.assets.update(run.auth, assetId, changes);
     }
     const addedOn = current ? new Date(current.createdAt).getTime() : Date.now();
     const broughtIn = created || addedOn >= new Date(run.row.createdAt).getTime();
     if (addedAt && broughtIn && addedOn > addedAt.getTime()) {
       // Best effort, as in the browser: the item still comes over with the date it arrived.
+      this.throwIfReleased(run);
       await this.sources.setAddedDate(run.auth, assetId, { addedAt: addedAt.toISOString() }).catch((error: unknown) => {
         this.logger.debug(`Eagle import: Added date kept for ${assetId}: ${String(error)}`);
       });

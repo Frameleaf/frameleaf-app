@@ -411,6 +411,62 @@ describe('FL-653 Eagle import from a server folder', () => {
       }
     });
 
+    describe('once the lease is lost part-way', () => {
+      beforeEach(() => {
+        vitest.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+      });
+      afterEach(() => {
+        vitest.useRealTimers();
+      });
+      const loseLease = async () => {
+        repository.renew.mockResolvedValue(undefined);
+        await vitest.advanceTimersByTimeAsync(30_000);
+      };
+
+      it('makes no "Studio References" collection', async () => {
+        let release!: () => void;
+        repository.save.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)));
+        const running = worker.run(row({ fingerprint }) as never);
+        await vitest.waitFor(() => expect(release).toBeDefined());
+        await loseLease();
+        release();
+        await running;
+        expect(albums.create).not.toHaveBeenCalled();
+        expect(repository.release).toHaveBeenCalled();
+      });
+
+      it('writes no rating, note or Added date for the item in hand', async () => {
+        let release!: () => void;
+        albums.addAssetsToAlbums.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve({}))));
+        const running = worker.run(row({ fingerprint }) as never);
+        await vitest.waitFor(() => expect(release).toBeDefined());
+        await loseLease();
+        release();
+        await running;
+        expect(assets.update).not.toHaveBeenCalled();
+        expect(sources.setAddedDate).not.toHaveBeenCalled();
+        expect(sources.addImported).not.toHaveBeenCalled();
+        expect(repository.addOutcome).not.toHaveBeenCalled();
+      });
+
+      it('stops before the last confirmed lease runs out when renewals keep failing', async () => {
+        let release!: () => void;
+        albums.addAssetsToAlbums.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve({}))));
+        const running = worker.run(row({ fingerprint }) as never);
+        await vitest.waitFor(() => expect(release).toBeDefined());
+        repository.renew.mockRejectedValue(new Error('database unreachable'));
+        // One failed renewal with time left on the lease: the run carries on.
+        await vitest.advanceTimersByTimeAsync(30_000);
+        expect(repository.release).not.toHaveBeenCalled();
+        // By the heartbeat before the lease would end, it has stopped.
+        await vitest.advanceTimersByTimeAsync(60_000);
+        release();
+        await running;
+        expect(repository.release).toHaveBeenCalled();
+        expect(repository.addOutcome).not.toHaveBeenCalled();
+      });
+    });
+
     it('lets the import go, without ending it, when another worker has it', async () => {
       repository.renew.mockResolvedValue(undefined);
       await worker.run(row({ fingerprint }) as never);

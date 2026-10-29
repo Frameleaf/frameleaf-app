@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { EagleLibraryRepository } from 'src/repositories/eagle-library.repository.js';
@@ -54,6 +54,48 @@ describe(EagleLibraryRepository.name, () => {
     expect(opened).toMatchObject({ size: 5 });
     await opened!.handle.close();
     await expect(sut.openItemFile(folder, 'I2', 'b.jpg')).resolves.toBeUndefined();
+  });
+
+  it('lists a folder through the handle it checked, so a folder swapped for a link is never listed', async () => {
+    const folder = await library('Studio.library');
+    await mkdir(path.join(outside, 'images', 'X.info'), { recursive: true });
+    await writeFile(path.join(outside, 'images', 'X.info', 'metadata.json'), JSON.stringify({ id: 'X' }));
+    await writeFile(path.join(outside, 'images', 'X.info', 'secret.jpg'), 'secret');
+    class Swapping extends EagleLibraryRepository {
+      constructor() {
+        super();
+        this.afterDirectoryCheck = async (directory) => {
+          if (directory.endsWith(`${path.sep}images`)) {
+            this.afterDirectoryCheck = undefined;
+            await rename(directory, `${directory}-old`);
+            await symlink(path.join(outside, 'images'), directory);
+          }
+        };
+      }
+    }
+    const folders = await new Swapping().readInfoFolders(folder);
+    expect(folders.map(({ id }) => id)).not.toContain('X');
+    expect(JSON.stringify(folders)).not.toContain('secret');
+  });
+
+  it('never walks into a folder swapped for a link while looking for libraries', async () => {
+    await library('Design/Studio.library');
+    await mkdir(path.join(outside, 'Elsewhere.library'), { recursive: true });
+    await writeFile(path.join(outside, 'Elsewhere.library', 'metadata.json'), '{}');
+    class Swapping extends EagleLibraryRepository {
+      constructor() {
+        super();
+        this.afterDirectoryCheck = async (directory) => {
+          if (directory.endsWith(`${path.sep}Design`)) {
+            this.afterDirectoryCheck = undefined;
+            await rename(directory, `${directory}-old`);
+            await symlink(outside, directory);
+          }
+        };
+      }
+    }
+    const found = await new Swapping().findLibraries(root);
+    expect(found.some((relative) => relative.includes('Elsewhere'))).toBe(false);
   });
 
   it('opens an item file only by plain names, inside the library, never through a link', async () => {

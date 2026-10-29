@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Dirent, constants } from 'node:fs';
-import { FileHandle, lstat, open, readdir, readlink, realpath, stat } from 'node:fs/promises';
+import { FileHandle, lstat, open, opendir, readdir, readlink, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { isSafeSegment } from 'src/utils/eagle-library.js';
 
@@ -58,6 +58,49 @@ const isLibraryName = (name: string) => name.toLowerCase().endsWith('.library');
  */
 @Injectable()
 export class EagleLibraryRepository {
+  /** Runs between a folder's check and its listing. Tests use it to swap the folder; nothing else sets it. */
+  protected afterDirectoryCheck?: (directory: string) => Promise<void>;
+
+  /**
+   * The entries of a folder that is exactly `expected`, listed through the handle that was checked.
+   * The folder is opened without following a link and must be a directory whose real path is
+   * `expected`. On Linux the listing reads that very handle (`/proc/self/fd`); elsewhere the folder's
+   * device and inode are compared before and after the listing, and a change gives no entries.
+   */
+  private async listDirectory(directory: string, expected: string): Promise<Dirent[]> {
+    const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW).catch(
+      () => {},
+    );
+    if (!handle) {
+      return [];
+    }
+    try {
+      const before = await handle.stat();
+      if (!before.isDirectory() || (await realPathOf(handle, directory)) !== expected) {
+        return [];
+      }
+      await this.afterDirectoryCheck?.(directory);
+      if (process.platform === 'linux') {
+        const entries: Dirent[] = [];
+        const listing = await opendir(`/proc/self/fd/${handle.fd}`).catch(() => {});
+        if (listing) {
+          for await (const entry of listing) {
+            entries.push(entry);
+          }
+          return entries;
+        }
+      }
+      const entries = await readdir(directory, { withFileTypes: true });
+      const after = await lstat(directory).catch(() => {});
+      const same = after?.isDirectory() && after.dev === before.dev && after.ino === before.ino;
+      return same ? entries : [];
+    } catch {
+      return [];
+    } finally {
+      await handle.close();
+    }
+  }
+
   /** `.library` folders below `root`, as paths relative to it, a few levels deep. */
   async findLibraries(root: string): Promise<string[]> {
     const realRoot = await realpath(root);
@@ -68,7 +111,7 @@ export class EagleLibraryRepository {
         return;
       }
       visited++;
-      const entries = await readdir(directory, { withFileTypes: true }).catch(() => [] as Dirent[]);
+      const entries = await this.listDirectory(directory, directory);
       for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
         // Hidden folders (the NAS's own, `.Trash`, `@eaDir`) and links are left alone.
         if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('@')) {
@@ -102,15 +145,12 @@ export class EagleLibraryRepository {
 
   /** Every `images/<id>.info` folder with its details and the names of its files, sorted by id. */
   async readInfoFolders(library: string): Promise<EagleInfoFolder[]> {
-    const images = path.join(library, 'images');
-    const info = await lstat(images).catch(() => {});
-    if (
-      !info?.isDirectory() ||
-      (await realpath(images).catch(() => {})) !== path.join(await realpath(library), 'images')
-    ) {
+    const realLibrary = await realpath(library).catch(() => {});
+    if (!realLibrary) {
       return [];
     }
-    const folders = (await readdir(images, { withFileTypes: true }))
+    const images = path.join(realLibrary, 'images');
+    const folders = (await this.listDirectory(images, images))
       .filter((entry) => entry.isDirectory() && entry.name.endsWith('.info') && isSafeSegment(entry.name))
       .map((entry) => entry.name)
       .toSorted((a, b) => a.localeCompare(b));
@@ -122,7 +162,7 @@ export class EagleLibraryRepository {
           const index = next++;
           const name = folders[index];
           const folder = path.join(images, name);
-          const entries = await readdir(folder, { withFileTypes: true }).catch(() => [] as Dirent[]);
+          const entries = await this.listDirectory(folder, folder);
           result[index] = {
             id: name.slice(0, -'.info'.length),
             metadata: await this.readJson(path.join(folder, 'metadata.json'), ITEM_METADATA_MAX_BYTES, library),
