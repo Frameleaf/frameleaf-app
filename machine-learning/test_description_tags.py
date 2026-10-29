@@ -80,6 +80,27 @@ def test_nsfw_tags_survive_the_twenty_tag_cut_ahead_of_ordinary_tags(tmp_path):
     assert response["tags"][:4] == ["naked", "explicit", "nsfw", "zebra"]
 
 
+def test_model_tags_keep_their_order_after_signal_tags_and_are_cut_at_twenty(tmp_path):
+    model = ImageDescriptionModel(next(iter(FLORENCE_MODELS)), acceleration="cuda", device="cpu", cache_dir=tmp_path)
+    own_tags = ["Zebra", "yacht", "zebra", *(f"thing{letter}" for letter in "abcdefghijklmnopqrstuvwxy")]
+    response = model._normalize_response(
+        json.dumps(
+            {
+                "description": "A zebra by a yacht.",
+                "tags": own_tags,
+                "safety": {"is_nsfw_likely": True, "confidence": "high", "indicators": ["naked"]},
+                "medical": {"is_medical_likely": True, "indicators": ["hospital"]},
+            }
+        )
+    )
+
+    # The model's own tags are used as given (not filtered from the text), after the signal tags,
+    # de-duplicated case-insensitively, and the list is cut at 20.
+    assert response["tags"][:7] == ["naked", "nsfw", "medical", "hospital", "zebra", "yacht", "thinga"]
+    assert len(response["tags"]) == TAG_LIMIT
+    assert len(set(response["tags"])) == TAG_LIMIT
+
+
 def test_drops_words_with_digits_whole_and_contractions():
     assert tags_from_text("A 3d-rendering and 3d_model of a kite; they're sure it's fine, don't worry") == [
         "kite",
