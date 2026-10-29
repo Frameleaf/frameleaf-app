@@ -13,7 +13,7 @@
     "resources"
   ],
   "scripts": {
-    "build": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest build",
+    "build": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" nest build",
     "format": "prettier --cache --check .",
     "help:snapshot": "curl -sf https://frameleaf.app/help-index.json -o resources/help/help-index.json",
     "format:fix": "prettier --cache --write --list-different .",
@@ -21,10 +21,10 @@
     "nest": "nest",
     "start:dev": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest start --watch --",
     "start:debug": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest start --debug 0.0.0.0:9230 --watch --",
-    "lint": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/lint.mjs",
+    "lint": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" node scripts/lint.mjs",
     "lint:fix": "pnpm run lint --fix",
     "test:lint": "node --test test/lint-batches.test.mjs",
-    "check": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && pnpm --filter @frameleaf/plugin-sdk build && tsc --noEmit",
+    "check": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && pnpm --filter @frameleaf/plugin-sdk build && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" tsc --noEmit",
     "check:code": "pnpm run format && pnpm run lint && pnpm run check",
     "check:all": "pnpm run check:code && pnpm run test:cov",
     "test": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && vitest --config test/vitest.config.mjs",
