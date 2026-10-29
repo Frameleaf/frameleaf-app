@@ -81,7 +81,7 @@ describe('FL-653 Eagle imports on the server', () => {
     await sut.requestStop(first!.id, user.id);
     const third = await create();
     expect(third?.id).not.toBe(first?.id);
-    await expect(sut.restart(first!.id, { target: { mode: 'top' }, existingTop: [] })).resolves.toBeUndefined();
+    await expect(sut.restart(first!.id, { target: { mode: 'top' } })).resolves.toBeUndefined();
   });
 
   it('keeps a stop that came after the run’s last check', async () => {
@@ -117,7 +117,9 @@ describe('FL-653 Eagle imports on the server', () => {
     // Finished with an item left over: choosing the library again carries it on.
     const again = await sut.findResumable(user.id, row.libraryPath, row.fingerprint);
     expect(again).toMatchObject({ id: row.id, failed: ['I3'], albums: { F1: 'a' } });
-    await expect(sut.restart(row.id, { target: { mode: 'top' }, existingTop: [] })).resolves.toMatchObject({
+    // Carrying on keeps the top-level names the import started with, for "Name (Eagle)".
+    await expect(sut.restart(row.id, { target: { mode: 'top' } })).resolves.toMatchObject({
+      existingTop: ['Web'],
       status: 'running',
       target: { mode: 'top' },
     });

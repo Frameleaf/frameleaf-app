@@ -116,7 +116,8 @@ export class EagleImportService {
       if (earlier.status === 'running' || earlier.status === 'stopping') {
         return this.present(earlier);
       }
-      const restarted = await this.repository.restart(earlier.id, { target, existingTop: dto.existingTop });
+      // Carrying on keeps the collection names the import started with (see `restart`).
+      const restarted = await this.repository.restart(earlier.id, { target });
       if (restarted) {
         this.logger.log(`Eagle import ${earlier.id} carries on`);
         return this.present(restarted);

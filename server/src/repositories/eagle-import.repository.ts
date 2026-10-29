@@ -90,17 +90,18 @@ export class EagleImportRepository {
   }
 
   /**
-   * Starts it again from where it got to, with the choices made now. Undefined when it isn't
-   * stopped or finished, or when another import of the library is already running.
+   * Starts it again from where it got to. Its collection names stay as they were decided when it
+   * started (`existingTop`, for "Name (Eagle)"), so carrying on never renames the folders still to
+   * come. Undefined when it isn't stopped or finished, or when another import of the library is
+   * already running.
    */
-  restart(id: string, patch: Pick<EagleImportPatch, 'target' | 'existingTop'>) {
+  restart(id: string, patch: Pick<EagleImportPatch, 'target'>) {
     const restarted = this.db
       .updateTable('eagle_import')
       .set({
         status: 'running',
         error: null,
         target: json(patch.target),
-        existingTop: json(patch.existingTop ?? []),
         updatedAt: sql`now()`,
       })
       .where('id', '=', id)

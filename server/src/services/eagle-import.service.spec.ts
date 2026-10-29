@@ -212,6 +212,8 @@ describe('FL-653 Eagle import from a server folder', () => {
     expect(started.status).toBe('running');
     expect(repository.create).not.toHaveBeenCalled();
     expect(JSON.stringify(started)).not.toContain(root);
+    // The names it started with stay: a carry-on sent before the collections loaded can't clear them.
+    expect(repository.restart).toHaveBeenCalledWith(expect.any(String), { target: { mode: 'inside', inside: 'new' } });
   });
 
   describe('the worker', () => {
