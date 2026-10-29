@@ -17,6 +17,7 @@ import {
   CloudConnectionState,
   CloudMlGatewayDeps,
   ML_CLONE_SUSPENDED_DETAIL,
+  loadInstanceIdentity,
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
@@ -394,6 +395,42 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     expect((metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity).kid).toBe(stored.kid);
     expect(cloud.requests.filter((request) => request.path === '/id/token')).toHaveLength(1);
     expect(cloud.requests.filter((request) => request.path === '/.well-known/frameleaf-services')).toHaveLength(1);
+  });
+
+  it('shares one discovery read and one token request between callers that miss the cache together', async () => {
+    metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
+    await loadInstanceIdentity(deps);
+    const signer = identity.currentSigner();
+    const documents = await Promise.all([1, 2, 3].map(() => cloudRepository.discovery(cloud.url)));
+    expect(new Set(documents).size).toBe(1);
+    const resource = `${cloud.url}/ml-eu`;
+    const tokens = await Promise.all(
+      [1, 2, 3, 4].map(() => cloudRepository.accessToken(documents[0], 'instance-1', resource, signer)),
+    );
+    expect(new Set(tokens.map(({ accessToken }) => accessToken)).size).toBe(1);
+    expect(cloud.requests.filter(({ path }) => path === '/.well-known/frameleaf-services')).toHaveLength(1);
+    expect(cloud.requests.filter(({ path }) => path === '/id/token')).toHaveLength(1);
+    // a failed request is not remembered: the next caller asks again
+    cloud.respond = ({ path }) => (path === '/id/token' ? { status: 503, body: {} } : undefined);
+    cloudRepository.forget();
+    await expect(cloudRepository.accessToken(documents[0], 'instance-1', resource, signer)).rejects.toThrow();
+    cloud.respond = () => {};
+    await expect(cloudRepository.accessToken(documents[0], 'instance-1', resource, signer)).resolves.toMatchObject({
+      accessToken: cloud.token,
+    });
+  });
+
+  it('never caches a token whose request was sent before forget', async () => {
+    metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
+    await loadInstanceIdentity(deps);
+    const signer = identity.currentSigner();
+    const document = await cloudRepository.discovery(cloud.url);
+    const resource = `${cloud.url}/ml-eu`;
+    const before = cloudRepository.accessToken(document, 'instance-1', resource, signer);
+    cloudRepository.forget();
+    await before;
+    await cloudRepository.accessToken(document, 'instance-1', resource, signer);
+    expect(cloud.requests.filter(({ path }) => path === '/id/token')).toHaveLength(2);
   });
 
   it('refuses a discovery document whose token issuer is on another host, and asks it for nothing (FL-159)', async () => {
