@@ -11,7 +11,13 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
   const id = '33333333-3333-4333-8333-333333333333';
   const userId = '11111111-1111-4111-8111-111111111111';
   const itemId = '44444444-4444-4444-8444-444444444444';
+  test.setTimeout(60000);
   const key = 'synthetic-delivery-key';
+  const albums = [
+    { id: itemId, albumName: 'Inspiration', parentId: null as string | null },
+  ];
+  const albumRequests: unknown[] = [];
+  let failNextAlbumResponse = false;
   const resources = new Map<
     string,
     {
@@ -84,9 +90,42 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       }
       if (req.url === '/frameleaf/api/capture/catalog') {
         send({
-          albums: [{ id: itemId, albumName: 'Inspiration', parentId: null }],
+          albums,
           tags: [],
         });
+        return;
+      }
+      if (
+        req.url === '/frameleaf/api/capture/albums' &&
+        req.method === 'POST'
+      ) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(Buffer.from(chunk));
+        const request = JSON.parse(Buffer.concat(chunks).toString());
+        albumRequests.push(request);
+        if (
+          request.libraryScope !== 'design' ||
+          (request.parentId &&
+            !albums.some((album) => album.id === request.parentId))
+        ) {
+          send({}, 409);
+          return;
+        }
+        const album = {
+          id:
+            albums.length === 1
+              ? '55555555-5555-4555-8555-555555555555'
+              : '66666666-6666-4666-8666-666666666666',
+          albumName: request.name,
+          parentId: request.parentId ?? null,
+        };
+        albums.push(album);
+        if (failNextAlbumResponse) {
+          failNextAlbumResponse = false;
+          send({}, 503);
+          return;
+        }
+        send({ ...album, unexpected: 'not-cached' }, 201);
         return;
       }
       const state = (resourceId: string) => ({
@@ -612,6 +651,67 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     await bookmarkPage
       .getByLabel('Album', { exact: true })
       .selectOption(itemId);
+    await bookmarkPage.getByText('Create an album', { exact: true }).click();
+    await bookmarkPage
+      .getByLabel('New album name', { exact: true })
+      .fill('Packaging');
+    await bookmarkPage
+      .getByLabel('Parent album', { exact: true })
+      .selectOption(itemId);
+    await bookmarkPage
+      .getByRole('button', { name: 'Create and select album', exact: true })
+      .click();
+    await expect(
+      bookmarkPage.getByText(
+        'Album created and selected. Captures have not been saved.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    const nestedId = albums[1].id;
+    await expect(bookmarkPage.getByLabel('Album', { exact: true })).toHaveValue(
+      nestedId,
+    );
+    await expect(
+      bookmarkPage
+        .getByLabel('Album', { exact: true })
+        .locator('option:checked'),
+    ).toHaveText('Inspiration / Packaging');
+    expect(albumRequests).toEqual([
+      { name: 'Packaging', parentId: itemId, libraryScope: 'design' },
+    ]);
+    await bookmarkPage
+      .getByLabel('New album name', { exact: true })
+      .fill('Interrupted');
+    await bookmarkPage
+      .getByLabel('Parent album', { exact: true })
+      .selectOption(nestedId);
+    failNextAlbumResponse = true;
+    await bookmarkPage
+      .getByRole('button', { name: 'Create and select album', exact: true })
+      .click();
+    await expect(bookmarkPage.getByRole('alert')).toContainText(
+      'Could not confirm album creation',
+    );
+    await expect(
+      bookmarkPage.getByRole('button', {
+        name: 'Create and select album',
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await bookmarkPage
+      .getByRole('button', { name: 'Refresh albums', exact: true })
+      .click();
+    await expect(
+      bookmarkPage.getByLabel('New album name', { exact: true }),
+    ).toBeEnabled();
+    await expect(
+      bookmarkPage
+        .getByLabel('Album', { exact: true })
+        .locator('option')
+        .filter({ hasText: 'Inspiration / Packaging / Interrupted' }),
+    ).toHaveCount(1);
+    expect(albumRequests).toHaveLength(2);
+    expect(albums).toHaveLength(3);
     const uploadsBeforeBookmark = creates;
     await bookmarkPage.screenshot({
       path: testInfo.outputPath('bookmark-preview.png'),
@@ -644,6 +744,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       title: 'Fixture inspiration',
     });
     expect(bookmarkBody.source.pageUrl).toBe(origin + '/page');
+    expect(bookmarkBody.albumId).toBe(nestedId);
     expect(bookmarkBody.uploadResourceId).toBeUndefined();
     expect(bookmarkBody.sha256).toBeUndefined();
     await popup.screenshot({

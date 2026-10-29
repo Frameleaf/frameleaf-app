@@ -14,6 +14,8 @@ export type ServerBinding = {
   credentialId: string;
 };
 const messages = {
+  album:
+    'Could not confirm album creation. Refresh albums and check the destination before trying again.',
   address:
     'Use an HTTPS server address without credentials, a query, or a fragment.',
   connection:
@@ -285,14 +287,48 @@ export async function createAlbum(
   name: string,
   parentId?: string,
 ) {
-  return createCaptureAlbum(
-    {
-      captureAlbumCreateDto: {
-        name,
-        parentId,
-        libraryScope: CaptureAlbumScope.Design,
+  name = name.trim();
+  if (
+    !name ||
+    name.length > 255 ||
+    (parentId !== undefined && !uuid.test(parentId))
+  )
+    throw new CaptureFailure('album');
+  try {
+    const album = await createCaptureAlbum(
+      {
+        captureAlbumCreateDto: {
+          name,
+          parentId,
+          libraryScope: CaptureAlbumScope.Design,
+        },
       },
-    },
-    await boundOptions(binding, token, globalThis.fetch.bind(globalThis)),
-  );
+      await boundOptions(binding, token, globalThis.fetch.bind(globalThis)),
+    );
+    if (
+      !album ||
+      !uuid.test(album.id) ||
+      album.albumName !== name ||
+      album.parentId !== (parentId ?? null)
+    )
+      throw new CaptureFailure('album');
+    return {
+      id: album.id,
+      albumName: album.albumName,
+      parentId: album.parentId,
+    };
+  } catch (error) {
+    if (
+      error instanceof CaptureFailure &&
+      [
+        'authorization',
+        'identity',
+        'credential',
+        'permission',
+        'unsupported',
+      ].includes(error.code)
+    )
+      throw error;
+    throw new CaptureFailure('album');
+  }
 }

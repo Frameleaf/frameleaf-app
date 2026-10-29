@@ -18,6 +18,7 @@ import { sameBinding } from './api';
 import {
   CaptureFailure,
   connectServer,
+  createAlbum,
   getCatalog,
   normalizeServerAddress,
 } from './api';
@@ -150,6 +151,7 @@ export function handleMessage(
         'retry-capture',
         'cancel-capture',
         'release-candidates',
+        'create-album',
       ].includes(message.type)
     )
   )
@@ -234,6 +236,71 @@ export function handleMessage(
             };
           }
           return { ok: true, connection: current, preview };
+        }
+        case 'create-album': {
+          if (
+            !capturePage ||
+            !('previewId' in message) ||
+            typeof message.previewId !== 'string' ||
+            !('name' in message) ||
+            typeof message.name !== 'string'
+          )
+            throw new Error();
+          const name = message.name.trim();
+          if (!name || name.length > 255)
+            throw new QueueFailure(
+              'Enter an album name of 1 to 255 characters.',
+            );
+          const current = await connectionStatus();
+          if (
+            !current ||
+            current.status !== 'connected' ||
+            !readPreview(message.previewId, current.binding)
+          )
+            throw new CaptureFailure('credential');
+          if (!(await hasServerAccess(current.binding.origin)))
+            throw new CaptureFailure('permission');
+          const parentId = 'parentId' in message ? message.parentId : undefined;
+          if (
+            parentId !== undefined &&
+            (typeof parentId !== 'string' ||
+              !current.catalog?.albums.some((album) => album.id === parentId))
+          )
+            throw new QueueFailure(
+              'Refresh albums and choose an available parent.',
+            );
+          let album;
+          try {
+            album = await createAlbum(
+              current.binding,
+              await credentialFor(current.binding),
+              name,
+              parentId,
+            );
+            await refresh();
+          } catch (error) {
+            if (
+              error instanceof CaptureFailure &&
+              ['authorization', 'identity', 'unsupported'].includes(error.code)
+            ) {
+              stopDelivery();
+              clearPreview();
+              await pauseConnection(current.binding);
+            }
+            throw error;
+          }
+          const latest = await connectionStatus();
+          if (
+            !latest ||
+            latest.status !== 'connected' ||
+            !sameBinding(latest.binding, current.binding) ||
+            !latest.catalog?.albums.some(
+              (value) =>
+                value.id === album.id && value.parentId === (parentId ?? null),
+            )
+          )
+            throw new CaptureFailure('album');
+          return { ok: true, connection: latest, albumId: album.id };
         }
         case 'release-candidates': {
           if (

@@ -31,6 +31,11 @@
   let bookmarkQueued = $state(false);
   let sourceTitle = $state("");
   let saving = $state(false);
+  let creating = $state(false);
+  let busy = $derived(saving || creating);
+  let newAlbumName = $state("");
+  let newAlbumParent = $state("");
+  let creationNeedsRefresh = $state(false);
   let notice = $state("");
   let saveController: AbortController | undefined;
 
@@ -50,7 +55,7 @@
     approvedOrigins.clear();
   }
   async function previewImage(candidate: CaptureCandidate) {
-    if (!preview || downloading || saving) return;
+    if (!preview || downloading || busy) return;
     const currentPreview = preview.id;
     const controller = new AbortController();
     download = controller;
@@ -123,6 +128,9 @@
         sourcePage = nextPreview?.discovery.pageUrl ?? "";
         bookmarkTarget = nextPreview?.discovery.bookmarkUrl ?? sourcePage;
         bookmarkQueued = false;
+        newAlbumName = "";
+        newAlbumParent = "";
+        creationNeedsRefresh = false;
         sourceTitle = (nextPreview?.discovery.title ?? "").slice(0, 2000);
       }
       preview = nextPreview;
@@ -165,7 +173,7 @@
     if (
       !preview ||
       connection?.status !== "connected" ||
-      saving ||
+      busy ||
       downloading ||
       !selected.length ||
       !albumId
@@ -271,7 +279,7 @@
     if (
       !preview ||
       connection?.status !== "connected" ||
-      saving ||
+      busy ||
       downloading ||
       !albumId ||
       bookmarkQueued
@@ -302,6 +310,67 @@
             : "Could not queue this bookmark. Check the address and try again.";
     } finally {
       saving = false;
+    }
+  }
+  async function createDestination(refreshOnly = false) {
+    if (
+      !preview ||
+      connection?.status !== "connected" ||
+      busy ||
+      (!refreshOnly && creationNeedsRefresh)
+    )
+      return;
+    const name = newAlbumName.trim();
+    if (!refreshOnly && (!name || name.length > 255)) {
+      error = "Enter an album name of 1 to 255 characters.";
+      return;
+    }
+    const previewId = preview.id;
+    const binding = connection.binding;
+    creating = true;
+    error = "";
+    notice = "";
+    if (!refreshOnly) creationNeedsRefresh = true;
+    try {
+      const reply = await sendRequest(
+        refreshOnly
+          ? { type: "refresh" }
+          : {
+              type: "create-album",
+              previewId,
+              name,
+              ...(newAlbumParent && { parentId: newAlbumParent }),
+            },
+      );
+      if (preview?.id !== previewId) return;
+      if (!reply.ok) {
+        error = reply.error;
+        return;
+      }
+      if (
+        reply.connection?.status !== "connected" ||
+        !sameBinding(reply.connection.binding, binding)
+      )
+        return;
+      connection = reply.connection;
+      if (!refreshOnly) {
+        if (
+          !reply.albumId ||
+          !connection.catalog?.albums.some(
+            (album) => album.id === reply.albumId,
+          )
+        )
+          throw new Error();
+        albumId = reply.albumId;
+        newAlbumName = "";
+        notice = "Album created and selected. Captures have not been saved.";
+      }
+      creationNeedsRefresh = false;
+    } catch {
+      error =
+        "Could not confirm album creation. Refresh albums and check the destination before trying again.";
+    } finally {
+      creating = false;
     }
   }
   function toggle(id: string, checked: boolean) {
@@ -386,7 +455,7 @@
             <button
               type="button"
               onclick={() => (selected = [])}
-              disabled={saving || !selected.length}>Clear selection</button
+              disabled={busy || !selected.length}>Clear selection</button
             >
           </div>
           {#if !visible.length}<p>
@@ -400,7 +469,7 @@
           <div class="preview-actions">
             <button
               type="button"
-              disabled={saving || !Object.keys(thumbnails).length}
+              disabled={busy || !Object.keys(thumbnails).length}
               onclick={clearImages}>Clear loaded previews</button
             >
             {#if downloading}<button
@@ -415,7 +484,7 @@
                   ><input
                     type="checkbox"
                     checked={selected.includes(candidate.id)}
-                    disabled={saving ||
+                    disabled={busy ||
                       (selected.length >= 100 &&
                         !selected.includes(candidate.id))}
                     onchange={(event) =>
@@ -446,9 +515,7 @@
                 <button
                   type="button"
                   class="preview-button"
-                  disabled={saving ||
-                    !!downloading ||
-                    !!thumbnails[candidate.id]}
+                  disabled={busy || !!downloading || !!thumbnails[candidate.id]}
                   onclick={() => void previewImage(candidate)}
                   >{downloading === candidate.id
                     ? "Loading preview…"
@@ -468,18 +535,54 @@
         <h2>Destination</h2>
         <p class="address">{connection?.binding.origin}</p>
         <label for="album">Album</label>
-        <select id="album" disabled={saving} bind:value={albumId}
+        <select id="album" disabled={busy} bind:value={albumId}
           ><option value="">Choose a design album</option
           >{#each connection?.catalog?.albums ?? [] as album}<option
               value={album.id}>{albumName(album.id)}</option
             >{/each}</select
         >
+        <details>
+          <summary>Create an album</summary>
+          <div class="album-create-form">
+            <label for="new-album-name">New album name</label><input
+              id="new-album-name"
+              maxlength="255"
+              disabled={busy || creationNeedsRefresh}
+              bind:value={newAlbumName}
+            />
+            <label for="new-album-parent">Parent album</label><select
+              id="new-album-parent"
+              disabled={busy || creationNeedsRefresh}
+              bind:value={newAlbumParent}
+              ><option value="">Top level</option
+              >{#each connection?.catalog?.albums ?? [] as album}<option
+                  value={album.id}>{albumName(album.id)}</option
+                >{/each}</select
+            >
+            <button
+              type="button"
+              disabled={busy || creationNeedsRefresh || !newAlbumName.trim()}
+              onclick={() => void createDestination()}
+              >Create and select album</button
+            >
+            {#if creationNeedsRefresh}<p class="hint">
+                Check the refreshed album list before creating again; an
+                interrupted request may have succeeded.
+              </p>{/if}
+            <button
+              type="button"
+              disabled={busy}
+              onclick={() => void createDestination(true)}
+              >Refresh albums</button
+            >
+          </div>
+        </details>
         {#if connection?.catalog?.tags.length}<fieldset>
             <legend>Tags</legend>{#each connection.catalog.tags as tag}<label
                 class="tag-choice"
                 ><input
                   type="checkbox"
-                  disabled={saving}
+                  disabled={busy}
                   bind:group={tagIds}
                   value={tag.id}
                 />{tag.value}</label
@@ -489,26 +592,26 @@
           id="note"
           rows="4"
           maxlength="10000"
-          disabled={saving}
+          disabled={busy}
           bind:value={note}></textarea>
         <label for="source-title">Source title</label><input
           id="source-title"
           maxlength="2000"
-          disabled={saving}
+          disabled={busy}
           bind:value={sourceTitle}
         />
         <label for="source-page">Source page</label><input
           id="source-page"
           type="url"
           maxlength="8192"
-          disabled={saving}
+          disabled={busy}
           bind:value={sourcePage}
         />
         <p class="hint">Source query parameters and fragments are removed.</p>
         {#if !preview.discovery.bookmarkUrl}<button
             class="primary"
             type="button"
-            disabled={saving || !!downloading || !selected.length || !albumId}
+            disabled={busy || !!downloading || !selected.length || !albumId}
             onclick={() => void saveSelected()}
             >{saving ? "Queuing images…" : "Save selected images"}</button
           >
@@ -519,7 +622,7 @@
           id="bookmark-target"
           type="url"
           maxlength="8192"
-          disabled={saving || bookmarkQueued}
+          disabled={busy || bookmarkQueued}
           bind:value={bookmarkTarget}
         />
         <p class="hint">
@@ -529,7 +632,7 @@
         <button
           type="button"
           class:primary={!!preview.discovery.bookmarkUrl}
-          disabled={saving || !!downloading || !albumId || bookmarkQueued}
+          disabled={busy || !!downloading || !albumId || bookmarkQueued}
           onclick={() => void saveBookmark()}
           >{bookmarkQueued ? "Bookmark queued" : "Save page bookmark"}</button
         >

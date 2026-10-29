@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { defaults } from '@frameleaf/sdk';
 import {
   connectServer,
+  createAlbum,
   getCatalog,
   normalizeServerAddress,
   serverPermissionPattern,
@@ -21,6 +22,116 @@ const json = (value: unknown, status = 200) =>
   });
 
 describe('capture server boundary', () => {
+  it('creates a design album at the chosen parent and projects only destination fields', async () => {
+    const parentId = '22222222-2222-4222-8222-222222222222';
+    const created = {
+      id: '33333333-3333-4333-8333-333333333333',
+      albumName: 'Packaging',
+      parentId,
+      libraryScope: 'design',
+      unexpected: 'private',
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json(capabilities))
+      .mockResolvedValueOnce(json(created));
+    vi.stubGlobal('fetch', fetch);
+    try {
+      const binding = {
+        origin: 'https://photos.example/frameleaf',
+        serverId: capabilities.serverId,
+        userId: capabilities.userId,
+        credentialId: 'key',
+      };
+      expect(
+        await createAlbum(binding, 'selected-key', ' Packaging ', parentId),
+      ).toEqual({ id: created.id, albumName: 'Packaging', parentId });
+      expect(fetch.mock.calls[1][0]).toBe(
+        'https://photos.example/frameleaf/api/capture/albums',
+      );
+      expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+        name: 'Packaging',
+        parentId,
+        libraryScope: 'design',
+      });
+      expect(new Headers(fetch.mock.calls[1][1].headers).get('x-api-key')).toBe(
+        'selected-key',
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('does not retry an ambiguous album creation and does not accept an unrelated destination response', async () => {
+    const binding = {
+      origin: 'https://photos.example',
+      serverId: capabilities.serverId,
+      userId: capabilities.userId,
+      credentialId: 'key',
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json(capabilities))
+      .mockRejectedValueOnce(new Error('secret transport diagnostic'));
+    vi.stubGlobal('fetch', fetch);
+    try {
+      await expect(
+        createAlbum(binding, 'selected-key', 'Packaging'),
+      ).rejects.toThrow('Refresh albums');
+      expect(fetch).toHaveBeenCalledTimes(2);
+      fetch
+        .mockReset()
+        .mockResolvedValueOnce(json(capabilities))
+        .mockResolvedValueOnce(
+          json({
+            id: '33333333-3333-4333-8333-333333333333',
+            albumName: 'Other',
+            parentId: null,
+          }),
+        );
+      await expect(
+        createAlbum(binding, 'selected-key', 'Packaging'),
+      ).rejects.toThrow('Refresh albums');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it.each([
+    { status: 401, value: {}, code: 'authorization' },
+    {
+      status: 200,
+      value: { ...capabilities, version: 2 },
+      code: 'unsupported',
+    },
+    {
+      status: 200,
+      value: {
+        ...capabilities,
+        userId: '22222222-2222-4222-8222-222222222222',
+      },
+      code: 'identity',
+    },
+  ])(
+    'preserves fatal preflight classification before album mutation: $code',
+    async ({ status, value, code }) => {
+      const fetch = vi.fn().mockResolvedValue(json(value, status));
+      vi.stubGlobal('fetch', fetch);
+      try {
+        const binding = {
+          origin: 'https://photos.example',
+          serverId: capabilities.serverId,
+          userId: capabilities.userId,
+          credentialId: 'key',
+        };
+        await expect(
+          createAlbum(binding, 'selected-key', 'Packaging'),
+        ).rejects.toMatchObject({ code });
+        expect(fetch).toHaveBeenCalledOnce();
+        expect(fetch.mock.calls[0][1].method).not.toBe('POST');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
   it('normalizes the site and optional API suffix without losing a deployment subpath', () => {
     expect(
       normalizeServerAddress('https://photos.example/frameleaf/api/'),

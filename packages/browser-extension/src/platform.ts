@@ -19,6 +19,7 @@ export type ExtensionRequest =
         | 'wake-queue';
     }
   | { type: 'preview' | 'retry-capture' | 'cancel-capture'; id: string }
+  | { type: 'create-album'; previewId: string; name: string; parentId?: string }
   | { type: 'release-candidates'; id: string; candidateIds: string[] }
   | {
       type: 'connect';
@@ -49,6 +50,7 @@ export type ExtensionReply =
       connection: ConnectionStatus | null;
       preview?: CapturePreview;
       queue?: QueueProgress;
+      albumId?: string;
     }
   | { ok: false; error: string; connection?: ConnectionStatus | null };
 export const trustedStorage = () => chrome.storage.local;

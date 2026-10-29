@@ -18,10 +18,11 @@ vi.mock('./discovery', async (original) => ({
   discoverActivePage: vi.fn(),
 }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectServer, getCatalog } from './api';
+import { connectServer, getCatalog, createAlbum } from './api';
 vi.mock('./api', async (original) => ({
   ...(await original<typeof import('./api')>()),
   connectServer: vi.fn(),
+  createAlbum: vi.fn(),
   getCatalog: vi.fn(),
 }));
 const binding = {
@@ -82,6 +83,81 @@ beforeEach(() => {
 });
 
 describe('trusted extension operations', () => {
+  it('creates nested albums only for the current capture preview and visible parent', async () => {
+    const { handleMessage } = await import('./background');
+    const popup = { ...sender, url: 'chrome-extension://frameleaf/popup.html' };
+    const capture = {
+      ...sender,
+      url: 'chrome-extension://frameleaf/capture.html',
+    };
+    const parent = {
+      id: '22222222-2222-4222-8222-222222222222',
+      albumName: 'Campaign',
+      parentId: null,
+    };
+    const child = {
+      id: '33333333-3333-4333-8333-333333333333',
+      albumName: 'Packaging',
+      parentId: parent.id,
+    };
+    vi.mocked(getCatalog).mockResolvedValue({ albums: [parent], tags: [] });
+    await handleMessage(
+      { type: 'connect', address: binding.origin, token: 'private-key' },
+      sender,
+    );
+    await handleMessage({ type: 'discover' }, popup);
+    const previewId = new URL(
+      vi.mocked(chrome.tabs.create).mock.calls[0][0].url!,
+    ).searchParams.get('id')!;
+    const request = {
+      type: 'create-album',
+      previewId,
+      name: ' Packaging ',
+      parentId: parent.id,
+    };
+    expect(
+      (
+        await handleMessage(request, {
+          ...capture,
+          url: 'https://evil.example/',
+        })
+      ).ok,
+    ).toBe(false);
+    expect(
+      (await handleMessage({ ...request, previewId: 'expired' }, capture)).ok,
+    ).toBe(false);
+    expect(
+      (
+        await handleMessage(
+          { ...request, parentId: '44444444-4444-4444-8444-444444444444' },
+          capture,
+        )
+      ).ok,
+    ).toBe(false);
+    expect((await handleMessage({ ...request, name: '   ' }, capture)).ok).toBe(
+      false,
+    );
+    expect(createAlbum).not.toHaveBeenCalled();
+    vi.mocked(createAlbum).mockResolvedValue(child);
+    vi.mocked(getCatalog).mockResolvedValue({
+      albums: [parent, child],
+      tags: [],
+    });
+    expect(await handleMessage(request, capture)).toMatchObject({
+      ok: true,
+      albumId: child.id,
+      connection: { catalog: { albums: [parent, child] } },
+    });
+    expect(createAlbum).toHaveBeenCalledWith(
+      binding,
+      'private-key',
+      'Packaging',
+      parent.id,
+    );
+    await handleMessage({ type: 'disconnect' }, sender);
+    expect((await handleMessage(request, capture)).ok).toBe(false);
+    expect(createAlbum).toHaveBeenCalledOnce();
+  });
   it.each([
     { id: 'frameleaf', url: 'https://page.example/options.html' },
     { id: 'elsewhere', url: sender.url },
