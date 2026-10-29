@@ -519,6 +519,7 @@ describe('/albums', () => {
         kind: AlbumKind.Album,
         parentId: null,
         icon: null,
+        color: null,
         sortOrder: null,
       });
     });
@@ -620,7 +621,7 @@ describe('/albums', () => {
         );
       });
 
-      it('rejects nesting an album under a plain album', async () => {
+      it('nests an album inside a plain album (FL-622)', async () => {
         const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Trips' });
 
         const { status, body } = await request(app)
@@ -628,8 +629,8 @@ describe('/albums', () => {
           .set('Authorization', `Bearer ${user1.accessToken}`)
           .send({ albumName: 'Disneyland 2024', parentId: parent.id });
 
-        expect(status).toBe(400);
-        expect(body).toEqual(errorDto.badRequest('Albums nest only inside a collection'));
+        expect(status).toBe(201);
+        expect(body).toMatchObject({ albumName: 'Disneyland 2024', parentId: parent.id });
       });
 
       it('reports the descendant count of a collection', async () => {
@@ -661,7 +662,7 @@ describe('/albums', () => {
         expect(body.parentId).toBeNull();
       });
 
-      it('keeps collections at the top level', async () => {
+      it('nests a collection inside another collection (FL-622)', async () => {
         const a = await utils.createAlbum(user1.accessToken, { albumName: 'CollectionA', kind: AlbumKind.Collection });
         const b = await utils.createAlbum(user1.accessToken, { albumName: 'CollectionB', kind: AlbumKind.Collection });
 
@@ -670,8 +671,8 @@ describe('/albums', () => {
           .set('Authorization', `Bearer ${user1.accessToken}`)
           .send({ parentId: b.id });
 
-        expect(status).toBe(400);
-        expect(body.message).toContain('top level');
+        expect(status).toBe(200);
+        expect(body).toMatchObject({ id: a.id, parentId: b.id });
       });
 
       it('rejects an album becoming its own parent', async () => {
