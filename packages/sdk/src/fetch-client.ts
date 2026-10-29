@@ -5303,6 +5303,10 @@ export type UpdateAssetDto = {
     state?: string | null;
     visibility?: AssetVisibility;
 };
+export type AssetAddedDateDto = {
+    /** A time in the past */
+    addedAt: string;
+};
 export type CastMediaUrlCreateDto = {
     kind: CastMediaKind;
 };
@@ -6013,11 +6017,19 @@ export type AssetSourceResponseDto = {
     createdAt: string;
     creator?: string | null;
     id: string;
+    /** The app the source was imported from, such as "eagle"; null when the browser extension saved it */
+    importedFrom: string | null;
     licenseUrl?: string | null;
     mediaUrl?: string | null;
     note?: string | null;
     pageUrl: string;
     title: string;
+};
+export type AssetSourceImportDto = {
+    /** The app the address was imported from */
+    importedFrom: ImportedFrom;
+    pageUrl: string;
+    title?: string;
 };
 export type AssetWaveformChannelDto = {
     /** Highest sample in each bucket, -1 to 1 */
@@ -23167,6 +23179,19 @@ export function updateAsset({ id, updateAssetDto }: {
     })));
 }
 /**
+ * Set the Added date of an imported Boards item
+ */
+export function setAssetAddedDate({ id, assetAddedDateDto }: {
+    id: string;
+    assetAddedDateDto: AssetAddedDateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/added-date`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: assetAddedDateDto
+    })));
+}
+/**
  * Create a Cast media URL
  */
 export function createCastMediaUrl({ id, castMediaUrlCreateDto }: {
@@ -23839,6 +23864,22 @@ export function getAssetSources({ id }: {
     }>(`/assets/${encodeURIComponent(id)}/sources`, {
         ...opts
     }));
+}
+/**
+ * Add an imported source address to an owned asset
+ */
+export function addImportedAssetSource({ id, assetSourceImportDto }: {
+    id: string;
+    assetSourceImportDto: AssetSourceImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetSourceResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/sources`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetSourceImportDto
+    })));
 }
 /**
  * View asset thumbnail
@@ -36305,6 +36346,9 @@ export enum AssetRestorationFileKind {
     After = "after",
     Result = "result",
     ResultPreview = "result_preview"
+}
+export enum ImportedFrom {
+    Eagle = "eagle"
 }
 export enum AssetMediaSize {
     Original = "original",

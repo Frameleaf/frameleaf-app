@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
@@ -9,8 +10,12 @@ import {
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
+/** Where an imported source came from (FL-653). Null for a source the browser extension saved. */
+export type AssetSourceImportedFrom = 'eagle';
+
 @Table('asset_source')
 @Unique({ columns: ['captureId'] })
+@Check({ name: 'asset_source_importedFrom_check', expression: `"importedFrom" IN ('eagle')` })
 export class AssetSourceTable {
   @PrimaryGeneratedColumn()
   id!: Generated<string>;
@@ -41,6 +46,10 @@ export class AssetSourceTable {
 
   @Column({ type: 'text', nullable: true })
   licenseUrl!: string | null;
+
+  /** The app the source was imported from, such as an Eagle library. Null when the extension saved it. */
+  @Column({ type: 'character varying', nullable: true })
+  importedFrom!: AssetSourceImportedFrom | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

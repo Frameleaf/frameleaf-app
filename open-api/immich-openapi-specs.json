@@ -15018,6 +15018,61 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/assets/{id}/added-date": {
+      "put": {
+        "description": "Moves the Added date of an owned item that is in Boards only to an earlier time in the past, such as when it was last changed in the app it was imported from.",
+        "operationId": "setAssetAddedDate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetAddedDateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set the Added date of an imported Boards item",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/{id}/cast": {
       "post": {
         "description": "Returns a signed URL path for one rendition (original, preview or video) of one item, for a Cast receiver that cannot send the session token or cookies. It expires after 15 minutes, serves only this item, and stops working when the session or API key is revoked, access is lost, the item becomes Locked or hidden for the account, or an administrator turns casting off for the account (refused with 403 here in those cases). Shared links cannot cast. The original needs download permission.",
@@ -18011,6 +18066,66 @@
           }
         ],
         "x-immich-permission": "assetSource.read"
+      },
+      "post": {
+        "description": "Records a web address an import brought over, such as from an Eagle library, as the item’s source. An address the item already has is returned as it is.",
+        "operationId": "addImportedAssetSource",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetSourceImportDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetSourceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add an imported source address to an owned asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
       }
     },
     "/assets/{id}/thumbnail": {
@@ -68625,6 +68740,20 @@
         ],
         "type": "object"
       },
+      "AssetAddedDateDto": {
+        "properties": {
+          "addedAt": {
+            "description": "A time in the past",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "addedAt"
+        ],
+        "type": "object"
+      },
       "AssetBulkDeleteDto": {
         "properties": {
           "force": {
@@ -72672,6 +72801,31 @@
         ],
         "type": "object"
       },
+      "AssetSourceImportDto": {
+        "properties": {
+          "importedFrom": {
+            "description": "The app the address was imported from",
+            "enum": [
+              "eagle"
+            ],
+            "type": "string"
+          },
+          "pageUrl": {
+            "format": "uri",
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "importedFrom",
+          "pageUrl"
+        ],
+        "type": "object"
+      },
       "AssetSourceResponseDto": {
         "properties": {
           "assetId": {
@@ -72701,6 +72855,11 @@
           "id": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "importedFrom": {
+            "description": "The app the source was imported from, such as \"eagle\"; null when the browser extension saved it",
+            "nullable": true,
             "type": "string"
           },
           "licenseUrl": {
@@ -72736,6 +72895,7 @@
           "capturedAt",
           "createdAt",
           "id",
+          "importedFrom",
           "pageUrl",
           "title"
         ],
