@@ -121,26 +121,36 @@
   });
   // FL-650: preview thumbnails on the seek bar, from the video's filmstrip (made ahead of time by the
   // server), read on the first pointer or focus on the seek bar. Without one it is a plain seek bar.
-  let scrubPreviews = $state<{ assetId: string; url: string }>();
+  // Keyed by the cache key too: an edit or re-encode changes the filmstrip version the sprite URL names.
+  const scrubKey = $derived(`${assetId}:${cacheKey ?? ''}`);
+  let scrubPreviews = $state<{ key: string; url: string }>();
   let scrubRequestedFor: string | undefined;
-  const scrubTrackUrl = $derived(scrubPreviews?.assetId === assetId ? scrubPreviews.url : undefined);
+  let destroyed = false;
+  const scrubTrackUrl = $derived(scrubPreviews?.key === scrubKey ? scrubPreviews.url : undefined);
   const loadScrubPreviews = async () => {
+    const key = scrubKey;
     const id = assetId;
-    if (scrubRequestedFor === id) {
+    if (scrubRequestedFor === key) {
       return;
     }
-    scrubRequestedFor = id;
+    scrubRequestedFor = key;
     try {
       const filmstrip = await getAssetFilmstrip({ id, ...PLAYER_FILMSTRIP, ...authManager.params });
+      if (destroyed || key !== scrubKey) {
+        return; // the viewer moved on while the filmstrip was being read
+      }
       // the track is a blob URL, so the sprite URL in its cues must be absolute
       const sprite = new URL(
         getAssetFilmstripSpriteUrl(id, { ...PLAYER_FILMSTRIP, version: filmstrip.version }),
         location.href,
       ).href;
       const url = URL.createObjectURL(new Blob([filmstripToVtt(filmstrip, sprite)], { type: 'text/vtt' }));
-      scrubPreviews = { assetId: id, url };
+      scrubPreviews = { key, url };
     } catch {
-      // no previews for this video: the seek bar works without them
+      // no previews this time (the filmstrip is still being made, or the network failed): try again next time
+      if (scrubRequestedFor === key) {
+        scrubRequestedFor = undefined;
+      }
     }
   };
   $effect(() => {
@@ -550,6 +560,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     if (videoPlayer) {
       videoPlayer.src = '';
     }
