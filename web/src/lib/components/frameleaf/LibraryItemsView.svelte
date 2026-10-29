@@ -52,6 +52,7 @@
   import { withFilterCondition } from '$lib/frameleaf/search-filters';
   import { shouldIgnoreEvent } from '$lib/actions/shortcut';
   import { downloadArchive, ignoreCancelledDownload } from '$lib/utils/asset-utils';
+  import { downloadBoardsItems, LIBRARY_FILE_LIMIT } from '$lib/frameleaf/boards-download';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     mdiAspectRatio,
@@ -138,7 +139,7 @@
   let popover = $state<'color' | 'shape' | null>(null);
   let colorTrigger: HTMLButtonElement | undefined = $state();
   let shapeTrigger: HTMLButtonElement | undefined = $state();
-  let dialog = $state<'album' | 'tags' | 'save' | null>(null);
+  let dialog = $state<'album' | 'tags' | 'save' | 'download' | null>(null);
   let lastExternal = '';
   let requestIdentity = '';
   const assets = $derived(
@@ -475,13 +476,32 @@
       (keys, owner, current) => trashLibraryItems(results.items, keys, owner, current),
       (count) => toastManager.primary($t('frameleaf_boards_trashed', { values: { count } })),
     );
+  const downloadName = $derived(album?.albumName || 'frameleaf');
+  const selectedBookmarkIds = $derived(
+    session.selection.filter((key) => key.startsWith('bookmark:')).map((key) => key.slice(9)),
+  );
+  /** Boards asks what goes in the .zip (FL-660); elsewhere a download starts at once. */
   const download = () => {
-    if (selectedAssetIds.length > 0) {
-      void downloadArchive(album?.albumName || 'frameleaf', { assetIds: [...selectedAssetIds] }).catch(
-        ignoreCancelledDownload,
-      );
+    if (selectedAssetIds.length === 0) {
+      return;
     }
+    if (workspace === 'design') {
+      dialog = 'download';
+      return;
+    }
+    void downloadArchive(downloadName, { assetIds: [...selectedAssetIds] }).catch(ignoreCancelledDownload);
   };
+  /** The library file lists only the account's own items, up to the server's limit. */
+  const libraryAvailable = $derived(
+    ownsSelection && selectedAssetIds.length + selectedBookmarkIds.length <= LIBRARY_FILE_LIMIT,
+  );
+  const downloadSelection = (includeLibrary: boolean) =>
+    void downloadBoardsItems({
+      fileName: downloadName,
+      assetIds: [...selectedAssetIds],
+      bookmarkIds: [...selectedBookmarkIds],
+      includeLibrary,
+    });
   const closeBookmark = () => {
     const key = selectedBookmark ? `bookmark:${selectedBookmark}` : undefined;
     activeBookmark = null;
@@ -859,6 +879,22 @@
   {/await}{/if}
 {#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
     <BoardsExtensionDialog bind:open={extensionOpen} />
+  {/await}{/if}
+{#if dialog === 'download'}{#await import('$lib/components/frameleaf/BoardsDownloadDialog.svelte') then { default: BoardsDownloadDialog }}
+    <BoardsDownloadDialog
+      bind:open={
+        () => dialog === 'download',
+        (open) => {
+          if (!open) {
+            dialog = null;
+          }
+        }
+      }
+      count={session.selection.length}
+      name={album ? collectionName : title}
+      {libraryAvailable}
+      onDownload={downloadSelection}
+    />
   {/await}{/if}
 
 <style>
