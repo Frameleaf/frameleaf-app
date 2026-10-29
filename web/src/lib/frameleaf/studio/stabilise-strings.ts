@@ -42,6 +42,18 @@ export const STABILISE_ENGINE_STRINGS = {
     values: ['reason'],
   },
   stabiliseHdr: { host: 'frameleaf_studio_stabilise_hdr', engine: 'editor.stabilise.hdr' },
+  stabiliseNotAppliedLocked: {
+    host: 'frameleaf_studio_stabilise_not_applied_locked',
+    engine: 'editor.stabilise.notApplied.locked',
+  },
+  stabiliseNotAppliedRemoved: {
+    host: 'frameleaf_studio_stabilise_not_applied_removed',
+    engine: 'editor.stabilise.notApplied.removed',
+  },
+  stabiliseNotAppliedOther: {
+    host: 'frameleaf_studio_stabilise_not_applied_other',
+    engine: 'editor.stabilise.notApplied.other',
+  },
   stabiliseWhereItRuns: { host: 'frameleaf_studio_stabilise_where_it_runs', engine: 'editor.stabilise.whereItRuns' },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 

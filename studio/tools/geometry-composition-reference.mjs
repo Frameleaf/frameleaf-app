@@ -100,7 +100,7 @@ export function compositionSourcesFor(sourceSha256) {
     }
   // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
   // renderer, which draws it through its correction; every other clip renders as before.
-  if (sourceSha256 === 'd7ebf469b188e2285a119fd248d7e0af96a11ed93f4e695c1b17dc370000a73d')
+  if (sourceSha256 === 'f93659e2672a3e89567c98ee704fe919e62d0512586e2620497f41c3e6dde415')
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':

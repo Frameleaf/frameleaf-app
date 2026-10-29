@@ -216,7 +216,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
           // FL-638 Stabilise: only a stabilised video clip draws differently (through its correction).
           binding.sourceSha256 ===
-            'd7ebf469b188e2285a119fd248d7e0af96a11ed93f4e695c1b17dc370000a73d')),
+            'f93659e2672a3e89567c98ee704fe919e62d0512586e2620497f41c3e6dde415')),
     'SOURCE_BROWSER',
   )
   check(

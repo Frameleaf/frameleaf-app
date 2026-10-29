@@ -30,7 +30,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/stabil
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/stabilise-section.test.tsx
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,178 @@
 +import { act, fireEvent, render, screen } from '@testing-library/react'
 +import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import type { VideoItem } from '@/types/timeline'
@@ -38,7 +38,7 @@ new file mode 100644
 +
 +const analyse = vi.hoisted(() => vi.fn())
 +const actions = vi.hoisted(() => ({
-+  applyStabilisation: vi.fn(() => ({ ok: true })),
++  applyStabilisation: vi.fn((): { ok: boolean; reason?: string } => ({ ok: true })),
 +  removeStabilisation: vi.fn(() => ({ ok: true })),
 +  setStabilisationLevel: vi.fn(() => ({ ok: true })),
 +}))
@@ -161,6 +161,42 @@ new file mode 100644
 +    expect(screen.queryByRole('button', { name: 'editor.stabilise.start' })).toBeNull()
 +  })
 +
++  it('says the result was not applied, in words, when the clip was locked or removed meanwhile', async () => {
++    for (const [reason, key] of [
++      ['locked', 'editor.stabilise.notApplied.locked'],
++      ['not-found', 'editor.stabilise.notApplied.removed'],
++      ['invalid-motion', 'editor.stabilise.notApplied.other'],
++    ] as const) {
++      analyse.mockResolvedValue(motion)
++      actions.applyStabilisation.mockReturnValueOnce({ ok: false, reason })
++      toast.warning.mockClear()
++      const { unmount } = render(<StabiliseSection item={clip()} />)
++      await act(async () => {
++        fireEvent.click(screen.getByRole('button', { name: 'editor.stabilise.start' }))
++      })
++      expect(toast.warning).toHaveBeenCalledWith(key)
++      expect(toast.error).not.toHaveBeenCalled()
++      unmount()
++    }
++  })
++
++  it('shows the level of a running analysis and starts again from each clip when the selection changes', async () => {
++    analyse.mockImplementation(() => new Promise(() => {}))
++    const first = clip()
++    const { rerender, unmount } = render(<StabiliseSection item={first} />)
++    fireEvent.click(screen.getByRole('radio', { name: 'editor.stabilise.level.locked' }))
++    fireEvent.click(screen.getByRole('button', { name: 'editor.stabilise.start' }))
++    // Remounted while the job runs: the job's level, not the default.
++    unmount()
++    const again = render(<StabiliseSection item={first} />)
++    expect(screen.getByRole('radio', { name: 'editor.stabilise.level.locked' }).getAttribute('aria-checked')).toBe('true')
++    // Another clip does not inherit it.
++    again.rerender(<StabiliseSection item={clip()} />)
++    expect(screen.getByRole('radio', { name: 'editor.stabilise.level.smooth' }).getAttribute('aria-checked')).toBe('true')
++    void rerender
++    again.unmount()
++  })
++
 +  it('says why when the analysis fails, and nothing is applied', async () => {
 +    analyse.mockRejectedValue(new Error('The clip has no picture to stabilise'))
 +    render(<StabiliseSection item={clip()} />)
@@ -177,7 +213,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/stabil
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/stabilise-section.tsx
-@@ -0,0 +1,254 @@
+@@ -0,0 +1,273 @@
 +import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { CheckCircle2, Video } from 'lucide-react'
@@ -189,6 +225,7 @@ new file mode 100644
 +  applyStabilisation,
 +  removeStabilisation,
 +  setStabilisationLevel,
++  type StabiliseRefusal,
 +} from '@/features/editor/deps/timeline-store'
 +import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
 +import { workingRangeOfSources } from '@/shared/graphics/color/managed-color'
@@ -225,7 +262,11 @@ new file mode 100644
 +function startStabiliseAnalysis(
 +  item: Pick<VideoItem, 'id' | 'label'>,
 +  level: StabilisationLevel,
-+  messages: { applied: string; failed: (reason: string) => string },
++  messages: {
++    applied: string
++    failed: (reason: string) => string
++    notApplied: (reason: StabiliseRefusal) => string
++  },
 +): void {
 +  if (running.has(item.id)) return
 +  const controller = new AbortController()
@@ -241,7 +282,8 @@ new file mode 100644
 +      if (controller.signal.aborted) return
 +      const outcome = applyStabilisation(item.id, motion, job.level)
 +      if (outcome.ok) toast.success(messages.applied)
-+      else toast.warning(messages.failed(outcome.reason))
++      // Analysed, but the clip changed meanwhile (removed, locked): say so, not that analysis failed.
++      else toast.warning(messages.notApplied(outcome.reason))
 +    })
 +    .catch((error: unknown) => {
 +      if (controller.signal.aborted) return
@@ -323,8 +365,15 @@ new file mode 100644
 +  useSyncExternalStore(subscribe, snapshot, snapshot)
 +  const job = running.get(item.id)
 +  const done = item.stabilisation
-+  const [chosen, setChosen] = useState<StabilisationLevel>(done?.level ?? 'smooth')
-+  const level = done?.level ?? chosen
++  // The level shown: the clip's own once stabilised, else the one its running analysis will apply,
++  // else the person's choice. Selecting another clip starts again from that clip's state.
++  const [chosen, setChosen] = useState<StabilisationLevel>(done?.level ?? job?.level ?? 'smooth')
++  const [shownFor, setShownFor] = useState(item.id)
++  if (shownFor !== item.id) {
++    setShownFor(item.id)
++    setChosen(done?.level ?? job?.level ?? 'smooth')
++  }
++  const level = done?.level ?? job?.level ?? chosen
 +  const colorTransfer = useMediaLibraryStore((state) =>
 +    item.mediaId ? state.mediaById[item.mediaId]?.colorTransfer : undefined,
 +  )
@@ -346,6 +395,12 @@ new file mode 100644
 +        reason === 'unavailable' || reason === ''
 +          ? t('editor.stabilise.failed')
 +          : t('editor.stabilise.failedReason', { reason }),
++      notApplied: (reason) =>
++        reason === 'locked'
++          ? t('editor.stabilise.notApplied.locked')
++          : reason === 'not-found'
++            ? t('editor.stabilise.notApplied.removed')
++            : t('editor.stabilise.notApplied.other'),
 +    })
 +
 +  return (
@@ -470,7 +525,7 @@ new file mode 100644
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -66,6 +66,11 @@ export {
+@@ -66,6 +66,12 @@ export {
    type MulticamSyncProposal,
  } from '@/features/timeline/stores/actions/edit/multicam-actions'
  export { applyColourMatch } from '@/features/timeline/utils/colour-match'
@@ -478,6 +533,7 @@ diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/
 +  applyStabilisation,
 +  removeStabilisation,
 +  setStabilisationLevel,
++  type StabiliseRefusal,
 +} from '@/features/timeline/stores/actions/edit/stabilise-actions'
  export {
    addCompositionControl,
@@ -1052,7 +1108,7 @@ new file mode 100644
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -1090,6 +1090,32 @@
+@@ -1090,6 +1090,37 @@
          "already-multicam": "These clips are already angles of a multicam edit.",
          "generated-media": "Generated clips have no recording to sync, so they can’t be angles."
        }
@@ -1081,7 +1137,12 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 +      "failed": "The camera movement couldn't be analysed.",
 +      "failedReason": "The camera movement couldn't be analysed: {{reason}}",
 +      "hdr": "Stabilise isn't available for HDR clips yet.",
-+      "whereItRuns": "Analysed once on your Frameleaf server, as a job in Activity. Changing the smoothness afterwards is instant."
++      "whereItRuns": "Analysed once on your Frameleaf server, as a job in Activity. Changing the smoothness afterwards is instant.",
++      "notApplied": {
++        "locked": "The clip is on a locked track, so it wasn't stabilised.",
++        "removed": "The clip was removed before the analysis finished.",
++        "other": "The analysis couldn't be applied to this clip."
++      }
      }
    }
  }
