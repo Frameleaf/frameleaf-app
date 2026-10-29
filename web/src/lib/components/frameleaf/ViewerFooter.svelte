@@ -13,6 +13,7 @@
   import { isImageAsset, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { canPlaySlideshow } from '$lib/services/asset.service';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
@@ -65,8 +66,9 @@
 
   const sharedLink = getSharedLink();
   const canPlayOriginal = $derived(!sharedLink || sendCopyPermitted(sharedLink));
-  // FL-630: without a playback copy the server plays the original, so that is what is selected
-  const hasPlaybackCopy = $derived(asset.playbackCopy !== false);
+  // FL-630: without a playback copy the server plays the original, so that is what is selected, unless
+  // real-time playback makes a copy as the video plays
+  const hasPlaybackCopy = $derived(asset.playbackCopy !== false || featureFlagsManager.value.realtimeTranscoding);
   const { slideshowState, settingsOpen } = slideshowStore;
   const playing = $derived($slideshowState === SlideshowState.PlaySlideshow);
   // The same gates as the menu's and the shared link's Play slideshow: never Locked, downloads on a link.

@@ -13,6 +13,9 @@ import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import ViewerFooter from './ViewerFooter.svelte';
 
+const flags = vi.hoisted(() => ({ realtimeTranscoding: false }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
+
 const base = {
   canNavigateCollection: true,
   canShowFilmstrip: true,
@@ -69,6 +72,18 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
       'aria-pressed',
       'true',
     );
+  });
+
+  it('keeps Play optimized without a stored copy when real-time playback makes one (FL-630)', () => {
+    flags.realtimeTranscoding = true;
+    render(ViewerFooter, {
+      asset: { ...assetFactory.build({ type: AssetTypeEnum.Video }), playbackCopy: false },
+      ...base,
+    });
+    const optimized = screen.getByRole('button', { name: 'frameleaf_viewer_source_optimized' });
+    expect(optimized).toBeEnabled();
+    expect(optimized).toHaveAttribute('aria-pressed', 'true');
+    flags.realtimeTranscoding = false;
   });
 
   it('cannot play a slideshow with nothing to move to', () => {

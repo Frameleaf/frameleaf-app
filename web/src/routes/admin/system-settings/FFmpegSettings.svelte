@@ -179,9 +179,15 @@
   /** FL-521: how many videos have a copy and the space the copies take. */
   let copies = $state<MediaCopiesResponseDto>();
 
+  // a newer read wins over an older one that answers later
+  let copiesRead = 0;
   const readCopies = async () => {
+    const read = ++copiesRead;
     try {
-      copies = await getMediaCopies();
+      const response = await getMediaCopies();
+      if (read === copiesRead) {
+        copies = response;
+      }
     } catch {
       // Without the counts the status says what happens to videos, without numbers.
     }
@@ -192,25 +198,15 @@
       const queue = await getQueue({ name: QueueName.VideoConversion });
       const before = waiting;
       waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
-      if (before > 0 && waiting < before) {
+      // FL-630: while copies are being made, and once more when they are done, the count and the
+      // space they take follow along
+      if (waiting > 0 || before > 0) {
         void readCopies();
       }
     } catch {
       // The status then says what happens to videos, without a count.
     }
   };
-
-  // FL-630: while copies are being made, the count and the space they take follow along.
-  $effect(() => {
-    if (waiting === 0) {
-      return;
-    }
-    const timer = setInterval(() => {
-      void readWaiting();
-      void readCopies();
-    }, 5000);
-    return () => clearInterval(timer);
-  });
 
   onMount(() => {
     void readWaiting();
@@ -224,6 +220,9 @@
       .catch(() => {
         // The Graphics card check page says why the server could not be checked.
       });
+    // FL-630: copies started by uploads or overnight are noticed while the page is open
+    const timer = setInterval(() => void readWaiting(), 5000);
+    return () => clearInterval(timer);
   });
 
   const hero = $derived.by(() => {
@@ -339,6 +338,8 @@
       });
       said = $t('frameleaf_play_vid_remake_started');
       await readWaiting();
+      // a remake that finished before the queue was read still changes the figures
+      void readCopies();
     } catch (error) {
       handleError(error, $t('frameleaf_play_vid_remake_failed'));
     } finally {

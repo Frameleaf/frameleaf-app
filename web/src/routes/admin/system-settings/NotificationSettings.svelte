@@ -591,7 +591,9 @@
               })}
             >
               {$t('frameleaf_notify_test_sent_body')}
-              {#if result.saved}{$t('frameleaf_notify_test_saved')}{/if}
+              {#if result.saved}
+                {$t('frameleaf_notify_test_saved')}
+              {/if}
             </Notice>
           {:else}
             <Notice tone="warn" title={$t('frameleaf_notify_test_failed')}>

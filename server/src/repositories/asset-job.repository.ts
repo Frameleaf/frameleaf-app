@@ -892,9 +892,11 @@ export class AssetJobRepository {
         (SELECT coalesce(sum(p."sizeInBytes"), 0)::float8 FROM public.physical_file p WHERE p.id IN (
           SELECT f."physicalFileId" FROM public.asset_file f JOIN public.asset c ON c.id = f."assetId"
           WHERE f.type = ${AssetFileType.EncodedVideo} AND c."deletedAt" IS NULL
+            AND c.visibility != ${AssetVisibility.Hidden}
         )) AS "copyBytes",
         (SELECT count(*) FROM public.asset_file f JOIN public.asset c ON c.id = f."assetId"
-          WHERE f.type = ${AssetFileType.EncodedVideo} AND c."deletedAt" IS NULL AND f."physicalFileId" IS NULL
+          WHERE f.type = ${AssetFileType.EncodedVideo} AND c."deletedAt" IS NULL
+            AND c.visibility != ${AssetVisibility.Hidden} AND f."physicalFileId" IS NULL
         )::int AS "unsizedCopies"
       FROM public.asset a
       WHERE a."deletedAt" IS NULL AND a.visibility != ${AssetVisibility.Hidden}
