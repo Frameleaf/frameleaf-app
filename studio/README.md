@@ -232,6 +232,20 @@ audio: it is synced like an angle and every camera's sound is muted. The angle b
 picture at the playhead from the cached filmstrip. Auditioning angles with sound and decoded export
 checks at cuts remain open.
 
+Patch 0168 (FL-640) adds word-by-word captions. Caption cues made from a transcript keep the
+transcript's word times (`words`, each linked to its stored word as `segmentIndex:wordIndex`), so a
+word corrected in the transcript is corrected in clip captions and placed caption segments, and trims
+and splits move the words with their cue. The Caption style card at the top of the captions section
+(`word-caption-style-card.tsx`) previews Vertical 9:16 or Original and stores a `wordLook` (Lines,
+Highlight, Word by word or One big word; highlight colour; Small, Medium or Large; Bottom, Middle or
+Top), writing size and position as the captions' own font size and height. The preview and export
+renderers draw the chosen style through the same pure model (`src/shared/typography/word-captions.ts`),
+in the captions' own title fonts. A cue without word times spreads its words by length. Subtitle files
+and embedded text tracks keep whole lines. A Vertical 9:16 export without a chosen look uses Highlight,
+Large, Middle (`tools/bundled-worker-word-captions.mjs`, called by the reframe). Tests cover word
+timing, the active word, each style through export paint and preview, the card, transcript
+correction and the vertical default. Browser journeys and pixel comparisons remain open.
+
 Patch 0152 (FL-627) extends motion tracking. The tracking box can be a separate clip, typically a
 rectangle drawn on the preview with the shape tool, while the target (a title, overlay or mask shape,
 which moves a blur region) keeps its own offset from that box. Parented targets are refused, because

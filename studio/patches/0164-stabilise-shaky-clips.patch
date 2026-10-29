@@ -1993,7 +1993,7 @@ diff --git a/src/types/timeline.ts b/src/types/timeline.ts
  import type { CropSettings, TransformParentBinding, TransformProperties } from './transform'
  import type { ItemEffect } from './effects'
  import type { MotionAnimationLayer, MotionModifier } from './motion'
-@@ -200,6 +201,11 @@ export type VideoItem = BaseTimelineItem & {
+@@ -205,6 +206,11 @@ export type VideoItem = BaseTimelineItem & {
    // Source dimensions (intrinsic size from media metadata)
    sourceWidth?: number
    sourceHeight?: number

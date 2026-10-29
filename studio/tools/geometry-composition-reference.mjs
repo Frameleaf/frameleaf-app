@@ -91,7 +91,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
     sourceSha256 === 'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
     // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
-    sourceSha256 === 'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47'
+    sourceSha256 === 'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
+    // FL-640 word-by-word captions (caption cues, subtitle text and caption UI) on multicam; changes no composition or raster producer.
+    sourceSha256 === 'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9'
   )
     return {
       ...COMPOSITION_SOURCES,
@@ -100,7 +102,7 @@ export function compositionSourcesFor(sourceSha256) {
     }
   // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
   // renderer, which draws it through its correction; every other clip renders as before.
-  if (sourceSha256 === 'f93659e2672a3e89567c98ee704fe919e62d0512586e2620497f41c3e6dde415')
+  if (sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a')
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':

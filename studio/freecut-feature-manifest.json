@@ -7238,9 +7238,10 @@
           "0106-browser-whisper-tiny-settings-test.patch",
           "0140-whisper-no-adapter-fallback.patch",
           "6a2085d30a",
-          "PR #288"
+          "PR #288",
+          "0168-word-by-word-captions.patch"
         ],
-        "note": "FL-111 closeout: Whisper model choice with a no-GPU fallback.",
+        "note": "FL-111 closeout: Whisper model choice with a no-GPU fallback. FL-640 adds word-by-word captions: captions made from the transcript keep its word times, and the Caption style card burns Highlight, Word by word or One big word into the picture in preview and export (a subtitle file keeps whole lines); a Vertical 9:16 export defaults to Highlight, Large, Middle (studio/tools/bundled-worker-word-captions.mjs).",
         "status": "shipped"
       },
       "id": "readme.local-ai-analysis.1",

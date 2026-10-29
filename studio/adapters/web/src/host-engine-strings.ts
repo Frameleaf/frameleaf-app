@@ -15,6 +15,9 @@ import {
   STABILISE_ENGINE_STRINGS,
   type StabiliseEngineString,
 } from '@frameleaf/host/stabilise-strings'
+  CAPTION_STYLE_ENGINE_STRINGS,
+  type CaptionStyleEngineString,
+} from '@frameleaf/host/caption-style-strings'
 
 type EngineI18n = {
   readonly language?: string
@@ -33,6 +36,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(STABILISE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<StabiliseEngineString, string>),
+  // The Caption style card (FL-640).
+  ...(Object.fromEntries(
+    Object.entries(CAPTION_STYLE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<CaptionStyleEngineString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {
