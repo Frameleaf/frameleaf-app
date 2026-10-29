@@ -1,4 +1,9 @@
-import { takeScreenshot, ScreenshotFailure } from './capture';
+import {
+  takeScreenshot,
+  ScreenshotFailure,
+  type ScreenshotPreview,
+} from './capture';
+import { takeWholePage } from './whole-page-capture';
 import {
   initializeCaptureMenus,
   registerCaptureMenus,
@@ -14,7 +19,11 @@ import {
 } from './queue';
 import type { ServerBinding } from './api';
 import type { QueueProgress } from './platform';
-import { DiscoveryFailure, discoverActivePage } from './discovery';
+import {
+  DiscoveryFailure,
+  discoverActivePage,
+  type PageDiscovery,
+} from './discovery';
 import {
   clearPreview,
   createPreview,
@@ -201,13 +210,17 @@ export function handleMessage(
       if (
         !trustedSender(sender, ['/popup.html']) ||
         !('mode' in message) ||
-        (message.mode !== 'visible' && message.mode !== 'area')
+        (message.mode !== 'visible' &&
+          message.mode !== 'area' &&
+          message.mode !== 'whole')
       )
         return Promise.resolve({
           ok: false,
           error: 'Open the extension toolbar to capture a screenshot.',
         });
-      return startScreenshot(message.mode);
+      return message.mode === 'whole'
+        ? startWholeScreenshot()
+        : startScreenshot(message.mode);
     }
   }
   return serialize(async () => {
@@ -477,6 +490,41 @@ export function handleMessage(
     }
   });
 }
+function connectedForScreenshot() {
+  return serialize(async () => {
+    const value = await connectionStatus();
+    if (value?.status !== 'connected') throw new CaptureFailure('credential');
+    if (!(await hasServerAccess(value.binding.origin)))
+      throw new CaptureFailure('permission');
+    return value;
+  });
+}
+function showScreenshot(
+  controller: AbortController,
+  binding: ServerBinding,
+  result: { discovery: PageDiscovery; screenshot: ScreenshotPreview } | null,
+): Promise<ExtensionReply> {
+  return serialize(async () => {
+    if (controller.signal.aborted) throw new ScreenshotFailure();
+    const latest = await connectionStatus();
+    if (
+      latest?.status !== 'connected' ||
+      !sameBinding(latest.binding, binding) ||
+      !(await hasServerAccess(binding.origin))
+    )
+      throw new CaptureFailure('credential');
+    if (result) {
+      const preview = createPreview(
+        binding,
+        result.discovery,
+        Date.now(),
+        result.screenshot,
+      );
+      await openCapturePreview(preview.id);
+    }
+    return { ok: true, connection: latest };
+  });
+}
 async function startScreenshot(
   mode: 'visible' | 'area',
 ): Promise<ExtensionReply> {
@@ -488,34 +536,9 @@ async function startScreenshot(
   const controller = new AbortController();
   screenshotController = controller;
   try {
-    const current = await serialize(async () => {
-      const value = await connectionStatus();
-      if (value?.status !== 'connected') throw new CaptureFailure('credential');
-      if (!(await hasServerAccess(value.binding.origin)))
-        throw new CaptureFailure('permission');
-      return value;
-    });
+    const current = await connectedForScreenshot();
     const result = await takeScreenshot(mode, controller.signal);
-    return await serialize(async () => {
-      if (controller.signal.aborted) throw new ScreenshotFailure();
-      const latest = await connectionStatus();
-      if (
-        latest?.status !== 'connected' ||
-        !sameBinding(latest.binding, current.binding) ||
-        !(await hasServerAccess(current.binding.origin))
-      )
-        throw new CaptureFailure('credential');
-      if (result) {
-        const preview = createPreview(
-          current.binding,
-          result.discovery,
-          Date.now(),
-          result.screenshot,
-        );
-        await openCapturePreview(preview.id);
-      }
-      return { ok: true, connection: latest };
-    });
+    return await showScreenshot(controller, current.binding, result);
   } catch (error) {
     if (mode === 'area' && !controller.signal.aborted)
       await chrome.tabs
@@ -528,6 +551,57 @@ async function startScreenshot(
           ? error.message
           : new ScreenshotFailure().message,
     };
+  } finally {
+    if (screenshotController === controller) screenshotController = undefined;
+  }
+}
+/**
+ * Replies as soon as the capture can start, so the popup can close itself and stay out of
+ * the picture. Progress and Cancel are shown on the page; the preview opens in a tab.
+ */
+async function startWholeScreenshot(): Promise<ExtensionReply> {
+  if (screenshotController)
+    return {
+      ok: false,
+      error: 'Finish or cancel the current screenshot first.',
+    };
+  const controller = new AbortController();
+  screenshotController = controller;
+  let current: Awaited<ReturnType<typeof connectedForScreenshot>>;
+  try {
+    current = await connectedForScreenshot();
+  } catch (error) {
+    if (screenshotController === controller) screenshotController = undefined;
+    return {
+      ok: false,
+      error:
+        error instanceof CaptureFailure
+          ? error.message
+          : new ScreenshotFailure().message,
+    };
+  }
+  void runWholeScreenshot(controller, current.binding);
+  return { ok: true, connection: current };
+}
+async function runWholeScreenshot(
+  controller: AbortController,
+  binding: ServerBinding,
+) {
+  try {
+    // Give the popup a moment to close before the page starts to scroll.
+    await new Promise((done) => setTimeout(done, 300));
+    const outcome = await takeWholePage(controller.signal);
+    if (outcome.kind === 'cancelled') return;
+    const result =
+      outcome.kind === 'fallback'
+        ? await takeScreenshot(outcome.mode, controller.signal)
+        : outcome;
+    await showScreenshot(controller, binding, result);
+  } catch {
+    if (!controller.signal.aborted)
+      await chrome.tabs
+        .create({ url: chrome.runtime.getURL('capture.html?error=whole') })
+        .catch(() => {});
   } finally {
     if (screenshotController === controller) screenshotController = undefined;
   }
