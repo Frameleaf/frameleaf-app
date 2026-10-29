@@ -10,13 +10,18 @@
     options,
     selectedOption = $bindable(),
     disabled = false,
+    placeholder,
     onSelect,
+    onSearch,
   }: {
     label: string;
     options: ComboBoxOption[];
     selectedOption?: ComboBoxOption;
     disabled?: boolean;
+    placeholder?: string;
     onSelect?: (option: ComboBoxOption | undefined) => void;
+    /** Options read from the server as the person types (FL-647). */
+    onSearch?: (query: string) => void;
   } = $props();
 </script>
 
@@ -26,7 +31,9 @@
     {options}
     bind:selectedOption
     {disabled}
+    {placeholder}
     {onSelect}
+    {onSearch}
     emptyText={$t('frameleaf_search_no_matching_options')}
   />
 </fieldset>

@@ -10901,12 +10901,33 @@
             }
           },
           {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Only albums whose name contains this text, ignoring case (a search-as-you-type picker)",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
             "name": "suppressedOnly",
             "required": false,
             "in": "query",
             "description": "Return album metadata for suppressed content only",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "At most this many albums",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "integer"
             }
           }
         ],
@@ -54814,6 +54835,73 @@
         "x-immich-state": "Stable"
       }
     },
+    "/tags/search": {
+      "get": {
+        "description": "Retrieve the tags whose value contains the text, ignoring case, at most `take` of them: a search-as-you-type picker, instead of the whole list.",
+        "operationId": "searchTags",
+        "parameters": [
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Only tags whose full value contains this text, ignoring case",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "At most this many tags",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TagResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search tags",
+        "tags": [
+          "Tags"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "tag.read"
+      }
+    },
     "/tags/statistics": {
       "get": {
         "description": "Count the Timeline items that carry each tag: exactly that tag, and that tag or any tag nested under it. Archived, Locked and hidden items are never counted, and tags the session may not see are left out.",
@@ -87484,9 +87572,20 @@
             "description": "Album name (exact match)",
             "type": "string"
           },
+          "search": {
+            "description": "Only albums whose name contains this text, ignoring case (a search-as-you-type picker)",
+            "maxLength": 100,
+            "type": "string"
+          },
           "suppressedOnly": {
             "description": "Return album metadata for suppressed content only",
             "type": "boolean"
+          },
+          "take": {
+            "description": "At most this many albums",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
           }
         },
         "type": "object"
@@ -142825,6 +142924,23 @@
           "updatedAt",
           "value"
         ],
+        "type": "object"
+      },
+      "TagSearchDto": {
+        "properties": {
+          "search": {
+            "description": "Only tags whose full value contains this text, ignoring case",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "take": {
+            "default": 20,
+            "description": "At most this many tags",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "TagStatisticsResponseDto": {
