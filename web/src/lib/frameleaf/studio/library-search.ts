@@ -17,7 +17,7 @@
  * when the saved project places it, exactly like a handoff item.
  */
 import {
-  getAssetInfo,
+  getAssetsInfo,
   AssetTypeEnum,
   AssetVisibility,
   SearchFacetField,
@@ -197,8 +197,8 @@ export interface StudioLibraryServiceOptions {
   offered: () => readonly StudioAssetRef[];
   /** Add library records to what the host offers; resolves once `offered` includes them. */
   adopt: (records: AssetResponseDto[]) => Promise<void>;
-  /** Read one asset as this session, at the moment it is adopted (a normal caller read). */
-  lookup?: (id: string) => Promise<AssetResponseDto>;
+  /** Read assets as this session, at the moment they are adopted (a normal caller read, batched by FL-647). */
+  lookup?: (ids: string[]) => Promise<AssetResponseDto[]>;
   personThumbnailUrl: (personId: string) => string;
   api?: StudioLibrarySearchApi;
 }
@@ -209,7 +209,7 @@ export const createStudioLibraryServices = ({
   elevated,
   offered,
   adopt,
-  lookup = (id) => getAssetInfo({ id }),
+  lookup = async (ids) => (await getAssetsInfo({ assetInfoBatchDto: { ids } })).assets,
   personThumbnailUrl,
   api = sdk,
 }: StudioLibraryServiceOptions): Required<
