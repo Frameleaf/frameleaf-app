@@ -102,6 +102,7 @@ import { SourceResourceController } from 'src/controllers/source-resource.contro
 import { StackController } from 'src/controllers/stack.controller.js';
 import { StorageMigrationAdminController } from 'src/controllers/storage-migration-admin.controller.js';
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
+import { StudioCaptionTranslationController } from 'src/controllers/studio-caption-translation.controller.js';
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
@@ -239,6 +240,7 @@ export const controllers = [
   StackController,
   StorageMigrationAdminController,
   StudioMediaController,
+  StudioCaptionTranslationController,
   StudioMovieController,
   StudioBundleController,
   StudioExportController,
