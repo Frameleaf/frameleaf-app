@@ -250,6 +250,10 @@ describe('sidecars', () => {
     const dated = { ...sidecarOf(), dates: { ...sidecarOf().dates, addedAt: '2024-03-01T12:00:00.000Z' } };
     expect(PreservationSidecarSchema.parse(dated).dates.addedAt).toBe('2024-03-01T12:00:00.000Z');
     expect(PreservationSidecarSchema.parse(sidecarOf()).dates).not.toHaveProperty('addedAt');
+    // a partial date would restore as 1 January; only a full timestamp with its offset is accepted
+    expect(() =>
+      PreservationSidecarSchema.parse({ ...sidecarOf(), dates: { ...sidecarOf().dates, addedAt: '2024' } }),
+    ).toThrow();
     const imported = { ...sidecarOf(), sources: [{ ...source, importedFrom: 'eagle' }] };
     const written = PreservationSidecarSchema.parse(JSON.parse(preservationJson(imported).toString('utf8')));
     expect(written.sources?.[0]).toMatchObject({ importedFrom: 'eagle' });

@@ -483,7 +483,8 @@ export const PreservationSidecarSchema = z
         dateTimeOriginal: isoDate.nullable(),
         timeZone: z.string().max(64).nullable(),
         /** FL-653: when a Boards-only item was added (an import may have set it). Absent in older packages. */
-        addedAt: isoDate.optional(),
+        // a full timestamp with its offset, as the Added-date request takes; "2024" alone is refused
+        addedAt: z.iso.datetime({ offset: true }).optional(),
       })
       .strict(),
     isFavorite: z.boolean(),
