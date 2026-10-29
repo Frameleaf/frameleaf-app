@@ -46,7 +46,7 @@ describe(AlbumController.name, () => {
       const { status, body } = await request(ctx.getHttpServer()).get('/albums/tree');
       expect(status).toEqual(200);
       expect(body).toEqual({ collections: [], albums: [], spaces: [] });
-      expect(service.getTree).toHaveBeenCalledWith(auth);
+      expect(service.getTree).toHaveBeenCalledWith(auth, {});
     });
   });
 
@@ -58,7 +58,7 @@ describe(AlbumController.name, () => {
       const { status, body } = await request(ctx.getHttpServer()).get('/albums/hierarchy');
       expect(status).toBe(200);
       expect(body).toEqual({ roots: [] });
-      expect(service.getHierarchy).toHaveBeenCalledWith(auth);
+      expect(service.getHierarchy).toHaveBeenCalledWith(auth, {});
     });
   });
 

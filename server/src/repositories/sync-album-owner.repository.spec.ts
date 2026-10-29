@@ -49,7 +49,8 @@ it('leaves the V2 query free of the V1-only owner projection', async () => {
   expect(queries).toHaveLength(1);
   expect(queries[0].sql).not.toContain('album_owner');
   expect(queries[0].sql).not.toContain('"ownerId"');
-  expect(queries[0].parameters).toEqual(['now-id', 'user-id']);
+  // the owner's id, then the scope filter: personal and both albums are synced, Boards-only ones are not
+  expect(queries[0].parameters).toEqual(['now-id', 'user-id', 'user-id', 'personal', 'both', 'owner']);
 });
 
 it.each([false, true])(

@@ -146,8 +146,8 @@ describe('durable capture transactions', () => {
       .execute();
     expect((await repo.catalog(auth)).albums).toEqual(
       expect.arrayContaining([
-        { id: album.id, albumName: album.albumName, parentId: null },
-        { id: child.id, albumName: child.albumName, parentId: null },
+        { id: album.id, albumName: album.albumName, parentId: null, icon: null, color: null },
+        { id: child.id, albumName: child.albumName, parentId: null, icon: null, color: null },
       ]),
     );
     expect((await repo.catalog(auth)).albums).toHaveLength(2);
