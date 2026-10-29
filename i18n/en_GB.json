@@ -1190,7 +1190,7 @@
   "frameleaf_pro_load_failed": "Could not load these items. Try again.",
   "frameleaf_pro_organization_failed": "Could not organize every item. Some changes may have been saved. Refresh the list and check the remaining items.",
   "frameleaf_pro_selection": "{count, plural, one {# item selected} other {# items selected}}",
-  "frameleaf_pro_title": "Pro",
+  "frameleaf_pro_title": "Boards",
   "frameleaf_pro_unfiled": "Unfiled",
   "frameleaf_sources_empty": "No saved sources.",
   "frameleaf_sources_license": "Licence",

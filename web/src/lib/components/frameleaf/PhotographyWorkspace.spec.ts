@@ -71,7 +71,7 @@ describe('PhotographyWorkspace', () => {
     render(PhotographyWorkspace);
     expect(await screen.findByRole('button', { name: 'New shoot' })).toBeInTheDocument();
     expect(screen.queryByText(/project/i)).toBeNull();
-    const rail = screen.getByRole('navigation', { name: 'Photography workspace' });
+    const rail = screen.getByRole('navigation', { name: 'Clients' });
     // the rail holds the studio-wide places only; a shoot's sections never join it
     for (const name of ['Shoots', 'Galleries', 'Studio website', 'Watermarks', 'Branding']) {
       expect(within(rail).getByRole('button', { name })).toBeInTheDocument();
