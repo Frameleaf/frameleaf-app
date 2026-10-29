@@ -179,10 +179,44 @@
   /** FL-521: how many videos have a copy and the space the copies take. */
   let copies = $state<MediaCopiesResponseDto>();
 
+  // FL-630: one read at a time (it counts the whole library); a refresh asked for meanwhile runs once after it
+  let reading = false;
+  let readAgain = false;
+  const readCopies = async () => {
+    if (reading) {
+      readAgain = true;
+      return;
+    }
+    reading = true;
+    try {
+      do {
+        readAgain = false;
+        try {
+          copies = await getMediaCopies();
+        } catch {
+          // Without the counts the status says what happens to videos, without numbers.
+        }
+      } while (readAgain);
+    } finally {
+      reading = false;
+    }
+  };
+
+  /** Conversions finished so far, as the queue last said; undefined until the first check. */
+  let finished: number | undefined;
   const readWaiting = async () => {
     try {
       const queue = await getQueue({ name: QueueName.VideoConversion });
+      const before = waiting;
       waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
+      const finishedBefore = finished;
+      finished = (queue?.statistics.completed ?? 0) + (queue?.statistics.failed ?? 0);
+      // FL-630: while copies are being made, once more when they are done, and after a copy made
+      // between two checks, the count and the space they take follow along. Only then: the count
+      // reads the whole library.
+      if (waiting > 0 || before > 0 || (finishedBefore !== undefined && finished !== finishedBefore)) {
+        void readCopies();
+      }
     } catch {
       // The status then says what happens to videos, without a count.
     }
@@ -190,13 +224,7 @@
 
   onMount(() => {
     void readWaiting();
-    void (async () => {
-      try {
-        copies = await getMediaCopies();
-      } catch {
-        // Without the counts the status says what happens to videos, without numbers.
-      }
-    })();
+    void readCopies();
     void getHardwareCheck()
       .then((check) => {
         const server = check?.server;
@@ -206,6 +234,9 @@
       .catch(() => {
         // The Graphics card check page says why the server could not be checked.
       });
+    // FL-630: copies started by uploads or overnight are noticed while the page is open
+    const timer = setInterval(() => void readWaiting(), 5000);
+    return () => clearInterval(timer);
   });
 
   const hero = $derived.by(() => {
@@ -320,6 +351,9 @@
         queueCommandDto: { command: QueueCommand.Start, force: true },
       });
       said = $t('frameleaf_play_vid_remake_started');
+      await readWaiting();
+      // a remake that finished before the queue was read still changes the figures
+      void readCopies();
     } catch (error) {
       handleError(error, $t('frameleaf_play_vid_remake_failed'));
     } finally {

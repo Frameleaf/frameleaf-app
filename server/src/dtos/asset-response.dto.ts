@@ -53,6 +53,10 @@ const SanitizedAssetResponseSchema = z
       })
       .optional()
       .describe('Available current still renditions; omitted when file evidence was not loaded'),
+    playbackCopy: z
+      .boolean()
+      .optional()
+      .describe('Whether a video has a playback copy; omitted for photos and when file evidence was not loaded'),
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     localDateTime: z
       .string()
@@ -226,6 +230,12 @@ const mapImageRenditions = (entity: MaybeDehydrated<MapAsset>) => {
   };
 };
 
+/** FL-630: without a playback copy the video plays its original, so the viewer offers only that. */
+const mapPlaybackCopy = (entity: MaybeDehydrated<MapAsset>) =>
+  entity.type === AssetType.Video && entity.files
+    ? entity.files.some((file) => file.type === AssetFileType.EncodedVideo && !!file.path)
+    : undefined;
+
 const peopleFromFaces = (faces?: MaybeDehydrated<AssetFace>[]): PersonResponseDto[] => {
   if (!faces) {
     return [];
@@ -271,6 +281,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
       imageEncoding:
         entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
       imageRenditions: mapImageRenditions(entity),
+      playbackCopy: mapPlaybackCopy(entity),
       hasMetadata: false,
       width: entity.width,
       height: entity.height,
@@ -311,6 +322,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     imageEncoding:
       entity.type === AssetType.Image ? (entity.exifInfo?.imageEncoding ?? unknownImageEncoding()) : undefined,
     imageRenditions: mapImageRenditions(entity),
+    playbackCopy: mapPlaybackCopy(entity),
     hasMetadata: true,
     duplicateId: entity.duplicateId,
     resized: true,
