@@ -263,7 +263,7 @@
   const getInputPosition = () => input?.getBoundingClientRect();
 
   let filteredOptions = $derived.by(() => {
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
     const _options = options.filter((option) => option.label.toLowerCase().includes(query));
 
     if (allowCreate && searchQuery !== '' && _options.every((option) => option.label !== searchQuery)) {

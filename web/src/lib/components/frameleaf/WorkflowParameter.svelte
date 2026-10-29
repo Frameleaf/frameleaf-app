@@ -25,6 +25,7 @@
     updateWorkflowParameter,
     type WorkflowParameterSchema,
   } from '$lib/frameleaf/workflows';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { onDestroy, untrack } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
@@ -63,6 +64,8 @@
   let pending = $state(0);
   const resolving = $derived(pending > 0);
   let destroyed = false;
+  // bumped by a session lock: lookups that were out then neither fill nor count
+  let epoch = 0;
   let matches = $state<ComboBoxOption[]>([]);
   let picked = $state<ComboBoxOption | undefined>();
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -86,17 +89,18 @@
       attempted.add(itemId);
     }
     untrack(() => pending++);
-    // a result always lands (the ids are not asked again), unless the component is gone
+    const started = epoch;
+    // a result always lands (the ids are not asked again), unless the component is gone or locked since
     void resolveWorkflowReferences(kind, ids)
       .then((found) => {
-        if (!destroyed) {
+        if (!destroyed && started === epoch) {
           for (const item of found) {
             referenceNames.set(item.id, item.label);
           }
         }
       })
       .finally(() => {
-        if (!destroyed) {
+        if (!destroyed && started === epoch) {
           pending--;
         }
       });
@@ -138,7 +142,21 @@
     picked = undefined;
   };
 
+  // A session lock forgets every tag and album name this picker read while unlocked; the chosen ones
+  // are read again under the locked session's rules.
+  const forgetOnLock = () => {
+    epoch++;
+    clearTimeout(searchTimer);
+    searchAbort?.abort();
+    matches = [];
+    pending = 0;
+    attempted.clear();
+    referenceNames.clear();
+  };
+  const stopListening = eventManager.on({ SessionLocked: forgetOnLock, SessionLockedRemote: forgetOnLock });
+
   onDestroy(() => {
+    stopListening();
     destroyed = true;
     clearTimeout(searchTimer);
     searchAbort?.abort();

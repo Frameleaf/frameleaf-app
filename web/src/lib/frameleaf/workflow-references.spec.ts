@@ -6,6 +6,7 @@ import {
   searchWorkflowReferences,
 } from '$lib/frameleaf/workflow-references';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 
@@ -55,4 +56,22 @@ describe('workflow reference names (FL-647)', () => {
     sdkMock.getTagById.mockRejectedValueOnce(new Error('not found'));
     expect(await resolveWorkflowReferences('TagId', [TAG])).toEqual([]);
   });
+
+  it.each(['SessionLocked', 'SessionLockedRemote'] as const)(
+    'forgets names read while unlocked on %s, including a lookup still out',
+    async (event) => {
+      sdkMock.getTagById.mockResolvedValueOnce(tag('Suppressed'));
+      expect(await resolveWorkflowReferences('TagId', [TAG])).toEqual([{ id: TAG, label: 'Suppressed' }]);
+
+      let finish!: (value: never) => void;
+      sdkMock.searchTags.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)) as never);
+      const search = searchWorkflowReferences('TagId', 'sup');
+      eventManager.emit(event);
+      finish([tag('Suppressed')] as never);
+      expect(await search).toEqual([]);
+
+      sdkMock.getTagById.mockRejectedValueOnce(new Error('not found'));
+      expect(await resolveWorkflowReferences('TagId', [TAG])).toEqual([]);
+    },
+  );
 });

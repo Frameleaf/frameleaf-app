@@ -6,6 +6,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import WorkflowParameter from '$lib/components/frameleaf/WorkflowParameter.svelte';
 import { clearWorkflowReferenceNames } from '$lib/frameleaf/workflow-references';
 import type { WorkflowParameterSchema } from '$lib/frameleaf/workflows';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 const TRIP = '7f9a1c2e-1111-4a6b-9c3d-000000000001';
 const FAMILY = '7f9a1c2e-1111-4a6b-9c3d-000000000002';
@@ -41,6 +42,19 @@ describe('WorkflowParameter tag and album pickers (FL-647)', () => {
     expect(await screen.findByText(`Unavailable selection: ${GONE}`)).toBeInTheDocument();
     expect(sdkMock.getTagById).toHaveBeenCalledTimes(2);
     expect(sdkMock.searchTags).not.toHaveBeenCalled();
+  });
+
+  it('reads the chosen names again when the session locks, and drops ones it can no longer read', async () => {
+    sdkMock.getTagById.mockResolvedValueOnce(tag(TRIP, 'Private/Trip'));
+    render(WorkflowParameter, { schema: tags, value: [TRIP], label: 'Tags', onChange: vi.fn() });
+    expect(await screen.findByText('Private/Trip')).toBeInTheDocument();
+
+    sdkMock.getTagById.mockRejectedValueOnce(new Error('not found'));
+    eventManager.emit('SessionLocked');
+
+    expect(await screen.findByText(`Unavailable selection: ${TRIP}`)).toBeInTheDocument();
+    expect(screen.queryByText('Private/Trip')).toBeNull();
+    expect(sdkMock.getTagById).toHaveBeenCalledTimes(2);
   });
 
   it("shows a saved workflow's albums by name", async () => {
