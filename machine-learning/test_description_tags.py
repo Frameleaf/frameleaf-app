@@ -63,6 +63,23 @@ def test_safety_tags_and_detector_labels_survive_the_twenty_tag_cut(tmp_path):
     assert response["tags"][:4] == ["medical", "hospital", "zebra", "yacht"]
 
 
+def test_nsfw_tags_survive_the_twenty_tag_cut_ahead_of_ordinary_tags(tmp_path):
+    model = ImageDescriptionModel(next(iter(FLORENCE_MODELS)), acceleration="cuda", device="cpu", cache_dir=tmp_path)
+    caption = " ".join(f"thing{letter}" for letter in "abcdefghijklmnopqrstuvwxy")
+    response = model._normalize_response(
+        json.dumps(
+            {
+                "description": caption,
+                "objects": ["zebra"],
+                "safety": {"is_nsfw_likely": True, "confidence": "high", "indicators": ["naked", "explicit"]},
+            }
+        )
+    )
+
+    assert len(response["tags"]) == TAG_LIMIT
+    assert response["tags"][:4] == ["naked", "explicit", "nsfw", "zebra"]
+
+
 def test_drops_words_with_digits_whole_and_contractions():
     assert tags_from_text("A 3d-rendering and 3d_model of a kite; they're sure it's fine, don't worry") == [
         "kite",
