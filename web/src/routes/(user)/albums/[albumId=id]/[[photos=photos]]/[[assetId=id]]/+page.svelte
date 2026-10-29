@@ -169,62 +169,59 @@
   /* ------------------------------------------------------------------ */
   const COLLECTION_PAGE = 250;
   let collectionAssets = $state<AssetResponseDto[]>([]);
-  let collectionPage = $state(1);
+  let collectionCursor: string | null = null;
   let collectionLoading = $state(false);
   let collectionExhausted = $state(false);
   let collectionRequest = 0;
 
+  // The collection and every album inside it, at any depth. Flat `albumIds` would mean "in all of these".
   const loadCollectionAssets = async (
-    page: number,
+    cursor: string | null,
     request: number,
     collectionId: string,
-    ids: string[],
     order: typeof album.order,
   ) => {
     collectionLoading = true;
     await publishCollectionPage(
-      () => searchAssets({ metadataSearchDto: { albumIds: ids, page, size: COLLECTION_PAGE, order } }),
+      () =>
+        searchAssets({
+          metadataSearchDto: {
+            filter: { albumSubtreeIds: { any: [collectionId] } },
+            orderBy: { direction: order },
+            size: COLLECTION_PAGE,
+            ...(cursor && { cursor }),
+          },
+        }),
       () => request === collectionRequest && collectionId === albumId,
       (results) => {
-        collectionAssets = page === 1 ? results.assets.items : [...collectionAssets, ...results.assets.items];
-        collectionExhausted = results.assets.nextPage === null;
+        collectionAssets = cursor ? [...collectionAssets, ...results.assets.items] : results.assets.items;
+        collectionCursor = results.assets.nextCursor;
+        collectionExhausted = results.assets.nextCursor === null;
       },
       () => (collectionLoading = false),
     );
   };
 
   $effect(() => {
-    const ids = collectionAlbums.map(({ id }) => id);
+    // Re-runs when the collection's albums change, which is what its photos are made of.
+    void collectionAlbums.length;
     const order = album.order;
     const collectionId = albumId;
     const request = ++collectionRequest;
     collectionAssets = [];
     collectionLoading = false;
-    collectionExhausted = ids.length === 0;
-    if (!isCollection) {
-      return;
-    }
-    // Re-runs when the collection's albums change, which is what its photos are made of.
-    collectionPage = 1;
-    if (ids.length > 0) {
-      handlePromiseError(loadCollectionAssets(1, request, collectionId, ids, order));
+    collectionCursor = null;
+    collectionExhausted = !isCollection;
+    if (isCollection) {
+      handlePromiseError(loadCollectionAssets(null, request, collectionId, order));
     }
   });
 
   const loadMoreCollectionAssets = () => {
-    if (collectionLoading || collectionExhausted) {
+    if (collectionLoading || collectionExhausted || !collectionCursor) {
       return;
     }
-    collectionPage += 1;
-    handlePromiseError(
-      loadCollectionAssets(
-        collectionPage,
-        collectionRequest,
-        albumId,
-        collectionAlbums.map(({ id }) => id),
-        album.order,
-      ),
-    );
+    handlePromiseError(loadCollectionAssets(collectionCursor, collectionRequest, albumId, album.order));
   };
 
   const assetCount = $derived(isCollection ? (node?.assetCount ?? collectionAssets.length) : album.assetCount);
