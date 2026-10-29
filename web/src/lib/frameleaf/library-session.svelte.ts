@@ -312,6 +312,18 @@ export class LibrarySessionStore {
     return this.dispatch({ type: 'scope', scope });
   }
 
+  /**
+   * The scope the page itself settles on right after a restore (the library outside an album or a
+   * space). Not a change the person made: a refused link stays in the address bar through it.
+   */
+  normalizeScope(scope: LibraryViewState['scope']) {
+    const result = this.setScope(scope);
+    if (this.#refusedAt !== null) {
+      this.#refusedAt = JSON.stringify(this.#session.state);
+    }
+    return result;
+  }
+
   /* ---------------------------------------------------------------------- */
   /* Results                                                                 */
   /* ---------------------------------------------------------------------- */

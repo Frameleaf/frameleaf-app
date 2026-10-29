@@ -120,7 +120,15 @@
     }
   });
   $effect(() => {
-    const timer = setInterval(() => void load(), runs.some((run) => !isRunSettled(run)) ? 5000 : 30_000);
+    // A hidden tab is not polled; the next tick after it shows again catches up.
+    const timer = setInterval(
+      () => {
+        if (!document.hidden) {
+          void load();
+        }
+      },
+      runs.some((run) => !isRunSettled(run)) ? 5000 : 30_000,
+    );
     return () => clearInterval(timer);
   });
 </script>

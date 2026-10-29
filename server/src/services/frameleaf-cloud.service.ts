@@ -423,13 +423,22 @@ export class FrameleafCloudService extends BaseService {
               : {
                   ...current,
                   lastError: message,
-                  pending: { ...current.pending, nextPollAt: this.after(Date.now(), current.pending.intervalSeconds) },
+                  pending: this.afterFailedCheck(current.pending, approved ? error.status : null),
                 },
           'link',
           { expected: link },
         );
       }
     }
+  }
+
+  /**
+   * The next check after one that failed. RFC 8628 section 3.5: a check that got no answer at all (a
+   * timeout, a refused connection) waits longer from then on, as `slow_down` does; a 5xx keeps the interval.
+   */
+  private afterFailedCheck(pending: NonNullable<FrameleafCloudLink['pending']>, status: number | null) {
+    const intervalSeconds = status === null ? pending.intervalSeconds + SLOW_DOWN_SECONDS : pending.intervalSeconds;
+    return { ...pending, intervalSeconds, nextPollAt: this.after(Date.now(), intervalSeconds) };
   }
 
   /** A cloud failure while an administrator waits becomes a 503 with the cloud's plain message. */
@@ -722,9 +731,14 @@ export class FrameleafCloudService extends BaseService {
     }
 
     switch (result.error) {
+      // the cloud answered, so an earlier failed check (a timeout, a 5xx) is no longer shown while waiting
       case 'authorization_pending': {
         await this.saveLink(
-          { ...link, pending: { ...pending, nextPollAt: this.after(now, pending.intervalSeconds) } },
+          {
+            ...link,
+            lastError: undefined,
+            pending: { ...pending, nextPollAt: this.after(now, pending.intervalSeconds) },
+          },
           null,
           { expected: link },
         );
@@ -733,7 +747,11 @@ export class FrameleafCloudService extends BaseService {
       case 'slow_down': {
         const intervalSeconds = pending.intervalSeconds + SLOW_DOWN_SECONDS;
         await this.saveLink(
-          { ...link, pending: { ...pending, intervalSeconds, nextPollAt: this.after(now, intervalSeconds) } },
+          {
+            ...link,
+            lastError: undefined,
+            pending: { ...pending, intervalSeconds, nextPollAt: this.after(now, intervalSeconds) },
+          },
           null,
           { expected: link },
         );
@@ -745,6 +763,20 @@ export class FrameleafCloudService extends BaseService {
       }
       case 'access_denied': {
         await this.endPending(cloudUrl, link, 'denied');
+        return;
+      }
+      case 'invalid_grant': {
+        // RFC 8628: the code can't be exchanged any more (spent by a check whose answer was lost, or revoked),
+        // so polling it again until it expires only shows "waiting for approval" for nothing
+        await this.saveLink(
+          {
+            ...emptyLink(cloudUrl, link),
+            lastLinkResult: 'expired',
+            lastError: 'Frameleaf Cloud no longer accepts this code. Get a new code to link this server.',
+          },
+          'link',
+          { expected: link },
+        );
         return;
       }
       default: {

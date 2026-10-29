@@ -13,7 +13,7 @@ import { omit } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { Album, columns } from 'src/database.js';
-import { ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import { ChunkedArray, DATABASE_PARAMETER_CHUNK_SIZE, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, SharedLinkType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
@@ -312,7 +312,8 @@ export class SharedLinkRepository {
     await this.db.deleteFrom('shared_link').where('shared_link.id', '=', id).execute();
   }
 
-  @ChunkedArray({ paramIndex: 1 })
+  // two parameters per row: a chunk of DATABASE_PARAMETER_CHUNK_SIZE rows would exceed PostgreSQL's limit
+  @ChunkedArray({ paramIndex: 1, chunkSize: Math.floor(DATABASE_PARAMETER_CHUNK_SIZE / 2) })
   async addAssets(id: string, assetIds: string[]) {
     if (assetIds.length === 0) {
       return [];

@@ -200,11 +200,22 @@ export class QueueService extends BaseService {
 
   async getAll(_auth: AuthDto): Promise<QueueResponseDto[]> {
     const names = Object.values(QueueName);
+    // The Jobs page asks for every queue every few seconds: whether each is paused or has
+    // unfinished work is read once for all of them, and only the counts are per queue.
+    const paused = await this.jobRepository.getPausedQueues();
+    const unfinished = await this.jobRepository.getQueuesWithUnfinishedWork(names);
     const queues: QueueResponseDto[] = [];
     for (let offset = 0; offset < names.length; offset += 4) {
       // Wait for this batch to settle on failure too, so a failed request cannot leave
       // its sibling snapshots consuming the database pool after the response ends.
-      const results = await Promise.allSettled(names.slice(offset, offset + 4).map((name) => this.getByName(name)));
+      const results = await Promise.allSettled(
+        names.slice(offset, offset + 4).map(async (name) => ({
+          name,
+          isPaused: paused.has(name),
+          statistics: await this.jobRepository.getJobCounts(name),
+          hasUnfinishedWork: unfinished.has(name),
+        })),
+      );
       for (const result of results) {
         if (result.status === 'rejected') throw result.reason;
         queues.push(result.value);

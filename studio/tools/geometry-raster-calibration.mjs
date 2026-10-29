@@ -208,9 +208,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
             'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+          // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
+          binding.sourceSha256 ===
+            'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
           // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
           binding.sourceSha256 ===
-            'dbac7909b56f746b54a39f1284ca5e0fd6af98cab83b8f01abc6da0fb51469e5')),
+            'dffeb3ab09afe064bd0a1d02f3f8985dc6df21c2c46b6eb672fe0b245a4eb8b6')),
     'SOURCE_BROWSER',
   )
   check(
