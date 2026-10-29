@@ -152,12 +152,14 @@ export class PersonService extends BaseService {
       closestFaceAssetId = person.faceAssetId;
     }
     const privacyOptions = getHiddenContentQueryOptions(auth);
-    const { items, hasNextPage } = await this.personRepository.getAllForUser(pagination, auth.user.id, {
-      withHidden,
-      closestFaceAssetId,
-      ...privacyOptions,
-    });
-    const { total, hidden } = await this.personRepository.getNumberOfPeople(auth.user.id, privacyOptions);
+    const [{ items, hasNextPage }, { total, hidden }] = await Promise.all([
+      this.personRepository.getAllForUser(pagination, auth.user.id, {
+        withHidden,
+        closestFaceAssetId,
+        ...privacyOptions,
+      }),
+      this.personRepository.getNumberOfPeople(auth.user.id, privacyOptions),
+    ]);
 
     return {
       people: items.map((person) => ({

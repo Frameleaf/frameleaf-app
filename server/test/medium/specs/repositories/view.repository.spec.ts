@@ -53,6 +53,19 @@ describe(ViewRepository.name, () => {
     }
   });
 
+  it('lists an absolute folder alone, never a folder elsewhere whose path ends the same way', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: '/photos/2024/a.jpg' });
+    const { asset: elsewhere } = await ctx.newAsset({ ownerId: user.id, originalPath: '/backup/photos/2024/b.jpg' });
+
+    const rows = await sut.getAssetsByOriginalPath(user.id, '/photos/2024');
+    expect(rows.map(({ id }) => id)).toEqual([asset.id]);
+    // a relative path still names that folder wherever it is
+    const relative = await sut.getAssetsByOriginalPath(user.id, 'photos/2024');
+    expect(relative.map(({ id }) => id).toSorted()).toEqual([asset.id, elsewhere.id].toSorted());
+  });
+
   describe('getFolderSummary', () => {
     it("summarises each folder's own originals: count, bytes, the four newest for a cover and the capture dates", async () => {
       const { ctx, sut } = setup();
