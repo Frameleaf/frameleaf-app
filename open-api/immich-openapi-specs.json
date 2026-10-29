@@ -14967,6 +14967,134 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/assets/{id}/annotations": {
+      "get": {
+        "description": "Returns the versioned annotation document kept beside the asset. Positions are fractions (0..1) of the picture. Anyone who can see the picture can read them; a picture outside Boards returns none.",
+        "operationId": "getAssetAnnotations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAnnotationsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read the Boards annotations drawn over a picture",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      },
+      "put": {
+        "description": "Replaces the whole annotation document for a picture the caller owns; an empty list removes them. The original file is never changed and no edit runs.",
+        "operationId": "replaceAssetAnnotations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetAnnotationsUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAnnotationsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Replace the Boards annotations drawn over a picture",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/{id}/cast": {
       "post": {
         "description": "Returns a signed URL path for one rendition (original, preview or video) of one item, for a Cast receiver that cannot send the session token or cookies. It expires after 15 minutes, serves only this item, and stops working when the session or API key is revoked, access is lost, the item becomes Locked or hidden for the account, or an administrator turns casting off for the account (refused with 403 here in those cases). Shared links cannot cast. The original needs download permission.",
@@ -67932,6 +68060,174 @@
         ],
         "type": "object"
       },
+      "AssetAnnotationGeometry": {
+        "additionalProperties": false,
+        "properties": {
+          "endX": {
+            "description": "Arrows only: where the arrow points",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "endY": {
+            "description": "Arrows only: where the arrow points",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "height": {
+            "description": "Rectangles only",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "width": {
+            "description": "Rectangles only",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "x": {
+            "description": "Left edge of a rectangle, tail of an arrow, or the start of a text label",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Top edge of a rectangle, tail of an arrow, or the baseline of a text label",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetAnnotationItem": {
+        "additionalProperties": false,
+        "properties": {
+          "geometry": {
+            "$ref": "#/components/schemas/AssetAnnotationGeometry"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetAnnotationKind"
+          },
+          "note": {
+            "maxLength": 280,
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/AssetAnnotationOrigin",
+            "description": "Set when the annotation was brought over from Eagle"
+          },
+          "text": {
+            "description": "Text annotations only: the words drawn",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "geometry",
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "AssetAnnotationKind": {
+        "enum": [
+          "rect",
+          "arrow",
+          "text"
+        ],
+        "type": "string"
+      },
+      "AssetAnnotationOrigin": {
+        "enum": [
+          "eagle"
+        ],
+        "type": "string"
+      },
+      "AssetAnnotationsDto": {
+        "properties": {
+          "canEdit": {
+            "description": "Whether the caller may replace these annotations; only the owner can",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssetAnnotationItem"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "sourceChanged": {
+            "description": "True when the picture has changed (for example cropped) since the annotations were saved",
+            "type": "boolean"
+          },
+          "sourceRevision": {
+            "description": "Fingerprint of the picture the annotations were drawn on",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "When the annotations were last saved; null when there are none",
+            "nullable": true,
+            "type": "string"
+          },
+          "version": {
+            "$ref": "#/components/schemas/AssetAnnotationsVersion"
+          }
+        },
+        "required": [
+          "canEdit",
+          "items",
+          "sourceChanged",
+          "sourceRevision",
+          "updatedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "AssetAnnotationsUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssetAnnotationItem"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "version": {
+            "$ref": "#/components/schemas/AssetAnnotationsVersion"
+          }
+        },
+        "required": [
+          "items",
+          "version"
+        ],
+        "type": "object"
+      },
+      "AssetAnnotationsVersion": {
+        "enum": [
+          1
+        ],
+        "type": "number"
+      },
       "AssetBulkDeleteDto": {
         "properties": {
           "force": {
@@ -83594,7 +83890,7 @@
             "type": "boolean"
           },
           "includeLibraryMetadata": {
-            "description": "Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only",
+            "description": "Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only",
             "type": "boolean"
           },
           "includeSidecar": {

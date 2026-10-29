@@ -4,8 +4,9 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { AssetAnnotationItemsSchema } from 'src/dtos/asset-annotation.dto.js';
 import { LibraryManifestDto } from 'src/dtos/library-manifest.dto.js';
-import { AlbumUserRole, AssetFileType, AssetVisibility, LibraryScope } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
 import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -95,6 +96,7 @@ export class DownloadRepository {
                   'asset.id',
                   'asset.checksum',
                   'asset.libraryScope',
+                  'asset.type',
                   'asset.isFavorite',
                   'asset.visibility',
                   'asset_exif.description',
@@ -223,6 +225,25 @@ export class DownloadRepository {
           includeSources && assetIds.length > 0
             ? await tx.selectFrom('asset_source').selectAll().where('assetId', 'in', assetIds).orderBy('id').execute()
             : [];
+        // FL-652: Boards annotations travel with Boards pictures only, as the item details show them.
+        const annotatedIds = assetRows
+          .filter((row) => row.type === AssetType.Image && row.libraryScope !== LibraryScope.Personal)
+          .map(({ id }) => id);
+        const annotations = new Map(
+          annotatedIds.length === 0
+            ? []
+            : (
+                await tx
+                  .selectFrom('asset_annotation')
+                  .select(['assetId', 'items'])
+                  .where('assetId', 'in', annotatedIds)
+                  .where('version', '=', 1)
+                  .execute()
+              ).flatMap(({ assetId, items }) => {
+                const parsed = AssetAnnotationItemsSchema.safeParse(items);
+                return parsed.success && parsed.data.length > 0 ? [[assetId, parsed.data] as const] : [];
+              }),
+        );
         const albumsByAsset = Map.groupBy(
           assetMemberships.filter((row) => albumIds.has(row.albumId)),
           (row) => row.assetId,
@@ -271,6 +292,7 @@ export class DownloadRepository {
             ...(includeSources
               ? { sources: (sourcesByAsset.get(row.id) ?? []).map((source) => portableCaptureSource(source)) }
               : {}),
+            ...(annotations.has(row.id) ? { annotations: annotations.get(row.id) } : {}),
           })),
           bookmarks: bookmarkRows.map((row) => ({
             id: row.id,

@@ -1,4 +1,6 @@
 import {
+  AssetAnnotationKind,
+  AssetTypeEnum,
   LibraryScope,
   PaletteAlgorithmVersion,
   PaletteRepresentative,
@@ -352,6 +354,103 @@ describe('LibraryWorkInspector', () => {
       // the item's collections are read again once the picker closes
       await waitFor(() => expect(sdkMock.getAllAlbums).toHaveBeenCalledTimes(2));
       show.mockRestore();
+    });
+
+    describe('annotations', () => {
+      const items = [
+        {
+          id: 'a1',
+          kind: AssetAnnotationKind.Rect,
+          geometry: { x: 0.05, y: 0.27, width: 0.45, height: 0.2 },
+          note: 'Headline runs to three lines on a phone.',
+        },
+        { id: 'a2', kind: AssetAnnotationKind.Arrow, geometry: { x: 0.36, y: 0.66, endX: 0.2, endY: 0.56 } },
+      ];
+      const document = (patch = {}) =>
+        ({
+          version: 1,
+          sourceRevision: 'rev',
+          sourceChanged: false,
+          canEdit: true,
+          items,
+          updatedAt: null,
+          ...patch,
+        }) as never;
+      const picture = (id: string) => boardsDetail(id, { type: AssetTypeEnum.Image });
+
+      it('lists them under the name with the switch, and highlights the chosen one on the preview', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document());
+        render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+
+        const section = await screen.findByTestId('boards-annotations');
+        expect(
+          within(section).getByRole('heading', { name: 'frameleaf_boards_annotations_count' }),
+        ).toBeInTheDocument();
+        expect(within(section).getByRole('button', { name: /frameleaf_boards_annotate$/ })).toBeInTheDocument();
+        expect(within(section).getAllByRole('listitem')).toHaveLength(2);
+        expect(within(section).getByText('frameleaf_boards_annotations_kept')).toBeInTheDocument();
+        expect(sdkMock.getAssetAnnotations).toHaveBeenCalledWith(expect.objectContaining({ id: asset.id }));
+
+        // the drawing on the preview is hidden from screen readers: the list is the way in
+        const preview = await screen.findByTestId('boards-annotated-image');
+        expect(preview.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+        expect(preview.querySelectorAll('.ann')).toHaveLength(2);
+
+        const [first] = within(section).getAllByRole('button', { name: 'frameleaf_boards_annotation_label' });
+        await fireEvent.click(first);
+        expect(first).toHaveAttribute('aria-pressed', 'true');
+        await waitFor(() => expect(preview.querySelector('.ann.on')).not.toBeNull());
+
+        await fireEvent.click(
+          within(section).getByRole('switch', { name: 'frameleaf_boards_annotations_show_on_picture' }),
+        );
+        await waitFor(() => expect(preview.querySelector('svg')).toBeNull());
+        // the list stays when they are hidden
+        expect(within(section).getAllByRole('listitem')).toHaveLength(2);
+      });
+
+      it('offers Annotate on an empty picture and opens the Boards viewer from View large', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document({ items: [] }));
+        const onOpen = vi.fn();
+        render(LibraryWorkInspector, { asset, onOpen, onClose: vi.fn(), boards: true });
+
+        const section = await screen.findByTestId('boards-annotations');
+        expect(within(section).getByText('frameleaf_boards_annotations_none')).toBeInTheDocument();
+        expect(within(section).queryByRole('switch')).not.toBeInTheDocument();
+
+        await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_boards_viewer_view_large_name' }));
+        expect(await screen.findByTestId('boards-viewer')).toBeInTheDocument();
+        expect(onOpen).not.toHaveBeenCalled();
+      });
+
+      it('shows someone else’s annotations read-only, and nothing when there are none', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(boardsDetail(asset.id, { type: AssetTypeEnum.Image, ownerId: 'other' }));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document({ canEdit: false }));
+        const view = render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        const section = await screen.findByTestId('boards-annotations');
+        expect(within(section).queryByRole('button', { name: /frameleaf_boards_annotate$/ })).not.toBeInTheDocument();
+        view.unmount();
+
+        sdkMock.getAssetAnnotations.mockResolvedValue(document({ canEdit: false, items: [] }));
+        render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        await screen.findByRole('heading', { name: 'frameleaf_boards_file' });
+        await waitFor(() => expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(2));
+        expect(screen.queryByTestId('boards-annotations')).not.toBeInTheDocument();
+      });
+
+      it('leaves videos and Photos items without annotations', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(boardsDetail(asset.id, { type: AssetTypeEnum.Video }));
+        render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        await screen.findByRole('heading', { name: 'frameleaf_boards_file' });
+        expect(sdkMock.getAssetAnnotations).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('boards-annotated-image')).not.toBeInTheDocument();
+      });
     });
 
     it('shows someone else’s item read-only', async () => {

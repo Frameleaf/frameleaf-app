@@ -44,6 +44,7 @@ import { AlbumUserAuditTable } from 'src/schema/tables/album-user-audit.table.js
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { ApiKeyTable } from 'src/schema/tables/api-key.table.js';
+import { AssetAnnotationTable } from 'src/schema/tables/asset-annotation.table.js';
 import { AssetAuditTable } from 'src/schema/tables/asset-audit.table.js';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
 import { AssetBackupDeletionTable } from 'src/schema/tables/asset-backup-deletion.table.js';
@@ -297,6 +298,7 @@ export class ImmichDatabase {
     BackupReconciliationTable,
     AssetPaletteTable,
     AssetPaletteSwatchTable,
+    AssetAnnotationTable,
     CaptureReceiptTable,
     BookmarkTable,
     AlbumBookmarkTable,
@@ -561,6 +563,7 @@ export interface DB extends QueueDatabase {
   asset_job_status: AssetJobStatusTable;
   asset_palette: AssetPaletteTable;
   asset_palette_swatch: AssetPaletteSwatchTable;
+  asset_annotation: AssetAnnotationTable;
   capture_receipt: CaptureReceiptTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;

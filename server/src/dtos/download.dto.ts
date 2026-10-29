@@ -57,7 +57,7 @@ const DownloadArchiveSchema = z
     includeLibraryMetadata: formBoolean
       .optional()
       .describe(
-        'Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only',
+        'Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only',
       ),
     includeSources: formBoolean
       .optional()
