@@ -853,7 +853,8 @@ export class AssetJobRepository {
   /**
    * FL-521: the photos and videos behind Editing & playback's status: photos and how many have no
    * preview yet, videos and how many have a playback copy. FL-537: and how long those videos are, for
-   * "about N MB a minute".
+   * "about N MB a minute". FL-630: and the space the copies take, from their recorded sizes (each
+   * shared file once); copies made before files were recorded are counted in `unsizedCopies`.
    */
   async countMediaCopies(): Promise<{
     photos: number;
@@ -862,6 +863,8 @@ export class AssetJobRepository {
     withCopy: number;
     videoMs: number;
     copyMs: number;
+    copyBytes: number;
+    unsizedCopies: number;
   }> {
     const { rows } = await sql<{
       photos: number;
@@ -870,6 +873,8 @@ export class AssetJobRepository {
       withCopy: number;
       videoMs: number;
       copyMs: number;
+      copyBytes: number;
+      unsizedCopies: number;
     }>`
       SELECT
         count(*) FILTER (WHERE a.type = ${AssetType.Image})::int AS photos,
@@ -883,7 +888,14 @@ export class AssetJobRepository {
         coalesce(sum(a.duration) FILTER (WHERE a.type = ${AssetType.Video}), 0)::float8 AS "videoMs",
         coalesce(sum(a.duration) FILTER (WHERE a.type = ${AssetType.Video} AND EXISTS (
           SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.EncodedVideo}
-        )), 0)::float8 AS "copyMs"
+        )), 0)::float8 AS "copyMs",
+        (SELECT coalesce(sum(p."sizeInBytes"), 0)::float8 FROM public.physical_file p WHERE p.id IN (
+          SELECT f."physicalFileId" FROM public.asset_file f JOIN public.asset c ON c.id = f."assetId"
+          WHERE f.type = ${AssetFileType.EncodedVideo} AND c."deletedAt" IS NULL
+        )) AS "copyBytes",
+        (SELECT count(*) FROM public.asset_file f JOIN public.asset c ON c.id = f."assetId"
+          WHERE f.type = ${AssetFileType.EncodedVideo} AND c."deletedAt" IS NULL AND f."physicalFileId" IS NULL
+        )::int AS "unsizedCopies"
       FROM public.asset a
       WHERE a."deletedAt" IS NULL AND a.visibility != ${AssetVisibility.Hidden}
         AND a.type IN (${AssetType.Image}, ${AssetType.Video})`.execute(this.db);

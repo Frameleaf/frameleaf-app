@@ -47,6 +47,30 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
     );
   });
 
+  it('selects the original when the video has no playback copy (FL-630)', () => {
+    const none = render(ViewerFooter, {
+      asset: { ...assetFactory.build({ type: AssetTypeEnum.Video }), playbackCopy: false },
+      ...base,
+    });
+    expect(screen.getByRole('button', { name: 'frameleaf_viewer_source_original' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const optimized = screen.getByRole('button', { name: 'frameleaf_viewer_source_optimized' });
+    expect(optimized).toHaveAttribute('aria-pressed', 'false');
+    expect(optimized).toBeDisabled();
+    none.unmount();
+
+    render(ViewerFooter, {
+      asset: { ...assetFactory.build({ type: AssetTypeEnum.Video }), playbackCopy: true },
+      ...base,
+    });
+    expect(screen.getByRole('button', { name: 'frameleaf_viewer_source_optimized' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
   it('cannot play a slideshow with nothing to move to', () => {
     render(ViewerFooter, { asset: assetFactory.build(), ...base, canNavigateCollection: false });
     expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeDisabled();

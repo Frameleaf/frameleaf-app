@@ -179,24 +179,39 @@
   /** FL-521: how many videos have a copy and the space the copies take. */
   let copies = $state<MediaCopiesResponseDto>();
 
+  const readCopies = async () => {
+    try {
+      copies = await getMediaCopies();
+    } catch {
+      // Without the counts the status says what happens to videos, without numbers.
+    }
+  };
+
   const readWaiting = async () => {
     try {
       const queue = await getQueue({ name: QueueName.VideoConversion });
+      const before = waiting;
       waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
+      if (before > 0 && waiting < before) {
+        void readCopies();
+      }
     } catch {
       // The status then says what happens to videos, without a count.
     }
   };
 
+  // FL-630: while copies are being made, the count and the space they take follow along.
+  $effect(() => {
+    if (waiting === 0) {
+      return;
+    }
+    const timer = setInterval(() => void readWaiting(), 5000);
+    return () => clearInterval(timer);
+  });
+
   onMount(() => {
     void readWaiting();
-    void (async () => {
-      try {
-        copies = await getMediaCopies();
-      } catch {
-        // Without the counts the status says what happens to videos, without numbers.
-      }
-    })();
+    void readCopies();
     void getHardwareCheck()
       .then((check) => {
         const server = check?.server;
@@ -320,6 +335,7 @@
         queueCommandDto: { command: QueueCommand.Start, force: true },
       });
       said = $t('frameleaf_play_vid_remake_started');
+      await readWaiting();
     } catch (error) {
       handleError(error, $t('frameleaf_play_vid_remake_failed'));
     } finally {

@@ -68874,6 +68874,10 @@
             },
             "type": "array"
           },
+          "playbackCopy": {
+            "description": "Whether a video has a playback copy; omitted for photos and when file evidence was not loaded",
+            "type": "boolean"
+          },
           "resized": {
             "description": "Is resized",
             "type": "boolean",
@@ -70906,6 +70910,10 @@
               "$ref": "#/components/schemas/PersonResponseDto"
             },
             "type": "array"
+          },
+          "playbackCopy": {
+            "description": "Whether a video has a playback copy; omitted for photos and when file evidence was not loaded",
+            "type": "boolean"
           },
           "resized": {
             "description": "Is resized",

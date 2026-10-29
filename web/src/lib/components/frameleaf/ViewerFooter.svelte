@@ -65,6 +65,8 @@
 
   const sharedLink = getSharedLink();
   const canPlayOriginal = $derived(!sharedLink || sendCopyPermitted(sharedLink));
+  // FL-630: without a playback copy the server plays the original, so that is what is selected
+  const hasPlaybackCopy = $derived(asset.playbackCopy !== false);
   const { slideshowState, settingsOpen } = slideshowStore;
   const playing = $derived($slideshowState === SlideshowState.PlaySlideshow);
   // The same gates as the menu's and the shared link's Play slideshow: never Locked, downloads on a link.
@@ -137,13 +139,18 @@
   <div class="fl-foot-group">
     {#if isVideoAsset(asset) && canPlayOriginal}
       <div class="fl-segment" role="group" aria-label={$t('frameleaf_viewer_video_source')}>
-        <button type="button" aria-pressed={isPlayingOriginalVideo} onclick={() => setPlayOriginalVideo(true)}>
+        <button
+          type="button"
+          aria-pressed={isPlayingOriginalVideo || !hasPlaybackCopy}
+          onclick={() => setPlayOriginalVideo(true)}
+        >
           {$t('frameleaf_viewer_source_original')}
         </button>
         <button
           type="button"
-          aria-pressed={!isPlayingOriginalVideo}
-          title={$t('frameleaf_viewer_optimized_title')}
+          aria-pressed={!isPlayingOriginalVideo && hasPlaybackCopy}
+          disabled={!hasPlaybackCopy}
+          title={hasPlaybackCopy ? $t('frameleaf_viewer_optimized_title') : $t('frameleaf_viewer_optimized_none')}
           onclick={() => setPlayOriginalVideo(false)}
         >
           {$t('frameleaf_viewer_source_optimized')}
@@ -341,6 +348,11 @@
     font: inherit;
     font-size: var(--fl-font-micro);
     cursor: pointer;
+  }
+
+  .fl-segment button:disabled {
+    cursor: default;
+    opacity: 0.5;
   }
 
   .fl-segment button[aria-pressed='true'] {

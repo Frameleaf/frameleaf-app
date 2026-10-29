@@ -158,6 +158,8 @@ export class AssetService extends BaseService {
       stack: { assets: true, ...getLockedVisibilityOptions(auth) },
       edits: true,
       tags: true,
+      // FL-630: the viewer offers "Play optimized" only when the video has a playback copy
+      files: true,
     });
 
     if (!asset) {

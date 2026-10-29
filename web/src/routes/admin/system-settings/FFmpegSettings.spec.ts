@@ -110,7 +110,7 @@ describe('Video playback copies (FL-366)', () => {
     expect(status.getByRole('heading', { name: 'Every video plays on every device' })).toBeInTheDocument();
     expect(status.getByText(/get a 1080p playback copy/)).toBeInTheDocument();
     expect(
-      group('Which videos get a copy').getByRole('button', { name: 'Only those that need one', pressed: true }),
+      group('Which videos get a copy').getByRole('button', { name: 'Only videos that need one', pressed: true }),
     ).toBeInTheDocument();
     expect(
       group('Playback quality').getByRole('button', { name: 'Better (1080p)', pressed: true }),
