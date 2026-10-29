@@ -198,7 +198,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
           // FL-596 motion tracking writes ordinary keyframes; it changes no producer.
           binding.sourceSha256 ===
-            '076073e60d0baee97812afe90c3c2a8eb65681ac91e68093548baec1a989c229')),
+            '076073e60d0baee97812afe90c3c2a8eb65681ac91e68093548baec1a989c229' ||
+          // FL-596 motion tracking: superseded runs discarded, time-sliced yields
+          binding.sourceSha256 ===
+            '1f842a0736b43b605bcb1d4cf73c16ffc8bd54ba9199a1b05d79ca46e03b7385')),
     'SOURCE_BROWSER',
   )
   check(

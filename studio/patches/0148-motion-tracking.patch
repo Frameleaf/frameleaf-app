@@ -28,7 +28,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/motion-track-section.tsx
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,158 @@
 +import { useEffect, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { useShallow } from 'zustand/react/shallow'
@@ -85,10 +85,12 @@ new file mode 100644
 +        signal: controller.signal,
 +        onProgress: (done, total) => setProgress(t('editor.motionTrack.decoding', { done, total })),
 +      })
++      // A superseded run (cancelled, or the source or direction changed) never writes its result.
++      if (controller.signal.aborted) return
 +      if (analysis.ok) setResult(analysis.result)
 +      else toast.warning(t(`editor.motionTrack.refusal.${analysis.reason}`))
 +    } catch (error) {
-+      if (!(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.motionTrack.refusal.decode-failed'))
++      if (!controller.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.motionTrack.refusal.decode-failed'))
 +    } finally {
 +      if (abortRef.current === controller) setProgress(null)
 +    }
@@ -113,7 +115,7 @@ new file mode 100644
 +          className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs"
 +          aria-label={t('editor.motionTrack.source')}
 +          value={sourceId}
-+          onChange={(event) => { setSourceId(event.target.value); setResult(null) }}
++          onChange={(event) => { abortRef.current?.abort(); setSourceId(event.target.value); setResult(null) }}
 +        >
 +          <option value="">{t('editor.motionTrack.chooseSource')}</option>
 +          {sources.map((entry) => {
@@ -127,7 +129,7 @@ new file mode 100644
 +          {(['forward', 'backward'] as const).map((value) => (
 +            <Button key={value} role="radio" aria-checked={direction === value} size="sm"
 +              variant={direction === value ? 'secondary' : 'ghost'} className="h-7 flex-1 text-xs"
-+              onClick={() => { setDirection(value); setResult(null) }}>
++              onClick={() => { abortRef.current?.abort(); setDirection(value); setResult(null) }}>
 +              {t(`editor.motionTrack.${value}`)}
 +            </Button>
 +          ))}
@@ -350,7 +352,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,284 @@
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import type { AnimationKeyframeSource } from '@/types/keyframe'
 +import { useItemsStore } from '../../items-store'
@@ -511,6 +513,7 @@ new file mode 100644
 +      const height = Math.max(1, Math.round((ANALYSIS_WIDTH * clip.sourceHeight) / clip.sourceWidth))
 +      const sink = new CanvasSink(track, { width: ANALYSIS_WIDTH, height, fit: 'fill' })
 +      let tracker: RegionTracker | null = null
++      let lastYield = performance.now()
 +      for (const [index, frame] of frames.entries()) {
 +        if (options.signal?.aborted) throw new DOMException('Tracking cancelled', 'AbortError')
 +        // Once lost, later frames are lost too: stop decoding.
@@ -531,8 +534,11 @@ new file mode 100644
 +          samples.push(tracker.next(gray))
 +        }
 +        options.onProgress?.(index + 1, frames.length)
-+        // Let the page breathe between frames.
-+        await new Promise((resolve) => setTimeout(resolve, 0))
++        // Let the page breathe once a ~12 ms slice is used: a yield per frame would be throttled in background tabs.
++        if (performance.now() - lastYield > 12) {
++          await new Promise((resolve) => setTimeout(resolve, 0))
++          lastYield = performance.now()
++        }
 +      }
 +    } finally {
 +      input.dispose()
