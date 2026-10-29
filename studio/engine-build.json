@@ -713,13 +713,13 @@
     {
       "path": "patches/0148-motion-tracking.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "4385c1ef778f50f7c3a9c0aa6a7efbcdb31be427474f87faebf4812927867220"
+      "sha256": "696e71b896a0e16578995dbeea248d75ceb7dbde56c71faa9629f8a699937d0d"
     },
     {
       "path": "patches/0152-tracking-box-and-provenance.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "96e2a0b80267fa04ead5583fb2674c75873950fcc6b68959efa89a4181843079"
+      "sha256": "d25b351214e55608c5ac218c17b3507badc381cee014c544208a2c091fc92210"
     }
   ],
-  "sourceSha256": "bd9c1a7e73e0a360bf5ba0a5487ba722db6ce36d38489f204e9cdc00e1b87d9b"
+  "sourceSha256": "efcc840ff88aa3bf6d1599f4f2fb64575608c8fa503f5bd3eb78548f4e40c975"
 }

@@ -277,14 +277,15 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
  
    it('applies a one-frame backward result instead of calling it stale', () => {
      expect(applyMotionTrack(resultFor([path[0]!], [], 'backward', [20]), {})).toMatchObject({ ok: true })
-@@ -154,6 +230,6 @@ describe('motion track actions', () => {
+@@ -154,7 +230,7 @@ describe('motion track actions', () => {
      const outcome = applyMotionTrack(resultFor(path))
      if (!outcome.ok) throw new Error(outcome.reason)
      useItemsStore.getState().setTracks([track('t1', true)])
 -    expect(removeMotionTrack('title', outcome.applicationId)).toBe(false)
 +    expect(removeMotionTrack('title', outcome.applicationId)).toBe('locked')
    })
- })
+ 
+   it('asks before tracking inside an existing animation, which would change it outside the range', () => {
 diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
 --- a/src/features/timeline/stores/actions/edit/motion-track-actions.ts
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
@@ -423,10 +424,10 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
      return { ok: false, reason: 'stale' }
    }
    if (result.lostFrames.length > 0 && !decisions.keepTrackedPart) return { ok: false, reason: 'unreviewed-lost' }
-@@ -256,6 +299,10 @@ export function applyMotionTrack(
-       .filter((keyframe) => keyframe.frame >= low && keyframe.frame <= high)
-       .map((keyframe) => ({ property: property.property, id: keyframe.id })))
-   if (conflicting.length > 0 && !decisions.replaceExisting) return { ok: false, reason: 'conflict' }
+@@ -262,6 +305,10 @@ export function applyMotionTrack(
+     .some((property) => property.keyframes.some((keyframe) => keyframe.frame < low)
+       && property.keyframes.some((keyframe) => keyframe.frame > high))
+   if ((conflicting.length > 0 || spanned) && !decisions.replaceExisting) return { ok: false, reason: 'conflict' }
 +  // Frames this track replaces leave the older records, so removing one of those never takes this track's keys.
 +  const olderTracks = ((target as TrackedItem).motionTracks ?? [])
 +    .map((entry) => ({ ...entry, keyFrames: entry.keyFrames.filter((frame) => frame < low || frame > high) }))
@@ -434,7 +435,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
  
    const applicationId = crypto.randomUUID()
    const source_: AnimationKeyframeSource = {
-@@ -280,34 +327,99 @@ export function applyMotionTrack(
+@@ -286,34 +333,99 @@ export function applyMotionTrack(
      }
    }
  
@@ -597,7 +598,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
        "applyRefusal": {
          "stale": "Die Clips wurden seit der Verfolgung geändert; erneut verfolgen.",
 @@ -923,7 +930,9 @@
-         "conflict": "Dieser Clip hat in dem Bereich Positions- oder Größen-Keyframes. Bestätige das Ersetzen.",
+         "conflict": "Dieser Clip animiert Position oder Größe bereits in oder über diesen Bereich. Bestätige das Ersetzen.",
          "locked": "Der Clip liegt auf einer gesperrten Spur.",
          "nothing-tracked": "Es wurde nichts verfolgt."
 -      }
@@ -643,7 +644,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
        "applyRefusal": {
          "stale": "The clips changed since tracking; track again.",
 @@ -936,7 +943,9 @@
-         "conflict": "This clip has position or size keyframes in that range. Confirm replacing them.",
+         "conflict": "This clip already animates position or size in or across that range. Confirm replacing it.",
          "locked": "The clip is on a locked track.",
          "nothing-tracked": "Nothing was tracked."
 -      }
@@ -689,7 +690,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
        "applyRefusal": {
          "stale": "Los clips cambiaron desde el seguimiento; vuelve a seguir.",
 @@ -923,7 +930,9 @@
-         "conflict": "Este clip tiene fotogramas clave de posición o tamaño en ese rango. Confirma el reemplazo.",
+         "conflict": "Este clip ya anima la posición o el tamaño en ese rango o a través de él. Confirma que quieres reemplazarlo.",
          "locked": "El clip está en una pista bloqueada.",
          "nothing-tracked": "No se siguió nada."
 -      }
@@ -735,7 +736,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
        "applyRefusal": {
          "stale": "Les clips ont changé depuis le suivi ; suivez à nouveau.",
 @@ -923,7 +930,9 @@
-         "conflict": "Ce clip a des images clés de position ou de taille dans cette plage. Confirmez le remplacement.",
+         "conflict": "Ce clip anime déjà la position ou la taille dans cette plage ou à travers elle. Confirmez le remplacement.",
          "locked": "Le clip est sur une piste verrouillée.",
          "nothing-tracked": "Rien n’a été suivi."
 -      }
@@ -781,7 +782,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
        "applyRefusal": {
          "stale": "追跡後にクリップが変更されました。もう一度追跡してください。",
 @@ -923,7 +930,9 @@
-         "conflict": "この範囲に位置またはサイズのキーフレームがあります。置き換えを確認してください。",
+         "conflict": "このクリップはその範囲内または範囲をまたいで位置やサイズのアニメーションがあります。置き換えを確認してください。",
          "locked": "クリップがロックされたトラックにあります。",
          "nothing-tracked": "何も追跡されませんでした。"
 -      }
@@ -827,7 +828,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
        "applyRefusal": {
          "stale": "추적 후 클립이 변경되었습니다. 다시 추적하세요.",
 @@ -923,7 +930,9 @@
-         "conflict": "이 범위에 위치 또는 크기 키프레임이 있습니다. 바꾸기를 확인하세요.",
+         "conflict": "이 클립은 이미 그 범위 안이나 범위를 가로질러 위치 또는 크기가 애니메이션됩니다. 교체를 확인하세요.",
          "locked": "클립이 잠긴 트랙에 있습니다.",
          "nothing-tracked": "추적된 내용이 없습니다."
 -      }
@@ -873,7 +874,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
        "applyRefusal": {
          "stale": "Os clipes mudaram desde o rastreamento; rastreie de novo.",
 @@ -923,7 +930,9 @@
-         "conflict": "Este clipe tem quadros-chave de posição ou tamanho nesse intervalo. Confirme a substituição.",
+         "conflict": "Este clipe já anima a posição ou o tamanho nesse intervalo ou através dele. Confirme a substituição.",
          "locked": "O clipe está em uma faixa bloqueada.",
          "nothing-tracked": "Nada foi rastreado."
 -      }
@@ -919,7 +920,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
        "applyRefusal": {
          "stale": "Klipler izlemeden sonra değişti; yeniden izleyin.",
 @@ -923,7 +930,9 @@
-         "conflict": "Bu klibin o aralıkta konum veya boyut anahtar kareleri var. Değiştirmeyi onaylayın.",
+         "conflict": "Bu klip o aralıkta veya aralık boyunca zaten konum ya da boyut animasyonu içeriyor. Değiştirmeyi onaylayın.",
          "locked": "Klip kilitli bir izde.",
          "nothing-tracked": "Hiçbir şey izlenmedi."
 -      }
@@ -965,7 +966,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
        "applyRefusal": {
          "stale": "跟踪后片段已更改，请重新跟踪。",
 @@ -923,7 +930,9 @@
-         "conflict": "此片段在该范围内有位置或尺寸关键帧。请确认替换。",
+         "conflict": "此片段在该范围内或跨越该范围已有位置或大小动画。请确认替换。",
          "locked": "片段位于锁定的轨道。",
          "nothing-tracked": "没有跟踪到任何内容。"
 -      }
