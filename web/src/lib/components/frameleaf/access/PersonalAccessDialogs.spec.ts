@@ -97,7 +97,12 @@ describe('PinDialog (FL-67)', () => {
 describe('ApiKeyDialog (FL-67)', () => {
   it('creates a browser capture key without silently granting general library access', async () => {
     sdkMock.createApiKey.mockResolvedValue({
-      apiKey: { id: 'capture-key', name: 'Browser', permissions: [], designPermissions: [...PURPOSE_PERMISSIONS.capture] },
+      apiKey: {
+        id: 'capture-key',
+        name: 'Browser',
+        permissions: [],
+        designPermissions: [...PURPOSE_PERMISSIONS.capture],
+      },
       secret: 'synthetic-capture-key',
     } as never);
     render(ApiKeyDialog, { onClose: vi.fn() });
