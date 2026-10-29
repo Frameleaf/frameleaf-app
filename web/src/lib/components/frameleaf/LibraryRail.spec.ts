@@ -472,9 +472,18 @@ describe('LibraryRail in Boards', () => {
     const dialog = within(await screen.findByRole('dialog', { name: 'Save to Frameleaf from your browser' }));
     expect(dialog.getByText('Add the extension')).toBeInTheDocument();
     expect(dialog.getByText('For Chrome and Edge. Free.')).toBeInTheDocument();
-    const key = dialog.getByRole('link', { name: 'Make a browser key' });
+    // FL-655: sign in with your Frameleaf account; a key is only the fallback
+    expect(dialog.getByText('Sign in with your Frameleaf account')).toBeInTheDocument();
+    expect(
+      dialog.getByText(
+        'In the extension, choose this server and press Sign in, then Allow. It can only save things and list your collections and tags. It can’t see your photos.',
+      ),
+    ).toBeInTheDocument();
+    expect(dialog.getByText('Start saving')).toBeInTheDocument();
+    const key = dialog.getByRole('link', { name: 'Browser can’t sign in? Use a key instead' });
     expect(key.getAttribute('href')).toContain('section=api-keys');
-    expect(dialog.getByText('Paste it into the extension')).toBeInTheDocument();
+    expect(dialog.queryByText('Paste it into the extension')).toBeNull();
+    expect(dialog.queryByRole('link', { name: 'Make a browser key' })).toBeNull();
   });
 
   it('turns the drawer into the "Collections and filters" sheet only in Boards', () => {

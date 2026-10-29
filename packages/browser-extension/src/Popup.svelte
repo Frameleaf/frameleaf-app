@@ -1,12 +1,21 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
+  import Account from "./Account.svelte";
+  import Connect from "./Connect.svelte";
   import Header from "./Header.svelte";
   import Icon from "./Icon.svelte";
-  import Promises from "./Promises.svelte";
   import QueuePanel from "./QueuePanel.svelte";
+  import SettingsPanel from "./SettingsPanel.svelte";
+  import SignedOut from "./SignedOut.svelte";
   import type { IconName } from "./icons";
   import { openOptions, sendRequest, watchConnection } from "./platform";
-  import type { ConnectionStatus } from "./settings";
+  import { hostOf } from "./sign-in-words";
+  import { settledView } from "./views";
+  import type {
+    ConnectionStatus,
+    RecentServer,
+    SignInNotice,
+  } from "./settings";
   type Tab = "images" | "page" | "screenshot" | "saving";
   const tabs: { id: Tab; label: string; icon: IconName }[] = [
     { id: "images", label: "Images", icon: "imageMultipleOutline" },
@@ -21,6 +30,44 @@
   let tab = $state<Tab>("images");
   let unfinished = $state(0);
   let showWaiting = $state(false);
+  // FL-655: sign-in state, Settings and Switch server live in the popup too
+  let recent = $state<RecentServer[]>([]);
+  let notice = $state<SignInNotice | null>(null);
+  let view = $state<"main" | "settings" | "switch" | "key">("main");
+  let keyAddress = $state("");
+  let allowLocalhost = $state(false);
+  const problem = $derived(
+    notice?.kind === "problem"
+      ? { problem: notice.problem, origin: notice.origin }
+      : null,
+  );
+  const connected = $derived(connection?.status === "connected");
+  /** The server Switch server started from, so a finished switch closes the form. */
+  let switchFrom = $state<string | null>(null);
+  $effect(() => {
+    if (loading) return;
+    view = settledView(view, {
+      connected,
+      origin: connection?.binding.origin ?? null,
+      switchFrom,
+    });
+  });
+  async function loadSignIn() {
+    try {
+      const reply = await sendRequest({ type: "sign-in-state" });
+      if (reply.ok) {
+        recent = reply.recent ?? [];
+        notice = reply.notice ?? null;
+        connection = reply.connection ?? connection;
+      }
+    } catch {
+      // the connection reply still shows something sensible
+    }
+  }
+  function startSaving() {
+    notice = null;
+    void sendRequest({ type: "dismiss-notice" }).catch(() => {});
+  }
   const tabButtons: Record<string, HTMLButtonElement> = {};
   async function discover(
     type: "discover" | "bookmark" | "visible" | "area" | "whole" = "discover",
@@ -50,6 +97,7 @@
   }
   onMount(() => {
     const stop = watchConnection(() => {
+      void loadSignIn();
       void sendRequest({ type: "status" })
         .then(accept)
         .catch(() => {
@@ -63,7 +111,9 @@
       .catch(() => {
         error = "Could not read the connection. Open Settings to try again.";
       })
+      .then(loadSignIn)
       .finally(() => {
+        if (connection) allowLocalhost = connection.binding.origin.startsWith("http:");
         loading = false;
       });
     return stop;
@@ -85,28 +135,40 @@
 </script>
 
 <main class="sheet popup-sheet">
-  <Header
-    origin={connection?.status === "connected"
-      ? connection.binding.origin
-      : null}
-    onSettings={connection ? () => void openOptions() : undefined}
-  />
+  {#if view !== "settings"}
+    <Header
+      origin={connected && connection ? connection.binding.origin : null}
+      onSettings={connected && view === "main"
+        ? () => (view = "settings")
+        : connection
+          ? () => void openOptions()
+          : undefined}
+    />
+  {/if}
   {#if loading}
     <div class="sheet-body"><p class="hint">Checking your connection…</p></div>
-  {:else if !connection}
-    <div class="sheet-body">
-      <p class="lead">
-        Connect to your Frameleaf server to save images, links and screenshots
-        into Boards.
-      </p>
-      <Promises />
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
-    </div>
-    <footer class="sheet-foot">
-      <button class="primary" type="button" onclick={() => void openOptions()}
-        >Connect</button
-      >
-    </footer>
+  {:else if view === "key"}
+    <Connect
+      mode="key"
+      {recent}
+      initialAddress={keyAddress}
+      bind:allowLocalhost
+      onBack={() => (view = "main")}
+      onConnected={() => (view = "main")}
+    />
+  {:else if !connection || (!connected && problem)}
+    <Connect
+      {recent}
+      {problem}
+      initialAddress={problem?.origin ?? recent[0]?.origin ?? ""}
+      bind:allowLocalhost
+      onKey={(address) => {
+        keyAddress = address;
+        view = "key";
+      }}
+    />
+  {:else if connection.status !== "connected" && connection.method === "sign-in"}
+    <SignedOut {connection} />
   {:else if connection.status !== "connected"}
     <div class="sheet-body" hidden={!showWaiting}>
       <h2>Waiting items</h2>
@@ -128,6 +190,42 @@
       >
       <button class="primary" type="button" onclick={() => void openOptions()}
         >Connect again</button
+      >
+    </footer>
+  {:else if view === "settings"}
+    <SettingsPanel
+      {connection}
+      bind:allowLocalhost
+      onBack={() => (view = "main")}
+      onSwitch={() => {
+        switchFrom = connection?.binding.origin ?? null;
+        view = "switch";
+      }}
+    />
+  {:else if view === "switch"}
+    <Connect
+      mode="switch"
+      {recent}
+      current={connection.binding.origin}
+      bind:allowLocalhost
+      onBack={() => (view = "settings")}
+    />
+  {:else if notice?.kind === "welcome"}
+    <div class="sheet-body center">
+      <Icon name="checkCircle" size={36} />
+      <h2>You’re signed in</h2>
+      <Account
+        name={connection.binding.userName}
+        detail={hostOf(connection.binding.origin)}
+      />
+      <p>
+        Open this window on any page to save its images, the page itself or a
+        screenshot.
+      </p>
+    </div>
+    <footer class="sheet-foot">
+      <button class="primary" type="button" onclick={startSaving}
+        >Start saving</button
       >
     </footer>
   {:else}

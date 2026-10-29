@@ -112,6 +112,17 @@ describe('login mandatory-change routing', () => {
     expect(container.querySelector('.auth-brand-plate')).toBeNull();
   });
 
+  it('says when the sign-in is for Save to Frameleaf, and Allow comes next (FL-655)', () => {
+    const extension = { ...data(false), continueUrl: '/auth/allow-extension?client=chrome' };
+    render(Page, { data: extension } as never);
+    expect(screen.getByText(en.frameleaf_auth_extension_note)).toBeInTheDocument();
+  });
+
+  it('says nothing about the extension for an ordinary sign-in (FL-655)', () => {
+    render(Page, { data: data(false) } as never);
+    expect(screen.queryByText(en.frameleaf_auth_extension_note)).not.toBeInTheDocument();
+  });
+
   it('shows the welcome message as plain text, or as cleaned web formatting (FL-426)', () => {
     const message = 'Hello <b>family</b><img src="https://tracker.example/x.png" onerror="alert(1)">';
     const plainData = data(false);

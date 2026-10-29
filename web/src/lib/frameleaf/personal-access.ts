@@ -97,6 +97,12 @@ export const normalizeKeyPermissions = (selected: Permission[]): Permission[] =>
  */
 export type KeyPurpose = 'view' | 'upload' | 'capture' | 'view-upload' | 'everything';
 export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'view-upload', 'capture', 'everything'];
+/**
+ * FL-655: the purposes New key lists. Save to Frameleaf signs in with your account, so a "Browser
+ * extension" key sits apart, under "For a browser that can't sign in", and is listed only once chosen.
+ */
+export const listedKeyPurposes = (current: KeyPurpose | 'custom'): readonly KeyPurpose[] =>
+  KEY_PURPOSES.filter((purpose) => purpose !== 'capture' || current === 'capture');
 const VIEW_PERMISSIONS: readonly Permission[] = [
   Permission.AssetRead,
   Permission.AssetView,
