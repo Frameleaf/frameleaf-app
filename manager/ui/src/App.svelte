@@ -231,7 +231,9 @@
       ...(signal ? { signal } : {}),
     });
     // A proxy or a restarting Manager can answer with an HTML page or nothing: say so plainly.
-    const value = await response.json().catch(() => ({ code: 'manager_unexpected_response' }));
+    // JSON `null` (or any non-object) is no Manager answer either; arrays are, for the endpoints that return one
+    const parsed = await response.json().catch(() => null);
+    const value = parsed !== null && typeof parsed === 'object' ? parsed : { code: 'manager_unexpected_response' };
     if (!response.ok || value.code === 'manager_unexpected_response') {
       if (response.status === 401 && value.code === 'sign_in_required') {
         signedIn = false;
