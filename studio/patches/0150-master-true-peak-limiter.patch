@@ -789,12 +789,27 @@ diff --git a/src/shared/state/playback/types.ts b/src/shared/state/playback/type
 diff --git a/src/shared/utils/loudness.ts b/src/shared/utils/loudness.ts
 --- a/src/shared/utils/loudness.ts
 +++ b/src/shared/utils/loudness.ts
-@@ -131,23 +131,33 @@ const PHASES: Float64Array[] = Array.from({ length: OVERSAMPLE }, (_, phase) =>
+@@ -131,22 +131,42 @@ const PHASES: Float64Array[] = Array.from({ length: OVERSAMPLE }, (_, phase) =>
    return taps.map((tap) => tap / sum)
  })
  
 -function truePeak(channels: readonly Float32Array[]): number {
 -  let peak = 0
++/** One channel's true peak at sample i: its magnitude and the three 4x-oversampled points after it. */
++function peakAt(channel: Float32Array, i: number, length: number): number {
++  let peak = Math.abs(channel[i]!)
++  for (let phase = 1; phase < OVERSAMPLE; phase += 1) {
++    const taps = PHASES[phase]!
++    let value = 0
++    for (let t = 0; t < TAPS; t += 1) {
++      const index = i + t - CENTER
++      if (index >= 0 && index < length) value += channel[index]! * taps[t]!
++    }
++    peak = Math.max(peak, Math.abs(value))
++  }
++  return peak
++}
++
 +/**
 + * Per-sample true peak across channels: the largest magnitude at the sample
 + * and at the three 4x-oversampled points after it.
@@ -805,30 +820,31 @@ diff --git a/src/shared/utils/loudness.ts b/src/shared/utils/loudness.ts
    for (const channel of channels) {
 -    for (let i = 0; i < channel.length; i += 1) {
 -      peak = Math.max(peak, Math.abs(channel[i]!))
-+    for (let i = 0; i < length; i += 1) {
-+      let peak = Math.abs(channel[i]!)
-       for (let phase = 1; phase < OVERSAMPLE; phase += 1) {
-         const taps = PHASES[phase]!
-         let value = 0
-         for (let t = 0; t < TAPS; t += 1) {
-           const index = i + t - CENTER
+-      for (let phase = 1; phase < OVERSAMPLE; phase += 1) {
+-        const taps = PHASES[phase]!
+-        let value = 0
+-        for (let t = 0; t < TAPS; t += 1) {
+-          const index = i + t - CENTER
 -          if (index >= 0 && index < channel.length) value += channel[index]! * taps[t]!
-+          if (index >= 0 && index < length) value += channel[index]! * taps[t]!
-         }
-         peak = Math.max(peak, Math.abs(value))
-       }
+-        }
+-        peak = Math.max(peak, Math.abs(value))
+-      }
++    for (let i = 0; i < length; i += 1) {
++      const peak = peakAt(channel, i, length)
 +      if (peak > peaks[i]!) peaks[i] = peak
      }
    }
--  return peak
 +  return peaks
 +}
 +
++// A scalar scan: measurement needs only the maximum, not a per-sample array the size of the mix.
 +function truePeak(channels: readonly Float32Array[]): number {
-+  return samplePeaks(channels).reduce((peak, value) => Math.max(peak, value), 0)
++  const length = channels[0]?.length ?? 0
++  let peak = 0
++  for (const channel of channels) for (let i = 0; i < length; i += 1) peak = Math.max(peak, peakAt(channel, i, length))
+   return peak
  }
  
- export function measureLoudness(input: LoudnessInput): LoudnessMeasurement {
 diff --git a/src/shared/utils/master-audio.ts b/src/shared/utils/master-audio.ts
 --- a/src/shared/utils/master-audio.ts
 +++ b/src/shared/utils/master-audio.ts

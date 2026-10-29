@@ -723,7 +723,7 @@
     {
       "path": "patches/0150-master-true-peak-limiter.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "a44c2b928e879275fb480b1b5de82ef1f7158dd2d81b94745680c0ec0b2b70bb"
+      "sha256": "7489e68d8e55ac725045010f596540edf2823bc329958ef78f08cb2d16c4da89"
     },
     {
       "path": "patches/0147-colour-match-between-shots.patch",
@@ -743,7 +743,7 @@
     {
       "path": "patches/0152-tracking-box-and-provenance.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "d40c54930966bad57e67d180784581f075885e0e9c542dd5ff35c4517eb7ffdd"
+      "sha256": "1d9f67ab599a1c452e705b1457c90ba4157e79cef5ad8e09bc8f33b399680a1e"
     },
     {
       "path": "patches/0149-multicam-editing.patch",
@@ -753,8 +753,8 @@
     {
       "path": "patches/0153-multicam-viewer-master-audio-drift.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "4a5b5b23399e16c8bbbf6e89fa4aaf7ba86d179ec11ac42cc25022e7caf13a19"
+      "sha256": "34b00d92096789396e170130be993067b873114e35f77eaa84a98e7ab5dfc82b"
     }
   ],
-  "sourceSha256": "0da35981dc1d5880ed7d737c6f22494cca49a4cf91e3c7e9a1079961bb35ccc1"
+  "sourceSha256": "99e38e689c7a49abf44c9cf846b34c95241ec88a939d68ea1b8cce109f4e71ba"
 }

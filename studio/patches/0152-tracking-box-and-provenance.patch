@@ -353,21 +353,23 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
      // The source mapping's refusal inputs: a change to any of them changes where tracked points land.
      video.crop ?? null, video.cornerPin ?? null, video.isReversed === true,
      (useKeyframesStore.getState().keyframesByItemId[source.id]?.properties ?? [])
-@@ -89,6 +102,13 @@ export function motionTrackBinding(source: TimelineItem, target: TimelineItem, s
+@@ -89,6 +102,15 @@ export function motionTrackBinding(source: TimelineItem, target: TimelineItem, s
        .filter((property) => (TRACKED_PROPERTIES as readonly string[]).includes(property.property))
        .map((property) => [property.property, property.keyframes.map((keyframe) => [keyframe.frame, keyframe.value, keyframe.easing])]),
      seedFrame, direction, canvasSize(),
 +    // A separate tracking box is bound too: moving it after tracking makes the result stale.
-+    box ? [box.id, box.from, box.durationInFrames, box.transform ?? null,
++    // Its parent and every key field that shapes the motion (easing config, temporal ease, spatial
++    // handles) count too; only identity and provenance are left out.
++    box ? [box.id, box.from, box.durationInFrames, box.transform ?? null, box.transformParent ?? null,
 +      (useKeyframesStore.getState().keyframesByItemId[box.id]?.properties ?? [])
 +        .filter((property) => [...TRACKED_PROPERTIES, 'rotation'].includes(property.property))
-+        .map((property) => [property.property, property.keyframes.map((keyframe) => [keyframe.frame, keyframe.value, keyframe.easing])]),
++        .map((property) => [property.property, property.keyframes.map(({ id: _id, source: _source, ...keyframe }) => keyframe)]),
 +      (useKeyframesStore.getState().keyframesByItemId[box.id]?.vectorProperties ?? [])
-+        .map((property) => [property.property, property.keyframes.map((keyframe) => [keyframe.frame, keyframe.value, keyframe.easing])])] : null,
++        .map((property) => [property.property, property.keyframes.map(({ id: _id, source: _source, ...keyframe }) => keyframe)])] : null,
    ])
  }
  
-@@ -124,16 +144,30 @@ export async function analyzeMotionTrack(
+@@ -124,16 +146,30 @@ export async function analyzeMotionTrack(
    targetId: string,
    seedFrame: number,
    direction: 'forward' | 'backward',
@@ -400,7 +402,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    if (hasKeyframes(targetId, ['position', 'scale'])) return { ok: false, reason: 'vector-keys' }
    const clip = placedClip(source)
    if (typeof clip === 'string') return { ok: false, reason: clip }
-@@ -150,12 +184,20 @@ export async function analyzeMotionTrack(
+@@ -150,12 +186,20 @@ export async function analyzeMotionTrack(
    const targetPlacement = resolveItemTransformAtFrame(target, {
      canvas: canvasSize(), frame: seedFrame, keyframes: useKeyframesStore.getState().keyframesByItemId[target.id],
    })
@@ -423,7 +425,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
  
    // Decode, track and drop one frame at a time: only the previous box and the template are kept.
    const samples: TrackSample[] = []
-@@ -216,6 +258,7 @@ export async function analyzeMotionTrack(
+@@ -216,6 +260,7 @@ export async function analyzeMotionTrack(
        targetId,
        binding,
        direction,
@@ -431,7 +433,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
        frames,
        samples: sourceSamples,
        values: followTrack(clip, sourceSamples, frames, targetPlacement),
-@@ -239,7 +282,9 @@ export function applyMotionTrack(
+@@ -239,7 +284,9 @@ export function applyMotionTrack(
    const items = useItemsStore.getState().items
    const source = items.find((item) => item.id === result.sourceId)
    const target = items.find((item) => item.id === result.targetId)
@@ -442,7 +444,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
      return { ok: false, reason: 'stale' }
    }
    if (result.lostFrames.length > 0 && !decisions.keepTrackedPart) return { ok: false, reason: 'unreviewed-lost' }
-@@ -262,6 +307,15 @@ export function applyMotionTrack(
+@@ -262,6 +309,15 @@ export function applyMotionTrack(
      .some((property) => property.keyframes.some((keyframe) => keyframe.frame < low)
        && property.keyframes.some((keyframe) => keyframe.frame > high))
    if ((conflicting.length > 0 || spanned) && !decisions.replaceExisting) return { ok: false, reason: 'conflict' }
@@ -458,7 +460,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
  
    const applicationId = crypto.randomUUID()
    const source_: AnimationKeyframeSource = {
-@@ -286,34 +340,105 @@ export function applyMotionTrack(
+@@ -286,34 +342,105 @@ export function applyMotionTrack(
      }
    }
  

@@ -250,7 +250,28 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
      ['locked', () => {
        useItemsStore.getState().setTracks([track('v1', 0), track('v2', 1, true), track('v3', 2), track('a1', 3), track('a2', 4), track('a3', 5)])
        return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
-@@ -159,4 +179,34 @@ describe('multicam', () => {
+@@ -114,6 +134,20 @@ describe('multicam', () => {
+       useItemsStore.getState()._updateItem('v3', { speed: 2 })
+       return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
+     }],
++    ['retimed', () => {
++      // A companion audio clip at another speed would be retimed by the edit.
++      useItemsStore.getState()._updateItem('a3', { speed: 1.5 })
++      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
++    }],
++    ['already-multicam', () => {
++      // Another group already names this recorder clip as its master audio.
++      useItemsStore.getState().setTracks([
++        { ...track('v0', -1), multicam: { groupId: 'g', role: 'program', masterAudioItemId: 'a9', angles: [] } } as TimelineTrack,
++        ...useItemsStore.getState().tracks, track('a9', 7),
++      ])
++      useItemsStore.getState()._addItem({ ...camera(9, 0, 0)[1], linkedGroupId: undefined } as AudioItem)
++      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'a9' })
++    }],
+     ['generated-media', () => {
+       // A generated clip has no media file.
+       useItemsStore.getState()._updateItem('v3', { mediaId: undefined })
+@@ -159,4 +193,34 @@ describe('multicam', () => {
      expect(outcome.ok).toBe(true)
      expect([byId('a1').muted, byId('a2').muted, byId('a3').muted]).toEqual([true, false, true])
    })
@@ -308,7 +329,18 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
    | 'decode-failed'
    | 'no-group'
    | 'no-program-clip'
-@@ -112,18 +115,22 @@ export async function analyzeMulticamSync(
+@@ -84,6 +87,10 @@ function checkAngles(items: readonly TimelineItem[], ids: readonly string[]): Mu
+   if (angles.some((item) => !item!.mediaId)) return 'generated-media'
+   if (angles.some((item) => (item as VideoItem).speed !== undefined && (item as VideoItem).speed !== 1)) return 'retimed'
+   if (angles.some((item) => (item as VideoItem).isReversed === true)) return 'retimed'
++  // A linked companion plays with its angle; drift correction sets its speed, so it must be at normal speed too.
++  if (angles.some((item) => getLinkedItems(items as TimelineItem[], item!.id).some((linked) => (linked as AudioItem).speed !== undefined && (linked as AudioItem).speed !== 1))) {
++    return 'retimed'
++  }
+   return null
+ }
+ 
+@@ -112,18 +119,22 @@ export async function analyzeMulticamSync(
    itemIds: readonly string[],
    referenceId: string,
    signal?: AbortSignal,
@@ -332,7 +364,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
        if (signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError')
        if (id === referenceId) continue
        const item = items.find((candidate) => candidate.id === id)!
-@@ -150,12 +157,19 @@ const sourceSeconds = (item: VideoItem | AudioItem, fps: number) => (item.source
+@@ -150,12 +161,19 @@ const sourceSeconds = (item: VideoItem | AudioItem, fps: number) => (item.source
   * Create the multicamera edit in one undo step. `angles` gives each angle's
   * approved offset (the reference's is 0; manual offsets are allowed for
   * angles whose analysis failed). The master audio is the linked audio of
@@ -354,7 +386,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  }): { ok: true; groupId: string } | { ok: false; reason: MulticamRefusal } {
    const { items, tracks } = useItemsStore.getState()
    const ids = params.angles.map((angle) => angle.itemId)
-@@ -163,17 +177,26 @@ export function createMulticamEdit(params: {
+@@ -163,24 +181,35 @@ export function createMulticamEdit(params: {
    if (refusal) return { ok: false, reason: refusal }
    const angleItems = ids.map((id) => items.find((item) => item.id === id) as VideoItem)
    const reference = angleItems.find((item) => item.id === params.referenceId)
@@ -389,7 +421,19 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      return { ok: false, reason: 'shared-track' }
    }
    // An angle already in a group would be claimed twice, leaving the first group stale. Program records
-@@ -188,19 +211,29 @@ export function createMulticamEdit(params: {
+   // name their angle items, which catches an angle moved off its group's track.
+-  const claimed = new Set((tracks as TrackWithMulticam[]).flatMap((track) =>
+-    track.multicam?.role === 'program' ? (track.multicam.angles ?? []).map((angle) => angle.itemId) : []))
+-  if (ids.some((id) => claimed.has(id))
++  // A standalone master another group names would be moved out from under that group.
++  const claimed = new Set((tracks as TrackWithMulticam[]).flatMap((track) => track.multicam?.role === 'program'
++    ? [...(track.multicam.angles ?? []).map((angle) => angle.itemId), ...(track.multicam.masterAudioItemId ? [track.multicam.masterAudioItemId] : [])]
++    : []))
++  if (ids.some((id) => claimed.has(id)) || (standalone && claimed.has(standalone.id))
+     || (tracks as TrackWithMulticam[]).some((track) => angleTrackIds.includes(track.id) && track.multicam)) {
+     return { ok: false, reason: 'already-multicam' }
+   }
+@@ -188,19 +217,29 @@ export function createMulticamEdit(params: {
  
    const fps = useTimelineSettingsStore.getState().fps
    const groupId = crypto.randomUUID()
@@ -428,7 +472,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  
    const programTrackId = `multicam-program-${groupId}`
    const topOrder = Math.min(...tracks.map((track) => track.order))
-@@ -211,13 +244,16 @@ export function createMulticamEdit(params: {
+@@ -211,13 +250,16 @@ export function createMulticamEdit(params: {
        groupId, role: 'program',
        algorithm: params.angles.some((angle) => angle.manual) ? 'manual' : MULTICAM_SYNC_ALGORITHM,
        referenceItemId: reference.id, masterAudioItemId: masterAudio.id,
@@ -447,7 +491,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      const angleTrackSet = new Set(angleTrackIds)
      store.setTracks([
        programTrack,
-@@ -225,10 +261,11 @@ export function createMulticamEdit(params: {
+@@ -225,10 +267,11 @@ export function createMulticamEdit(params: {
          ? { ...track, visible: false, multicam: { groupId, role: 'angle' } }
          : track),
      ])
@@ -460,7 +504,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      }
      // The chosen master is the edit's sound, so it is heard even if it was muted before.
      if (masterAudio.muted) store._updateItem(masterAudio.id, { muted: false })
-@@ -239,10 +276,10 @@ export function createMulticamEdit(params: {
+@@ -239,10 +282,10 @@ export function createMulticamEdit(params: {
    return { ok: true, groupId }
  }
  
@@ -473,7 +517,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
    return {
      ...angle,
      id: crypto.randomUUID(),
-@@ -250,7 +287,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
+@@ -250,7 +293,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
      from,
      durationInFrames: duration,
      sourceStart,

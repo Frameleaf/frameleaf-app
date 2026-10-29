@@ -91,7 +91,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
     sourceSha256 === 'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
     // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
-    sourceSha256 === '0da35981dc1d5880ed7d737c6f22494cca49a4cf91e3c7e9a1079961bb35ccc1'
+    sourceSha256 === '99e38e689c7a49abf44c9cf846b34c95241ec88a939d68ea1b8cce109f4e71ba'
   )
     return {
       ...COMPOSITION_SOURCES,
