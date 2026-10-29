@@ -277,6 +277,59 @@ describe('capture-only delivery contract', () => {
       await expect(transport.commit(committedTask)).rejects.toThrow();
     }
   });
+  it('cancels with the original commit payload from any phase and validates the outcome', async () => {
+    const { fetch, transport } = harness(() =>
+      json({ captureId: id, status: 'cancelled' }),
+    );
+    expect(await transport.cancel(task)).toEqual({
+      captureId: id,
+      status: 'cancelled',
+    });
+    expect(fetch.mock.calls[1][0]).toBe(binding.origin + '/api/capture/cancel');
+    expect(fetch.mock.calls[1][1]?.method).toBe('POST');
+    expect(JSON.parse(fetch.mock.calls[1][1]?.body as string)).toMatchObject({
+      captureId: id,
+      uploadResourceId: id,
+      sha256: task.file!.sha256,
+      albumId: task.albumId,
+    });
+    const published = {
+      captureId: id,
+      status: 'already-published',
+      receipt: {
+        captureId: id,
+        status: 'created',
+        item: { kind: 'asset', asset: { id: task.albumId } },
+      },
+    };
+    expect(await harness(() => json(published)).transport.cancel(task)).toEqual(
+      {
+        captureId: id,
+        status: 'already-published',
+        receipt: {
+          captureId: id,
+          status: 'created',
+          kind: 'asset',
+          itemId: task.albumId,
+        },
+      },
+    );
+    for (const response of [
+      { captureId: task.albumId, status: 'cancelled' },
+      { captureId: id, status: 'unknown' },
+      { captureId: id, status: 'cancelled', receipt: published.receipt },
+      { ...published, receipt: undefined },
+      {
+        ...published,
+        receipt: { ...published.receipt, captureId: task.albumId },
+      },
+    ]) {
+      const { transport } = harness(() => json(response));
+      await expect(transport.cancel(task)).rejects.toBeInstanceOf(
+        DeliveryFailure,
+      );
+    }
+  });
   it('refuses a wrong destination or an unpersisted commit phase before sending any request', async () => {
     const { fetch, transport } = harness();
     await expect(

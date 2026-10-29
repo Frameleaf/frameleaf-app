@@ -11,6 +11,7 @@ import {
   claimCapture,
   deferCapture,
   finishCapture,
+  finishCaptureCancellation,
   QueueFailure,
   restartMissingUpload,
   saveCaptureProgress,
@@ -53,8 +54,29 @@ async function deliver(
   transport: CaptureTransport,
   signal: AbortSignal,
 ) {
-  if (task.cancelRequested)
-    throw new QueueFailure(CANCELLATION_PENDING, 'cancel');
+  try {
+    if (task.cancelRequested)
+      throw new QueueFailure(CANCELLATION_PENDING, 'cancel');
+    await send(task, owner, transport, signal);
+  } catch (error) {
+    if (!(error instanceof QueueFailure && error.code === 'cancel'))
+      throw error;
+    // Still holding the claim: ask the server for the durable outcome.
+    if (signal.aborted) throw new DeliveryFailure('cancelled');
+    await finishCaptureCancellation(
+      task.id,
+      owner,
+      await transport.cancel(task),
+    );
+  }
+}
+
+async function send(
+  task: CaptureTask,
+  owner: string,
+  transport: CaptureTransport,
+  signal: AbortSignal,
+) {
   const remember = async (state: 'uploading' | 'committing', offset: number) =>
     (task = await saveCaptureProgress(task.id, owner, { state, offset }));
   const call = async <T>(operation: () => Promise<T>): Promise<T> => {

@@ -666,7 +666,9 @@ export const requestCaptureCancellation = (
       ['saved', 'duplicate', 'cancelled'].includes(task.state)
     )
       throw invalid();
-    if (task.cancelRequested) return;
+    // Started captures parked for attention become claimable so the runner can settle them.
+    if (['needs-attention', 'failed'].includes(task.state))
+      task.state = 'queued';
     task.cancelRequested = true;
     task.error = CANCELLATION_PENDING;
     task.updatedAt = now;

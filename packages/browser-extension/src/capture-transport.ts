@@ -1,5 +1,6 @@
 import {
   appendCaptureUpload,
+  cancelCapture,
   cancelCaptureUpload,
   commitCapture,
   createCaptureUpload,
@@ -9,7 +10,7 @@ import {
   type CaptureResponseDto,
 } from '@frameleaf/sdk';
 import { boundOptions, CaptureFailure, type ServerBinding } from './api';
-import type { CaptureTask, CaptureReceipt } from './queue';
+import type { CaptureCancellation, CaptureTask, CaptureReceipt } from './queue';
 import { MAX_CAPTURE_BYTES } from './acquisition';
 const uuid4 =
   /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
@@ -162,6 +163,17 @@ function checkedReceipt(
     itemId,
   };
 }
+
+const commitDto = (task: CaptureTask): CaptureCommitDto => ({
+  captureId: task.captureId,
+  albumId: task.albumId,
+  tagIds: task.tagIds,
+  source: task.source,
+  ...(task.note !== undefined && { note: task.note }),
+  ...(task.file
+    ? { uploadResourceId: task.captureId, sha256: fileFor(task).sha256 }
+    : { bookmark: task.bookmark }),
+});
 
 export function createCaptureTransport(
   binding: ServerBinding,
@@ -317,20 +329,32 @@ export function createCaptureTransport(
           task.offset !== (task.file?.size ?? 0)
         )
           throw new DeliveryFailure('attention');
-        const captureCommitDto: CaptureCommitDto = {
-          captureId: task.captureId,
-          albumId: task.albumId,
-          tagIds: task.tagIds,
-          source: task.source,
-          ...(task.note !== undefined && { note: task.note }),
-          ...(task.file
-            ? { uploadResourceId: task.captureId, sha256: fileFor(task).sha256 }
-            : { bookmark: task.bookmark }),
-        };
         return checkedReceipt(
-          await commitCapture({ captureCommitDto }, await requestOptions(task)),
+          await commitCapture(
+            { captureCommitDto: commitDto(task) },
+            await requestOptions(task),
+          ),
           task,
         );
+      }),
+    // Same payload as commit: the server matches it against the original request hash.
+    cancel: (task: CaptureTask) =>
+      guard(async (): Promise<CaptureCancellation> => {
+        const value = await cancelCapture(
+          { captureCommitDto: commitDto(task) },
+          await requestOptions(task),
+        );
+        if (value?.captureId !== task.captureId)
+          throw new DeliveryFailure('attention');
+        if (value.status === 'already-published')
+          return {
+            captureId: task.captureId,
+            status: value.status,
+            receipt: checkedReceipt(value.receipt!, task),
+          };
+        if (value.status !== 'cancelled' || value.receipt)
+          throw new DeliveryFailure('attention');
+        return { captureId: task.captureId, status: 'cancelled' };
       }),
     cancelUpload: (task: CaptureTask) =>
       guard(async () => {

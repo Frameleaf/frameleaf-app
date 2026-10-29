@@ -9,6 +9,7 @@ import {
   listCaptures,
   retryCapture,
   cancelQueuedCapture,
+  requestCaptureCancellation,
   QueueFailure,
 } from './queue';
 import type { ServerBinding } from './api';
@@ -111,7 +112,7 @@ async function queueProgress(): Promise<QueueProgress> {
             ? task.error.slice(0, 1000)
             : undefined,
         canRetry: !done(task.state) && !busy && (task.retryAt ?? 0) <= now,
-        canCancel: !done(task.state) && !busy && task.attempts === 0,
+        canCancel: !done(task.state) && !task.cancelRequested,
       };
     }),
   };
@@ -429,7 +430,12 @@ export function handleMessage(
               );
             await retryCapture(message.id, current.binding);
             wake();
-          } else await cancelQueuedCapture(message.id, current.binding);
+          } else if (task.attempts === 0 && !task.claim)
+            await cancelQueuedCapture(message.id, current.binding);
+          else {
+            await requestCaptureCancellation(message.id, current.binding);
+            wake();
+          }
           break;
         }
         case 'status':

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import type { CaptureTask } from './queue';
+import type { CaptureCancellation, CaptureTask } from './queue';
 import type { CaptureUploadStateDto } from '@frameleaf/sdk';
 import { createCaptureTransport, DeliveryFailure } from './capture-transport';
 vi.mock('./capture-transport', async (original) => ({
@@ -60,6 +60,10 @@ function fakeTransport() {
       itemId: albumId,
     })),
     cancelUpload: vi.fn(async (_task: CaptureTask) => {}),
+    cancel: vi.fn(async (task: CaptureTask): Promise<CaptureCancellation> => ({
+      captureId: task.id,
+      status: 'cancelled',
+    })),
   };
 }
 const enqueue = () =>
@@ -85,7 +89,7 @@ beforeEach(async () => {
   vi.mocked(createCaptureTransport).mockReturnValue(transport);
 });
 describe('durable capture delivery', () => {
-  it('pauses cancellation intent before any network request while unrelated captures continue', async () => {
+  it('settles cancellation intent with the server before any upload while unrelated captures continue', async () => {
     const cancelled = await enqueue();
     const other = await enqueue();
     await queue.requestCaptureCancellation(cancelled.id, binding);
@@ -94,11 +98,14 @@ describe('durable capture delivery', () => {
     ).resolves.toBeUndefined();
     const tasks = await queue.listCaptures(binding);
     expect(tasks.find((task) => task.id === cancelled.id)).toMatchObject({
-      state: 'needs-attention',
-      cancelRequested: true,
+      state: 'cancelled',
+      cancellationReceipt: { captureId: cancelled.id, status: 'cancelled' },
     });
     expect(tasks.find((task) => task.id === other.id)?.state).toBe('saved');
-    expect(await queue.captureBlob(cancelled.id)).not.toBeNull();
+    expect(await queue.captureBlob(cancelled.id)).toBeNull();
+    expect(transport.cancel.mock.calls.map(([task]) => task.id)).toEqual([
+      cancelled.id,
+    ]);
     for (const call of [
       ...transport.getUpload.mock.calls,
       ...transport.createUpload.mock.calls,
@@ -107,7 +114,7 @@ describe('durable capture delivery', () => {
     ])
       expect(call[0].id).not.toBe(cancelled.id);
   });
-  it('stops at the next durable boundary if cancellation arrives during append', async () => {
+  it('stops at the next durable boundary if cancellation arrives during append, then cancels on the server', async () => {
     const task = await enqueue();
     transport.appendUpload.mockImplementationOnce(async (current) => {
       remote.set(current.id, current.file!.size);
@@ -118,12 +125,44 @@ describe('durable capture delivery', () => {
       runner.resumeQueue(binding, 'private-key'),
     ).resolves.toBeUndefined();
     expect(transport.commit).not.toHaveBeenCalled();
+    expect(transport.cancel).toHaveBeenCalledOnce();
+    expect((await queue.listCaptures(binding))[0].state).toBe('cancelled');
+    expect(await queue.captureBlob(task.id)).toBeNull();
+  });
+  it('records the saved receipt when the server says the capture was already published', async () => {
+    const task = await enqueue();
+    await queue.requestCaptureCancellation(task.id, binding);
+    transport.cancel.mockResolvedValueOnce({
+      captureId: task.id,
+      status: 'already-published',
+      receipt: {
+        captureId: task.id,
+        status: 'created',
+        kind: 'asset',
+        itemId: albumId,
+      },
+    });
+    await runner.resumeQueue(binding, 'private-key');
+    expect((await queue.listCaptures(binding))[0]).toMatchObject({
+      state: 'saved',
+    });
+    expect(await queue.captureBlob(task.id)).toBeNull();
+  });
+  it('keeps the original bytes and intent when the cancel request fails, and retries from attention', async () => {
+    const task = await enqueue();
+    await queue.requestCaptureCancellation(task.id, binding);
+    transport.cancel.mockRejectedValueOnce(new DeliveryFailure('attention'));
+    await runner.resumeQueue(binding, 'private-key');
     expect((await queue.listCaptures(binding))[0]).toMatchObject({
       state: 'needs-attention',
       cancelRequested: true,
-      phase: 'upload',
     });
     expect(await queue.captureBlob(task.id)).not.toBeNull();
+    // Pressing Cancel again re-queues the parked capture for the runner.
+    await queue.requestCaptureCancellation(task.id, binding);
+    await runner.resumeQueue(binding, 'private-key');
+    expect((await queue.listCaptures(binding))[0].state).toBe('cancelled');
+    expect(transport.commit).not.toHaveBeenCalled();
   });
   it('records the verified save if cancellation arrives while commit is returning', async () => {
     const task = await enqueue();
