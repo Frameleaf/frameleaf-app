@@ -214,7 +214,7 @@ describe('album pickers', () => {
     const roots = albumPickerTree([...albums, album({ id: 'orphan', albumName: 'Orphan', parentId: 'gone' })]);
     expect(roots.map(({ album }) => album.id)).toEqual(['brand', 'other', 'orphan']);
     expect(roots[0].children.map(({ album }) => album.id)).toEqual(['mood', 'type']);
-    expect(roots[0].children[0].children.map(({ album }) => album.id)).toEqual(['deep']);
+    expect(roots[0].children.at(0)!.children.map(({ album }) => album.id)).toEqual(['deep']);
   });
 
   it('survives a parent loop without recursing forever', () => {

@@ -13,8 +13,6 @@
   import BookmarkInspector from '$lib/components/frameleaf/BookmarkInspector.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import BulkAlbumDialog from '$lib/components/frameleaf/BulkAlbumDialog.svelte';
-  import SaveLinkDialog from '$lib/components/frameleaf/SaveLinkDialog.svelte';
-  import BoardsExtensionDialog from '$lib/components/frameleaf/BoardsExtensionDialog.svelte';
   import BulkTagDialog from '$lib/components/frameleaf/BulkTagDialog.svelte';
   import ThumbnailSizeControl from '$lib/components/frameleaf/ThumbnailSizeControl.svelte';
   import WorkFileNamesToggle from '$lib/components/frameleaf/WorkFileNamesToggle.svelte';
@@ -834,20 +832,24 @@
   onAssetChange={reload}
 />
 
-{#if linkDialog}<SaveLinkDialog
-    bind:open={
-      () => linkDialog !== null,
-      (open) => {
-        if (!open) {
-          linkDialog = null;
+{#if linkDialog}{#await import('$lib/components/frameleaf/SaveLinkDialog.svelte') then { default: SaveLinkDialog }}
+    <SaveLinkDialog
+      bind:open={
+        () => linkDialog !== null,
+        (open) => {
+          if (!open) {
+            linkDialog = null;
+          }
         }
       }
-    }
-    url={linkDialog.url}
-    albumId={album?.id}
-    onSaved={() => generation++}
-  />{/if}
-<BoardsExtensionDialog bind:open={extensionOpen} />
+      url={linkDialog.url}
+      albumId={album?.id}
+      onSaved={() => generation++}
+    />
+  {/await}{/if}
+{#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
+    <BoardsExtensionDialog bind:open={extensionOpen} />
+  {/await}{/if}
 
 <style>
   .fl-items-view {

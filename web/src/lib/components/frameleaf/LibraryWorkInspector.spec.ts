@@ -246,6 +246,8 @@ describe('LibraryWorkInspector', () => {
         'false',
       );
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+      // the Boards-only sections load on demand
+      await screen.findByRole('textbox', { name: 'frameleaf_boards_note' });
       const headings = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent);
       expect(headings).toEqual([
         'frameleaf_boards_colours',
@@ -258,7 +260,7 @@ describe('LibraryWorkInspector', () => {
       ]);
       expect(screen.getByText('frameleaf_boards_scope_off')).toBeInTheDocument();
       expect(screen.getByText('image/png')).toBeInTheDocument();
-      expect(screen.getByRole('textbox', { name: 'frameleaf_boards_note' })).toHaveValue('Warm light');
+      expect(await screen.findByRole('textbox', { name: 'frameleaf_boards_note' })).toHaveValue('Warm light');
     });
 
     it('keeps the Photos layout for Photos items unless Boards asks for its own', async () => {

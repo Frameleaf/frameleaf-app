@@ -48,7 +48,7 @@ test.describe('Free Pro workspace', () => {
     );
     await utils.setAuthCookies(context, owner.accessToken);
     await page.goto('/pro');
-    const card = page.getByRole('button', { name: title, exact: true });
+    const card = page.getByRole('button', { name: `Open saved link ${title}`, exact: true });
     await card.focus();
     await card.press('Enter');
     await expect(page.getByRole('textbox', { name: 'Notes', exact: true })).toHaveValue(note);
@@ -66,9 +66,9 @@ test.describe('Free Pro workspace', () => {
     );
     await input.press('Enter');
     await searched;
-    await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Open saved link ${title}`, exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByRole('button', { name: title, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Open saved link ${title}`, exact: true })).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Search', exact: true })).toBeHidden();
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
@@ -153,7 +153,7 @@ test.describe('Free Pro workspace', () => {
     await utils.setAuthCookies(context, viewer.accessToken);
     await page.goto(`/albums/${album.id}`);
     await expect(page.locator('.summary')).toContainText('1 item');
-    await page.getByRole('button', { name: title, exact: true }).click();
+    await page.getByRole('button', { name: `Open saved link ${title}`, exact: true }).click();
     await expect(page.getByRole('link', { name: 'Open website' })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Notes', exact: true })).toHaveCount(0);
     await expect(page.getByText(secret, { exact: true })).toHaveCount(0);
@@ -171,6 +171,6 @@ test.describe('Free Pro workspace', () => {
     const response = await searched;
     const result = await response.json();
     expect(result.count).toBe(0);
-    await expect(page.getByRole('button', { name: title, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `Open saved link ${title}`, exact: true })).toHaveCount(0);
   });
 });

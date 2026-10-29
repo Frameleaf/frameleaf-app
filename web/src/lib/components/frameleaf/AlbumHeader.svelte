@@ -4,8 +4,6 @@
   import { goto } from '$app/navigation';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCoverDialog from '$lib/components/frameleaf/AlbumCoverDialog.svelte';
-  import AlbumAppearanceDialog from '$lib/components/frameleaf/AlbumAppearanceDialog.svelte';
-  import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import AlbumInlineEdit from '$lib/components/frameleaf/AlbumInlineEdit.svelte';
@@ -863,24 +861,28 @@
 <AlbumCoverDialog {album} albumIds={coverSourceIds} bind:open={coverOpen} onUpdated={onCoverChange} />
 <AlbumOptionsDialog {album} bind:open={optionsOpen} onUpdated={onAlbumChange} />
 
-<AlbumCreateDialog
-  kind={album.kind}
-  {album}
-  collections={collections.filter(({ id }) => id !== album.id)}
-  canMove={album.kind !== AlbumKind.Space && owner}
-  bind:open={editOpen}
-  onCreate={createChildAlbum}
-  onSave={saveDetails}
-/>
+{#if editOpen}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
+    <AlbumCreateDialog
+      kind={album.kind}
+      {album}
+      collections={collections.filter(({ id }) => id !== album.id)}
+      canMove={album.kind !== AlbumKind.Space && owner}
+      bind:open={editOpen}
+      onCreate={createChildAlbum}
+      onSave={saveDetails}
+    />
+  {/await}{/if}
 
-<AlbumCreateDialog
-  kind={AlbumKind.Album}
-  collections={collections.length > 0 ? collections : [album]}
-  defaultParentId={album.id}
-  bind:open={createOpen}
-  onCreate={createChildAlbum}
-  onCreateSmart={createChildSmartAlbum}
-/>
+{#if createOpen}{#await import('$lib/components/frameleaf/AlbumCreateDialog.svelte') then { default: AlbumCreateDialog }}
+    <AlbumCreateDialog
+      kind={AlbumKind.Album}
+      collections={collections.length > 0 ? collections : [album]}
+      defaultParentId={album.id}
+      bind:open={createOpen}
+      onCreate={createChildAlbum}
+      onCreateSmart={createChildSmartAlbum}
+    />
+  {/await}{/if}
 
 {#if rule}
   <SmartAlbumReevaluateDialog {rule} sources={ruleSources} bind:open={reevaluateOpen} onApplied={onRuleChanged} />
@@ -901,7 +903,14 @@
 {/if}
 
 {#if editor && album.kind !== AlbumKind.Space}
-  <AlbumAppearanceDialog {album} hasChildren={childAlbums.length > 0} bind:open={iconOpen} onSave={saveAppearance} />
+  {#if iconOpen}{#await import('$lib/components/frameleaf/AlbumAppearanceDialog.svelte') then { default: AlbumAppearanceDialog }}
+      <AlbumAppearanceDialog
+        {album}
+        hasChildren={childAlbums.length > 0}
+        bind:open={iconOpen}
+        onSave={saveAppearance}
+      />
+    {/await}{/if}
 {/if}
 
 <!--

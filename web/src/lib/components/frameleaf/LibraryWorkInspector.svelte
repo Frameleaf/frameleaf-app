@@ -16,11 +16,7 @@
    */
   import AssetPalette from '$lib/components/frameleaf/AssetPalette.svelte';
   import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
-  import BoardsCollections from '$lib/components/frameleaf/BoardsCollections.svelte';
-  import BoardsNote from '$lib/components/frameleaf/BoardsNote.svelte';
   import BoardsRating from '$lib/components/frameleaf/BoardsRating.svelte';
-  import BoardsScopeSwitch from '$lib/components/frameleaf/BoardsScopeSwitch.svelte';
-  import BoardsTagEditor from '$lib/components/frameleaf/BoardsTagEditor.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { onDestroy } from 'svelte';
   import { getExifRating } from '$lib/frameleaf/rating';
@@ -186,22 +182,31 @@
   {#if isOwner || tags.length > 0}
     <section class="part" aria-labelledby={`${tabId}-tags`}>
       <h3 id={`${tabId}-tags`}>{$t('tags')}</h3>
-      <BoardsTagEditor assetId={item.id} {tags} canEdit={isOwner} labelledBy={`${tabId}-tags`} />
+      {#await import('$lib/components/frameleaf/BoardsTagEditor.svelte') then { default: BoardsTagEditor }}<BoardsTagEditor
+          assetId={item.id}
+          {tags}
+          canEdit={isOwner}
+          labelledBy={`${tabId}-tags`}
+        />{/await}
     </section>
   {/if}
   {#if isOwner || item.exifInfo?.description}
     <section class="part" aria-labelledby={`${tabId}-note`}>
       <h3 id={`${tabId}-note`}>{$t('frameleaf_boards_note')}</h3>
-      <BoardsNote
-        assetId={item.id}
-        value={item.exifInfo?.description ?? ''}
-        canEdit={isOwner}
-        labelledBy={`${tabId}-note`}
-      />
+      {#await import('$lib/components/frameleaf/BoardsNote.svelte') then { default: BoardsNote }}<BoardsNote
+          assetId={item.id}
+          value={item.exifInfo?.description ?? ''}
+          canEdit={isOwner}
+          labelledBy={`${tabId}-note`}
+        />{/await}
     </section>
   {/if}
   <section class="part">
-    <BoardsCollections assetId={item.id} scope={LibraryViewScope.Design} canAdd={isOwner} />
+    {#await import('$lib/components/frameleaf/BoardsCollections.svelte') then { default: BoardsCollections }}<BoardsCollections
+        assetId={item.id}
+        scope={LibraryViewScope.Design}
+        canAdd={isOwner}
+      />{/await}
   </section>
   <section class="part">
     <AssetSources assetId={item.id} canRead={isOwner} added={item.createdAt} />
@@ -223,15 +228,15 @@
   </section>
   {#if isOwner}
     <section class="part">
-      <BoardsScopeSwitch
-        assetId={item.id}
-        scope={item.libraryScope}
-        onChange={(scope) => {
-          if (detail?.id === item.id) {
-            detail = { ...detail, libraryScope: scope };
-          }
-        }}
-      />
+      {#await import('$lib/components/frameleaf/BoardsScopeSwitch.svelte') then { default: BoardsScopeSwitch }}<BoardsScopeSwitch
+          assetId={item.id}
+          scope={item.libraryScope}
+          onChange={(scope) => {
+            if (detail?.id === item.id) {
+              detail = { ...detail, libraryScope: scope };
+            }
+          }}
+        />{/await}
     </section>
   {/if}
 {/snippet}

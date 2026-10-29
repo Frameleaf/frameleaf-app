@@ -2,7 +2,6 @@
   import { browser } from '$app/env';
   import { page } from '$app/state';
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
-  import BoardsExtensionDialog from '$lib/components/frameleaf/BoardsExtensionDialog.svelte';
   import RailSavedSearches from '$lib/components/frameleaf/RailSavedSearches.svelte';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
   import {
@@ -798,7 +797,9 @@
   </div>
 </Sidebar>
 
-<BoardsExtensionDialog bind:open={extensionOpen} />
+{#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
+    <BoardsExtensionDialog bind:open={extensionOpen} />
+  {/await}{/if}
 
 <style>
   .nested-branch .nested-branch {

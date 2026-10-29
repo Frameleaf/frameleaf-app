@@ -185,7 +185,7 @@ describe('Frameleaf selection bar', () => {
     mount();
     await fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(within(dialog).getByRole('radio', { name: /Iceland/ })).toBeInTheDocument());
     expect(getAllAlbums).toHaveBeenCalledOnce();
     expect(within(dialog).getByText('Trips')).toBeInTheDocument();
