@@ -321,7 +321,7 @@ diff --git a/src/features/timeline/stores/actions/edit/loudness-match-actions.te
  
  const track = (id: string, locked = false) => ({
    id, name: id, order: 0, height: 80, locked, syncLock: true, visible: true, muted: false,
-@@ -97,3 +99,25 @@ describe('loudness match', () => {
+@@ -100,3 +102,25 @@ describe('loudness match', () => {
      expect(resolveAudibleItems(items, ['v1', 'a1', 'v2', 'v3']).map((item) => item.id)).toEqual(['a1', 'v2'])
    })
  })

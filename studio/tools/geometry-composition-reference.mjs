@@ -82,8 +82,10 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
     // FL-598 loudness matching changes clip volume, the audio panel and the export report only.
     sourceSha256 === '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf' ||
-    // FL-623 adds an audio master limiter and loudness settings; it changes no picture producer.
-    sourceSha256 === '6c40d5eb52f678068e75e4fb72baac81689f5ba16fd134e5b0beb778abdbf001'
+    // FL-598 loudness match: binding covers link state
+    sourceSha256 === 'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d' ||
+    // FL-623 master true-peak limiter
+    sourceSha256 === 'af6263d8c4de187158b918ad571f8fd25f356800259f25b31cceb2d02da3b365'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -199,9 +199,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-598 loudness matching changes clip volume, the audio panel and the export report only.
           binding.sourceSha256 ===
             '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf' ||
-          // FL-623 adds an audio master limiter and loudness settings; it changes no picture producer.
+          // FL-598 loudness match: binding covers link state
           binding.sourceSha256 ===
-            '6c40d5eb52f678068e75e4fb72baac81689f5ba16fd134e5b0beb778abdbf001')),
+            'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d' ||
+          // FL-623 master true-peak limiter
+          binding.sourceSha256 ===
+            'af6263d8c4de187158b918ad571f8fd25f356800259f25b31cceb2d02da3b365')),
     'SOURCE_BROWSER',
   )
   check(
