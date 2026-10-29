@@ -344,6 +344,11 @@ describe('first-run setup state (FL-176)', () => {
       expect(setupRedirect('/auth/login', { isAdmin: true }, open)).toBeNull();
       expect(setupRedirect('/maintenance', { isAdmin: true }, open)).toBeNull();
       expect(setupRedirect('/link', { isAdmin: true }, open)).toBeNull();
+      // the path is only read when the redirect depends on it
+      const pathname = vi.fn(() => '/photos');
+      expect(setupRedirect(pathname, { isAdmin: true }, { ...open, isOnboarded: true })).toBeNull();
+      expect(pathname).not.toHaveBeenCalled();
+      expect(setupRedirect(pathname, { isAdmin: true }, open)).toBe('/auth/onboarding');
     });
   });
 

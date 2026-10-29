@@ -34,7 +34,10 @@ export const authenticate = async (url: URL, options?: AuthOptions) => {
   } catch {
     server = undefined;
   }
-  const setup = server ? setupRedirect(url.pathname, authManager.user, server) : null;
+  // The path is read only while setup could redirect. Reading `url.pathname` here made every page
+  // load that calls this depend on the path, so opening or closing an item in an album (or any other
+  // view with the item in its address) loaded the whole page's data again.
+  const setup = server ? setupRedirect(() => url.pathname, authManager.user, server) : null;
   if (setup) {
     redirect(307, setup);
   }

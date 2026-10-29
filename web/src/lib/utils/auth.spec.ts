@@ -49,6 +49,21 @@ describe('authenticate: Frameleaf setup (FL-176)', () => {
     await expect(authenticate(at('/photos'))).resolves.toBeUndefined();
   });
 
+  it('does not read the path of a signed-in page once setup is complete', async () => {
+    // a route load that reads the path runs again whenever it changes, such as opening an item
+    server.value = { isInitialized: true, isOnboarded: true };
+    let reads = 0;
+    const url = {
+      get pathname() {
+        reads++;
+        return '/albums/album-1/photos/asset-1';
+      },
+      search: '',
+    } as URL;
+    await expect(authenticate(url)).resolves.toBeUndefined();
+    expect(reads).toBe(0);
+  });
+
   it('does not loop on the setup page itself', async () => {
     await expect(authenticate(at('/auth/onboarding'))).resolves.toBeUndefined();
   });
