@@ -91792,7 +91792,6 @@
           "AssetVideoEditGeneration",
           "AssetEncodeVideoQueueAll",
           "AssetEncodeVideo",
-          "AssetWarmFilmstrip",
           "StudioHdrProxyGenerate",
           "AssetEmptyTrash",
           "AssetExtractMetadataQueueAll",
