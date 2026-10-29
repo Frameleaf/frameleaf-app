@@ -192,6 +192,38 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0150 (FL-623) saves the loudness target and ceiling in the project (`timeline.masterLoudness`,
+protocol 3.2 table and schema) and adds an optional true-peak limiter at the ceiling as the last stage of
+the export mix, after master gain and automation. The limiter (`tp-lookahead-1.5ms-v1`) knows the whole
+mix, so it looks ahead without latency: each sample's required gain from its 4x-oversampled peak takes a
+±1.5 ms running minimum and a box average, which never exceeds what a peak needs, and release recovers
+over 50 ms; channels share one gain. While it is on, export mixes the whole range at once (no 30 s
+windows) and never copies audio packets. Preview routes the master through a Web Audio compressor set
+as a limiter at the ceiling only while the limiter is on (sample-peak, about 6 ms lookahead), so it
+approximates the export and adds no latency otherwise. The Match loudness section edits the target,
+ceiling and limiter as undoable project settings, and the export report checks against them. Tests
+hold the limited true peak within 0.2 dB of the ceiling at -0.3, -1 and -2 dBTP, keep quiet audio
+untouched and channels in step, and cover save, undo and serialization. Native clients must refuse to
+export a graph with the limiter on unless they apply it. Browser, worker and codec-overshoot checks
+remain open.
+
+Patch 0145 (FL-598) adds dialogue loudness matching and an export loudness report. One BS.1770-4
+meter (K-weighting derived for any sample rate, 400 ms blocks with EBU R128 absolute and relative
+gates, true peak by 4x polyphase oversampling; `bs1770-4/r128-gating/tp-4x-v1`) runs in a worker for
+both. The audio panel's Match loudness section measures the selected clips' source ranges (a video's
+linked audio when it has one), shows loudness and true peak as the clip plays now, and suggests a
+change to the clip's static volume toward an editable -16 LUFS target and -1 dBTP ceiling. Gain
+envelopes, fades and ducking stay relative to that volume, so they keep their shape. Boost is capped at
++12 dB and the clip volume range at -60..+12 dB, both flagged; muted, silent, shorter-than-0.4 s and
+undecodable clips get no suggestion. Every result is bound to the clip's audible state, so an edit since
+measuring, or applying the same result twice, is refused as stale; approved changes apply in one undo
+step. The export dialog measures the decoded deliverable and reports LUFS and dBTP against the Studio
+defaults with a warning, never blocking; a failed measurement reads unknown. The calibrated tests cover
+EBU 3341 levels at 44.1, 48 and 96 kHz, gating, silence and inter-sample peaks. There is no master
+limiter: the export path keeps its existing soft clip above 0 dBFS, so a ceiling overshoot is reported,
+not prevented. The target is not saved in the project, and browser decode, worker export and
+codec-overshoot qualification remain open.
+
 Patch 0145 (FL-597) adds speed ramps and fixes freeze-frame sync. The clip panel's Speed ramp section
 takes points (a position in the clip's source and a speed from 0.25x to 4x) with linear or eased
 boundaries, shows the resulting duration and caption count, and applies in one undo step. The curve

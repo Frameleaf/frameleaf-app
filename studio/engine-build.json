@@ -714,7 +714,17 @@
       "path": "patches/0145-speed-ramps-and-linked-freeze-frames.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e9cc60f8e795da201025e9ba35de8895853d48d796edc68f6f00e0967df86c5e"
+    },
+    {
+      "path": "patches/0145-dialogue-loudness-match-and-export-report.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8b347a4145cfffadecf7ed4fe08d0a00ba0ac216b83d374f3c97537197cf4e1c"
+    },
+    {
+      "path": "patches/0150-master-true-peak-limiter.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c33c56620d7e745abf6d02679a0c0fa9be5f19dea5484b4c90cb0c5614324515"
     }
   ],
-  "sourceSha256": "82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e"
+  "sourceSha256": "83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce"
 }
