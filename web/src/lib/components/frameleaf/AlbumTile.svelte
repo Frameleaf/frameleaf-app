@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
   import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import { defaultIconFor, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
@@ -188,7 +189,10 @@
     </span>
   </a>
   <div class="text">
-    <a class="name" {href}>{name}</a>
+    <a class="name" {href}
+      >{#if album.color}<AlbumMark icon={album.icon} color={album.color} kind={album.kind} size="16" />
+      {/if}{name}</a
+    >
     <div class="meta">
       <small>{meta}</small>
       <AlbumAvatarStack users={others} />

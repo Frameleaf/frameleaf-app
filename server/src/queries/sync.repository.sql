@@ -90,42 +90,20 @@ from
   inner join "album_user" as "album_users" on "album"."id" = "album_users"."albumId"
 where
   "album_users"."userId" = $5
-  and greatest(
-    album."updateId",
-    album_users."createId",
-    coalesce(
-      (
-        (
-          select
-            "parent_user"."createId"
-          from
-            "album_user" as "parent_user"
-          where
-            "parent_user"."albumId" = "album"."parentId"
-            and "parent_user"."userId" = $6
-        )
-      ),
-      album."updateId"
-    ),
-    coalesce(
-      (
-        (
-          select
-            "parent_audit"."id"
-          from
-            "album_audit" as "parent_audit"
-          where
-            "parent_audit"."albumId" = "album"."parentId"
-            and "parent_audit"."userId" = $7
-          order by
-            "parent_audit"."id" desc
-          limit
-            $8
-        )
-      ),
-      album."updateId"
-    )
-  ) < $9
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album"."id"
+      and scope_member."userId" = $6::uuid
+      and (
+        "scope_album"."libraryScope" in ($7, $8)
+        or scope_member.role != $9
+      )
+  )
   and greatest(
     album."updateId",
     album_users."createId",
@@ -161,9 +139,8 @@ where
       ),
       album."updateId"
     )
-  ) > $13
-order by
-  greatest(
+  ) < $13
+  and greatest(
     album."updateId",
     album_users."createId",
     coalesce(
@@ -194,6 +171,43 @@ order by
             "parent_audit"."id" desc
           limit
             $16
+        )
+      ),
+      album."updateId"
+    )
+  ) > $17
+order by
+  greatest(
+    album."updateId",
+    album_users."createId",
+    coalesce(
+      (
+        (
+          select
+            "parent_user"."createId"
+          from
+            "album_user" as "parent_user"
+          where
+            "parent_user"."albumId" = "album"."parentId"
+            and "parent_user"."userId" = $18
+        )
+      ),
+      album."updateId"
+    ),
+    coalesce(
+      (
+        (
+          select
+            "parent_audit"."id"
+          from
+            "album_audit" as "parent_audit"
+          where
+            "parent_audit"."albumId" = "album"."parentId"
+            and "parent_audit"."userId" = $19
+          order by
+            "parent_audit"."id" desc
+          limit
+            $20
         )
       ),
       album."updateId"
@@ -295,6 +309,20 @@ from
   inner join "album_user" as "album_users" on "album"."id" = "album_users"."albumId"
 where
   "album_users"."userId" = $5
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album"."id"
+      and scope_member."userId" = $6::uuid
+      and (
+        "scope_album"."libraryScope" in ($7, $8)
+        or scope_member.role != $9
+      )
+  )
   and greatest(
     album."updateId",
     album_users."createId",
@@ -307,7 +335,7 @@ where
             "album_user" as "parent_user"
           where
             "parent_user"."albumId" = "album"."parentId"
-            and "parent_user"."userId" = $6
+            and "parent_user"."userId" = $10
         )
       ),
       album."updateId"
@@ -321,17 +349,17 @@ where
             "album_audit" as "parent_audit"
           where
             "parent_audit"."albumId" = "album"."parentId"
-            and "parent_audit"."userId" = $7
+            and "parent_audit"."userId" = $11
           order by
             "parent_audit"."id" desc
           limit
-            $8
+            $12
         )
       ),
       album."updateId"
     )
-  ) < $9
-  and (album."createdAt", album.id) < ($10::timestamptz, $11::uuid)
+  ) < $13
+  and (album."createdAt", album.id) < ($14::timestamptz, $15::uuid)
 order by
   "album"."createdAt" desc,
   "album"."id" desc
@@ -344,8 +372,22 @@ from
   "album_user"
 where
   "userId" = $1
-  and "createId" >= $2
-  and "createId" < $3
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_user"."albumId"
+      and scope_member."userId" = $2::uuid
+      and (
+        "scope_album"."libraryScope" in ($3, $4)
+        or scope_member.role != $5
+      )
+  )
+  and "createId" >= $6
+  and "createId" < $7
 order by
   "createId" asc
 
@@ -359,8 +401,21 @@ where
   "album_audit"."id" < $1
   and "album_audit"."id" > $2
   and "userId" = $3
+union all
+select
+  "album"."updateId" as "id",
+  "album"."id" as "albumId"
+from
+  "album" as "album"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+where
+  "album"."updateId" < $4
+  and "album"."updateId" > $5
+  and "album_user"."userId" = $6
+  and "album_user"."role" = $7
+  and "album"."libraryScope" = $8
 order by
-  "album_audit"."id" asc
+  "id" asc
 
 -- SyncRepository.album.getUpserts
 select distinct
@@ -401,6 +456,20 @@ where
   "album"."updateId" < $1
   and "album"."updateId" > $2
   and "album_users"."userId" = $3
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album"."id"
+      and scope_member."userId" = $4::uuid
+      and (
+        "scope_album"."libraryScope" in ($5, $6)
+        or scope_member.role != $7
+      )
+  )
 order by
   "album"."updateId" asc
 
@@ -454,6 +523,20 @@ where
   "album"."updateId" < $3
   and "album"."updateId" > $4
   and "album_users"."userId" = $5
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album"."id"
+      and scope_member."userId" = $6::uuid
+      and (
+        "scope_album"."libraryScope" in ($7, $8)
+        or scope_member.role != $9
+      )
+  )
 order by
   "album"."updateId" asc
 
@@ -537,6 +620,20 @@ where
   and "album_asset"."updateId" <= $4
   and "album_asset"."updateId" > $5
   and "album_asset"."albumId" = $6
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_asset"."albumId"
+      and scope_member."userId" = $7::uuid
+      and (
+        "scope_album"."libraryScope" in ($8, $9)
+        or scope_member.role != $10
+      )
+  )
   and not (
     exists (
       select
@@ -557,7 +654,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $7::uuid
+    or "asset"."ownerId" = $11::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -643,6 +740,20 @@ where
   and "asset"."updateId" > $4
   and "album_asset"."updateId" <= $5
   and "album_user"."userId" = $6
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_user"."albumId"
+      and scope_member."userId" = $7::uuid
+      and (
+        "scope_album"."libraryScope" in ($8, $9)
+        or scope_member.role != $10
+      )
+  )
   and not (
     exists (
       select
@@ -663,7 +774,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $7::uuid
+    or "asset"."ownerId" = $11::uuid
   )
 order by
   "asset"."updateId" asc
@@ -748,6 +859,20 @@ where
   "album_asset"."updateId" < $3
   and "album_asset"."updateId" > $4
   and "album_user"."userId" = $5
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_user"."albumId"
+      and scope_member."userId" = $6::uuid
+      and (
+        "scope_album"."libraryScope" in ($7, $8)
+        or scope_member.role != $9
+      )
+  )
   and not (
     exists (
       select
@@ -768,7 +893,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $6::uuid
+    or "asset"."ownerId" = $10::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -811,6 +936,20 @@ where
   and "album_asset"."updateId" <= $2
   and "album_asset"."updateId" > $3
   and "album_asset"."albumId" = $4
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_asset"."albumId"
+      and scope_member."userId" = $5::uuid
+      and (
+        "scope_album"."libraryScope" in ($6, $7)
+        or scope_member.role != $8
+      )
+  )
   and not (
     exists (
       select
@@ -831,7 +970,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5::uuid
+    or "asset"."ownerId" = $9::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -875,6 +1014,20 @@ where
   and "asset_exif"."updateId" > $2
   and "album_asset"."updateId" <= $3
   and "album_user"."userId" = $4
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_user"."albumId"
+      and scope_member."userId" = $5::uuid
+      and (
+        "scope_album"."libraryScope" in ($6, $7)
+        or scope_member.role != $8
+      )
+  )
   and not (
     exists (
       select
@@ -895,7 +1048,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5::uuid
+    or "asset"."ownerId" = $9::uuid
   )
 order by
   "asset_exif"."updateId" asc
@@ -939,6 +1092,20 @@ where
   "album_asset"."updateId" < $1
   and "album_asset"."updateId" > $2
   and "album_user"."userId" = $3
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_user"."albumId"
+      and scope_member."userId" = $4::uuid
+      and (
+        "scope_album"."libraryScope" in ($5, $6)
+        or scope_member.role != $7
+      )
+  )
   and not (
     exists (
       select
@@ -959,7 +1126,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $4::uuid
+    or "asset"."ownerId" = $8::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -977,6 +1144,20 @@ where
   and "album_asset"."updateId" <= $2
   and "album_asset"."updateId" > $3
   and "album_asset"."albumId" = $4
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_asset"."albumId"
+      and scope_member."userId" = $5::uuid
+      and (
+        "scope_album"."libraryScope" in ($6, $7)
+        or scope_member.role != $8
+      )
+  )
   and not (
     exists (
       select
@@ -997,7 +1178,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5::uuid
+    or "asset"."ownerId" = $9::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -1020,6 +1201,20 @@ where
       "album_user"
     where
       "album_user"."userId" = $3
+      and exists (
+        select
+          1
+        from
+          album scope_album
+          join album_user scope_member on scope_member."albumId" = scope_album.id
+        where
+          scope_album.id = "album_user"."albumId"
+          and scope_member."userId" = $4::uuid
+          and (
+            "scope_album"."libraryScope" in ($5, $6)
+            or scope_member.role != $7
+          )
+      )
   )
   and not (
     exists (
@@ -1048,6 +1243,20 @@ where
   "album_asset"."updateId" < $1
   and "album_asset"."updateId" > $2
   and "album_user"."userId" = $3
+  and exists (
+    select
+      1
+    from
+      album scope_album
+      join album_user scope_member on scope_member."albumId" = scope_album.id
+    where
+      scope_album.id = "album_user"."albumId"
+      and scope_member."userId" = $4::uuid
+      and (
+        "scope_album"."libraryScope" in ($5, $6)
+        or scope_member.role != $7
+      )
+  )
   and not (
     exists (
       select
@@ -1068,7 +1277,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $4::uuid
+    or "asset"."ownerId" = $8::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -1106,6 +1315,20 @@ where
       "album_user"
     where
       "album_user"."userId" = $3
+      and exists (
+        select
+          1
+        from
+          album scope_album
+          join album_user scope_member on scope_member."albumId" = scope_album.id
+        where
+          scope_album.id = "album_user"."albumId"
+          and scope_member."userId" = $4::uuid
+          and (
+            "scope_album"."libraryScope" in ($5, $6)
+            or scope_member.role != $7
+          )
+      )
   )
 order by
   "album_user_audit"."id" asc
@@ -1128,6 +1351,20 @@ where
       "album_user" as "albumUsers"
     where
       "albumUsers"."userId" = $3
+      and exists (
+        select
+          1
+        from
+          album scope_album
+          join album_user scope_member on scope_member."albumId" = scope_album.id
+        where
+          scope_album.id = "albumUsers"."albumId"
+          and scope_member."userId" = $4::uuid
+          and (
+            "scope_album"."libraryScope" in ($5, $6)
+            or scope_member.role != $7
+          )
+      )
   )
 order by
   "album_user"."updateId" asc
@@ -1210,8 +1447,9 @@ select
 from
   "asset"
 where
-  "asset"."updateId" < $1
-  and "asset"."ownerId" = $2
+  "asset"."libraryScope" in ($1, $2)
+  and "asset"."updateId" < $3
+  and "asset"."ownerId" = $4
   and not (
     exists (
       select
@@ -1226,7 +1464,7 @@ where
   and (
     coalesce(asset."localDateTime", '-infinity'::timestamptz),
     asset.id
-  ) < ($3::timestamptz, $4::uuid)
+  ) < ($5::timestamptz, $6::uuid)
 order by
   coalesce(asset."localDateTime", '-infinity'::timestamptz) desc,
   "asset"."id" desc
@@ -1241,8 +1479,19 @@ where
   "asset_audit"."id" < $1
   and "asset_audit"."id" > $2
   and "ownerId" = $3
+union all
+select
+  "asset"."updateId" as "id",
+  "asset"."id" as "assetId"
+from
+  "asset" as "asset"
+where
+  "asset"."updateId" < $4
+  and "asset"."updateId" > $5
+  and "asset"."ownerId" = $6
+  and "asset"."libraryScope" = $7
 order by
-  "asset_audit"."id" asc
+  "id" asc
 
 -- SyncRepository.asset.getHiddenDeletes
 select
@@ -1352,7 +1601,8 @@ from
 where
   "asset"."updateId" < $1
   and "asset"."updateId" > $2
-  and "ownerId" = $3
+  and "asset"."libraryScope" in ($3, $4)
+  and "ownerId" = $5
   and not (
     exists (
       select
@@ -1403,6 +1653,7 @@ where
   "asset_exif"."updateId" < $1
   and "asset_exif"."updateId" > $2
   and "asset"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and not (
     exists (
       select
@@ -1428,6 +1679,7 @@ where
   "asset_edit_audit"."id" < $1
   and "asset_edit_audit"."id" > $2
   and "asset"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and not (
     exists (
       select
@@ -1457,6 +1709,7 @@ where
   "asset_edit"."updateId" < $1
   and "asset_edit"."updateId" > $2
   and "asset"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and not (
     exists (
       select
@@ -1482,6 +1735,7 @@ where
   "asset_face_audit"."id" < $1
   and "asset_face_audit"."id" > $2
   and "asset"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and not (
     exists (
       select
@@ -1529,6 +1783,7 @@ where
     where
       "user"."id" = $4
   )
+  and "asset"."libraryScope" in ($5, $6)
   and not (
     exists (
       select
@@ -1565,6 +1820,7 @@ where
   "asset_face"."updateId" < $1
   and "asset_face"."updateId" > $2
   and "asset"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and not (
     exists (
       select
@@ -1623,6 +1879,7 @@ where
     where
       "user"."id" = $4
   )
+  and "asset"."libraryScope" in ($5, $6)
   and not (
     exists (
       select
@@ -1650,6 +1907,7 @@ where
   and "asset_metadata_audit"."id" > $2
   and "asset"."ownerId" = $3
   and "asset_metadata_audit"."key" != $4
+  and "asset"."libraryScope" in ($5, $6)
   and not (
     exists (
       select
@@ -1678,6 +1936,7 @@ where
   and "asset_metadata"."updateId" > $2
   and "asset"."ownerId" = $3
   and "asset_metadata"."key" != $4
+  and "asset"."libraryScope" in ($5, $6)
   and not (
     exists (
       select
@@ -1704,6 +1963,7 @@ where
   "asset_ocr_audit"."id" < $1
   and "asset_ocr_audit"."id" > $2
   and "asset"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and not (
     exists (
       select
@@ -1742,6 +2002,7 @@ where
   "asset_ocr"."updateId" < $1
   and "asset_ocr"."updateId" > $2
   and "asset"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and not (
     exists (
       select

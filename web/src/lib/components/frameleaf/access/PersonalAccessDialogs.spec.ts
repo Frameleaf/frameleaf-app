@@ -1,4 +1,4 @@
-import { Permission } from '@frameleaf/sdk';
+import { ApiKeyResponsePermission, Permission } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
@@ -95,6 +95,37 @@ describe('PinDialog (FL-67)', () => {
 });
 
 describe('ApiKeyDialog (FL-67)', () => {
+  it('names each purpose with who it suits, the browser extension just before Everything (FL-622)', () => {
+    render(ApiKeyDialog, { onClose: vi.fn() });
+
+    expect(
+      screen.getAllByRole('radio').map((radio) => radio.closest('label')?.querySelector('strong')?.textContent),
+    ).toEqual(
+      ['view', 'upload', 'view_upload', 'capture', 'everything'].map(
+        (id) => `frameleaf_access_key_purpose_${id} · frameleaf_access_key_purpose_${id}_for`,
+      ),
+    );
+  });
+  it('creates a browser capture key without silently granting general library access', async () => {
+    sdkMock.createApiKey.mockResolvedValue({
+      apiKey: {
+        id: 'capture-key',
+        name: 'Browser',
+        permissions: [],
+        designPermissions: [...PURPOSE_PERMISSIONS.capture],
+      },
+      secret: 'synthetic-capture-key',
+    } as never);
+    render(ApiKeyDialog, { onClose: vi.fn() });
+    await typeInto(screen.getByLabelText('frameleaf_access_key_name'), 'Browser');
+    await fireEvent.click(screen.getByRole('radio', { name: /frameleaf_access_key_purpose_capture/ }));
+    await fireEvent.click(screen.getAllByRole('button', { name: 'frameleaf_access_key_create' }).at(-1)!);
+    await waitFor(() =>
+      expect(sdkMock.createApiKey).toHaveBeenCalledWith({
+        apiKeyCreateDto: { name: 'Browser', permissions: [Permission.CaptureCreate, Permission.CaptureCatalogRead] },
+      }),
+    );
+  });
   it('creates a key with the chosen permissions and shows its value once', async () => {
     sdkMock.createApiKey.mockResolvedValue({
       apiKey: { id: 'key-1', name: 'Importer', permissions: [Permission.AssetRead] },
@@ -119,9 +150,11 @@ describe('ApiKeyDialog (FL-67)', () => {
     const apiKey = {
       id: 'key-1',
       name: 'Script',
-      permissions: [Permission.AssetRead],
+      permissions: [ApiKeyResponsePermission.AssetRead],
+      designPermissions: [],
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      lastUsedAt: null,
     };
     render(ApiKeyDialog, { apiKey, onClose: vi.fn() });
 

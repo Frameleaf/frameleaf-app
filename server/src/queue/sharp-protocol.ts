@@ -8,6 +8,7 @@ export const SHARP_OPERATIONS = [
   'generateHdrRenditions',
   'exportPhotoStill',
   'decodeImage',
+  'extractAssetPalette',
   'generateImageThumbnails',
   'generateThumbnail',
   'writeCloudUpload',

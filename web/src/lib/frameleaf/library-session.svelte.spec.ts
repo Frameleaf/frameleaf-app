@@ -44,6 +44,56 @@ describe('LibrarySessionStore', () => {
     store = new LibrarySessionStore({ userId: 'user-1', pageSize: 10, storage, transientStorage: storage });
   });
 
+  it('starts a fresh designer workspace uncropped without replacing the photography start layout', () => {
+    libraryStartLayout.set('browse');
+    const design = new LibrarySessionStore({
+      userId: 'user-1',
+      workspace: 'design',
+      storage,
+      transientStorage: storage,
+    });
+    design.restore(undefined, 'user-1', '/pro');
+    expect(design.layout).toBe('timeline');
+    store.restore(undefined, 'user-1', '/photos');
+    expect(store.layout).toBe('browse');
+    design.setLayout('work');
+    design.persist();
+    design.restore(undefined, 'user-1', '/pro');
+    expect(design.layout).toBe('work');
+    libraryStartLayout.set(null);
+  });
+
+  it('keeps Pro query, layout and tab selection out of the personal workspace', () => {
+    store.restore(undefined, 'user-1', '/library');
+    store.setLayout('timeline');
+    store.select('personal');
+    store.persist();
+    const design = new LibrarySessionStore({
+      userId: 'user-1',
+      workspace: 'design',
+      storage,
+      transientStorage: storage,
+    });
+    design.restore(undefined, 'user-1', '/pro');
+    design.setLayout('work');
+    design.select('bookmark:reference');
+    design.persist();
+    const personal = new LibrarySessionStore({ userId: 'user-1', storage, transientStorage: storage });
+    personal.restore(undefined, 'user-1', '/library');
+    expect(personal.layout).toBe('timeline');
+    expect(personal.selection).toEqual(['personal']);
+    const reopened = new LibrarySessionStore({
+      userId: 'user-1',
+      workspace: 'design',
+      storage,
+      transientStorage: storage,
+    });
+    reopened.restore(undefined, 'user-1', '/pro');
+    expect(reopened.layout).toBe('work');
+    expect(reopened.selection).toEqual(['bookmark:reference']);
+    reopened.restore(undefined, 'other-user', '/pro');
+    expect(reopened.selection).toEqual([]);
+  });
   it('starts on Browse with nothing selected', () => {
     expect(store.layout).toBe('browse');
     expect(store.selection).toEqual([]);

@@ -19,6 +19,7 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  LibraryScope,
   Permission,
   StorageFolder,
 } from 'src/enum.js';
@@ -1394,6 +1395,37 @@ describe(AssetService.name, () => {
   });
 
   describe('updateAll', () => {
+    it.each([LibraryScope.Design, LibraryScope.Personal, LibraryScope.Both])(
+      'moves media to %s without copying it and refreshes personal clients',
+      async (libraryScope) => {
+        const asset = getForAsset(AssetFactory.create({ ownerId: authStub.admin.user.id, libraryScope }));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getByIds.mockResolvedValue([asset]);
+        mocks.asset.setLibraryScope.mockResolvedValue([asset.id]);
+        mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([{ ...asset, faces: [] }]);
+        await sut.updateAll(authStub.admin, { ids: [asset.id], libraryScope });
+        expect(mocks.asset.setLibraryScope).toHaveBeenCalledWith([asset.id], asset.ownerId, libraryScope);
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+        if (libraryScope === LibraryScope.Design) {
+          expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_delete', asset.ownerId, asset.id);
+          expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith(
+            'on_asset_update',
+            expect.anything(),
+            expect.anything(),
+          );
+        } else {
+          expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+            'on_asset_update',
+            asset.ownerId,
+            expect.objectContaining({ id: asset.id }),
+          );
+          expect(mocks.job.queue).toHaveBeenCalledWith({
+            name: JobName.AssetGenerateThumbnails,
+            data: { id: asset.id, notify: true },
+          });
+        }
+      },
+    );
     beforeEach(() => {
       mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
     });

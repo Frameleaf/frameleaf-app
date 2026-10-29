@@ -12,6 +12,7 @@ import {
   AssetTypeSchema,
   AssetVisibilitySchema,
   ImageEnrichmentFilterSchema,
+  LibraryViewScopeSchema,
   TimeBucketDateTypeSchema,
 } from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
@@ -23,6 +24,7 @@ export const TIMELINE_FILTER_MAX_LENGTH = 16_384;
 
 const TimeBucketQueryBaseSchema = z
   .object({
+    libraryScope: LibraryViewScopeSchema.optional(),
     userId: z.uuidv4().optional().describe('Filter assets by specific user ID'),
     albumId: z.uuidv4().optional().describe('Filter assets belonging to a specific album'),
     assetType: AssetTypeSchema.optional().describe('Filter assets by media type'),

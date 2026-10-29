@@ -49,6 +49,7 @@ const setup = async (context: BrowserContext) => {
   await context.route('**/api/albums/tree', (route) =>
     route.fulfill({ json: { collections: [], albums: [], spaces: [] } }),
   );
+  await context.route('**/api/albums/hierarchy*', (route) => route.fulfill({ json: { roots: [] } }));
   await context.route('**/api/notifications*', (route) => route.fulfill({ json: [] }));
   await context.route('**/api/jobs/running', (route) =>
     route.fulfill({ json: { operations: [], memoryExports: [], queues: [], canManageQueues: false } }),

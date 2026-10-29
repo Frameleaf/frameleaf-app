@@ -793,15 +793,8 @@ export class PersonService extends BaseService {
       throw new NotFoundException();
     }
 
-    if (auth.hideNsfwAssets && person.faceAssetId) {
-      const allowedFaces = await this.accessRepository.person.checkFaceOwnerAccess(
-        auth.user.id,
-        new Set([person.faceAssetId]),
-        auth.hiddenContent ?? true,
-      );
-      if (!allowedFaces.has(person.faceAssetId)) {
-        throw new NotFoundException();
-      }
+    if (person.faceAssetId && !(await this.featuredAssetId(auth, person))) {
+      throw new NotFoundException();
     }
 
     return new FileDownloadResponse({

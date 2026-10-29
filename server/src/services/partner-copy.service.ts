@@ -18,6 +18,7 @@ import {
   FrameleafWorker,
   JobName,
   JobStatus,
+  LibraryScope,
   QueueName,
 } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -201,7 +202,13 @@ export class PartnerCopyService extends BaseService {
     partnerSharedById: string,
   ): Promise<string | undefined> {
     const source = await this.assetRepository.getById(sourceAssetId);
-    if (!source || source.deletedAt || source.status !== AssetStatus.Active || source.ownerId === targetOwnerId) {
+    if (
+      !source ||
+      source.libraryScope === LibraryScope.Design ||
+      source.deletedAt ||
+      source.status !== AssetStatus.Active ||
+      source.ownerId === targetOwnerId
+    ) {
       return;
     }
     // external-library files are never linked (spec §3.2); the motion part of a Live Photo is Hidden

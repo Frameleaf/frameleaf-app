@@ -7,6 +7,7 @@ import {
   AssetFileType,
   JobName,
   JobStatus,
+  LibraryScope,
   NotificationLevel,
   NotificationType,
   PushEventType,
@@ -411,6 +412,21 @@ describe(NotificationService.name, () => {
   });
 
   describe('onAssetMetadataExtracted', () => {
+    it('routes designer updates away from legacy personal clients', async () => {
+      const asset = AssetFactory.create({ libraryScope: LibraryScope.Design });
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([{ ...getForAsset(asset), faces: [] }]);
+      await sut.onAssetMetadataExtracted({ assetId: asset.id, userId: asset.ownerId, source: 'sidecar-write' });
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'LibraryAssetUpdateV1',
+        asset.ownerId,
+        expect.objectContaining({ id: asset.id }),
+      );
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith(
+        'on_asset_update',
+        expect.anything(),
+        expect.anything(),
+      );
+    });
     it('keeps the landmarks in the update a location edit sends back (LIB-12)', async () => {
       const asset = AssetFactory.from().exif({ latitude: 51.4254, longitude: -116.1773 }).build();
       const landmark = { id: 'Q41858', name: 'Banff National Park', kind: 'park' };

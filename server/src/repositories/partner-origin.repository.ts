@@ -2,12 +2,21 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder, AssetStatus, AssetType } from 'src/enum.js';
+import {
+  AlbumKind,
+  AssetFileType,
+  AssetLockReason,
+  AssetOrder,
+  AssetStatus,
+  AssetType,
+  LibraryScope,
+} from 'src/enum.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { isInOwnerFolder, ownLibraryPath } from 'src/utils/library-path.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
 /** What kind of copy an origin row describes (FL-326, spec §4.2). */
 export type OriginKind = 'asset' | 'album';
@@ -616,6 +625,7 @@ export class PartnerOriginRepository {
         .selectAll()
         .where('id', '=', input.sourceAssetId)
         .where('deletedAt', 'is', null)
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .where('status', '=', AssetStatus.Active)
         .where('libraryId', 'is', null)
         .where('isExternal', '=', false)
@@ -698,6 +708,7 @@ export class PartnerOriginRepository {
         .values({
           ...columns,
           ownerId: input.ownerId,
+          libraryScope: LibraryScope.Personal,
           originalPath: input.original.path,
           libraryPath: null,
           physicalOriginalFileId: input.original.id,
@@ -908,7 +919,7 @@ export class PartnerOriginRepository {
       id: string;
     }>`
       SELECT id FROM asset
-      WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL
+      WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal)}
         ${cursor ? sql`AND id > ${cursor}::uuid` : sql``}
       ORDER BY id
       LIMIT ${limit}
@@ -919,7 +930,7 @@ export class PartnerOriginRepository {
     const { rows } = await sql<{
       count: number;
     }>`
-      SELECT count(*)::int AS count FROM asset WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL
+      SELECT count(*)::int AS count FROM asset WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal)}
     `.execute(this.db);
     return rows[0]?.count ?? 0;
   }
@@ -930,7 +941,7 @@ export class PartnerOriginRepository {
         album.kind, album."albumThumbnailAssetId", album."deletedAt"
       FROM album
       JOIN album_user owner ON owner."albumId" = album.id AND owner.role = 'owner'
-      WHERE album.id = ${albumId}::uuid
+      WHERE album.id = ${albumId}::uuid AND ${libraryScopePredicate(LibraryScope.Personal, 'album')}
     `.execute(this.db);
     return rows[0];
   }
@@ -942,7 +953,7 @@ export class PartnerOriginRepository {
       SELECT album.id
       FROM album
       JOIN album_user owner ON owner."albumId" = album.id AND owner.role = 'owner'
-      WHERE owner."userId" = ${ownerId}::uuid AND album."deletedAt" IS NULL AND album.kind = 'album'
+      WHERE owner."userId" = ${ownerId}::uuid AND album."deletedAt" IS NULL AND album.kind = 'album' AND ${libraryScopePredicate(LibraryScope.Personal, 'album')}
       ORDER BY album.id
     `.execute(this.db);
     return rows.map(({ id }) => id);

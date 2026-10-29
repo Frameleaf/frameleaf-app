@@ -4,7 +4,7 @@ import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -21,6 +21,7 @@ import {
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, isLocked, isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -336,6 +337,7 @@ export class AssetJobRepository {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         // FL-57: the checksum tells whether a face decision was made about this original
         .select(['asset.id', 'asset.visibility', 'asset.checksum'])
         .$call(withExifInner)
@@ -383,6 +385,7 @@ export class AssetJobRepository {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .select(['asset.id'])
         .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
         .where('asset.status', '=', sql.lit(AssetStatus.Active))
@@ -421,6 +424,7 @@ export class AssetJobRepository {
   getForBestPhotoScoring(id: string) {
     return this.db
       .selectFrom('asset')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .select((eb) => [
         'asset.id',
         'asset.ownerId',
@@ -677,6 +681,7 @@ export class AssetJobRepository {
 
   selectionForDetectFacesJob(force?: boolean) {
     return this.assetsWithPreviews()
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$if(force === false, (qb) => qb.where('job_status.facesRecognizedAt', 'is', null))
       .select(['asset.id'])
       .orderBy('asset.fileCreatedAt', 'desc');

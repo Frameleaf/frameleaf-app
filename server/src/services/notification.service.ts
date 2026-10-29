@@ -20,6 +20,7 @@ import {
   AssetFileType,
   JobName,
   JobStatus,
+  LibraryScope,
   NotificationLevel,
   NotificationType,
   Permission,
@@ -232,7 +233,7 @@ export class NotificationService extends BaseService {
     const [asset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([assetId], userId);
     if (asset) {
       this.websocketRepository.clientSend(
-        'on_asset_update',
+        asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
         userId,
         await this.withLandmarks(mapAsset(asset, { auth: { user: { id: userId } } as AuthDto })),
       );

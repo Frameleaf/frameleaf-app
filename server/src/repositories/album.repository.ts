@@ -16,7 +16,7 @@ import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
-import { AlbumUserRole } from 'src/enum.js';
+import { AlbumUserRole, LibraryScope, type LibraryViewScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -33,7 +33,30 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
+
+// shortcut: hierarchy edits serialize across users; shard this lock if measured contention warrants it.
+export const lockAlbumHierarchy = async (db: Kysely<DB>) => {
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended('frameleaf:album-hierarchy', 0))`.execute(db);
+};
+
+const assertAlbumDepth = async (db: Kysely<DB>, parentId: string | null | undefined, height: number) => {
+  if (!parentId) return;
+  const parent = await db
+    .selectFrom('album')
+    .select('id')
+    .where('id', '=', parentId)
+    .where('deletedAt', 'is', null)
+    .executeTakeFirst();
+  if (!parent) throw new BadRequestException('Parent album no longer exists');
+  const ancestors = await db
+    .selectFrom('album_closure')
+    .select(({ fn }) => fn.countAll<string>().as('depth'))
+    .where('id_descendant', '=', parentId)
+    .executeTakeFirstOrThrow();
+  if (Number(ancestors.depth) + height > 32) throw new BadRequestException('Albums may nest at most 32 levels deep');
+};
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -115,6 +138,8 @@ const isAlbumOwned = (ownerId: string) => (eb: ExpressionBuilder<DB, 'album'>) =
   );
 /** One album as a person's directory sees it, for checking a custom order (FL-52). */
 export type DirectoryItem = {
+  libraryScope?: LibraryScope;
+  role?: AlbumUserRole;
   id: string;
   kind: string;
   parentId: string | null;
@@ -315,6 +340,7 @@ export class AlbumRepository {
       isOwned?: boolean;
       isShared?: boolean;
       name?: string;
+      libraryScope?: LibraryViewScope;
     } = {},
   ): Promise<MapAlbumDto[]> {
     const rows = await this.buildAlbumBaseQuery(ownerId, options)
@@ -323,6 +349,24 @@ export class AlbumRepository {
       .select(withSharedLink)
       .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
       .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
+      .$if(!!options.libraryScope, (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            libraryScopePredicate(options.libraryScope!, 'album'),
+            ...(options.libraryScope === LibraryScope.Personal
+              ? [
+                  eb.exists(
+                    eb
+                      .selectFrom('album_user')
+                      .whereRef('album_user.albumId', '=', 'album.id')
+                      .where('album_user.userId', '=', ownerId)
+                      .where('album_user.role', '!=', AlbumUserRole.Owner),
+                  ),
+                ]
+              : []),
+          ]),
+        ),
+      )
       .orderBy('album.sortOrder', sql`asc nulls last`)
       .orderBy('album.createdAt', 'desc')
       .execute();
@@ -505,6 +549,8 @@ export class AlbumRepository {
     const userIds = albumUsers.map((u) => u.userId);
     const roles = albumUsers.map((u) => u.role);
     const execute = async (tx: Kysely<DB>) => {
+      await lockAlbumHierarchy(tx);
+      await assertAlbumDepth(tx, album.parentId, 1);
       const result = await tx
         .with('album', (db) => db.insertInto('album').values(album).returningAll())
         .with('album_user', (db) =>
@@ -588,10 +634,14 @@ export class AlbumRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await this.db.transaction().execute((tx) => this.deleteIn(tx, id));
+    await this.db.transaction().execute(async (tx) => {
+      await lockAlbumHierarchy(tx);
+      await this.deleteIn(tx, id);
+    });
   }
   async deleteFailedClassificationAlbum(id: string, ownerId: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
+      await lockAlbumHierarchy(tx);
       const album = await tx
         .selectFrom('album')
         .select('id')
@@ -605,39 +655,19 @@ export class AlbumRepository {
       if (!rule) await this.deleteIn(tx, id);
     });
   }
-  /**
-   * FL-146: delete a collection and keep its albums, which move to the collection's own parent (the
-   * top level when it has none), as the prototype does. One transaction: a collection whose delete fails
-   * keeps every album, and no album is left pointing at a collection that is gone.
-   */
+  /** Kept for existing callers; every album deletion now preserves children. */
   async deleteCollection(id: string): Promise<void> {
-    await this.db.transaction().execute(async (tx) => {
-      const collection = await tx
-        .selectFrom('album')
-        .select('parentId')
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst();
-      if (!collection) {
-        return;
-      }
-      const children = await tx.selectFrom('album').select('id').where('parentId', '=', id).forUpdate().execute();
-      for (const child of children) {
-        await this.reparentIn(tx, child.id, collection.parentId);
-      }
-      await this.deleteIn(tx, id);
-    });
+    await this.delete(id);
   }
+
   private async deleteIn(tx: Transaction<DB>, id: string): Promise<void> {
-    const _subtree = await tx
-      .selectFrom('album_closure')
-      .select('id_descendant')
-      .where('id_ancestor', '=', id)
-      .execute();
-    const subtreeIds = _subtree.length > 0 ? _subtree.map(({ id_descendant }) => id_descendant) : [id];
-    await this.smartAlbums.deleteAlbums(subtreeIds, tx);
-    await this.deletePositions({ albumIds: subtreeIds }, tx);
-    await this.deleteCoverFollowsNewest(subtreeIds, tx);
+    const album = await tx.selectFrom('album').select('parentId').where('id', '=', id).forUpdate().executeTakeFirst();
+    if (!album) return;
+    const children = await tx.selectFrom('album').select('id').where('parentId', '=', id).forUpdate().execute();
+    for (const child of children) await this.reparentIn(tx, child.id, album.parentId);
+    await this.smartAlbums.deleteAlbums([id], tx);
+    await this.deletePositions({ albumIds: [id] }, tx);
+    await this.deleteCoverFollowsNewest([id], tx);
     await tx.deleteFrom('album').where('id', '=', id).execute();
   }
   /**
@@ -744,6 +774,8 @@ export class AlbumRepository {
     newParentId: string | null,
     expectedParentId?: string | null,
   ): Promise<void> {
+    await lockAlbumHierarchy(tx);
+    if (newParentId === id) throw new BadRequestException('An album cannot be its own parent');
     if (expectedParentId !== undefined) {
       // FL-52: a move made from an outdated directory (the album was moved elsewhere since the
       // client loaded it) is refused rather than silently undoing the other change.
@@ -774,6 +806,12 @@ export class AlbumRepository {
         throw new BadRequestException('Cannot move an album under one of its own descendants');
       }
     }
+    const { rows: heights } = await sql<{ height: number }>`
+      SELECT count(*)::int AS height FROM album_closure
+      WHERE id_ancestor IN (SELECT id_descendant FROM album_closure WHERE id_ancestor = ${id}::uuid)
+      GROUP BY id_descendant ORDER BY height DESC LIMIT 1
+    `.execute(tx);
+    await assertAlbumDepth(tx, newParentId, heights[0]?.height ?? 1);
     await tx.updateTable('album').set({ parentId: newParentId }).where('id', '=', id).execute();
     await tx
       .deleteFrom('album_closure')
@@ -825,6 +863,7 @@ export class AlbumRepository {
       return;
     }
     await this.db.transaction().execute(async (tx) => {
+      await lockAlbumHierarchy(tx);
       if (validate) {
         // Everything the person can see, as it is now, locked until the order is written.
         const rows = await tx
@@ -833,7 +872,15 @@ export class AlbumRepository {
             join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', userId),
           )
           .where('album.deletedAt', 'is', null)
-          .select(['album.id', 'album.icon', 'album.parentId', 'album.sortOrder', 'album.kind'])
+          .select([
+            'album.id',
+            'album.icon',
+            'album.parentId',
+            'album.sortOrder',
+            'album.kind',
+            'album.libraryScope',
+            'album_user.role',
+          ])
           .modifyEnd(sql`FOR SHARE OF album`)
           .execute();
         validate(rows);

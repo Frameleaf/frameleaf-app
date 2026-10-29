@@ -14,11 +14,13 @@ import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 's
 import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
+  AlbumHierarchyResponseDto,
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
+  AlbumViewDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
   CreateAlbumDto,
@@ -36,6 +38,7 @@ import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import {
   AlbumKind,
   AlbumUserRole,
+  LibraryScope,
   Permission,
   PushEventType,
   SharedSpaceEventType,
@@ -45,7 +48,7 @@ import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/reposit
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAlbumEditFields, queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
-import { albumOrderGroup, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
+import { albumOrderGroup, buildAlbumHierarchy, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
@@ -54,10 +57,11 @@ import {
   getOthersRulesQueryOptions,
   getPrivacyQueryOptions,
 } from 'src/utils/hidden-content.js';
+import { scopeMatches } from 'src/utils/library-scope.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
-import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
+import { isSharedSpace, requireInvitableRole, requireSpaceOwner, spaceOwnerId } from 'src/utils/shared-space.js';
 import { getSupporters } from 'src/utils/supporter.js';
 
 /** Why an editor's move is refused. The album's place is one stored value that everyone sees. */
@@ -68,9 +72,13 @@ export const ALBUM_MOVE_OWNER_ONLY =
 export class AlbumService extends BaseService {
   async getStatistics(auth: AuthDto): Promise<AlbumStatisticsResponseDto> {
     const [owned, shared, notShared] = await Promise.all([
-      this.albumRepository.getAll(auth.user.id, { isOwned: true }),
-      this.albumRepository.getAll(auth.user.id, { isShared: true }),
-      this.albumRepository.getAll(auth.user.id, { isOwned: true, isShared: false }),
+      this.albumRepository.getAll(auth.user.id, { isOwned: true, libraryScope: LibraryScope.Personal }),
+      this.albumRepository.getAll(auth.user.id, { isShared: true, libraryScope: LibraryScope.Personal }),
+      this.albumRepository.getAll(auth.user.id, {
+        isOwned: true,
+        isShared: false,
+        libraryScope: LibraryScope.Personal,
+      }),
     ]);
 
     return {
@@ -88,7 +96,7 @@ export class AlbumService extends BaseService {
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
     let albums: MapAlbumDto[] = assetId
       ? await this.albumRepository.getByAssetId(ownerId, assetId, privacyOptions)
-      : await this.albumRepository.getAll(ownerId, rest);
+      : await this.albumRepository.getAll(ownerId, { libraryScope: LibraryScope.Personal, ...rest });
     // FL-522: a smart album the person hid stays out of their own album list (it keeps filling)
     const hidden: Set<string> | undefined = await this.smartAlbumRepository.getHiddenAlbumIds(ownerId);
     if (hidden && hidden.size > 0) {
@@ -168,11 +176,13 @@ export class AlbumService extends BaseService {
    * with. Access is the same membership rule as `getAll`; partner and shared
    * link rules are unchanged (neither grants album listing).
    */
-  async getTree(auth: AuthDto): Promise<AlbumTreeResponseDto> {
+  async getTree(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumTreeResponseDto> {
     await this.albumRepository.updateThumbnails({ userId: auth.user.id });
 
     const privacyOptions = this.nsfwOptions(auth);
-    let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {});
+    let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {
+      libraryScope: dto.libraryScope ?? LibraryScope.Personal,
+    });
     if (albums.length === 0) {
       return buildAlbumTree([]);
     }
@@ -210,6 +220,18 @@ export class AlbumService extends BaseService {
     );
   }
 
+  async getHierarchy(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumHierarchyResponseDto> {
+    const tree = await this.getTree(auth, dto);
+    return buildAlbumHierarchy(
+      [
+        ...tree.collections.flatMap(({ collection, albums }) => [collection, ...albums]),
+        ...tree.albums,
+        ...tree.spaces,
+      ],
+      await this.albumRepository.getPositions(auth.user.id),
+    );
+  }
+
   /**
    * Save the person's custom order for one group of their directory (FL-52): the albums inside a
    * collection, or the collections, the albums on their own or the shared spaces at the top level.
@@ -226,8 +248,14 @@ export class AlbumService extends BaseService {
     }
     // The group is read and the order written in one transaction, with the albums locked against a
     // concurrent move, so an order can never be saved for a group that changed in between.
-    await this.albumRepository.setPositions(auth.user.id, albumIds, (visible) => {
-      const group = albumOrderGroup(visible, dto.parentId, albumIds[0]);
+    await this.albumRepository.setPositions(auth.user.id, albumIds, (rows) => {
+      const view = dto.libraryScope ?? LibraryScope.Personal;
+      const visible = rows.filter(
+        ({ libraryScope, role }) =>
+          scopeMatches(libraryScope ?? LibraryScope.Personal, view) ||
+          (view === LibraryScope.Personal && role !== undefined && role !== AlbumUserRole.Owner),
+      );
+      const group = albumOrderGroup(visible, dto.parentId, albumIds[0], dto.hierarchy);
       if (!group) {
         if (visible.every(({ id }) => id !== albumIds[0])) {
           throw new BadRequestException('Not found or no album.read access');
@@ -374,12 +402,12 @@ export class AlbumService extends BaseService {
 
     const kind = dto.kind ?? AlbumKind.Album;
     if (dto.parentId) {
-      if (kind !== AlbumKind.Album) {
-        throw new BadRequestException('Collections and shared spaces stay at the top level');
+      if (kind === AlbumKind.Space) {
+        throw new BadRequestException('Shared spaces stay at the top level');
       }
       // Nesting changes the collection, so require AlbumUpdate on it (owner or editor).
       await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [dto.parentId] });
-      await this.requireCollection(auth, dto.parentId);
+      await this.requireParentAlbum(auth, dto.parentId);
     }
 
     const allowedAssetIdsSet = await this.checkAccess({
@@ -403,12 +431,14 @@ export class AlbumService extends BaseService {
 
     const album = await this.albumRepository.create(
       {
+        libraryScope: dto.libraryScope ?? LibraryScope.Personal,
         albumName: dto.albumName,
         description: dto.description,
         albumThumbnailAssetId: coverAssetId ?? null,
         order: getPreferences(userMetadata).albums.defaultAssetOrder,
         parentId: dto.parentId ?? null,
         icon: dto.icon ?? null,
+        color: dto.color ?? null,
         kind,
       },
       assetIds,
@@ -446,6 +476,10 @@ export class AlbumService extends BaseService {
     // shown to, so the candidates are the assets that every viewer may see.
     const album = await this.findOrFail(id, auth, { withAssets: true, lockedOwnerId: undefined });
 
+    if (dto.libraryScope !== undefined && spaceOwnerId(album) !== auth.user.id) {
+      throw new ForbiddenException('Only the album owner can change its library scope');
+    }
+
     if (dto.albumThumbnailAssetId && dto.coverFollowsNewest) {
       throw new BadRequestException('Pick a cover or follow the newest item, not both');
     }
@@ -474,12 +508,14 @@ export class AlbumService extends BaseService {
         album.id,
         {
           id: album.id,
+          libraryScope: dto.libraryScope,
           albumName: dto.albumName,
           description: dto.description,
           albumThumbnailAssetId: dto.albumThumbnailAssetId,
           isActivityEnabled: dto.isActivityEnabled,
           order: dto.order,
           icon: dto.icon,
+          color: dto.color,
           sortOrder: dto.sortOrder,
         },
         auth.user.id,
@@ -528,8 +564,7 @@ export class AlbumService extends BaseService {
   }
 
   /**
-   * One level of nesting: only an album moves, only into a collection, and only
-   * its owner reorganises it (parentId is a single stored value, so an editor
+   * Albums and collections may nest; only their owner reorganises them (parentId is a single stored value, so an editor
    * of a shared album must not rewrite the owner's organisation). The
    * destination needs AlbumUpdate (owner or editor of the collection).
    */
@@ -543,8 +578,8 @@ export class AlbumService extends BaseService {
       throw new BadRequestException('An album cannot be its own parent');
     }
 
-    if (asAlbumKind(album.kind) !== AlbumKind.Album) {
-      throw new BadRequestException('Collections and shared spaces stay at the top level');
+    if (asAlbumKind(album.kind) === AlbumKind.Space) {
+      throw new BadRequestException('Shared spaces stay at the top level');
     }
 
     const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
@@ -555,7 +590,7 @@ export class AlbumService extends BaseService {
 
     if (newParentId !== null) {
       await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [newParentId] });
-      await this.requireCollection(auth, newParentId);
+      await this.requireParentAlbum(auth, newParentId);
     }
 
     // The descendant/cycle check runs inside reparent's transaction (atomic with
@@ -565,25 +600,21 @@ export class AlbumService extends BaseService {
       : this.albumRepository.reparent(album.id, newParentId, expectedParentId));
   }
 
-  private async requireCollection(auth: AuthDto, id: string): Promise<void> {
+  private async requireParentAlbum(auth: AuthDto, id: string): Promise<void> {
     const parent = await this.findOrFail(id, auth, { withAssets: false });
-    if (asAlbumKind(parent.kind) !== AlbumKind.Collection) {
-      throw new BadRequestException('Albums nest only inside a collection');
+    if (asAlbumKind(parent.kind) === AlbumKind.Space) {
+      throw new BadRequestException('Albums cannot nest inside a shared space');
     }
   }
 
   /**
-   * Deleting a collection leaves its albums standing, moved to the collection's
-   * parent (the top level when it has none), in one transaction; deleting an
-   * album keeps every original file in the library. Nested legacy albums under
-   * a plain album still follow the existing cascade.
+   * Deleting a node promotes its children in one transaction; original media
+   * and descendant albums are preserved.
    */
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AlbumDelete, ids: [id] });
-    const album = await this.findOrFail(id, auth, { withAssets: false });
-    await (asAlbumKind(album.kind) === AlbumKind.Collection
-      ? this.albumRepository.deleteCollection(id)
-      : this.albumRepository.delete(id));
+    await this.findOrFail(id, auth, { withAssets: false });
+    await this.albumRepository.deleteCollection(id);
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {

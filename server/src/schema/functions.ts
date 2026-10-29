@@ -486,3 +486,33 @@ export const desktop_clip_producer_guard = registerFunction({
       RETURN NEW;
     END`,
 });
+
+// Returning to personal must re-send metadata cleared by an older client's asset deletion.
+export const asset_library_scope_refresh = registerFunction({
+  name: 'asset_library_scope_refresh',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+  IF OLD."libraryScope" = 'design' AND NEW."libraryScope" <> 'design' THEN
+    UPDATE asset_exif SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_edit SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_face SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_metadata SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_ocr SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END`,
+});
+
+export const album_library_scope_refresh = registerFunction({
+  name: 'album_library_scope_refresh',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+  IF OLD."libraryScope" = 'design' AND NEW."libraryScope" <> 'design' THEN
+    UPDATE album_asset SET "updatedAt" = clock_timestamp() WHERE "albumId" = NEW.id;
+    UPDATE album_user SET "updatedAt" = clock_timestamp() WHERE "albumId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END`,
+});

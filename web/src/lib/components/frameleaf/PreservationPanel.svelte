@@ -223,6 +223,9 @@
                   values: { exported: item.manifest.exported, failed: item.manifest.failed },
                 })}
               {/if}
+              {#if item.bookmarks && item.bookmarks.selected > 0}
+                · <span>{$t('frameleaf_preservation_package_bookmark_counts', { values: item.bookmarks })}</span>
+              {/if}
               {#if item.scopeDescription}· {item.scopeDescription}{/if}
             </p>
             {#if item.verification}

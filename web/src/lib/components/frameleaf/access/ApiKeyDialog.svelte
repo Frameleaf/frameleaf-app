@@ -4,7 +4,8 @@
    * `personal-key-create` / `personal-key-edit` forms and the one-time reveal of the design
    * template's `PersonalForm`.
    *
-   * FL-367: a key starts from what it is for (View only, Upload only, View and upload, Everything);
+   * FL-367: a key starts from what it is for (View only, Upload only, View and upload, Browser
+   * extension, Everything), each with who it suits and what it can and can't do (`ApiKeys.jsx`);
    * every permission stays behind "Choose exact permissions", searchable, and ticking one there
    * makes the key "Your own choice". Choosing full access or every permission saves `all`, as the
    * previous editor did. A key that can delete
@@ -14,6 +15,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import {
+    keyPermissions,
     API_KEY_NAME_MAX_LENGTH,
     filterPermissions,
     INDIVIDUAL_PERMISSIONS,
@@ -45,9 +47,9 @@
   let name = $state(apiKey?.name ?? '');
   let selected = $state<Permission[]>(
     apiKey
-      ? apiKey.permissions.includes(Permission.All)
+      ? keyPermissions(apiKey).includes(Permission.All)
         ? [Permission.All]
-        : [...apiKey.permissions]
+        : keyPermissions(apiKey)
       : [...PURPOSE_PERMISSIONS.view],
   );
   const choosePurpose = (next: KeyPurpose) => (selected = [...PURPOSE_PERMISSIONS[next]]);
@@ -162,7 +164,12 @@
               onchange={() => choosePurpose(option)}
             />
             <span>
-              <strong>{$t(`frameleaf_access_key_purpose_${option.replace('-', '_')}` as Translations)}</strong>
+              <strong>
+                {$t(`frameleaf_access_key_purpose_${option.replace('-', '_')}` as Translations)}
+                <span class="suits"
+                  >· {$t(`frameleaf_access_key_purpose_${option.replace('-', '_')}_for` as Translations)}</span
+                >
+              </strong>
               <small>{$t(`frameleaf_access_key_purpose_${option.replace('-', '_')}_help` as Translations)}</small>
             </span>
           </label>
@@ -219,12 +226,16 @@
     margin-bottom: var(--fl-space-2);
     font-weight: 600;
   }
-  .purpose span {
+  .purpose > span {
     display: grid;
     gap: var(--fl-space-1);
   }
   .purpose small {
     color: var(--fl-muted);
+  }
+  /* Who the purpose suits, after its name: "Browser extension · Saving from your web browser". */
+  .purpose .suits {
+    font-weight: 400;
   }
   details > summary {
     cursor: pointer;

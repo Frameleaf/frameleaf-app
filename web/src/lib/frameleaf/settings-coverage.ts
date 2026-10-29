@@ -1597,6 +1597,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'expectedRevision',
   },
   {
+    pattern: 'clients.enabled',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    evidence: 'clients.enabled',
+  },
+  {
     pattern: 'folders.enabled',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',

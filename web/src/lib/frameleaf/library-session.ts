@@ -32,6 +32,7 @@ import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
  *
  * Presentation switches never rebuild the collection, the selection or the editor draft.
  */
+export type LibraryWorkspace = 'personal' | 'design';
 export type LibraryLayout = 'timeline' | 'browse' | 'work';
 export type LibraryView = 'grid' | 'list' | 'detail' | 'compare' | 'map' | 'moments';
 /**
@@ -674,9 +675,10 @@ export const writeLibraryView = (url: URL, state: LibraryViewState): URL => {
 };
 
 /** Callers must use the authenticated user ID; never reuse another user's session. */
-export const libraryPreferenceKey = (userId: string) => `frameleaf:library:v1:${encodeURIComponent(userId)}`;
-export const libraryTransientKey = (userId: string, context = '') =>
-  `frameleaf:library:tab:v1:${encodeURIComponent(userId)}${context ? `:${encodeURIComponent(context)}` : ''}`;
+export const libraryPreferenceKey = (userId: string, workspace: LibraryWorkspace = 'personal') =>
+  `frameleaf:library:v1:${encodeURIComponent(userId)}${workspace === 'design' ? ':workspace:design' : ''}`;
+export const libraryTransientKey = (userId: string, context = '', workspace: LibraryWorkspace = 'personal') =>
+  `frameleaf:library:tab:v1:${encodeURIComponent(userId)}${workspace === 'design' ? ':workspace:design' : ''}${context ? `:${encodeURIComponent(context)}` : ''}`;
 
 /**
  * What survives a reload. Layout is device-local so it is stored rather than put in the URL.

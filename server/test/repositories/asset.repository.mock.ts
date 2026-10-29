@@ -35,6 +35,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getByLibraryIdAndOriginalPath: vitest.fn(),
     deleteAll: vitest.fn(),
     update: vitest.fn(),
+    setLibraryScope: vitest.fn(),
     withLivePhotoUpdate: vitest.fn() as Mocked<RepositoryInterface<AssetRepository>>['withLivePhotoUpdate'],
     withMetadataUpdate: vitest.fn() as Mocked<RepositoryInterface<AssetRepository>>['withMetadataUpdate'],
     createLivePhotoUpload: vitest.fn(),

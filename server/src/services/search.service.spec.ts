@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException, UnauthorizedException } from '@
 import { beforeEach, vitest } from 'vitest';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SearchFacetField, SearchHistogramGranularity, SearchSuggestionType } from 'src/dtos/search.dto.js';
-import { AssetVisibility, Permission, UserMetadataKey } from 'src/enum.js';
+import { AssetVisibility, LibraryScope, Permission, UserMetadataKey } from 'src/enum.js';
 import { SearchService } from 'src/services/search.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -18,6 +18,35 @@ vitest.useFakeTimers();
 describe(SearchService.name, () => {
   let sut: SearchService;
   let mocks: ServiceMocks;
+
+  it('checks subtree root access before searching and rejects subtree expansion through a shared link', async () => {
+    const id = newUuid();
+    mocks.search.searchStatisticsV3.mockResolvedValue({ total: 0 });
+    await expect(
+      sut.searchStatistics(authStub.user1, { filter: { albumSubtreeIds: { any: [id] } } }),
+    ).rejects.toThrow();
+    expect(mocks.search.searchStatisticsV3).not.toHaveBeenCalled();
+  });
+
+  it('does not expand a shared link into descendant albums', async () => {
+    const id = newUuid();
+    const link = AuthFactory.from().sharedLink().build();
+    mocks.search.searchMetadataV3.mockResolvedValue({ items: [], hasNextPage: false });
+    mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([id]));
+    await expect(sut.searchMetadata(link, { filter: { albumSubtreeIds: { any: [id] } } })).rejects.toThrow(
+      'Shared links do not grant descendant albums',
+    );
+    expect(mocks.search.searchMetadataV3).not.toHaveBeenCalled();
+  });
+
+  it('carries the requested designer scope into structured search', async () => {
+    mocks.search.searchStatisticsV3.mockResolvedValue({ total: 0 });
+    await sut.searchStatistics(authStub.admin, { filter: {}, libraryScope: LibraryScope.Design });
+    expect(mocks.search.searchStatisticsV3).toHaveBeenCalledWith(
+      expect.objectContaining({ filter: expect.objectContaining({ libraryScope: 'design' }) }),
+      expect.any(Object),
+    );
+  });
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(SearchService));

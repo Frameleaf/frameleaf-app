@@ -71,7 +71,7 @@ describe('PhotographyWorkspace', () => {
     render(PhotographyWorkspace);
     expect(await screen.findByRole('button', { name: 'New shoot' })).toBeInTheDocument();
     expect(screen.queryByText(/project/i)).toBeNull();
-    const rail = screen.getByRole('navigation', { name: 'Photography workspace' });
+    const rail = screen.getByRole('navigation', { name: 'Clients' });
     // the rail holds the studio-wide places only; a shoot's sections never join it
     for (const name of ['Shoots', 'Galleries', 'Studio website', 'Watermarks', 'Branding']) {
       expect(within(rail).getByRole('button', { name })).toBeInTheDocument();
@@ -84,6 +84,18 @@ describe('PhotographyWorkspace', () => {
     expect(within(tabs).getByRole('button', { name: 'Photographs' })).toHaveAttribute('aria-current', 'page');
     expect(within(rail).queryByRole('button', { name: 'Orders & delivery' })).toBeNull();
     expect(screen.queryByText(/project/i)).toBeNull();
+  });
+
+  it('offers "Remove from the top bar" at the rail foot only when the page passes it', async () => {
+    const onRemoveFromTopBar = vi.fn();
+    const view = render(PhotographyWorkspace);
+    await screen.findByRole('button', { name: 'New shoot' });
+    expect(screen.queryByRole('button', { name: /Remove from the top bar/ })).toBeNull();
+    view.unmount();
+
+    render(PhotographyWorkspace, { onRemoveFromTopBar });
+    await fireEvent.click(await screen.findByRole('button', { name: /Remove from the top bar/ }));
+    expect(onRemoveFromTopBar).toHaveBeenCalledOnce();
   });
 
   it("opens the shoot's RAW photos in the RAW editor, the chosen ones once some are chosen (FL-420)", async () => {
