@@ -199,9 +199,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-595 multicam editing arranges ordinary clips and tracks; it changes no producer.
           binding.sourceSha256 ===
             '4cd592b6f8fef4211afd5947eff79fd2c33ebc6db6b01d264a64ce12d540931c' ||
+          // FL-595 multicam: superseded sync results are discarded
+          binding.sourceSha256 ===
+            '1705779f7c7de23bf9417fce0769a5a5b6dcfbbfc1bc2424a1e3211d2ecf3033' ||
           // FL-628 multicam angle viewer, standalone master audio and drift correction
           binding.sourceSha256 ===
-            'ce24032b66e951b8e5612837a67b6dd99fdcb8cb78a479ae3eee1a0ad15e0875')),
+            '7aa71e6ec65e086831540a1bde89bd84a435af9264238276c67c33867696d102')),
     'SOURCE_BROWSER',
   )
   check(

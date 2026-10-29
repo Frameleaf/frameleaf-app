@@ -33,23 +33,24 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
    const [busy, setBusy] = useState(false)
    const abortRef = useRef<AbortController | null>(null)
    useEffect(() => () => abortRef.current?.abort(), [])
-@@ -35,13 +41,14 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+@@ -35,7 +41,7 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
      abortRef.current = controller
      setBusy(true)
      try {
 -      const analysis = await analyzeMulticamSync(items.map((item) => item.id), referenceId, controller.signal)
 +      const analysis = await analyzeMulticamSync(items.map((item) => item.id), referenceId, controller.signal, standaloneMaster ? masterId : undefined)
+       // A superseded run (cancelled, or the reference changed) never writes its results.
+       if (controller.signal.aborted) return
        if (!analysis.ok) {
-         toast.warning(t(`editor.multicam.refusal.${analysis.reason}`))
-         return
+@@ -44,6 +50,7 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
        }
        setProposals(analysis.proposals)
        // Only reliable matches prefill an offset; failed ones stay manual (0 until edited).
 +      setDriftFix(Object.fromEntries(analysis.proposals.map((p) => [p.itemId, p.sync.clock !== undefined])))
        setOffsets(Object.fromEntries(analysis.proposals.map((p) => [p.itemId, p.sync.flags.length === 0 ? Math.round(p.sync.offsetSeconds * fps) : 0])))
      } catch (error) {
-       if (!(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.multicam.refusal.decode-failed'))
-@@ -54,9 +61,12 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+       if (!controller.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.multicam.refusal.decode-failed'))
+@@ -56,9 +63,12 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
      const outcome = createMulticamEdit({
        referenceId,
        masterItemId: masterId,
@@ -62,7 +63,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
          return {
            itemId: item.id,
            offsetSeconds: frames / fps,
-@@ -70,10 +80,10 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+@@ -72,10 +82,10 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
      else toast.warning(t(`editor.multicam.refusal.${outcome.reason}`))
    }
  
@@ -75,15 +76,15 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
      </select>
    )
  
-@@ -83,14 +93,19 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+@@ -85,14 +95,19 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
          {/* Offsets are relative to the reference: a new reference discards them and the sync results. */}
-         {select(t('editor.multicam.reference'), referenceId, (id) => { setReferenceId(id); setProposals(null); setOffsets({}) })}
+         {select(t('editor.multicam.reference'), referenceId, (id) => { abortRef.current?.abort(); setReferenceId(id); setProposals(null); setOffsets({}) })}
        </PropertyRow>
 -      <PropertyRow label={t('editor.multicam.masterAudio')}>{select(t('editor.multicam.masterAudio'), masterId, setMasterId)}</PropertyRow>
 -      {items.filter((item) => item.id !== referenceId).map((item) => {
 +      <PropertyRow label={t('editor.multicam.masterAudio')}>{select(t('editor.multicam.masterAudio'), masterId, (id) => {
 +        // A standalone master is synced by analysis like an angle, so changing to or from one re-syncs.
-+        if (audioItems.some((item) => item.id === id) || standaloneMaster) { setProposals(null); setOffsets({}) }
++        if (audioItems.some((item) => item.id === id) || standaloneMaster) { abortRef.current?.abort(); setProposals(null); setOffsets({}) }
 +        setMasterId(id)
 +      }, [...items, ...audioItems])}</PropertyRow>
 +      {[...items, ...(standaloneMaster ? audioItems.filter((item) => item.id === masterId) : [])].filter((item) => item.id !== referenceId).map((item) => {
@@ -98,7 +99,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
                    aria-label={t('editor.multicam.offset', { label: item.label })}
                    value={offsets[item.id] ?? 0}
                    onChange={(event) => setOffsets((current) => ({ ...current, [item.id]: Math.round(Number(event.target.value)) }))} />
-@@ -99,6 +114,13 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
+@@ -101,6 +116,13 @@ function CreateMulticam({ items }: { items: TimelineItem[] }) {
                {proposal && (proposal.sync.flags.length === 0
                  ? <span className="text-xs">{t('editor.multicam.matched', { score: Math.round(proposal.sync.score * 100) })}</span>
                  : proposal.sync.flags.map((flag) => <span key={flag} className="text-xs text-amber-500">{t(`editor.multicam.flag.${flag}`)}</span>))}
@@ -112,7 +113,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
              </div>
            </PropertyRow>
          )
-@@ -123,6 +145,29 @@ function CutControls({ groupId }: { groupId: string }) {
+@@ -125,6 +147,29 @@ function CutControls({ groupId }: { groupId: string }) {
    const angles = group?.record.angles ?? []
    const labels = useTimelineStore((s) => angles.map((angle) => s.items.find((item) => item.id === angle.itemId)?.label ?? '?').join('\u0000')).split('\u0000')
  
@@ -142,7 +143,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
    const cut = (index: number) => {
      const outcome = cutToAngle(groupId, index, usePlaybackStore.getState().currentFrame)
      if (!outcome.ok) {
-@@ -145,14 +190,19 @@ function CutControls({ groupId }: { groupId: string }) {
+@@ -147,14 +192,19 @@ function CutControls({ groupId }: { groupId: string }) {
          }
        }}
      >
@@ -170,7 +171,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
        <p className="col-span-2 text-xs text-muted-foreground">{t('editor.multicam.cutNote')}</p>
      </div>
    )
-@@ -165,6 +215,9 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+@@ -167,6 +217,9 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
      ? (tracks.find((track) => track.id === items[0]!.trackId) as { multicam?: { role: string; groupId: string } } | undefined)?.multicam
      : undefined
    const videos = items.filter((item) => item.type === 'video')
@@ -180,7 +181,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
    const canCreate = videos.length >= 2 && videos.length <= 4 && videos.length === items.filter((item) => item.type !== 'audio').length
    if (!canCreate && programGroupId?.role !== 'program') return null
  
-@@ -172,7 +225,7 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+@@ -174,7 +227,7 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
      <PropertySection title={t('editor.multicam.title')} icon={Clapperboard} defaultOpen={true}>
        {programGroupId?.role === 'program'
          ? <CutControls groupId={programGroupId.groupId} />
