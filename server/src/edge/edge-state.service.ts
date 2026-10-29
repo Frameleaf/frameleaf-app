@@ -346,8 +346,10 @@ export class EdgeStateService {
    */
   private async schemaReady(): Promise<boolean> {
     if (!this.migrated) {
-      this.migrated = await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
-        this.databaseRepository.isSchemaReady(),
+      this.migrated = await this.databaseRepository.withLock(
+        DatabaseLock.Migrations,
+        () => this.databaseRepository.isSchemaReady(),
+        { untilFree: true },
       );
       if (!this.migrated) {
         this.logger.debug('Waiting for the database migrations before starting remote access');

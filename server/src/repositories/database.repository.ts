@@ -492,11 +492,17 @@ export class DatabaseRepository {
     });
   }
 
-  async withLock<R>(lock: DatabaseLock, callback: () => Promise<R>): Promise<R> {
+  /**
+   * Runs `callback` holding a session advisory lock. The wait for the lock is bounded by the pool's
+   * lock timeout (5 s) unless `untilFree` is set: the boot migration lock is held by whichever worker
+   * migrates for as long as the migrations take, so the workers waiting for it (FL-648: on a fresh
+   * install the API worker gave up after 5 s and took the whole server down) wait until it is free.
+   */
+  async withLock<R>(lock: DatabaseLock, callback: () => Promise<R>, options: { untilFree?: boolean } = {}): Promise<R> {
     return this.asyncLock.acquire(DatabaseLock[lock], () =>
       this.db.connection().execute(async (connection) => {
         try {
-          await this.acquireLock(lock, connection);
+          await (options.untilFree ? this.acquireLockUntilFree(lock, connection) : this.acquireLock(lock, connection));
           return await callback();
         } finally {
           await this.releaseLock(lock, connection);
@@ -659,6 +665,18 @@ export class DatabaseRepository {
 
   private async acquireLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<void> {
     await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
+  }
+
+  /** `acquireLock` without the session's lock and statement timeouts; both are restored once it is held. */
+  private async acquireLockUntilFree(lock: DatabaseLock, connection: Kysely<DB>): Promise<void> {
+    await sql`SET lock_timeout = 0`.execute(connection);
+    await sql`SET statement_timeout = 0`.execute(connection);
+    try {
+      await this.acquireLock(lock, connection);
+    } finally {
+      await sql`RESET lock_timeout`.execute(connection);
+      await sql`RESET statement_timeout`.execute(connection);
+    }
   }
 
   private async acquireTryLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<boolean> {

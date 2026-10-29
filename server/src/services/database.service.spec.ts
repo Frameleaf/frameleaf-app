@@ -24,7 +24,9 @@ describe(DatabaseService.name, () => {
 
   it('boots PostgreSQL 19 prerelease with one migration chain and HNSW indexes', async () => {
     await sut.onBootstrap();
-    expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+    expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function), {
+      untilFree: true,
+    });
     expect(mocks.database.assertFrameleafDatabase).toHaveBeenCalledOnce();
     expect(mocks.database.runMigrations).toHaveBeenCalledOnce();
     expect(mocks.database.assertImportActivated).toHaveBeenCalledOnce();
