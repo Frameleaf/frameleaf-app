@@ -11,6 +11,10 @@ import {
   TRANSCRIPT_ENGINE_STRINGS,
   type TranscriptEngineString,
 } from '@frameleaf/host/transcript-strings'
+import {
+  CAPTION_STYLE_ENGINE_STRINGS,
+  type CaptionStyleEngineString,
+} from '@frameleaf/host/caption-style-strings'
 
 type EngineI18n = {
   readonly language?: string
@@ -25,6 +29,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(TRANSCRIPT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<TranscriptEngineString, string>),
+  // The Caption style card (FL-640).
+  ...(Object.fromEntries(
+    Object.entries(CAPTION_STYLE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<CaptionStyleEngineString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {
