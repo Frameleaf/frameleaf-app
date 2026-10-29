@@ -520,6 +520,7 @@ describe('/albums', () => {
         parentId: null,
         icon: null,
         color: null,
+        libraryScope: 'personal',
         sortOrder: null,
       });
     });

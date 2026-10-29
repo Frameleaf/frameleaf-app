@@ -60,7 +60,7 @@ describe('buildPageCommands', () => {
     const pages = buildPageCommands($t, context());
     const hrefOf = (id: string) => pages.find((page) => page.id === id)?.href;
 
-    expect(pages.slice(0, 3).map((page) => page.id)).toEqual(['primary:library', 'primary:studio', 'primary:activity']);
+    expect(pages.slice(0, 3).map((page) => page.id)).toEqual(['primary:library', 'primary:pro', 'primary:studio']);
     expect(hrefOf('primary:library')).toBe('/photos');
     expect(hrefOf('primary:studio')).toBe('/studio/projects');
     expect(hrefOf('primary:activity')).toBe('/activity');
