@@ -120,7 +120,7 @@ export class CaptureRepository {
     return this.db.transaction().execute(async (tx) => {
       await this.assertActor(auth, tx, Permission.CaptureCatalogRead);
       const albums = await this.writableAlbums(tx, auth)
-        .select(['album.id', 'album.albumName', 'album.parentId'])
+        .select(['album.id', 'album.albumName', 'album.parentId', 'album.icon', 'album.color'])
         .orderBy('album.albumName')
         .orderBy('album.id')
         .execute();

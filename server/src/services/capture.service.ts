@@ -41,6 +41,7 @@ export class CaptureService {
       version: 1,
       serverId,
       userId: auth.user.id,
+      userName: auth.user.name,
       maxFileBytes: limits.maxSize,
       captureSupported: true,
       cancellationSupported: true,

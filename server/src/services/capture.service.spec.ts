@@ -173,6 +173,7 @@ describe('capture application boundary', () => {
       version: 1,
       serverId: 'local-server',
       userId: auth.user.id,
+      userName: auth.user.name,
       maxFileBytes: 1024,
       captureSupported: true,
       cancellationSupported: true,

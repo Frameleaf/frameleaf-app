@@ -63,6 +63,7 @@ export class CaptureCapabilitiesDto extends createZodDto(
       version: z.literal(1).meta({ id: 'CaptureProtocolVersion' }),
       serverId: z.string(),
       userId: z.uuidv4(),
+      userName: z.string().optional().describe('Account name, shown as "Signed in as" in the browser extension'),
       maxFileBytes: z.int().min(0),
       captureSupported: z.literal(true),
       cancellationSupported: z.literal(true).optional(),
@@ -85,7 +86,9 @@ export class CaptureCatalogDto extends createZodDto(
   z
     .object({
       albums: z.array(
-        AlbumResponseSchema.pick({ id: true, albumName: true, parentId: true }).meta({ id: 'CaptureAlbumChoice' }),
+        AlbumResponseSchema.pick({ id: true, albumName: true, parentId: true, icon: true, color: true }).meta({
+          id: 'CaptureAlbumChoice',
+        }),
       ),
       tags: z.array(TagResponseSchema),
     })
