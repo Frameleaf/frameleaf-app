@@ -107,7 +107,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-641 caption languages (translated caption tracks, voice-over and the Languages card) on Stabilise; changes no composition or raster producer.
     sourceSha256 === 'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb' ||
     // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
-    sourceSha256 === 'f0ebfb9968193b891b37c0cc6f6e97b0285e964ab96a15b1a26b03e224920590'
+    sourceSha256 === '4f29387e8ae85af46c8565ffc077b463b1066d3150734d34b439c6cec2a2ee93'
   )
     return {
       ...COMPOSITION_SOURCES,

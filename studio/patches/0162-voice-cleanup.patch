@@ -617,7 +617,7 @@ diff --git a/src/features/timeline/stores/actions/edit/voice-cleanup-actions.tes
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/voice-cleanup-actions.test.ts
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,125 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -727,7 +727,11 @@ new file mode 100644
 +    useItemsStore.getState()._updateItem('a1', { sourceStart: 310, from: 100, durationInFrames: 110 })
 +    expect(applyVoiceCleanup('a1', cleaned, expected)).toBe('missing')
 +    expect(item()).toMatchObject({ mediaId: 'm1', sourceStart: 310 })
-+    useItemsStore.getState()._updateItem('a1', { sourceStart: 300, from: 90, durationInFrames: 120 })
++    // Relinked to another file with the same window.
++    useItemsStore.getState()._updateItem('a1', { sourceStart: 300, from: 90, durationInFrames: 120, mediaId: 'm2' })
++    expect(applyVoiceCleanup('a1', cleaned, expected)).toBe('missing')
++    expect(item().mediaId).toBe('m2')
++    useItemsStore.getState()._updateItem('a1', { mediaId: 'm1' })
 +    expect(applyVoiceCleanup('a1', cleaned, expected)).toBe('applied')
 +  })
 +
