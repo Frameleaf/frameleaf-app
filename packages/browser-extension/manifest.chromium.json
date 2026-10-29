@@ -23,7 +23,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "Save to Frameleaf",
-  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "host_permissions": ["https://*/*", "http://*/*"],
   "options_ui": {
     "open_in_tab": true,
     "page": "options.html"

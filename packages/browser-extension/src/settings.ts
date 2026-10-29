@@ -213,6 +213,29 @@ export async function rememberServer(origin: string, account?: string) {
   });
 }
 
+/** The collection last saved into on each server, chosen first next time. */
+const lastCollectionKey = 'frameleafLastCollectionV1';
+async function lastCollections(): Promise<Record<string, string>> {
+  await initializeStorage();
+  const stored = (await trustedStorage().get(lastCollectionKey))[
+    lastCollectionKey
+  ];
+  return stored && typeof stored === 'object'
+    ? (stored as Record<string, string>)
+    : {};
+}
+export async function lastCollection(origin: string): Promise<string> {
+  const id = (await lastCollections())[origin];
+  return typeof id === 'string' ? id : '';
+}
+export async function rememberCollection(origin: string, albumId: string) {
+  const all = await lastCollections();
+  if (all[origin] === albumId) return;
+  await trustedStorage().set({
+    [lastCollectionKey]: { ...all, [origin]: albumId },
+  });
+}
+
 /**
  * FL-655: what the popup says about the last sign-in when it opens again (Chrome closes the popup
  * while the sign-in window is open): "You're signed in" once, or the problem, with its server.

@@ -431,29 +431,6 @@ details.source[open] {
   color: var(--fl-muted);
   font-size: 13px;
 }
-.privacy {
-  display: flex;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--fl-radius-control);
-  background: var(--fl-raised);
-  color: var(--fl-muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-.privacy > .icon {
-  color: var(--fl-accent);
-}
-.privacy .link-button {
-  display: block;
-  font-size: 13px;
-}
-.preview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
 .candidate-list {
   list-style: none;
   margin: 0;
@@ -516,14 +493,6 @@ details.source[open] {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.preview-button {
-  min-height: 28px;
-  font-size: 12px;
-  font-weight: 500;
-}
-.candidate-list .error {
-  font-size: 12px;
 }
 
 /* Page link */
@@ -936,6 +905,25 @@ details.source[open] {
   .switch input,
   .switch input::after {
     transition: none;
+  }
+}
+.destination {
+  border-radius: var(--fl-radius-control);
+  transition: box-shadow var(--fl-duration-fast, 0.15s);
+}
+/* the first pick on a page points at where it will be saved */
+.destination.nudge {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fl-accent) 45%, transparent);
+  animation: destination-nudge 1s ease-in-out 2;
+}
+@keyframes destination-nudge {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--fl-accent) 20%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .destination.nudge {
+    animation: none;
   }
 }
 .connect-form {
