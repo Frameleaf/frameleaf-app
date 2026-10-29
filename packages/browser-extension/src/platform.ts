@@ -154,6 +154,10 @@ export function registerBackground(
   });
   start();
 }
+/** Runs when the browser starts with the extension already installed. */
+export function registerStartup(started: () => void) {
+  chrome.runtime.onStartup.addListener(started);
+}
 export function watchConnection(changed: () => void) {
   const listener = (
     _changes: Record<string, chrome.storage.StorageChange>,

@@ -22,10 +22,15 @@ type Connection = {
   catalog: CaptureCatalogDto | null;
   method?: ConnectionMethod;
   apiKeyId?: string;
+  /**
+   * FL-655: a paused sign-in access keeps its key only so Sign out can still remove it on the
+   * server; it is never used to save (credentialFor needs a connected status).
+   */
+  pausedToken?: string;
 };
 export type ConnectionStatus = Omit<
   Connection,
-  'version' | 'token' | 'apiKeyId'
+  'version' | 'token' | 'apiKeyId' | 'pausedToken'
 >;
 const key = 'frameleafConnectionV1';
 let secured: Promise<void> | undefined;
@@ -58,7 +63,8 @@ async function read(): Promise<Connection | null> {
     !(
       value.method === undefined || ['sign-in', 'key'].includes(value.method)
     ) ||
-    !(value.apiKeyId === undefined || typeof value.apiKeyId === 'string')
+    !(value.apiKeyId === undefined || typeof value.apiKeyId === 'string') ||
+    !(value.pausedToken === undefined || typeof value.pausedToken === 'string')
   )
     throw new CaptureFailure('credential');
   try {
@@ -102,10 +108,10 @@ export async function saveConnection(
 /** FL-655: the key and its access id, for signing out on the server. */
 export async function accessFor(binding: ServerBinding) {
   const value = await read();
-  if (!value || !value.token || !sameBinding(value.binding, binding))
-    return null;
+  const token = value?.token ?? value?.pausedToken;
+  if (!value || !token || !sameBinding(value.binding, binding)) return null;
   return {
-    token: value.token,
+    token,
     method: value.method ?? 'key',
     apiKeyId: value.apiKeyId,
   };
@@ -143,6 +149,10 @@ export async function pauseConnection(binding: ServerBinding) {
         status: 'needs-attention',
         catalog: null,
         ...(value.method && { method: value.method }),
+        ...(value.method === 'sign-in' &&
+          (value.token ?? value.pausedToken) && {
+            pausedToken: value.token ?? value.pausedToken,
+          }),
       } satisfies Connection,
     });
 }
@@ -270,4 +280,39 @@ export async function installationId(): Promise<string> {
   ).join('');
   await trustedStorage().set({ [installationKey]: id });
   return id;
+}
+
+/**
+ * FL-655: accesses this browser must still remove on the server (a sign-in it couldn't keep, or a
+ * paused access signed out while the server couldn't be reached). Each is retried on startup, on
+ * the delivery alarm and after the next sign-in, until the server removes it or says it is gone.
+ * Bounded: at most 10, and none kept longer than 30 days.
+ */
+export type PendingRemoval = { origin: string; token: string; at: number };
+const removalsKey = 'frameleafPendingRemovalsV1';
+const MAX_REMOVALS = 10;
+const REMOVAL_DAYS = 30;
+export async function pendingRemovals(): Promise<PendingRemoval[]> {
+  await initializeStorage();
+  const stored = (await trustedStorage().get(removalsKey))[removalsKey];
+  const oldest = Date.now() - REMOVAL_DAYS * 24 * 60 * 60 * 1000;
+  return (Array.isArray(stored) ? stored : []).filter(
+    (item): item is PendingRemoval =>
+      !!item &&
+      typeof item.origin === 'string' &&
+      typeof item.token === 'string' &&
+      item.token.length > 0 &&
+      item.token.length <= 4096 &&
+      Number.isSafeInteger(item.at) &&
+      item.at >= oldest,
+  );
+}
+export async function setPendingRemovals(list: PendingRemoval[]) {
+  await initializeStorage();
+  if (list.length === 0) await trustedStorage().remove(removalsKey);
+  else await trustedStorage().set({ [removalsKey]: list.slice(-MAX_REMOVALS) });
+}
+export async function addPendingRemoval(origin: string, token: string) {
+  const list = (await pendingRemovals()).filter((item) => item.token !== token);
+  await setPendingRemovals([...list, { origin, token, at: Date.now() }]);
 }

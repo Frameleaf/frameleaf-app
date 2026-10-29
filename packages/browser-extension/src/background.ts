@@ -61,12 +61,16 @@ import {
   registerDeliveryAlarm,
   openCapturePreview,
   registerBackground,
+  registerStartup,
   trustedSender,
   type ExtensionReply,
 } from './platform';
 import {
   accessFor,
+  addPendingRemoval,
   connectionStatus,
+  pendingRemovals,
+  setPendingRemovals,
   installationId,
   credentialFor,
   disconnect,
@@ -275,11 +279,15 @@ export function handleMessage(
           });
           if (!(await hasServerAccess(origin)))
             throw new CaptureFailure('permission');
+          // FL-655: a key replaces a signed-in access, which is removed on its server
+          await revokeSignedIn();
+          generation++;
           await saveConnection(binding, message.token);
           await rememberServer(origin, binding.userName);
           await setSignInNotice(null);
           await refresh();
           wake();
+          void retryRemovals();
           break;
         }
         case 'refresh':
@@ -445,6 +453,7 @@ export function handleMessage(
             'localOnly' in message && message.localOnly === true;
           if (!(await signOutCurrent(localOnly)))
             throw new CaptureFailure('signOut');
+          generation++;
           await setSignInNotice(null);
           break;
         }
@@ -541,6 +550,16 @@ async function signOutCurrent(localOnly = false): Promise<boolean> {
   const current = await connectionStatus().catch(() => null);
   if (current) {
     const access = await accessFor(current.binding).catch(() => null);
+    // A paused access can't save any more: sign out here, and remove it on the server now or later.
+    if (
+      access?.method === 'sign-in' &&
+      !localOnly &&
+      current.status !== 'connected'
+    ) {
+      await revoke(current.binding.origin, access.token);
+      await disconnect();
+      return true;
+    }
     if (access?.method === 'sign-in' && !localOnly) {
       // nothing more is sent with the key while it is being removed
       stopDelivery();
@@ -560,6 +579,54 @@ async function signOutCurrent(localOnly = false): Promise<boolean> {
   }
   await disconnect();
   return true;
+}
+/**
+ * FL-655: counts every change you make to the connection (connect, sign out, a sign-in saved), so a
+ * sign-in window that comes back after a newer change is not saved over it.
+ */
+let generation = 0;
+class Superseded extends Error {}
+/** Remove an access on the server; if it can't be reached now, keep trying later. */
+async function revoke(origin: string, token: string) {
+  const removed =
+    (await hasServerAccess(origin).catch(() => false)) &&
+    (await removeAccess(origin, token, globalThis.fetch.bind(globalThis)).catch(
+      () => false,
+    ));
+  if (!removed) await addPendingRemoval(origin, token);
+}
+/** A signed-in access about to be replaced by another connection. */
+async function revokeSignedIn() {
+  const current = await connectionStatus().catch(() => null);
+  if (!current) return;
+  const access = await accessFor(current.binding).catch(() => null);
+  if (access?.method === 'sign-in')
+    await revoke(current.binding.origin, access.token);
+}
+let retrying: Promise<void> | undefined;
+/** Retries the removals still owed; each leaves the list once the server removed it or says it's gone. */
+export function retryRemovals(): Promise<void> {
+  return (retrying ??= (async () => {
+    try {
+      const removed = new Set<string>();
+      for (const item of await pendingRemovals()) {
+        const done =
+          (await hasServerAccess(item.origin).catch(() => false)) &&
+          (await removeAccess(
+            item.origin,
+            item.token,
+            globalThis.fetch.bind(globalThis),
+          ).catch(() => false));
+        if (done) removed.add(item.token);
+      }
+      // removals added meanwhile are kept
+      await setPendingRemovals(
+        (await pendingRemovals()).filter((item) => !removed.has(item.token)),
+      );
+    } finally {
+      retrying = undefined;
+    }
+  })());
 }
 let signingIn = false;
 /**
@@ -608,7 +675,10 @@ async function signIn(message: object): Promise<ExtensionReply> {
         stopScreenshot();
         clearPreview();
         if (!(await signOutCurrent())) throw new SignInFailure('sign-out');
+        generation++;
       });
+    // a sign-out or another connection while the window is open wins over this sign-in
+    const before = generation;
     const verifier = randomText(48);
     const state = randomText(24);
     const redirectUri = signInRedirectUri();
@@ -658,6 +728,10 @@ async function signIn(message: object): Promise<ExtensionReply> {
         binding.userId !== access.userId
       )
         throw new SignInFailure('failed');
+      if (generation !== before) throw new Superseded();
+      // the access this replaces, on whichever server, is removed there
+      await revokeSignedIn();
+      generation++;
       await saveConnection(binding, access.secret, {
         method: 'sign-in',
         apiKeyId: access.apiKeyId,
@@ -668,12 +742,19 @@ async function signIn(message: object): Promise<ExtensionReply> {
       await refresh().catch(() => {});
       wake();
     });
+    void retryRemovals();
     return { ok: true, connection: await connectionStatus() };
   } catch (error) {
+    // an access the server made but this browser didn't keep is removed again, now or later
     if (exchanged && !saved)
-      await removeAccess(origin, exchanged.secret, transport).catch(
-        () => false,
-      );
+      await revoke(origin, exchanged.secret).catch(() => {});
+    if (error instanceof Superseded)
+      return {
+        ok: false,
+        error:
+          'You signed out or connected again while signing in, so this sign-in wasn’t kept.',
+        connection: await connectionStatus().catch(() => null),
+      };
     const problem: SignInProblem =
       error instanceof SignInFailure ? error.problem : 'failed';
     await setSignInNotice({ kind: 'problem', problem, origin }).catch(() => {});
@@ -843,7 +924,12 @@ async function handleMenu(
   });
 }
 registerCaptureMenus(handleMenu);
-registerDeliveryAlarm(wake);
+registerDeliveryAlarm(() => {
+  wake();
+  void retryRemovals().catch(() => {});
+});
+// FL-655: removals still owed are retried when the browser starts, on the alarm and after connecting
+registerStartup(() => void retryRemovals().catch(() => {}));
 registerBackground(
   handleMessage,
   async () => {

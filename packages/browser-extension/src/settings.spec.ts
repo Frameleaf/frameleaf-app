@@ -151,6 +151,14 @@ describe('trusted connection storage', () => {
     expect(await settings.connectionStatus()).toEqual(
       expect.objectContaining({ status: 'needs-attention', method: 'sign-in' }),
     );
+    // the paused key can't save, and isn't shown, but Sign out can still remove it on the server
+    await expect(settings.credentialFor(binding)).rejects.toThrow();
+    expect(JSON.stringify(await settings.connectionStatus())).not.toContain(
+      'signed-in-key',
+    );
+    expect(await settings.accessFor(binding)).toEqual(
+      expect.objectContaining({ token: 'signed-in-key', method: 'sign-in' }),
+    );
   });
   it('lists recently used servers newest first, without duplicates (FL-655)', async () => {
     const settings = await import('./settings');

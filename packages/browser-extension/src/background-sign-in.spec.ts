@@ -252,6 +252,123 @@ describe('Sign in with your Frameleaf account (FL-655)', () => {
     expect(values.frameleafConnectionV1).toBeUndefined();
   });
 
+  it('keeps a removal it couldn’t make, and makes it later', async () => {
+    vi.mocked(connectServer).mockResolvedValue({
+      ...binding,
+      serverId: 'another-server',
+    });
+    const reachable = fetchMock.getMockImplementation() as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') throw new TypeError('offline');
+      return reachable(url, init);
+    });
+    const { handleMessage, retryRemovals } = await import('./background');
+
+    await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example' },
+      popup,
+    );
+    expect(values.frameleafPendingRemovalsV1).toEqual([
+      expect.objectContaining({
+        origin: 'https://photos.example',
+        token: 'access-key',
+      }),
+    ]);
+
+    // still unreachable: kept
+    await retryRemovals();
+    expect(values.frameleafPendingRemovalsV1).toHaveLength(1);
+    // reachable again: removed on the server and dropped
+    fetchMock.mockImplementation(reachable);
+    await retryRemovals();
+    expect(values.frameleafPendingRemovalsV1).toBeUndefined();
+  });
+
+  it('drops a removal once the server says the access is already gone', async () => {
+    values.frameleafPendingRemovalsV1 = [
+      { origin: 'https://photos.example', token: 'old', at: Date.now() },
+    ];
+    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
+    const { retryRemovals } = await import('./background');
+
+    await retryRemovals();
+
+    expect(values.frameleafPendingRemovalsV1).toBeUndefined();
+  });
+
+  it('doesn’t save a sign-in that comes back after you signed out, and removes its access', async () => {
+    const { handleMessage } = await import('./background');
+    await handleMessage(
+      {
+        type: 'connect',
+        address: 'https://photos.example',
+        token: 'hand-made',
+      },
+      popup,
+    );
+    let finish!: (value: string) => void;
+    launch.mockImplementation(
+      ({ url }: { url: string }) =>
+        new Promise<string>((resolve) => {
+          finish = () =>
+            resolve(
+              `${REDIRECT}?code=the-code&state=${new URL(url).searchParams.get('state')}`,
+            );
+        }),
+    );
+
+    const pending = handleMessage(
+      { type: 'sign-in', address: 'https://photos.example' },
+      popup,
+    );
+    await vi.waitFor(() => expect(launch).toHaveBeenCalled());
+    await handleMessage({ type: 'disconnect' }, popup);
+    finish('');
+    const reply = await pending;
+
+    expect(reply).toEqual(expect.objectContaining({ ok: false }));
+    expect(values.frameleafConnectionV1).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://photos.example/api/browser-extension/sign-in',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: { 'x-api-key': 'access-key' },
+      }),
+    );
+    // and it isn't reported as a problem with the server
+    expect(values.frameleafSignInNoticeV1).toBeUndefined();
+  });
+
+  it('signing out of a paused access still removes it on the server', async () => {
+    const { handleMessage } = await import('./background');
+    await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example' },
+      popup,
+    );
+    const settings = await import('./settings');
+    await settings.pauseConnection(binding);
+    expect(await settings.credentialFor(binding).catch(() => 'refused')).toBe(
+      'refused',
+    );
+
+    const reply = await handleMessage(
+      { type: 'sign-in', address: 'https://photos.example', switching: true },
+      popup,
+    );
+
+    expect(reply).toEqual(expect.objectContaining({ ok: true }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://photos.example/api/browser-extension/sign-in',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: { 'x-api-key': 'access-key' },
+      }),
+    );
+  });
+
   it('closing the window is cancelling, and nothing is saved', async () => {
     launch.mockRejectedValue(new Error('The user did not approve access.'));
     const { handleMessage } = await import('./background');
