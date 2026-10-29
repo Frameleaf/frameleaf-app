@@ -13,7 +13,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import userEvent from '@testing-library/user-event';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
-import { resetAnnotationsRegistry } from '$lib/frameleaf/boards-annotations-store.svelte';
+import { acquireAnnotations, resetAnnotationsRegistry } from '$lib/frameleaf/boards-annotations-store.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -483,6 +483,35 @@ describe('LibraryWorkInspector', () => {
         await waitFor(() =>
           expect(within(onA).queryByText('frameleaf_boards_annotations_save_failed')).not.toBeInTheDocument(),
         );
+      });
+
+      it('reads the annotations once per selection, and never retries a failed read on its own', async () => {
+        // the picture is already registered, as when it is shown again (another view still has it open)
+        const asset = timelineAssetFactory.build();
+        acquireAnnotations(asset.id);
+        sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document());
+        const view = render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        await screen.findByTestId('boards-annotations');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(1);
+        view.unmount();
+
+        const failing = timelineAssetFactory.build();
+        acquireAnnotations(failing.id);
+        sdkMock.getAssetInfo.mockResolvedValue(picture(failing.id));
+        sdkMock.getAssetAnnotations.mockClear();
+        sdkMock.getAssetAnnotations.mockRejectedValue(new Error('offline'));
+        render(LibraryWorkInspector, { asset: failing, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+        expect(await screen.findByText('frameleaf_boards_annotations_unavailable')).toBeInTheDocument();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(1);
+
+        // Retry is the person's choice
+        sdkMock.getAssetAnnotations.mockResolvedValue(document());
+        await fireEvent.click(screen.getByRole('button', { name: /retry|try/i }));
+        expect(await screen.findByTestId('boards-annotations')).toBeInTheDocument();
+        expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(2);
       });
 
       it('offers Annotate on an empty picture and opens the Boards viewer from View large', async () => {

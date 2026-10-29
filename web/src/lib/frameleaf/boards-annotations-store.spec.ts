@@ -230,4 +230,22 @@ describe('Boards annotations save state', () => {
     await state.flush();
     expect(saves().map(({ sourceRevision }) => sourceRevision)).toEqual(['rev-1', 'rev-2']);
   });
+
+  it('shows a change as not saved, not as reloaded, when the read after a 409 fails', async () => {
+    const state = await open('asset-1');
+    sdkMock.replaceAssetAnnotations.mockRejectedValueOnce(conflict());
+    sdkMock.getAssetAnnotations.mockRejectedValueOnce(new Error('offline'));
+    state.change([item('a'), item('b')]);
+    await state.flush();
+    expect(state).toMatchObject({ reloaded: false, saveFailed: true });
+    expect(ids(state.items)).toEqual(['a', 'b']);
+
+    // Retry tries again: the server still refuses it, and this time the read works
+    sdkMock.replaceAssetAnnotations.mockRejectedValueOnce(conflict());
+    read('rev-2', ['a']);
+    state.retry();
+    await state.flush();
+    expect(state).toMatchObject({ reloaded: true, saveFailed: false });
+    expect(ids(state.items)).toEqual(['a']);
+  });
 });

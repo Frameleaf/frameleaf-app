@@ -25,7 +25,7 @@
     type BoardsAnnotationsState,
   } from '$lib/frameleaf/boards-annotations-store.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { getExifRating } from '$lib/frameleaf/rating';
   import { formatDuration, cameraLabel, dimensionsLabel } from '$lib/frameleaf/viewer-headline';
   import { locationLabel } from '$lib/frameleaf/info-panel';
@@ -168,10 +168,15 @@
       annotations = null;
       return;
     }
-    // shared with every other view of this picture, so a save that failed earlier shows here with Retry
-    const next = acquireAnnotations(id);
+    // Shared with every other view of this picture, so a save that failed earlier shows here with
+    // Retry. Untracked: reading the annotations reads their status, and this effect must run again
+    // only when the picture changes, never because a read finished or failed.
+    const next = untrack(() => {
+      const state = acquireAnnotations(id);
+      void state.load();
+      return state;
+    });
     annotations = next;
-    void next.load();
     return () => void releaseAnnotations(next);
   });
 

@@ -57,18 +57,23 @@ export class BoardsAnnotationsState {
     if (this.status !== 'ready') {
       this.status = 'loading';
     }
-    this.#queue = this.#queue.then(() => this.#read());
+    this.#queue = this.#queue.then(async () => {
+      await this.#read();
+    });
     return this.#queue;
   }
 
-  async #read() {
+  /** Whether the annotations were read. */
+  async #read(): Promise<boolean> {
     try {
       const document = await getAssetAnnotations({ ...authManager.params, id: this.assetId });
       this.#apply(document);
+      return true;
     } catch {
       if (this.status !== 'ready') {
         this.status = 'failed';
       }
+      return false;
     }
   }
 
@@ -138,8 +143,12 @@ export class BoardsAnnotationsState {
       if (isConflict(error)) {
         // The picture changed after these positions were read, so they may not fit it any more.
         // Nothing was saved: read again, which drops changes built on the old revision, and say so.
-        await this.#read();
-        this.reloaded = true;
+        // If that read fails too, the change is still waiting: show it as not saved, with Retry.
+        if (await this.#read()) {
+          this.reloaded = true;
+        } else {
+          this.saveFailed = true;
+        }
         return;
       }
       // the change stays waiting for Retry, unless a newer one has replaced it
