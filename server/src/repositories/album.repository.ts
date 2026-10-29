@@ -343,6 +343,8 @@ export class AlbumRepository {
       /** FL-647: only albums whose name contains this text, ignoring case */
       search?: string;
       take?: number;
+      /** albums to leave out before `take` applies (smart albums the person hid) */
+      excludeIds?: string[];
       libraryScope?: LibraryViewScope;
     } = {},
   ): Promise<MapAlbumDto[]> {
@@ -352,6 +354,7 @@ export class AlbumRepository {
       .select(withSharedLink)
       .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
       .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
+      .$if(!!options.excludeIds?.length, (qb) => qb.where('album.id', 'not in', options.excludeIds!))
       .$if(!!options.search, (qb) =>
         qb.where(sql<boolean>`strpos(lower("album"."albumName"), lower(${options.search})) > 0`),
       )

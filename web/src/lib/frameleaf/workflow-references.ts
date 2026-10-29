@@ -1,4 +1,5 @@
 import { getAllAlbums, getTagById, searchTags } from '@frameleaf/sdk';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 
 /** The kinds of identifiers a workflow parameter can pick from (its schema's `uiHint.type`). */
 export type WorkflowReferenceKind = 'TagId' | 'AlbumId';
@@ -10,11 +11,15 @@ export const WORKFLOW_REFERENCE_RESULTS = 20;
 export const isWorkflowReferenceKind = (value: unknown): value is WorkflowReferenceKind =>
   value === 'TagId' || value === 'AlbumId';
 
-// Names already read on this page, so a saved workflow's choices are resolved once.
+// Names already read on this page, so a saved workflow's choices are resolved once. They are kept per
+// account: a lookup is filed under the account that started it, so a response that lands after a
+// sign-out or account switch can never answer the next account.
 const names = new Map<string, string>();
-const remember = (kind: WorkflowReferenceKind, items: WorkflowReference[]) => {
+const account = () => (authManager.authenticated ? authManager.user.id : '');
+const key = (owner: string, kind: WorkflowReferenceKind, id: string) => `${owner}:${kind}:${id}`;
+const remember = (owner: string, kind: WorkflowReferenceKind, items: WorkflowReference[]) => {
   for (const item of items) {
-    names.set(`${kind}:${item.id}`, item.label);
+    names.set(key(owner, kind, item.id), item.label);
   }
   return items;
 };
@@ -28,16 +33,19 @@ export const searchWorkflowReferences = async (
   text: string,
   signal?: AbortSignal,
 ): Promise<WorkflowReference[]> => {
+  const owner = account();
   const search = text.trim() || undefined;
   if (kind === 'TagId') {
     const tags = await searchTags({ search, take: WORKFLOW_REFERENCE_RESULTS }, { signal });
     return remember(
+      owner,
       kind,
       tags.map((tag) => ({ id: tag.id, label: tag.value })),
     );
   }
   const albums = await getAllAlbums({ search, take: WORKFLOW_REFERENCE_RESULTS }, { signal });
   return remember(
+    owner,
     kind,
     albums.map((album) => ({ id: album.id, label: album.albumName })),
   );
@@ -48,17 +56,18 @@ export const resolveWorkflowReferences = async (
   kind: WorkflowReferenceKind,
   ids: readonly string[],
 ): Promise<WorkflowReference[]> => {
-  const unknown = [...new Set(ids)].filter((id) => !names.has(`${kind}:${id}`));
+  const owner = account();
+  const unknown = [...new Set(ids)].filter((id) => !names.has(key(owner, kind, id)));
   await Promise.all(
     unknown.map(async (id) => {
       try {
         if (kind === 'TagId') {
           const tag = await getTagById({ id });
-          remember(kind, [{ id: tag.id, label: tag.value }]);
+          remember(owner, kind, [{ id: tag.id, label: tag.value }]);
         } else {
           const [album] = await getAllAlbums({ id });
           if (album) {
-            remember(kind, [{ id: album.id, label: album.albumName }]);
+            remember(owner, kind, [{ id: album.id, label: album.albumName }]);
           }
         }
       } catch {
@@ -67,7 +76,7 @@ export const resolveWorkflowReferences = async (
     }),
   );
   return ids.flatMap((id) => {
-    const label = names.get(`${kind}:${id}`);
+    const label = names.get(key(owner, kind, id));
     return label === undefined ? [] : [{ id, label }];
   });
 };

@@ -38,7 +38,7 @@ describe('WorkflowParameter tag and album pickers (FL-647)', () => {
     render(WorkflowParameter, { schema: tags, value: [TRIP, GONE], label: 'Tags', onChange: vi.fn() });
 
     expect(await screen.findByText('Travel/Trip')).toBeInTheDocument();
-    expect(await screen.findByText(new RegExp(GONE))).toBeInTheDocument();
+    expect(await screen.findByText(`Unavailable selection: ${GONE}`)).toBeInTheDocument();
     expect(sdkMock.getTagById).toHaveBeenCalledTimes(2);
     expect(sdkMock.searchTags).not.toHaveBeenCalled();
   });

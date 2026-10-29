@@ -25,7 +25,7 @@
     updateWorkflowParameter,
     type WorkflowParameterSchema,
   } from '$lib/frameleaf/workflows';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
@@ -59,7 +59,10 @@
   const referenceKind = $derived(isWorkflowReferenceKind(schema.uiHint?.type) ? schema.uiHint.type : undefined);
   const referenceNames = new SvelteMap<string, string>();
   const attempted = new Set<string>();
-  let resolving = $state(false);
+  // lookups still out; overlapping lookups each count, so the last one to finish clears it
+  let pending = $state(0);
+  const resolving = $derived(pending > 0);
+  let destroyed = false;
   let matches = $state<ComboBoxOption[]>([]);
   let picked = $state<ComboBoxOption | undefined>();
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -82,24 +85,21 @@
     for (const itemId of ids) {
       attempted.add(itemId);
     }
-    let current = true;
-    resolving = true;
+    untrack(() => pending++);
+    // a result always lands (the ids are not asked again), unless the component is gone
     void resolveWorkflowReferences(kind, ids)
       .then((found) => {
-        if (current) {
+        if (!destroyed) {
           for (const item of found) {
             referenceNames.set(item.id, item.label);
           }
         }
       })
       .finally(() => {
-        if (current) {
-          resolving = false;
+        if (!destroyed) {
+          pending--;
         }
       });
-    return () => {
-      current = false;
-    };
   });
 
   const searchReferences = (query: string) => {
@@ -139,6 +139,7 @@
   };
 
   onDestroy(() => {
+    destroyed = true;
     clearTimeout(searchTimer);
     searchAbort?.abort();
   });
