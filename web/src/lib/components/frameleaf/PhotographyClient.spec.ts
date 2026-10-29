@@ -455,7 +455,9 @@ it('loads both comparison previews together and drops a reply for an earlier com
   const pending: ((blob: Blob) => void)[] = [];
   vi.mocked(galleryMedia).mockImplementation((_gallery, _id, kind) =>
     kind === 'preview'
-      ? new Promise((resolve) => pending.push(resolve))
+      ? new Promise((resolve) => {
+          pending.push(resolve);
+        })
       : Promise.resolve(new Blob(['jpeg'], { type: 'image/jpeg' })),
   );
   await fireEvent.click(screen.getByRole('checkbox', { name: 'Compare photo 7' }));

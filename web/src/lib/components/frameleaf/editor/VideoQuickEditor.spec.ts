@@ -474,7 +474,10 @@ describe('HDR and Dolby Vision clips (FL-113)', () => {
     const drawImage = vi.fn();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as never);
     const frames: FrameRequestCallback[] = [];
-    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback));
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
     vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
     await opened();
     const element = await waitFor(() => document.querySelector('video')!);
