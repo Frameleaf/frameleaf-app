@@ -1003,10 +1003,22 @@ export class MachineLearningRepository implements RestorationInference {
         }
         throw new Error(`The translation worker answered ${response.status}`);
       }
-      const text = await response.text();
-      bytesReceived = Buffer.byteLength(text);
-      if (bytesReceived > TRANSLATION_TOTAL_BYTES) throw new Error('The translation is too large');
-      result = translationResultSchema.parse(JSON.parse(text));
+      // Bound the answer while it is read, before any JSON allocation.
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('The translation worker sent no answer');
+      const chunks: Uint8Array[] = [];
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > TRANSLATION_TOTAL_BYTES) throw new Error('The translation is too large');
+          chunks.push(value);
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      result = translationResultSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       if (result.translations.length !== options.lines.length) {
         throw new Error('The translation worker did not answer every line');
       }

@@ -68,6 +68,24 @@ describe('MachineLearningRepository.translateCaptions', () => {
     );
   });
 
+  it('stops reading an answer larger than any caption translation', async () => {
+    const chunk = new Uint8Array(1024 * 1024).fill(32);
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })));
+    await expect(sut.translateCaptions(selection, options, new AbortController().signal)).rejects.toThrow(
+      'The translation is too large',
+    );
+    // 16 MiB is the bound: reading stops just past it instead of buffering an endless answer.
+    expect(sent).toBeLessThan(20);
+    expect(selection.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
+  });
+
   it('refuses a malformed answer and other failures', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer({ translations: 'nope' })));
     await expect(sut.translateCaptions(selection, options, new AbortController().signal)).rejects.toThrow();
