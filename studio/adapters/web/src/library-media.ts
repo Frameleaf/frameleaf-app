@@ -471,6 +471,8 @@ export function createLibraryMediaSeeder(options: {
       for (const asset of assets) {
         if (removed.delete(asset.id)) options.onAvailabilityChange?.(asset.id, true)
         seeded.delete(asset.id)
+        // A restored record starts afresh, so a later HDR report marks it again.
+        hdrMarked.delete(asset.id)
       }
       return this.seed(assets)
     },

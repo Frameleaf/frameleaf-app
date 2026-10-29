@@ -201,6 +201,25 @@ describe('library media across editor remounts', () => {
     }
   })
 
+  it('marks a restored item as HDR again when the server reports it after the restore (FL-636)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-lib-hdr', onChange: () => {} })
+    try {
+      await media.seed([{ ...libraryAsset, hdr: true }])
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBe('hdr')
+      await removeMediaFromProject('fl-lib-hdr', LIBRARY)
+      await deleteMedia(LIBRARY)
+      media.forget(LIBRARY)
+      // Restored before the server names it HDR again: a plain record.
+      await media.restore([libraryAsset])
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBeUndefined()
+      // The next report marks it.
+      await media.seed([{ ...libraryAsset, hdr: true }])
+      expect((await getMedia(LIBRARY))?.colorTransfer).toBe('hdr')
+    } finally {
+      media.dispose()
+    }
+  })
+
   it('records a library original the server reports as HDR, also after it was seeded (FL-97)', async () => {
     const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-hdr', onChange: () => {} })
     try {
