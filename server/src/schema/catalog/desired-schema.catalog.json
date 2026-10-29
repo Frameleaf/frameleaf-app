@@ -46091,419 +46091,79 @@
       "synchronize": true
     },
     {
-      "name": "eagle_import",
+      "name": "asset_annotation",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
-          "name": "id",
-          "tableName": "eagle_import",
+          "name": "assetId",
+          "tableName": "asset_annotation",
           "nullable": false,
           "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "rootId",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "relativePath",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "libraryPath",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "libraryName",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "fingerprint",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "target",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "existingTop",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "default": "'[]'::jsonb",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "status",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "default": "'running'::character varying",
           "synchronize": true
         },
         {
           "type": "integer",
           "primary": false,
-          "name": "total",
-          "tableName": "eagle_import",
+          "name": "version",
+          "tableName": "asset_annotation",
           "nullable": false,
           "isArray": false,
           "numericPrecision": 32,
           "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "rootAlbumId",
-          "tableName": "eagle_import",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "albums",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "default": "'{}'::jsonb",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "tagIds",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "default": "'{}'::jsonb",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "failed",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "default": "'[]'::jsonb",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "recent",
-          "tableName": "eagle_import",
-          "nullable": false,
-          "isArray": false,
-          "default": "'[]'::jsonb",
           "synchronize": true
         },
         {
           "type": "text",
           "primary": false,
-          "name": "error",
-          "tableName": "eagle_import",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "leaseOwner",
-          "tableName": "eagle_import",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "leaseExpiresAt",
-          "tableName": "eagle_import",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "eagle_import",
+          "name": "sourceRevision",
+          "tableName": "asset_annotation",
           "nullable": false,
           "isArray": false,
-          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "items",
+          "tableName": "asset_annotation",
+          "nullable": false,
+          "isArray": false,
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
           "name": "updatedAt",
-          "tableName": "eagle_import",
+          "tableName": "asset_annotation",
           "nullable": false,
           "isArray": false,
           "default": "now()",
           "synchronize": true
         }
       ],
-      "indexes": [
-        {
-          "name": "eagle_import_ownerId_idx",
-          "definition": "CREATE INDEX \"eagle_import_ownerId_idx\" ON public.eagle_import USING btree (\"ownerId\")",
-          "tableName": "eagle_import",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "eagle_import_active_library_uq",
-          "definition": "CREATE UNIQUE INDEX eagle_import_active_library_uq ON public.eagle_import USING btree (\"ownerId\", \"libraryPath\") WHERE ((status)::text = ANY ((ARRAY['running'::character varying, 'stopping'::character varying])::text[]))",
-          "tableName": "eagle_import",
-          "columnNames": [
-            "ownerId",
-            "libraryPath"
-          ],
-          "using": "btree",
-          "where": "((status)::text = ANY ((ARRAY['running'::character varying, 'stopping'::character varying])::text[]))",
-          "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "eagle_import_rootAlbumId_idx",
-          "definition": "CREATE INDEX \"eagle_import_rootAlbumId_idx\" ON public.eagle_import USING btree (\"rootAlbumId\")",
-          "tableName": "eagle_import",
-          "columnNames": [
-            "rootAlbumId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "eagle_import_ownerId_createdAt_idx",
-          "definition": "CREATE INDEX \"eagle_import_ownerId_createdAt_idx\" ON public.eagle_import USING btree (\"ownerId\", \"createdAt\")",
-          "tableName": "eagle_import",
-          "columnNames": [
-            "ownerId",
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
+      "indexes": [],
       "triggers": [],
       "constraints": [
         {
           "type": "primary-key",
-          "name": "eagle_import_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "eagle_import",
+          "name": "asset_annotation_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_annotation",
           "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "eagle_import_status_check",
-          "definition": "CHECK (((status)::text = ANY ((ARRAY['running'::character varying, 'stopping'::character varying, 'stopped'::character varying, 'finished'::character varying])::text[])))",
-          "tableName": "eagle_import",
-          "expression": "(((status)::text = ANY ((ARRAY['running'::character varying, 'stopping'::character varying, 'stopped'::character varying, 'finished'::character varying])::text[])))",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "eagle_import_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "eagle_import",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "eagle_import_rootAlbumId_fkey",
-          "definition": "FOREIGN KEY (\"rootAlbumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "eagle_import",
-          "columnNames": [
-            "rootAlbumId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "eagle_import_item",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "eagle_import_item",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "importId",
-          "tableName": "eagle_import_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "itemId",
-          "tableName": "eagle_import_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "eagle_import_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "duplicate",
-          "tableName": "eagle_import_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "eagle_import_item",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "eagle_import_item_importId_idx",
-          "definition": "CREATE INDEX \"eagle_import_item_importId_idx\" ON public.eagle_import_item USING btree (\"importId\")",
-          "tableName": "eagle_import_item",
-          "columnNames": [
-            "importId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "eagle_import_item_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "eagle_import_item",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "eagle_import_item_importId_itemId_uq",
-          "definition": "UNIQUE (\"importId\", \"itemId\")",
-          "tableName": "eagle_import_item",
-          "columnNames": [
-            "importId",
-            "itemId"
+            "assetId"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "eagle_import_item_importId_fkey",
-          "definition": "FOREIGN KEY (\"importId\") REFERENCES eagle_import(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "eagle_import_item",
+          "name": "asset_annotation_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_annotation",
           "columnNames": [
-            "importId"
+            "assetId"
           ],
-          "referenceTableName": "eagle_import",
+          "referenceTableName": "asset",
           "referenceColumnNames": [
             "id"
           ],

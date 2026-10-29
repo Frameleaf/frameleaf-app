@@ -125,6 +125,8 @@ const SHARED_LINK_ROUTES = new Set([
   'GET assets/:id/filmstrip/sprite',
   'GET assets/:id/original',
   // the viewer's colours follow the thumbnail's access
+  // Boards annotations follow the picture's access, as its palette does (FL-652)
+  'GET assets/:id/annotations',
   'GET assets/:id/palette',
   'GET assets/:id/thumbnail',
   'GET assets/:id/video/playback',

@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "a55eb1501a3ce55954dbc1453260469aafdf217b",
+  "sourceCommit": "817a12033d8b8a5b395ed5dbda0b70f857d5a460",
   "sourceHashes": {
     "src/enum.ts": "d34b6a42251d64c2b8f690255cde86cfda0c7103d58658aba1ef73c85c100197",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -7,7 +7,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "97580740af21afbf5abc0617b1110b3700223694584e6e109ef8b3ceb63d1818",
-    "src/schema/index.ts": "59ffddfcfc5bb1f857f3be04897762a39f997bedb1358df31b8384acec7dac52",
+    "src/schema/index.ts": "d98ae630529b1a515e1af06a00d5962dc863edc020494a0248f61af535952f0c",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -20,6 +20,7 @@
     "src/schema/tables/album-user.table.ts": "ab8f99553f854f0f63ee0c0de597281f7226bb28e772d1e928333369fc8e3513",
     "src/schema/tables/album.table.ts": "417f1ecbd009818fd7b2de515c2ecc6a88210b9b2c09bb79bfaa30153dbea07b",
     "src/schema/tables/api-key.table.ts": "e828609d4c58ca96edaf7eba013c4be8d7699d16ea83125660927bc6d0f2a4ca",
+    "src/schema/tables/asset-annotation.table.ts": "320093d2204398a21ee6e8cd1b31200b27e847023566bfea92b40d372a6dde5f",
     "src/schema/tables/asset-audit.table.ts": "f2c3a79bf9d93b8d8bebd9f8867ff3c3182f29174f16360ad0f1e7da1da8effd",
     "src/schema/tables/asset-av.table.ts": "8fc3c04c087336d778a4d70eef05057bae92b1a7c391b07a6fd9ab8d770a86bf",
     "src/schema/tables/asset-backup-deletion.table.ts": "e294b543c4291a6d3b2a686b58b6145713de8addb463a22f196d35f18ad9d8ad",
@@ -64,7 +65,6 @@
     "src/schema/tables/desktop-worker-session.table.ts": "b3954a978e49bcc37946cdcd0a668e06f5fae2fdb02d91645f798543081e0fcd",
     "src/schema/tables/develop-batch.table.ts": "f3b3cd6db414b659b6ee97444b34b6c347f863786f212a47dc795fb9702f5f4b",
     "src/schema/tables/duplicate-decision.table.ts": "40e198b76121bafe69c17f282136a480e78658c2f3efcc884987fe56c4cd4316",
-    "src/schema/tables/eagle-import.table.ts": "83ff2d9755ea335e9d36caef5ffb8df9e46af9bbdbf90cdc5f18215d3c0a19a5",
     "src/schema/tables/face-search.table.ts": "dcf3d20474ef65a7fc155081d9b04a5151be688268cfd113df1cf2e040f0bde9",
     "src/schema/tables/geodata-places.table.ts": "2c0be153c56497bfa21053ce9834ae8a6e4c6ae3c7677643302f44ce5d0c333e",
     "src/schema/tables/icloud-edit-authority.table.ts": "ba14f25a37c620555ca64a52d2568b08cd23353d8c88ff8c033b028749b312e5",
@@ -153,6 +153,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "dab7e148743ff869c0f6fb0697703b2360faf9cf9809b94009a4b3e6cf42c397",
-  "rawMetadataSha256": "3eec7b47f3c3c4c5080447f0898ab28c85b4acc5206bfee727fc98bd9f5dab92"
+  "dumpSha256": "ae1ea8780856ac670f007b5ae59370e4f7627964c33dc626654ea308a4e624ee",
+  "rawMetadataSha256": "d29a3d24b9ab4d97f9f55309be51666edd43cd2a5c4c7b4154e26cb3923b02b3"
 }

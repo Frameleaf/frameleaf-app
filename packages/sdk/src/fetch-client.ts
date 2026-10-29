@@ -5307,6 +5307,48 @@ export type AssetAddedDateDto = {
     /** A time in the past */
     addedAt: string;
 };
+export type AssetAnnotationGeometry = {
+    /** Arrows only: where the arrow points */
+    endX?: number;
+    /** Arrows only: where the arrow points */
+    endY?: number;
+    /** Rectangles only */
+    height?: number;
+    /** Rectangles only */
+    width?: number;
+    /** Left edge of a rectangle, tail of an arrow, or the start of a text label */
+    x: number;
+    /** Top edge of a rectangle, tail of an arrow, or the baseline of a text label */
+    y: number;
+};
+export type AssetAnnotationItem = {
+    geometry: AssetAnnotationGeometry;
+    id: string;
+    kind: AssetAnnotationKind;
+    note?: string;
+    /** Set when the annotation was brought over from Eagle */
+    origin?: AssetAnnotationOrigin;
+    /** Text annotations only: the words drawn */
+    text?: string;
+};
+export type AssetAnnotationsDto = {
+    /** Whether the caller may replace these annotations; only the owner can */
+    canEdit: boolean;
+    items: AssetAnnotationItem[];
+    /** True when the picture has changed (for example cropped) since the annotations were saved */
+    sourceChanged: boolean;
+    /** Fingerprint of the picture the annotations were drawn on */
+    sourceRevision: string;
+    /** When the annotations were last saved; null when there are none */
+    updatedAt: string | null;
+    version: AssetAnnotationsVersion;
+};
+export type AssetAnnotationsUpdateDto = {
+    items: AssetAnnotationItem[];
+    /** The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved, unless this is the revision already stored with the annotations: they are then saved and stay marked as drawn on the older picture. After a 409, read the annotations again. */
+    sourceRevision: string;
+    version: AssetAnnotationsVersion;
+};
 export type CastMediaUrlCreateDto = {
     kind: CastMediaKind;
 };
@@ -7732,7 +7774,7 @@ export type DownloadArchiveDto = {
     bookmarkIds?: string[];
     /** Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals */
     edited?: boolean;
-    /** Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only */
+    /** Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only */
     includeLibraryMetadata?: boolean;
     /** Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no) */
     includeSidecar?: boolean;
@@ -23398,6 +23440,40 @@ export function setAssetAddedDate({ id, assetAddedDateDto }: {
     })));
 }
 /**
+ * Read the Boards annotations drawn over a picture
+ */
+export function getAssetAnnotations({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetAnnotationsDto;
+    }>(`/assets/${encodeURIComponent(id)}/annotations${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Replace the Boards annotations drawn over a picture
+ */
+export function replaceAssetAnnotations({ id, assetAnnotationsUpdateDto }: {
+    id: string;
+    assetAnnotationsUpdateDto: AssetAnnotationsUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetAnnotationsDto;
+    }>(`/assets/${encodeURIComponent(id)}/annotations`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: assetAnnotationsUpdateDto
+    })));
+}
+/**
  * Create a Cast media URL
  */
 export function createCastMediaUrl({ id, castMediaUrlCreateDto }: {
@@ -36482,6 +36558,17 @@ export enum CloudAvailability {
     NotConfigured = "not-configured",
     PausedKeyUnloaded = "paused-key-unloaded",
     Ready = "ready"
+}
+export enum AssetAnnotationKind {
+    Rect = "rect",
+    Arrow = "arrow",
+    Text = "text"
+}
+export enum AssetAnnotationOrigin {
+    Eagle = "eagle"
+}
+export enum AssetAnnotationsVersion {
+    $1 = 1
 }
 export enum CastMediaKind {
     Original = "original",

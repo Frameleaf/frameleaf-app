@@ -8,6 +8,7 @@ import { AnalyticsRepository } from 'src/repositories/analytics.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
+import { AssetAnnotationRepository } from 'src/repositories/asset-annotation.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
@@ -144,6 +145,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
   SpeechRepository,
+  AssetAnnotationRepository,
   AssetPaletteRepository,
   CaptureRepository,
   BrowserExtensionSignInRepository,
