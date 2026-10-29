@@ -45,6 +45,11 @@ export interface EagleImportRunOptions {
   concurrency?: number;
   annotations?: boolean;
   now?: () => Date;
+  /**
+   * Whether the account that started the import is still the one signed in. The import stops
+   * before the next item once it isn't, so nothing is sent into another account's library.
+   */
+  isCurrent?: () => boolean;
 }
 
 const TAG_BATCH = 100;
@@ -71,6 +76,8 @@ export class EagleImportRun implements EagleRunStatus {
   #record: EagleImportRecord;
   #options: EagleImportRunOptions;
   #stopRequested = false;
+  /** Writing the record failed; the import carries on, and duplicates are still found on a later run. */
+  #persist = true;
   #finished: Promise<void> | undefined;
   #collectionNames = new Map<string, string>();
 
@@ -124,14 +131,60 @@ export class EagleImportRun implements EagleRunStatus {
     }
   }
 
+  /**
+   * Writes the record. It is best-effort: a browser that can't store it (blocked storage, some
+   * private windows) still imports, it just can't resume without reading the files again.
+   */
   async #save() {
+    if (!this.#persist) {
+      return;
+    }
     this.#record.updatedAt = (this.#options.now?.() ?? new Date()).toISOString();
-    await this.#options.store.save(this.#record);
+    try {
+      await this.#options.store.save(this.#record);
+    } catch {
+      this.#persist = false;
+    }
+  }
+
+  async #saveOutcome(itemId: string, outcome: EagleItemOutcome) {
+    if (!this.#persist) {
+      return;
+    }
+    try {
+      await this.#options.store.saveOutcome(this.key, itemId, outcome);
+    } catch {
+      this.#persist = false;
+    }
+  }
+
+  /**
+   * A fresh import replaces any earlier record of the same library, so its old per-item rows can't
+   * make this run skip items. If they can't be removed, nothing is written for this run, rather
+   * than mixing new rows with old ones.
+   */
+  async #startFresh() {
+    if (this.#options.saved) {
+      return;
+    }
+    try {
+      await this.#options.store.remove(this.key);
+    } catch {
+      this.#persist = false;
+    }
+  }
+
+  #stillCurrent() {
+    if (this.#options.isCurrent && !this.#options.isCurrent()) {
+      this.#stopRequested = true;
+    }
+    return !this.#stopRequested;
   }
 
   async #run() {
     const { library, supported } = this.#options;
     try {
+      await this.#startFresh();
       await this.#save();
       await this.#makeCollections();
       const remaining = library.items.filter(
@@ -145,11 +198,7 @@ export class EagleImportRun implements EagleRunStatus {
     }
     const stopped = this.#stopRequested;
     this.#record.status = stopped || this.failed.size > 0 ? 'stopped' : 'finished';
-    try {
-      await this.#save();
-    } catch {
-      // The record could not be written; what is in Boards stays, and duplicates are still found.
-    }
+    await this.#save();
     this.state = stopped ? 'stopped' : 'finished';
   }
 
@@ -169,7 +218,7 @@ export class EagleImportRun implements EagleRunStatus {
     for (const folder of eagleFolders(library)) {
       const name = folder.parent ? folder.name : (topNames.get(folder.id) ?? folder.name);
       this.#collectionNames.set(folder.id, name);
-      if (this.#stopRequested) {
+      if (!this.#stillCurrent()) {
         return;
       }
       if (!Object.hasOwn(record.albums, folder.id)) {
@@ -202,7 +251,7 @@ export class EagleImportRun implements EagleRunStatus {
   async #sendAll(items: EagleItem[]) {
     let next = 0;
     const worker = async () => {
-      while (!this.#stopRequested && next < items.length) {
+      while (this.#stillCurrent() && next < items.length) {
         await this.#send(items[next++]);
       }
     };
@@ -210,7 +259,7 @@ export class EagleImportRun implements EagleRunStatus {
   }
 
   async #send(item: EagleItem) {
-    const { api, store, checksums } = this.#options;
+    const { api, checksums } = this.#options;
     const record = this.#record;
     const { target } = record;
     try {
@@ -240,7 +289,7 @@ export class EagleImportRun implements EagleRunStatus {
         }
       }
       const outcome = { assetId, duplicate };
-      await store.saveOutcome(this.key, item.id, outcome);
+      await this.#saveOutcome(item.id, outcome);
       this.outcomes[item.id] = outcome;
       this.failed.delete(item.id);
       this.done++;

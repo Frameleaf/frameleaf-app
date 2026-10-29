@@ -218,4 +218,56 @@ describe('EagleImportRun', () => {
       expect.objectContaining({ kind: 'rect', origin: 'eagle' }),
     ]);
   });
+
+  it('stops before the next item once another account is signed in', async () => {
+    const server = fakeApi();
+    let signedIn = true;
+    const importing = run(server.api, { isCurrent: () => signedIn });
+    const upload = server.api.upload;
+    server.api.upload = (file, checksums) => {
+      signedIn = false;
+      return upload(file, checksums);
+    };
+    await importing.start();
+    expect(importing.state).toBe('stopped');
+    expect(server.uploads).toHaveLength(1);
+    expect(importing.done).toBe(1);
+  });
+
+  it('keeps importing when the record cannot be written', async () => {
+    const server = fakeApi();
+    const failing: EagleImportStore = {
+      ...memoryEagleImportStore(),
+      save: () => Promise.reject(new Error('blocked')),
+      saveOutcome: () => Promise.reject(new Error('blocked')),
+    };
+    const importing = run(server.api, { store: failing });
+    await importing.start();
+    expect(importing.error).toBeUndefined();
+    expect(importing.state).toBe('finished');
+    expect(importing.done).toBe(6);
+    expect(importing.failed.size).toBe(0);
+  });
+
+  it('replaces the rows of an earlier import of the same library when starting afresh', async () => {
+    const server = fakeApi();
+    const key = 'user-1:Fixture.library';
+    await store.save({
+      key,
+      ownerId: 'user-1',
+      libraryName: FIXTURE_LIBRARY_NAME,
+      target: { mode: 'top' },
+      albums: {},
+      tagIds: {},
+      total: 6,
+      status: 'finished',
+      startedAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+    });
+    await store.saveOutcome(key, 'I1', { assetId: 'old-asset', duplicate: false });
+    await run(server.api).start();
+    const saved = await store.get(key);
+    expect(saved?.outcomes.I1).toEqual({ assetId: 'asset-hero.jpg', duplicate: false });
+    expect(Object.keys(saved!.outcomes)).toHaveLength(6);
+  });
 });

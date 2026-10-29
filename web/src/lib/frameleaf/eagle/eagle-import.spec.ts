@@ -6,6 +6,7 @@ import {
   planEagleImport,
   previewTarget,
   reconciles,
+  repeatedContents,
   supportedExtensions,
   topFolderNames,
   type EagleLibrary,
@@ -275,5 +276,21 @@ describe('Eagle comments as annotations', () => {
     expect(annotations).toHaveLength(200);
     expect(new Set(annotations.map(({ id }) => id)).size).toBe(200);
     expect(annotations[0].note).toHaveLength(280);
+  });
+});
+
+describe('files that appear twice in the library', () => {
+  it('counts every copy after the first as already in your library', async () => {
+    const library = await readFixture();
+    const checksums = new Map([
+      ['I1', { sha256: 'a' }],
+      ['I2', { sha256: 'b' }],
+      ['I3', { sha256: 'a' }],
+      ['I5', { sha256: 'a' }],
+    ]);
+    const repeated = repeatedContents(library.items, checksums);
+    expect([...repeated]).toEqual(['I3', 'I5']);
+    const plan = planEagleImport(library, { existing: repeated });
+    expect(plan).toMatchObject({ already: 2, newFiles: 4 });
   });
 });

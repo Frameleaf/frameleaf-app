@@ -7,6 +7,8 @@
    * import carries on; opening the dialog again shows where it is.
    */
   interface ImportSession {
+    /** The account that started it: another account never sees or carries on this import. */
+    ownerId: string;
     library: EagleLibrary;
     plan: EaglePlan;
     supported: ReadonlySet<string>;
@@ -34,6 +36,7 @@
     planEagleImport,
     previewTarget,
     reconciles,
+    repeatedContents,
     supportedExtensions,
     type EagleTarget,
   } from '$lib/frameleaf/eagle/eagle-import';
@@ -102,6 +105,13 @@
 
   const store = eagleImportStore();
   const ownerId = authManager.authenticated ? authManager.user.id : '';
+  // An import started by another account (signed out, then someone else signed in) is stopped and
+  // forgotten here: its library, plan and record are never shown to, or continued by, this account.
+  if (session && session.ownerId !== ownerId) {
+    session.run.stop();
+    session = undefined;
+    eagleImportUi.run = undefined;
+  }
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
 
   /** Opening the dialog again shows the import where it is. */
@@ -225,7 +235,8 @@
     const current = library;
     try {
       const earlier = await store.get(eagleImportKey(ownerId, current.name)).catch(() => undefined);
-      saved = earlier && earlier.record.status !== 'finished' ? earlier : undefined;
+      saved =
+        earlier && earlier.record.status !== 'finished' && earlier.record.ownerId === ownerId ? earlier : undefined;
       const toCheck = current.items.filter(
         (item) => isComing(item, supported) && !(saved && Object.hasOwn(saved.outcomes, item.id)),
       );
@@ -241,7 +252,8 @@
           }
         }),
       );
-      const existing = new Set<string>();
+      // A file that appears twice in the library is stored once, so its later copies count as already here.
+      const existing = repeatedContents(toCheck, checksums);
       for (let index = 0; index < toCheck.length; index += CHECK_BATCH) {
         const assets = toCheck.slice(index, index + CHECK_BATCH).flatMap(({ id }) => {
           const { sha256, sha1 } = checksums.get(id)!;
@@ -309,10 +321,11 @@
       api: frameleafEagleImportApi,
       store,
       checksums,
-      saved: from,
+      saved: from && from.record.ownerId === ownerId ? from : undefined,
       annotations: EAGLE_ANNOTATIONS_AVAILABLE,
+      isCurrent: authManager.captureSession(),
     });
-    session = { library, plan, supported, run: next, startedAt: Date.now(), startDone: next.done };
+    session = { ownerId, library, plan, supported, run: next, startedAt: Date.now(), startDone: next.done };
     run = next;
     eagleImportUi.run = next;
     eagleImportUi.revision++;

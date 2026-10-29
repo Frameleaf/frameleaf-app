@@ -282,6 +282,30 @@ export const supportedExtensions = (serverExtensions?: Iterable<string>) => {
   return supported;
 };
 
+/**
+ * Items whose file has the same contents as an earlier item in the library. The import stores such a
+ * file once, so the check counts every copy after the first as already in your library, as the upload
+ * will. `items` are in the order the import sends them.
+ */
+export function repeatedContents(
+  items: readonly Pick<EagleItem, 'id'>[],
+  checksums: ReadonlyMap<string, { sha256: string }>,
+): Set<string> {
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  for (const { id } of items) {
+    const sha256 = checksums.get(id)?.sha256;
+    if (!sha256) {
+      continue;
+    }
+    if (seen.has(sha256)) {
+      repeated.add(id);
+    }
+    seen.add(sha256);
+  }
+  return repeated;
+}
+
 /** The dry run: everything the import would do, worked out from the library's lists before any file is sent. */
 export function planEagleImport(library: EagleLibrary, options: EaglePlanOptions = {}) {
   const supported = options.supported ?? BOARDS_EXTENSIONS;
