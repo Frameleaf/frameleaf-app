@@ -88,8 +88,10 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === '5e7b4f122a6f76379925b6a5d7be8ea5b304acdde2b14d1ff5674ab916ae0183' ||
     // FL-599 colour match: binding uses the sampled frame rate
     sourceSha256 === 'e5e6e1f2c0089e1c61489213944110a3e68d8595805dc1c8c0bfd87a21309dc4' ||
+    // FL-599 colour match: zero-strength removal, HDR strength refusal
+    sourceSha256 === '700f4566c68163ab92916dfbbdcd11a247918d57d762738f2419c3834c5b6929' ||
     // FL-626 graded and HDR colour match
-    sourceSha256 === '949c01dbb70b5dda1fa231beb9b0c7a60b81af1cf46d4882d30851f554f574e3'
+    sourceSha256 === '97a4849a08c1e36746c7761ffbce788c8580b70644e4f00d50caf3c2b5369628'
   )
     return {
       ...COMPOSITION_SOURCES,

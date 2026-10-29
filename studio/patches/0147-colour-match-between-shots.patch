@@ -330,7 +330,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
-@@ -0,0 +1,292 @@
+@@ -0,0 +1,294 @@
 +import type { ItemEffect } from '@/types/effects'
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
@@ -561,7 +561,8 @@ new file mode 100644
 +      outcome.stale.push(result.itemId)
 +      continue
 +    }
-+    if (result.proposal.flags.length > 0) {
++    // Strength 0 removes an existing match, which a flagged proposal must not block.
++    if (strength !== 0 && result.proposal.flags.length > 0) {
 +      outcome.refused.push({ itemId: item.id, reason: 'flagged' })
 +      continue
 +    }
@@ -614,7 +615,8 @@ new file mode 100644
 +export function setColourMatchStrength(itemId: string, strength: number): boolean {
 +  const item = useItemsStore.getState().itemById[itemId]
 +  const current = item ? readColourMatch(item) : null
-+  if (!item || !current || hasLockedEditParticipants([item])) return false
++  // HDR projects are not supported by this match, so its effects are not rewritten there.
++  if (!item || !current || projectIsHdr(useItemsStore.getState().items) || hasLockedEditParticipants([item])) return false
 +  const effects = item.effects ?? []
 +  const next = withMatch(effects, colourMatchEffects(current.params, strength, current.provenance, matchIds(effects)))
 +  execute('SET_COLOUR_MATCH_STRENGTH', () => {

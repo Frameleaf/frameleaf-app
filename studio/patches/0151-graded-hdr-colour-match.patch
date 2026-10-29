@@ -145,7 +145,7 @@ diff --git a/src/features/export/utils/canvas-render-orchestrator.ts b/src/featu
 diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
 --- a/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
-@@ -3,6 +3,7 @@
+@@ -3,10 +3,12 @@
  import { beforeEach, describe, expect, it } from 'vite-plus/test'
  import type { ItemEffect } from '@/types/effects'
  import type { TimelineTrack, VideoItem } from '@/types/timeline'
@@ -153,7 +153,12 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
  import { useItemsStore } from '../../items-store'
  import { useTimelineCommandStore } from '../../timeline-command-store'
  import { useTimelineSettingsStore } from '../../timeline-settings-store'
-@@ -91,14 +92,19 @@ describe('colour match actions', () => {
+ import { useProjectStore } from '@/features/timeline/deps/projects'
++import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+ import {
+   analyzeColourMatch,
+   applyColourMatches,
+@@ -91,14 +93,43 @@ describe('colour match actions', () => {
      expect(useTimelineCommandStore.getState().canUndo).toBe(false)
    })
  
@@ -177,10 +182,34 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
 +    const bound: ColourMatchTargetResult = { ...result(target), binding: colourMatchBinding(target, 1, referenceClip({ effects: [grade] }), 0.5) }
 +    expect(applyColourMatches([{ result: bound, strength: 1 }]).applied).toEqual(['v1'])
 +    expect(effectTypes('v1')).toEqual(['gpu-exposure', 'gpu-exposure', 'gpu-temperature'])
++  })
++
++  it('puts a new match after a grade added since the last match', () => {
++    useItemsStore.getState().setItems([video(), referenceClip()])
++    applyColourMatches([{ result: result(video()), strength: 1 }])
++    const matched = useItemsStore.getState().itemById['v1'] as VideoItem
++    const graded = { ...matched, effects: [...(matched.effects ?? []), grade] } as VideoItem
++    useItemsStore.getState().setItems([graded, referenceClip()])
++    expect(applyColourMatches([{ result: result(graded), strength: 1 }]).applied).toEqual(['v1'])
++    const ids = (useItemsStore.getState().itemById['v1']!.effects ?? []).map((effect) => effect.id)
++    expect(ids[0]).toBe('grade')
++    expect(ids.slice(1).every((id) => id.startsWith('colour-match:'))).toBe(true)
++  })
++
++  it('treats an SDR result as stale once an HDR source is placed', () => {
++    useItemsStore.getState().setItems([video(), referenceClip()])
++    const sdr = result(video())
++    useMediaLibraryStore.setState({ mediaById: { hdr: { colorTransfer: 'pq' } } } as never)
++    useItemsStore.getState().setItems([video(), referenceClip(), video({ id: 'v9', mediaId: 'hdr', from: 900 })])
++    try {
++      expect(applyColourMatches([{ result: sdr, strength: 1 }]).stale).toEqual(['v1'])
++    } finally {
++      useMediaLibraryStore.setState({ mediaById: {} } as never)
++    }
    })
  
    it('treats a result as stale when the reference or either clip direction changes', () => {
-@@ -109,18 +115,24 @@ describe('colour match actions', () => {
+@@ -109,18 +140,24 @@ describe('colour match actions', () => {
      expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
      useItemsStore.getState().setItems([item])
      expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
@@ -271,7 +300,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  function projectIsHdr(items: readonly TimelineItem[]): boolean {
    const project = useProjectStore.getState().currentProject
    if (project?.metadata.colorManagement?.workingRange === 'hdr') return true
-@@ -71,47 +70,69 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
+@@ -71,47 +70,71 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
   * (its match effects excluded), the reference's source, timing, direction and
   * full grade, and the project's colour management.
   */
@@ -305,6 +334,8 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
 +    describe(item, (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect)), false), seconds,
 +    reference ? [describe(reference, reference.effects ?? [], true), referenceSeconds] : null,
      useProjectStore.getState().currentProject?.metadata.colorManagement ?? null,
++    // The effective working range, since an HDR source added anywhere switches the renderer to HDR.
++    projectIsHdr(useItemsStore.getState().items),
    ])
  }
  
@@ -367,7 +398,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  }
  
  function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { reason: ColourMatchRefusal; itemId?: string } | null {
-@@ -120,13 +141,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
+@@ -120,13 +143,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
      if (!item) return { reason: 'not-found', itemId: id }
      if (item.type !== 'video') return { reason: 'unsupported-clip', itemId: id }
      if (item.isReversed === true) return { reason: 'reversed', itemId: id }
@@ -381,7 +412,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    return null
  }
  
-@@ -155,25 +170,30 @@ export async function analyzeColourMatch(
+@@ -155,33 +172,41 @@ export async function analyzeColourMatch(
    const referenceSeconds = sourceSecondsAt(reference, frameFor(reference), fps)
  
    try {
@@ -416,7 +447,21 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    }
  }
  
-@@ -215,11 +235,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+-function withMatch(effects: readonly ItemEffect[], match: ItemEffect[]): ItemEffect[] {
++/**
++ * A new match was measured through every other effect, so it goes last (`atEnd`); a strength
++ * change keeps the match where it is.
++ */
++function withMatch(effects: readonly ItemEffect[], match: ItemEffect[], atEnd: boolean): ItemEffect[] {
+   const first = effects.findIndex(isColourMatchEffect)
+   const rest = effects.filter((effect) => !isColourMatchEffect(effect))
+-  // Replace in place so the match keeps its position after the grade; otherwise append.
+-  const at = first === -1 ? rest.length : effects.slice(0, first).filter((effect) => !isColourMatchEffect(effect)).length
++  const at = atEnd || first === -1 ? rest.length : effects.slice(0, first).filter((effect) => !isColourMatchEffect(effect)).length
+   return [...rest.slice(0, at), ...match, ...rest.slice(at)]
+ }
+ 
+@@ -215,11 +240,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
    const outcome: ColourMatchApplyOutcome = { applied: [], stale: [], refused: [] }
    const items = useItemsStore.getState().items
    const updates: Array<{ itemId: string; effects: ItemEffect[] }> = []
@@ -429,6 +474,27 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    for (const { result, strength } of approvals) {
      const item = items.find((candidate) => candidate.id === result.itemId)
      const reference = items.find((candidate) => candidate.id === result.provenance.referenceItemId)
+@@ -240,7 +261,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+     const effects = item.effects ?? []
+     updates.push({
+       itemId: item.id,
+-      effects: withMatch(effects, colourMatchEffects(result.proposal.params, strength, result.provenance, matchIds(effects))),
++      effects: withMatch(effects, colourMatchEffects(result.proposal.params, strength, result.provenance, matchIds(effects)), true),
+     })
+   }
+   if (updates.length > 0) {
+@@ -283,9 +304,9 @@ export function setColourMatchStrength(itemId: string, strength: number): boolea
+   const item = useItemsStore.getState().itemById[itemId]
+   const current = item ? readColourMatch(item) : null
+   // HDR projects are not supported by this match, so its effects are not rewritten there.
+-  if (!item || !current || projectIsHdr(useItemsStore.getState().items) || hasLockedEditParticipants([item])) return false
++  if (!item || !current || hasLockedEditParticipants([item])) return false
+   const effects = item.effects ?? []
+-  const next = withMatch(effects, colourMatchEffects(current.params, strength, current.provenance, matchIds(effects)))
++  const next = withMatch(effects, colourMatchEffects(current.params, strength, current.provenance, matchIds(effects)), false)
+   execute('SET_COLOUR_MATCH_STRENGTH', () => {
+     useItemsStore.getState()._setItemEffects([{ itemId, effects: next }])
+     useTimelineSettingsStore.getState().markDirty()
 diff --git a/src/features/timeline/utils/colour-match.test.ts b/src/features/timeline/utils/colour-match.test.ts
 --- a/src/features/timeline/utils/colour-match.test.ts
 +++ b/src/features/timeline/utils/colour-match.test.ts
@@ -439,7 +505,7 @@ diff --git a/src/features/timeline/utils/colour-match.test.ts b/src/features/tim
    applyColourMatch,
    colourMatchEffects,
    proposeColourMatch,
-@@ -108,4 +109,22 @@ describe('colour match', () => {
+@@ -108,4 +109,27 @@ describe('colour match', () => {
      const [half] = colourMatchEffects(params, 0.5, provenance, ids)
      expect(half!.effect.params.exposure).toBe(0.25)
    })
@@ -461,11 +527,16 @@ diff --git a/src/features/timeline/utils/colour-match.test.ts b/src/features/tim
 +    // Values above reference white are not clipped away in HDR.
 +    expect(Math.max(...matched.flat())).toBeGreaterThan(1)
 +  })
++
++  it('keeps saturated BT.2020 pixels with a negative BT.709 component in HDR', () => {
++    const stats = sampleWorkingStats(Float32Array.from([-0.05, 0.3, 0.6, 0.2, 0.2, 0.2]), 'linear-display-bt709-v1')
++    expect(stats.usableFraction).toBe(1)
++  })
  })
 diff --git a/src/features/timeline/utils/colour-match.ts b/src/features/timeline/utils/colour-match.ts
 --- a/src/features/timeline/utils/colour-match.ts
 +++ b/src/features/timeline/utils/colour-match.ts
-@@ -51,18 +51,26 @@ export interface ColourMatchProposal {
+@@ -51,21 +51,33 @@ export interface ColourMatchProposal {
    flags: ColourMatchFlag[]
  }
  
@@ -495,11 +566,19 @@ diff --git a/src/features/timeline/utils/colour-match.ts b/src/features/timeline
 +    const r = rgb[i]!
 +    const g = rgb[i + 1]!
 +    const b = rgb[i + 2]!
-+    if (!(Math.min(r, g, b) >= low && Math.max(r, g, b) <= high)) continue
++    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b
++    // In HDR, a saturated BT.2020 colour can have a negative BT.709 component and still be
++    // valid, so black is judged by luminance there; SDR keeps the per-channel clip test.
++    const aboveBlack = domain === 'srgb-display-bt709' ? Math.min(r, g, b) >= low : luma >= low
++    if (!(aboveBlack && Math.max(r, g, b) <= high)) continue
      count += 1
      sumR += r; sumG += g; sumB += b
-     lumas.push(0.2126 * r + 0.7152 * g + 0.0722 * b)
-@@ -73,6 +81,15 @@ export function sampleStats(rgba: Uint8ClampedArray): ColourSampleStats {
+-    lumas.push(0.2126 * r + 0.7152 * g + 0.0722 * b)
++    lumas.push(luma)
+   }
+   const mean: [number, number, number] = count > 0 ? [sumR / count, sumG / count, sumB / count] : [0, 0, 0]
+   const lumaMean = lumas.reduce((a, v) => a + v, 0) / Math.max(1, lumas.length)
+@@ -73,6 +85,15 @@ export function sampleStats(rgba: Uint8ClampedArray): ColourSampleStats {
    return { mean, usableFraction: total > 0 ? count / total : 0, lumaSpread }
  }
  
@@ -515,7 +594,7 @@ diff --git a/src/features/timeline/utils/colour-match.ts b/src/features/timeline
  export function proposeColourMatch(reference: ColourSampleStats, target: ColourSampleStats): ColourMatchProposal {
    const flags: ColourMatchFlag[] = []
    if (reference.usableFraction < MIN_USABLE_FRACTION || target.usableFraction < MIN_USABLE_FRACTION) flags.push('clipped')
-@@ -98,10 +115,17 @@ export function proposeColourMatch(reference: ColourSampleStats, target: ColourS
+@@ -98,10 +119,17 @@ export function proposeColourMatch(reference: ColourSampleStats, target: ColourS
    return { params, flags }
  }
  
