@@ -12,6 +12,7 @@ import {
   DatabaseLock,
   JobName,
   JobStatus,
+  MlAdmissionRefusal,
   NotificationLevel,
   PushEventType,
   SystemMetadataKey,
@@ -38,7 +39,7 @@ import {
   resolveCloudGateway,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import { HEARTBEAT_FIELDS } from 'src/utils/frameleaf-cloud-link.js';
-import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import {
   FakeCloud,
   FakeCloudAnswer,
@@ -394,6 +395,31 @@ describe(FrameleafCloudService.name, () => {
       makeDue();
       await expect(sut.getLink()).resolves.toMatchObject({ state: 'pending', lastError: null });
       expect(storedLink()?.lastError).toBeUndefined();
+    });
+
+    it('ends the attempt when the cloud no longer accepts the code (invalid_grant)', async () => {
+      serveLinking(() => ({ status: 400, body: { error: 'invalid_grant' } }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await expect(sut.getLink()).resolves.toMatchObject({ state: 'unlinked', linkResult: 'expired', pending: null });
+      expect(storedLink()).toMatchObject({ status: 'unlinked', lastError: expect.stringContaining('Get a new code') });
+    });
+
+    it('waits longer after a check that got no answer, as RFC 8628 asks, but not after a 5xx', async () => {
+      serveLinking(() => ({ status: 503, body: { code: 'unavailable', message: 'down', retryable: true } }));
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      expect(storedLink()?.pending?.intervalSeconds).toBe(5);
+
+      const requestOAuth = vi
+        .spyOn(FrameleafCloudRepository.prototype, 'requestOAuth')
+        .mockRejectedValueOnce(new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'did not answer'));
+      makeDue();
+      await sut.getLink();
+      requestOAuth.mockRestore();
+      expect(storedLink()).toMatchObject({ status: 'pending', pending: { intervalSeconds: 10 } });
+      expect(Date.parse(storedLink()!.pending!.nextPollAt)).toBeGreaterThan(Date.now() + 9000);
     });
 
     it('adds five seconds to the interval on slow_down', async () => {
