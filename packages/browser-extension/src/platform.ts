@@ -1,6 +1,11 @@
 import type { CaptureState } from './queue';
 import type { CapturePreview } from './preview';
-import type { ConnectionStatus } from './settings';
+import type {
+  ConnectionStatus,
+  RecentServer,
+  SignInNotice,
+  SignInProblem,
+} from './settings';
 import {
   CaptureFailure,
   normalizeServerAddress,
@@ -31,7 +36,15 @@ export type ExtensionRequest =
       address: string;
       token: string;
       allowLocalhost?: boolean;
-    };
+    }
+  // FL-655: sign in with your Frameleaf account; `switching` signs out of the current server first
+  | {
+      type: 'sign-in';
+      address: string;
+      allowLocalhost?: boolean;
+      switching?: boolean;
+    }
+  | { type: 'sign-in-state' | 'dismiss-notice' };
 export interface QueueItem {
   id: string;
   label: string;
@@ -63,8 +76,15 @@ export type ExtensionReply =
       preview?: CapturePreview;
       queue?: QueueProgress;
       albumId?: string;
+      recent?: RecentServer[];
+      notice?: SignInNotice | null;
     }
-  | { ok: false; error: string; connection?: ConnectionStatus | null };
+  | {
+      ok: false;
+      error: string;
+      connection?: ConnectionStatus | null;
+      problem?: SignInProblem;
+    };
 export const trustedStorage = () => chrome.storage.local;
 export function trustedSender(
   sender: chrome.runtime.MessageSender,
@@ -101,6 +121,15 @@ export const sendRequest = (
   request: ExtensionRequest,
 ): Promise<ExtensionReply> => chrome.runtime.sendMessage(request);
 export const openOptions = () => chrome.runtime.openOptionsPage();
+
+/** FL-655: where the browser's sign-in window hands the result back: `https://<id>.chromiumapp.org/`. */
+export const signInRedirectUri = () => chrome.identity.getRedirectURL();
+/** FL-655: the browser's own sign-in window, showing the server's pages. */
+export const launchSignInWindow = (url: string) =>
+  chrome.identity.launchWebAuthFlow({ url, interactive: true });
+/** FL-655: which browser this is, for the access name ("Save to Frameleaf · Edge"). */
+export const browserClient = (): 'chrome' | 'edge' =>
+  /\bEdg\//.test(navigator.userAgent) ? 'edge' : 'chrome';
 export function registerBackground(
   handler: (
     message: unknown,

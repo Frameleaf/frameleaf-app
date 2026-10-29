@@ -31,7 +31,21 @@ import {
   normalizeServerAddress,
 } from './api';
 import {
+  allowPageUrl,
+  checkServer,
+  codeChallenge,
+  exchangeCode,
+  randomText,
+  readReturn,
+  removeAccess,
+  SIGN_IN_WINDOW_MS,
+  SignInFailure,
+} from './sign-in';
+import {
+  browserClient,
   hasServerAccess,
+  launchSignInWindow,
+  signInRedirectUri,
   openOptions,
   ensureDeliveryAlarm,
   registerDeliveryAlarm,
@@ -41,9 +55,15 @@ import {
   type ExtensionReply,
 } from './platform';
 import {
+  accessFor,
   connectionStatus,
   credentialFor,
   disconnect,
+  recentServers,
+  rememberServer,
+  setSignInNotice,
+  signInNotice,
+  type SignInProblem,
   initializeStorage,
   pauseConnection,
   saveCatalog,
@@ -194,9 +214,11 @@ export function handleMessage(
   if (message && typeof message === 'object' && 'type' in message) {
     if (
       settingsPage &&
-      ['connect', 'disconnect'].includes(String(message.type))
+      ['connect', 'disconnect', 'sign-in'].includes(String(message.type))
     )
       stopScreenshot();
+    // FL-655: the sign-in window stays open while you sign in, so it never holds the queue of messages.
+    if (settingsPage && message.type === 'sign-in') return signIn(message);
     if (message.type === 'screenshot') {
       if (
         !trustedSender(sender, ['/popup.html']) ||
@@ -239,6 +261,8 @@ export function handleMessage(
           if (!(await hasServerAccess(origin)))
             throw new CaptureFailure('permission');
           await saveConnection(binding, message.token);
+          await rememberServer(origin, binding.userName);
+          await setSignInNotice(null);
           await refresh();
           wake();
           break;
@@ -401,7 +425,18 @@ export function handleMessage(
           stopDelivery();
           stopScreenshot();
           clearPreview();
-          await disconnect();
+          await signOutCurrent();
+          await setSignInNotice(null);
+          break;
+        case 'sign-in-state':
+          return {
+            ok: true,
+            connection: await connectionStatus(),
+            recent: await recentServers(),
+            notice: await signInNotice(),
+          };
+        case 'dismiss-notice':
+          await setSignInNotice(null);
           break;
         case 'queue': {
           const queue = await queueProgress();
@@ -476,6 +511,138 @@ export function handleMessage(
       }
     }
   });
+}
+/**
+ * FL-655: sign out of the current server. An access added by signing in removes itself on the
+ * server, so it leaves API keys too; a key pasted by hand is only forgotten here. Waiting items
+ * are kept either way, for when you sign in to that server again.
+ */
+async function signOutCurrent() {
+  const current = await connectionStatus().catch(() => null);
+  if (current) {
+    const access = await accessFor(current.binding).catch(() => null);
+    if (
+      access?.method === 'sign-in' &&
+      (await hasServerAccess(current.binding.origin))
+    )
+      await removeAccess(
+        current.binding.origin,
+        access.token,
+        globalThis.fetch.bind(globalThis),
+      ).catch(() => false);
+  }
+  await disconnect();
+}
+let signingIn = false;
+/**
+ * FL-655: sign in with your Frameleaf account. The popup closes while the browser's sign-in window
+ * is open, so this runs here and leaves a notice ("You're signed in", or what went wrong) for the
+ * next time the popup opens.
+ */
+async function signIn(message: object): Promise<ExtensionReply> {
+  if (
+    !('address' in message) ||
+    typeof message.address !== 'string' ||
+    message.address.length > 8192
+  )
+    return { ok: false, error: new CaptureFailure('address').message };
+  const allowLocalhost =
+    'allowLocalhost' in message && message.allowLocalhost === true;
+  const switching = 'switching' in message && message.switching === true;
+  let origin: string;
+  try {
+    origin = normalizeServerAddress(message.address, allowLocalhost);
+  } catch {
+    return {
+      ok: false,
+      error: new CaptureFailure('address').message,
+      problem: 'address',
+    };
+  }
+  if (signingIn)
+    return {
+      ok: false,
+      error: 'A sign-in window is already open.',
+      problem: 'busy',
+    };
+  signingIn = true;
+  const transport = globalThis.fetch.bind(globalThis);
+  try {
+    if (!(await hasServerAccess(origin))) throw new SignInFailure('permission');
+    await checkServer(origin, transport);
+    await setSignInNotice(null);
+    if (switching)
+      await serialize(async () => {
+        stopDelivery();
+        stopScreenshot();
+        clearPreview();
+        await signOutCurrent();
+      });
+    const verifier = randomText(48);
+    const state = randomText(24);
+    const redirectUri = signInRedirectUri();
+    const started = Date.now();
+    let returned: string | undefined;
+    try {
+      returned = await launchSignInWindow(
+        allowPageUrl(origin, {
+          redirectUri,
+          codeChallenge: await codeChallenge(verifier),
+          state,
+          client: browserClient(),
+        }),
+      );
+    } catch {
+      // closing the window is cancelling; a window left open too long has expired
+      throw new SignInFailure(
+        Date.now() - started > SIGN_IN_WINDOW_MS ? 'expired' : 'cancelled',
+      );
+    }
+    if (Date.now() - started > SIGN_IN_WINDOW_MS)
+      throw new SignInFailure('expired');
+    const code = readReturn(returned, redirectUri, state);
+    const access = await exchangeCode(
+      origin,
+      { code, codeVerifier: verifier, redirectUri },
+      transport,
+    );
+    await serialize(async () => {
+      stopDelivery();
+      stopScreenshot();
+      clearPreview();
+      if (!(await hasServerAccess(origin)))
+        throw new SignInFailure('permission');
+      const binding = await connectServer(origin, access.secret, {
+        allowLocalhost,
+      });
+      if (
+        binding.serverId !== access.serverId ||
+        binding.userId !== access.userId
+      )
+        throw new SignInFailure('failed');
+      await saveConnection(binding, access.secret, {
+        method: 'sign-in',
+        apiKeyId: access.apiKeyId,
+      });
+      await rememberServer(origin, binding.userName);
+      await setSignInNotice({ kind: 'welcome' });
+      await refresh().catch(() => {});
+      wake();
+    });
+    return { ok: true, connection: await connectionStatus() };
+  } catch (error) {
+    const problem: SignInProblem =
+      error instanceof SignInFailure ? error.problem : 'failed';
+    await setSignInNotice({ kind: 'problem', problem, origin }).catch(() => {});
+    return {
+      ok: false,
+      error: problem,
+      problem,
+      connection: await connectionStatus().catch(() => null),
+    };
+  } finally {
+    signingIn = false;
+  }
 }
 async function startScreenshot(
   mode: 'visible' | 'area',

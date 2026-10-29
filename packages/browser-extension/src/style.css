@@ -886,6 +886,121 @@ details.source[open] {
   margin-top: 8px;
 }
 
+/* FL-655: signing in */
+.sheet-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.sheet-foot .foot-back {
+  margin-right: auto;
+}
+.sub-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--fl-border);
+}
+.recent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.recent button {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 12px;
+  font-weight: 400;
+  text-align: left;
+}
+.recent button > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.recent button small {
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+.recent button[aria-pressed="true"] {
+  border-color: var(--fl-accent);
+}
+.recent button[aria-pressed="true"] > .icon:last-child {
+  color: var(--fl-accent);
+}
+.sign-in-notice {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  color: var(--fl-muted);
+  font-size: 13px;
+}
+.sign-in-notice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sign-in-notice strong {
+  color: var(--fl-text);
+}
+.sign-in-notice.warn > .icon {
+  color: var(--fl-warning);
+}
+.sign-in-notice.info > .icon {
+  color: var(--fl-accent);
+}
+.account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+.account-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--fl-raised);
+  color: var(--fl-text);
+  font-weight: 600;
+}
+.account-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.account-text small {
+  color: var(--fl-muted);
+  overflow-wrap: anywhere;
+}
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.setting-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 @media (max-width: 760px) {
   .capture-sheet,
   .options-sheet {
