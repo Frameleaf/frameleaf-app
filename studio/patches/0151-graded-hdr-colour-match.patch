@@ -158,7 +158,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
  import {
    analyzeColourMatch,
    applyColourMatches,
-@@ -91,14 +93,43 @@ describe('colour match actions', () => {
+@@ -91,14 +93,48 @@ describe('colour match actions', () => {
      expect(useTimelineCommandStore.getState().canUndo).toBe(false)
    })
  
@@ -174,6 +174,11 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
      await expect(analyzeColourMatch('ref', ['ref'], 0)).resolves.toMatchObject({ ok: false, reason: 'same-clip' })
 +    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'reversed', itemId: 'v1' })
 +    await expect(analyzeColourMatch('ref', ['v2'], 0)).resolves.toEqual({ ok: false, reason: 'unsupported-clip', itemId: 'v2' })
++  })
++
++  it('refuses graded analysis without WebGPU, which would skip the grade', async () => {
++    useItemsStore.getState().setItems([referenceClip({ effects: [grade] }), video()])
++    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'graded-needs-gpu' })
 +  })
 +
 +  it('matches graded clips after their grade', () => {
@@ -209,7 +214,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
    })
  
    it('treats a result as stale when the reference or either clip direction changes', () => {
-@@ -109,18 +140,24 @@ describe('colour match actions', () => {
+@@ -109,18 +145,24 @@ describe('colour match actions', () => {
      expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
      useItemsStore.getState().setItems([item])
      expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
@@ -269,17 +274,18 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    type ColourMatchParams,
    type ColourMatchProposal,
    type ColourMatchProvenance,
-@@ -26,8 +29,7 @@ export type ColourMatchRefusal =
+@@ -26,8 +29,8 @@ export type ColourMatchRefusal =
    | 'not-found'
    | 'unsupported-clip'
    | 'same-clip'
 -  | 'hdr'
 -  | 'graded'
 +  | 'hdr-needs-gpu'
++  | 'graded-needs-gpu'
    | 'reversed'
    | 'locked'
    | 'decode-failed'
-@@ -38,6 +40,8 @@ export interface ColourMatchTargetResult {
+@@ -38,6 +41,8 @@ export interface ColourMatchTargetResult {
    binding: string
    provenance: ColourMatchProvenance
    proposal: ColourMatchProposal
@@ -288,7 +294,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  }
  
  export type ColourMatchAnalysis =
-@@ -47,11 +51,6 @@ export type ColourMatchAnalysis =
+@@ -47,11 +52,6 @@ export type ColourMatchAnalysis =
  /** Analysis frames are downscaled to this width; means need no more. */
  const SAMPLE_WIDTH = 160
  
@@ -300,7 +306,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  function projectIsHdr(items: readonly TimelineItem[]): boolean {
    const project = useProjectStore.getState().currentProject
    if (project?.metadata.colorManagement?.workingRange === 'hdr') return true
-@@ -71,47 +70,71 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
+@@ -75,47 +75,71 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
   * (its match effects excluded), the reference's source, timing, direction and
   * full grade, and the project's colour management.
   */
@@ -398,7 +404,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  }
  
  function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { reason: ColourMatchRefusal; itemId?: string } | null {
-@@ -120,13 +143,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
+@@ -124,13 +148,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
      if (!item) return { reason: 'not-found', itemId: id }
      if (item.type !== 'video') return { reason: 'unsupported-clip', itemId: id }
      if (item.isReversed === true) return { reason: 'reversed', itemId: id }
@@ -412,8 +418,25 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    return null
  }
  
-@@ -155,33 +172,41 @@ export async function analyzeColourMatch(
+@@ -157,35 +175,57 @@ export async function analyzeColourMatch(
+       : item.from + Math.floor(item.durationInFrames / 2)
+   const reference = items.find((item) => item.id === referenceId) as VideoItem
    const referenceSeconds = sourceSecondsAt(reference, frameFor(reference), fps)
++  // Without WebGPU the renderer skips GPU effects and would sample the ungraded picture.
++  const noWebGpu = typeof navigator === 'undefined' || !('gpu' in navigator) || !navigator.gpu
++  const sampledEffects = [
++    ...(reference.effects ?? []),
++    ...targetIds.flatMap((id) => (items.find((item) => item.id === id)?.effects ?? []).filter((effect) => !isColourMatchEffect(effect))),
++  ]
++  if (noWebGpu && sampledEffects.some((effect) => effect.enabled && effect.effect.type === 'gpu-effect')) {
++    return { ok: false, reason: 'graded-needs-gpu' }
++  }
++  // Bound before sampling: an edit while frames render makes the result stale rather than
++  // describing a look that was not the one sampled.
++  const bindings = new Map(targetIds.map((id) => {
++    const target = items.find((item) => item.id === id) as VideoItem
++    return [id, colourMatchBinding(target, sourceSecondsAt(target, frameFor(target), fps), reference, referenceSeconds, fps)]
++  }))
  
    try {
 -    const referenceStats = await sampleFrame(reference, referenceSeconds)
@@ -429,7 +452,8 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
        targets.push({
          itemId: id,
          label: target.label,
-         binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds, fps),
+-        binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds, fps),
++        binding: bindings.get(id)!,
          provenance: { referenceItemId: referenceId, referenceSeconds, targetSeconds },
 -        proposal: proposeColourMatch(referenceStats, await sampleFrame(target, targetSeconds)),
 +        proposal: proposeColourMatch(reference_.stats, sampled.stats),
@@ -442,7 +466,6 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
      if (error instanceof DOMException && error.name === 'AbortError') throw error
 -    return { ok: false, reason: 'decode-failed' }
 +    // HDR frames come from the GPU float route; only a browser without WebGPU gets that reason.
-+    const noWebGpu = typeof navigator === 'undefined' || !('gpu' in navigator) || !navigator.gpu
 +    return { ok: false, reason: projectIsHdr(items) && noWebGpu ? 'hdr-needs-gpu' : 'decode-failed' }
    }
  }
@@ -461,7 +484,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    return [...rest.slice(0, at), ...match, ...rest.slice(at)]
  }
  
-@@ -215,11 +240,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+@@ -219,11 +259,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
    const outcome: ColourMatchApplyOutcome = { applied: [], stale: [], refused: [] }
    const items = useItemsStore.getState().items
    const updates: Array<{ itemId: string; effects: ItemEffect[] }> = []
@@ -474,7 +497,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    for (const { result, strength } of approvals) {
      const item = items.find((candidate) => candidate.id === result.itemId)
      const reference = items.find((candidate) => candidate.id === result.provenance.referenceItemId)
-@@ -240,7 +261,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+@@ -244,7 +280,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
      const effects = item.effects ?? []
      updates.push({
        itemId: item.id,
@@ -483,7 +506,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
      })
    }
    if (updates.length > 0) {
-@@ -283,9 +304,9 @@ export function setColourMatchStrength(itemId: string, strength: number): boolea
+@@ -287,9 +323,9 @@ export function setColourMatchStrength(itemId: string, strength: number): boolea
    const item = useItemsStore.getState().itemById[itemId]
    const current = item ? readColourMatch(item) : null
    // HDR projects are not supported by this match, so its effects are not rewritten there.
@@ -618,7 +641,7 @@ diff --git a/src/features/timeline/utils/colour-match.ts b/src/features/timeline
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -911,12 +911,14 @@
+@@ -911,12 +911,15 @@
          "not-found": "Wähle Clips auf der Zeitleiste.",
          "unsupported-clip": "Farbangleichung funktioniert mit Videoclips.",
          "same-clip": "Wähle eine andere Referenz als die anzugleichenden Clips.",
@@ -629,6 +652,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 -        "decode-failed": "Aus den Clips konnte kein Bild gelesen werden."
 -      }
 +        "decode-failed": "Aus den Clips konnte kein Bild gelesen werden.",
++        "graded-needs-gpu": "Das Abgleichen gegradeter Clips braucht WebGPU, um ihre Effekte zu rendern; dieser Browser kann das nicht.",
 +        "hdr-needs-gpu": "HDR-Angleichung braucht WebGPU, um das bearbeitete HDR-Bild zu lesen; dieser Browser kann das nicht."
 +      },
 +      "review": "Vorher und nachher",
@@ -640,7 +664,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -924,12 +924,14 @@
+@@ -924,12 +924,15 @@
          "not-found": "Choose clips on the timeline.",
          "unsupported-clip": "Colour matching works on video clips.",
          "same-clip": "Choose a reference other than the clips being matched.",
@@ -651,6 +675,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 -        "decode-failed": "Couldn't read a frame from the clips."
 -      }
 +        "decode-failed": "Couldn't read a frame from the clips.",
++        "graded-needs-gpu": "Matching graded clips needs WebGPU to render their effects; this browser can't.",
 +        "hdr-needs-gpu": "HDR matching needs WebGPU to read the graded HDR frame; this browser can't."
 +      },
 +      "review": "Before and after",
@@ -662,7 +687,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -911,12 +911,14 @@
+@@ -911,12 +911,15 @@
          "not-found": "Elige clips en la línea de tiempo.",
          "unsupported-clip": "La igualación de color funciona con clips de vídeo.",
          "same-clip": "Elige una referencia distinta de los clips que se igualan.",
@@ -673,6 +698,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 -        "decode-failed": "No se pudo leer un fotograma de los clips."
 -      }
 +        "decode-failed": "No se pudo leer un fotograma de los clips.",
++        "graded-needs-gpu": "Igualar clips con gradación necesita WebGPU para renderizar sus efectos; este navegador no puede.",
 +        "hdr-needs-gpu": "Igualar en HDR necesita WebGPU para leer el fotograma HDR corregido; este navegador no puede."
 +      },
 +      "review": "Antes y después",
@@ -684,7 +710,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -911,12 +911,14 @@
+@@ -911,12 +911,15 @@
          "not-found": "Choisissez des clips dans la timeline.",
          "unsupported-clip": "L’harmonisation des couleurs fonctionne avec les clips vidéo.",
          "same-clip": "Choisissez une référence différente des clips à harmoniser.",
@@ -695,6 +721,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 -        "decode-failed": "Impossible de lire une image des clips."
 -      }
 +        "decode-failed": "Impossible de lire une image des clips.",
++        "graded-needs-gpu": "L’appariement de clips étalonnés nécessite WebGPU pour rendre leurs effets ; ce navigateur ne le peut pas.",
 +        "hdr-needs-gpu": "L’harmonisation HDR a besoin de WebGPU pour lire l’image HDR étalonnée ; ce navigateur ne le peut pas."
 +      },
 +      "review": "Avant et après",
@@ -706,7 +733,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -911,12 +911,14 @@
+@@ -911,12 +911,15 @@
          "not-found": "タイムラインのクリップを選択してください。",
          "unsupported-clip": "色合わせは動画クリップで使えます。",
          "same-clip": "合わせるクリップとは別の参照を選んでください。",
@@ -717,6 +744,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 -        "decode-failed": "クリップからフレームを読み取れませんでした。"
 -      }
 +        "decode-failed": "クリップからフレームを読み取れませんでした。",
++        "graded-needs-gpu": "グレーディング済みクリップのマッチにはエフェクトを描画する WebGPU が必要ですが、このブラウザーでは使えません。",
 +        "hdr-needs-gpu": "HDR の色合わせには、グレーディング後の HDR フレームを読み取るために WebGPU が必要です。このブラウザーでは使えません。"
 +      },
 +      "review": "適用前と適用後",
@@ -728,7 +756,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -911,12 +911,14 @@
+@@ -911,12 +911,15 @@
          "not-found": "타임라인에서 클립을 선택하세요.",
          "unsupported-clip": "색 맞추기는 비디오 클립에서 동작합니다.",
          "same-clip": "맞출 클립과 다른 기준을 선택하세요.",
@@ -739,6 +767,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 -        "decode-failed": "클립에서 프레임을 읽을 수 없습니다."
 -      }
 +        "decode-failed": "클립에서 프레임을 읽을 수 없습니다.",
++        "graded-needs-gpu": "그레이딩된 클립을 맞추려면 효과를 렌더링할 WebGPU가 필요하지만 이 브라우저는 지원하지 않습니다.",
 +        "hdr-needs-gpu": "HDR 색 맞추기에는 보정된 HDR 프레임을 읽기 위해 WebGPU가 필요합니다. 이 브라우저에서는 사용할 수 없습니다."
 +      },
 +      "review": "적용 전과 후",
@@ -750,7 +779,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -911,12 +911,14 @@
+@@ -911,12 +911,15 @@
          "not-found": "Escolha clipes na linha do tempo.",
          "unsupported-clip": "A igualação de cor funciona em clipes de vídeo.",
          "same-clip": "Escolha uma referência diferente dos clipes a igualar.",
@@ -761,6 +790,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 -        "decode-failed": "Não foi possível ler um quadro dos clipes."
 -      }
 +        "decode-failed": "Não foi possível ler um quadro dos clipes.",
++        "graded-needs-gpu": "Igualar clipes com correção de cor precisa de WebGPU para renderizar os efeitos; este navegador não consegue.",
 +        "hdr-needs-gpu": "Igualar em HDR precisa de WebGPU para ler o quadro HDR corrigido; este navegador não consegue."
 +      },
 +      "review": "Antes e depois",
@@ -772,7 +802,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -911,12 +911,14 @@
+@@ -911,12 +911,15 @@
          "not-found": "Zaman çizelgesinde klip seçin.",
          "unsupported-clip": "Renk eşleştirme video kliplerinde çalışır.",
          "same-clip": "Eşleştirilen kliplerden farklı bir referans seçin.",
@@ -783,6 +813,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 -        "decode-failed": "Kliplerden kare okunamadı."
 -      }
 +        "decode-failed": "Kliplerden kare okunamadı.",
++        "graded-needs-gpu": "Renk düzeltmeli klipleri eşleştirmek, efektlerini işlemek için WebGPU gerektirir; bu tarayıcı bunu yapamıyor.",
 +        "hdr-needs-gpu": "HDR eşleştirme, düzenlenmiş HDR kareyi okumak için WebGPU gerektirir; bu tarayıcı yapamıyor."
 +      },
 +      "review": "Önce ve sonra",
@@ -794,7 +825,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -911,12 +911,14 @@
+@@ -911,12 +911,15 @@
          "not-found": "请在时间线上选择片段。",
          "unsupported-clip": "颜色匹配适用于视频片段。",
          "same-clip": "请选择与被匹配片段不同的参考。",
@@ -805,6 +836,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
 -        "decode-failed": "无法从片段读取画面。"
 -      }
 +        "decode-failed": "无法从片段读取画面。",
++        "graded-needs-gpu": "匹配已调色的片段需要 WebGPU 渲染其效果；此浏览器不支持。",
 +        "hdr-needs-gpu": "HDR 匹配需要 WebGPU 读取调色后的 HDR 画面；此浏览器无法做到。"
 +      },
 +      "review": "前后对比",
