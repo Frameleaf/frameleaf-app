@@ -85,7 +85,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-599 colour match: binding covers clip timing and cadence
     sourceSha256 === 'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba' ||
     // FL-599 colour match: matched references refused, superseded runs discarded
-    sourceSha256 === '5e7b4f122a6f76379925b6a5d7be8ea5b304acdde2b14d1ff5674ab916ae0183'
+    sourceSha256 === '5e7b4f122a6f76379925b6a5d7be8ea5b304acdde2b14d1ff5674ab916ae0183' ||
+    // FL-599 colour match: binding uses the sampled frame rate
+    sourceSha256 === 'e5e6e1f2c0089e1c61489213944110a3e68d8595805dc1c8c0bfd87a21309dc4'
   )
     return {
       ...COMPOSITION_SOURCES,
