@@ -50,7 +50,7 @@ import {
   executionSignal,
   settleOperationExecution,
 } from 'src/utils/execution-signal.js';
-import { portableCaptureSource } from 'src/utils/library-manifest.js';
+import { portableAssetSource, portableCaptureSource } from 'src/utils/library-manifest.js';
 import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import {
   GENERATED_DESCRIPTION_MARK,
@@ -624,7 +624,7 @@ export class PreservationWorkerService {
     const sidecar: PreservationSidecar = {
       schemaVersion: PRESERVATION_SCHEMA_VERSION,
       libraryScope: asset.libraryScope ?? LibraryScope.Personal,
-      sources: sources.map((source) => portableCaptureSource(source)),
+      sources: sources.map((source) => portableAssetSource(source)),
       sourceAssetId: asset.id,
       originalFileName: asset.originalFileName,
       type: asset.type as PreservationSidecar['type'],

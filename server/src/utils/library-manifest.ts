@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { AssetSourceImportedFrom } from 'src/schema/tables/asset-source.table.js';
 import { CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
 
 /** Attribution URLs are portable; browser credentials and fetch-only query strings are not. */
@@ -32,4 +33,12 @@ export const portableCaptureSource = (value: {
   note: value.note ?? null,
   creator: value.creator ?? null,
   licenseUrl: attributionUrl(value.licenseUrl),
+});
+
+/** An item's saved source for a backup package: the portable source, and the import it came from (FL-653). */
+export const portableAssetSource = (
+  value: Parameters<typeof portableCaptureSource>[0] & { importedFrom?: AssetSourceImportedFrom | null },
+) => ({
+  ...portableCaptureSource(value),
+  ...(value.importedFrom && { importedFrom: value.importedFrom }),
 });

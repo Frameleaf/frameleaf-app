@@ -3,7 +3,6 @@ import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import {
   AlbumKind,
@@ -31,7 +30,12 @@ import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
 import { assertExecutionActive } from 'src/utils/execution-signal.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
-import { PreservationBookmark, PreservationPackageError, preservationDerivedId } from 'src/utils/preservation.js';
+import {
+  PreservationAssetSource,
+  PreservationBookmark,
+  PreservationPackageError,
+  preservationDerivedId,
+} from 'src/utils/preservation.js';
 
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
@@ -982,7 +986,7 @@ export class PreservationRepository {
   }
 
   /** Replays add attribution without replacing any source already bound to an original. */
-  appendRestoredSources(ownerId: string, assetId: string, sources: readonly CaptureSourceDto[]) {
+  appendRestoredSources(ownerId: string, assetId: string, sources: readonly PreservationAssetSource[]) {
     return this.write(async (db) => {
       const asset = await db
         .selectFrom('asset')
@@ -1013,6 +1017,7 @@ export class PreservationRepository {
             note: source.note ?? null,
             creator: source.creator ?? null,
             licenseUrl: source.licenseUrl ?? null,
+            importedFrom: source.importedFrom ?? null,
           })
           .onConflict((oc) => oc.column('captureId').doNothing())
           .execute();

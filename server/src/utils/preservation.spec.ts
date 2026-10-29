@@ -234,6 +234,28 @@ describe('sidecars', () => {
     expect(parsed).toEqual(sidecar);
   });
 
+  it('carries where an imported source came from, and still reads sources without it (FL-653)', () => {
+    const source = {
+      captureId: '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0',
+      pageUrl: 'https://example.com/board',
+      mediaUrl: null,
+      title: '',
+      capturedAt: '2026-10-29T10:00:00.000Z',
+      note: null,
+      creator: null,
+      licenseUrl: null,
+    };
+    const v2 = { ...sidecarOf(), sources: [source] };
+    expect(PreservationSidecarSchema.parse(v2).sources?.[0]).not.toHaveProperty('importedFrom');
+    const imported = { ...sidecarOf(), sources: [{ ...source, importedFrom: 'eagle' }] };
+    const written = PreservationSidecarSchema.parse(JSON.parse(preservationJson(imported).toString('utf8')));
+    expect(written.sources?.[0]).toMatchObject({ importedFrom: 'eagle' });
+    expect(
+      PreservationSidecarSchema.safeParse({ ...sidecarOf(), sources: [{ ...source, importedFrom: 'pinterest' }] })
+        .success,
+    ).toBe(false);
+  });
+
   it('refuses a sidecar with fields it does not know', () => {
     expect(PreservationSidecarSchema.safeParse({ ...sidecarOf(), extra: true }).success).toBe(false);
   });

@@ -148,6 +148,18 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         note: 'My attribution note',
       })
       .execute();
+    // FL-653: a source an Eagle import brought over keeps saying so after a restore.
+    await db
+      .insertInto('asset_source')
+      .values({
+        assetId: asset.id,
+        captureId: randomUUID(),
+        pageUrl: 'https://eagle.example.com/board',
+        title: '',
+        capturedAt: new Date(),
+        importedFrom: 'eagle',
+      })
+      .execute();
     const bookmark = await new BookmarkRepository(db).create(owner.id, {
       url: 'https://example.com/watch?v=123',
       title: 'Video reference',
@@ -246,7 +258,9 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
       const sidecar = PreservationSidecarSchema.parse(
         JSON.parse((await readFile(join(exported!.package.path, entry.metadata!.path))).toString()),
       );
-      expect(sidecar.sources?.[0].pageUrl).toBe('https://example.com/art');
+      const byPage = new Map(sidecar.sources?.map((source) => [source.pageUrl, source]));
+      expect(byPage.get('https://example.com/art')).not.toHaveProperty('importedFrom');
+      expect(byPage.get('https://eagle.example.com/board')).toMatchObject({ importedFrom: 'eagle' });
       const imported = await repo.createPackage({
         ownerId: target.id,
         origin: 'import',
@@ -351,9 +365,16 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
           expect.objectContaining({ value: 'Material/Paper', parentId: expect.any(String) }),
         ]),
       );
-      expect(await repo.getAssetSources(restored[0].id, target.id)).toEqual([
-        expect.objectContaining({ note: 'My attribution note', pageUrl: 'https://example.com/art' }),
-      ]);
+      expect(await repo.getAssetSources(restored[0].id, target.id)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            note: 'My attribution note',
+            pageUrl: 'https://example.com/art',
+            importedFrom: null,
+          }),
+          expect.objectContaining({ pageUrl: 'https://eagle.example.com/board', importedFrom: 'eagle' }),
+        ]),
+      );
       expect(ctx.getMock(EventRepository).emit).toHaveBeenCalledWith(
         'AssetCreate',
         expect.objectContaining({
