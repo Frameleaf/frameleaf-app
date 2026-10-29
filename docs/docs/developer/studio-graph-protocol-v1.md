@@ -2093,7 +2093,7 @@ The graph has no grade node, and `clip.setGrade` is refused. A grade is a set of
 3. `gpu-curves`: the master and channel curves.
 4. `gpu-lut`: a look, with `intensity` as its strength. A look the deployment does not bundle is refused when the project is resolved (`studio/resource-inventory.json`, kind `lut`).
 
-The engine applies a stack in array order (13.2.2) and does not require this order; it is the order a client writes so that the same panel gives the same picture on every client. A client reads a grade back by finding these effects in the stack. Effects of other kinds, and a second effect of one of these kinds, are not part of the grade and are left as they are. A grade for several clips at once is the same effects on an `adjustment` item on a track above them (`studio/spec/layers.md`, L8).
+The engine applies a stack in array order (13.2.2) and does not require this order; it is the order a client writes so that the same panel gives the same picture on every client. A client reads a grade back by finding these effects in the stack, skipping effects whose ids begin `colour-match:` (13.3.3): those are a colour match, not the grade, and a grade edit leaves them as they are. Effects of other kinds, and a second effect of one of these kinds, are not part of the grade and are left as they are. A grade for several clips at once is the same effects on an `adjustment` item on a track above them (`studio/spec/layers.md`, L8).
 
 ### 13.9 `clip.setAudio`
 

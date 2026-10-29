@@ -7,7 +7,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/colour
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,148 @@
 +import { useEffect, useRef, useState } from 'react'
 +import { useShallow } from 'zustand/react/shallow'
 +import { useTranslation } from 'react-i18next'
@@ -59,10 +59,12 @@ new file mode 100644
 +    try {
 +      const frame = usePlaybackStore.getState().currentFrame
 +      const analysis = await analyzeColourMatch(referenceId, targetIds, frame, controller.signal)
++      // A superseded run (cancelled, or the reference changed) never writes its results.
++      if (controller.signal.aborted) return
 +      if (analysis.ok) setResults(analysis.targets)
 +      else toast.warning(t(`editor.colourMatch.refusal.${analysis.reason}`))
 +    } catch (error) {
-+      if (!(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.colourMatch.refusal.decode-failed'))
++      if (!controller.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.colourMatch.refusal.decode-failed'))
 +    } finally {
 +      if (abortRef.current === controller) setBusy(false)
 +    }
@@ -84,7 +86,7 @@ new file mode 100644
 +          className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs"
 +          aria-label={t('editor.colourMatch.reference')}
 +          value={referenceId}
-+          onChange={(event) => { setReferenceId(event.target.value); setResults(null) }}
++          onChange={(event) => { abortRef.current?.abort(); setReferenceId(event.target.value); setResults(null) }}
 +        >
 +          <option value="">{t('editor.colourMatch.chooseReference')}</option>
 +          {references.map((entry) => {
@@ -195,7 +197,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,128 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -292,6 +294,10 @@ new file mode 100644
 +  it('refuses graded clips and a reference that is also a target before sampling', async () => {
 +    useItemsStore.getState().setItems([video({ id: 'ref' }), video({ effects: [grade] })])
 +    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'graded', itemId: 'v1' })
++    // A reference that already carries a colour match is refused too; a matched target is not graded.
++    const matched: ItemEffect = { ...grade, id: 'colour-match:exposure' }
++    useItemsStore.getState().setItems([video({ id: 'ref', effects: [matched] }), video()])
++    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'graded', itemId: 'ref' })
 +    await expect(analyzeColourMatch('ref', ['ref'], 0)).resolves.toMatchObject({ ok: false, reason: 'same-clip' })
 +  })
 +
@@ -324,7 +330,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
-@@ -0,0 +1,282 @@
+@@ -0,0 +1,286 @@
 +import type { ItemEffect } from '@/types/effects'
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
@@ -442,6 +448,10 @@ new file mode 100644
 +    if (item.type !== 'video') return { reason: 'unsupported-clip', itemId: id }
 +    if (item.isReversed === true) return { reason: 'reversed', itemId: id }
 +    if ((item.effects ?? []).some(isGradingEffect)) return { reason: 'graded', itemId: id }
++    // The reference is sampled ungraded, so a reference that is itself matched would not be what is seen.
++    if (id === ids[0] && (item.effects ?? []).some((effect) => effect.enabled && isColourMatchEffect(effect))) {
++      return { reason: 'graded', itemId: id }
++    }
 +  }
 +  if (projectIsHdr(items)) return { reason: 'hdr' }
 +  return null
