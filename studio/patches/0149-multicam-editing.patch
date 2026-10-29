@@ -384,7 +384,7 @@ new file mode 100644
 +    expect(cutToAngle(outcome.groupId, 1, 100)).toEqual({ ok: false, reason: 'no-coverage', missing: [150, 300] })
 +  })
 +
-+  it('unmutes a master audio clip that was muted, as the edit's one sound', () => {
++  it('unmutes a master audio clip that was muted, as the one sound of the edit', () => {
 +    useItemsStore.getState()._updateItem('a2', { muted: true })
 +    const outcome = createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v2' })
 +    expect(outcome.ok).toBe(true)
