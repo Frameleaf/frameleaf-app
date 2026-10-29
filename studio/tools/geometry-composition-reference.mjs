@@ -81,7 +81,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-562 transcript editing changes no geometry/composition producer.
     sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
     // FL-597 speed ramps and freeze frames change timeline edits only.
-    sourceSha256 === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a'
+    sourceSha256 === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
+    // FL-597 speed ramps: captions follow their segments, mismatched companions refused
+    sourceSha256 === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e'
   )
     return {
       ...COMPOSITION_SOURCES,

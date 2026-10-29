@@ -507,7 +507,7 @@ diff --git a/src/features/timeline/stores/actions/edit/speed-ramp-actions.test.t
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/speed-ramp-actions.test.ts
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,215 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -704,12 +704,30 @@ new file mode 100644
 +    expect(applySpeedRamp('video-1', slowMiddle)).toBe('needs-room')
 +    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
 +  })
++
++  it('refuses linked companions whose source lengths differ', () => {
++    useItemsStore.getState().setItems([video(), audio({ sourceEnd: 90 })])
++    expect(applySpeedRamp('video-1', slowMiddle)).toBe('unsynchronized-links')
++  })
++
++  it('hands a caption to the segment it lands in, so ramping another segment leaves it alone', () => {
++    useItemsStore.getState().setItems([video(), audio(), caption({ from: 110, durationInFrames: 5 })])
++    expect(applySpeedRamp('video-1', slowMiddle)).toBeNull()
++    const before = useItemsStore.getState().itemById['caption-1'] as TextItem
++    const owner = ramped('video').find((segment) => before.from >= segment.from && before.from < segment.from + segment.durationInFrames)!
++    expect(owner.id).not.toBe('video-1')
++    expect(before.captionSource?.clipId).toBe(owner.id)
++
++    const fast: SpeedRampRequest = { points: [{ position: 0, speed: 2 }, { position: 1, speed: 2 }], easing: 'linear' }
++    expect(applySpeedRamp('video-1', fast)).toBeNull()
++    expect(useItemsStore.getState().itemById['caption-1']).toMatchObject({ from: before.from, durationInFrames: before.durationInFrames })
++  })
 +})
 diff --git a/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts b/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,247 @@
 +import type { AudioItem, TextItem, TimelineItem, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
 +import { useTransitionsStore } from '../../transitions-store'
@@ -790,6 +808,10 @@ new file mode 100644
 +  if (sourceSeconds === null || participants.some((item) => sourceSecondsOf(item as RampableItem, fps) === null)) {
 +    return { ok: false, reason: 'unsupported-clip' }
 +  }
++  // One curve is planned from the anchor's source length; a companion of another length would not follow it.
++  if (participants.some((item) => Math.abs(sourceSecondsOf(item as RampableItem, fps)! - sourceSeconds) > 1 / fps)) {
++    return { ok: false, reason: 'unsynchronized-links' }
++  }
 +
 +  const captionIds = participants.flatMap((item) => getAttachedCaptionItemIds(items, item.id))
 +  const captions = items.filter((item) => captionIds.includes(item.id))
@@ -862,19 +884,6 @@ new file mode 100644
 +      const anchor = participants.find((item) => item.id === itemId)!
 +      const linked = participants.length > 1
 +
-+      const toNewFrame = captionFrameMapper(anchor, plan, fps)
-+      for (const captionId of participants.flatMap((item) => getAttachedCaptionItemIds(items, item.id))) {
-+        const caption = items.find((item) => item.id === captionId) as TextItem | undefined
-+        if (!caption) continue
-+        const from = toNewFrame(caption.from)
-+        const end = toNewFrame(caption.from + caption.durationInFrames)
-+        if (end <= from) {
-+          store._removeItems([caption.id])
-+        } else {
-+          store._updateItem(caption.id, { from, durationInFrames: end - from })
-+        }
-+      }
-+
 +      // Shared timeline cuts keep linked video and audio segments in step.
 +      const segmentsByItem = toSourceSegments(plan, participants.map((item) => ({
 +        sourceStart: item.sourceStart ?? 0,
@@ -882,6 +891,32 @@ new file mode 100644
 +        sourceFps: item.sourceFps ?? fps,
 +      })), fps)
 +      const groupIds = segmentsByItem[0]!.map(() => (linked ? crypto.randomUUID() : undefined))
++      // Segment 0 keeps the clip's id; the others are new clips.
++      const segmentIds = participants.map((item, participantIndex) =>
++        segmentsByItem[participantIndex]!.map((_, index) => (index === 0 ? item.id : crypto.randomUUID())))
++
++      // Captions move with the source they describe and belong to the segment they now start in, so a
++      // later ramp of one segment finds only its own captions.
++      const toNewFrame = captionFrameMapper(anchor, plan, fps)
++      participants.forEach((item, participantIndex) => {
++        for (const captionId of getAttachedCaptionItemIds(items, item.id)) {
++          const caption = items.find((candidate) => candidate.id === captionId) as TextItem | undefined
++          if (!caption) continue
++          const from = toNewFrame(caption.from)
++          const end = toNewFrame(caption.from + caption.durationInFrames)
++          if (end <= from) {
++            store._removeItems([caption.id])
++            continue
++          }
++          const segment = segmentsByItem[participantIndex]!.findIndex((candidate) =>
++            from >= anchor.from + candidate.offset && from < anchor.from + candidate.offset + candidate.durationInFrames)
++          const clipId = segment > 0 ? segmentIds[participantIndex]![segment]! : item.id
++          store._updateItem(caption.id, {
++            from, durationInFrames: end - from,
++            ...(caption.captionSource && clipId !== item.id && { captionSource: { ...caption.captionSource, clipId } }),
++          })
++        }
++      })
 +
 +      const added: TimelineItem[] = []
 +      const selected: string[] = []
@@ -908,7 +943,7 @@ new file mode 100644
 +          if (index === 0) {
 +            store._updateItem(item.id, geometry)
 +          } else {
-+            added.push({ ...item, ...geometry, id: crypto.randomUUID() } as TimelineItem)
++            added.push({ ...item, ...geometry, id: segmentIds[participantIndex]![index]! } as TimelineItem)
 +          }
 +        })
 +        selected.push(item.id)
@@ -924,14 +959,20 @@ new file mode 100644
 +  return null
 +}
 +
-+/** Captions: old timeline frame -> source seconds (at the clip's current constant speed) -> ramped frame. */
++/**
++ * Captions: old timeline frame -> source seconds (at the clip's current constant speed) -> ramped frame.
++ * Frames outside the clip are not clamped onto it: before it they stay, after it they keep their
++ * place (or move out with a longer clip), so a caption crossing a cut keeps its other part.
++ */
 +function captionFrameMapper(anchor: RampableItem, plan: SpeedRampPlan, fps: number): (frame: number) => number {
 +  const sourceFps = anchor.sourceFps ?? fps
 +  const speed = anchor.speed ?? 1
 +  const sourceSeconds = (anchor.sourceEnd! - (anchor.sourceStart ?? 0)) / sourceFps
++  const oldEnd = anchor.from + anchor.durationInFrames
 +  return (frame) => {
-+    const oldOffset = Math.min(anchor.durationInFrames, Math.max(0, frame - anchor.from))
-+    return anchor.from + Math.round(plan.offsetAt(Math.min((oldOffset / fps) * speed, sourceSeconds)))
++    if (frame <= anchor.from) return frame
++    if (frame > oldEnd) return frame + Math.max(0, plan.durationInFrames - anchor.durationInFrames)
++    return anchor.from + Math.round(plan.offsetAt(Math.min(((frame - anchor.from) / fps) * speed, sourceSeconds)))
 +  }
 +}
 diff --git a/src/features/timeline/utils/speed-ramp.test.ts b/src/features/timeline/utils/speed-ramp.test.ts
