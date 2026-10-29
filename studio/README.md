@@ -192,6 +192,17 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0152 (FL-627) extends motion tracking. The tracking box can be a separate clip, typically a
+rectangle drawn on the preview with the shape tool, while the target (a title, overlay or mask shape,
+which moves a blur region) keeps its own offset from that box. Parented targets are refused, because
+tracking writes canvas positions. During tracking the source clip's timeline bar shows progress; the
+result marks the tracked range, or the lost range in red, until it is applied or discarded. Each applied
+track is recorded on the target as `motionTracks` (`{ applicationId, algorithm, sourceId, keyFrames,
+lostFrames }`; protocol 12.6 note), so Remove still works after save and reopen, when keyframes have
+lost their tags: it deletes x, y, width and height keys at the recorded frames, leaving other keys
+alone. Tests cover the separate box, parented and invalid boxes, the lost-range overlay and
+remove-after-reopen. Preview/export pixel comparisons and browser journeys remain open.
+
 Patch 0148 (FL-596) adds motion tracking. The clip panel's Track motion section (one selected visual
 clip: title, shape, image or video overlay) uses that clip's own box at the playhead as the tracking box:
 the editor places it over the subject first. It is mapped into the chosen video's source pixels through
