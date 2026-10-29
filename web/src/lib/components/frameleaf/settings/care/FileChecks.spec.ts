@@ -58,6 +58,7 @@ const newStore = () => {
 };
 
 const idle = {
+  hasUnfinishedWork: false,
   statistics: { active: 0, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
 } as never;
 
@@ -212,6 +213,7 @@ describe('File checks (FL-366)', () => {
 
   it('shows a running check’s progress and stops it, keeping what was found (FL-520)', async () => {
     sdkMock.getQueue.mockResolvedValue({
+      hasUnfinishedWork: true,
       statistics: { active: 1, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 },
     } as never);
     const running = overview({

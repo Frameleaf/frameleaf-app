@@ -57,7 +57,8 @@ export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boo
   }
   const requestedVersion = configVersion;
   return asyncLock.acquire(DatabaseLock[DatabaseLock.GetSystemConfig], async () => {
-    if (requestedVersion !== configVersion && config) {
+    // a concurrent load is only reused when it read the epoch this caller saw
+    if (requestedVersion !== configVersion && config && configEpoch === epoch?.epoch) {
       return config;
     }
     while (true) {

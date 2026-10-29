@@ -127,6 +127,17 @@ describe('watchSessionPrivacy', () => {
     expect(revalidate).toHaveBeenCalledOnce();
   });
 
+  it('revalidates once after a sign-in here, since the route data was loaded signed out', async () => {
+    const revalidate = vi.fn();
+    vi.mocked(getAuthStatus).mockImplementation(respond(status(false)));
+    guard = watchSessionPrivacy(() => true, vi.fn(), revalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revalidate).not.toHaveBeenCalled();
+    eventManager.emit('AuthUserLoaded', {} as never);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revalidate).toHaveBeenCalledOnce();
+  });
+
   it('records the elevation for other tabs where a lock does not erase it', async () => {
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
     guard = watchSessionPrivacy(() => true);

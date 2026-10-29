@@ -224,7 +224,9 @@ describe('coordinator capacity admission', () => {
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
     // feedManifest runs sharing/terminal-alias settlement and redaction even without unfinished work;
     // the pass starts from the queue after the last one served
-    expect(fixture.store.feedManifest.mock.calls.flat().toSorted()).toEqual(coordinatorData.queues.toSorted());
+    expect(fixture.store.feedManifest.mock.calls.flat().toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual(
+      coordinatorData.queues.toSorted((a, b) => a.localeCompare(b)),
+    );
   });
 
   it('backs off full reconciliation while every queue is idle, up to 30 seconds', async () => {

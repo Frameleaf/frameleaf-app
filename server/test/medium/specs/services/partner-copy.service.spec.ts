@@ -842,6 +842,30 @@ describe(PartnerCopyService.name, () => {
       expect(afterSecond).toHaveLength(3);
     });
 
+    it('passes on an album copied before a stop when the final batch is retried', async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Lake' }, [source.id]);
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
+      await origins.startBackfill(alice.id, bob.id, 1);
+      // the stopped run copied the album, then stopped before passing it on to Bob's partners
+      const copyId = await sut.copyAlbum(album.id, bob.id, alice.id);
+      ctx.getMock(JobRepository).queueAll.mockClear();
+
+      await sut.handleBackfill({ sharedById: alice.id, sharedWithId: bob.id });
+
+      expect(ctx.getMock(JobRepository).queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PartnerCopyAlbum,
+          data: { sourceAlbumId: copyId, targetOwnerId: carol.id, partnerSharedById: bob.id },
+        },
+      ]);
+    });
+
     it('stops following when the partnership ends; the partner keeps every copy', async () => {
       const { sut, ctx, origins } = setup();
       const { sut: partners, ctx: partnerCtx } = newMediumService(PartnerService, {

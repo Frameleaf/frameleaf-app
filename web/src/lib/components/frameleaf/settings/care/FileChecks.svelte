@@ -240,8 +240,9 @@
   $effect(() => {
     const interval = setInterval(() => {
       void getQueue({ name: QueueName.IntegrityCheck })
-        .then(({ statistics: { active, waiting, delayed } }) => {
-          const busy = active + waiting + delayed > 0;
+        .then(({ statistics: { active, waiting, delayed }, hasUnfinishedWork }) => {
+          // a paused or not yet admitted check has no counts but is still to run
+          const busy = hasUnfinishedWork || active + waiting + delayed > 0;
           if (!busy && running) {
             void load();
           } else if (busy) {

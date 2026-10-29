@@ -102,9 +102,10 @@ export class PetService {
       )
     ) {
       const observations = await this.petRepository.getObservations(auth.user.id, id, { withLocked: true });
-      await this.eventRepository.emit('AssetsChanged', {
-        assetIds: [...new Set(observations.map((item) => item.assetId))],
-      });
+      const assetIds = [...new Set(observations.map((item) => item.assetId))];
+      if (assetIds.length > 0) {
+        await this.eventRepository.emit('AssetsChanged', { assetIds });
+      }
     }
 
     return mapPet(await this.findOrFail(auth, id));
@@ -114,9 +115,10 @@ export class PetService {
     await this.findOrFail(auth, id);
     const observations = await this.petRepository.getObservations(auth.user.id, id, { withLocked: true });
     await this.petRepository.delete(auth.user.id, id);
-    await this.eventRepository.emit('AssetsChanged', {
-      assetIds: [...new Set(observations.map((item) => item.assetId))],
-    });
+    const assetIds = [...new Set(observations.map((item) => item.assetId))];
+    if (assetIds.length > 0) {
+      await this.eventRepository.emit('AssetsChanged', { assetIds });
+    }
   }
 
   /**
@@ -155,9 +157,11 @@ export class PetService {
       });
     }
 
-    await this.eventRepository.emit('AssetsChanged', {
-      assetIds: [...new Set(observations.map((item) => item.assetId))],
-    });
+    const assetIds = [...new Set(observations.map((item) => item.assetId))];
+
+    if (assetIds.length > 0) {
+      await this.eventRepository.emit('AssetsChanged', { assetIds });
+    }
     return mapPet(await this.findOrFail(auth, id));
   }
 

@@ -36,6 +36,21 @@ const settle = (run: (done: () => void) => void) =>
  * Runs on the API worker only (one process). Not unit-testable against real multicast without
  * flaking in CI, so tests mock the `bonjour-service` module rather than exercising real UDP.
  */
+/** A DNS-SD instance name is at most 63 UTF-8 bytes: the suffix always fits, the name is cut by bytes. */
+export const dnsSdInstanceName = (name: string, id: string) => {
+  const suffix = ` (${id.slice(0, 8)})`;
+  let budget = 63 - Buffer.byteLength(suffix);
+  let kept = '';
+  for (const character of name) {
+    budget -= Buffer.byteLength(character);
+    if (budget < 0) {
+      break;
+    }
+    kept += character;
+  }
+  return kept + suffix;
+};
+
 @Injectable()
 export class LanDiscoveryService extends BaseService {
   private bonjour: Bonjour | null = null;
@@ -129,7 +144,7 @@ export class LanDiscoveryService extends BaseService {
     this.bonjour ??= new Bonjour();
     // two servers with the same name would collide on the mDNS instance name and bonjour-service silently
     // withdraws the second record; apps show the TXT name, so the instance name carries part of the id
-    const instance = `${name.slice(0, 50)} (${id.slice(0, 8)})`;
+    const instance = dnsSdInstanceName(name, id);
     this.service = this.bonjour.publish({
       name: instance,
       type: 'frameleaf',

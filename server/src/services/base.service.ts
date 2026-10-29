@@ -434,6 +434,14 @@ export class BaseService {
     return readConfig(repos);
   }
 
+  /** One AssetsChanged for a bulk change; nothing when no item changed, as when it was sent per item. */
+  protected async emitAssetsChanged(assetIds: Iterable<string>) {
+    const unique = [...new Set(assetIds)];
+    if (unique.length > 0) {
+      await this.eventRepository.emit('AssetsChanged', { assetIds: unique });
+    }
+  }
+
   /**
    * FL-66: change the saved system configuration as one step. It holds the settings lock that
    * every administrator save holds, and starts from the configuration read straight from storage

@@ -606,9 +606,9 @@ export const loadCommandCatalogue = async (term: string, signal?: AbortSignal): 
       [],
     ),
     settle<AlbumTreeResponseDto>(getAlbumTree({}, { signal }), { albums: [], collections: [], spaces: [] }),
-    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.City), []),
-    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.State), []),
-    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.Country), []),
+    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.City, signal), []),
+    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.State, signal), []),
+    settle<string[]>(sharedSearchSuggestions(SearchSuggestionType.Country, signal), []),
   ]);
 
   const tree = buildAlbumTree(albums);

@@ -207,6 +207,7 @@ describe('/server', () => {
         externalDomain: '',
         publicUsers: true,
         isOnboarded: false,
+        isNewServerSetup: false,
         maintenanceMode: false,
         // FL-402: the worker may still be putting the place data back from its first start
         placesRestoring: expect.any(Boolean),

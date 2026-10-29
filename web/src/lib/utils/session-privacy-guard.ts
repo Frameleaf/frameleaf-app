@@ -117,8 +117,9 @@ export const watchSessionPrivacy = (
   let wallDeadline: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inFlight: Promise<void> | undefined;
-  // a lock still settling when this view loaded: the session was unlocked while its loaders ran
-  let lockSeenBeforeVerified = false;
+  // the route data was loaded under other access: a lock still settling when this view loaded (the
+  // session was unlocked while its loaders ran), or a sign-in here since (they ran signed out)
+  let loadedUnderOtherAccess = false;
 
   const revoke = () => {
     if (stopped) {
@@ -180,7 +181,7 @@ export const watchSessionPrivacy = (
 
   const check = async () => {
     if (sessionAccess.lockPending && !verified) {
-      lockSeenBeforeVerified = true;
+      loadedUnderOtherAccess = true;
     }
     if (stopped || sessionAccess.lockPending) {
       return;
@@ -221,7 +222,7 @@ export const watchSessionPrivacy = (
       // extend elevation. Fail closed if the server time cannot be established.
       const remaining = expiresAt - serverTime - 1000 - (performance.now() - started);
       // decided before anything below clears this tab's records
-      const revalidateLoaders = lockSeenBeforeVerified || loadersCouldHaveSeenElevation(status);
+      const revalidateLoaders = loadedUnderOtherAccess || loadersCouldHaveSeenElevation(status);
       let isElevated = status.isElevated;
       if (
         isElevated &&
@@ -293,6 +294,7 @@ export const watchSessionPrivacy = (
           return;
         }
       }
+      loadedUnderOtherAccess = false;
       verified = true;
       onInitialStatus('ready');
     } catch (error) {
@@ -314,6 +316,7 @@ export const watchSessionPrivacy = (
   const unsubscribe = eventManager.on({
     AuthUserLoaded: () => {
       verified = false;
+      loadedUnderOtherAccess = true;
       return refresh();
     },
     AuthLogout: () => {

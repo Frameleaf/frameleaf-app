@@ -30,7 +30,7 @@ export const authenticate = async (url: URL, options?: AuthOptions) => {
   // FL-176: until Frameleaf setup is complete, an administrator is sent to it; others are not.
   let server: { isInitialized: boolean; isOnboarded: boolean } | undefined;
   try {
-    server = serverConfigManager.value;
+    server = await serverConfigManager.ready();
   } catch {
     server = undefined;
   }

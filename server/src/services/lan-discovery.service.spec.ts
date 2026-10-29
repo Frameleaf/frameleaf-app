@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { SystemMetadataKey } from 'src/enum.js';
-import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
+import { LanDiscoveryService, dnsSdInstanceName } from 'src/services/lan-discovery.service.js';
 import * as frameleafRemoteAccess from 'src/utils/frameleaf-remote-access.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -274,5 +274,18 @@ describe(LanDiscoveryService.name, () => {
 
       expect(stop).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe(dnsSdInstanceName.name, () => {
+  it('fits a multibyte server name and the id suffix in 63 UTF-8 bytes without splitting a character', () => {
+    const name = dnsSdInstanceName('写真'.repeat(20), '0123456789abcdef');
+    expect(Buffer.byteLength(name)).toBeLessThanOrEqual(63);
+    expect(name.endsWith(' (01234567)')).toBe(true);
+    expect(name).not.toContain('\u{FFFD}');
+  });
+
+  it('keeps a short name whole', () => {
+    expect(dnsSdInstanceName('My Server', 'server-1')).toBe('My Server (server-1)');
   });
 });
