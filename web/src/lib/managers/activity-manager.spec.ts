@@ -54,6 +54,20 @@ describe('activity view ownership', () => {
     expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(2);
   });
 
+  it('asks again for an album whose cached activity a late reaction dropped', async () => {
+    const created = deferred<ActivityResponseDto>();
+    sdkMock.createActivity.mockReturnValue(created.promise as never);
+    await activityManager.init('react-album', 'item');
+    const reacting = activityManager.addActivity({ albumId: 'react-album', assetId: 'item', type: ReactionType.Like });
+    await activityManager.init('react-album');
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(2);
+
+    created.resolve({ id: 'like', type: ReactionType.Like } as ActivityResponseDto);
+    await reacting;
+    await activityManager.init('react-album');
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(3);
+  });
+
   it('lets a repeated init wait for the load already running', async () => {
     const pending = deferred<ActivityResponseDto[]>();
     sdkMock.getActivities.mockImplementation((args) => (args.userId ? Promise.resolve([]) : pending.promise));

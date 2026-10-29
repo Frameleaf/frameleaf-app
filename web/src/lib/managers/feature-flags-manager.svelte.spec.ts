@@ -34,4 +34,17 @@ describe('feature flags manager', () => {
     events.emit('ServerFeaturesLoaded', flags(true));
     expect(featureFlagsManager.value).toEqual(flags(false));
   });
+
+  it('keeps an older answer when the newer refresh fails', async () => {
+    let answer!: (value: never) => void;
+    sdkMock.getServerFeatures
+      .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never)
+      .mockRejectedValueOnce(new Error('offline'));
+    const { featureFlagsManager } = await import('$lib/managers/feature-flags-manager.svelte');
+    const older = featureFlagsManager.init();
+    await expect(featureFlagsManager.init()).rejects.toThrow('offline');
+    answer(flags(true));
+    await older;
+    expect(featureFlagsManager.value).toEqual(flags(true));
+  });
 });

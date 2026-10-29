@@ -302,7 +302,8 @@
     const latest = next.operations?.[0];
     if (previousOperationState && latest?.state === 'complete' && previousOperationState !== `${latest.id}:complete`) {
       backupsLoaded = false;
-      if (screen === 'backups' || screen === 'overview') await loadBackups(signal);
+      // its own deadline: a slow dashboard answer must not use up the backup request's time
+      if (screen === 'backups' || screen === 'overview') await loadBackups(AbortSignal.timeout(30_000));
     }
     previousOperationState = latest ? `${latest.id}:${latest.state}` : '';
   }

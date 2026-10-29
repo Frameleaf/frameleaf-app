@@ -12,7 +12,8 @@ import { startPartnerBackfill, stopPartnerSharing } from 'src/services/partner-c
 export class PartnerService extends BaseService {
   async create(auth: AuthDto, { sharedWithId }: PartnerCreateDto): Promise<PartnerResponseDto> {
     // a library shared with its own owner would start copying every item back into that same library
-    if (sharedWithId === auth.user.id) {
+    // UUIDs compare without case, as the database compares them
+    if (sharedWithId.toLowerCase() === auth.user.id.toLowerCase()) {
       throw new BadRequestException('Cannot share your library with yourself');
     }
     if (!auth.session?.hasElevatedPermission) {

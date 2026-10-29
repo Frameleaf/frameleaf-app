@@ -65,7 +65,10 @@
       batch = await getDevelopBatch({ id: batch.id });
     }
   };
+  // Bumped by every operation: a poll that started before one (a cancel, say) is older than its answer.
+  let operations = 0;
   const perform = async (operation: () => Promise<void>) => {
+    operations++;
     busy = true;
     error = '';
     try {
@@ -73,6 +76,7 @@
     } catch (error_) {
       showError(error_);
     } finally {
+      operations++;
       busy = false;
     }
   };
@@ -110,16 +114,17 @@
         return;
       }
       const id = batch.id;
+      const operation = operations;
       polling = true;
       void getDevelopBatch({ id })
         .then((value) => {
-          if (!disposed && batch?.id === id && !busy && !uploading) {
+          if (!disposed && batch?.id === id && operation === operations && !uploading) {
             batch = value;
           }
         })
         .catch((error_) => {
-          // a poll for a batch no longer shown has nothing to say about the one that is
-          if (!disposed && batch?.id === id) {
+          // a poll for a batch no longer shown, or overtaken by an operation, has nothing to say about it
+          if (!disposed && batch?.id === id && operation === operations) {
             showError(error_);
           }
         })

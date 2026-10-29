@@ -4,6 +4,8 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 class FeatureFlagsManager {
   #value?: ServerFeaturesDto = $state();
   #loads = 0;
+  /** The newest load whose answer is in `#value`. */
+  #applied = 0;
   /** Sign-in's answer, not yet used by an `init`: that one `init` needs no request of its own. */
   #fromSignIn = false;
 
@@ -42,8 +44,9 @@ class FeatureFlagsManager {
   async #loadFeatureFlags() {
     const load = ++this.#loads;
     const value = await getServerFeatures();
-    // an older answer that arrives late never replaces a newer one
-    if (load === this.#loads) {
+    // an older answer that arrives late never replaces a newer one, but stands in for a newer one that failed
+    if (load > this.#applied) {
+      this.#applied = load;
       this.#value = value;
     }
   }
