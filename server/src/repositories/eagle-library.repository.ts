@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Dirent, constants } from 'node:fs';
-import { FileHandle, lstat, open, opendir, readdir, readlink, realpath, stat } from 'node:fs/promises';
+import { FileHandle, access, lstat, open, opendir, readlink, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { isSafeSegment } from 'src/utils/eagle-library.js';
 
@@ -51,6 +51,17 @@ async function realPathOf(handle: FileHandle, filePath: string): Promise<string 
 const isLibraryName = (name: string) => name.toLowerCase().endsWith('.library');
 
 /**
+ * This server can't list a folder through the handle it checked (no `/proc/self/fd`, so not
+ * Linux), so it refuses rather than list by name, which a swapped link could redirect.
+ */
+export class EagleListingUnavailableError extends Error {
+  constructor() {
+    super('Importing from a folder on the server isn’t available on this server');
+    this.name = 'EagleListingUnavailableError';
+  }
+}
+
+/**
  * FL-653: reads Eagle libraries in the folders an administrator allowed for imports
  * (`FRAMELEAF_IMPORT_ROOTS`). It only ever reads: nothing in an Eagle library is written, moved or
  * deleted. Links are never followed, so a library can't reach outside the folder it was found in;
@@ -61,11 +72,40 @@ export class EagleLibraryRepository {
   /** Runs between a folder's check and its listing. Tests use it to swap the folder; nothing else sets it. */
   protected afterDirectoryCheck?: (directory: string) => Promise<void>;
 
+  /** Whether this server can list folders through a checked handle (Linux, where Frameleaf runs). */
+  async isAvailable(): Promise<boolean> {
+    return (
+      process.platform === 'linux' &&
+      (await access('/proc/self/fd')
+        .then(() => true)
+        .catch(() => false))
+    );
+  }
+
+  /**
+   * Lists an open folder through its descriptor (`/proc/self/fd/<fd>`), never by its name (`_directory`
+   * is only for tests that can't list a descriptor). Throws `EagleListingUnavailableError` where that
+   * isn't possible; nothing falls back to a listing by name.
+   */
+  protected async listOpenDirectory(handle: FileHandle, _directory: string): Promise<Dirent[]> {
+    if (process.platform !== 'linux') {
+      throw new EagleListingUnavailableError();
+    }
+    const listing = await opendir(`/proc/self/fd/${handle.fd}`).catch(() => {
+      throw new EagleListingUnavailableError();
+    });
+    const entries: Dirent[] = [];
+    for await (const entry of listing) {
+      entries.push(entry);
+    }
+    return entries;
+  }
+
   /**
    * The entries of a folder that is exactly `expected`, listed through the handle that was checked.
    * The folder is opened without following a link and must be a directory whose real path is
-   * `expected`. On Linux the listing reads that very handle (`/proc/self/fd`); elsewhere the folder's
-   * device and inode are compared before and after the listing, and a change gives no entries.
+   * `expected`; the listing then reads that very handle. A folder that fails the check has no
+   * entries; a server that can't list through a handle refuses (`EagleListingUnavailableError`).
    */
   private async listDirectory(directory: string, expected: string): Promise<Dirent[]> {
     const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW).catch(
@@ -80,21 +120,11 @@ export class EagleLibraryRepository {
         return [];
       }
       await this.afterDirectoryCheck?.(directory);
-      if (process.platform === 'linux') {
-        const entries: Dirent[] = [];
-        const listing = await opendir(`/proc/self/fd/${handle.fd}`).catch(() => {});
-        if (listing) {
-          for await (const entry of listing) {
-            entries.push(entry);
-          }
-          return entries;
-        }
+      return await this.listOpenDirectory(handle, directory);
+    } catch (error) {
+      if (error instanceof EagleListingUnavailableError) {
+        throw error;
       }
-      const entries = await readdir(directory, { withFileTypes: true });
-      const after = await lstat(directory).catch(() => {});
-      const same = after?.isDirectory() && after.dev === before.dev && after.ino === before.ino;
-      return same ? entries : [];
-    } catch {
       return [];
     } finally {
       await handle.close();

@@ -86179,6 +86179,10 @@
       },
       "EagleLibrariesResponseDto": {
         "properties": {
+          "available": {
+            "description": "Whether this server can import from its folders (it needs Linux, where Frameleaf runs)",
+            "type": "boolean"
+          },
           "libraries": {
             "items": {
               "$ref": "#/components/schemas/EagleLibraryLocationDto"
@@ -86192,6 +86196,7 @@
           }
         },
         "required": [
+          "available",
           "libraries",
           "roots"
         ],

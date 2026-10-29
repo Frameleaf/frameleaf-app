@@ -33,6 +33,9 @@ export class EagleLibraryLocationDto extends createZodDto(
 export class EagleLibrariesResponseDto extends createZodDto(
   z
     .object({
+      available: z
+        .boolean()
+        .describe('Whether this server can import from its folders (it needs Linux, where Frameleaf runs)'),
       /** How many import folders the administrator allowed; none means the choice can't be used. */
       roots: z.int().min(0),
       libraries: z.array(EagleLibraryLocationDto.schema),

@@ -1,7 +1,12 @@
 import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { EagleLibraryRepository } from 'src/repositories/eagle-library.repository.js';
+import { EagleLibraryRepository, EagleListingUnavailableError } from 'src/repositories/eagle-library.repository.js';
+
+// Folders are listed only through a checked handle (`/proc/self/fd`), so the listing tests run where
+// Frameleaf runs: on Linux. Elsewhere the repository refuses to list, which is tested below.
+const linux = process.platform === 'linux';
+const onLinux = it.runIf(linux);
 
 describe(EagleLibraryRepository.name, () => {
   let root: string;
@@ -26,7 +31,7 @@ describe(EagleLibraryRepository.name, () => {
     await rm(outside, { recursive: true, force: true });
   });
 
-  it('lists .library folders a few levels down, without following links or opening hidden folders', async () => {
+  onLinux('lists .library folders a few levels down, without following links or opening hidden folders', async () => {
     await library('Design/Eagle/Studio References.library');
     await library('Top.library');
     await library('.hidden/Secret.library');
@@ -38,7 +43,7 @@ describe(EagleLibraryRepository.name, () => {
     await expect(sut.findLibraries(root)).resolves.toEqual(['Design/Eagle/Studio References.library', 'Top.library']);
   });
 
-  it('reads the item folders and their file names, never a linked file', async () => {
+  onLinux('reads the item folders and their file names, never a linked file', async () => {
     const folder = await library('Studio.library');
     await mkdir(path.join(folder, 'images', 'I2.info'));
     await writeFile(path.join(folder, 'images', 'I2.info', 'metadata.json'), '{ not json');
@@ -56,7 +61,7 @@ describe(EagleLibraryRepository.name, () => {
     await expect(sut.openItemFile(folder, 'I2', 'b.jpg')).resolves.toBeUndefined();
   });
 
-  it('lists a folder through the handle it checked, so a folder swapped for a link is never listed', async () => {
+  onLinux('lists a folder through the handle it checked, so a folder swapped for a link is never listed', async () => {
     const folder = await library('Studio.library');
     await mkdir(path.join(outside, 'images', 'X.info'), { recursive: true });
     await writeFile(path.join(outside, 'images', 'X.info', 'metadata.json'), JSON.stringify({ id: 'X' }));
@@ -78,7 +83,7 @@ describe(EagleLibraryRepository.name, () => {
     expect(JSON.stringify(folders)).not.toContain('secret');
   });
 
-  it('never walks into a folder swapped for a link while looking for libraries', async () => {
+  onLinux('never walks into a folder swapped for a link while looking for libraries', async () => {
     await library('Design/Studio.library');
     await mkdir(path.join(outside, 'Elsewhere.library'), { recursive: true });
     await writeFile(path.join(outside, 'Elsewhere.library', 'metadata.json'), '{}');
@@ -98,7 +103,25 @@ describe(EagleLibraryRepository.name, () => {
     expect(found.some((relative) => relative.includes('Elsewhere'))).toBe(false);
   });
 
-  it('opens an item file only by plain names, inside the library, never through a link', async () => {
+  it.skipIf(linux)('refuses to list folders where it can’t list through the checked handle', async () => {
+    const folder = await library('Studio.library');
+    await expect(sut.isAvailable()).resolves.toBe(false);
+    await expect(sut.findLibraries(root)).rejects.toBeInstanceOf(EagleListingUnavailableError);
+    await expect(sut.readInfoFolders(folder)).rejects.toBeInstanceOf(EagleListingUnavailableError);
+  });
+
+  it('never falls back to listing by name when the handle can’t be listed', async () => {
+    const folder = await library('Studio.library');
+    class NoHandleListing extends EagleLibraryRepository {
+      protected override listOpenDirectory(): Promise<never> {
+        return Promise.reject(new EagleListingUnavailableError());
+      }
+    }
+    await expect(new NoHandleListing().readInfoFolders(folder)).rejects.toBeInstanceOf(EagleListingUnavailableError);
+    await expect(new NoHandleListing().findLibraries(root)).rejects.toBeInstanceOf(EagleListingUnavailableError);
+  });
+
+  onLinux('opens an item file only by plain names, inside the library, never through a link', async () => {
     const folder = await library('Studio.library');
     await mkdir(path.join(outside, 'X.info'));
     await writeFile(path.join(outside, 'X.info', 'a.jpg'), 'secret');

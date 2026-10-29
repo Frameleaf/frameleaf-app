@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import path from 'node:path';
 import type { Selectable } from 'kysely';
@@ -19,7 +20,7 @@ import {
 } from 'src/dtos/eagle-import.dto.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EagleImportRepository } from 'src/repositories/eagle-import.repository.js';
-import { EagleLibraryRepository } from 'src/repositories/eagle-library.repository.js';
+import { EagleLibraryRepository, EagleListingUnavailableError } from 'src/repositories/eagle-library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { TakeoutStagingError, TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
 import { EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
@@ -59,9 +60,16 @@ export class EagleImportService {
   async listLibraries(auth: AuthDto): Promise<EagleLibrariesResponseDto> {
     this.requireAdminSession(auth);
     const roots = this.roots();
+    // Folders are only ever listed through a checked handle, which needs Linux (where Frameleaf runs).
+    if (!(await this.libraries.isAvailable())) {
+      return { available: false, roots: roots.length, libraries: [] };
+    }
     const libraries = [];
     for (const [index, root] of roots.entries()) {
       const found = await this.libraries.findLibraries(root).catch((error: unknown) => {
+        if (error instanceof EagleListingUnavailableError) {
+          throw new ServiceUnavailableException(error.message);
+        }
         this.logger.warn(`Import folder ${index} could not be read: ${String(error)}`);
         return [] as string[];
       });
@@ -69,7 +77,7 @@ export class EagleImportService {
         ...found.map((relative) => ({ rootId: String(index), path: relative, name: path.basename(relative) })),
       );
     }
-    return { roots: roots.length, libraries };
+    return { available: true, roots: roots.length, libraries };
   }
 
   /** The chosen library's lists, for the check before importing. Nothing is imported yet. */
@@ -168,15 +176,17 @@ export class EagleImportService {
 
   /** Reads a library folder the server already resolved. */
   async read(directory: string): Promise<EagleServerLibrary> {
+    if (!(await this.libraries.isAvailable())) {
+      throw new ServiceUnavailableException(new EagleListingUnavailableError().message);
+    }
     const metadata = await this.libraries.readLibraryMetadata(directory);
     if (metadata === undefined) {
       throw new BadRequestException('This folder isn’t an Eagle library, or its list can’t be read');
     }
-    const library = buildEagleLibrary(
-      path.basename(directory),
-      metadata,
-      await this.libraries.readInfoFolders(directory),
-    );
+    const infoFolders = await this.libraries.readInfoFolders(directory).catch((error: unknown) => {
+      throw error instanceof EagleListingUnavailableError ? new ServiceUnavailableException(error.message) : error;
+    });
+    const library = buildEagleLibrary(path.basename(directory), metadata, infoFolders);
     if (!library) {
       throw new BadRequestException('This folder isn’t an Eagle library, or its list can’t be read');
     }

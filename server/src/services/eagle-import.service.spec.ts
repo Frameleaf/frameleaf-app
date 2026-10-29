@@ -1,7 +1,13 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { type FileHandle, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type { Dirent } from 'node:fs';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import type { EagleImportRepository } from 'src/repositories/eagle-import.repository.js';
@@ -17,6 +23,19 @@ import { EagleImportService } from 'src/services/eagle-import.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 
 type AnyMock = Mock<(...args: any[]) => any>;
+
+/**
+ * The real repository, except that folders are listed by name: these tests run on any machine,
+ * while the server itself lists only through a checked handle on Linux (see the repository spec).
+ */
+class AnyPlatformLibraryRepository extends EagleLibraryRepository {
+  override isAvailable() {
+    return Promise.resolve(true);
+  }
+  protected override listOpenDirectory(_handle: FileHandle, directory: string): Promise<Dirent[]> {
+    return readdir(directory, { withFileTypes: true });
+  }
+}
 
 const admin: AuthDto = { user: { ...authStub.admin.user, isAdmin: true }, session: { id: 'session' } as never };
 const created = new Date('2026-10-29T10:00:00.000Z');
@@ -98,7 +117,7 @@ describe('FL-653 Eagle import from a server folder', () => {
       logger as unknown as LoggingRepository,
       { getEnv: () => ({ storage: { importRoots: [root] } }) } as unknown as ConfigRepository,
       repository as unknown as EagleImportRepository,
-      new EagleLibraryRepository(),
+      new AnyPlatformLibraryRepository(),
       staging as unknown as TakeoutStagingRepository,
     );
   });
@@ -131,6 +150,25 @@ describe('FL-653 Eagle import from a server folder', () => {
     ...overrides,
   });
 
+  it('says a server that can’t list through a checked handle can’t import from its folders', async () => {
+    class Unavailable extends EagleLibraryRepository {
+      override isAvailable() {
+        return Promise.resolve(false);
+      }
+    }
+    const unavailable = new EagleImportService(
+      logger as unknown as LoggingRepository,
+      { getEnv: () => ({ storage: { importRoots: [root] } }) } as unknown as ConfigRepository,
+      repository as unknown as EagleImportRepository,
+      new Unavailable(),
+      staging as unknown as TakeoutStagingRepository,
+    );
+    await expect(unavailable.listLibraries(admin)).resolves.toEqual({ available: false, roots: 1, libraries: [] });
+    await expect(
+      unavailable.check(admin, { rootId: '0', path: 'Design/Studio References.library' }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
   describe('who may choose a server folder', () => {
     it.each([
       ['someone who is not an administrator', { ...authStub.user1, session: { id: 's' } as never }],
@@ -145,6 +183,7 @@ describe('FL-653 Eagle import from a server folder', () => {
 
     it('lists the libraries in the permitted import folders', async () => {
       await expect(service.listLibraries(admin)).resolves.toEqual({
+        available: true,
         roots: 1,
         libraries: [
           {
@@ -277,7 +316,7 @@ describe('FL-653 Eagle import from a server folder', () => {
       worker = new EagleImportWorkerService(
         logger as unknown as LoggingRepository,
         repository as unknown as EagleImportRepository,
-        new EagleLibraryRepository(),
+        new AnyPlatformLibraryRepository(),
         staging as unknown as TakeoutStagingRepository,
         {
           get: vitest.fn().mockResolvedValue({ ...admin.user, quotaUsageInBytes: 0, quotaSizeInBytes: null }),

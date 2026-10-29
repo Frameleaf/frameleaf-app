@@ -7968,6 +7968,8 @@ export type EagleLibraryLocationDto = {
     rootId: string;
 };
 export type EagleLibrariesResponseDto = {
+    /** Whether this server can import from its folders (it needs Linux, where Frameleaf runs) */
+    available: boolean;
     libraries: EagleLibraryLocationDto[];
     roots: number;
 };

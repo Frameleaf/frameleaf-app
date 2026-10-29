@@ -67,9 +67,21 @@ describe('Import from Eagle: a library in a folder the server can open', () => {
     expect(screen.getByText('Only an administrator can import from a folder on the server.')).toBeInTheDocument();
   });
 
+  it('says so when this server can’t import from its folders, and leaves the import from this computer as it is', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: false, roots: 1, libraries: [] });
+    render(BoardsEagleImportDialog);
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    expect(await screen.findByText(/isn’t available on this server/)).toBeInTheDocument();
+    expect(sdkMock.checkEagleLibrary).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('radio', { name: /On this computer/ }));
+    expect(screen.getByRole('button', { name: /Choose the library folder/ })).toBeEnabled();
+  });
+
   it('lists the libraries on the server, checks one there and starts the import on the server', async () => {
     authManager.setUser(userAdminFactory.build({ isAdmin: true }));
     sdkMock.getEagleLibraries.mockResolvedValue({
+      available: true,
       roots: 1,
       libraries: [{ rootId: '0', path: 'Design/Eagle/Studio References.library', name: 'Studio References.library' }],
     });

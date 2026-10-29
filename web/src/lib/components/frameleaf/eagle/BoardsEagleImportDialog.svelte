@@ -144,6 +144,8 @@
   let serverLocation = $state<EagleServerLocation | undefined>(session?.location);
   let serverLibraries = $state<EagleLibraryLocationDto[] | undefined>();
   let serverRoots = $state(0);
+  /** This server can import from its folders (it can't where it can't list them safely: not Linux). */
+  let serverAvailable = $state(true);
   let serverListFailed = $state(false);
   /** The server's earlier import of the chosen library, to carry on. */
   let serverSaved = $state<EagleImportResponseDto | undefined>();
@@ -255,6 +257,7 @@
     serverListFailed = false;
     try {
       const found = await listServerLibraries();
+      serverAvailable = found.available;
       serverRoots = found.roots;
       serverLibraries = found.libraries;
     } catch {
@@ -835,6 +838,8 @@
           />
         {:else if !serverLibraries}
           <p role="status">{$t('frameleaf_eagle_server_loading')}</p>
+        {:else if !serverAvailable}
+          <p class="note-line" role="status">{$t('frameleaf_eagle_server_unavailable_here')}</p>
         {:else if serverRoots === 0}
           <p class="note-line" role="status">{$t('frameleaf_eagle_server_no_roots')}</p>
         {:else if serverLibraries.length === 0}

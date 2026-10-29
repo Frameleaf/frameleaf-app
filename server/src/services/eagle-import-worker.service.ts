@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Selectable } from 'kysely';
@@ -230,8 +230,12 @@ export class EagleImportWorkerService {
     if (!(await this.staging.isInsideRoots(row.libraryPath, this.config.getEnv().storage.importRoots))) {
       throw new EagleItemError('This folder is no longer one the server may import from');
     }
-    const library = await this.imports.read(row.libraryPath).catch(() => {
-      throw new EagleItemError('The library can’t be read now. Check that the folder is still there.');
+    const library = await this.imports.read(row.libraryPath).catch((error: unknown) => {
+      throw new EagleItemError(
+        error instanceof ServiceUnavailableException
+          ? error.message
+          : 'The library can’t be read now. Check that the folder is still there.',
+      );
     });
     if (library.fingerprint !== row.fingerprint) {
       throw new EagleItemError('This library changed since it was checked. Check it again to carry on.');
