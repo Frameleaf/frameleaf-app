@@ -81,6 +81,12 @@ const PLAN_RETRY_MS = 10 * 60 * 1000;
 const REFRESH_RETRY_MS = 60 * 1000;
 /** The relay must answer an in-band AUTH within this long. */
 const REFRESH_ANSWER_MS = 10 * 1000;
+/**
+ * A tunnel that closes sooner than this after it was opened (replaced by another copy of this server, or
+ * closed by the relay at once) does not reset the reconnect backoff, so a flapping tunnel backs off to
+ * the 5-minute ceiling instead of reconnecting every second.
+ */
+export const RELAY_STABLE_TUNNEL_MS = 60 * 1000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -100,7 +106,8 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
  *   the decrypted connection to the proxy core tagged `via: relay`. The relay only ever carries TLS
  *   records it cannot read. Only this server's own names are served; `:authority` is never dialled.
  * - PING every `keepaliveSec` (30 s); three unanswered PINGs reconnect. Reconnects wait a full-jitter
- *   backoff from 1 s to 5 min; three failures in a row re-select the relay. The token is refreshed
+ *   backoff from 1 s to 5 min, reset only by a tunnel that stayed up a minute; three failures in a
+ *   row re-select the relay. The token is refreshed
  *   in-band at half its life. A revoked or suspended server stops until it is linked again, remote
  *   access is turned off and on, or an hour passes.
  */
@@ -128,6 +135,7 @@ export class EdgeRelayService {
   /** Specs replace these seams. */
   dial = (options: tls.ConnectionOptions): TLSSocket => tls.connect(options);
   random = () => Math.random();
+  now = () => Date.now();
   /** Extra certificate authorities for the relay's certificate (the public roots otherwise). */
   ca: string | undefined = undefined;
   wait = (ms: number, signal: AbortSignal) => sleep(ms, undefined, { signal }).catch(() => {});
@@ -254,6 +262,7 @@ export class EdgeRelayService {
         continue;
       }
       let end: TunnelEnd | null = null;
+      let upFor = 0;
       try {
         if (this.reselect && !target.recovery) {
           await this.select(target).catch((error: unknown) => {
@@ -268,7 +277,9 @@ export class EdgeRelayService {
           this.failures = 0;
         }
         const grant = await this.token(target);
+        const opened = this.now();
         end = await this.connect(target, grant, signal);
+        upFor = this.now() - opened;
       } catch (error) {
         if (signal.aborted) {
           return;
@@ -279,9 +290,11 @@ export class EdgeRelayService {
         return;
       }
       if (end) {
-        // it was up: start over from the shortest wait, on the same relay unless it drains
+        // it was up: on the same relay unless it drains, and from the shortest wait again once it stayed up
         this.failures = 0;
-        this.attempt = 0;
+        if (upFor >= RELAY_STABLE_TUNNEL_MS) {
+          this.attempt = 0;
+        }
         this.ended(target, end);
       }
       await this.wait(backoffDelayMs(this.attempt++, this.random), signal);
