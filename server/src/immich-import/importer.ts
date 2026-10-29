@@ -1,3 +1,4 @@
+import { AssetLockReason } from 'src/enum.js';
 import {
   CONTENT_TABLES,
   DEFERRED_COLUMNS,
@@ -27,6 +28,15 @@ const BOOTSTRAP_TABLES = new Set([
   'naturalearth_countries',
 ]);
 const localColumns = new Set(['updateId', 'createId']);
+const lockedFace = `EXISTS (SELECT 1 FROM public.asset_face f JOIN public.asset_lock l ON l."assetId"=f."assetId" WHERE f.id=s."faceAssetId")`;
+/** Columns `convertLocks` rewrites. Verification accepts a changed value only where a lock explains it. */
+const LOCK_REWRITES: Record<string, Record<string, string>> = {
+  asset: { visibility: `s.visibility='locked' AND EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=d.id)` },
+  album: {
+    albumThumbnailAssetId: `EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=s."albumThumbnailAssetId")`,
+  },
+  person: { faceAssetId: lockedFace, thumbnailPath: lockedFace },
+};
 
 // Serialized row/checkpoint parameters enter as text so postgres.js does not JSON-encode them again.
 export class ImmichImportService {
@@ -101,6 +111,7 @@ export class ImmichImportService {
       }
       // Cyclic nullable relationships are patched only once both endpoints exist.
       for (const table of Object.keys(DEFERRED_COLUMNS)) {
+        if (this.deferredColumns(table).length === 0) continue;
         for await (const batch of this.source.batches(table)) {
           await this.destination.transaction(async (db) => {
             for (const { row } of batch) {
@@ -110,6 +121,8 @@ export class ImmichImportService {
           });
         }
       }
+      await this.buildAlbumTree();
+      await this.convertLocks();
       await this.copyMediaLocation();
       await this.destination.query("UPDATE public.frameleaf_immich_import SET status='verifying'");
     });
@@ -147,6 +160,9 @@ export class ImmichImportService {
         }
       }
       await this.verifyRelationships();
+      if ((await this.destination.query(`SELECT 1 FROM public.asset WHERE visibility='locked' LIMIT 1`)).length > 0) {
+        throw new ImportRefused('LOCKED_FOLDER_NOT_CONVERTED');
+      }
       // Detect source changes since the copy, including changes during verification.
       if ((await this.source.preflight()) !== report.fingerprint) {
         throw new ImportRefused('SOURCE_CHANGED_DURING_VERIFICATION');
@@ -283,7 +299,7 @@ export class ImmichImportService {
             });
           }
           const initial = { ...target };
-          for (const column of DEFERRED_COLUMNS[table] ?? []) {
+          for (const column of this.deferredColumns(table)) {
             initial[column] = null;
           }
           await this.insert(db, table, initial);
@@ -308,6 +324,66 @@ export class ImmichImportService {
       VALUES ($1,true) ON CONFLICT(table_name) DO UPDATE SET complete=true`,
       [table],
     );
+  }
+
+  /** Every album needs its closure self row, and fork albums their ancestors, as the album repository writes
+   * them. Parents become collections and keep their nesting, as the in-place upgrade did
+   * (2100000000080-AddAlbumKind). Idempotent, so a resumed run repeats it. */
+  private async buildAlbumTree(): Promise<void> {
+    // UNION, not UNION ALL: a fork tree saved before its cycle guard (2100000000020) still terminates.
+    await this.destination.query(`INSERT INTO public.album_closure(id_ancestor,id_descendant)
+      WITH RECURSIVE tree(id_ancestor,id_descendant) AS (
+        SELECT id,id FROM public.album
+        UNION SELECT a."parentId",t.id_descendant FROM tree t JOIN public.album a ON a.id=t.id_ancestor
+        WHERE a."parentId" IS NOT NULL)
+      SELECT id_ancestor,id_descendant FROM tree ON CONFLICT DO NOTHING`);
+    await this.destination.query(`UPDATE public.album SET kind='collection' WHERE kind='album'
+      AND id IN (SELECT "parentId" FROM public.album WHERE "parentId" IS NOT NULL)
+      AND id NOT IN (SELECT "albumId" FROM public.smart_album)`);
+  }
+
+  /** Frameleaf locks with `asset_lock` records, never `visibility = locked` (src/utils/locked.ts). Carries the
+   * upstream Locked folder and the fork's Mark Sensitive over exactly as 2100000000320-AddAssetLock did for an
+   * in-place upgrade: whole stacks and live photos lock, and locked media stops being a cover or face thumbnail.
+   * Idempotent, so a resumed run repeats it. */
+  private async convertLocks(): Promise<void> {
+    await this.destination.query(
+      `INSERT INTO public.asset_lock("assetId",reason,"lockedAt","previousVisibility")
+      SELECT id,$1,"updatedAt",'locked' FROM public.asset WHERE visibility='locked' ON CONFLICT DO NOTHING`,
+      [AssetLockReason.FrameleafLockedFolder],
+    );
+    await this.destination.query(`UPDATE public.asset SET visibility=CASE
+      WHEN EXISTS (SELECT 1 FROM public.asset still WHERE still."livePhotoVideoId"=asset.id) THEN 'hidden'
+      ELSE 'timeline' END::asset_visibility_enum WHERE visibility='locked'`);
+    // ponytail: fork sensitive *detections* (asset.is_nsfw) are not carried; they only hid media when the admin
+    // switched detection hiding on. Owner marks are, from the imported ml-enrichment review.
+    await this.destination.query(
+      `INSERT INTO public.asset_lock("assetId",reason,"lockedAt")
+      SELECT "assetId",$1,"updatedAt" FROM public.asset_metadata
+      WHERE key='ml-enrichment' AND value #>> '{nsfwDetection,review,isNsfw}'='true' ON CONFLICT DO NOTHING`,
+      [AssetLockReason.Marked],
+    );
+    await this.destination.query(`INSERT INTO public.asset_lock("assetId",reason,"lockedAt","lockedBy")
+      SELECT member.id,source.reason,source."lockedAt",source."lockedBy" FROM public.asset member
+      JOIN (SELECT DISTINCT ON (a."stackId") a."stackId",l.reason,l."lockedAt",l."lockedBy"
+        FROM public.asset_lock l JOIN public.asset a ON a.id=l."assetId" JOIN public.stack s ON s.id=a."stackId"
+        ORDER BY a."stackId",(a.id=s."primaryAssetId") DESC,l."lockedAt") source ON source."stackId"=member."stackId"
+      ON CONFLICT DO NOTHING`);
+    await this.destination.query(`INSERT INTO public.asset_lock("assetId",reason,"lockedAt","lockedBy")
+      SELECT still."livePhotoVideoId",l.reason,l."lockedAt",l."lockedBy" FROM public.asset_lock l
+      JOIN public.asset still ON still.id=l."assetId" WHERE still."livePhotoVideoId" IS NOT NULL
+      ON CONFLICT DO NOTHING`);
+    await this.destination.query(`UPDATE public.album SET "albumThumbnailAssetId"=(
+        SELECT aa."assetId" FROM public.album_asset aa JOIN public.asset a ON a.id=aa."assetId" AND a."deletedAt" IS NULL
+          AND NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id)
+        WHERE aa."albumId"=album.id ORDER BY a."fileCreatedAt" DESC LIMIT 1)
+      WHERE "albumThumbnailAssetId" IN (SELECT "assetId" FROM public.asset_lock)`);
+    await this.destination.query(`UPDATE public.person SET "faceAssetId"=(
+        SELECT f.id FROM public.asset_face f JOIN public.asset a ON a.id=f."assetId"
+          AND NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id)
+        WHERE f."personGroupId"=person."personGroupId" AND f."deletedAt" IS NULL AND f."isVisible" IS TRUE
+        ORDER BY a."deletedAt" IS NOT NULL,a."fileCreatedAt" DESC LIMIT 1),"thumbnailPath"=''
+      WHERE "faceAssetId" IN (SELECT f.id FROM public.asset_face f JOIN public.asset_lock l ON l."assetId"=f."assetId")`);
   }
 
   /** Imported paths start with the source's media root; without its saved location the server assumes the
@@ -391,6 +467,12 @@ export class ImmichImportService {
     );
   }
 
+  /** Deferred columns this source has: fork album nesting only exists on fork sources. */
+  private deferredColumns(table: string): string[] {
+    const columns = this.source.fixture.tables[table]?.columns ?? [];
+    return (DEFERRED_COLUMNS[table] ?? []).filter((column) => columns.includes(column));
+  }
+
   private targetKeys(table: string): string[] {
     return table === 'person' && this.legacyPeople
       ? ['ownerId', 'personGroupId']
@@ -398,7 +480,7 @@ export class ImmichImportService {
   }
 
   private async patchReferences(db: ImportDatabase, table: string, row: ImportRow): Promise<void> {
-    const columns = DEFERRED_COLUMNS[table];
+    const columns = this.deferredColumns(table);
     const keys = this.targetKeys(table);
     await db.query(
       `UPDATE public.${quote(table)} d SET ${columns.map((column) => `${quote(column)}=s.${quote(column)}`).join(',')}
@@ -416,7 +498,13 @@ export class ImmichImportService {
       `SELECT 1 FROM public.${quote(table)} d,
       jsonb_populate_record(NULL::public.${quote(table)},$1::text::jsonb) s
       WHERE ${keys.map((key) => `d.${quote(key)}=s.${quote(key)}`).join(' AND ')}
-      AND ${columns.map((column) => `d.${quote(column)} IS NOT DISTINCT FROM s.${quote(column)}`).join(' AND ')}`,
+      AND ${columns
+        .map((column) => {
+          const same = `d.${quote(column)} IS NOT DISTINCT FROM s.${quote(column)}`;
+          const rewrite = LOCK_REWRITES[table]?.[column];
+          return rewrite ? `(${same} OR (${rewrite}))` : same;
+        })
+        .join(' AND ')}`,
       [JSON.stringify(row)],
     );
     if (records.length !== 1) {
