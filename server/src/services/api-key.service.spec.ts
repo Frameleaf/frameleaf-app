@@ -294,6 +294,22 @@ describe(ApiKeyService.name, () => {
     });
   });
 
+  describe('design permissions', () => {
+    it('reports newer permissions apart from the strictly decoded permissions list', async () => {
+      const auth = AuthFactory.create();
+      const apiKey = ApiKeyFactory.create({
+        userId: auth.user.id,
+        permissions: [Permission.CaptureCreate, Permission.AssetRead, Permission.CaptureCatalogRead],
+      });
+      mocks.apiKey.getById.mockResolvedValue(apiKey);
+
+      await expect(sut.getById(auth, apiKey.id)).resolves.toMatchObject({
+        permissions: [Permission.AssetRead],
+        designPermissions: [Permission.CaptureCreate, Permission.CaptureCatalogRead],
+      });
+    });
+  });
+
   describe('getById', () => {
     it('should throw an error if the key is not found', async () => {
       const auth = AuthFactory.create();

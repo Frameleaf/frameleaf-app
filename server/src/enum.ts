@@ -254,6 +254,14 @@ export const AssetOrderWithRandomSchema = z
 export enum Permission {
   All = 'all',
 
+  BookmarkCreate = 'bookmark.create',
+  BookmarkRead = 'bookmark.read',
+  BookmarkUpdate = 'bookmark.update',
+  BookmarkDelete = 'bookmark.delete',
+
+  CaptureCreate = 'capture.create',
+  CaptureCatalogRead = 'capture.catalog.read',
+
   ActivityCreate = 'activity.create',
   ActivityRead = 'activity.read',
   ActivityUpdate = 'activity.update',
@@ -268,6 +276,7 @@ export enum Permission {
 
   // ASSET_CREATE = 'asset.create',
   AssetRead = 'asset.read',
+  AssetSourceRead = 'assetSource.read',
   AssetUpdate = 'asset.update',
   AssetDelete = 'asset.delete',
   AssetStatistics = 'asset.statistics',
@@ -2308,6 +2317,8 @@ export enum JobName {
   AssetGenerateVideoDuplicateFrames = 'AssetGenerateVideoDuplicateFrames',
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
   AssetDevelopRender = 'AssetDevelopRender',
+  AssetPaletteExtract = 'AssetPaletteExtract',
+  AssetPaletteQueueAll = 'AssetPaletteQueueAll',
   PhotographyWorkflowRender = 'PhotographyWorkflowRender',
   AssetVideoEditGeneration = 'AssetVideoEditGeneration',
   AssetEncodeVideoQueueAll = 'AssetEncodeVideoQueueAll',
@@ -3099,6 +3110,18 @@ export const OAuthTokenEndpointAuthMethodSchema = z
   .describe('OAuth token endpoint auth method')
   .meta({ id: 'OAuthTokenEndpointAuthMethod' });
 
+export enum LibraryScope {
+  Personal = 'personal',
+  Design = 'design',
+  Both = 'both',
+}
+
+export const LibraryScopeSchema = z.enum(LibraryScope).meta({ id: 'LibraryScope' });
+export const LibraryViewScopeSchema = z
+  .enum([LibraryScope.Personal, LibraryScope.Design])
+  .meta({ id: 'LibraryViewScope' });
+export type LibraryViewScope = z.infer<typeof LibraryViewScopeSchema>;
+
 export enum AssetVisibility {
   Archive = 'archive',
   Timeline = 'timeline',
@@ -3238,6 +3261,8 @@ export enum ConfigVisibility {
 }
 
 export enum ApiTag {
+  Capture = 'Capture',
+  Bookmarks = 'Bookmarks',
   Activities = 'Activities',
   Albums = 'Albums',
   AlbumSources = 'Album sources',

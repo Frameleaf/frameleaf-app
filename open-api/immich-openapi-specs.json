@@ -10371,6 +10371,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "visibility",
             "required": false,
             "in": "query",
@@ -10876,6 +10884,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "name",
             "required": false,
             "in": "query",
@@ -11060,6 +11076,56 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/hierarchy": {
+      "get": {
+        "description": "Albums and collections with their visible descendants. Shared spaces remain at the top level.",
+        "operationId": "getAlbumHierarchy",
+        "parameters": [
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumHierarchyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the nested album directory",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
     "/albums/icons": {
       "get": {
         "description": "Every Material Design Icons name an album or collection may use, plus the categorised suggested set shown first in icon choosers. Served as data so clients never bundle the catalogue.",
@@ -11202,9 +11268,18 @@
     },
     "/albums/tree": {
       "get": {
-        "description": "Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. Albums nest one level deep inside collections only; collections and shared spaces are always top level.",
+        "description": "Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. This compatibility projection flattens nested collections and promotes albums whose parent is not a visible collection. Use /albums/hierarchy for the full hierarchy.",
         "operationId": "getAlbumTree",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -11243,7 +11318,7 @@
     },
     "/albums/{id}": {
       "delete": {
-        "description": "Delete a specific album by its ID. Note the album is initially trashed and then immediately scheduled for deletion, but relies on a background job to complete the process.",
+        "description": "Delete a specific album by its ID. Direct children move to its parent; original media is preserved.",
         "operationId": "deleteAlbum",
         "parameters": [
           {
@@ -11594,9 +11669,135 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/{id}/bookmarks": {
+      "delete": {
+        "operationId": "removeBookmarksFromAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookmarkIdsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BulkIdResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove bookmark memberships without deleting bookmarks",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "albumAsset.delete"
+      },
+      "put": {
+        "operationId": "addBookmarksToAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookmarkIdsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BulkIdResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add owned bookmarks to an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "albumAsset.create"
+      }
+    },
     "/albums/{id}/collection": {
       "put": {
-        "description": "Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it (an editor gets 403); the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.",
+        "description": "Move an album or collection under an editable album or collection, or send null to move it to the top level. Only the owner can move a node. Shared spaces stay at the top level.",
         "operationId": "moveAlbumToCollection",
         "parameters": [
           {
@@ -11658,7 +11859,7 @@
     },
     "/albums/{id}/descendant-count": {
       "get": {
-        "description": "Return the number of descendant albums (children, grandchildren, etc.) for a specific album. Used by the UI to show \"Delete X and N nested albums?\" confirmations.",
+        "description": "Return the number of descendant albums (children, grandchildren, etc.) for a specific album. Deleting an album preserves its descendants.",
         "operationId": "getAlbumDescendantCount",
         "parameters": [
           {
@@ -11696,6 +11897,103 @@
           }
         ],
         "summary": "Count descendant albums",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
+    "/albums/{id}/items": {
+      "get": {
+        "description": "Ordered by kind then ID. Counts apply media privacy filters and keep assetCount separate from bookmarkCount.",
+        "operationId": "getAlbumItems",
+        "parameters": [
+          {
+            "name": "afterId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "afterKind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryItemKind"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve a page of assets and bookmarks in an album",
         "tags": [
           "Albums"
         ],
@@ -13813,6 +14111,14 @@
             "description": "Filter by trash status",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
             }
           },
           {
@@ -16946,6 +17252,117 @@
         "x-immich-state": "Stable"
       }
     },
+    "/assets/{id}/palette": {
+      "get": {
+        "operationId": "getAssetPalette",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPaletteDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read the current representative palette and extraction state",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
+    "/assets/{id}/palette/retry": {
+      "post": {
+        "operationId": "retryAssetPalette",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Queue bounded palette extraction for the current source",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/{id}/restorations": {
       "get": {
         "description": "Every restoration of the asset, newest first, with its lifecycle state, the destination it was bound to and which result the owner chose as the playback version.",
@@ -17489,6 +17906,60 @@
         ],
         "x-immich-permission": "asset.edit.create",
         "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/sources": {
+      "get": {
+        "operationId": "getAssetSources",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssetSourceResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve private capture provenance for an owned asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "assetSource.read"
       }
     },
     "/assets/{id}/thumbnail": {
@@ -18946,6 +19417,896 @@
         ],
         "x-immich-permission": "asset.read",
         "x-immich-state": "Beta"
+      }
+    },
+    "/bookmarks": {
+      "post": {
+        "operationId": "createBookmark",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookmarkCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a bookmark",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.create"
+      }
+    },
+    "/bookmarks/{id}": {
+      "delete": {
+        "operationId": "trashBookmark",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move an owned bookmark to trash",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.delete"
+      },
+      "get": {
+        "operationId": "getBookmark",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve an owned bookmark",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.read"
+      },
+      "patch": {
+        "operationId": "updateBookmark",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookmarkUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update an owned bookmark",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.update"
+      }
+    },
+    "/bookmarks/{id}/restore": {
+      "post": {
+        "operationId": "restoreBookmark",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore an owned bookmark from trash",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.update"
+      }
+    },
+    "/bookmarks/{id}/tags": {
+      "get": {
+        "operationId": "getBookmarkTags",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookmarkTagsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve an owned bookmark’s tag IDs",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.read"
+      },
+      "post": {
+        "operationId": "addBookmarkTags",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookmarkTagsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add tags to an owned bookmark",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.update"
+      },
+      "put": {
+        "operationId": "setBookmarkTags",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookmarkTagsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Replace an owned bookmark’s tags",
+        "tags": [
+          "Bookmarks"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "bookmark.update"
+      }
+    },
+    "/capture/albums": {
+      "post": {
+        "operationId": "createCaptureAlbum",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureAlbumCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create an ordinary design album for capture",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
+      }
+    },
+    "/capture/cancel": {
+      "post": {
+        "operationId": "cancelCapture",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureCommitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureCancelResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel an unpublished capture UUID or return its existing saved receipt",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
+      }
+    },
+    "/capture/capabilities": {
+      "get": {
+        "operationId": "getCaptureCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureCapabilitiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discover versioned design capture support and account binding",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.catalog.read"
+      }
+    },
+    "/capture/catalog": {
+      "get": {
+        "operationId": "getCaptureCatalog",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureCatalogDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List writable designer album hierarchy and permitted existing tags",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.catalog.read"
+      }
+    },
+    "/capture/commit": {
+      "post": {
+        "operationId": "commitCapture",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureCommitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Commit a capture and its provenance, tags, album membership and receipt atomically",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
+      }
+    },
+    "/capture/uploads": {
+      "post": {
+        "description": "Upload draft interop 9. Asset-Metadata must include publication: capture, captureId, libraryScope: design, filename and file timestamps. Verified bytes remain private until capture commit.",
+        "operationId": "createCaptureUpload",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "audio/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "image/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            },
+            "video/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureUploadStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stage a private resumable file using its persisted capture UUID",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
+      }
+    },
+    "/capture/uploads/{id}": {
+      "delete": {
+        "operationId": "cancelCaptureUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel an unpublished capture resource",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
+      },
+      "get": {
+        "operationId": "getCaptureUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureUploadStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Recover capture byte verification state without returning media metadata",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
+      },
+      "head": {
+        "operationId": "getCaptureUploadOffset",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read the durable acknowledged capture upload offset",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
+      },
+      "patch": {
+        "operationId": "appendCaptureUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/partial-upload": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureUploadStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Append acknowledged capture bytes without publishing an asset",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
       }
     },
     "/cast/{token}": {
@@ -26928,6 +28289,57 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/library/items/search": {
+      "post": {
+        "description": "Bookmark rows require bookmark.read for API keys. Semantic mode ranks up to 1000 filtered asset candidates and reports an explicit candidate count cap. Source filters require assetSource.read.",
+        "operationId": "searchLibraryItems",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryItemSearchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemSearchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search accessible assets and bookmarks with one query and cursor",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
       }
     },
     "/license/link-code": {
@@ -41391,6 +42803,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "make",
             "required": false,
             "in": "query",
@@ -54206,6 +55626,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "lockReason",
             "required": false,
             "in": "query",
@@ -54487,6 +55915,14 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
             }
           },
           {
@@ -54786,6 +56222,14 @@
             }
           },
           {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          },
+          {
             "name": "lockReason",
             "required": false,
             "in": "query",
@@ -55080,6 +56524,14 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
             }
           },
           {
@@ -59114,6 +60566,14 @@
   },
   "tags": [
     {
+      "name": "Capture",
+      "description": "Save design assets and web references with narrow, revocable capture access."
+    },
+    {
+      "name": "Bookmarks",
+      "description": "Saved web references organized using existing albums and tags."
+    },
+    {
       "name": "Activities",
       "description": "An activity is a like or a comment made by a user on an asset or album."
     },
@@ -62434,6 +63894,38 @@
         ],
         "type": "object"
       },
+      "AlbumHierarchyNode": {
+        "properties": {
+          "album": {
+            "$ref": "#/components/schemas/AlbumResponseDto"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/AlbumHierarchyNode"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "album",
+          "children"
+        ],
+        "type": "object"
+      },
+      "AlbumHierarchyResponseDto": {
+        "properties": {
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/AlbumHierarchyNode"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "roots"
+        ],
+        "type": "object"
+      },
       "AlbumIconCatalogueResponseDto": {
         "properties": {
           "names": {
@@ -62556,6 +64048,13 @@
             "minItems": 1,
             "type": "array"
           },
+          "hierarchy": {
+            "description": "Order actual siblings in the recursive hierarchy; omitted for the legacy flattened directory",
+            "type": "boolean"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "parentId": {
             "description": "Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces)",
             "format": "uuid",
@@ -62596,6 +64095,11 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "color": {
+            "description": "Colour name (grey, green, teal, blue, purple, pink, amber, red) or null",
+            "nullable": true,
+            "type": "string"
           },
           "contributorCounts": {
             "items": {
@@ -62663,6 +64167,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
+          },
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
           },
@@ -62671,7 +64178,7 @@
             "description": "Present on your own album when partner sharing copied it from another library"
           },
           "parentId": {
-            "description": "Collection this album belongs to (null = top-level)",
+            "description": "Parent album or collection (null = top-level)",
             "nullable": true,
             "type": "string"
           },
@@ -62719,6 +64226,7 @@
           "albumThumbnailAssetId",
           "albumUsers",
           "assetCount",
+          "color",
           "createdAt",
           "description",
           "hasSharedLink",
@@ -63045,6 +64553,39 @@
         ],
         "type": "object"
       },
+      "AlbumSubtreeFilter": {
+        "$ref": "#/components/schemas/IdsFilter",
+        "properties": {
+          "all": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "any": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "none": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "AlbumTreeResponseDto": {
         "properties": {
           "albums": {
@@ -63146,6 +64687,14 @@
           "viewer"
         ],
         "type": "string"
+      },
+      "AlbumViewDto": {
+        "properties": {
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          }
+        },
+        "type": "object"
       },
       "AlbumsAddAssetsDto": {
         "properties": {
@@ -64732,6 +66281,13 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
           },
+          "designPermissions": {
+            "description": "Design workspace permissions, listed apart from permissions so older clients can still read keys",
+            "items": {
+              "$ref": "#/components/schemas/DesignPermission"
+            },
+            "type": "array"
+          },
           "id": {
             "description": "API key ID",
             "format": "uuid",
@@ -64751,7 +66307,7 @@
           "permissions": {
             "description": "List of permissions",
             "items": {
-              "$ref": "#/components/schemas/Permission"
+              "$ref": "#/components/schemas/ApiKeyResponsePermission"
             },
             "type": "array"
           },
@@ -64770,6 +66326,7 @@
         "required": [
           "apiKey",
           "createdAt",
+          "designPermissions",
           "id",
           "lastUsedAt",
           "name",
@@ -64787,6 +66344,13 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "designPermissions": {
+            "description": "Design workspace permissions, listed apart from permissions so older clients can still read keys",
+            "items": {
+              "$ref": "#/components/schemas/DesignPermission"
+            },
+            "type": "array"
           },
           "id": {
             "description": "API key ID",
@@ -64807,7 +66371,7 @@
           "permissions": {
             "description": "List of permissions",
             "items": {
-              "$ref": "#/components/schemas/Permission"
+              "$ref": "#/components/schemas/ApiKeyResponsePermission"
             },
             "type": "array"
           },
@@ -64821,6 +66385,7 @@
         },
         "required": [
           "createdAt",
+          "designPermissions",
           "id",
           "lastUsedAt",
           "name",
@@ -64828,6 +66393,194 @@
           "updatedAt"
         ],
         "type": "object"
+      },
+      "ApiKeyResponsePermission": {
+        "description": "List of permissions",
+        "enum": [
+          "all",
+          "activity.create",
+          "activity.read",
+          "activity.update",
+          "activity.delete",
+          "activity.statistics",
+          "apiKey.create",
+          "apiKey.read",
+          "apiKey.update",
+          "apiKey.delete",
+          "apiKey.rotate",
+          "asset.read",
+          "asset.update",
+          "asset.delete",
+          "asset.statistics",
+          "asset.share",
+          "asset.view",
+          "asset.download",
+          "asset.upload",
+          "asset.copy",
+          "asset.derive",
+          "assetFile.read",
+          "assetFile.delete",
+          "assetFile.download",
+          "asset.edit.get",
+          "asset.edit.create",
+          "asset.edit.delete",
+          "album.create",
+          "album.read",
+          "album.update",
+          "album.delete",
+          "album.statistics",
+          "album.share",
+          "album.download",
+          "albumAsset.create",
+          "albumAsset.delete",
+          "albumUser.create",
+          "albumUser.update",
+          "albumUser.delete",
+          "auth.changePassword",
+          "authDevice.delete",
+          "archive.read",
+          "backup.list",
+          "backup.download",
+          "backup.upload",
+          "backup.delete",
+          "clusterGroup.read",
+          "clusterGroup.leave",
+          "clusterGroupRequest.create",
+          "clusterGroupRequest.read",
+          "clusterGroupRequest.delete",
+          "adminConfig.read",
+          "adminConfig.update",
+          "userConfig.read",
+          "duplicate.read",
+          "duplicate.delete",
+          "face.create",
+          "face.read",
+          "face.update",
+          "face.delete",
+          "folder.read",
+          "job.create",
+          "job.read",
+          "library.create",
+          "library.read",
+          "library.update",
+          "library.delete",
+          "library.statistics",
+          "timeline.read",
+          "timeline.download",
+          "maintenance",
+          "map.read",
+          "map.search",
+          "memory.create",
+          "memory.read",
+          "memory.update",
+          "memory.delete",
+          "memory.statistics",
+          "memoryAsset.create",
+          "memoryAsset.delete",
+          "notification.create",
+          "notification.read",
+          "notification.update",
+          "notification.delete",
+          "partner.create",
+          "partner.read",
+          "partner.update",
+          "partner.delete",
+          "person.create",
+          "person.read",
+          "person.update",
+          "person.delete",
+          "person.statistics",
+          "person.merge",
+          "person.reassign",
+          "pinCode.create",
+          "pinCode.update",
+          "pinCode.delete",
+          "plugin.create",
+          "plugin.read",
+          "plugin.update",
+          "plugin.delete",
+          "server.about",
+          "server.apkLinks",
+          "server.storage",
+          "server.statistics",
+          "server.versionCheck",
+          "adminCloud.read",
+          "adminCloud.update",
+          "adminCloud.link",
+          "adminRemoteAccess.update",
+          "frameleafAccount.read",
+          "frameleafAccount.update",
+          "adminCloudMl.read",
+          "adminCloudMl.update",
+          "cloudMlJob.create",
+          "cloudMlJob.read",
+          "adminCloudBackup.read",
+          "adminCloudBackup.update",
+          "adminCloudBackup.run",
+          "serverLicense.read",
+          "serverLicense.update",
+          "serverLicense.delete",
+          "session.create",
+          "session.read",
+          "session.update",
+          "session.delete",
+          "session.lock",
+          "sharedLink.create",
+          "sharedLink.read",
+          "sharedLink.update",
+          "sharedLink.delete",
+          "stack.create",
+          "stack.read",
+          "stack.update",
+          "stack.delete",
+          "sync.stream",
+          "syncCheckpoint.read",
+          "syncCheckpoint.update",
+          "syncCheckpoint.delete",
+          "systemConfig.read",
+          "systemConfig.update",
+          "systemMetadata.read",
+          "systemMetadata.update",
+          "tag.create",
+          "tag.read",
+          "tag.update",
+          "tag.delete",
+          "tag.asset",
+          "user.read",
+          "user.update",
+          "userLicense.create",
+          "userLicense.read",
+          "userLicense.update",
+          "userLicense.delete",
+          "userOnboarding.read",
+          "userOnboarding.update",
+          "userOnboarding.delete",
+          "userPreference.read",
+          "userPreference.update",
+          "userProfileImage.create",
+          "userProfileImage.read",
+          "userProfileImage.update",
+          "userProfileImage.delete",
+          "queue.read",
+          "queue.update",
+          "queueJob.create",
+          "queueJob.read",
+          "queueJob.update",
+          "queueJob.delete",
+          "workflow.create",
+          "workflow.read",
+          "workflow.update",
+          "workflow.delete",
+          "workflow.logs",
+          "adminUser.create",
+          "adminUser.read",
+          "adminUser.update",
+          "adminUser.delete",
+          "adminSession.read",
+          "adminSession.delete",
+          "adminAuth.unlinkAll"
+        ],
+        "type": "string"
       },
       "ApiKeyUpdateDto": {
         "properties": {
@@ -65537,6 +67290,9 @@
                 ],
                 "x-immich-state": "Deprecated"
               },
+              "libraryScope": {
+                "$ref": "#/components/schemas/LibraryViewScope"
+              },
               "make": {
                 "deprecated": true,
                 "description": "Filter by camera make",
@@ -66187,6 +67943,9 @@
             "minimum": -90,
             "nullable": true,
             "type": "number"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
           },
           "longitude": {
             "description": "Longitude coordinate; null together with a null latitude removes the location",
@@ -68600,6 +70359,10 @@
             "description": "Mark as favorite",
             "type": "boolean"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope",
+            "description": "Workspace membership; defaults to personal"
+          },
           "livePhotoVideoId": {
             "description": "Live photo video ID",
             "format": "uuid",
@@ -68982,6 +70745,41 @@
         ],
         "type": "string"
       },
+      "AssetPaletteDto": {
+        "properties": {
+          "hasTransparency": {
+            "type": "boolean"
+          },
+          "representative": {
+            "$ref": "#/components/schemas/PaletteRepresentative"
+          },
+          "sourceRevision": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PaletteStatus"
+          },
+          "swatches": {
+            "items": {
+              "$ref": "#/components/schemas/PaletteSwatch"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "version": {
+            "$ref": "#/components/schemas/PaletteAlgorithmVersion"
+          }
+        },
+        "required": [
+          "hasTransparency",
+          "representative",
+          "sourceRevision",
+          "status",
+          "swatches",
+          "version"
+        ],
+        "type": "object"
+      },
       "AssetPlaybackOptionsDto": {
         "properties": {
           "edited": {
@@ -69137,6 +70935,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
           },
           "livePhotoVideoId": {
             "description": "Live photo video ID",
@@ -70089,6 +71890,75 @@
         ],
         "type": "object"
       },
+      "AssetSourceResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "captureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "capturedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "creator": {
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "licenseUrl": {
+            "format": "uri",
+            "maxLength": 8192,
+            "nullable": true,
+            "type": "string"
+          },
+          "mediaUrl": {
+            "format": "uri",
+            "maxLength": 8192,
+            "nullable": true,
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 20000,
+            "nullable": true,
+            "type": "string"
+          },
+          "pageUrl": {
+            "format": "uri",
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "captureId",
+          "capturedAt",
+          "createdAt",
+          "id",
+          "pageUrl",
+          "title"
+        ],
+        "type": "object"
+      },
       "AssetStackResponseDto": {
         "properties": {
           "assetCount": {
@@ -70126,6 +71996,9 @@
           "isTrashed": {
             "description": "Filter by trash status",
             "type": "boolean"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "visibility": {
             "$ref": "#/components/schemas/AssetVisibility"
@@ -71171,6 +73044,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
+          },
           "livePhotoVideoId": {
             "description": "Live photo video ID",
             "nullable": true,
@@ -71487,6 +73363,202 @@
           "subjectId",
           "year"
         ],
+        "type": "object"
+      },
+      "BookmarkCreateDto": {
+        "properties": {
+          "isArchived": {
+            "type": "boolean"
+          },
+          "isLocked": {
+            "type": "boolean"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope",
+            "default": "design"
+          },
+          "note": {
+            "maxLength": 20000,
+            "nullable": true,
+            "type": "string"
+          },
+          "previewAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "rating": {
+            "maximum": 5,
+            "minimum": -1,
+            "nullable": true,
+            "type": "integer"
+          },
+          "title": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url"
+        ],
+        "type": "object"
+      },
+      "BookmarkIdsDto": {
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "BookmarkResponseDto": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deletedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "isLocked": {
+            "type": "boolean"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
+          },
+          "note": {
+            "nullable": true,
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "previewAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "rating": {
+            "maximum": 5,
+            "minimum": -1,
+            "nullable": true,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updateId": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "deletedAt",
+          "id",
+          "isArchived",
+          "isLocked",
+          "libraryScope",
+          "note",
+          "ownerId",
+          "previewAssetId",
+          "title",
+          "updateId",
+          "updatedAt",
+          "url"
+        ],
+        "type": "object"
+      },
+      "BookmarkTagsDto": {
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "BookmarkUpdateDto": {
+        "properties": {
+          "isArchived": {
+            "type": "boolean"
+          },
+          "isLocked": {
+            "type": "boolean"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
+          },
+          "note": {
+            "maxLength": 20000,
+            "nullable": true,
+            "type": "string"
+          },
+          "previewAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "rating": {
+            "maximum": 5,
+            "minimum": -1,
+            "nullable": true,
+            "type": "integer"
+          },
+          "title": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "BoolFilter": {
@@ -73020,6 +75092,333 @@
         ],
         "type": "string"
       },
+      "CaptureAlbumChoice": {
+        "properties": {
+          "albumName": {
+            "description": "Album name",
+            "type": "string"
+          },
+          "color": {
+            "description": "Colour name (grey, green, teal, blue, purple, pink, amber, red) or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "icon": {
+            "description": "Icon: a Material Design Icons name or legacy key (null = default icon)",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Album ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "parentId": {
+            "description": "Parent album or collection (null = top-level)",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumName",
+          "color",
+          "icon",
+          "id",
+          "parentId"
+        ],
+        "type": "object"
+      },
+      "CaptureAlbumCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "libraryScope": {
+            "$ref": "#/components/schemas/CaptureAlbumScope"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "parentId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "libraryScope",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CaptureAlbumScope": {
+        "enum": [
+          "design"
+        ],
+        "type": "string"
+      },
+      "CaptureCancelResponseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "captureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/CaptureResponseDto"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaptureCancelStatus"
+          }
+        },
+        "required": [
+          "captureId",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CaptureCancelStatus": {
+        "enum": [
+          "cancelled",
+          "already-published"
+        ],
+        "type": "string"
+      },
+      "CaptureCapabilitiesDto": {
+        "properties": {
+          "cancellationSupported": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "captureSupported": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "maxFileBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "serverId": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "userName": {
+            "description": "Account name, shown as \"Signed in as\" in the browser extension",
+            "type": "string"
+          },
+          "version": {
+            "$ref": "#/components/schemas/CaptureProtocolVersion"
+          }
+        },
+        "required": [
+          "captureSupported",
+          "maxFileBytes",
+          "serverId",
+          "userId",
+          "version"
+        ],
+        "type": "object"
+      },
+      "CaptureCatalogDto": {
+        "properties": {
+          "albums": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureAlbumChoice"
+            },
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums",
+          "tags"
+        ],
+        "type": "object"
+      },
+      "CaptureCommitDto": {
+        "additionalProperties": false,
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "bookmark": {
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "url": {
+                "format": "uri",
+                "maxLength": 8192,
+                "type": "string"
+              }
+            },
+            "required": [
+              "url",
+              "title"
+            ],
+            "type": "object"
+          },
+          "captureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "sha256": {
+            "description": "Required for file captures; the complete uploaded file SHA-256",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "capturedAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                "type": "string"
+              },
+              "creator": {
+                "maxLength": 2000,
+                "nullable": true,
+                "type": "string"
+              },
+              "licenseUrl": {
+                "format": "uri",
+                "maxLength": 8192,
+                "nullable": true,
+                "type": "string"
+              },
+              "mediaUrl": {
+                "format": "uri",
+                "maxLength": 8192,
+                "nullable": true,
+                "type": "string"
+              },
+              "pageUrl": {
+                "format": "uri",
+                "maxLength": 8192,
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 2000,
+                "type": "string"
+              }
+            },
+            "required": [
+              "pageUrl",
+              "title",
+              "capturedAt"
+            ],
+            "type": "object"
+          },
+          "tagIds": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "uploadResourceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "captureId",
+          "source"
+        ],
+        "type": "object"
+      },
+      "CaptureProtocolVersion": {
+        "enum": [
+          1
+        ],
+        "type": "number"
+      },
+      "CaptureResponseDto": {
+        "properties": {
+          "captureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "item": {
+            "$ref": "#/components/schemas/LibraryItemDto"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaptureStatus"
+          }
+        },
+        "required": [
+          "captureId",
+          "item",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CaptureStatus": {
+        "enum": [
+          "created",
+          "duplicate"
+        ],
+        "type": "string"
+      },
+      "CaptureUploadStateDto": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "id",
+          "offset",
+          "ready"
+        ],
+        "type": "object"
+      },
       "CastMediaKind": {
         "description": "Which rendition the receiver gets: the original file, the edited preview image, or the video stream",
         "enum": [
@@ -73425,6 +75824,14 @@
       },
       "ClassificationPreviewDto": {
         "properties": {
+          "filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchFilter"
+              }
+            ],
+            "nullable": true
+          },
           "mediaType": {
             "$ref": "#/components/schemas/ClassificationMediaType",
             "default": "any"
@@ -73611,6 +76018,14 @@
             "default": true,
             "type": "boolean"
           },
+          "filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchFilter"
+              }
+            ],
+            "nullable": true
+          },
           "icon": {
             "description": "Icon of the smart album",
             "maxLength": 80,
@@ -73734,6 +76149,14 @@
           "enabled": {
             "type": "boolean"
           },
+          "filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchFilter"
+              }
+            ],
+            "nullable": true
+          },
           "id": {
             "type": "string"
           },
@@ -73846,6 +76269,14 @@
           "enabled": {
             "description": "A disabled rule keeps what it applied and stops changing anything",
             "type": "boolean"
+          },
+          "filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchFilter"
+              }
+            ],
+            "nullable": true
           },
           "mediaType": {
             "$ref": "#/components/schemas/ClassificationMediaType"
@@ -73967,6 +76398,27 @@
           "id",
           "name"
         ],
+        "type": "object"
+      },
+      "ClientsResponse": {
+        "properties": {
+          "enabled": {
+            "description": "Whether Clients is in use and shown in the top bar",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "ClientsUpdate": {
+        "properties": {
+          "enabled": {
+            "description": "Whether Clients is in use and shown in the top bar",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "CloudBackupAccountExclusionsDto": {
@@ -77780,6 +80232,38 @@
         ],
         "type": "object"
       },
+      "ColorFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "hex": {
+            "pattern": "^#[a-fA-F0-9]{6}$",
+            "type": "string"
+          },
+          "minWeight": {
+            "default": 0.05,
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "tolerance": {
+            "$ref": "#/components/schemas/ColorTolerance",
+            "default": "normal"
+          }
+        },
+        "required": [
+          "hex"
+        ],
+        "type": "object"
+      },
+      "ColorTolerance": {
+        "enum": [
+          "tight",
+          "normal",
+          "broad"
+        ],
+        "type": "string"
+      },
       "Colorspace": {
         "description": "Colorspace",
         "enum": [
@@ -77916,6 +80400,10 @@
             },
             "type": "array"
           },
+          "color": {
+            "description": "Optional colour: grey, green, teal, blue, purple, pink, amber or red",
+            "type": "string"
+          },
           "description": {
             "description": "Album description",
             "nullable": true,
@@ -77942,8 +80430,11 @@
             "default": "album",
             "description": "What to create: an album (default), a collection of albums or a shared space"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
+          },
           "parentId": {
-            "description": "Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.",
+            "description": "Parent album or collection (omit for top-level). Shared spaces cannot nest.",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
@@ -78706,6 +81197,19 @@
           "unknownPixelFormat",
           "unsupportedBitDepth",
           "unusableGeometry"
+        ],
+        "type": "string"
+      },
+      "DesignPermission": {
+        "description": "Design workspace permission",
+        "enum": [
+          "assetSource.read",
+          "bookmark.create",
+          "bookmark.read",
+          "bookmark.update",
+          "bookmark.delete",
+          "capture.create",
+          "capture.catalog.read"
         ],
         "type": "string"
       },
@@ -80980,12 +83484,30 @@
             },
             "type": "array"
           },
+          "bookmarkIds": {
+            "description": "Owned bookmarks to include in the portable manifest",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "type": "array"
+          },
           "edited": {
             "description": "Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals",
             "type": "boolean"
           },
+          "includeLibraryMetadata": {
+            "description": "Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only",
+            "type": "boolean"
+          },
           "includeSidecar": {
             "description": "Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no)",
+            "type": "boolean"
+          },
+          "includeSources": {
+            "description": "Explicitly include private capture attribution in the portable manifest",
             "type": "boolean"
           }
         },
@@ -83723,6 +86245,9 @@
           "isShared": {
             "description": "Filter by shared status: true = only shared, false = not shared, undefined = no filter",
             "type": "boolean"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "name": {
             "description": "Album name (exact match)",
@@ -89167,6 +91692,8 @@
           "AssetGenerateVideoDuplicateFrames",
           "AssetEditThumbnailGeneration",
           "AssetDevelopRender",
+          "AssetPaletteExtract",
+          "AssetPaletteQueueAll",
           "AssetVideoEditGeneration",
           "AssetEncodeVideoQueueAll",
           "AssetEncodeVideo",
@@ -90289,6 +92816,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "make": {
             "deprecated": true,
             "description": "Filter by camera make",
@@ -90767,6 +93297,18 @@
         ],
         "type": "object"
       },
+      "LibraryAssetItemKind": {
+        "enum": [
+          "asset"
+        ],
+        "type": "string"
+      },
+      "LibraryBookmarkItemKind": {
+        "enum": [
+          "bookmark"
+        ],
+        "type": "string"
+      },
       "LibraryFeatureProgressDto": {
         "properties": {
           "done": {
@@ -90953,6 +93495,221 @@
           "other_library"
         ],
         "type": "string"
+      },
+      "LibraryItemDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "$ref": "#/components/schemas/LibraryAssetItemKind"
+              },
+              "asset": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AssetResponseDto"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SanitizedAssetResponseDto"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "asset"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "$ref": "#/components/schemas/LibraryBookmarkItemKind"
+              },
+              "bookmark": {
+                "$ref": "#/components/schemas/BookmarkResponseDto"
+              }
+            },
+            "required": [
+              "kind",
+              "bookmark"
+            ]
+          }
+        ]
+      },
+      "LibraryItemKind": {
+        "enum": [
+          "asset",
+          "bookmark"
+        ],
+        "type": "string"
+      },
+      "LibraryItemSearchDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/SearchFilter"
+          },
+          "kinds": {
+            "description": "Only these kinds of item; all kinds when omitted. Semantic search returns media only",
+            "items": {
+              "$ref": "#/components/schemas/LibraryItemSearchKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/LibraryItemSearchMode",
+            "default": "text"
+          },
+          "query": {
+            "default": "",
+            "maxLength": 500,
+            "type": "string"
+          },
+          "queryAssetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/LibraryItemSearchSort"
+          }
+        },
+        "type": "object"
+      },
+      "LibraryItemSearchKind": {
+        "enum": [
+          "asset",
+          "bookmark"
+        ],
+        "type": "string"
+      },
+      "LibraryItemSearchMode": {
+        "enum": [
+          "text",
+          "smart"
+        ],
+        "type": "string"
+      },
+      "LibraryItemSearchResponseDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "countCapped": {
+            "description": "The count covers bounded ranked candidates; more semantic matches may exist",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "countCapped",
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "LibraryItemSearchSort": {
+        "enum": [
+          "added",
+          "color",
+          "name",
+          "rating"
+        ],
+        "type": "string"
+      },
+      "LibraryItemsQueryDto": {
+        "properties": {
+          "afterId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "afterKind": {
+            "$ref": "#/components/schemas/LibraryItemKind"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LibraryItemsResponseDto": {
+        "properties": {
+          "assetCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bookmarkCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "itemCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/LibraryItemKind"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "assetCount",
+          "bookmarkCount",
+          "itemCount",
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
       },
       "LibraryMovePauseDto": {
         "additionalProperties": false,
@@ -91489,6 +94246,14 @@
         ],
         "type": "string"
       },
+      "LibraryScope": {
+        "enum": [
+          "personal",
+          "design",
+          "both"
+        ],
+        "type": "string"
+      },
       "LibrarySearchDto": {
         "properties": {
           "withDeleted": {
@@ -91679,6 +94444,27 @@
           "videos"
         ],
         "type": "object"
+      },
+      "LibraryTextFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "contains": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "contains"
+        ],
+        "type": "object"
+      },
+      "LibraryViewScope": {
+        "enum": [
+          "personal",
+          "design"
+        ],
+        "type": "string"
       },
       "LicenseActivateDto": {
         "properties": {
@@ -96505,6 +99291,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "make": {
             "deprecated": true,
             "description": "Filter by camera make",
@@ -98069,14 +100858,14 @@
       "MoveAlbumDto": {
         "properties": {
           "collectionId": {
-            "description": "Collection to move the album into, or null to take it out so it stands on its own",
+            "description": "Parent album or collection, or null for top level",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
           "expectedParentId": {
-            "description": "Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.",
+            "description": "Where the client last saw the album (its parent, or null for top level). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -99137,6 +101926,59 @@
         ],
         "type": "object"
       },
+      "PaletteAlgorithmVersion": {
+        "enum": [
+          1
+        ],
+        "type": "number"
+      },
+      "PaletteRepresentative": {
+        "enum": [
+          "image",
+          "frame"
+        ],
+        "type": "string"
+      },
+      "PaletteStatus": {
+        "enum": [
+          "pending",
+          "ready",
+          "failed",
+          "unavailable"
+        ],
+        "type": "string"
+      },
+      "PaletteSwatch": {
+        "properties": {
+          "hex": {
+            "pattern": "^#[a-f0-9]{6}$",
+            "type": "string"
+          },
+          "oklab": {
+            "items": {
+              "format": "double",
+              "maximum": 1.000001,
+              "minimum": 0,
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "weight": {
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "hex",
+          "oklab",
+          "weight"
+        ],
+        "type": "object"
+      },
       "PartnerBackfillDto": {
         "properties": {
           "done": {
@@ -99631,6 +102473,12 @@
         "description": "List of permissions",
         "enum": [
           "all",
+          "bookmark.create",
+          "bookmark.read",
+          "bookmark.update",
+          "bookmark.delete",
+          "capture.create",
+          "capture.catalog.read",
           "activity.create",
           "activity.read",
           "activity.update",
@@ -99642,6 +102490,7 @@
           "apiKey.delete",
           "apiKey.rotate",
           "asset.read",
+          "assetSource.read",
           "asset.update",
           "asset.delete",
           "asset.statistics",
@@ -116933,6 +119782,33 @@
       },
       "PreservationPackageDto": {
         "properties": {
+          "bookmarks": {
+            "description": "Saved links, counted separately from originals; withheld when this session cannot read the selection",
+            "nullable": true,
+            "properties": {
+              "selected": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "skipped": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "written": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "selected",
+              "written",
+              "skipped"
+            ],
+            "type": "object"
+          },
           "counts": {
             "$ref": "#/components/schemas/PreservationPackageCountsDto"
           },
@@ -117079,6 +119955,10 @@
         "properties": {
           "includeLocked": {
             "description": "Count Locked items as included; needs an unlocked session",
+            "type": "boolean"
+          },
+          "includeMetadata": {
+            "description": "Include saved links and metadata; defaults to true",
             "type": "boolean"
           },
           "scope": {
@@ -117520,7 +120400,18 @@
         "description": "What to preserve. Only your own items are ever included: never a partner’s or a shared album’s.",
         "properties": {
           "assetIds": {
-            "description": "Exactly these items of yours, instead of a filter",
+            "description": "Exactly these originals of yours, instead of a filter",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "bookmarkIds": {
+            "description": "Exactly these saved links of yours; requires metadata",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -119195,6 +122086,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "make": {
             "deprecated": true,
@@ -123397,6 +126291,102 @@
         ],
         "type": "object"
       },
+      "SanitizedAssetResponseDto": {
+        "properties": {
+          "duration": {
+            "description": "Video/gif duration in milliseconds (null for static images)",
+            "maximum": 2147483647,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "hasMetadata": {
+            "description": "Whether asset has metadata",
+            "type": "boolean"
+          },
+          "height": {
+            "description": "Asset height",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "imageEncoding": {
+            "$ref": "#/components/schemas/ImageEncodingInfo",
+            "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
+          },
+          "imageRenditions": {
+            "description": "Available current still renditions; omitted when file evidence was not loaded",
+            "properties": {
+              "hdrFullsize": {
+                "type": "boolean"
+              },
+              "hdrPreview": {
+                "type": "boolean"
+              },
+              "sdrFullsize": {
+                "type": "boolean"
+              },
+              "sdrPreview": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "sdrPreview",
+              "sdrFullsize",
+              "hdrPreview",
+              "hdrFullsize"
+            ],
+            "type": "object"
+          },
+          "livePhotoVideoId": {
+            "description": "Live photo video ID",
+            "nullable": true,
+            "type": "string"
+          },
+          "localDateTime": {
+            "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "originalMimeType": {
+            "description": "Original MIME type",
+            "type": "string"
+          },
+          "thumbhash": {
+            "description": "Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting.",
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "width": {
+            "description": "Asset width",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "duration",
+          "hasMetadata",
+          "height",
+          "id",
+          "localDateTime",
+          "thumbhash",
+          "type",
+          "width"
+        ],
+        "type": "object"
+      },
       "SavedSearch": {
         "properties": {
           "name": {
@@ -123982,6 +126972,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "make": {
             "deprecated": true,
             "description": "Filter by camera make",
@@ -124381,11 +127374,21 @@
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
+          "albumSubtreeIds": {
+            "$ref": "#/components/schemas/AlbumSubtreeFilter"
+          },
+          "aspectRatio": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel width divided by height; null when dimensions are unavailable"
+          },
           "checksum": {
             "$ref": "#/components/schemas/StringFilter"
           },
           "city": {
             "$ref": "#/components/schemas/StringFilterNullable"
+          },
+          "color": {
+            "$ref": "#/components/schemas/ColorFilter"
           },
           "country": {
             "$ref": "#/components/schemas/StringFilterNullable"
@@ -124395,6 +127398,10 @@
           },
           "description": {
             "$ref": "#/components/schemas/StringPatternFilter"
+          },
+          "durationMs": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Video/GIF duration in milliseconds; null for static images"
           },
           "encodedVideoPath": {
             "$ref": "#/components/schemas/StringFilter"
@@ -124410,6 +127417,13 @@
           },
           "hasTags": {
             "$ref": "#/components/schemas/BoolFilter"
+          },
+          "hasTransparency": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "height": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel height from metadata"
           },
           "id": {
             "$ref": "#/components/schemas/IdFilter"
@@ -124440,6 +127454,9 @@
           },
           "libraryId": {
             "$ref": "#/components/schemas/IdFilterNullable"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "localDateTime": {
             "$ref": "#/components/schemas/DateFilter"
@@ -124475,6 +127492,9 @@
           "rating": {
             "$ref": "#/components/schemas/NumberFilterNullable"
           },
+          "source": {
+            "$ref": "#/components/schemas/SourceFilter"
+          },
           "state": {
             "$ref": "#/components/schemas/StringFilterNullable"
           },
@@ -124483,6 +127503,9 @@
           },
           "takenAt": {
             "$ref": "#/components/schemas/DateFilter"
+          },
+          "text": {
+            "$ref": "#/components/schemas/LibraryTextFilter"
           },
           "trashedAt": {
             "$ref": "#/components/schemas/DateFilterNullable"
@@ -124495,6 +127518,10 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/EnumFilterAssetVisibility"
+          },
+          "width": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel width from metadata"
           }
         },
         "type": "object"
@@ -124505,11 +127532,21 @@
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
+          "albumSubtreeIds": {
+            "$ref": "#/components/schemas/AlbumSubtreeFilter"
+          },
+          "aspectRatio": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel width divided by height; null when dimensions are unavailable"
+          },
           "checksum": {
             "$ref": "#/components/schemas/StringFilter"
           },
           "city": {
             "$ref": "#/components/schemas/StringFilterNullable"
+          },
+          "color": {
+            "$ref": "#/components/schemas/ColorFilter"
           },
           "country": {
             "$ref": "#/components/schemas/StringFilterNullable"
@@ -124519,6 +127556,10 @@
           },
           "description": {
             "$ref": "#/components/schemas/StringPatternFilter"
+          },
+          "durationMs": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Video/GIF duration in milliseconds; null for static images"
           },
           "encodedVideoPath": {
             "$ref": "#/components/schemas/StringFilter"
@@ -124534,6 +127575,13 @@
           },
           "hasTags": {
             "$ref": "#/components/schemas/BoolFilter"
+          },
+          "hasTransparency": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "height": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel height from metadata"
           },
           "id": {
             "$ref": "#/components/schemas/IdFilter"
@@ -124592,6 +127640,9 @@
           "rating": {
             "$ref": "#/components/schemas/NumberFilterNullable"
           },
+          "source": {
+            "$ref": "#/components/schemas/SourceFilter"
+          },
           "state": {
             "$ref": "#/components/schemas/StringFilterNullable"
           },
@@ -124600,6 +127651,9 @@
           },
           "takenAt": {
             "$ref": "#/components/schemas/DateFilter"
+          },
+          "text": {
+            "$ref": "#/components/schemas/LibraryTextFilter"
           },
           "trashedAt": {
             "$ref": "#/components/schemas/DateFilterNullable"
@@ -124612,6 +127666,10 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/EnumFilterAssetVisibility"
+          },
+          "width": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Source pixel width from metadata"
           }
         },
         "type": "object"
@@ -124930,6 +127988,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "make": {
             "deprecated": true,
@@ -128095,6 +131156,9 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "make": {
             "deprecated": true,
             "description": "Filter by camera make",
@@ -128544,6 +131608,20 @@
         "required": [
           "capped",
           "total"
+        ],
+        "type": "object"
+      },
+      "SourceFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "contains": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "contains"
         ],
         "type": "object"
       },
@@ -129354,6 +132432,9 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "make": {
             "deprecated": true,
@@ -139171,6 +142252,9 @@
           "key": {
             "type": "string"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "lockReason": {
             "anyOf": [
               {
@@ -139554,6 +142638,9 @@
           "key": {
             "type": "string"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "lockReason": {
             "anyOf": [
               {
@@ -139752,6 +142839,9 @@
           "key": {
             "type": "string"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
+          },
           "lockReason": {
             "anyOf": [
               {
@@ -139878,6 +142968,9 @@
           },
           "key": {
             "type": "string"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryViewScope"
           },
           "lockReason": {
             "anyOf": [
@@ -140482,6 +143575,11 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "color": {
+            "description": "Colour: grey, green, teal, blue, purple, pink, amber or red (null = no colour)",
+            "nullable": true,
+            "type": "string"
+          },
           "coverFollowsNewest": {
             "description": "Always use the newest item as the cover (true), or keep the current cover from now on (false). Cannot be true together with albumThumbnailAssetId.",
             "type": "boolean"
@@ -140512,11 +143610,14 @@
             "description": "Enable activity feed",
             "type": "boolean"
           },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
+          },
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
           },
           "parentId": {
-            "description": "Collection to move the album into (null = move to top-level, omit = no change)",
+            "description": "Parent album or collection (null = move to top-level, omit = no change)",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -140574,6 +143675,9 @@
             "minimum": -90,
             "nullable": true,
             "type": "number"
+          },
+          "libraryScope": {
+            "$ref": "#/components/schemas/LibraryScope"
           },
           "livePhotoVideoId": {
             "description": "Live photo video ID",
@@ -141868,6 +144972,9 @@
           "cast": {
             "$ref": "#/components/schemas/CastResponse"
           },
+          "clients": {
+            "$ref": "#/components/schemas/ClientsResponse"
+          },
           "download": {
             "$ref": "#/components/schemas/DownloadResponse"
           },
@@ -141994,6 +145101,9 @@
           },
           "cast": {
             "$ref": "#/components/schemas/CastUpdate"
+          },
+          "clients": {
+            "$ref": "#/components/schemas/ClientsUpdate"
           },
           "download": {
             "$ref": "#/components/schemas/DownloadUpdate"

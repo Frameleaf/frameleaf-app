@@ -9,6 +9,18 @@ import {
 describe('LibraryGridPreferences', () => {
   beforeEach(() => localStorage.clear());
 
+  it('keeps designer grid preferences separate from photography defaults', () => {
+    const personal = new LibraryGridPreferences();
+    personal.thumbnailSize = 260;
+    personal.showFileNames = false;
+    const design = new LibraryGridPreferences('design');
+    design.thumbnailSize = 140;
+    design.showFileNames = true;
+    expect(new LibraryGridPreferences().thumbnailSize).toBe(260);
+    expect(new LibraryGridPreferences().showFileNames).toBe(false);
+    expect(new LibraryGridPreferences('design').thumbnailSize).toBe(140);
+    expect(new LibraryGridPreferences('design').showFileNames).toBe(true);
+  });
   it('starts at the default size with file names hidden', () => {
     const preferences = new LibraryGridPreferences();
     expect(preferences.thumbnailSize).toBe(THUMBNAIL_SIZE_DEFAULT);

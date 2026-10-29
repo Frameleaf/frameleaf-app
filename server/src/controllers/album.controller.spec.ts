@@ -46,7 +46,19 @@ describe(AlbumController.name, () => {
       const { status, body } = await request(ctx.getHttpServer()).get('/albums/tree');
       expect(status).toEqual(200);
       expect(body).toEqual({ collections: [], albums: [], spaces: [] });
-      expect(service.getTree).toHaveBeenCalledWith(auth);
+      expect(service.getTree).toHaveBeenCalledWith(auth, {});
+    });
+  });
+
+  describe('GET /albums/hierarchy', () => {
+    it('returns the authorized recursive album hierarchy', async () => {
+      const auth = AuthFactory.create();
+      ctx.authenticate.mockResolvedValue(auth);
+      service.getHierarchy.mockResolvedValue({ roots: [] });
+      const { status, body } = await request(ctx.getHttpServer()).get('/albums/hierarchy');
+      expect(status).toBe(200);
+      expect(body).toEqual({ roots: [] });
+      expect(service.getHierarchy).toHaveBeenCalledWith(auth, {});
     });
   });
 

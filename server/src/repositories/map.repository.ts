@@ -15,7 +15,7 @@ import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LANDMARK_MAX_RADIUS_M, citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { AssetVisibility, LibraryScope, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -24,6 +24,7 @@ import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isTimelineVisible, visibilityIs } from 'src/utils/locked.js';
 
 export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
@@ -398,6 +399,7 @@ export class MapRepository {
     // FL-195: the viewer's own marks and detections, when their session is unlocked
     const reveal = options.revealLockedOwnerId;
     return this.mapMarkersQuery()
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .$if(isArchived === true, (qb) =>
         qb.where((eb) =>
@@ -450,6 +452,7 @@ export class MapRepository {
     const base = () =>
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
         .where('asset.deletedAt', 'is', null)
         .$call((qb) => withHiddenContentFilter(qb, options))

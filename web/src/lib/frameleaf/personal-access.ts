@@ -4,7 +4,7 @@
  * they can be tested on their own. Every action goes to the account's own endpoints; nothing here
  * stores a password, PIN, key or activation key.
  */
-import { Permission, type SessionResponseDto } from '@frameleaf/sdk';
+import { Permission, type ApiKeyResponseDto, type SessionResponseDto } from '@frameleaf/sdk';
 
 /** The server's minimum for a new password (`ChangePasswordDto`). */
 export const PASSWORD_MIN_LENGTH = 8;
@@ -61,6 +61,12 @@ export const canSubmitPin = (
 };
 
 /** Every grantable permission except full access, in the server's order. */
+/** Every permission a key holds; design permissions are reported in their own field. */
+export const keyPermissions = (key: ApiKeyResponseDto): Permission[] => [
+  ...(key.permissions as string[] as Permission[]),
+  ...((key.designPermissions ?? []) as string[] as Permission[]),
+];
+
 export const INDIVIDUAL_PERMISSIONS: readonly Permission[] = Object.values(Permission).filter(
   (permission) => permission !== Permission.All,
 );
@@ -84,9 +90,13 @@ export const normalizeKeyPermissions = (selected: Permission[]): Permission[] =>
  * FL-367: what a new key is for, in place of choosing from every permission. Each purpose is a
  * fixed list of existing permissions; "View only" does not download originals (defaulted on FL-367,
  * the owner's question is open), and "View and upload" may not change albums.
+ *
+ * `capture` is the "Browser extension" purpose (FL-622, `ApiKeys.jsx`): it saves images, links and
+ * screenshots into Boards and lists the collections and tags to file them, and cannot see photos.
+ * The order is the prototype's, with the browser extension just before Everything.
  */
-export type KeyPurpose = 'view' | 'upload' | 'view-upload' | 'everything';
-export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'view-upload', 'everything'];
+export type KeyPurpose = 'view' | 'upload' | 'capture' | 'view-upload' | 'everything';
+export const KEY_PURPOSES: readonly KeyPurpose[] = ['view', 'upload', 'view-upload', 'capture', 'everything'];
 const VIEW_PERMISSIONS: readonly Permission[] = [
   Permission.AssetRead,
   Permission.AssetView,
@@ -101,6 +111,7 @@ const VIEW_PERMISSIONS: readonly Permission[] = [
 export const PURPOSE_PERMISSIONS: Readonly<Record<KeyPurpose, readonly Permission[]>> = {
   view: VIEW_PERMISSIONS,
   upload: [Permission.AssetUpload],
+  capture: [Permission.CaptureCreate, Permission.CaptureCatalogRead],
   'view-upload': [...VIEW_PERMISSIONS, Permission.AssetUpload],
   everything: [Permission.All],
 };

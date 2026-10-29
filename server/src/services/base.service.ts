@@ -11,7 +11,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { DatabaseLock, MlWorkload } from 'src/enum.js';
+import { DatabaseLock, LibraryScope, MlWorkload } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -591,7 +591,7 @@ export class BaseService {
     const assets = (await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, ownerId)) ?? [];
     for (const asset of assets) {
       this.websocketRepository.clientSend(
-        'on_asset_update',
+        asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
         ownerId,
         // ponytail: no landmarks here, a Locked move never changes where an item was taken and the
         // viewer closes on it anyway; add `withLandmarks` if an unlock ever keeps the viewer open

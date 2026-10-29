@@ -1,0 +1,1041 @@
+Subject: Save the project loudness target and add a true-peak limiter to the master
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
+@@ -12,10 +12,12 @@ import {
+   DEFAULT_TARGET_LUFS,
+   resolveAudibleItems,
+   suggestLoudnessMatch,
++  setMasterLoudness,
+   useTimelineStore,
+   type ClipLoudnessResult,
+ } from '@/features/editor/deps/timeline-store'
+ import { parseClamped } from '@/shared/utils/parse-clamped'
++import { usePlaybackStore } from '@/shared/state/playback'
+ import { PropertyRow, PropertySection } from '../components'
+ 
+ const format = (value: number | null | undefined, unit: string) =>
+@@ -29,11 +31,28 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+   const { t } = useTranslation()
+   const timelineItems = useTimelineStore((s) => s.items)
+   const fps = useTimelineStore((s) => s.fps)
+-  // Draft text stays editable (an intermediate "-" is kept); matching uses parsed, clamped values.
+-  const [targetText, setTargetText] = useState(String(DEFAULT_TARGET_LUFS))
+-  const [ceilingText, setCeilingText] = useState(String(DEFAULT_CEILING_DBTP))
+-  const target = parseClamped(targetText, -36, -6, DEFAULT_TARGET_LUFS)
+-  const ceiling = parseClamped(ceilingText, -12, 0, DEFAULT_CEILING_DBTP)
++  // Target, ceiling and limiter are project settings (FL-623), saved and undoable. Draft text stays
++  // editable (an intermediate "-" is kept); matching uses parsed, clamped values, saved on blur.
++  const saved = usePlaybackStore((s) => s.masterLoudness)
++  const loudness = saved ?? { targetLufs: DEFAULT_TARGET_LUFS, ceilingDbtp: DEFAULT_CEILING_DBTP, limiter: false }
++  const [targetText, setTargetText] = useState(String(loudness.targetLufs))
++  const [ceilingText, setCeilingText] = useState(String(loudness.ceilingDbtp))
++  // Undo, redo or another panel can change the saved settings: the drafts follow them.
++  const savedKey = `${loudness.targetLufs}|${loudness.ceilingDbtp}`
++  const [shownKey, setShownKey] = useState(savedKey)
++  if (shownKey !== savedKey) {
++    setShownKey(savedKey)
++    setTargetText(String(loudness.targetLufs))
++    setCeilingText(String(loudness.ceilingDbtp))
++  }
++  const target = parseClamped(targetText, -36, -6, loudness.targetLufs)
++  const ceiling = parseClamped(ceilingText, -12, 0, loudness.ceilingDbtp)
++  const save = (change: Partial<typeof loudness>) => {
++    const next = { ...loudness, ...change }
++    if (next.targetLufs !== loudness.targetLufs || next.ceilingDbtp !== loudness.ceilingDbtp || next.limiter !== loudness.limiter) {
++      setMasterLoudness(next)
++    }
++  }
+   const [results, setResults] = useState<ClipLoudnessResult[] | null>(null)
+   const [busy, setBusy] = useState(false)
+   const abortRef = useRef<AbortController | null>(null)
+@@ -88,7 +107,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+           <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
+             aria-label={t('editor.audioSection.loudness.target')} value={targetText}
+             onChange={(event) => setTargetText(event.target.value)}
+-            onBlur={() => setTargetText(String(target))} />
++            onBlur={() => { setTargetText(String(target)); save({ targetLufs: target }) }} />
+           <span className="text-xs text-muted-foreground">LUFS</span>
+         </div>
+       </PropertyRow>
+@@ -97,11 +116,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+           <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
+             aria-label={t('editor.audioSection.loudness.ceiling')} value={ceilingText}
+             onChange={(event) => setCeilingText(event.target.value)}
+-            onBlur={() => setCeilingText(String(ceiling))} />
++            onBlur={() => { setCeilingText(String(ceiling)); save({ ceilingDbtp: ceiling }) }} />
+           <span className="text-xs text-muted-foreground">dBTP</span>
+         </div>
+       </PropertyRow>
+ 
++      <PropertyRow label={t('editor.audioSection.loudness.limiter')}>
++        <input
++          type="checkbox"
++          aria-label={t('editor.audioSection.loudness.limiter')}
++          checked={loudness.limiter}
++          onChange={(event) => save({ limiter: event.target.checked })}
++        />
++      </PropertyRow>
++
+       <div className="space-y-1 px-1 py-2 text-xs" aria-live="polite">
+         {busy && <p>{t('editor.audioSection.loudness.analyzing')}</p>}
+         {rows.map(({ result, suggestion }) => (
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -33,7 +33,7 @@ export {
+   type SpeedRampEasing,
+   type SpeedRampPoint,
+ } from '@/features/timeline/stores/actions/edit/speed-ramp-actions'
+-export { applyLoudnessMatch } from '@/features/timeline/stores/actions/edit/loudness-match-actions'
++export { applyLoudnessMatch, setMasterLoudness } from '@/features/timeline/stores/actions/edit/loudness-match-actions'
+ export {
+   analyzeClipLoudness,
+   DEFAULT_CEILING_DBTP,
+diff --git a/src/features/export/components/export-dialog.tsx b/src/features/export/components/export-dialog.tsx
+--- a/src/features/export/components/export-dialog.tsx
++++ b/src/features/export/components/export-dialog.tsx
+@@ -480,12 +480,14 @@ export function ExportDialog({ open, onClose, onOpenRenderQueue }: ExportDialogP
+         masterBusDb: exportable.masterBusDb,
+         masterBusMuted: exportable.masterBusMuted,
+         masterGainEnvelope: (exportable.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++        masterLoudness: exportable.masterLoudness,
+       }),
+     [
+       exportable.busAudioEq,
+       exportable.masterBusDb,
+       exportable.masterBusMuted,
+       exportable.masterGainEnvelope,
++      exportable.masterLoudness,
+       fps,
+       hasInOutPoints,
+       inPoint,
+diff --git a/src/features/export/components/export-loudness-report.tsx b/src/features/export/components/export-loudness-report.tsx
+--- a/src/features/export/components/export-loudness-report.tsx
++++ b/src/features/export/components/export-loudness-report.tsx
+@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import { Gauge } from 'lucide-react'
+ import { measureLoudnessInWorker, type LoudnessMeasurement } from '@/shared/utils/loudness'
++import { usePlaybackStore } from '@/shared/state/playback'
+ 
+-/** Studio loudness defaults (FL-598): not a promise to meet any platform's rules. */
+-const TARGET_LUFS = -16
+-const CEILING_DBTP = -1
++/** Studio loudness defaults (FL-598), used until the project saves its own (FL-623). */
++const DEFAULT_TARGET_LUFS = -16
++const DEFAULT_CEILING_DBTP = -1
+ /** Reported tolerance for the integrated level and the true-peak reading. */
+ const TARGET_TOLERANCE_LU = 1
+ const PEAK_TOLERANCE_DB = 0.2
+@@ -44,6 +45,9 @@ async function decodeDeliverable(blob: Blob): Promise<AudioBuffer> {
+  */
+ export function ExportLoudnessReport({ blob }: { blob: Blob | null | undefined }) {
+   const { t } = useTranslation()
++  const saved = usePlaybackStore((s) => s.masterLoudness)
++  const TARGET_LUFS = saved?.targetLufs ?? DEFAULT_TARGET_LUFS
++  const CEILING_DBTP = saved?.ceilingDbtp ?? DEFAULT_CEILING_DBTP
+   // The parent keys this report by the exported blob, so each export starts at "measuring".
+   const [measured, setReport] = useState<Report>({ state: 'measuring' })
+   const measurable = !!blob && typeof OfflineAudioContext !== 'undefined'
+diff --git a/src/features/export/hooks/use-client-render.ts b/src/features/export/hooks/use-client-render.ts
+--- a/src/features/export/hooks/use-client-render.ts
++++ b/src/features/export/hooks/use-client-render.ts
+@@ -148,6 +148,7 @@ export function useClientRender(): UseClientRenderReturn {
+         const masterGainEnvelope = usePlaybackStore
+           .getState()
+           .masterGainEnvelope.map((point) => ({ ...point }))
++        const masterLoudness = usePlaybackStore.getState().masterLoudness ?? undefined
+         const backgroundColor = currentProject?.metadata?.backgroundColor
+         // Use PROJECT resolution for composition (transform calculations match preview)
+         const projectWidth = currentProject?.metadata?.width ?? DEFAULT_PROJECT_WIDTH
+@@ -193,6 +194,7 @@ export function useClientRender(): UseClientRenderReturn {
+             masterBusDb,
+             masterBusMuted,
+             masterGainEnvelope,
++            masterLoudness,
+           },
+           signal,
+           handleProgress,
+@@ -259,6 +261,7 @@ export function useClientRender(): UseClientRenderReturn {
+           masterBusDb,
+           masterBusMuted,
+           masterGainEnvelope,
++          masterLoudness,
+         )
+         composition.colorManagement = currentProject?.metadata?.colorManagement
+ 
+diff --git a/src/features/export/hooks/use-render-queue-runner.ts b/src/features/export/hooks/use-render-queue-runner.ts
+--- a/src/features/export/hooks/use-render-queue-runner.ts
++++ b/src/features/export/hooks/use-render-queue-runner.ts
+@@ -80,6 +80,7 @@ async function renderQueuedJob(job: RenderJob): Promise<void> {
+         masterBusDb: snapshot.masterBusDb,
+         masterBusMuted: snapshot.masterBusMuted,
+         masterGainEnvelope: (snapshot.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++        masterLoudness: snapshot.masterLoudness,
+       },
+       controller.signal,
+       (progress) => useRenderQueueStore.getState().updateJobProgress(job.id, progress),
+@@ -115,6 +116,7 @@ async function renderQueuedJob(job: RenderJob): Promise<void> {
+       snapshot.masterBusDb,
+       snapshot.masterBusMuted,
+       snapshot.masterGainEnvelope,
++      snapshot.masterLoudness,
+     )
+     composition.colorManagement = snapshot.colorManagement
+ 
+diff --git a/src/features/export/stores/render-queue-store.ts b/src/features/export/stores/render-queue-store.ts
+--- a/src/features/export/stores/render-queue-store.ts
++++ b/src/features/export/stores/render-queue-store.ts
+@@ -34,6 +34,7 @@ export interface RenderJobSnapshot {
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   /** Project managed colour captured with the job (FL-97). */
+   colorManagement?: ProjectColorManagement
+ }
+diff --git a/src/features/export/utils/build-render-job.ts b/src/features/export/utils/build-render-job.ts
+--- a/src/features/export/utils/build-render-job.ts
++++ b/src/features/export/utils/build-render-job.ts
+@@ -72,6 +72,7 @@ function captureTimeline(sequence?: ExportableSequence): TimelineCapture {
+     masterBusDb: seq.masterBusDb,
+     masterBusMuted: seq.masterBusMuted,
+     masterGainEnvelope: (seq.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++    ...(seq.masterLoudness && { masterLoudness: { ...seq.masterLoudness } }),
+     colorManagement: currentProject?.metadata.colorManagement,
+   }
+ 
+@@ -174,6 +175,7 @@ export async function buildRenderJob({
+     masterBusDb: cap.snapshot.masterBusDb,
+     masterBusMuted: cap.snapshot.masterBusMuted,
+     masterGainEnvelope: (cap.snapshot.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++    masterLoudness: cap.snapshot.masterLoudness,
+   })
+   const { clientSettings, exportMode } = smartCopy.eligible
+     ? requested
+diff --git a/src/features/export/utils/canvas-audio.limiter.test.ts b/src/features/export/utils/canvas-audio.limiter.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/canvas-audio.limiter.test.ts
+@@ -0,0 +1,15 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { getAudioPacketPassthroughPlan, supportsWindowedAudioProcessing } from './canvas-audio'
++import type { CompositionInputProps } from '@/types/export'
++
++const composition = (limiter: boolean) => ({
++  fps: 30, width: 1920, height: 1080, durationInFrames: 30, tracks: [],
++  masterLoudness: { targetLufs: -16, ceilingDbtp: -1, limiter },
++}) as unknown as CompositionInputProps
++
++describe('export mix with the true-peak limiter (FL-623)', () => {
++  it('never streams in windows or copies packets while the limiter is on', () => {
++    expect(supportsWindowedAudioProcessing(composition(true))).toBe(false)
++    expect(getAudioPacketPassthroughPlan(composition(true))).toBeNull()
++  })
++})
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1,5 +1,6 @@
+ import { applyTrackGain, validateTrackStages, type TrackGainStage } from '@/shared/utils/track-audio'
+ import { applyMasterGain } from '@/shared/utils/master-audio'
++import { limitTruePeak } from '@/shared/utils/true-peak-limiter'
+ /**
+  * Canvas Audio Processing System
+  *
+@@ -2308,6 +2309,8 @@ function supportsWindowedAudioSegment(segment: AudioSegment): boolean {
+  * identical to preview.
+  */
+ export function supportsWindowedAudioProcessing(composition: CompositionInputProps): boolean {
++  // The true-peak limiter looks ahead across the whole mix (FL-623).
++  if (composition.masterLoudness?.limiter === true) return false
+   const segments = extractAudioSegments(composition, composition.fps).filter(
+     (segment) => !segment.muted,
+   )
+@@ -2380,6 +2383,7 @@ export function getAudioPacketPassthroughPlan(
+     composition.fps <= 0 ||
+     (composition.masterGainEnvelope?.length ?? 0) > 0 ||
+     composition.masterBusMuted === true ||
++    composition.masterLoudness?.limiter === true ||
+     (composition.masterBusDb ?? 0) !== 0
+   ) {
+     return null
+@@ -3118,6 +3122,11 @@ export async function processAudio(
+   const masterBusDb = composition.masterBusDb
+   applyMasterGain(mixedSamples, composition, config.sampleRate)
+ 
++  // Optional final stage (FL-623): true-peak limiter at the project ceiling, after all master processing.
++  if (composition.masterLoudness?.limiter === true) {
++    limitTruePeak(mixedSamples, config.sampleRate, composition.masterLoudness.ceilingDbtp)
++  }
++
+   log.info('Audio processing complete', {
+     outputSamples: mixedSamples[0]?.length,
+     channels: mixedSamples.length,
+diff --git a/src/features/export/utils/smart-copy.ts b/src/features/export/utils/smart-copy.ts
+--- a/src/features/export/utils/smart-copy.ts
++++ b/src/features/export/utils/smart-copy.ts
+@@ -43,6 +43,7 @@ export interface SmartCopyContext {
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   source?: MediaMetadata
+ }
+ 
+@@ -257,6 +258,7 @@ function hasTimelineAudioProcessing(
+     trackProcessing ||
+     (context.masterGainEnvelope?.length ?? 0) > 0 ||
+     context.masterBusMuted === true ||
++    context.masterLoudness?.limiter === true ||
+     (context.masterBusDb ?? 0) !== 0 ||
+     hasEqProcessing(context.busAudioEq)
+   )
+diff --git a/src/features/export/utils/timeline-to-composition.ts b/src/features/export/utils/timeline-to-composition.ts
+--- a/src/features/export/utils/timeline-to-composition.ts
++++ b/src/features/export/utils/timeline-to-composition.ts
+@@ -53,6 +53,7 @@ export function convertTimelineToComposition(
+   masterBusDb?: number,
+   masterBusMuted = false,
+   masterGainEnvelope: import('@/shared/utils/master-audio').MasterGainPoint[] = [],
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness,
+ ): CompositionInputProps {
+   items = items.map((item) =>
+     item.type === 'video' ? resolveReverseConformedVideoItem(item, fps, { mode: 'export' }) : item,
+@@ -266,6 +267,7 @@ export function convertTimelineToComposition(
+     masterBusDb,
+     masterBusMuted,
+     masterGainEnvelope: masterGainEnvelope.map((point) => ({ ...point })),
++    ...(masterLoudness && { masterLoudness: { ...masterLoudness } }),
+     masterOriginFrame: hasInOutRange ? inPoint! : 0,
+   }
+ }
+diff --git a/src/features/timeline/stores/actions/edit/loudness-match-actions.test.ts b/src/features/timeline/stores/actions/edit/loudness-match-actions.test.ts
+--- a/src/features/timeline/stores/actions/edit/loudness-match-actions.test.ts
++++ b/src/features/timeline/stores/actions/edit/loudness-match-actions.test.ts
+@@ -12,7 +12,9 @@ import {
+   type ClipLoudnessResult,
+ } from '../../../utils/loudness-match'
+ import { LOUDNESS_ALGORITHM } from '@/shared/utils/loudness'
+-import { applyLoudnessMatch } from './loudness-match-actions'
++import { applyLoudnessMatch, setMasterLoudness } from './loudness-match-actions'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { buildTimelineFromStores } from '../../timeline-persistence'
+ 
+ const track = (id: string, locked = false) => ({
+   id, name: id, order: 0, height: 80, locked, syncLock: true, visible: true, muted: false,
+@@ -100,3 +102,25 @@ describe('loudness match', () => {
+     expect(resolveAudibleItems(items, ['v1', 'a1', 'v2', 'v3']).map((item) => item.id)).toEqual(['a1', 'v2'])
+   })
+ })
++
++describe('project loudness settings (FL-623)', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    usePlaybackStore.getState().setMasterAudio({ masterLoudness: null })
++  })
++
++  it('saves target, ceiling and limiter as one undoable edit that serializes with the timeline', () => {
++    setMasterLoudness({ targetLufs: -14, ceilingDbtp: -2, limiter: true })
++    expect(usePlaybackStore.getState().masterLoudness).toEqual({ targetLufs: -14, ceilingDbtp: -2, limiter: true })
++    expect(buildTimelineFromStores().masterLoudness).toEqual({ targetLufs: -14, ceilingDbtp: -2, limiter: true })
++    useTimelineCommandStore.getState().undo()
++    expect(usePlaybackStore.getState().masterLoudness).toBeNull()
++    expect(buildTimelineFromStores().masterLoudness).toBeUndefined()
++  })
++
++  it('refuses out-of-range settings', () => {
++    expect(() => setMasterLoudness({ targetLufs: -3, ceilingDbtp: -1, limiter: false })).toThrow()
++    expect(() => setMasterLoudness({ targetLufs: -16, ceilingDbtp: 1, limiter: false })).toThrow()
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++})
+diff --git a/src/features/timeline/stores/actions/edit/loudness-match-actions.ts b/src/features/timeline/stores/actions/edit/loudness-match-actions.ts
+--- a/src/features/timeline/stores/actions/edit/loudness-match-actions.ts
++++ b/src/features/timeline/stores/actions/edit/loudness-match-actions.ts
+@@ -2,6 +2,8 @@ import type { AudioItem, VideoItem } from '@/types/timeline'
+ import { useItemsStore } from '../../items-store'
+ import { useTimelineSettingsStore } from '../../timeline-settings-store'
+ import { execute } from '../shared'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { validateMasterLoudness, type MasterLoudness } from '@/shared/utils/master-audio'
+ import { hasLockedEditParticipants } from '../linked-edit'
+ import {
+   suggestLoudnessMatch,
+@@ -59,3 +61,12 @@ export function applyLoudnessMatch(
+   outcome.applied = updates.map((update) => update.id)
+   return outcome
+ }
++
++/** Save the project's loudness target, ceiling and limiter choice (FL-623) as one undoable edit. */
++export function setMasterLoudness(value: MasterLoudness): void {
++  const loudness = validateMasterLoudness(value)
++  execute('SET_MASTER_LOUDNESS', () => {
++    usePlaybackStore.getState().setMasterAudio({ masterLoudness: loudness })
++    useTimelineSettingsStore.getState().markDirty()
++  }, { ...loudness })
++}
+diff --git a/src/features/timeline/stores/actions/export-snapshot.ts b/src/features/timeline/stores/actions/export-snapshot.ts
+--- a/src/features/timeline/stores/actions/export-snapshot.ts
++++ b/src/features/timeline/stores/actions/export-snapshot.ts
+@@ -41,6 +41,7 @@ export interface ExportableSequence {
+   masterBusDb: number
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   durationFrames: number
+   inPoint: number | null
+   outPoint: number | null
+@@ -143,6 +144,7 @@ export function getExportableSequence(sequenceId: string | null): ExportableSequ
+       masterBusDb: playback.masterBusDb,
+       masterBusMuted: playback.masterBusMuted,
+       masterGainEnvelope: (playback.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++      ...(playback.masterLoudness && { masterLoudness: { ...playback.masterLoudness } }),
+       durationFrames: furthestItemEnd(root.items),
+       ...range(nav.mainHolder),
+     }
+@@ -170,6 +172,7 @@ export function getExportableSequence(sequenceId: string | null): ExportableSequ
+     masterBusDb: playback.masterBusDb,
+     masterBusMuted: playback.masterBusMuted,
+     masterGainEnvelope: (playback.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++    ...(playback.masterLoudness && { masterLoudness: { ...playback.masterLoudness } }),
+     durationFrames: comp.durationInFrames || furthestItemEnd(comp.items),
+     ...range(comp),
+   }
+diff --git a/src/features/timeline/stores/commands/snapshot.ts b/src/features/timeline/stores/commands/snapshot.ts
+--- a/src/features/timeline/stores/commands/snapshot.ts
++++ b/src/features/timeline/stores/commands/snapshot.ts
+@@ -203,6 +203,7 @@ export function captureSnapshot(): TimelineSnapshot {
+     masterBusDb: playbackState.masterBusDb,
+     masterBusMuted: playbackState.masterBusMuted,
+     masterGainEnvelope: (playbackState.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++    ...(playbackState.masterLoudness && { masterLoudness: { ...playbackState.masterLoudness } }),
+     projectId: currentProject?.id ?? null,
+     projectMetadata: currentProject ? { ...currentProject.metadata } : null,
+   }
+@@ -253,6 +254,7 @@ export function restoreSnapshot(snapshot: TimelineSnapshot, restoreMasterMute =
+   usePlaybackStore.getState().setMasterAudio({
+     masterBusDb: snapshot.masterBusDb ?? 0,
+     masterGainEnvelope: snapshot.masterGainEnvelope ?? [],
++    masterLoudness: snapshot.masterLoudness ?? null,
+     ...(restoreMasterMute && { masterBusMuted: snapshot.masterBusMuted === true }),
+   })
+ 
+@@ -285,6 +287,7 @@ export function snapshotsEqual(a: TimelineSnapshot, b: TimelineSnapshot): boolea
+     JSON.stringify(a.busAudioEq ?? null) === JSON.stringify(b.busAudioEq ?? null) &&
+     a.masterBusDb === b.masterBusDb &&
+     JSON.stringify(a.masterGainEnvelope ?? []) === JSON.stringify(b.masterGainEnvelope ?? []) &&
++    JSON.stringify(a.masterLoudness ?? null) === JSON.stringify(b.masterLoudness ?? null) &&
+     (a.masterBusMuted === true) === (b.masterBusMuted === true) &&
+     a.projectId === b.projectId &&
+     projectMetadataEqual(a.projectMetadata, b.projectMetadata)
+diff --git a/src/features/timeline/stores/commands/types.ts b/src/features/timeline/stores/commands/types.ts
+--- a/src/features/timeline/stores/commands/types.ts
++++ b/src/features/timeline/stores/commands/types.ts
+@@ -32,6 +32,7 @@ export interface TimelineSnapshot {
+   masterBusDb: number
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   projectId: string | null
+   projectMetadata: ProjectResolution | null
+ }
+diff --git a/src/features/timeline/stores/timeline-persistence.ts b/src/features/timeline/stores/timeline-persistence.ts
+--- a/src/features/timeline/stores/timeline-persistence.ts
++++ b/src/features/timeline/stores/timeline-persistence.ts
+@@ -743,6 +743,7 @@ interface TimelinePersistenceSnapshot {
+   masterBusDb: number
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   markers: ProjectMarker[]
+   inPoint: number | null
+   outPoint: number | null
+@@ -812,6 +813,7 @@ function captureTimelinePersistenceSnapshot(): TimelinePersistenceSnapshot {
+     masterBusDb: playback.masterBusDb,
+     masterBusMuted: playback.masterBusMuted,
+     masterGainEnvelope: (playback.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++    ...(playback.masterLoudness && { masterLoudness: { ...playback.masterLoudness } }),
+     markers: heldRoot ? heldRoot.markers : markers.markers,
+     inPoint: heldRoot ? heldRoot.inPoint : markers.inPoint,
+     outPoint: heldRoot ? heldRoot.outPoint : markers.outPoint,
+@@ -841,6 +843,7 @@ function buildTimelineFromPersistenceSnapshot(
+     ...((snapshot.masterGainEnvelope?.length ?? 0) > 0 && {
+       masterGainEnvelope: snapshot.masterGainEnvelope!.map((point) => ({ ...point })),
+     }),
++    ...(snapshot.masterLoudness && { masterLoudness: { ...snapshot.masterLoudness } }),
+     currentFrame: snapshot.currentFrame,
+     zoomLevel: snapshot.zoomLevel,
+     scrollPosition: snapshot.scrollPosition,
+@@ -1145,6 +1148,7 @@ export async function hydrateTimelineStoresFromProject(project: Project): Promis
+     masterBusDb: project.timeline?.masterBusDb ?? 0,
+     masterBusMuted: project.timeline?.masterBusMuted === true,
+     masterGainEnvelope: project.timeline?.masterGainEnvelope ?? [],
++    masterLoudness: project.timeline?.masterLoudness ?? null,
+   })
+   usePlaybackStore.getState().setBusAudioEq(project.timeline?.busAudioEq)
+ 
+diff --git a/src/headless/main.ts b/src/headless/main.ts
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -236,6 +236,7 @@ interface HeadlessTimelineInput {
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   /** Project managed colour (FL-97); absent renders as an SDR project. */
+   colorManagement?: ProjectColorManagement
+   compositions?: SubComposition[]
+@@ -614,6 +615,7 @@ async function renderTimeline(input: HeadlessTimelineInput): Promise<HeadlessRen
+     masterBusDb,
+     masterBusMuted,
+     masterGainEnvelope,
++    masterLoudness,
+     colorManagement,
+     compositions = [],
+     media,
+@@ -665,6 +667,7 @@ async function renderTimeline(input: HeadlessTimelineInput): Promise<HeadlessRen
+     masterBusDb,
+     masterBusMuted,
+     masterGainEnvelope,
++    masterLoudness,
+   )
+   composition.colorManagement = colorManagement
+ 
+@@ -748,6 +751,7 @@ async function renderProject(input: HeadlessProjectInput): Promise<HeadlessRende
+     masterBusDb: timeline.masterBusDb,
+     masterBusMuted: timeline.masterBusMuted,
+     masterGainEnvelope: (timeline.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++    masterLoudness: timeline.masterLoudness,
+     colorManagement: meta?.colorManagement,
+     compositions: (timeline.compositions ?? []) as unknown as SubComposition[],
+     media,
+@@ -894,6 +898,7 @@ interface MigratedTimelineView {
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   colorManagement?: ProjectColorManagement
+   /** Non-fatal findings from project normalization (overlap repairs etc.). */
+   projectWarnings: ProjectWarning[]
+@@ -922,6 +927,7 @@ function extractTimeline(rawProject: Project): MigratedTimelineView {
+     masterBusDb: timeline.masterBusDb,
+     masterBusMuted: timeline.masterBusMuted,
+     masterGainEnvelope: (timeline.masterGainEnvelope ?? []).map((point) => ({ ...point })),
++    masterLoudness: timeline.masterLoudness,
+     colorManagement: meta?.colorManagement,
+   }
+ }
+@@ -950,6 +956,7 @@ function buildComposition(view: MigratedTimelineView): CompositionInputProps {
+     view.masterBusDb,
+     view.masterBusMuted,
+     view.masterGainEnvelope,
++    view.masterLoudness,
+   )
+   composition.colorManagement = view.colorManagement
+   return composition
+diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
+--- a/src/i18n/locales/partials/de/editor.json
++++ b/src/i18n/locales/partials/de/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "Braucht mehr als +12 dB: bitte manuell prüfen.",
+           "volume-range": "Begrenzt durch den Lautstärkebereich des Clips (−60 bis +12 dB)."
+-        }
++        },
++        "limiter": "True Peaks beim Export an der Grenze begrenzen"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "Needs more than +12 dB: review it by hand.",
+           "volume-range": "Limited by the clip's volume range (−60 to +12 dB)."
+-        }
++        },
++        "limiter": "Limit true peaks at the ceiling on export"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
+--- a/src/i18n/locales/partials/es/editor.json
++++ b/src/i18n/locales/partials/es/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "Necesita más de +12 dB: revísalo a mano.",
+           "volume-range": "Limitado por el rango de volumen del clip (−60 a +12 dB)."
+-        }
++        },
++        "limiter": "Limitar los picos reales al techo al exportar"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
+--- a/src/i18n/locales/partials/fr/editor.json
++++ b/src/i18n/locales/partials/fr/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "Il faudrait plus de +12 dB : vérifiez manuellement.",
+           "volume-range": "Limité par la plage de volume du clip (−60 à +12 dB)."
+-        }
++        },
++        "limiter": "Limiter les crêtes réelles au plafond à l’export"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
+--- a/src/i18n/locales/partials/ja/editor.json
++++ b/src/i18n/locales/partials/ja/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "+12 dB を超える変更が必要です。手動で確認してください。",
+           "volume-range": "クリップの音量範囲（−60〜+12 dB）で制限されています。"
+-        }
++        },
++        "limiter": "書き出し時にトゥルーピークを上限で制限"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
+--- a/src/i18n/locales/partials/ko/editor.json
++++ b/src/i18n/locales/partials/ko/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "+12 dB 넘게 필요합니다. 직접 검토하세요.",
+           "volume-range": "클립 볼륨 범위(−60~+12 dB)로 제한됩니다."
+-        }
++        },
++        "limiter": "내보낼 때 트루 피크를 상한으로 제한"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
+--- a/src/i18n/locales/partials/pt-BR/editor.json
++++ b/src/i18n/locales/partials/pt-BR/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "Precisa de mais de +12 dB: revise manualmente.",
+           "volume-range": "Limitado pela faixa de volume do clipe (−60 a +12 dB)."
+-        }
++        },
++        "limiter": "Limitar picos reais ao teto na exportação"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
+--- a/src/i18n/locales/partials/tr/editor.json
++++ b/src/i18n/locales/partials/tr/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "+12 dB'den fazlası gerekiyor: elle gözden geçirin.",
+           "volume-range": "Klibin ses aralığıyla (−60 ile +12 dB) sınırlı."
+-        }
++        },
++        "limiter": "Dışa aktarırken gerçek tepeleri sınırda tut"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
+--- a/src/i18n/locales/partials/zh/editor.json
++++ b/src/i18n/locales/partials/zh/editor.json
+@@ -622,7 +622,8 @@
+         "limited": {
+           "boost-cap": "需要超过 +12 dB：请手动检查。",
+           "volume-range": "受片段音量范围（−60 至 +12 dB）限制。"
+-        }
++        },
++        "limiter": "导出时将真峰值限制在上限"
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/runtime/composition-runtime/utils/preview-master-bus.ts b/src/runtime/composition-runtime/utils/preview-master-bus.ts
+--- a/src/runtime/composition-runtime/utils/preview-master-bus.ts
++++ b/src/runtime/composition-runtime/utils/preview-master-bus.ts
+@@ -35,6 +35,33 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
+   mute.channelInterpretation = 'discrete'
+   mute.gain.value = 0
+   mute.connect(context.destination)
++  // FL-623: while the project limiter is on, the mix passes a compressor set as a limiter at the
++  // ceiling. Web Audio limits sample peaks with about 6 ms lookahead; export limits true peaks.
++  let limiter: DynamicsCompressorNode | null = null
++  let limiterRouted = false
++  const routeLimiter = () => {
++    if (!processor) return
++    const loudness = usePlaybackStore.getState().masterLoudness
++    const wanted = loudness?.limiter === true
++    if (wanted && !limiter) {
++      limiter = context.createDynamicsCompressor()
++      limiter.knee.value = 0
++      limiter.ratio.value = 20
++      limiter.attack.value = 0.001
++      limiter.release.value = 0.05
++    }
++    if (limiter && loudness) limiter.threshold.value = loudness.ceilingDbtp
++    if (wanted === limiterRouted) return
++    processor.disconnect()
++    limiter?.disconnect()
++    if (wanted) {
++      processor.connect(limiter!)
++      limiter!.connect(mute)
++    } else {
++      processor.connect(mute)
++    }
++    limiterRouted = wanted
++  }
+   let disposed = false
+   let failed = false
+   let processor: AudioWorkletNode | null = null
+@@ -106,6 +133,8 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
+       }
+       input.connect(processor)
+       processor.connect(mute)
++      limiterRouted = false
++      if (usePlaybackStore.getState().masterLoudness?.limiter === true) routeLimiter()
+     }
+     const state = usePlaybackStore.getState()
+     pendingClockGeneration = anchor.generation
+@@ -129,6 +158,7 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
+     processor.port.postMessage(pending)
+   }
+   const unsubscribe = usePlaybackStore.subscribe((state, previous) => {
++    if (state.masterLoudness !== previous.masterLoudness) routeLimiter()
+     if (
+       state.masterBusDb !== previous.masterBusDb ||
+       state.masterBusMuted !== previous.masterBusMuted ||
+@@ -149,6 +179,7 @@ export function getPreviewMasterInput(clock: Clock, context: AudioContext): Gain
+       mute.gain.setValueAtTime(0, context.currentTime)
+       input.disconnect()
+       processor?.disconnect()
++      limiter?.disconnect()
+       if (processor) {
+         processor.port.onmessage = null
+         processor.port.close()
+diff --git a/src/shared/state/playback/store.ts b/src/shared/state/playback/store.ts
+--- a/src/shared/state/playback/store.ts
++++ b/src/shared/state/playback/store.ts
+@@ -1,4 +1,4 @@
+-import { validateMasterGainEnvelope } from '@/shared/utils/master-audio'
++import { validateMasterGainEnvelope, validateMasterLoudness } from '@/shared/utils/master-audio'
+ import { create } from 'zustand'
+ import { persist } from 'zustand/middleware'
+ import type { PlaybackState, PlaybackActions, PreviewQuality } from './types'
+@@ -109,6 +109,7 @@ export const usePlaybackStore = create<PlaybackState & PlaybackActions>()(
+       masterBusDb: 0,
+       masterBusMuted: false,
+       masterGainEnvelope: [],
++      masterLoudness: null,
+       masterPreviewError: null,
+       busAudioEq: undefined,
+       zoom: -1, // -1 = auto-fit, positive values = specific zoom percentage
+@@ -233,9 +234,14 @@ export const usePlaybackStore = create<PlaybackState & PlaybackActions>()(
+           state.masterGainEnvelope === undefined
+             ? undefined
+             : validateMasterGainEnvelope(state.masterGainEnvelope)
++        const loudness =
++          state.masterLoudness === undefined || state.masterLoudness === null
++            ? state.masterLoudness
++            : validateMasterLoudness(state.masterLoudness)
+         set({
+           ...state,
+           ...(envelope !== undefined && { masterGainEnvelope: envelope }),
++          ...(loudness !== undefined && { masterLoudness: loudness }),
+           masterPreviewError: null,
+         })
+       },
+diff --git a/src/shared/state/playback/types.ts b/src/shared/state/playback/types.ts
+--- a/src/shared/state/playback/types.ts
++++ b/src/shared/state/playback/types.ts
+@@ -1,4 +1,4 @@
+-import type { MasterGainPoint } from '@/shared/utils/master-audio'
++import type { MasterGainPoint, MasterLoudness } from '@/shared/utils/master-audio'
+ import type { AudioEqSettings } from '@/types/audio'
+ 
+ export interface CaptureOptions {
+@@ -58,6 +58,8 @@ export interface PlaybackState {
+   /** Project mix mute, persisted with the timeline and applied during export. */
+   masterBusMuted: boolean
+   masterGainEnvelope: MasterGainPoint[]
++  /** Project loudness target and limiter; null means Studio defaults and no limiter. */
++  masterLoudness: MasterLoudness | null
+   masterPreviewError: string | null
+   busAudioEq?: AudioEqSettings
+   zoom: number
+@@ -108,6 +110,7 @@ export interface PlaybackActions {
+     masterBusDb?: number
+     masterBusMuted?: boolean
+     masterGainEnvelope?: MasterGainPoint[]
++    masterLoudness?: MasterLoudness | null
+   }) => void
+   setMasterBusDb: (db: number) => void
+   setMasterBusMuted: (muted: boolean) => void
+diff --git a/src/shared/utils/loudness.ts b/src/shared/utils/loudness.ts
+--- a/src/shared/utils/loudness.ts
++++ b/src/shared/utils/loudness.ts
+@@ -131,23 +131,33 @@ const PHASES: Float64Array[] = Array.from({ length: OVERSAMPLE }, (_, phase) =>
+   return taps.map((tap) => tap / sum)
+ })
+ 
+-function truePeak(channels: readonly Float32Array[]): number {
+-  let peak = 0
++/**
++ * Per-sample true peak across channels: the largest magnitude at the sample
++ * and at the three 4x-oversampled points after it.
++ */
++export function samplePeaks(channels: readonly Float32Array[]): Float32Array {
++  const length = channels[0]?.length ?? 0
++  const peaks = new Float32Array(length)
+   for (const channel of channels) {
+-    for (let i = 0; i < channel.length; i += 1) {
+-      peak = Math.max(peak, Math.abs(channel[i]!))
++    for (let i = 0; i < length; i += 1) {
++      let peak = Math.abs(channel[i]!)
+       for (let phase = 1; phase < OVERSAMPLE; phase += 1) {
+         const taps = PHASES[phase]!
+         let value = 0
+         for (let t = 0; t < TAPS; t += 1) {
+           const index = i + t - CENTER
+-          if (index >= 0 && index < channel.length) value += channel[index]! * taps[t]!
++          if (index >= 0 && index < length) value += channel[index]! * taps[t]!
+         }
+         peak = Math.max(peak, Math.abs(value))
+       }
++      if (peak > peaks[i]!) peaks[i] = peak
+     }
+   }
+-  return peak
++  return peaks
++}
++
++function truePeak(channels: readonly Float32Array[]): number {
++  return samplePeaks(channels).reduce((peak, value) => Math.max(peak, value), 0)
+ }
+ 
+ export function measureLoudness(input: LoudnessInput): LoudnessMeasurement {
+diff --git a/src/shared/utils/master-audio.ts b/src/shared/utils/master-audio.ts
+--- a/src/shared/utils/master-audio.ts
++++ b/src/shared/utils/master-audio.ts
+@@ -6,7 +6,33 @@ export interface MasterGainPoint {
+   frame: number
+   gainDb: number
+ }
++/**
++ * Project loudness settings (FL-598/FL-623): the delivery target the export
++ * report checks against, and an optional true-peak limiter at the end of the
++ * export mix at `ceilingDbtp`.
++ */
++export interface MasterLoudness {
++  targetLufs: number
++  ceilingDbtp: number
++  limiter: boolean
++}
++
++export function validateMasterLoudness(value: unknown): MasterLoudness {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid master loudness')
++  const v = value as Record<string, unknown>
++  if (
++    Object.keys(v).some((key) => !['targetLufs', 'ceilingDbtp', 'limiter'].includes(key)) ||
++    typeof v.targetLufs !== 'number' || !Number.isFinite(v.targetLufs) || v.targetLufs < -36 || v.targetLufs > -6 ||
++    typeof v.ceilingDbtp !== 'number' || !Number.isFinite(v.ceilingDbtp) || v.ceilingDbtp < -12 || v.ceilingDbtp > 0 ||
++    typeof v.limiter !== 'boolean'
++  ) {
++    throw new Error('Invalid master loudness')
++  }
++  return { targetLufs: v.targetLufs, ceilingDbtp: v.ceilingDbtp, limiter: v.limiter }
++}
++
+ export interface MasterAudioState {
++  masterLoudness?: MasterLoudness
+   masterBusDb?: number
+   masterBusMuted?: boolean
+   masterGainEnvelope?: readonly MasterGainPoint[]
+diff --git a/src/shared/utils/true-peak-limiter.test.ts b/src/shared/utils/true-peak-limiter.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/true-peak-limiter.test.ts
+@@ -0,0 +1,64 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { measureLoudness } from './loudness'
++import { limitTruePeak } from './true-peak-limiter'
++
++const RATE = 48000
++
++function burstySignal(seconds: number): Float32Array[] {
++  const left = new Float32Array(seconds * RATE)
++  const right = new Float32Array(seconds * RATE)
++  for (let i = 0; i < left.length; i += 1) {
++    const t = i / RATE
++    const loud = Math.floor(t * 4) % 3 === 0 ? 1.6 : 0.3
++    left[i] = loud * Math.sin(2 * Math.PI * 997 * t) * 0.9
++    right[i] = loud * Math.sin(2 * Math.PI * 12000 * t + Math.PI / 4) * 0.7
++  }
++  return [left, right]
++}
++
++describe('limitTruePeak', () => {
++  it.each([-1, -2, -0.3])('keeps the true peak at or below %s dBTP within 0.2 dB', (ceiling) => {
++    const channels = burstySignal(3)
++    expect(measureLoudness({ sampleRate: RATE, channels }).truePeakDbtp!).toBeGreaterThan(ceiling + 3)
++    limitTruePeak(channels, RATE, ceiling)
++    expect(measureLoudness({ sampleRate: RATE, channels }).truePeakDbtp!).toBeLessThanOrEqual(ceiling + 0.2)
++  })
++
++  it('leaves audio below the ceiling untouched and keeps channels in step', () => {
++    const quiet = [Float32Array.from({ length: RATE }, (_, i) => 0.2 * Math.sin(i / 10))]
++    const before = Float32Array.from(quiet[0]!)
++    limitTruePeak(quiet, RATE, -1)
++    expect(quiet[0]).toEqual(before)
++
++    const channels = burstySignal(1)
++    const ratioBefore = channels[0]![1000]! / channels[1]![1000]!
++    limitTruePeak(channels, RATE, -1)
++    expect(channels[0]![1000]! / channels[1]![1000]!).toBeCloseTo(ratioBefore, 6)
++  })
++
++  it('only reduces quiet passages briefly after a loud one (release)', () => {
++    const channels = burstySignal(3)
++    limitTruePeak(channels, RATE, -1)
++    // 0.5 s into a quiet quarter-second the gain has recovered: level is the original 0.3 × 0.9.
++    const t = 0.25 + 0.2
++    const window = channels[0]!.subarray(Math.round(t * RATE), Math.round((t + 0.02) * RATE))
++    const peak = window.reduce((m, v) => Math.max(m, Math.abs(v)), 0)
++    expect(peak).toBeGreaterThan(0.26)
++  })
++
++  it('gives the same result in bounded chunks as in one pass over the whole mix', () => {
++    const whole = burstySignal(2)
++    const chunked = whole.map((channel) => Float32Array.from(channel))
++    limitTruePeak(whole, RATE, -1, Infinity)
++    limitTruePeak(chunked, RATE, -1, 4096)
++    let worst = 0
++    for (let c = 0; c < whole.length; c += 1) {
++      for (let i = 0; i < whole[c]!.length; i += 1) worst = Math.max(worst, Math.abs(whole[c]![i]! - chunked[c]![i]!))
++    }
++    expect(worst).toBeLessThan(1e-6)
++  })
++
++  it('fails instead of skipping when the ceiling is not a number', () => {
++    expect(() => limitTruePeak(burstySignal(1), RATE, Number.NaN)).toThrow(/true-peak ceiling/)
++  })
++})
+diff --git a/src/shared/utils/true-peak-limiter.ts b/src/shared/utils/true-peak-limiter.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/true-peak-limiter.ts
+@@ -0,0 +1,86 @@
++import { samplePeaks } from './loudness'
++
++/**
++ * Offline true-peak limiter (FL-623). The whole mix is known, so the gain can
++ * look ahead with no added latency: each sample's required gain (ceiling over
++ * its 4x-oversampled peak) is taken as a running minimum over ±L samples and
++ * then box-averaged over L, which keeps the gain at every peak no higher than
++ * that peak requires while ramping smoothly into it. Release is limited to
++ * recover gradually. Channels share one gain, so the image does not shift.
++ * It runs in chunks with a margin of original samples on each side, so memory
++ * stays bounded for long exports and the result matches one whole-mix pass.
++ * Algorithm id: tp-lookahead-1.5ms-v1.
++ */
++
++const LOOKAHEAD_SECONDS = 0.0015
++const RELEASE_SECONDS = 0.05
++
++export function limitTruePeak(
++  channels: Float32Array[],
++  sampleRate: number,
++  ceilingDbtp: number,
++  chunkSize = 1 << 16,
++): void {
++  // An invalid ceiling would silently skip limiting; fail the export instead.
++  if (!Number.isFinite(ceilingDbtp)) throw new Error(`Invalid true-peak ceiling: ${ceilingDbtp}`)
++  const length = channels[0]?.length ?? 0
++  if (length === 0) return
++  const ceiling = 10 ** (ceilingDbtp / 20)
++  const lookahead = Math.max(8, Math.round(LOOKAHEAD_SECONDS * sampleRate))
++  const half = Math.floor(lookahead / 2)
++  // Each output sample reads required gains up to half + L away, whose peaks read a few taps further.
++  const margin = lookahead + half + 16
++  const chunk = Math.max(chunkSize, margin)
++  const release = 1 - Math.exp(-1 / (RELEASE_SECONDS * sampleRate))
++  // Original samples just before the current chunk; the chunk before has already been limited.
++  let saved: Float32Array[] = channels.map(() => new Float32Array(0))
++  let gain = 1
++
++  for (let start = 0; start < length; start += chunk) {
++    const end = Math.min(length, start + chunk)
++    const extFrom = Math.max(0, start - margin)
++    const extTo = Math.min(length, end + margin)
++    const ext = channels.map((channel, c) => {
++      const copy = new Float32Array(extTo - extFrom)
++      copy.set(saved[c]!.subarray(saved[c]!.length - (start - extFrom)))
++      copy.set(channel.subarray(start, extTo), start - extFrom)
++      return copy
++    })
++    saved = channels.map((channel) => channel.slice(Math.max(start, end - margin), end))
++
++    const peaks = samplePeaks(ext)
++    const required = new Float32Array(peaks.length)
++    let limiting = false
++    for (let i = 0; i < peaks.length; i += 1) {
++      required[i] = peaks[i]! > ceiling ? ceiling / peaks[i]! : 1
++      if (required[i]! < 1) limiting = true
++    }
++    if (!limiting && gain >= 1) continue
++
++    // Running minimum over [i - L, i + L] with a monotonic deque (indices within ext).
++    const windowMin = new Float32Array(required.length)
++    const deque = new Int32Array(required.length)
++    let head = 0
++    let tail = 0
++    let next = 0
++    for (let i = 0; i < required.length; i += 1) {
++      for (; next < required.length && next <= i + lookahead; next += 1) {
++        while (tail > head && required[deque[tail - 1]!]! >= required[next]!) tail -= 1
++        deque[tail++] = next
++      }
++      while (deque[head]! < i - lookahead) head += 1
++      windowMin[i] = required[deque[head]!]!
++    }
++    // Box average over [i - L/2, i + L/2]; never above the peak's own requirement.
++    const prefix = new Float64Array(windowMin.length + 1)
++    for (let i = 0; i < windowMin.length; i += 1) prefix[i + 1] = prefix[i]! + windowMin[i]!
++    for (let i = start; i < end; i += 1) {
++      const from = Math.max(0, i - half) - extFrom
++      const to = Math.min(length, i + half + 1) - extFrom
++      const smoothed = (prefix[to]! - prefix[from]!) / (to - from)
++      // Attack follows the lookahead envelope; release rises at most at the release rate.
++      gain = Math.min(smoothed, gain + (1 - gain) * release)
++      for (const channel of channels) channel[i] = channel[i]! * gain
++    }
++  }
++}
+diff --git a/src/types/export.ts b/src/types/export.ts
+--- a/src/types/export.ts
++++ b/src/types/export.ts
+@@ -75,6 +75,7 @@ export interface CompositionInputProps {
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   masterOriginFrame?: number
+   /** Project managed colour (FL-97); absent renders as an SDR project. */
+   colorManagement?: ProjectColorManagement
+diff --git a/src/types/project.ts b/src/types/project.ts
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -60,6 +60,8 @@ export interface ProjectTimeline {
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
+   masterGainEnvelope?: import('@/shared/utils/master-audio').MasterGainPoint[]
++  /** Loudness target and optional true-peak limiter (FL-623). Absent: Studio defaults, no limiter. */
++  masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   tracks: Array<{
+     id: string
+     name: string

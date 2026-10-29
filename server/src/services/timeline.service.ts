@@ -21,7 +21,12 @@ import {
   requireSuppressedOnlyAccess,
 } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { collectFilterIds, filterNamesPeople, requirePetFilterAllowed } from 'src/utils/search-filter.js';
+import {
+  collectFilterIds,
+  filterNamesPeople,
+  requirePetFilterAllowed,
+  requireSourceFilterAllowed,
+} from 'src/utils/search-filter.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -188,8 +193,14 @@ export class TimelineService extends BaseService {
       if (auth.sharedLink) {
         throw new BadRequestException('filter and imageEnrichment are not available through a shared link');
       }
+      requireSourceFilterAllowed(auth, dto.filter ?? {});
       // the same access the single albumId and tagId above need, as search checks the albums it names
-      const albumIds = collectFilterIds(dto.filter ?? {}, 'albumIds');
+      const albumIds = [
+        ...new Set([
+          ...collectFilterIds(dto.filter ?? {}, 'albumIds'),
+          ...collectFilterIds(dto.filter ?? {}, 'albumSubtreeIds'),
+        ]),
+      ];
       if (albumIds.length > 0) {
         await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: albumIds });
       }

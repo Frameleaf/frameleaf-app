@@ -39,6 +39,7 @@ import {
   CacheControl,
   ChecksumAlgorithm,
   JobName,
+  LibraryScope,
   Permission,
   StorageFolder,
 } from 'src/enum.js';
@@ -305,6 +306,7 @@ export class AssetMediaService extends BaseService {
 
         type: mimeTypes.assetType(file.originalPath),
         isFavorite: dto.isFavorite,
+        libraryScope: dto.libraryScope ?? LibraryScope.Personal,
         duration: dto.duration || null,
         // `locked` is a lock record, never a stored visibility (FL-34): an upload into the Locked view
         // is stored on the timeline and locked in the same transaction, so nothing lists it unlocked

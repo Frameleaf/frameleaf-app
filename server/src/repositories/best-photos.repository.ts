@@ -3,12 +3,13 @@ import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetStatus, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
 import { deferJobAdoption } from 'src/queue/context.js';
 import { DB } from 'src/schema/index.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 
@@ -75,14 +76,14 @@ export class BestPhotosRepository {
     const adopt = async (db: Kysely<DB>) => {
       const asset = await db
         .selectFrom('asset')
-        .select('ownerId')
+        .select(['ownerId', 'libraryScope'])
         .where('id', '=', score.assetId)
         .forUpdate()
         .executeTakeFirstOrThrow();
       if (asset.ownerId !== score.ownerId) {
         throw new Error('Best photo score owner mismatch');
       }
-      await this.upsertInto(db, score);
+      if (asset.libraryScope !== LibraryScope.Design) await this.upsertInto(db, score);
     };
     if (!deferJobAdoption(adopt)) {
       await this.db.transaction().execute(adopt);
@@ -131,6 +132,7 @@ export class BestPhotosRepository {
       .innerJoin('public.asset as asset', 'asset.id', 'asset_best_photo_score.assetId')
       .where('asset_best_photo_score.ownerId', '=', asUuid(options.ownerId))
       .where('asset.ownerId', '=', asUuid(options.ownerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where('asset.status', '=', sql.lit(AssetStatus.Active))
       .where('asset.visibility', 'in', [

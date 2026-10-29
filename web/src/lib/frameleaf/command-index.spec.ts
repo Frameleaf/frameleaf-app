@@ -60,7 +60,7 @@ describe('buildPageCommands', () => {
     const pages = buildPageCommands($t, context());
     const hrefOf = (id: string) => pages.find((page) => page.id === id)?.href;
 
-    expect(pages.slice(0, 3).map((page) => page.id)).toEqual(['primary:library', 'primary:studio', 'primary:activity']);
+    expect(pages.slice(0, 3).map((page) => page.id)).toEqual(['primary:library', 'primary:pro', 'primary:studio']);
     expect(hrefOf('primary:library')).toBe('/photos');
     expect(hrefOf('primary:studio')).toBe('/studio/projects');
     expect(hrefOf('primary:activity')).toBe('/activity');
@@ -152,7 +152,18 @@ describe('buildCatalogueCommands', () => {
   it('points people and albums at their own pages and a place at its search results', () => {
     const commands = buildCatalogueCommands($t, {
       people: [{ id: 'p1', name: 'Ada' }] as never,
-      albums: [{ id: 'a1', name: 'Iceland', icon: null, kind: 'album', assetCount: 12, shared: false, children: [] }],
+      albums: [
+        {
+          id: 'a1',
+          name: 'Iceland',
+          icon: null,
+          color: null,
+          kind: 'album',
+          assetCount: 12,
+          shared: false,
+          children: [],
+        },
+      ],
       places: [{ field: 'city', value: 'Banff' }],
     });
     expect(commands.people[0].href).toBe('/people/p1');
@@ -164,7 +175,9 @@ describe('buildCatalogueCommands', () => {
   it('opens a shared space on its own page', () => {
     const commands = buildCatalogueCommands($t, {
       ...emptyCommandCatalogue(),
-      albums: [{ id: 's1', name: 'Family', icon: null, kind: 'space', assetCount: 3, shared: true, children: [] }],
+      albums: [
+        { id: 's1', name: 'Family', icon: null, color: null, kind: 'space', assetCount: 3, shared: true, children: [] },
+      ],
     });
     expect(commands.collections[0].href).toBe('/sharing/s1');
   });

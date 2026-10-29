@@ -16,6 +16,7 @@
     withDiscoveryEnrichment,
     withDiscoveryFacet,
     withoutDiscoveryFilter,
+    withoutDiscoveryFilters,
     type DiscoveryFilterSection,
     type DiscoveryQuery,
   } from '$lib/components/discovery/query';
@@ -30,6 +31,7 @@
     loadEnrichmentCounts,
     loadFilterPanelOptions,
     loadPaletteCount,
+    isMixedPaletteSearch,
     loadPaletteFacets,
     loadPaletteHistogram,
     loadPaletteResults,
@@ -78,6 +80,7 @@
   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
   import {
     AssetMediaSize,
+    LibraryViewScope,
     AssetTypeEnum,
     ImageEnrichmentFilter,
     type AssetResponseDto,
@@ -250,7 +253,13 @@
   // A fresh search starts in smart search, as the prototype's `searchBy` defaults to "semantic". A page
   // search the palette cannot fully carry (FL-48) keeps its own mode, so reopening it changes nothing.
   let mode = $state<PaletteMode>(
-    untrack(() => !opened.input && unsupported.length === 0 && featureFlagsManager.value.smartSearch)
+    untrack(
+      () =>
+        !opened.input &&
+        unsupported.length === 0 &&
+        opened.base.filter.libraryScope !== LibraryViewScope.Design &&
+        featureFlagsManager.value.smartSearch,
+    )
       ? 'smart'
       : opened.mode,
   );
@@ -360,6 +369,7 @@
   const includeArchived = $derived(authManager.authenticated && !!authManager.preferences.search?.includeArchived);
   const body = $derived(paletteSearchBody(next, includeArchived));
   const smart = $derived(smartEnabled && isSmartBody(body));
+  const mixedSearch = $derived(isMixedPaletteSearch(body));
   const typing = $derived(text.trim().length > 0 || tokens.length > 0);
   const pending = $derived(mode !== 'speech' && (deferredInput !== liveInput || loading));
 
@@ -501,6 +511,7 @@
   const isAbort = (error: unknown, signal: AbortSignal) =>
     signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
 
+  const libraryScope = $derived(base.filter.libraryScope);
   let optionsController: AbortController | undefined;
   let catalogController: AbortController | undefined;
   let remoteController: AbortController | undefined;
@@ -508,11 +519,14 @@
 
   $effect(() => {
     void generation;
+    const scope = libraryScope;
     untrack(() => {
+      options = emptyFilterPanelOptions();
+      optionsLoaded = false;
       optionsController?.abort();
       const controller = new AbortController();
       optionsController = controller;
-      void loadFilterPanelOptions(controller.signal)
+      void loadFilterPanelOptions(controller.signal, scope)
         .then((result) => {
           if (controller.signal.aborted) {
             return;
@@ -538,7 +552,9 @@
   // Typeahead counts: the collection (or library) as a whole, not narrowed by what is typed
   const catalogBody = $derived(
     paletteSearchBody(
-      scopeChoice === 'library' ? emptyDiscoveryQuery() : withPaletteScope(emptyDiscoveryQuery(), scope),
+      scopeChoice === 'library'
+        ? { ...emptyDiscoveryQuery(), filter: { libraryScope: base.filter.libraryScope } }
+        : withPaletteScope({ ...emptyDiscoveryQuery(), filter: { libraryScope: base.filter.libraryScope } }, scope),
       includeArchived,
     ),
   );
@@ -550,6 +566,11 @@
       const controller = new AbortController();
       catalogController = controller;
       const { signal } = controller;
+      if (isMixedPaletteSearch(catalogBody)) {
+        catalogFacets = {};
+        catalogYears = [];
+        return;
+      }
       void loadPaletteFacets(catalogBody, signal, 100)
         .then((result) => !signal.aborted && (catalogFacets = result))
         .catch(() => !signal.aborted && (catalogFacets = {}));
@@ -637,16 +658,23 @@
             scopeChoice === 'library',
           )
         : Promise.resolve(),
-      settle(loadPaletteFacets(searchBody, signal), (value) => (facets = value ?? {})),
       settle(
-        loadPaletteHistogram(searchBody, signal),
+        isMixedPaletteSearch(searchBody) ? Promise.resolve({}) : loadPaletteFacets(searchBody, signal),
+        (value) => (facets = value ?? {}),
+      ),
+      settle(
+        isMixedPaletteSearch(searchBody)
+          ? Promise.resolve({ unit: 'month' as const, buckets: [] })
+          : loadPaletteHistogram(searchBody, signal),
         (value) => (histogram = value ?? { unit: 'month', buckets: [] }),
       ),
       settle(
-        loadEnrichmentCounts(searchBody, advanced ? ALL_ENRICHMENT : QUICK_ENRICHMENT, signal),
+        isMixedPaletteSearch(searchBody)
+          ? Promise.resolve({})
+          : loadEnrichmentCounts(searchBody, advanced ? ALL_ENRICHMENT : QUICK_ENRICHMENT, signal),
         (value) => (enrichmentCounts = value ?? {}),
       ),
-      typing
+      typing && !isMixedPaletteSearch(searchBody)
         ? settle(
             loadPaletteResults(searchBody, smartFor(searchBody), TOP_HITS, signal),
             // A failed search keeps the last good hits on screen (dimmed) rather than emptying the list
@@ -794,7 +822,7 @@
     text = '';
     tokens = [];
     droppedChips = 0;
-    base = withPaletteScope({ ...emptyDiscoveryQuery(), mode: base.mode }, scope);
+    base = withPaletteScope(withoutDiscoveryFilters(base), scope);
     input?.focus();
   };
 
@@ -892,14 +920,24 @@
       onClose();
       return;
     }
-    handlePromiseError(goto(isEmptyDiscoverySearch(query) ? '/search' : discoveryUrl(query)));
+    handlePromiseError(
+      goto(
+        isEmptyDiscoverySearch(query) && query.filter.libraryScope !== LibraryViewScope.Design
+          ? '/search'
+          : discoveryUrl(query),
+      ),
+    );
     onClose();
   };
 
   const openAsset = (asset: AssetResponseDto) => {
     remember();
     const parameters = new URLSearchParams({ [DISCOVERY_QUERY_PARAMETER]: JSON.stringify(submitted()) });
-    handlePromiseError(goto(`/search/photos/${asset.id}?${parameters}`));
+    handlePromiseError(
+      goto(
+        `${submitted().filter.libraryScope === LibraryViewScope.Design ? '/pro' : '/search'}/photos/${asset.id}?${parameters}`,
+      ),
+    );
     onClose();
   };
 
@@ -1326,6 +1364,7 @@
     {#if advanced}
       <div class="sp-advanced">
         <FilterPanel
+          showEnrichment={!mixedSearch}
           embedded
           query={next}
           {options}
@@ -1395,7 +1434,7 @@
           </section>
         {/if}
 
-        {#if typing && mode !== 'speech'}
+        {#if typing && mode !== 'speech' && !mixedSearch}
           <section>
             <h3>
               {$t('frameleaf_search_photos_and_videos')}

@@ -11,7 +11,14 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllAlbums: vi.fn(),
 }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me' } } }));
+vi.mock('$lib/frameleaf/icon-catalogue', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/frameleaf/icon-catalogue')>()),
+  // The album marks in Add to album would fetch the icon geometry from Vite, which is not running.
+  loadIconPaths: async () => ({}),
+}));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: { user: { id: 'me' }, authenticated: true, captureSession: () => () => true },
+}));
 
 /**
  * The bar's contract with the library view: it never runs an action itself, it hands an action and a
@@ -178,7 +185,7 @@ describe('Frameleaf selection bar', () => {
     mount();
     await fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(within(dialog).getByRole('radio', { name: /Iceland/ })).toBeInTheDocument());
     expect(getAllAlbums).toHaveBeenCalledOnce();
     expect(within(dialog).getByText('Trips')).toBeInTheDocument();

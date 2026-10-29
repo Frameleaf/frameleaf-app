@@ -84,7 +84,11 @@ describe('SearchSaveDialog', () => {
     await fireEvent.click(screen.getByRole('button', { name: /Smart album/ }));
     await waitFor(() =>
       expect(sdkMock.createClassificationRule).toHaveBeenCalledWith({
-        classificationRuleCreateDto: { albumName: 'Jamie', personIds: [JAMIE], visualQueries: ['hike'] },
+        classificationRuleCreateDto: expect.objectContaining({
+          albumName: 'Jamie',
+          visualQueries: ['hike'],
+          filter: expect.objectContaining({ personIds: { all: [JAMIE] } }),
+        }),
       }),
     );
     expect(onSaved).toHaveBeenCalledWith('smart', true);
@@ -92,10 +96,15 @@ describe('SearchSaveDialog', () => {
   });
 
   it('disables the smart album for a search a rule cannot say, and says why', () => {
-    setup({ ...emptyDiscoveryQuery(), filter: { city: { eq: 'Banff' } } });
+    setup({ ...emptyDiscoveryQuery(), mode: 'smart', queryAssetId: JAMIE });
     const smart = screen.getByRole('button', { name: /Smart album/ });
     expect(smart).toBeDisabled();
-    expect(smart).toHaveTextContent('Only searches by people');
+    expect(smart).toHaveTextContent('photos like one photo');
+  });
+
+  it('offers a smart album for any filter a rule can say, such as a place', () => {
+    setup({ ...emptyDiscoveryQuery(), filter: { city: { eq: 'Banff' } } });
+    expect(screen.getByRole('button', { name: /Smart album/ })).toBeEnabled();
   });
 
   it('confirms the exact number, then snapshots every match into a new album and reports per item', async () => {

@@ -1,4 +1,4 @@
-import { AssetTypeEnum, SearchFacetField, type AssetResponseDto } from '@frameleaf/sdk';
+import { LibraryViewScope, AssetTypeEnum, SearchFacetField, type AssetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -112,6 +112,7 @@ describe('SearchPalette', () => {
       ],
     });
     sdkMock.searchAssetStatistics.mockResolvedValue({ total: 42 });
+    sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
     sdkMock.searchSmartStatistics.mockResolvedValue({ total: 1000, capped: true });
     sdkMock.searchAssets.mockResolvedValue(searchResponse([asset('a1', 'IMG_0001.jpg')]) as never);
     sdkMock.searchSmart.mockResolvedValue(searchResponse([asset('a2', 'IMG_0002.jpg')]) as never);
@@ -167,6 +168,11 @@ describe('SearchPalette', () => {
       filter: { city: { eq: 'Banff' } },
     });
     expect(sdkMock.searchSpokenWords).not.toHaveBeenCalled();
+  });
+
+  it('starts Pro in mixed All text even when semantic models are available', () => {
+    setup({ ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } });
+    expect(screen.getByRole('button', { name: 'Search mode: All text' })).toBeInTheDocument();
   });
 
   describe('what the server can answer', () => {

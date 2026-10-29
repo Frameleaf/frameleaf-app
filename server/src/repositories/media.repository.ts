@@ -355,6 +355,10 @@ export class MediaRepository {
     return sharpProcessPool.run('encodeDevelopOutput', [input, raw, options, output]);
   }
 
+  async extractAssetPalette(input: string | Buffer, options: DecodeToBufferOptions) {
+    return sharpProcessPool.run('extractAssetPalette', [input, options]);
+  }
+
   async generateThumbhash(input: string | Buffer, options: GenerateThumbhashOptions): Promise<Buffer> {
     return sharpProcessPool.run('generateThumbhash', [input, options]);
   }

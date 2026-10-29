@@ -6,7 +6,7 @@ import { validate as isUuid } from 'uuid';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
+import { AssetFileType, AssetType, AssetVisibility, LibraryScope, SourceType, UserMetadataKey } from 'src/enum.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -24,6 +24,7 @@ import {
   withFilePath,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
@@ -369,6 +370,15 @@ export class PersonRepository {
   selectionForFaces(options: GetAllFacesOptions = {}) {
     return this.db
       .selectFrom('asset_face')
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset as scope_asset')
+            .select('scope_asset.id')
+            .whereRef('scope_asset.id', '=', 'asset_face.assetId')
+            .where(libraryScopePredicate(LibraryScope.Personal, 'scope_asset')),
+        ),
+      )
       .selectAll('asset_face')
       .$if(options.personGroupId === null, (qb) => qb.where('asset_face.personGroupId', 'is', null))
       .$if(!!options.personGroupId, (qb) => qb.where('asset_face.personGroupId', '=', options.personGroupId!))
@@ -392,6 +402,7 @@ export class PersonRepository {
             .selectFrom('asset_face')
             .innerJoin('asset', 'asset.id', 'asset_face.assetId')
             .select(['asset_face.id', 'asset_face.assetId'])
+            .where(libraryScopePredicate(LibraryScope.Personal))
             .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
             .$if(ownerId !== undefined, (qb) => qb.where('asset.ownerId', '=', ownerId!))
             .where('asset_face.deletedAt', 'is', null)
@@ -460,6 +471,7 @@ export class PersonRepository {
       ])
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where('person.ownerId', '=', userId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true)
       .orderBy('person.isHidden', 'asc')
@@ -611,6 +623,15 @@ export class PersonRepository {
   getFaceForFacialRecognitionJob(id: string) {
     return this.db
       .selectFrom('asset_face')
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset as scope_asset')
+            .select('scope_asset.id')
+            .whereRef('scope_asset.id', '=', 'asset_face.assetId')
+            .where(libraryScopePredicate(LibraryScope.Personal, 'scope_asset')),
+        ),
+      )
       .select([
         'asset_face.id',
         'asset_face.assetId',
@@ -647,6 +668,7 @@ export class PersonRepository {
           : join.onRef('asset_face.id', '=', 'person.faceAssetId'),
       )
       .innerJoin('asset', 'asset_face.assetId', 'asset.id')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select([
         'person.ownerId',
@@ -713,6 +735,7 @@ export class PersonRepository {
                 .on(isTimelineVisible('asset', options.revealLockedOwnerId))
                 .on('asset.deletedAt', 'is', null),
             )
+            .where(libraryScopePredicate(LibraryScope.Personal))
             .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
             .where('asset_face.deletedAt', 'is', null)
             .where('asset_face.isVisible', 'is', true)
@@ -996,6 +1019,7 @@ export class PersonRepository {
         .innerJoin('asset', (join) =>
           join.onRef('asset.id', '=', 'asset_face.assetId').on((eb) => isNotLockedAsset(eb)),
         )
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .where('asset_face.personGroupId', '=', personGroupId)
         .where('asset_face.deletedAt', 'is', null)
         .where('asset_face.isVisible', 'is', true)
@@ -1120,6 +1144,7 @@ export class PersonRepository {
     return this.db
       .selectFrom('asset_face')
       .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .select(['asset.id', effectiveVisibility('asset').as('visibility'), 'asset.deletedAt'])
       .where('asset_face.id', '=', faceId)
       .where('asset_face.deletedAt', 'is', null)
@@ -1235,6 +1260,7 @@ export class PersonRepository {
         .where('asset_face.deletedAt', 'is', null)
         .where('asset_face.isVisible', 'is', true)
         .where('asset.ownerId', '=', viewerId)
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .where('asset.deletedAt', 'is', null)
         .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Timeline), sql.lit(AssetVisibility.Archive)])
         // FL-195: the viewer's own revealed locks qualify in an unlocked session, like any other item

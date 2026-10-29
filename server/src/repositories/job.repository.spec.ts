@@ -52,6 +52,17 @@ describe(JobRepository.name, () => {
     expect(enqueue.mock.calls[1][0][0].options).toEqual({ jobId: 'album/user', delay: 3000 });
   });
 
+  it('deduplicates palette work per source revision and backfill cursor', async () => {
+    await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev1' } });
+    await sut.queue({ name: JobName.AssetPaletteExtract, data: { id: 'asset', sourceRevision: 'rev2' } });
+    await sut.queue({ name: JobName.AssetPaletteQueueAll, data: { afterId: 'cursor' } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: 'AssetPaletteExtract:asset:rev1' } },
+      { deduplication: { id: 'AssetPaletteExtract:asset:rev2' } },
+      { deduplication: { id: 'AssetPaletteQueueAll:cursor:false' } },
+    ]);
+  });
+
   it('buffers success follow-ups for the final outcome transaction with run and dependency lineage', async () => {
     const execution = context();
     await queueExecution.run(execution, () =>

@@ -1,4 +1,12 @@
-import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, type SearchFilter } from '@frameleaf/sdk';
+import {
+  AssetTypeEnum,
+  AssetVisibility,
+  ColorTolerance,
+  ImageEnrichmentFilter,
+  type ColorFilter,
+  type NumberFilterNullable,
+  type SearchFilter,
+} from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { ENRICHMENT_FIELD, type DiscoveryQuery } from '$lib/components/discovery/query';
 import {
@@ -16,6 +24,15 @@ import {
  * optional detail. It is pure: the caller translates the name and formats nothing else.
  */
 const FIELD_LABEL_KEYS: Record<string, Translations> = {
+  color: 'frameleaf_color_filter',
+  hasTransparency: 'frameleaf_filter_transparency',
+  source: 'frameleaf_sources_title',
+  text: 'frameleaf_search_mode_all_text',
+  albumSubtreeIds: 'frameleaf_filter_nested_albums',
+  width: 'frameleaf_filter_width',
+  height: 'frameleaf_filter_height',
+  aspectRatio: 'frameleaf_filter_aspect_ratio',
+  durationMs: 'frameleaf_filter_duration',
   personIds: 'people',
   hasPeople: 'people',
   petIds: 'frameleaf_pets_title',
@@ -51,7 +68,7 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
 };
 
 /** Text the caller translates: an i18n key and its ICU values. */
-export type FilterText = { key: Translations; values?: Record<string, number | Date> };
+export type FilterText = { key: Translations; values?: Record<string, string | number | Date> };
 
 /** LIB-09: the filter panel's own wording for each value, shared so a chip never shows the stored one. */
 export const MEDIA_TYPE_LABEL_KEYS: Record<string, Translations> = {
@@ -143,7 +160,7 @@ const localDay = (day: string) => new Date(`${day}T00:00:00`);
 export const filterFieldLabelKey = (field: string) => FIELD_LABEL_KEYS[field] ?? 'frameleaf_library_filter_field_other';
 
 const LIST_OPERATORS = ['in', 'notIn', 'any', 'all', 'none'] as const;
-const TEXT_OPERATORS = ['like', 'notLike', 'startsWith', 'endsWith', 'matches'] as const;
+const TEXT_OPERATORS = ['like', 'notLike', 'startsWith', 'endsWith', 'matches', 'contains'] as const;
 
 const scalar = (value: unknown): string | null => {
   if (typeof value === 'string') {
@@ -203,6 +220,19 @@ const describeValue = (field: string, condition: Record<string, unknown>): Filte
   if (field === 'rating') {
     return ratingChoiceText(ratingControlValue(condition)) ?? undefined;
   }
+  if (field === 'color') {
+    return colorFilterText(condition as ColorFilter) ?? undefined;
+  }
+  if (field === 'aspectRatio') {
+    const shape = boardShapeOf(condition as NumberFilterNullable);
+    return shape === 'any' || shape === 'custom' ? undefined : { key: BOARD_SHAPE_LABEL_KEYS[shape] };
+  }
+  if (field === 'width') {
+    const width = minimumWidthOf(condition as NumberFilterNullable);
+    return typeof width === 'number' && width > 0
+      ? { key: 'frameleaf_boards_min_width_value', values: { width } }
+      : undefined;
+  }
   if ((field === 'localDateTime' || field === 'takenAt') && !captureDateHasCustomCondition(condition)) {
     const from = captureDateControlValue(condition, 'gte');
     const to = captureDateControlValue(condition, 'lte');
@@ -256,6 +286,9 @@ const describeRawFilterField = (query: DiscoveryQuery, field: string): FilterChi
   if (entries.length === 0) {
     return null;
   }
+  if (field === 'color') {
+    return { ...base, detail: scalar((condition as Record<string, unknown>).hex) };
+  }
   for (const operator of LIST_OPERATORS) {
     const values = (condition as Record<string, unknown>)[operator];
     if (Array.isArray(values) && values.length > 0) {
@@ -307,3 +340,138 @@ export const filterFieldEntityIds = (query: DiscoveryQuery, field: string): stri
   const ids = Array.isArray(any) ? any : Array.isArray(all) ? all : null;
   return ids && ids.every((id) => typeof id === 'string') ? (ids as string[]) : null;
 };
+
+/* -------------------------------------------------------------------------- */
+/* Boards colour, shape and width controls                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The colour picker's 16 named swatches (Boards prototype `COLOUR_PRESETS`). The id is the value of
+ * the `name` select in `frameleaf_boards_colour_name`, so every swatch has a translated name.
+ */
+export const COLOR_PRESETS = [
+  { id: 'red', hex: '#c0392b' },
+  { id: 'rust', hex: '#b5523b' },
+  { id: 'amber', hex: '#d9a441' },
+  { id: 'sand', hex: '#e4c96a' },
+  { id: 'green', hex: '#3fb46a' },
+  { id: 'olive', hex: '#55582e' },
+  { id: 'teal', hex: '#3f8f8a' },
+  { id: 'lake', hex: '#45869c' },
+  { id: 'blue', hex: '#417cb6' },
+  { id: 'navy', hex: '#24495a' },
+  { id: 'purple', hex: '#8b6cf0' },
+  { id: 'pink', hex: '#d9639b' },
+  { id: 'cream', hex: '#eee8e0' },
+  { id: 'grey', hex: '#828a8c' },
+  { id: 'black', hex: '#141b20' },
+  { id: 'white', hex: '#ffffff' },
+] as const;
+
+/** The swatch id for a hex, or `other` so the name select falls back to the hex itself. */
+export const colorPresetId = (hex: string): string =>
+  COLOR_PRESETS.find((preset) => preset.hex === hex.toLowerCase())?.id ?? 'other';
+
+/** The values for `frameleaf_boards_colour_name` (and the pill): the swatch's name, or the hex. */
+export const colorNameValues = (hex: string) => ({ name: colorPresetId(hex), hex: hex.toUpperCase() });
+
+/** "How close": the prototype's Exact, Close and Loose are the server's Tight, Normal and Broad. */
+export const COLOR_CLOSENESS: readonly { value: ColorTolerance; labelKey: Translations }[] = [
+  { value: ColorTolerance.Tight, labelKey: 'frameleaf_boards_colour_exact' },
+  { value: ColorTolerance.Normal, labelKey: 'frameleaf_boards_colour_close' },
+  { value: ColorTolerance.Broad, labelKey: 'frameleaf_boards_colour_loose' },
+];
+
+/** The server's default minimum swatch coverage: any colour that shows in the palette. */
+export const COLOR_DEFAULT_MIN_WEIGHT = 0.05;
+/**
+ * "Only the main colour". The server has no "dominant swatch" predicate, only a minimum coverage, so
+ * the main colour is a swatch covering at least a quarter of the picture.
+ */
+export const COLOR_MAIN_MIN_WEIGHT = 0.25;
+
+export type ColorChoice = { hex: string; tolerance: ColorTolerance; mainOnly: boolean };
+
+export const isHexColor = (value: string) => /^#[\da-f]{6}$/i.test(value);
+
+/** The picker's three controls as a server colour filter. */
+export const colorFilterFrom = ({ hex, tolerance, mainOnly }: ColorChoice): ColorFilter => ({
+  hex: hex.toLowerCase(),
+  tolerance,
+  minWeight: mainOnly ? COLOR_MAIN_MIN_WEIGHT : COLOR_DEFAULT_MIN_WEIGHT,
+});
+
+/** A stored colour filter read back into the picker's controls. */
+export const colorChoiceOf = (color: ColorFilter | undefined): ColorChoice | null =>
+  color && isHexColor(color.hex)
+    ? {
+        hex: color.hex.toLowerCase(),
+        tolerance: color.tolerance ?? ColorTolerance.Normal,
+        mainOnly: (color.minWeight ?? COLOR_DEFAULT_MIN_WEIGHT) >= COLOR_MAIN_MIN_WEIGHT,
+      }
+    : null;
+
+/** "Teal · close": the active colour as a pill or chip names it. */
+export const colorFilterText = (color: ColorFilter | undefined): FilterText | null => {
+  const choice = colorChoiceOf(color);
+  return choice
+    ? { key: 'frameleaf_boards_colour_pill', values: { ...colorNameValues(choice.hex), closeness: choice.tolerance } }
+    : null;
+};
+
+/** "Show loose matches": the same colour at the widest distance and any coverage. */
+export const looseColorFilter = (color: ColorFilter): ColorFilter =>
+  colorFilterFrom({ hex: color.hex, tolerance: ColorTolerance.Broad, mainOnly: false });
+
+export type BoardShape = 'any' | 'landscape' | 'portrait' | 'square' | 'wide';
+
+/** Shapes as aspect-ratio (width ÷ height) ranges, the same cut-offs the prototype's `shapeOf` uses. */
+export const BOARD_SHAPES: Record<Exclude<BoardShape, 'any'>, NumberFilterNullable> = {
+  landscape: { gt: 1.05, lte: 1.9 },
+  portrait: { lt: 0.95 },
+  square: { gte: 0.95, lte: 1.05 },
+  wide: { gt: 1.9 },
+};
+
+export const BOARD_SHAPE_LABEL_KEYS: Record<BoardShape, Translations> = {
+  any: 'frameleaf_boards_shape_any',
+  landscape: 'frameleaf_boards_shape_landscape',
+  portrait: 'frameleaf_boards_shape_portrait',
+  square: 'frameleaf_boards_shape_square',
+  wide: 'frameleaf_boards_shape_wide',
+};
+
+const sameCondition = (a: object, b: object) => {
+  const left = Object.entries(a).filter(([, value]) => value !== undefined);
+  const right = Object.entries(b);
+  return left.length === right.length && right.every(([key, value]) => (a as Record<string, unknown>)[key] === value);
+};
+
+/** The shape an aspect-ratio condition stands for; `custom` for any other range. */
+export const boardShapeOf = (condition: NumberFilterNullable | undefined): BoardShape | 'custom' => {
+  if (!condition || Object.keys(condition).length === 0) {
+    return 'any';
+  }
+  const shape = (Object.keys(BOARD_SHAPES) as Exclude<BoardShape, 'any'>[]).find((id) =>
+    sameCondition(condition, BOARD_SHAPES[id]),
+  );
+  return shape ?? 'custom';
+};
+
+export const boardShapeCondition = (shape: BoardShape): NumberFilterNullable | undefined =>
+  shape === 'any' ? undefined : { ...BOARD_SHAPES[shape] };
+
+/** "At least this wide": any width, 800, 1,200, full HD and 4K. */
+export const MINIMUM_WIDTHS = [0, 800, 1200, 1920, 3840] as const;
+
+/** The minimum width a width condition asks for: 0 for none, `custom` for anything else. */
+export const minimumWidthOf = (condition: NumberFilterNullable | undefined): number | 'custom' => {
+  if (!condition || Object.keys(condition).length === 0) {
+    return 0;
+  }
+  const keys = Object.keys(condition).filter((key) => condition[key as keyof NumberFilterNullable] !== undefined);
+  return keys.length === 1 && typeof condition.gte === 'number' ? condition.gte : 'custom';
+};
+
+export const minimumWidthCondition = (width: number): NumberFilterNullable | undefined =>
+  width > 0 ? { gte: width } : undefined;

@@ -967,7 +967,11 @@
         }
         const base = asset.originalFileName.replace(/\.[^.]+$/, '');
         const file = new File([blob], `${base} ${preciseTime(at).replace(':', '.')}.jpg`, { type: 'image/jpeg' });
-        void fileUploadHandler({ files: [file], isLockedAssets: asset.visibility === AssetVisibility.Locked })
+        void fileUploadHandler({
+          files: [file],
+          libraryScope: asset.libraryScope,
+          isLockedAssets: asset.visibility === AssetVisibility.Locked,
+        })
           .then(() =>
             toastManager.primary($t('frameleaf_video_editor_frame_saved', { values: { time: preciseTime(at) } })),
           )
@@ -2069,18 +2073,19 @@
               <h2>{$t('frameleaf_video_editor_tool_enhance')}</h2>
             </div>
             {#each enhanceItems as item (item.key)}
+              {@const enabled = edit[item.key]}
               <div class="ed-toggle">
                 <strong><Icon icon={item.icon} size="16" /> {$t(item.label)}</strong>
                 <button
                   type="button"
                   role="switch"
                   class="ed-switch"
-                  aria-checked={edit[item.key]}
+                  aria-checked={enabled}
                   aria-label={$t(item.label)}
-                  onclick={() => change({ [item.key]: !edit[item.key] })}
+                  onclick={() => change({ [item.key]: !enabled })}
                 ></button>
                 <p>{$t(item.help)}</p>
-                {#if edit[item.key]}
+                {#if enabled}
                   <span class="ed-status" role="status">{$t('frameleaf_video_editor_enhance_on_save')}</span>
                 {/if}
               </div>

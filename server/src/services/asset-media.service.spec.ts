@@ -22,6 +22,7 @@ import {
   AssetVisibility,
   CacheControl,
   JobName,
+  LibraryScope,
   UserMetadataKey,
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
@@ -200,6 +201,18 @@ describe(AssetMediaService.name, () => {
     mocks.storage.checkFileExists.mockResolvedValue(true);
     mocks.user.getMetadata.mockResolvedValue([]);
   });
+
+  it.each([LibraryScope.Personal, LibraryScope.Design, LibraryScope.Both, undefined])(
+    'prepares %s scope in the first published asset row',
+    async (libraryScope) => {
+      const prepared = await sut.prepareUploadAsset(
+        authStub.user1,
+        { ...createDto, libraryScope },
+        fileStub.livePhotoStill,
+      );
+      expect(prepared.asset.libraryScope).toBe(libraryScope ?? LibraryScope.Personal);
+    },
+  );
 
   describe('getUploadAssetIdByChecksum', () => {
     it('should return if checksum is undefined', async () => {

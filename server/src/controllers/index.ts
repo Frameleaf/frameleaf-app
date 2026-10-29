@@ -1,4 +1,5 @@
 import { ActivityController } from 'src/controllers/activity.controller.js';
+import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { AnalyticsController } from 'src/controllers/analytics.controller.js';
@@ -8,7 +9,9 @@ import { ArchiveOperationController } from 'src/controllers/archive-operation.co
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
+import { AssetPaletteController } from 'src/controllers/asset-palette.controller.js';
 import { AssetRestorationController } from 'src/controllers/asset-restoration.controller.js';
+import { AssetSourceController } from 'src/controllers/asset-source.controller.js';
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
 import { AssetController } from 'src/controllers/asset.controller.js';
 import { AttentionController } from 'src/controllers/attention.controller.js';
@@ -16,8 +19,10 @@ import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
 import { BackupDeviceAdminController, BackupDeviceController } from 'src/controllers/backup-device.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
+import { BookmarkController } from 'src/controllers/bookmark.controller.js';
 import { BuddyBackupPeerController } from 'src/controllers/buddy-backup-peer.controller.js';
 import { BuddyBackupAdminController, BuddyBackupOwnerController } from 'src/controllers/buddy-backup.controller.js';
+import { CaptureController } from 'src/controllers/capture.controller.js';
 import { CastController } from 'src/controllers/cast.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
@@ -55,6 +60,7 @@ import { IdenticalFilesController } from 'src/controllers/identical-files.contro
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
+import { LibraryItemController } from 'src/controllers/library-item.controller.js';
 import { LibraryProgressController } from 'src/controllers/library-progress.controller.js';
 import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
@@ -126,6 +132,12 @@ import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
   SpeechController,
+  LibraryItemController,
+  AssetPaletteController,
+  CaptureController,
+  AlbumItemsController,
+  AssetSourceController,
+  BookmarkController,
   DevelopBatchController,
   DesktopDeviceController,
   PhotoSourceController,

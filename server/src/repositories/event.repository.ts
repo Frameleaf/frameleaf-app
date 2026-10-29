@@ -88,6 +88,7 @@ type EventMap = {
   AssetShow: [{ assetId: string; userId: string }];
   AssetTrash: [{ assetId: string; userId: string }];
   AssetDelete: [{ assetId: string; userId: string }];
+  AssetDevelopCurrentChanged: [{ assetId: string }];
   AssetMetadataExtracted: [{ assetId: string; userId: string; source?: JobSource }];
 
   // asset bulk events
@@ -223,11 +224,11 @@ export type EventItem<T extends EmitEvent> = {
 
 /**
  * FL-169: events announced after something irreversible, whose handlers each do their own part of
- * the follow-up (revoking Studio access, clearing move history, telling clients). Every handler runs
+ * the follow-up (revoking Studio access, clearing move history, telling clients, refreshing palettes). Every handler runs
  * even when an earlier one throws; a failure is logged and never reaches the emitter, which could not
  * repeat the change anyway. Other events keep stopping at, and rethrowing, the first failure.
  */
-const ISOLATED_EVENTS: ReadonlySet<EmitEvent> = new Set<EmitEvent>(['AssetDelete']);
+const ISOLATED_EVENTS: ReadonlySet<EmitEvent> = new Set<EmitEvent>(['AssetDelete', 'AssetDevelopCurrentChanged']);
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;
 

@@ -44,6 +44,7 @@
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type SwitchKey =
+    | 'clients.enabled'
     | 'folders.enabled'
     | 'folders.sidebarWeb'
     | 'memories.enabled'
@@ -71,6 +72,8 @@
     { id: 'tags', use: 'tags.enabled', sidebar: 'tags.sidebarWeb', icon: mdiTagMultipleOutline },
     { id: 'ratings', use: 'ratings.enabled' },
     { id: 'cast', use: 'cast.gCastEnabled' },
+    // Opt-in: on, Clients joins the top bar beside Library, Boards and Studio.
+    { id: 'clients', use: 'clients.enabled' },
     { id: 'recent', sidebar: 'recentlyAdded.sidebarWeb', icon: mdiClockOutline },
   ];
 
@@ -87,6 +90,7 @@
   ];
 
   const keys: AccountPreferenceKey[] = [
+    'clients.enabled',
     'folders.enabled',
     'folders.sidebarWeb',
     'memories.enabled',
