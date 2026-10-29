@@ -6288,11 +6288,17 @@ export type CaptureCapabilitiesDto = {
     maxFileBytes: number;
     serverId: string;
     userId: string;
+    /** Account name, shown as "Signed in as" in the browser extension */
+    userName?: string;
     version: CaptureProtocolVersion;
 };
 export type CaptureAlbumChoice = {
     /** Album name */
     albumName: string;
+    /** Colour name (grey, green, teal, blue, purple, pink, amber, red) or null */
+    color: string | null;
+    /** Icon: a Material Design Icons name or legacy key (null = default icon) */
+    icon: string | null;
     /** Album ID */
     id: string;
     /** Parent album or collection (null = top-level) */
