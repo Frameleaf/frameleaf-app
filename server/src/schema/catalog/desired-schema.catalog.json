@@ -33630,165 +33630,6 @@
       "synchronize": true
     },
     {
-      "name": "asset_source",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset_source",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "captureId",
-          "tableName": "asset_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "pageUrl",
-          "tableName": "asset_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "mediaUrl",
-          "tableName": "asset_source",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "title",
-          "tableName": "asset_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "capturedAt",
-          "tableName": "asset_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "note",
-          "tableName": "asset_source",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "creator",
-          "tableName": "asset_source",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "licenseUrl",
-          "tableName": "asset_source",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "asset_source",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_source_assetId_idx",
-          "definition": "CREATE INDEX \"asset_source_assetId_idx\" ON public.asset_source USING btree (\"assetId\")",
-          "tableName": "asset_source",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_source_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_source",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "asset_source_captureId_uq",
-          "definition": "UNIQUE (\"captureId\")",
-          "tableName": "asset_source",
-          "columnNames": [
-            "captureId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_source_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset_source",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "capture_receipt",
       "columns": [
         {
@@ -46074,42 +45915,59 @@
       "synchronize": true
     },
     {
-      "name": "asset_annotation",
+      "name": "asset_source",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
+          "name": "id",
+          "tableName": "asset_source",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
           "name": "assetId",
-          "tableName": "asset_annotation",
+          "tableName": "asset_source",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "integer",
+          "type": "uuid",
           "primary": false,
-          "name": "version",
-          "tableName": "asset_annotation",
+          "name": "captureId",
+          "tableName": "asset_source",
           "nullable": false,
           "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
           "synchronize": true
         },
         {
           "type": "text",
           "primary": false,
-          "name": "sourceRevision",
-          "tableName": "asset_annotation",
+          "name": "pageUrl",
+          "tableName": "asset_source",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "jsonb",
+          "type": "text",
           "primary": false,
-          "name": "items",
-          "tableName": "asset_annotation",
+          "name": "mediaUrl",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "title",
+          "tableName": "asset_source",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -46117,32 +45975,99 @@
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "updatedAt",
-          "tableName": "asset_annotation",
+          "name": "capturedAt",
+          "tableName": "asset_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "note",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "creator",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "licenseUrl",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_source",
           "nullable": false,
           "isArray": false,
           "default": "now()",
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "importedFrom",
+          "tableName": "asset_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
-      "indexes": [],
+      "indexes": [
+        {
+          "name": "asset_source_assetId_idx",
+          "definition": "CREATE INDEX \"asset_source_assetId_idx\" ON public.asset_source USING btree (\"assetId\")",
+          "tableName": "asset_source",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
       "triggers": [],
       "constraints": [
         {
           "type": "primary-key",
-          "name": "asset_annotation_pkey",
-          "definition": "PRIMARY KEY (\"assetId\")",
-          "tableName": "asset_annotation",
+          "name": "asset_source_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset_source",
           "columnNames": [
-            "assetId"
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "asset_source_captureId_uq",
+          "definition": "UNIQUE (\"captureId\")",
+          "tableName": "asset_source",
+          "columnNames": [
+            "captureId"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "asset_annotation_assetId_fkey",
+          "name": "asset_source_assetId_fkey",
           "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset_annotation",
+          "tableName": "asset_source",
           "columnNames": [
             "assetId"
           ],
@@ -46152,6 +46077,14 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_source_importedFrom_check",
+          "definition": "CHECK (((\"importedFrom\")::text = 'eagle'::text))",
+          "tableName": "asset_source",
+          "expression": "(((\"importedFrom\")::text = 'eagle'::text))",
           "synchronize": true
         }
       ],

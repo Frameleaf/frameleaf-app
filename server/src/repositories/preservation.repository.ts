@@ -3,7 +3,6 @@ import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { CaptureSourceDto } from 'src/dtos/bookmark.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
 import {
   AlbumKind,
@@ -31,7 +30,12 @@ import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
 import { assertExecutionActive } from 'src/utils/execution-signal.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
-import { PreservationBookmark, PreservationPackageError, preservationDerivedId } from 'src/utils/preservation.js';
+import {
+  PreservationAssetSource,
+  PreservationBookmark,
+  PreservationPackageError,
+  preservationDerivedId,
+} from 'src/utils/preservation.js';
 
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
@@ -821,6 +825,7 @@ export class PreservationRepository {
         'asset.fileCreatedAt',
         'asset.fileModifiedAt',
         'asset.localDateTime',
+        'asset.createdAt',
         'asset.isFavorite',
         'asset.visibility',
         'asset.livePhotoVideoId',
@@ -981,8 +986,11 @@ export class PreservationRepository {
       .execute();
   }
 
-  /** Replays add attribution without replacing any source already bound to an original. */
-  appendRestoredSources(ownerId: string, assetId: string, sources: readonly CaptureSourceDto[]) {
+  /**
+   * Replays add attribution without replacing any source already bound to an original. A source
+   * that is already there keeps its details; only a missing import marker (FL-653) is filled in.
+   */
+  appendRestoredSources(ownerId: string, assetId: string, sources: readonly PreservationAssetSource[]) {
     return this.write(async (db) => {
       const asset = await db
         .selectFrom('asset')
@@ -993,13 +1001,26 @@ export class PreservationRepository {
         .forUpdate()
         .executeTakeFirst();
       if (!asset) throw new PreservationPackageError('asset_unavailable', 'The restored original is unavailable');
+      const fillMarker = async (captureId: string, importedFrom: PreservationAssetSource['importedFrom']) => {
+        if (!importedFrom) return;
+        await db
+          .updateTable('asset_source')
+          .set({ importedFrom })
+          .where('captureId', '=', captureId)
+          .where('assetId', '=', assetId)
+          .where('importedFrom', 'is', null)
+          .execute();
+      };
       for (const source of sources) {
         const original = await db
           .selectFrom('asset_source')
           .select('assetId')
           .where('captureId', '=', source.captureId)
           .executeTakeFirst();
-        if (original?.assetId === assetId) continue;
+        if (original?.assetId === assetId) {
+          await fillMarker(source.captureId, source.importedFrom);
+          continue;
+        }
         const captureId = preservationDerivedId(`${ownerId}:source:${assetId}:${source.captureId}`);
         await db
           .insertInto('asset_source')
@@ -1013,6 +1034,7 @@ export class PreservationRepository {
             note: source.note ?? null,
             creator: source.creator ?? null,
             licenseUrl: source.licenseUrl ?? null,
+            importedFrom: source.importedFrom ?? null,
           })
           .onConflict((oc) => oc.column('captureId').doNothing())
           .execute();
@@ -1023,8 +1045,31 @@ export class PreservationRepository {
           .executeTakeFirst();
         if (saved?.assetId !== assetId)
           throw new PreservationPackageError('source_unavailable', 'Capture attribution is unavailable');
+        await fillMarker(captureId, source.importedFrom);
       }
     });
+  }
+
+  /**
+   * FL-653: a restored Boards-only item gets back the Added date its package recorded, by the same
+   * rule as the Added-date API: the restoring owner's own item, Boards only, not in the trash, a time
+   * in the past, and only ever earlier than it is now.
+   */
+  async restoreAddedDate(ownerId: string, assetId: string, addedAt: Date) {
+    if (!(addedAt.getTime() > 0) || addedAt.getTime() >= Date.now()) return false;
+    const row = await this.write((db) =>
+      db
+        .updateTable('asset')
+        .set({ createdAt: addedAt })
+        .where('id', '=', assetId)
+        .where('ownerId', '=', ownerId)
+        .where('libraryScope', '=', LibraryScope.Design)
+        .where('deletedAt', 'is', null)
+        .where('createdAt', '>=', addedAt)
+        .returning('id')
+        .executeTakeFirst(),
+    );
+    return !!row;
   }
 
   /** The owner's albums the copied items belong to, with every owned ancestor. */

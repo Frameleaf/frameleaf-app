@@ -2,10 +2,12 @@ import { SvelteSet } from 'svelte/reactivity';
 import { EAGLE_ANNOTATIONS_AVAILABLE, eagleAnnotations } from '$lib/frameleaf/eagle/eagle-annotations';
 import {
   EAGLE_DEFAULT_COLLECTION,
+  eagleAddedDate,
   eagleColour,
   eagleFileName,
   eagleFolders,
   eagleImportKey,
+  eagleSourceUrl,
   isComing,
   topFolderNames,
   type EagleItem,
@@ -328,6 +330,10 @@ export class EagleImportRun implements EagleRunStatus {
         await this.#write(() => api.tag(assetId, tagIds));
       }
       await this.#describe(item, assetId, duplicate);
+      const pageUrl = eagleSourceUrl(item);
+      if (pageUrl) {
+        await this.#write(() => api.addSource(assetId, pageUrl));
+      }
       if ((this.#options.annotations ?? EAGLE_ANNOTATIONS_AVAILABLE) && api.annotate) {
         const annotations = eagleAnnotations(item);
         if (annotations.length > 0) {
@@ -358,19 +364,37 @@ export class EagleImportRun implements EagleRunStatus {
     }
   }
 
-  /** Rating and note. An item that was already in the library keeps a rating or note it has. */
+  /**
+   * Rating, note and Added date. An item that was already in the library keeps a rating or note it
+   * has, and keeps its Added date unless this import brought it in (in an earlier run, or as
+   * another Eagle item with the same file).
+   */
   async #describe(item: EagleItem, assetId: string, duplicate: boolean) {
+    const { api } = this.#options;
     const note = item.annotation.trim();
-    if (item.star <= 0 && !note) {
+    const addedAt = eagleAddedDate(item, (this.#options.now?.() ?? new Date()).getTime());
+    if (item.star <= 0 && !note && !addedAt) {
       return;
     }
-    const current = duplicate ? await this.#options.api.describe(assetId) : { rating: null, description: '' };
+    const current = duplicate ? await api.describe(assetId) : undefined;
     const changes = {
-      ...(item.star > 0 && !current.rating && { rating: item.star }),
-      ...(note && !current.description.trim() && { description: note }),
+      ...(item.star > 0 && !current?.rating && { rating: item.star }),
+      ...(note && !current?.description.trim() && { description: note }),
     };
     if (Object.keys(changes).length > 0) {
-      await this.#write(() => this.#options.api.update(assetId, changes));
+      await this.#write(() => api.update(assetId, changes));
+    }
+    const broughtIn = !current || Date.parse(current.addedAt) >= Date.parse(this.#record.startedAt);
+    if (addedAt && broughtIn && (!current || Date.parse(current.addedAt) > addedAt.getTime())) {
+      try {
+        await this.#write(() => api.setAdded(assetId, addedAt));
+      } catch (error) {
+        // The Added date is the one detail that may not come over: the server refuses a time it
+        // sees as in the future (a clock ahead of it). The item keeps the date it came in.
+        if (error instanceof AccountChangedError) {
+          throw error;
+        }
+      }
     }
   }
 }

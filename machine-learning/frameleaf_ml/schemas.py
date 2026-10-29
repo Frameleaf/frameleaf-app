@@ -36,6 +36,7 @@ class ModelTask(StrEnum):
     INPAINT = "inpaint"
     TRANSCRIBE = "transcribe"
     MUSIC = "music"
+    SUBJECT_MATTE = "subject-matte"
     VOICE_CLEANUP = "voice-cleanup"
     TRANSLATE = "translate"
 
@@ -245,6 +246,32 @@ class SemanticMaskOptions(_OptionsBase):
     device: Literal["cpu", "cuda"] | None = None
 
 
+class SubjectMattePoint(_OptionsBase):
+    """One "Add to subject" (1) or "Take away" (0) point: a frame of the clip and fractions of it."""
+
+    frame: int = Field(ge=0, lt=600)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    label: Literal[0, 1]
+
+
+class SubjectMatteOptions(_OptionsBase):
+    """Options for the subject-matte task (Studio cut-out, FL-639).
+
+    `seedKind` "face" seeds the subject from `seedBox`, the chosen person's face as fractions of the
+    first frame; "subject" finds the main subject with Florence-2. `points` refine the subject from
+    their frame on. The matte comes back at `matteWidth` x `matteHeight`.
+    """
+
+    seedKind: Literal["face", "subject"] = "subject"
+    seedBox: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    points: list[SubjectMattePoint] = Field(default_factory=list, max_length=64)
+    matteWidth: int = Field(default=256, ge=1, le=512)
+    matteHeight: int = Field(default=256, ge=1, le=512)
+    # None leaves the choice to MACHINE_LEARNING_SEMANTIC_MASK_DEVICE, as for photo masks.
+    device: Literal["cpu", "cuda"] | None = None
+
+
 class InpaintOptions(_OptionsBase):
     """Options for the inpaint task (Clean Up Remove fills). The server sends none today."""
 
@@ -311,6 +338,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.INPAINT, ModelType.VISUAL): InpaintOptions,
     (ModelTask.TRANSCRIBE, ModelType.AUDIO): TranscribeOptions,
     (ModelTask.MUSIC, ModelType.AUDIO): MusicOptions,
+    (ModelTask.SUBJECT_MATTE, ModelType.VISUAL): SubjectMatteOptions,
     (ModelTask.VOICE_CLEANUP, ModelType.AUDIO): VoiceCleanupOptions,
     (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
 }

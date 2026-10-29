@@ -228,7 +228,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '7e7728db01aed01e9871c27c5439255e9eb25bf82b5d9dbfe220ef06474c30e6' ||
           // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '4e403256d5f1722d890776b9d374d9b6e8f28aad82c02deef110b5fe1d45a9ad')),
+            '4e403256d5f1722d890776b9d374d9b6e8f28aad82c02deef110b5fe1d45a9ad' ||
+          // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
+          binding.sourceSha256 ===
+            'fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2')),
     'SOURCE_BROWSER',
   )
   check(

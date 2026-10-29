@@ -456,12 +456,21 @@ const RegionSchema = z
   })
   .strict();
 
+/**
+ * An item's saved source in a package. `importedFrom` (FL-653) marks one an import brought over, such
+ * as from an Eagle library; it is optional, so packages written before it still restore.
+ */
+export const PreservationAssetSourceSchema = CaptureSourceDto.schema
+  .extend({ importedFrom: z.enum(['eagle']).nullable().optional() })
+  .strict();
+export type PreservationAssetSource = z.infer<typeof PreservationAssetSourceSchema>;
+
 /** The per-original sidecar, `metadata/<id>.json`. */
 export const PreservationSidecarSchema = z
   .object({
     schemaVersion: z.union([z.literal(1), z.literal(PRESERVATION_SCHEMA_VERSION)]),
     libraryScope: LibraryScopeSchema.optional(),
-    sources: z.array(CaptureSourceDto.schema.strict()).max(1000).optional(),
+    sources: z.array(PreservationAssetSourceSchema).max(1000).optional(),
     sourceAssetId: z.uuid(),
     originalFileName: z.string().min(1).max(1024),
     type: AssetTypeLiteral,
@@ -473,6 +482,9 @@ export const PreservationSidecarSchema = z
         localDateTime: isoDate.nullable(),
         dateTimeOriginal: isoDate.nullable(),
         timeZone: z.string().max(64).nullable(),
+        /** FL-653: when a Boards-only item was added (an import may have set it). Absent in older packages. */
+        // a full timestamp with its offset, as the Added-date request takes; "2024" alone is refused
+        addedAt: z.iso.datetime({ offset: true }).optional(),
       })
       .strict(),
     isFavorite: z.boolean(),

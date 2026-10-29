@@ -118,6 +118,15 @@ export function compositionSourcesFor(sourceSha256) {
       'src/features/export/utils/canvas-item-renderer/gpu.ts':
         '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
     }
+  // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
+  if (sourceSha256 === 'fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2')
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/canvas-item-renderer/gpu.ts':
+        '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
+      'src/features/export/utils/client-render-engine.ts':
+        '0e2d3bfc84f9871d4ca39155e9f851e391c083bf368cbd1eafd9ae11b85b4ae4',
+    }
   assert(legacyCompositionSources.has(sourceSha256), 'COMPOSITION_SOURCE_UNREGISTERED')
   return COMPOSITION_SOURCES
 }

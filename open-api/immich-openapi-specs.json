@@ -10901,12 +10901,33 @@
             }
           },
           {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Only albums whose name contains this text, ignoring case (a search-as-you-type picker)",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
             "name": "suppressedOnly",
             "required": false,
             "in": "query",
             "description": "Return album metadata for suppressed content only",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "At most this many albums",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "integer"
             }
           }
         ],
@@ -15018,76 +15039,10 @@
         "x-immich-state": "Deprecated"
       }
     },
-    "/assets/{id}/annotations": {
-      "get": {
-        "description": "Returns the versioned annotation document kept beside the asset. Positions are fractions (0..1) of the picture. Anyone who can see the picture can read them; a picture outside Boards returns none.",
-        "operationId": "getAssetAnnotations",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-              "type": "string"
-            }
-          },
-          {
-            "name": "key",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "slug",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssetAnnotationsDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "summary": "Read the Boards annotations drawn over a picture",
-        "tags": [
-          "Assets"
-        ],
-        "x-immich-history": [
-          {
-            "version": "v3",
-            "state": "Added"
-          }
-        ],
-        "x-immich-permission": "asset.read"
-      },
+    "/assets/{id}/added-date": {
       "put": {
-        "description": "Replaces the whole annotation document for a picture the caller owns; an empty list removes them. Send the sourceRevision you read. If the picture changed since then, the request is refused with 409 and nothing is saved, unless that sourceRevision is the one already stored with the annotations: they are then saved and stay marked as drawn on the older picture (sourceChanged true). The original file is never changed and no edit runs.",
-        "operationId": "replaceAssetAnnotations",
+        "description": "Moves the Added date of an owned item that is in Boards only to an earlier time in the past, such as when it was last changed in the app it was imported from.",
+        "operationId": "setAssetAddedDate",
         "parameters": [
           {
             "name": "id",
@@ -15104,21 +15059,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AssetAnnotationsUpdateDto"
+                "$ref": "#/components/schemas/AssetAddedDateDto"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssetAnnotationsDto"
-                }
-              }
-            },
+          "204": {
             "description": ""
           }
         },
@@ -15133,7 +15081,7 @@
             "api_key": []
           }
         ],
-        "summary": "Replace the Boards annotations drawn over a picture",
+        "summary": "Set the Added date of an imported Boards item",
         "tags": [
           "Assets"
         ],
@@ -18139,6 +18087,66 @@
           }
         ],
         "x-immich-permission": "assetSource.read"
+      },
+      "post": {
+        "description": "Records a web address an import brought over, such as from an Eagle library, as the item’s source. An address the item already has is returned as it is.",
+        "operationId": "addImportedAssetSource",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetSourceImportDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetSourceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add an imported source address to an owned asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
       }
     },
     "/assets/{id}/thumbnail": {
@@ -51068,6 +51076,207 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/cutouts": {
+      "post": {
+        "description": "Owner only. Follows one person (from their face) or the main subject through one video clip of the head revision on this server or a computer on your home network, never Frameleaf Cloud. When it completes, the matte is kept with the project as a file; name it on the clip. The original video never changes. Follow the job with `GET /studio/projects/{id}/cutouts/{cutoutId}`.",
+        "operationId": "createStudioCutout",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioCutoutCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCutoutDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cut out the subject in a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/cutouts/subjects": {
+      "get": {
+        "description": "Owner only. The named people face recognition found in the video of one clip on the main timeline of the head revision, largest first, or just the main subject when there is no one.",
+        "operationId": "getStudioCutoutSubjects",
+        "parameters": [
+          {
+            "name": "clipId",
+            "required": true,
+            "in": "query",
+            "description": "A video clip on the main timeline of the head revision",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCutoutSubjectsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List who a Studio cut-out can follow in a clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/cutouts/{cutoutId}": {
+      "get": {
+        "description": "Owner only. Where the cut-out is and, once it completed, the matte to name on the clip.",
+        "operationId": "getStudioCutout",
+        "parameters": [
+          {
+            "name": "cutoutId",
+            "required": true,
+            "in": "path",
+            "description": "Cut-out job id",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Studio project id",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCutoutDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio cut-out",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/duplicate": {
       "post": {
         "description": "Creates a new project of yours whose first version is this project as it is now. The copy is not shared for review. Owner only.",
@@ -54825,6 +55034,73 @@
         ],
         "x-immich-permission": "tag.asset",
         "x-immich-state": "Stable"
+      }
+    },
+    "/tags/search": {
+      "get": {
+        "description": "Retrieve the tags whose value contains the text, ignoring case, at most `take` of them: a search-as-you-type picker, instead of the whole list.",
+        "operationId": "searchTags",
+        "parameters": [
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Only tags whose full value contains this text, ignoring case",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "At most this many tags",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TagResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search tags",
+        "tags": [
+          "Tags"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "tag.read"
       }
     },
     "/tags/statistics": {
@@ -68753,180 +69029,19 @@
         ],
         "type": "object"
       },
-      "AssetAnnotationGeometry": {
-        "additionalProperties": false,
+      "AssetAddedDateDto": {
         "properties": {
-          "endX": {
-            "description": "Arrows only: where the arrow points",
-            "format": "double",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "endY": {
-            "description": "Arrows only: where the arrow points",
-            "format": "double",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "height": {
-            "description": "Rectangles only",
-            "format": "double",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "width": {
-            "description": "Rectangles only",
-            "format": "double",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "x": {
-            "description": "Left edge of a rectangle, tail of an arrow, or the start of a text label",
-            "format": "double",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "y": {
-            "description": "Top edge of a rectangle, tail of an arrow, or the baseline of a text label",
-            "format": "double",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          }
-        },
-        "required": [
-          "x",
-          "y"
-        ],
-        "type": "object"
-      },
-      "AssetAnnotationItem": {
-        "additionalProperties": false,
-        "properties": {
-          "geometry": {
-            "$ref": "#/components/schemas/AssetAnnotationGeometry"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9_-]+$",
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/AssetAnnotationKind"
-          },
-          "note": {
-            "maxLength": 280,
-            "type": "string"
-          },
-          "origin": {
-            "$ref": "#/components/schemas/AssetAnnotationOrigin",
-            "description": "Set when the annotation was brought over from Eagle"
-          },
-          "text": {
-            "description": "Text annotations only: the words drawn",
-            "maxLength": 200,
+          "addedAt": {
+            "description": "A time in the past",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
           }
         },
         "required": [
-          "geometry",
-          "id",
-          "kind"
+          "addedAt"
         ],
         "type": "object"
-      },
-      "AssetAnnotationKind": {
-        "enum": [
-          "rect",
-          "arrow",
-          "text"
-        ],
-        "type": "string"
-      },
-      "AssetAnnotationOrigin": {
-        "enum": [
-          "eagle"
-        ],
-        "type": "string"
-      },
-      "AssetAnnotationsDto": {
-        "properties": {
-          "canEdit": {
-            "description": "Whether the caller may replace these annotations; only the owner can",
-            "type": "boolean"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/AssetAnnotationItem"
-            },
-            "maxItems": 200,
-            "type": "array"
-          },
-          "sourceChanged": {
-            "description": "True when the picture has changed (for example cropped) since the annotations were saved",
-            "type": "boolean"
-          },
-          "sourceRevision": {
-            "description": "Fingerprint of the picture the annotations were drawn on",
-            "type": "string"
-          },
-          "updatedAt": {
-            "description": "When the annotations were last saved; null when there are none",
-            "nullable": true,
-            "type": "string"
-          },
-          "version": {
-            "$ref": "#/components/schemas/AssetAnnotationsVersion"
-          }
-        },
-        "required": [
-          "canEdit",
-          "items",
-          "sourceChanged",
-          "sourceRevision",
-          "updatedAt",
-          "version"
-        ],
-        "type": "object"
-      },
-      "AssetAnnotationsUpdateDto": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/AssetAnnotationItem"
-            },
-            "maxItems": 200,
-            "type": "array"
-          },
-          "sourceRevision": {
-            "description": "The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved, unless this is the revision already stored with the annotations: they are then saved and stay marked as drawn on the older picture. After a 409, read the annotations again.",
-            "maxLength": 64,
-            "minLength": 1,
-            "type": "string"
-          },
-          "version": {
-            "$ref": "#/components/schemas/AssetAnnotationsVersion"
-          }
-        },
-        "required": [
-          "items",
-          "sourceRevision",
-          "version"
-        ],
-        "type": "object"
-      },
-      "AssetAnnotationsVersion": {
-        "enum": [
-          1
-        ],
-        "type": "number"
       },
       "AssetBulkDeleteDto": {
         "properties": {
@@ -72975,6 +73090,31 @@
         ],
         "type": "object"
       },
+      "AssetSourceImportDto": {
+        "properties": {
+          "importedFrom": {
+            "description": "The app the address was imported from",
+            "enum": [
+              "eagle"
+            ],
+            "type": "string"
+          },
+          "pageUrl": {
+            "format": "uri",
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "importedFrom",
+          "pageUrl"
+        ],
+        "type": "object"
+      },
       "AssetSourceResponseDto": {
         "properties": {
           "assetId": {
@@ -73004,6 +73144,11 @@
           "id": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "importedFrom": {
+            "description": "The app the source was imported from, such as \"eagle\"; null when the browser extension saved it",
+            "nullable": true,
             "type": "string"
           },
           "licenseUrl": {
@@ -73039,6 +73184,7 @@
           "capturedAt",
           "createdAt",
           "id",
+          "importedFrom",
           "pageUrl",
           "title"
         ],
@@ -84873,7 +85019,7 @@
             "type": "boolean"
           },
           "includeLibraryMetadata": {
-            "description": "Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only",
+            "description": "Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only",
             "type": "boolean"
           },
           "includeSidecar": {
@@ -87627,9 +87773,20 @@
             "description": "Album name (exact match)",
             "type": "string"
           },
+          "search": {
+            "description": "Only albums whose name contains this text, ignoring case (a search-as-you-type picker)",
+            "maxLength": 100,
+            "type": "string"
+          },
           "suppressedOnly": {
             "description": "Return album metadata for suppressed content only",
             "type": "boolean"
+          },
+          "take": {
+            "description": "At most this many albums",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
           }
         },
         "type": "object"
@@ -135105,6 +135262,285 @@
         },
         "type": "object"
       },
+      "StudioCutoutCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "A video clip on the main timeline of the head revision",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "personId": {
+            "description": "The person to cut out, or null for the main subject",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "points": {
+            "default": [],
+            "description": "Add to subject and Take away points, followed through the shot from where they were painted",
+            "items": {
+              "$ref": "#/components/schemas/StudioCutoutPointDto"
+            },
+            "maxItems": 64,
+            "type": "array"
+          }
+        },
+        "required": [
+          "clipId",
+          "personId"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutDto": {
+        "properties": {
+          "clipId": {
+            "description": "The video clip",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why it failed, in words a person can read",
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "For a refusal a client words itself: faceDetectionOff (a person needs face recognition) or personNotInFirstFrame",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "The cut-out job",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "matte": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioCutoutMatteDto"
+              }
+            ],
+            "description": "Once completed: the matte to name on the clip",
+            "nullable": true
+          },
+          "progress": {
+            "description": "Frames followed so far, in percent",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "description": "The Studio project",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StudioCutoutStatus"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/StudioCutoutSubjectDto"
+          }
+        },
+        "required": [
+          "clipId",
+          "error",
+          "errorCode",
+          "id",
+          "matte",
+          "progress",
+          "projectId",
+          "status",
+          "subject"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutMatteDto": {
+        "properties": {
+          "columns": {
+            "description": "Matte frames in each row of the file",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "durationSeconds": {
+            "description": "How long the followed part is, in seconds",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "fps": {
+            "description": "Matte frames a second",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "frameHeight": {
+            "description": "Height of one matte frame in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "frameWidth": {
+            "description": "Width of one matte frame in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "frames": {
+            "description": "Matte frames in the file",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "importId": {
+            "description": "The matte, kept with the project as a file: frames side by side, row after row",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "startSeconds": {
+            "description": "Where the followed part of the source starts, in seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "columns",
+          "durationSeconds",
+          "fps",
+          "frameHeight",
+          "frameWidth",
+          "frames",
+          "importId",
+          "startSeconds"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutPointDto": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  0
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              }
+            ],
+            "description": "1 adds to the subject, 0 takes away"
+          },
+          "sourceSeconds": {
+            "description": "When in the source video the point was painted, in seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "x": {
+            "description": "Across the picture, 0 at the left edge and 1 at the right",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Down the picture, 0 at the top and 1 at the bottom",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "sourceSeconds",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutStatus": {
+        "description": "Where the cut-out is",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "StudioCutoutSubjectDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/StudioCutoutSubjectKind"
+          },
+          "name": {
+            "description": "The person’s name, for a person subject",
+            "nullable": true,
+            "type": "string"
+          },
+          "personId": {
+            "description": "The person, for a person subject",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "personId"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutSubjectKind": {
+        "description": "A person recognised in the clip, or the main subject when there is no one",
+        "enum": [
+          "person",
+          "subject"
+        ],
+        "type": "string"
+      },
+      "StudioCutoutSubjectsDto": {
+        "properties": {
+          "subjects": {
+            "description": "The named people face recognition found in the clip’s video, or just the main subject",
+            "items": {
+              "$ref": "#/components/schemas/StudioCutoutSubjectDto"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "subjects"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutSubjectsQueryDto": {
+        "properties": {
+          "clipId": {
+            "description": "A video clip on the main timeline of the head revision",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "clipId"
+        ],
+        "type": "object"
+      },
       "StudioExportAudio": {
         "description": "Audio of the result: `preserve` keeps the widest source channel layout at its sample rate; `stereo` is an explicit downmix",
         "enum": [
@@ -142968,6 +143404,23 @@
           "updatedAt",
           "value"
         ],
+        "type": "object"
+      },
+      "TagSearchDto": {
+        "properties": {
+          "search": {
+            "description": "Only tags whose full value contains this text, ignoring case",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "take": {
+            "default": 20,
+            "description": "At most this many tags",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "TagStatisticsResponseDto": {

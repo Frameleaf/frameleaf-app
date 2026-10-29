@@ -15,7 +15,7 @@
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import WorkflowParameter, { type ReferenceOption } from '$lib/components/frameleaf/WorkflowParameter.svelte';
+  import WorkflowParameter from '$lib/components/frameleaf/WorkflowParameter.svelte';
   import '$lib/frameleaf/workflow-designer.css';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import {
@@ -70,7 +70,6 @@
     methods,
     triggers,
     templates,
-    references = {},
     onSaved,
     onDeleted,
   }: {
@@ -81,7 +80,6 @@
     methods: PluginMethodResponseDto[];
     triggers: WorkflowTriggerResponseDto[];
     templates: PluginTemplateResponseDto[];
-    references?: Record<string, ReferenceOption[]>;
     onSaved: (workflow: WorkflowResponseDto) => void;
     onDeleted: (id: string) => void;
   } = $props();
@@ -600,7 +598,6 @@
                 value={selected.config ?? {}}
                 label={$t('frameleaf_workflows.parameters')}
                 storedSecrets={selected.storedSecrets}
-                {references}
                 onChange={(config) => updateStep({ ...selected, config: config as Record<string, unknown> })}
               />
               {#if selected.storedSecrets.length > 0}<small>{$t('frameleaf_workflows.credentials_note')}</small>{/if}

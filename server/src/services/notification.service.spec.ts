@@ -351,6 +351,7 @@ describe(NotificationService.name, () => {
   describe('onJobError (FL-71)', () => {
     beforeEach(() => {
       mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+      mocks.notification.deleteByDedupeKey.mockResolvedValue([]);
     });
 
     it.each([
@@ -372,6 +373,53 @@ describe(NotificationService.name, () => {
 
       expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), '[redacted]');
       expect(JSON.stringify(mocks.logger.error.mock.calls)).not.toContain('hunter2-secret');
+    });
+
+    it('tells the admin a library data snapshot did not finish, in plain words that open Backup (FL-657)', async () => {
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+      const error = new Error('spawn /usr/lib/postgresql/19/bin/pg_dump ENOENT');
+
+      await sut.onJobError({ job: { name: JobName.DatabaseBackup, data: {} }, error });
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: NotificationType.BackupFailed,
+          level: NotificationLevel.Error,
+          title: 'Library data snapshot didn’t finish',
+          data: { kind: 'library-snapshot-failed', dedupeKey: 'library-snapshot-failed' },
+        }),
+      );
+      // A retry of the same snapshot replaces the earlier notice instead of adding a second one.
+      expect(mocks.notification.deleteByDedupeKey).toHaveBeenCalledWith(expect.any(String), 'library-snapshot-failed');
+      expect(mocks.notification.deleteByDedupeKey.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.notification.create.mock.invocationCallOrder[0],
+      );
+      const notice = JSON.stringify(mocks.notification.create.mock.calls);
+      expect(notice).not.toContain('pg_dump');
+      expect(notice).not.toContain('DatabaseBackup');
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('pg_dump'), expect.any(String), '{}');
+    });
+
+    it('removes the notice once a library data snapshot finishes, and ignores other jobs (FL-657)', async () => {
+      const admin = UserFactory.create({ isAdmin: true });
+      mocks.user.getAdmin.mockResolvedValue(admin);
+
+      await sut.onJobSuccess({ job: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } } as never);
+      expect(mocks.notification.deleteByDedupeKey).not.toHaveBeenCalled();
+
+      await sut.onJobSuccess({ job: { name: JobName.DatabaseBackup, data: {} } } as never);
+      expect(mocks.notification.deleteByDedupeKey).toHaveBeenCalledWith(admin.id, 'library-snapshot-failed');
+      // Nothing was removed, so open lists need not read again.
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+
+      // A stale notice was removed: open lists are told to read again, so it leaves them too.
+      mocks.notification.deleteByDedupeKey.mockResolvedValue([notificationStub.albumEvent] as never);
+      await sut.onJobSuccess({ job: { name: JobName.DatabaseBackup, data: {} } } as never);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_notification',
+        admin.id,
+        expect.objectContaining({ id: notificationStub.albumEvent.id }),
+      );
     });
 
     it('still logs the data of other jobs', async () => {

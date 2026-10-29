@@ -5,13 +5,14 @@
    * note that only the owner sees it, and when it was Added.
    *
    * Saved sources are private to the owner, so they are only read when `canRead`; anyone else sees
-   * when the item was added and nothing about where it was saved from. An item with a saved source
-   * came in through the browser extension, which is the only path that records one; any other item
-   * was uploaded. Stored links are untrusted and only http(s) addresses become links.
+   * when the item was added and nothing about where it was saved from. A saved source came in
+   * through the browser extension, or from an Eagle import (FL-653), which marks its sources as
+   * imported; any other item was uploaded. Stored links are untrusted and only http(s) addresses
+   * become links.
    */
   import { getAssetSources, type AssetSourceResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiPuzzleOutline, mdiTrayArrowUp } from '@mdi/js';
+  import { mdiFolderZipOutline, mdiPuzzleOutline, mdiTrayArrowUp } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -76,7 +77,13 @@
     const url = new URL(href);
     return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`;
   };
-  const viaExtension = $derived(sources.length > 0);
+  const savedWith = $derived(
+    sources.some((source) => !source.importedFrom)
+      ? { icon: mdiPuzzleOutline, label: $t('frameleaf_boards_source_via_extension') }
+      : sources.some((source) => source.importedFrom === 'eagle')
+        ? { icon: mdiFolderZipOutline, label: $t('frameleaf_boards_source_via_eagle') }
+        : { icon: mdiTrayArrowUp, label: $t('frameleaf_boards_source_via_upload') },
+  );
 </script>
 
 {#if canRead || added}
@@ -91,8 +98,8 @@
         {#if canRead}
           <dt>{$t('frameleaf_boards_source_saved_with')}</dt>
           <dd class="via">
-            <Icon icon={viaExtension ? mdiPuzzleOutline : mdiTrayArrowUp} size="15" aria-hidden />
-            {viaExtension ? $t('frameleaf_boards_source_via_extension') : $t('frameleaf_boards_source_via_upload')}
+            <Icon icon={savedWith.icon} size="15" aria-hidden />
+            {savedWith.label}
           </dd>
         {/if}
         {#each sources as source (source.id)}

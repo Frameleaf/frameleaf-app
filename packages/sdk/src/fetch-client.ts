@@ -5303,47 +5303,9 @@ export type UpdateAssetDto = {
     state?: string | null;
     visibility?: AssetVisibility;
 };
-export type AssetAnnotationGeometry = {
-    /** Arrows only: where the arrow points */
-    endX?: number;
-    /** Arrows only: where the arrow points */
-    endY?: number;
-    /** Rectangles only */
-    height?: number;
-    /** Rectangles only */
-    width?: number;
-    /** Left edge of a rectangle, tail of an arrow, or the start of a text label */
-    x: number;
-    /** Top edge of a rectangle, tail of an arrow, or the baseline of a text label */
-    y: number;
-};
-export type AssetAnnotationItem = {
-    geometry: AssetAnnotationGeometry;
-    id: string;
-    kind: AssetAnnotationKind;
-    note?: string;
-    /** Set when the annotation was brought over from Eagle */
-    origin?: AssetAnnotationOrigin;
-    /** Text annotations only: the words drawn */
-    text?: string;
-};
-export type AssetAnnotationsDto = {
-    /** Whether the caller may replace these annotations; only the owner can */
-    canEdit: boolean;
-    items: AssetAnnotationItem[];
-    /** True when the picture has changed (for example cropped) since the annotations were saved */
-    sourceChanged: boolean;
-    /** Fingerprint of the picture the annotations were drawn on */
-    sourceRevision: string;
-    /** When the annotations were last saved; null when there are none */
-    updatedAt: string | null;
-    version: AssetAnnotationsVersion;
-};
-export type AssetAnnotationsUpdateDto = {
-    items: AssetAnnotationItem[];
-    /** The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved, unless this is the revision already stored with the annotations: they are then saved and stay marked as drawn on the older picture. After a 409, read the annotations again. */
-    sourceRevision: string;
-    version: AssetAnnotationsVersion;
+export type AssetAddedDateDto = {
+    /** A time in the past */
+    addedAt: string;
 };
 export type CastMediaUrlCreateDto = {
     kind: CastMediaKind;
@@ -6055,11 +6017,19 @@ export type AssetSourceResponseDto = {
     createdAt: string;
     creator?: string | null;
     id: string;
+    /** The app the source was imported from, such as "eagle"; null when the browser extension saved it */
+    importedFrom: string | null;
     licenseUrl?: string | null;
     mediaUrl?: string | null;
     note?: string | null;
     pageUrl: string;
     title: string;
+};
+export type AssetSourceImportDto = {
+    /** The app the address was imported from */
+    importedFrom: ImportedFrom;
+    pageUrl: string;
+    title?: string;
 };
 export type AssetWaveformChannelDto = {
     /** Highest sample in each bucket, -1 to 1 */
@@ -7762,7 +7732,7 @@ export type DownloadArchiveDto = {
     bookmarkIds?: string[];
     /** Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals */
     edited?: boolean;
-    /** Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only */
+    /** Include frameleaf-library.json with owned albums, tags and bookmarks alongside originals; signed-in accounts only */
     includeLibraryMetadata?: boolean;
     /** Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no) */
     includeSidecar?: boolean;
@@ -15863,6 +15833,71 @@ export type StudioCommentUpdateDto = {
     resolved?: boolean;
     text?: string;
 };
+export type StudioCutoutPointDto = {
+    /** 1 adds to the subject, 0 takes away */
+    label: 0 | 1;
+    /** When in the source video the point was painted, in seconds */
+    sourceSeconds: number;
+    /** Across the picture, 0 at the left edge and 1 at the right */
+    x: number;
+    /** Down the picture, 0 at the top and 1 at the bottom */
+    y: number;
+};
+export type StudioCutoutCreateDto = {
+    /** A video clip on the main timeline of the head revision */
+    clipId: string;
+    /** The person to cut out, or null for the main subject */
+    personId: string | null;
+    /** Add to subject and Take away points, followed through the shot from where they were painted */
+    points?: StudioCutoutPointDto[];
+};
+export type StudioCutoutMatteDto = {
+    /** Matte frames in each row of the file */
+    columns: number;
+    /** How long the followed part is, in seconds */
+    durationSeconds: number;
+    /** Matte frames a second */
+    fps: number;
+    /** Height of one matte frame in pixels */
+    frameHeight: number;
+    /** Width of one matte frame in pixels */
+    frameWidth: number;
+    /** Matte frames in the file */
+    frames: number;
+    /** The matte, kept with the project as a file: frames side by side, row after row */
+    importId: string;
+    /** Where the followed part of the source starts, in seconds */
+    startSeconds: number;
+};
+export type StudioCutoutSubjectDto = {
+    kind: StudioCutoutSubjectKind;
+    /** The person’s name, for a person subject */
+    name: string | null;
+    /** The person, for a person subject */
+    personId: string | null;
+};
+export type StudioCutoutDto = {
+    /** The video clip */
+    clipId: string;
+    /** Why it failed, in words a person can read */
+    error: string | null;
+    /** For a refusal a client words itself: faceDetectionOff (a person needs face recognition) or personNotInFirstFrame */
+    errorCode: string | null;
+    /** The cut-out job */
+    id: string;
+    /** Once completed: the matte to name on the clip */
+    matte: (StudioCutoutMatteDto) | null;
+    /** Frames followed so far, in percent */
+    progress: number;
+    /** The Studio project */
+    projectId: string;
+    status: StudioCutoutStatus;
+    subject: StudioCutoutSubjectDto;
+};
+export type StudioCutoutSubjectsDto = {
+    /** The named people face recognition found in the clip’s video, or just the main subject */
+    subjects: StudioCutoutSubjectDto[];
+};
 export type StudioProjectDuplicateDto = {
     /** Name of the copy; the client supplies the translated default */
     name?: string;
@@ -17911,8 +17946,12 @@ export type GetAlbumsDto = {
     libraryScope?: LibraryViewScope;
     /** Album name (exact match) */
     name?: string;
+    /** Only albums whose name contains this text, ignoring case (a search-as-you-type picker) */
+    search?: string;
     /** Return album metadata for suppressed content only */
     suppressedOnly?: boolean;
+    /** At most this many albums */
+    take?: number;
 };
 export type KnownAssetDevelopCrop = {
     /** Crop height as a fraction of the frame */
@@ -18586,6 +18625,10 @@ export type SmartAlbumKindParamDto = {
 export type StackSearchDto = {
     /** Filter by primary asset ID */
     primaryAssetId?: string;
+};
+export type StudioCutoutSubjectsQueryDto = {
+    /** A video clip on the main timeline of the head revision */
+    clipId: string;
 };
 export type StudioExportSearchDto = {
     skip?: number;
@@ -19304,6 +19347,12 @@ export type SyncUserV1 = {
     name: string;
     /** User profile changed at */
     profileChangedAt: string;
+};
+export type TagSearchDto = {
+    /** Only tags whose full value contains this text, ignoring case */
+    search?: string;
+    /** At most this many tags */
+    take?: number;
 };
 export type TimeBucketAssetDto = {
     /** Filter assets belonging to a specific album */
@@ -22204,14 +22253,16 @@ export function addAlbumSourceAssets({ id, bulkIdsDto }: {
 /**
  * List all albums
  */
-export function getAllAlbums({ assetId, id, isOwned, isShared, libraryScope, name, suppressedOnly }: {
+export function getAllAlbums({ assetId, id, isOwned, isShared, libraryScope, name, search, suppressedOnly, take }: {
     assetId?: string;
     id?: string;
     isOwned?: boolean;
     isShared?: boolean;
     libraryScope?: LibraryViewScope;
     name?: string;
+    search?: string;
     suppressedOnly?: boolean;
+    take?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -22223,7 +22274,9 @@ export function getAllAlbums({ assetId, id, isOwned, isShared, libraryScope, nam
         isShared,
         libraryScope,
         name,
-        suppressedOnly
+        search,
+        suppressedOnly,
+        take
     }))}`, {
         ...opts
     }));
@@ -23209,37 +23262,16 @@ export function updateAsset({ id, updateAssetDto }: {
     })));
 }
 /**
- * Read the Boards annotations drawn over a picture
+ * Set the Added date of an imported Boards item
  */
-export function getAssetAnnotations({ id, key, slug }: {
+export function setAssetAddedDate({ id, assetAddedDateDto }: {
     id: string;
-    key?: string;
-    slug?: string;
+    assetAddedDateDto: AssetAddedDateDto;
 }, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: AssetAnnotationsDto;
-    }>(`/assets/${encodeURIComponent(id)}/annotations${QS.query(QS.explode({
-        key,
-        slug
-    }))}`, {
-        ...opts
-    }));
-}
-/**
- * Replace the Boards annotations drawn over a picture
- */
-export function replaceAssetAnnotations({ id, assetAnnotationsUpdateDto }: {
-    id: string;
-    assetAnnotationsUpdateDto: AssetAnnotationsUpdateDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: AssetAnnotationsDto;
-    }>(`/assets/${encodeURIComponent(id)}/annotations`, oazapfts.json({
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/added-date`, oazapfts.json({
         ...opts,
         method: "PUT",
-        body: assetAnnotationsUpdateDto
+        body: assetAddedDateDto
     })));
 }
 /**
@@ -23915,6 +23947,22 @@ export function getAssetSources({ id }: {
     }>(`/assets/${encodeURIComponent(id)}/sources`, {
         ...opts
     }));
+}
+/**
+ * Add an imported source address to an owned asset
+ */
+export function addImportedAssetSource({ id, assetSourceImportDto }: {
+    id: string;
+    assetSourceImportDto: AssetSourceImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetSourceResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/sources`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetSourceImportDto
+    })));
 }
 /**
  * View asset thumbnail
@@ -32066,6 +32114,52 @@ export function updateStudioProjectComment({ commentId, id, studioCommentUpdateD
     })));
 }
 /**
+ * Cut out the subject in a Studio clip
+ */
+export function createStudioCutout({ id, studioCutoutCreateDto }: {
+    id: string;
+    studioCutoutCreateDto: StudioCutoutCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 202;
+        data: StudioCutoutDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/cutouts`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioCutoutCreateDto
+    })));
+}
+/**
+ * List who a Studio cut-out can follow in a clip
+ */
+export function getStudioCutoutSubjects({ clipId, id }: {
+    clipId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCutoutSubjectsDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/cutouts/subjects${QS.query(QS.explode({
+        clipId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get a Studio cut-out
+ */
+export function getStudioCutout({ cutoutId, id }: {
+    cutoutId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCutoutDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/cutouts/${encodeURIComponent(cutoutId)}`, {
+        ...opts
+    }));
+}
+/**
  * Duplicate a Studio project
  */
 export function duplicateStudioProject({ id, studioProjectDuplicateDto }: {
@@ -32945,6 +33039,23 @@ export function bulkTagAssets({ tagBulkAssetsDto }: {
         method: "PUT",
         body: tagBulkAssetsDto
     })));
+}
+/**
+ * Search tags
+ */
+export function searchTags({ search, take }: {
+    search?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TagResponseDto[];
+    }>(`/tags/search${QS.query(QS.explode({
+        search,
+        take
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Retrieve tag statistics
@@ -36167,17 +36278,6 @@ export enum CloudAvailability {
     PausedKeyUnloaded = "paused-key-unloaded",
     Ready = "ready"
 }
-export enum AssetAnnotationKind {
-    Rect = "rect",
-    Arrow = "arrow",
-    Text = "text"
-}
-export enum AssetAnnotationOrigin {
-    Eagle = "eagle"
-}
-export enum AssetAnnotationsVersion {
-    $1 = 1
-}
 export enum CastMediaKind {
     Original = "original",
     Preview = "preview",
@@ -36392,6 +36492,9 @@ export enum AssetRestorationFileKind {
     After = "after",
     Result = "result",
     ResultPreview = "result_preview"
+}
+export enum ImportedFrom {
+    Eagle = "eagle"
 }
 export enum AssetMediaSize {
     Original = "original",
@@ -38250,6 +38353,16 @@ export enum StudioCaptionLanguage {
     Sv = "sv",
     Da = "da",
     Nb = "nb"
+}
+export enum StudioCutoutStatus {
+    Queued = "queued",
+    Running = "running",
+    Completed = "completed",
+    Failed = "failed"
+}
+export enum StudioCutoutSubjectKind {
+    Person = "person",
+    Subject = "subject"
 }
 export enum StudioReframeSubject {
     Face = "face",

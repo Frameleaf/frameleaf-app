@@ -7,6 +7,7 @@ const count = z.int().nonnegative();
 const activationArguments = z.object({ step: z.int().positive(), total: z.int().positive() }).strict();
 const argumentsOf = {
   'job-failed': z.object({ jobName: name, error: name }).strict(),
+  'library-snapshot-failed': z.object({}).strict(),
   'item-share-one': z.object({ senderName: name }).strict(),
   'item-share-many': z.object({ senderName: name, count }).strict(),
   'cluster-request': z.object({ senderName: name }).strict(),
@@ -114,6 +115,10 @@ export const NOTIFICATION_CATALOGS: NotificationCatalogs = {
     version: 1,
     messages: {
       'job-failed': { title: 'Job Failed', body: 'Job {jobName} failed with error: {error}' },
+      'library-snapshot-failed': {
+        title: 'Library data snapshot didn’t finish',
+        body: 'The snapshot of your albums, people, edits and settings didn’t finish. Open Backup › On this server to try again.',
+      },
       'item-share-one': { title: 'Shared with you', body: '{senderName} shared an item with you' },
       'item-share-many': { title: 'Shared with you', body: '{senderName} shared {count} items with you' },
       'cluster-request': { title: 'Cluster Group Request', body: '{senderName} asked you to join their cluster group' },

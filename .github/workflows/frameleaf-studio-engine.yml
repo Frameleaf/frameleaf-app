@@ -231,6 +231,8 @@ jobs:
           STUDIO_ADDITIVE_REPORT="$RUNNER_TEMP/linear-additive-report.json" node studio/tools/linear-additive.browser.mjs
           node studio/tools/nested-float.browser.mjs
           node studio/tools/chroma-key.browser.mjs
+          # FL-639: Cut out the subject, drawn through its matte with each background.
+          node studio/tools/subject-cutout.browser.mjs
           EFFECTS_MATRIX_REPORT="$RUNNER_TEMP/effects-matrix-report.json" node studio/tools/effects-matrix.browser.mjs
           BLEND_MATRIX_REPORT="$RUNNER_TEMP/blend-matrix-report.json" node studio/tools/blend-matrix.browser.mjs
           TRANSITION_MATRIX_REPORT="$RUNNER_TEMP/transition-matrix-report.json" node studio/tools/transition-matrix.browser.mjs

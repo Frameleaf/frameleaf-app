@@ -81,6 +81,7 @@
     mdiImageMultipleOutline,
     mdiInboxOutline,
     mdiLaptop,
+    mdiLinkVariant,
     mdiNoteTextOutline,
     mdiPaletteOutline,
     mdiServerNetwork,
@@ -534,12 +535,11 @@
           count={plan.areaCommentsWaiting}
           reason={$t('frameleaf_eagle_area_comments_reason')}
         />{/if}
-      {#if plan.sources > 0}<EagleNamedList
-          title={$t('frameleaf_eagle_sources')}
-          count={plan.sources}
-          reason={$t('frameleaf_eagle_sources_reason')}
+      {#if plan.notWebAddresses > 0}<EagleNamedList
+          title={$t('frameleaf_eagle_not_web_addresses')}
+          count={plan.notWebAddresses}
+          reason={$t('frameleaf_eagle_not_web_addresses_reason')}
         />{/if}
-      <EagleNamedList title={$t('frameleaf_eagle_dates')} reason={$t('frameleaf_eagle_dates_reason')} />
       <EagleNamedList title={$t('frameleaf_eagle_palettes')} reason={$t('frameleaf_eagle_palettes_reason')} />
     </ul>
   {/if}
@@ -696,6 +696,12 @@
                 mdiNoteTextOutline,
                 plan.notes,
                 $t('frameleaf_eagle_label_notes', { values: { count: plan.notes } }),
+              )}
+              {@render count(
+                mdiLinkVariant,
+                plan.sources,
+                $t('frameleaf_eagle_label_sources', { values: { count: plan.sources } }),
+                $t('frameleaf_eagle_sources_detail'),
               )}
               {#if EAGLE_ANNOTATIONS_AVAILABLE}
                 {@render count(
@@ -967,6 +973,11 @@
               mdiNoteTextOutline,
               result.notes,
               $t('frameleaf_eagle_label_notes', { values: { count: result.notes } }),
+            )}
+            {@render count(
+              mdiLinkVariant,
+              result.sources,
+              $t('frameleaf_eagle_label_sources', { values: { count: result.sources } }),
             )}
             {#if EAGLE_ANNOTATIONS_AVAILABLE}
               {@render count(

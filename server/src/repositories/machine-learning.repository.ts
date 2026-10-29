@@ -552,6 +552,38 @@ export type VoiceCleanupAnalysis = { noises: Array<z.infer<typeof VoiceNoiseSche
 const VOICE_LINE_BYTES = 1024 * 1024;
 const VOICE_TOTAL_BYTES = 80 * 1024 * 1024;
 
+/** FL-639: the worker cannot cut out a subject: no `/subject-matte` route (an older worker) or no pinned model. */
+export class CutoutUnavailableError extends Error {}
+/** The worker could not follow the subject, in words a person can read (no subject on the first frame). */
+export class CutoutWorkerError extends Error {}
+
+/** The model the cut-out asks for: the pinned Florence-2 + SAM2.1 snapshots photo masks use. */
+export const SUBJECT_MATTE_MODEL_NAME = 'frameleaf-florence2-sam2.1';
+
+/** One line of a worker's `/subject-matte` stream (machine-learning/frameleaf_ml/main.py). */
+export const subjectMatteStreamItemSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('progress'),
+    done: z.int().min(0).max(1e6),
+    total: z.int().min(1).max(1e6),
+    seedBox: z.array(z.number()).length(4).optional(),
+  }),
+  z.object({ type: z.literal('frame'), index: z.int().min(0).max(1e6), png: z.string().max(1024 * 1024) }),
+  z.object({ type: z.literal('done') }),
+  z.object({ type: z.literal('error'), message: z.string().max(512) }),
+]);
+
+const SUBJECT_MATTE_LINE_BYTES = 1024 * 1024 + 256;
+const SUBJECT_MATTE_TOTAL_BYTES = 128 * 1024 * 1024;
+
+export type SubjectMatteOptions = {
+  seedKind: 'face' | 'subject';
+  seedBox: [number, number, number, number] | null;
+  points: Array<{ frame: number; x: number; y: number; label: 0 | 1 }>;
+  matteWidth: number;
+  matteHeight: number;
+};
+
 /** The inpainting model the Clean Up Remove fill asks for: LaMa big-lama on the ML worker (owner decision 2026-10-08). */
 export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 
@@ -1258,6 +1290,134 @@ export class MachineLearningRepository implements RestorationInference {
     return seconds;
   }
 
+  /**
+   * FL-639: send a clip's frames (JPEG files, in order) to exactly the admitted home destination and read
+   * its `/subject-matte` stream. `onFrame` gets each frame's matte (a grayscale PNG) as it arrives and
+   * `onProgress` the frames followed; aborting `signal` closes the connection, which stops the worker at
+   * its next frame. Frameleaf Cloud never gets the frames.
+   */
+  async subjectMatte(
+    selection: MlSelection,
+    framePaths: readonly string[],
+    options: SubjectMatteOptions,
+    signal: AbortSignal,
+    onFrame: (index: number, png: Buffer) => Promise<void> | void,
+    onProgress: (done: number, total: number) => void,
+  ): Promise<void> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    let bytesSent = 0;
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({
+        'subject-matte': {
+          visual: {
+            modelName: SUBJECT_MATTE_MODEL_NAME,
+            options: {
+              seedKind: options.seedKind,
+              ...(options.seedBox && { seedBox: options.seedBox }),
+              points: options.points,
+              matteWidth: options.matteWidth,
+              matteHeight: options.matteHeight,
+            },
+          },
+        },
+      }),
+    );
+    for (const [index, framePath] of framePaths.entries()) {
+      const blob = await openAsBlob(framePath, { type: 'image/jpeg' });
+      bytesSent += blob.size;
+      form.append('frames', blob, `${String(index).padStart(5, '0')}.jpg`);
+    }
+    let finished = false;
+    const seen = new Set<number>();
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('subject-matte', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no runtime or model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new CutoutUnavailableError(`The worker cannot cut out a subject (${response.status})`);
+        }
+        throw new Error(`The cut-out worker answered ${response.status}`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('The cut-out worker sent no answer');
+      }
+      let pending = Buffer.alloc(0);
+      const handle = async (line: Buffer) => {
+        if (line.length === 0) {
+          return;
+        }
+        const item = subjectMatteStreamItemSchema.parse(JSON.parse(line.toString('utf8')));
+        switch (item.type) {
+          case 'progress': {
+            onProgress(item.done, item.total);
+            break;
+          }
+          case 'frame': {
+            if (item.index >= framePaths.length || seen.has(item.index)) {
+              throw new Error('The cut-out worker sent an unexpected frame');
+            }
+            seen.add(item.index);
+            await onFrame(item.index, Buffer.from(item.png, 'base64'));
+            break;
+          }
+          case 'error': {
+            throw new CutoutWorkerError(item.message);
+          }
+          default: {
+            finished = true;
+          }
+        }
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > SUBJECT_MATTE_TOTAL_BYTES) throw new Error('The cut-out is too large');
+          pending = Buffer.concat([pending, value]);
+          let newline = pending.indexOf(10);
+          while (newline !== -1 && !finished) {
+            await handle(pending.subarray(0, newline));
+            pending = pending.subarray(newline + 1);
+            newline = pending.indexOf(10);
+          }
+          if (pending.length > SUBJECT_MATTE_LINE_BYTES) throw new Error('A cut-out line is too long');
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      if (!finished || seen.size !== framePaths.length) {
+        throw new Error('The cut-out worker stopped before it finished');
+      }
+      await this.authorize(selection.endpoint);
+    } catch (error) {
+      if (!(error instanceof CutoutUnavailableError || error instanceof CutoutWorkerError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    }
+    record('success');
+  }
+
   /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */
   setCloudProber(prober: CloudMlProber | null) {
     this.cloudProber = prober;
@@ -1497,6 +1657,8 @@ export class MachineLearningRepository implements RestorationInference {
     payload: ModelPayload,
     config: MachineLearningRequest,
     bound?: { binding: Record<string, unknown>; parse: (value: unknown) => T; path?: 'predict-face-bound' },
+    /** Ends the request early, as well as the queue deadline and the job's own signal. */
+    signal?: AbortSignal,
   ): Promise<T> {
     if (selection.desktopClip || selection.desktopOcr || selection.desktopFace)
       throw new Error('desktop_bound_profile_required');
@@ -1531,6 +1693,7 @@ export class MachineLearningRepository implements RestorationInference {
           headers: this.authHeaders(selection.endpoint),
           body: formData,
           redirect: 'error',
+          ...(signal && { signal }),
         },
         undefined,
         bound ? 4 * 1024 * 1024 : undefined,
@@ -1611,7 +1774,13 @@ export class MachineLearningRepository implements RestorationInference {
     });
   }
 
-  async detectFaces(selection: MlSelection, imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
+  async detectFaces(
+    selection: MlSelection,
+    imagePath: string,
+    { modelName, minScore }: FaceDetectionOptions,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
     const request = faceEntries({ modelName, minScore });
     let response: FacialRecognitionResponse;
     if (selection.desktopFace) {
@@ -1628,7 +1797,9 @@ export class MachineLearningRepository implements RestorationInference {
       } finally {
         selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
       }
-    } else response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request);
+    } else
+      response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request, undefined, signal);
+    signal?.throwIfAborted();
     return {
       imageHeight: response.imageHeight,
       imageWidth: response.imageWidth,
