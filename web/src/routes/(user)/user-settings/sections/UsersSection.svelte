@@ -57,12 +57,13 @@
   // What the old `/admin/users` layout loaded: the server's storage info and every account.
   const loadUsers = () => {
     failed = false;
-    // Both reads are independent: the account list does not wait for the disk check.
-    void Promise.all([requestServerInfo(), searchUsersAdmin({ withDeleted: true })])
-      .then(([, result]) => {
-        users = result;
-        loaded = true;
-      })
+    // Both reads are independent: the account list does not wait for the disk check, and is shown as
+    // soon as it arrives, so a list read again meanwhile (after an edit) is never replaced by this one.
+    const accounts = searchUsersAdmin({ withDeleted: true }).then((result) => {
+      users = result;
+    });
+    void Promise.all([requestServerInfo(), accounts])
+      .then(() => (loaded = true))
       .catch(() => (failed = true));
   };
   onMount(() => {
