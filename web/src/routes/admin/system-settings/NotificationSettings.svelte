@@ -250,7 +250,9 @@
   );
 
   let sending = $state(false);
-  let result = $state<{ ok: true; at: Date } | { ok: false; reason: string; account: boolean } | null>(null);
+  let result = $state<{ ok: true; at: Date; saved: boolean } | { ok: false; reason: string; account: boolean } | null>(
+    null,
+  );
   const sendTest = async () => {
     if (sending) {
       return;
@@ -278,13 +280,16 @@
           replyTo: smtp.replyTo,
         },
       });
-      result = { ok: true, at: new Date() };
+      const at = new Date();
+      result = { ok: true, at, saved: false };
       // FL-66: a successful delivery test saves the email settings only, against the draft's
       // revision; every other pending change stays in the draft for review. A signed-in account
       // was saved by the server when it was connected.
       // Edits made while the test ran still need their own review and save.
       if (!disabled && !account && testedSettings === JSON.stringify(smtp)) {
-        await settingsDraft.saveKeys(['notifications']);
+        // FL-630: the draft notice no longer names the area, so the result says it was saved
+        const saved = await settingsDraft.saveKeys(['notifications']);
+        result = { ok: true, at, saved };
       }
     } catch (error) {
       result = {
@@ -586,6 +591,7 @@
               })}
             >
               {$t('frameleaf_notify_test_sent_body')}
+              {#if result.saved}{$t('frameleaf_notify_test_saved')}{/if}
             </Notice>
           {:else}
             <Notice tone="warn" title={$t('frameleaf_notify_test_failed')}>

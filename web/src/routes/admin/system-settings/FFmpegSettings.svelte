@@ -205,7 +205,10 @@
     if (waiting === 0) {
       return;
     }
-    const timer = setInterval(() => void readWaiting(), 5000);
+    const timer = setInterval(() => {
+      void readWaiting();
+      void readCopies();
+    }, 5000);
     return () => clearInterval(timer);
   });
 

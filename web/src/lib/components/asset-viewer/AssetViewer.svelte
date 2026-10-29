@@ -335,7 +335,10 @@
   });
 
   let requestedOriginalVideo = $state($alwaysLoadOriginalVideo);
-  const isPlayingOriginalVideo = $derived(requestedOriginalVideo && (!sharedLink || sendCopyPermitted(sharedLink)));
+  // FL-630: a video without a playback copy plays its original, so the player asks for the original directly
+  const isPlayingOriginalVideo = $derived(
+    (requestedOriginalVideo || asset.playbackCopy === false) && (!sharedLink || sendCopyPermitted(sharedLink)),
+  );
   let slideshowStartAssetId = $state<string>();
 
   const setPlayOriginalVideo = (value: boolean) => {

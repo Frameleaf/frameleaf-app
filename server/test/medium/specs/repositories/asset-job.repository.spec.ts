@@ -82,7 +82,14 @@ describe(AssetJobRepository.name, () => {
       unsizedCopies: 1,
     });
 
-    // FL-630: once the copy's file is recorded, its size is the space copies take
+    // FL-630: once the copy's file is recorded, its size is the space copies take, counted once
+    // however many copies share the file (here the edited copy of the same video)
+    await ctx.newAssetFile({
+      assetId: video.id,
+      type: AssetFileType.EncodedVideo,
+      path: `/v/${video.id}.mp4`,
+      isEdited: true,
+    });
     await sql`insert into "physical_file" ("type", "checksum", "sizeInBytes", "path", "canonicalAssetId")
       values (${PhysicalFileType.EncodedVideo}, ${Buffer.from('copy')}, 5000, ${`/v/${video.id}.mp4`}, ${video.id})`.execute(
       ctx.database,
