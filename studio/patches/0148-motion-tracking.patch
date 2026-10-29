@@ -371,7 +371,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
-@@ -0,0 +1,307 @@
+@@ -0,0 +1,311 @@
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import type { AnimationKeyframeSource } from '@/types/keyframe'
 +import { useItemsStore } from '../../items-store'
@@ -451,7 +451,8 @@ new file mode 100644
 +export function motionTrackBinding(source: TimelineItem, target: TimelineItem, seedFrame: number, direction: 'forward' | 'backward'): string {
 +  const video = source as VideoItem
 +  return JSON.stringify([
-+    MOTION_TRACKER_ALGORITHM, source.id, source.mediaId, video.sourceStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1,
++    MOTION_TRACKER_ALGORITHM, source.id, source.mediaId, video.sourceStart ?? video.trimStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1,
++    video.sourceFps ?? null,
 +    source.from, source.durationInFrames, source.transform ?? null, target.id, target.from, target.transform ?? null,
 +    // The source mapping's refusal inputs: a change to any of them changes where tracked points land.
 +    video.crop ?? null, video.cornerPin ?? null, video.isReversed === true,
@@ -469,7 +470,10 @@ new file mode 100644
 +  const sourceFps = item.sourceFps ?? fps
 +  // Older clips carry the trim as trimStart; playback reads it the same way.
 +  const sourceStart = item.sourceStart ?? item.trimStart ?? 0
-+  return (sourceStart + timelineToSourceFrames(frame - item.from, item.speed ?? 1, fps, sourceFps)) / sourceFps
++  const sourceFrame = sourceStart + timelineToSourceFrames(frame - item.from, item.speed ?? 1, fps, sourceFps)
++  // sourceEnd is exclusive: the last shown frame must not map past it into unshown footage.
++  const last = item.sourceEnd !== undefined ? Math.max(sourceStart, item.sourceEnd - 1) : Infinity
++  return Math.min(sourceFrame, last) / sourceFps
 +}
 +
 +function toGray(canvas: OffscreenCanvas | HTMLCanvasElement): GrayFrame {
