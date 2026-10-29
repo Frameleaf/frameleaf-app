@@ -28,11 +28,14 @@
  */
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
+import type { CaptionLanguageEngineString } from './caption-language-strings';
+import type { StudioCaptionTranslationRequest, StudioCaptionTranslationResult } from './caption-languages';
 import type { CaptionStyleEngineString } from './caption-style-strings';
 import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
+import type { StabiliseEngineString } from './stabilise-strings';
 import type { TranscriptEngineString } from './transcript-strings';
 
 /* ------------------------------------------------------------------ */
@@ -360,8 +363,12 @@ export type StudioAdapterString =
   | 'lockedTrackRefused'
   /** The transcript panel's words (FL-562), written over the engine's English the same way. */
   | TranscriptEngineString
+  /** The Stabilise card's words (FL-638), the same way. */
+  | StabiliseEngineString
   /** The Caption style card's words (FL-640), written over the engine's English the same way. */
-  | CaptionStyleEngineString;
+  | CaptionStyleEngineString
+  /** The captions Languages card's words (FL-641), the same way. */
+  | CaptionLanguageEngineString;
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 
@@ -516,6 +523,12 @@ export interface StudioHostServices {
    * job followed in Activity (FL-104, FL-106); the editor never renders or saves an export itself.
    */
   requestExport?(kind: 'video'): void;
+  /**
+   * Captions in other languages (FL-641): translate caption lines, sent as text only, on the processing
+   * order ("Where work runs"). One translation per line comes back, in order; the editor keeps the
+   * timing. Optional: without it the editor says translation is not available.
+   */
+  translateCaptions?(request: StudioCaptionTranslationRequest): Promise<StudioCaptionTranslationResult>;
 }
 
 /* ------------------------------------------------------------------ */

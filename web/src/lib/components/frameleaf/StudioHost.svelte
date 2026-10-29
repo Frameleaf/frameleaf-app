@@ -130,8 +130,10 @@
     type StudioProjectStatus,
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
+  import { stabiliseEngineStrings } from '$lib/frameleaf/studio/stabilise-strings';
   import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
   import { captionStyleEngineStrings } from '$lib/frameleaf/studio/caption-style-strings';
+  import { captionLanguageEngineStrings } from '$lib/frameleaf/studio/caption-language-strings';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
   import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@frameleaf/sdk';
   import type { Translations } from 'svelte-i18n';
@@ -553,7 +555,9 @@
       relinkSaved: $t('frameleaf_studio_relink_saved'),
       lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
       ...transcriptEngineStrings($t),
+      ...stabiliseEngineStrings($t),
       ...captionStyleEngineStrings($t),
+      ...captionLanguageEngineStrings($t),
     },
   });
 

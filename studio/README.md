@@ -192,6 +192,25 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0164 (FL-638) adds Stabilise. The Motion tab of one video clip has a Stabilise card: an
+Original / Stabilised preview, Smoothness (Gentle, Smooth, Locked off, cropping in 4, 7 and 12 percent),
+Stabilise clip, progress while the camera movement is analysed, then the level and crop with Turn off.
+The analysis is a job on the Frameleaf server, in Activity (`POST /studio/projects/{id}/stabilisations`;
+the card module is substituted by the adapter's `shims/stabilise-service.ts`). It decodes the clip's
+source window at up to 30 frames a second into 160-pixel grey pictures and measures each frame's shift
+and turn by block matching and a robust fit (`block-similarity-v1`), on the CPU, never on Frameleaf
+Cloud. The cumulative camera path is written into the clip as `stabilisation.motion` (protocol 2.4,
+schema `item.stabilisation`). The engine smooths it for the level (Gaussian, 0.33 s and 1 s; Locked off
+holds the mean) and draws the clip through the smoothed-minus-measured shift and turn, scaled by the
+crop and clipped to where the picture shows; a correction that would uncover an edge is reduced just
+enough that none shows (no edge fill). The canvas item renderer draws it in export and the canvas
+preview, and the live preview applies the same correction as a CSS transform; stabilised clips leave
+the GPU-direct paths for the canvas renderer. Changing the level applies at once with no new analysis,
+and each of apply, level and Turn off is one undo step. HDR clips are not offered Stabilise. Tests
+cover path smoothing, the crop coverage maths, the renderer transform at the clip's source time and
+the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
+path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
+parity and speed-ramp spans in the live preview remain open.
 Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
 the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
 embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the
@@ -861,3 +880,7 @@ Patch `0144-transcript-editing.patch` replaces the engine's Transcript tab with 
 ## Locked tracks refuse drags and adds (FL-450)
 
 Patch `0141-locked-track-drop-refusal.patch` makes a lock binding for a person's drags in the editor. Dragging library media, files, a compound clip or a timeline clip over a locked track (or one inside a locked layer group) shows a not-allowed cursor and no drop marker; releasing it adds, moves and duplicates nothing. A drag that would put any dragged clip, or a video's linked sound, on a locked track is refused the same way. Insert and overwrite edits that target a locked track give the same short message, `timeline.track.lockedTrackRefused`. A drag hovering a locked track is announced through a polite status region, and the refusal toast is announced by the editor's toaster. The host translates the message (`lockedTrackRefused` in the host strings, `frameleaf_studio_locked_track_refused`) and the adapter writes it over the engine's English after each language change. The graph command `clip.add` refuses the same inputs in the command layer (protocol 12.3.1). The existing Freecut MIT notice covers the adapted sources and tests.
+
+## Captions in other languages (FL-641)
+
+Patch `0170-caption-languages.patch` adds the approved Languages card below the Subtitle section of the clip inspector, shown whenever captions are selected. It lists the original captions (their language is chosen in the card, and fixed once a language is added) with their line count, and each translated language with its own line count. Translate sends the original lines, as text only, through the host (`translateCaptions`, frame protocol 9) to `POST /studio/projects/{id}/caption-translations`, which translates them with M2M100 418M on the first place in the processing order that can: this server, then a computer at home. Frameleaf Cloud has no translation workload yet, so it is never sent the text. Each language becomes its own caption track: one subtitle segment, on its own hidden track, holding the translated lines on the original lines' timing, with the original's look; its `source.translation` records the language, the language it came from and whether it goes with the export. Fixing an original line later does not change a translation; Translate again replaces it in place and keeps its settings. In the picture shows one language and hides the others: a translation's track is shown, original caption tracks that hold only captions are hidden, and transcript captions riding on a clip are switched off with their own `enabled`, so the clip stays visible. Review lines shows the original line beside each editable translated line. Make a voice-over speaks every translated line with the voices Studio already has (Kokoro in English, Supertonic for the other languages it speaks; Norwegian has captions only), puts the lines together at their captions' times without one talking over the next, imports the sound into the project's media and places it on its own voice track with everything else ducking 12 dB under it. Remove takes the language's track and its voice-over away. Every edit is one undo step. On a video export with captions, the language in the picture is burned in or carried as the subtitle track the export settings ask for, and every language ticked "Subtitle track in the export" is saved as its own SRT next to it (`web/src/lib/frameleaf/studio/caption-languages.ts`). The card's words are host-translated (`caption-language-strings.ts`). `adapters/web/test/caption-languages.test.ts` covers line collection, track building, the language in the picture, the timeline edits with undo, the voice-over mix and the strings. The existing Freecut MIT notice covers the adapted sources and tests.

@@ -36,6 +36,7 @@ class ModelTask(StrEnum):
     INPAINT = "inpaint"
     TRANSCRIBE = "transcribe"
     MUSIC = "music"
+    TRANSLATE = "translate"
 
 
 class ModelType(StrEnum):
@@ -270,6 +271,17 @@ class MusicOptions(_OptionsBase):
     seed: int = Field(default=0, ge=0, le=2**31 - 1)
 
 
+class TranslateOptions(_OptionsBase):
+    """Options for the translate task (Studio captions in other languages, FL-641).
+
+    `source` and `target` are the BCP 47 primary tags of the languages Studio offers (`en`, `fr`, `nb`);
+    the worker refuses any other.
+    """
+
+    source: str = Field(pattern=r"^[a-z]{2,3}$")
+    target: str = Field(pattern=r"^[a-z]{2,3}$")
+
+
 # Map of (task, type) -> options pydantic class for per-entry validation.
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
@@ -284,6 +296,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.INPAINT, ModelType.VISUAL): InpaintOptions,
     (ModelTask.TRANSCRIBE, ModelType.AUDIO): TranscribeOptions,
     (ModelTask.MUSIC, ModelType.AUDIO): MusicOptions,
+    (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
 }
 
 

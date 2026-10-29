@@ -339,14 +339,14 @@ details.source[open] {
 }
 .shot-choice {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 .shot-choice button {
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  padding: 12px;
+  padding: 12px 10px;
   font-weight: 400;
   text-align: left;
 }
@@ -355,6 +355,7 @@ details.source[open] {
 }
 .shot-choice small {
   color: var(--fl-muted);
+  line-height: 1.35;
 }
 
 /* Images */
@@ -571,6 +572,79 @@ details.source[open] {
   margin-top: 6px;
   color: var(--fl-muted);
   font-size: 13px;
+}
+.whole-strip {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  scrollbar-width: thin;
+}
+.whole-strip:focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 2px;
+}
+.whole-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.whole-end,
+.whole-cut {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px 12px;
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+.whole-cut {
+  position: relative;
+  padding-top: 20px;
+  color: var(--fl-warning);
+  text-align: center;
+}
+.whole-cut::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  border-top: 2px dashed var(--fl-warning);
+}
+.whole-cut span {
+  position: relative;
+  padding: 0 8px;
+  background: var(--fl-raised);
+  line-height: 1.4;
+}
+.shot figcaption.cut-caption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fl-warning);
+}
+.cut-warning {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--fl-warning) 45%, transparent);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  color: var(--fl-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.cut-warning svg {
+  flex: none;
+  color: var(--fl-warning);
+}
+.cut-warning strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--fl-text);
 }
 
 /* Collection picker */

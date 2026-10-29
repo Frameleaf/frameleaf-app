@@ -759,7 +759,17 @@
       "path": "patches/0168-word-by-word-captions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c1728386c5702a182af284678aa74ff3330583dc2779959540ae2b299ec99722"
+    },
+    {
+      "path": "patches/0164-stabilise-shaky-clips.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "75a01bae7be8e0dcf4bb849b107dba50781d9812f6531bc465568a320bdb65d2"
+    },
+    {
+      "path": "patches/0170-caption-languages.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ddf70ec8b8038d204aeb9da5f5c77a0fa71f9866df924b3df1f6fc107eee629c"
     }
   ],
-  "sourceSha256": "b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9"
+  "sourceSha256": "a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb"
 }

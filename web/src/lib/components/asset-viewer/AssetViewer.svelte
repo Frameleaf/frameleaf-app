@@ -33,6 +33,7 @@
   import { isPanorama } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -342,8 +343,13 @@
       requestedOriginalVideo = true;
     }
   });
+  // FL-630: a video without a playback copy plays its original (unless real-time playback makes one as it
+  // plays), so the player asks for the original directly
   const isPlayingOriginalVideo = $derived(
-    (requestedOriginalVideo || speechOriginal) && (!sharedLink || sendCopyPermitted(sharedLink)),
+    (requestedOriginalVideo ||
+      speechOriginal ||
+      (asset.playbackCopy === false && !featureFlagsManager.value.realtimeTranscoding)) &&
+      (!sharedLink || sendCopyPermitted(sharedLink)),
   );
   let slideshowStartAssetId = $state<string>();
 

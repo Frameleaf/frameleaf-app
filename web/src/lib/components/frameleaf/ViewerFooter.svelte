@@ -13,6 +13,7 @@
   import { isImageAsset, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { canPlaySlideshow } from '$lib/services/asset.service';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
@@ -65,6 +66,9 @@
 
   const sharedLink = getSharedLink();
   const canPlayOriginal = $derived(!sharedLink || sendCopyPermitted(sharedLink));
+  // FL-630: without a playback copy the server plays the original, so that is what is selected, unless
+  // real-time playback makes a copy as the video plays
+  const hasPlaybackCopy = $derived(asset.playbackCopy !== false || featureFlagsManager.value.realtimeTranscoding);
   const { slideshowState, settingsOpen } = slideshowStore;
   const playing = $derived($slideshowState === SlideshowState.PlaySlideshow);
   // The same gates as the menu's and the shared link's Play slideshow: never Locked, downloads on a link.
@@ -137,13 +141,18 @@
   <div class="fl-foot-group">
     {#if isVideoAsset(asset) && canPlayOriginal}
       <div class="fl-segment" role="group" aria-label={$t('frameleaf_viewer_video_source')}>
-        <button type="button" aria-pressed={isPlayingOriginalVideo} onclick={() => setPlayOriginalVideo(true)}>
+        <button
+          type="button"
+          aria-pressed={isPlayingOriginalVideo || !hasPlaybackCopy}
+          onclick={() => setPlayOriginalVideo(true)}
+        >
           {$t('frameleaf_viewer_source_original')}
         </button>
         <button
           type="button"
-          aria-pressed={!isPlayingOriginalVideo}
-          title={$t('frameleaf_viewer_optimized_title')}
+          aria-pressed={!isPlayingOriginalVideo && hasPlaybackCopy}
+          disabled={!hasPlaybackCopy}
+          title={hasPlaybackCopy ? $t('frameleaf_viewer_optimized_title') : $t('frameleaf_viewer_optimized_none')}
           onclick={() => setPlayOriginalVideo(false)}
         >
           {$t('frameleaf_viewer_source_optimized')}
@@ -341,6 +350,11 @@
     font: inherit;
     font-size: var(--fl-font-micro);
     cursor: pointer;
+  }
+
+  .fl-segment button:disabled {
+    cursor: default;
+    opacity: 0.5;
   }
 
   .fl-segment button[aria-pressed='true'] {
