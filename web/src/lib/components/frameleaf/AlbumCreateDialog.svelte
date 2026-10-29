@@ -305,8 +305,7 @@
     color: var(--fl-muted);
   }
   .field input,
-  .field textarea,
-  .field select {
+  .field textarea {
     padding: var(--fl-space-2) var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);

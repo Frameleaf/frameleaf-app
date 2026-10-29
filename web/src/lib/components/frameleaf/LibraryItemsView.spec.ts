@@ -185,7 +185,7 @@ it('offers loose matches when nothing is close to the colour', async () => {
   expect(await screen.findByRole('heading', { name: 'Nothing close to that colour' })).toBeInTheDocument();
   await fireEvent.click(screen.getByRole('button', { name: 'Show loose matches' }));
   await waitFor(() =>
-    expect(lastRequest()?.filter.color).toEqual({ hex: '#3f8f8a', tolerance: 'broad', minWeight: 0.05 }),
+    expect(lastRequest()?.filter?.color).toEqual({ hex: '#3f8f8a', tolerance: 'broad', minWeight: 0.05 }),
   );
 });
 
