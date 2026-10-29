@@ -67,8 +67,12 @@ export class SpeechRepository {
       .execute();
   }
 
-  async assetOwner(assetId: string) {
-    return this.db.selectFrom('asset').select('ownerId').where('id', '=', assetId).executeTakeFirst();
+  async assetOwners(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return [];
+    }
+    const rows = await this.db.selectFrom('asset').select('ownerId').distinct().where('id', 'in', assetIds).execute();
+    return rows.map(({ ownerId }) => ownerId);
   }
 
   async wake(ownerId: string) {

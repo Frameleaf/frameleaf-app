@@ -9,7 +9,7 @@ class VideoSeek {
   pending = $state<SeekRequest | null>(null);
 
   request(assetId: string, timestampMs: number, original = false) {
-    this.pending = { assetId, original, seconds: Math.max(0, timestampMs) / 1000 };
+    this.pending = { assetId, ...(original && { original: true }), seconds: Math.max(0, timestampMs) / 1000 };
   }
 
   /** The seconds to seek to for this video, consuming the request; null when there is none. */

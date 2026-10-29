@@ -157,7 +157,6 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.BuddyBackup]: 'frameleaf_render_workers_kind_buddy_backup',
   [MediaOperationKind.BuddyRestore]: 'frameleaf_render_workers_kind_buddy_restore',
   [MediaOperationKind.StudioReverseConform]: 'frameleaf_render_workers_kind_studio_reverse_conform',
-  [MediaOperationKind.SpeechTranscription]: 'frameleaf_speech_title',
   [MediaOperationKind.StudioTranscription]: 'frameleaf_render_workers_kind_studio_transcription',
   [MediaOperationKind.StudioMovie]: 'frameleaf_render_workers_kind_studio_movie',
   [MediaOperationKind.StudioExport]: 'frameleaf_render_workers_kind_studio_export',

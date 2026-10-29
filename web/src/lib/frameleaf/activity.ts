@@ -527,7 +527,6 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
             : workingKey,
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
-    ...(operation.kind === MediaOperationKind.SpeechTranscription && { titleKey: 'frameleaf_speech_title' as const }),
     ...(dedup && { titleKey: 'frameleaf_activity_title_physical_deduplication' }),
     // A job about a Locked item a locked session may not see comes without its file name (FL-43).
     ...(operation.withheld && { titleKey: 'frameleaf_activity_title_locked_item', withheld: true }),
@@ -555,7 +554,6 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     // Studio exports, source reversals and previews need fresh authorization/allocation, never a copied job.
     // An edit that could not be cancelled was never cancelled by its owner, so only a failure retries.
     canRetry:
-      operation.kind !== MediaOperationKind.SpeechTranscription &&
       operation.kind !== MediaOperationKind.MediaHealth &&
       operation.kind !== MediaOperationKind.LibraryScan &&
       operation.kind !== MediaOperationKind.StudioExport &&

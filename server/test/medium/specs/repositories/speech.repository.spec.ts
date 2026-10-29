@@ -1,13 +1,25 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { AssetLockReason, AssetType, MediaOperationKind, UserMetadataKey } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetType,
+  IntegrityReport,
+  JobStatus,
+  MediaOperationKind,
+  UserMetadataKey,
+} from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { SpeechRepository } from 'src/repositories/speech.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { IntegrityService } from 'src/services/integrity.service.js';
+import { SpeechService } from 'src/services/speech.service.js';
 import { speechQuery } from 'src/utils/speech.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -65,6 +77,93 @@ const complete = async (words = ['hello', 'world']) => {
   expect(await repository.publish(held.operation, held.claimToken, 'whisper-small', 'en')).toBe(true);
   return held;
 };
+
+it('completes system IntegrityDeleteReports and invalidates the real speech owners without an empty UUID query', async () => {
+  const owners = [await setup(), await setup()];
+  const assets = [];
+  for (const owner of [owners[0], owners[0], owners[1]]) {
+    const asset = await owner.asset();
+    assets.push(asset);
+    await repository.reconcile(owner.user.id);
+    await complete();
+    expect((await owner.search()).total).toBeGreaterThan(0);
+  }
+  const { sut: integrity, ctx } = newMediumService(IntegrityService, {
+    database: db,
+    real: [AssetRepository, IntegrityRepository],
+    mock: [LoggingRepository, EventRepository],
+  });
+  const websocket = { clientSend: vi.fn() };
+  const speech = new SpeechService(
+    repository,
+    operations,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    { setContext: vi.fn() } as never,
+    websocket as never,
+  );
+  ctx.getMock(EventRepository).emit.mockImplementation(async (name, ...args) => {
+    if (name === 'AssetTrashAll') await speech.onAssetTrashAll(args[0] as { userId: string; assetIds: string[] });
+  });
+  const reports = await Promise.all(
+    assets.map(async (asset) => {
+      const report = await ctx
+        .get(IntegrityRepository)
+        .create({ assetId: asset.id, path: asset.originalPath, type: IntegrityReport.MissingFile });
+      return { id: report.id, assetId: asset.id, path: asset.originalPath, fileAssetId: null };
+    }),
+  );
+  await db
+    .updateTable('speech_settings')
+    .set({ cursor: randomUUID(), nextScanAt: new Date(Date.now() + 86_400_000) })
+    .where(
+      'ownerId',
+      'in',
+      owners.map(({ user }) => user.id),
+    )
+    .execute();
+  await expect(integrity.handleDeleteIntegrityReports({ reports })).resolves.toBe(JobStatus.Success);
+  expect(ctx.getMock(EventRepository).emit).toHaveBeenCalledWith('AssetTrashAll', {
+    assetIds: assets.map(({ id }) => id),
+    userId: '',
+  });
+  expect(websocket.clientSend).toHaveBeenCalledTimes(2);
+  for (const owner of owners) {
+    expect(websocket.clientSend).toHaveBeenCalledWith('on_speech_index_change', owner.user.id);
+    expect(await repository.settings(owner.user.id)).toMatchObject({ cursor: null });
+    expect((await owner.search()).total).toBe(0);
+    await repository.reconcile(owner.user.id);
+  }
+  expect(
+    await db
+      .selectFrom('integrity_report')
+      .select('id')
+      .where(
+        'id',
+        'in',
+        reports.map(({ id }) => id),
+      )
+      .execute(),
+  ).toEqual([]);
+  // Trash hides retained transcripts; permanent asset deletion still cascades all stored quotes.
+  const ids = assets.map(({ id }) => id);
+  expect(await db.selectFrom('speech_transcript').select('assetId').where('assetId', 'in', ids).execute()).toHaveLength(
+    3,
+  );
+  await db.deleteFrom('asset').where('id', 'in', ids).execute();
+  for (const table of ['speech_transcript', 'speech_window', 'speech_checkpoint'] as const) {
+    expect(await db.selectFrom(table).select('assetId').where('assetId', 'in', ids).execute()).toEqual([]);
+  }
+  websocket.clientSend.mockClear();
+  await speech.onAssetTrashAll({ userId: owners[0].user.id, assetIds: [assets[0].id] });
+  expect(websocket.clientSend).toHaveBeenCalledExactlyOnceWith('on_speech_index_change', owners[0].user.id);
+  websocket.clientSend.mockClear();
+  await expect(speech.onAssetTrashAll({ userId: '', assetIds: ids })).resolves.toBeUndefined();
+  expect(websocket.clientSend).not.toHaveBeenCalled();
+});
 
 it('keeps staging private, publishes empty success, groups exact phrase hits and pages videos with an exact total', async () => {
   const f = await setup();

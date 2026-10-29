@@ -1412,6 +1412,7 @@ export enum MediaOperationKind {
    * the job's result, and nothing else is kept once it settles.
    */
   StudioTranscription = 'studio_transcription',
+  /** Internal library indexing. Its live status and controls use the dedicated speech API. */
   SpeechTranscription = 'speech_transcription',
   /**
    * Make a movie (FL-561): the best moments of an album, a memory or a selection, cut on the beat of
@@ -1538,6 +1539,8 @@ export enum MediaOperationKind {
 
 export const MediaOperationKindSchema = z
   .enum(MediaOperationKind)
+  // Legacy clients decode a closed enum. Internal indexing is never a generic Activity/render response.
+  .exclude(['SpeechTranscription'])
   .describe('Media operation kind')
   .meta({ id: 'MediaOperationKind' });
 

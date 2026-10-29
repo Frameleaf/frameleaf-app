@@ -240,11 +240,12 @@
       {#if status.error === 'unavailable'}<p role="status">{$t('frameleaf_speech_unavailable')}</p>{/if}
       <div class="actions">
         <Button
+          type="button"
           variant="primary"
           disabled={busy ||
             conflicted ||
             (enabled && (!destinationId || (scope === 'albums' && albumIds.length === 0)))}
-          onclick={() => void change('save')}>{$t('save')}</Button
+          onclick={() => void change('save')}>{$t('frameleaf_speech_save')}</Button
         >
         <Button disabled={busy || conflicted || !status.enabled} onclick={() => void change('retry')}
           >{$t('frameleaf_speech_retry')}</Button

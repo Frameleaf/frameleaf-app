@@ -361,13 +361,15 @@
   const body = $derived(paletteSearchBody(next, includeArchived));
   const smart = $derived(smartEnabled && isSmartBody(body));
   const typing = $derived(text.trim().length > 0 || tokens.length > 0);
-  const pending = $derived(deferredInput !== liveInput || loading);
+  const pending = $derived(mode !== 'speech' && (deferredInput !== liveInput || loading));
 
-  const selectedCount = $derived(scopeChoice === 'library' ? counts.library : counts.current);
-  const otherCount = $derived(scopeChoice === 'library' ? counts.current : counts.library);
+  const selectedCount = $derived(
+    mode === 'speech' ? null : scopeChoice === 'library' ? counts.library : counts.current,
+  );
+  const otherCount = $derived(mode === 'speech' ? null : scopeChoice === 'library' ? counts.current : counts.library);
 
   const suggestions = $derived<PaletteSuggestion[]>(
-    text.trim() ? suggestSearchTokens(text, catalog, 6, operators) : [],
+    mode !== 'speech' && text.trim() ? suggestSearchTokens(text, catalog, 6, operators) : [],
   );
   // "Go to" reuses the shared command index; a filter being typed ("person:…") is not a destination
   const destinations = $derived(
@@ -429,7 +431,7 @@
     ...(typing ? [] : saved.map((item) => ({ kind: 'saved' as const, item }))),
   ]);
   // The Advanced view hides the results, so arrows and Enter never move through them
-  const navItems = $derived(advanced ? [] : items);
+  const navItems = $derived(advanced || mode === 'speech' ? [] : items);
   const indexOf = (entry: Entry) => items.indexOf(entry);
   const activeEntry = $derived(active >= 0 ? navItems[active] : undefined);
   const previewAsset = $derived(
@@ -562,6 +564,7 @@
       paletteSearchBody(currentQuery, includeArchived),
       paletteSearchBody(libraryQuery, includeArchived),
       scopeChoice,
+      mode,
       smartEnabled,
       typing,
       advanced,
@@ -577,6 +580,10 @@
       clearTimeout(remoteTimer);
       const controller = new AbortController();
       remoteController = controller;
+      if (mode === 'speech') {
+        runRemote(controller.signal);
+        return;
+      }
       loading = true;
       remoteTimer = setTimeout(() => runRemote(controller.signal), REMOTE_DEBOUNCE_MS);
     });
@@ -587,6 +594,11 @@
       loading = false;
       counts = { current: null, library: null };
       results = [];
+      failed = false;
+      facets = {};
+      histogram = { unit: 'month', buckets: [] };
+      enrichmentCounts = {};
+      settledLabel = $t('frameleaf_speech_palette_hint');
       return;
     }
     const currentBody = paletteSearchBody(currentQuery, includeArchived);
@@ -1090,16 +1102,22 @@
   const countLabel = (count: PaletteCount) =>
     $t('frameleaf_search_palette_matches', { values: { count: count.total, capped: count.capped ? 'yes' : 'no' } });
   const matchesLabel = $derived(
-    pending
-      ? $t('frameleaf_search_searching')
-      : failed
-        ? $t('frameleaf_search_failed')
-        : selectedCount
-          ? countLabel(selectedCount)
-          : $t('frameleaf_search_searching'),
+    mode === 'speech'
+      ? $t('frameleaf_speech_palette_hint')
+      : pending
+        ? $t('frameleaf_search_searching')
+        : failed
+          ? $t('frameleaf_search_failed')
+          : selectedCount
+            ? countLabel(selectedCount)
+            : $t('frameleaf_search_searching'),
   );
   // The live region speaks only settled answers, never "Searching…" on every keystroke
   $effect(() => {
+    if (mode === 'speech') {
+      settledLabel = $t('frameleaf_speech_palette_hint');
+      return;
+    }
     if (pending) {
       return;
     }
@@ -1162,7 +1180,7 @@
           aria-label={$t('frameleaf_search_query')}
           role="combobox"
           aria-expanded={navItems.length > 0}
-          aria-controls="{listId}-results"
+          aria-controls={mode === 'speech' ? undefined : `${listId}-results`}
           aria-autocomplete="list"
           aria-activedescendant={!advanced && active >= 0 && activeEntry ? `${listId}-item-${active}` : undefined}
           autocomplete="off"
@@ -1248,7 +1266,7 @@
             onclick={() => (scopeChoice = option.value)}
           >
             {option.label}
-            <small>{formatScopeCount(option.count)}</small>
+            {#if mode !== 'speech'}<small>{formatScopeCount(option.count)}</small>{/if}
           </button>
         {/each}
       </div>
@@ -1323,7 +1341,7 @@
       </div>
     {/if}
 
-    <div class="sp-body" hidden={advanced}>
+    <div class="sp-body" hidden={advanced || mode === 'speech'}>
       <div
         class="sp-results"
         id="{listId}-results"
@@ -1381,7 +1399,7 @@
           </section>
         {/if}
 
-        {#if typing}
+        {#if typing && mode !== 'speech'}
           <section>
             <h3>
               {$t('frameleaf_search_photos_and_videos')}
@@ -1611,7 +1629,7 @@
     <footer class="sp-footer">
       <span class="sp-keys" aria-hidden="true">
         <!-- The Advanced view has no list to move through, so only the keys that still act are named. -->
-        {#if !advanced}
+        {#if !advanced && mode !== 'speech'}
           <kbd>↑</kbd><kbd>↓</kbd>
           {$t('frameleaf_search_key_move')}
           <kbd>⏎</kbd>

@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 
@@ -20,10 +21,7 @@ it('never exposes a speech source or transcript through generic Activity even af
     createdAt: new Date(),
     updatedAt: new Date(),
   } as unknown as MediaOperation;
-  const result = mapOperation(operation);
-  expect(result.assetId).toBeNull();
-  expect(result.label).not.toContain('private');
-  expect(result.settings).toEqual({});
-  expect(result.error).toBeNull();
-  expect(result.totalUnits).toBeNull();
+  // The legacy contract cannot represent this internal kind, even as a sanitized row.
+  expect(() => mapOperation(operation)).toThrow(NotFoundException);
+  expect(() => mapOperation(operation, new Set(['private-source']))).toThrow(NotFoundException);
 });

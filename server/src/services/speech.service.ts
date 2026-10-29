@@ -63,16 +63,12 @@ export class SpeechService {
 
   @OnEvent({ name: 'AssetChanged' })
   async onAssetChanged({ assetId }: { assetId: string }) {
-    const owner = await this.repository.assetOwner(assetId);
-    if (owner) {
-      await this.repository.wake(owner.ownerId);
-      this.changed(owner.ownerId);
-    }
+    await this.assetsChanged([assetId]);
   }
 
   @OnEvent({ name: 'AssetLocked' })
   async onAssetLocked({ assetIds }: { assetIds: string[] }) {
-    for (const assetId of assetIds) await this.onAssetChanged({ assetId });
+    await this.assetsChanged(assetIds);
   }
 
   private async ownerChanged(ownerId: string) {
@@ -80,19 +76,28 @@ export class SpeechService {
     this.changed(ownerId);
   }
 
+  // Bulk events can carry an empty userId (integrity repair), so owners also come from the assets themselves.
+  private async assetsChanged(assetIds: string[], userId?: string) {
+    const owners = new Set(await this.repository.assetOwners(assetIds));
+    if (userId) {
+      owners.add(userId);
+    }
+    for (const ownerId of owners) await this.ownerChanged(ownerId);
+  }
+
   @OnEvent({ name: 'AssetTrashAll' })
-  async onAssetTrashAll({ userId }: { userId: string }) {
-    await this.ownerChanged(userId);
+  async onAssetTrashAll({ assetIds, userId }: { assetIds: string[]; userId: string }) {
+    await this.assetsChanged(assetIds, userId);
   }
 
   @OnEvent({ name: 'AssetDeleteAll' })
-  async onAssetDeleteAll({ userId }: { userId: string }) {
-    await this.ownerChanged(userId);
+  async onAssetDeleteAll({ assetIds, userId }: { assetIds: string[]; userId: string }) {
+    await this.assetsChanged(assetIds, userId);
   }
 
   @OnEvent({ name: 'AssetRestoreAll' })
-  async onAssetRestoreAll({ userId }: { userId: string }) {
-    await this.ownerChanged(userId);
+  async onAssetRestoreAll({ assetIds, userId }: { assetIds: string[]; userId: string }) {
+    await this.assetsChanged(assetIds, userId);
   }
 
   @OnEvent({ name: 'AssetMetadataExtracted' })

@@ -20,6 +20,7 @@ import {
   MediaOperationBulkAction,
   MediaOperationDestination,
   MediaOperationKind,
+  MediaOperationKindSchema,
   MediaOperationStatus,
   Permission,
   RenderWorkerRefusalReason,
@@ -72,12 +73,14 @@ import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   ACTIVE_MEDIA_OPERATION_STATUSES,
   PAUSABLE_MEDIA_OPERATION_KINDS,
+  PUBLIC_MEDIA_OPERATION_KINDS,
   canDismissMediaOperation,
   canPauseMediaOperation,
   canResumeMediaOperation,
   canRetryMediaOperation,
   isActiveMediaOperation,
   isPausableMediaOperationKind,
+  isPublicMediaOperationKind,
 } from 'src/utils/media-operation.js';
 import { PreservationPackageError, isPreservationKind, parsePreservationSnapshot } from 'src/utils/preservation.js';
 
@@ -264,26 +267,14 @@ const admissionRefusalOf = (
 
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): MediaOperationDto => {
-  // Speech details are read through its live scope-filtered endpoint, never a cached Activity row.
-  if (operation.kind === MediaOperationKind.SpeechTranscription) {
-    operation = {
-      ...operation,
-      assetId: null,
-      resultAssetId: null,
-      destinationDetail: null,
-      label: 'Spoken words',
-      settings: {},
-      result: null,
-      estimate: null,
-      error: null,
-      totalUnits: null,
-      processedUnits: 0,
-    };
+  // A shared presenter must never turn an internal job into an unsupported legacy enum value.
+  if (!isPublicMediaOperationKind(operation.kind)) {
+    throw new NotFoundException('Media operation not found');
   }
   const privateWeekly = isPrivateICloudOperation(operation);
   return {
     id: operation.id,
-    kind: operation.kind as MediaOperationKind,
+    kind: operation.kind,
     status: operation.status as MediaOperationStatus,
     destination: operation.destination as MediaOperationDestination,
     destinationDetail: privateWeekly ? null : operation.destinationDetail,
@@ -364,6 +355,7 @@ export class MediaOperationService {
   async search(auth: AuthDto, dto: MediaOperationSearchDto): Promise<MediaOperationListResponseDto> {
     const { items, total } = await this.repository.list({
       ownerId: auth.user.id,
+      publicOnly: true,
       kind: dto.kind,
       statuses: dto.status ? [dto.status] : undefined,
       includeDismissed: dto.includeDismissed ?? false,
@@ -385,6 +377,7 @@ export class MediaOperationService {
   async listUnfinished(auth: AuthDto, take: number): Promise<MediaOperationDto[]> {
     const { items } = await this.repository.list({
       ownerId: auth.user.id,
+      publicOnly: true,
       statuses: ACTIVE_MEDIA_OPERATION_STATUSES,
       includeDismissed: false,
       take,
@@ -719,9 +712,6 @@ export class MediaOperationService {
     if (operation.kind === MediaOperationKind.StudioReverseConform) {
       throw new BadRequestException('Source reversal must be submitted again with current source authorization');
     }
-    if (operation.kind === MediaOperationKind.SpeechTranscription) {
-      throw new BadRequestException('Retry speech indexing from Spoken words settings with current scope');
-    }
 
     // FL-106: a Studio export is a version of its project. Its render and its publication each had
     // their automatic retry; exporting again makes a new version against the project as it is now,
@@ -800,12 +790,12 @@ export class MediaOperationService {
    */
   async getStatistics(): Promise<MediaOperationStatisticsDto> {
     const [rows, unreleased] = await Promise.all([
-      this.repository.getAggregates(),
-      this.repository.getUnreleasedRemoteOperations(1000),
+      this.repository.getAggregates({ publicOnly: true }),
+      this.repository.getUnreleasedRemoteOperations(1000, PUBLIC_MEDIA_OPERATION_KINDS),
     ]);
 
-    const buckets = rows.map((row) => ({
-      kind: row.kind,
+    const buckets = rows.map((row): MediaOperationStatisticsDto['buckets'][number] => ({
+      kind: MediaOperationKindSchema.parse(row.kind),
       status: row.status,
       destination: row.destination as MediaOperationDestination,
       count: row.count,
@@ -1256,7 +1246,7 @@ export class MediaOperationService {
 
   private async findOwned(auth: AuthDto, id: string): Promise<MediaOperation> {
     const operation = await this.repository.getForOwner(id, auth.user.id);
-    if (!operation) {
+    if (!operation || !isPublicMediaOperationKind(operation.kind)) {
       // Somebody else's job and a job that never existed give the same answer on purpose.
       throw new NotFoundException('Media operation not found');
     }

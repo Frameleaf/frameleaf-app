@@ -42,6 +42,7 @@ import {
   storedAdmission,
 } from 'src/utils/ml-destination.js';
 import { RESTORATION_OPERATION_KINDS } from 'src/utils/restoration.js';
+import { isPublicMediaOperationKind } from 'src/utils/media-operation.js';
 import {
   ALL_LIBRARY_ANALYSIS_QUEUES,
   LIBRARY_ANALYSIS_QUEUES,
@@ -297,6 +298,7 @@ export class WorkerInventoryService {
   ): WorkerRunnerDto[] {
     const byWorker = new Map<string, WorkerRunnerDto>();
     for (const claimant of claimants) {
+      if (!isPublicMediaOperationKind(claimant.kind)) continue;
       const current = byWorker.get(claimant.workerId) ?? {
         workerId: claimant.workerId,
         kinds: [],

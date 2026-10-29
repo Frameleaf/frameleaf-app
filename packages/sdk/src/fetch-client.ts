@@ -34182,7 +34182,6 @@ export enum MediaOperationKind {
     StudioPreview = "studio_preview",
     StudioReverseConform = "studio_reverse_conform",
     StudioTranscription = "studio_transcription",
-    SpeechTranscription = "speech_transcription",
     StudioMovie = "studio_movie",
     StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",

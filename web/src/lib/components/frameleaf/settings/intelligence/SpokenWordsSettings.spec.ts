@@ -81,7 +81,7 @@ it('requires explicit opt-in, owner-safe albums and local/network worker selecti
   expect(screen.queryByText('Shared album')).not.toBeInTheDocument();
   await fireEvent.click(screen.getByRole('checkbox', { name: 'My album' }));
   await fireEvent.click(toggle);
-  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save spoken words settings' }));
   await waitFor(() =>
     expect(sdkMock.updateSpeechSettings).toHaveBeenCalledWith({
       speechSettingsUpdateDto: {
@@ -126,7 +126,7 @@ it('keeps the draft and focused control when same-generation progress arrives', 
   expect(document.activeElement).toBe(scope);
   expect(toggle).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByRole('checkbox', { name: 'My album' })).toBeChecked();
-  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save spoken words settings' }));
   expect(sdkMock.updateSpeechSettings).toHaveBeenCalledWith({
     speechSettingsUpdateDto: {
       expectedGeneration: 'generation',
@@ -145,12 +145,12 @@ it('keeps its own save response authoritative when the change event arrives firs
   const saved = { ...status, enabled: true, generation: 'saved' };
   const response = deferredPromise<typeof saved>();
   sdkMock.updateSpeechSettings.mockReturnValue(response.promise as never);
-  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save spoken words settings' }));
   sdkMock.getSpeechStatus.mockResolvedValue(saved as never);
   eventManager.emit('SpeechIndexChange');
   expect(toggle).toBeInTheDocument();
   response.resolve(saved);
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save spoken words settings' })).toBeEnabled());
   expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(sdkMock.getSpeechCapabilities).toHaveBeenCalledTimes(1);
@@ -165,8 +165,8 @@ it('ignores delayed progress from before a successful save', async () => {
   await waitFor(() => expect(sdkMock.getSpeechStatus).toHaveBeenCalledTimes(2));
   await fireEvent.click(toggle);
   sdkMock.updateSpeechSettings.mockResolvedValue({ ...status, enabled: true, generation: 'saved' } as never);
-  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+  await fireEvent.click(screen.getByRole('button', { name: 'Save spoken words settings' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save spoken words settings' })).toBeEnabled());
   progress.resolve({ ...status, indexed: 9 });
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
@@ -183,11 +183,32 @@ it('preserves the draft but requires explicit refresh after another settings gen
   await screen.findByRole('alert');
   expect(toggle).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByRole('status')).toHaveTextContent('4');
-  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save spoken words settings' })).toBeDisabled();
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
   await waitFor(() => expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false'));
-  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save spoken words settings' }));
   expect(sdkMock.updateSpeechSettings).toHaveBeenLastCalledWith({
     speechSettingsUpdateDto: expect.objectContaining({ expectedGeneration: 'remote' }),
   });
+});
+
+it('names its independent save and never submits an enclosing preferences form', async () => {
+  const form = document.createElement('form');
+  const submit = vi.fn((event: Event) => event.preventDefault());
+  form.addEventListener('submit', submit);
+  document.body.append(form);
+  try {
+    render(SpokenWordsSettings, { target: form });
+    await screen.findByRole('switch', { name: 'Index spoken words' });
+    const save = screen.getByRole('button', { name: 'Save spoken words settings' });
+    expect(save).toHaveAttribute('type', 'button');
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    await fireEvent.click(save);
+    await waitFor(() => expect(sdkMock.updateSpeechSettings).toHaveBeenCalledOnce());
+    expect(submit).not.toHaveBeenCalled();
+    expect(sdkMock.updateMyPreferences).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+    form.remove();
+  }
 });
