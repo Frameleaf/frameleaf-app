@@ -228,7 +228,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/multicam-actions.test.ts
-@@ -0,0 +1,155 @@
+@@ -0,0 +1,162 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -383,12 +383,19 @@ new file mode 100644
 +    if (!outcome.ok) throw new Error(outcome.reason)
 +    expect(cutToAngle(outcome.groupId, 1, 100)).toEqual({ ok: false, reason: 'no-coverage', missing: [150, 300] })
 +  })
++
++  it('unmutes a master audio clip that was muted, as the one sound of the edit', () => {
++    useItemsStore.getState()._updateItem('a2', { muted: true })
++    const outcome = createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v2' })
++    expect(outcome.ok).toBe(true)
++    expect([byId('a1').muted, byId('a2').muted, byId('a3').muted]).toEqual([true, false, true])
++  })
 +})
 diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src/features/timeline/stores/actions/edit/multicam-actions.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/multicam-actions.ts
-@@ -0,0 +1,307 @@
+@@ -0,0 +1,309 @@
 +import type { AudioItem, TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
 +import { useTimelineSettingsStore } from '../../timeline-settings-store'
@@ -621,6 +628,8 @@ new file mode 100644
 +      const audio = linkedAudioOf(store.items, item)
 +      if (audio && audio.id !== masterAudio.id) store._updateItem(audio.id, { muted: true })
 +    }
++    // The chosen master is the edit's sound, so it is heard even if it was muted before.
++    if (masterAudio.muted) store._updateItem(masterAudio.id, { muted: false })
 +    const placedReference = store.itemById[reference.id] as VideoItem
 +    store._addItem(programClip(placedReference, programTrackId, groupId, angleItems.indexOf(reference), placedReference.from, placedReference.durationInFrames, fps))
 +    useTimelineSettingsStore.getState().markDirty()

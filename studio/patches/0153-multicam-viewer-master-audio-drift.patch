@@ -202,9 +202,9 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
    const angles = [
      { itemId: 'v1', offsetSeconds: 0 },
      { itemId: 'v2', offsetSeconds: -1.5 },
-@@ -152,4 +152,34 @@ describe('multicam', () => {
-     if (!outcome.ok) throw new Error(outcome.reason)
-     expect(cutToAngle(outcome.groupId, 1, 100)).toEqual({ ok: false, reason: 'no-coverage', missing: [150, 300] })
+@@ -159,4 +159,34 @@ describe('multicam', () => {
+     expect(outcome.ok).toBe(true)
+     expect([byId('a1').muted, byId('a2').muted, byId('a3').muted]).toEqual([true, false, true])
    })
 +
 +  it('corrects clock drift by playing the angle and its audio at the fitted speed (FL-628)', () => {
@@ -398,9 +398,9 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
        if (audio && audio.id !== masterAudio.id) store._updateItem(audio.id, { muted: true })
 +      else if (!audio && standalone) store._updateItem(item.id, { embeddedAudioMuted: true })
      }
-     const placedReference = store.itemById[reference.id] as VideoItem
-     store._addItem(programClip(placedReference, programTrackId, groupId, angleItems.indexOf(reference), placedReference.from, placedReference.durationInFrames, fps))
-@@ -237,10 +269,10 @@ export function createMulticamEdit(params: {
+     // The chosen master is the edit's sound, so it is heard even if it was muted before.
+     if (masterAudio.muted) store._updateItem(masterAudio.id, { muted: false })
+@@ -239,10 +271,10 @@ export function createMulticamEdit(params: {
    return { ok: true, groupId }
  }
  
@@ -413,7 +413,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
    return {
      ...angle,
      id: crypto.randomUUID(),
-@@ -248,7 +280,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
+@@ -250,7 +282,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
      from,
      durationInFrames: duration,
      sourceStart,

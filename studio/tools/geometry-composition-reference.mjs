@@ -88,8 +88,10 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === 'c47b6b1facd2f0faa7343899fd42cc28e62d65e8b6b1efc5817a637f7095c8ea' ||
     // FL-595 multicam: generated-media refusal, program-claimed angles
     sourceSha256 === '32b53edcdbcd90b4bbbe41df1adde2494f34a0fed63ff2dd51025ba03334d5c2' ||
+    // FL-595 multicam: muted master audio unmuted
+    sourceSha256 === 'd3f4a569bd7006fde20b8348b99cbb9257c15b671f8c6d065824b20011d0d073' ||
     // FL-628 multicam angle viewer, standalone master audio and drift correction
-    sourceSha256 === 'd221396f98ad955dd3307d9ee1f1ae6b69875dbcf2f4a7c1b4822251c7096575'
+    sourceSha256 === '1a917ebfbf8987a7ae358270abd77ddbe309d46e6f5958920e03b0323a2223a1'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -713,13 +713,13 @@
     {
       "path": "patches/0149-multicam-editing.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "a03db29f859066f39652b071d12746b590d85765d4fda9a1c0e0461fdb131918"
+      "sha256": "885b5ae708636316ff030ed57a7c7c9e470433b9b3236577c8274902a11d3fc5"
     },
     {
       "path": "patches/0153-multicam-viewer-master-audio-drift.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "a56883788b3971ad0773b7dc10e4251f54465490ac8897b0e3b0a266493aa7a8"
+      "sha256": "b5fd27cf361b67d782c1fccd63180ddd7ede60181052ac7eb4c97e8109f2c6ca"
     }
   ],
-  "sourceSha256": "d221396f98ad955dd3307d9ee1f1ae6b69875dbcf2f4a7c1b4822251c7096575"
+  "sourceSha256": "1a917ebfbf8987a7ae358270abd77ddbe309d46e6f5958920e03b0323a2223a1"
 }
