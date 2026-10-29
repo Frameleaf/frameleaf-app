@@ -421,15 +421,24 @@
       return;
     }
     let frame = 0;
+    // A paused clip shows the same picture every frame: copy it again only when the element, its
+    // size or its position changed, not 60 times a second at full resolution.
+    let drawn: { from: HTMLVideoElement; target: HTMLCanvasElement; at: number } | null = null;
     const draw = () => {
       const from = videoEl;
       const target = mirrorEl;
       if (from && target && from.readyState >= 2) {
-        if (target.width !== from.videoWidth) {
+        const resized = target.width !== from.videoWidth || target.height !== from.videoHeight;
+        if (resized) {
           target.width = from.videoWidth;
           target.height = from.videoHeight;
         }
-        target.getContext('2d')?.drawImage(from, 0, 0);
+        const unchanged =
+          !resized && from.paused && drawn?.from === from && drawn.target === target && drawn.at === from.currentTime;
+        if (!unchanged) {
+          target.getContext('2d')?.drawImage(from, 0, 0);
+          drawn = { from, target, at: from.currentTime };
+        }
       }
       frame = requestAnimationFrame(draw);
     };
