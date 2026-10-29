@@ -164,7 +164,8 @@ a {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--fl-success-text, var(--fl-accent));
+  /* --fl-success-text is the dark text used on green buttons, unreadable on this background */
+  color: var(--fl-accent);
 }
 
 /* Controls */
@@ -909,16 +910,16 @@ details.source[open] {
 }
 .destination {
   border-radius: var(--fl-radius-control);
-  transition: box-shadow var(--fl-duration-fast, 0.15s);
 }
 /* the first pick on a page points at where it will be saved */
 .destination.nudge {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fl-accent) 45%, transparent);
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 8px;
   animation: destination-nudge 1s ease-in-out 2;
 }
 @keyframes destination-nudge {
   50% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, var(--fl-accent) 20%, transparent);
+    outline-color: color-mix(in srgb, var(--fl-accent) 30%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {

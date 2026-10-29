@@ -62,6 +62,7 @@
   let saveController: AbortController | undefined;
 
   const approvedOrigins = new Set<string>();
+  const savedCandidates = new Set<string>();
   const imageBytes = new Map<string, Blob>();
   let thumbnails = $state<Record<string, string>>({});
   let thumbnailController = new AbortController();
@@ -164,6 +165,7 @@
       const nextPreview = reply.ok ? (reply.preview ?? null) : null;
       if (preview?.id !== nextPreview?.id) {
         clearImages();
+        savedCandidates.clear();
         notice = "";
         nudged = false;
         sourcePage = nextPreview?.discovery.pageUrl ?? "";
@@ -175,6 +177,12 @@
         queuedAny = false;
         sourceTitle = (nextPreview?.discovery.title ?? "").slice(0, 2000);
       }
+      // A reload can land before the background has released what was just queued; keep it gone.
+      if (nextPreview && savedCandidates.size)
+        nextPreview.discovery.candidates =
+          nextPreview.discovery.candidates.filter(
+            (candidate) => !savedCandidates.has(candidate.id),
+          );
       preview = nextPreview;
       error = reply.ok ? "" : reply.error;
       if (
@@ -392,6 +400,7 @@
           ),
         );
         queued++;
+        savedCandidates.add(candidate.id);
         selected = selected.filter((id) => id !== candidate.id);
         if (thumbnails[candidate.id])
           URL.revokeObjectURL(thumbnails[candidate.id]);
