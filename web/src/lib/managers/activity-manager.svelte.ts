@@ -36,6 +36,8 @@ class ActivityManager {
   isLoading = $state(false);
   #viewVersion = 0;
   #viewFailed = false;
+  /** The current view's load, which a repeated `init` for the same view waits on. */
+  #viewLoad: Promise<void> | undefined;
   #refreshVersion = 0;
   #cacheIsCurrent: (() => boolean) | undefined;
 
@@ -93,8 +95,9 @@ class ActivityManager {
     // album page asks again whenever its effect re-runs, which used to fetch the album's activity
     // twice on every visit and drop the first answer.
     // A view whose load failed is asked for again.
+    // A caller asking again while the first load is still running waits for that same load.
     if (albumId === this.#albumId && assetId === this.#assetId && !this.#viewFailed) {
-      return;
+      return this.#viewLoad;
     }
 
     this.#viewVersion++;
@@ -102,14 +105,13 @@ class ActivityManager {
     this.#assetId = assetId;
     this.#viewFailed = false;
     const isCurrent = this.#captureView();
-    try {
-      await this.refreshActivities(albumId, assetId);
-    } catch (error) {
+    this.#viewLoad = this.refreshActivities(albumId, assetId).catch((error: unknown) => {
       if (isCurrent()) {
         this.#viewFailed = true;
         handleError(error, get(t)('errors.unable_to_get_comments_number'));
       }
-    }
+    });
+    await this.#viewLoad;
   }
 
   #invalidateCache(albumId: string, assetId?: string) {
@@ -254,6 +256,7 @@ class ActivityManager {
   reset() {
     this.#viewVersion++;
     this.#viewFailed = false;
+    this.#viewLoad = undefined;
     this.#refreshVersion++;
     this.isLoading = false;
     this.#isLiked = null;
