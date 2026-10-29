@@ -82,6 +82,9 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
 - **Whisper speech recognition for Studio captions (large-v3-turbo, small; CTranslate2 conversions)** — OpenAI; CTranslate2 conversions by Mobius Labs (dropbox-dash) and SYSTRAN; faster-whisper by SYSTRAN. Licence: MIT (Whisper code and large-v3-turbo weights; faster-whisper; CTranslate2), Apache-2.0 (small weights per its Hugging Face card). https://github.com/openai/whisper
   Studio captions on the server (owner decision 2026-10-09): OpenAI Whisper large-v3-turbo (on a GPU) and small (on a CPU) as CTranslate2 conversions run by faster-whisper (MIT, SYSTRAN) on CTranslate2 (MIT, OpenNMT): dropbox-dash/faster-whisper-large-v3-turbo revision 0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf (model.bin SHA-256 e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da) and Systran/faster-whisper-small revision 536b0662742c02347bc0e980a01041f333bce120 (model.bin SHA-256 3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671), served unchanged by the Frameleaf model mirror. Runs on this server's ML worker or a home-network worker the owner names; never on Frameleaf Cloud from this path.
   Licence texts: licenses/texts/openai-whisper-mit.txt, licenses/texts/apache-2.0.txt.
+- **M2M100 418M translation for Studio captions (CTranslate2 conversion)** — Meta AI (fairseq); CTranslate2 conversion by Jon Craton. Licence: MIT (M2M100 weights and the conversion; CTranslate2), Apache-2.0 (SentencePiece). https://github.com/facebookresearch/fairseq/tree/main/examples/m2m_100
+  Studio captions in other languages (owner decision 2026-10-29, FL-641): Meta AI's M2M100 418M as the int8 CTranslate2 conversion jncraton/m2m100_418M-ct2-int8 revision 7c1b2620a4e58dacecbd8bf89cfd6da7eb9eb7b0 (model.bin SHA-256 d6703dd9f920ff896e45c3d97b490761bed5944937b90bbe6a7245f5652542d4), run by CTranslate2 (MIT, OpenNMT) with SentencePiece (Apache-2.0, Google), served unchanged by the Frameleaf model mirror. Only caption text is sent; it runs on this server's ML worker or a computer at home.
+  Licence texts: licenses/texts/fairseq-m2m100-mit.txt, licenses/texts/apache-2.0.txt.
 - **Qwen2.5-VL Instruct 3B and 7B (photo descriptions)** — Qwen team, Alibaba Cloud; OpenVINO conversions by llmware. Licence: Qwen Research License (3B, the default); Apache-2.0 (7B). https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
   The 3B model (the default) is under the Qwen Research License (non-commercial); the 7B model is under Apache-2.0. Both run on this server, a home-network worker and Frameleaf Cloud, for personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).
   Licence texts: licenses/texts/qwen-research-license.txt, licenses/texts/apache-2.0.txt.
@@ -1373,6 +1376,32 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+## licenses/texts/fairseq-m2m100-mit.txt
+
+```text
+MIT License
+
+Copyright (c) Facebook, Inc. and its affiliates.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## licenses/texts/insightface-model-licence.txt

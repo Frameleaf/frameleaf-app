@@ -1,4 +1,9 @@
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
+import {
+  isStudioCaptionTranslationRequest,
+  type StudioCaptionTranslationRequest,
+  type StudioCaptionTranslationResult,
+} from './caption-languages';
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
 import {
   isStudioProjectImportUpload,
@@ -93,7 +98,13 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V8 = Object.freeze({
   resolveStudioProjectSource: (args: unknown[]) =>
     args.length === 2 && isStudioSourceRequest(args[0]) && isStudioEditorScope(args[1]),
 });
+/** Protocol 9 (FL-641): translate caption lines on the processing order. */
+export const STUDIO_FRAME_SERVICE_SCHEMA_V9 = Object.freeze({
+  ...STUDIO_FRAME_SERVICE_SCHEMA_V8,
+  translateCaptions: (args: unknown[]) => args.length === 1 && isStudioCaptionTranslationRequest(args[0]),
+});
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
+  translateCaptions: { args: [request: StudioCaptionTranslationRequest]; result: StudioCaptionTranslationResult };
   commitEditorDraft: {
     args: [graph: unknown, baseRevision: number, scope: StudioEditorScope];
     result: StudioEditorCommitResult;
@@ -108,7 +119,7 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
     result: StudioSourceResolutionDto;
   };
 };
-export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V8;
+export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V9;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };
 export const isStudioFrameServiceName = (name: unknown): name is StudioFrameServiceName =>
-  typeof name === 'string' && Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, name);
+  typeof name === 'string' && Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V9, name);

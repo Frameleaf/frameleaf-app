@@ -147,7 +147,7 @@ describe('studio engine manifest', () => {
   });
 
   it('requires protocol8 and refuses a held protocol7 build', async () => {
-    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(8);
+    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(9);
     await expect(resolveStudioFrameManifest(async () => json({ ...manifest, protocolVersion: 7 }))).rejects.toThrow(
       /protocol 7/,
     );

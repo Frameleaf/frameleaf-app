@@ -15690,6 +15690,24 @@ export type StudioBundleExportCreateDto = {
     /** Export only these sequences, with every sequence they nest. `main` names the Main timeline. Leave out for the whole project. */
     sequenceIds?: string[];
 };
+export type StudioCaptionTranslationCreateDto = {
+    /** The caption lines, in order, as plain text. Timing stays with the caller. */
+    lines: string[];
+    /** The language the captions are in */
+    source: StudioCaptionLanguage;
+    /** The language to translate them into */
+    target: StudioCaptionLanguage;
+};
+export type StudioCaptionTranslationDto = {
+    /** The machine-learning destination that translated the lines */
+    destinationId: string;
+    /** One translation per line asked for, in the same order */
+    lines: string[];
+    /** The translation model the worker used */
+    model: string;
+    source: StudioCaptionLanguage;
+    target: StudioCaptionLanguage;
+};
 export type StudioTimeDto = {
     /** Denominator */
     den: number;
@@ -31683,6 +31701,22 @@ export function exportStudioProjectBundle({ id, studioBundleExportCreateDto }: {
     })));
 }
 /**
+ * Translate Studio captions
+ */
+export function translateStudioCaptions({ id, studioCaptionTranslationCreateDto }: {
+    id: string;
+    studioCaptionTranslationCreateDto: StudioCaptionTranslationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCaptionTranslationDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/caption-translations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioCaptionTranslationCreateDto
+    })));
+}
+/**
  * List Studio review comments
  */
 export function getStudioProjectComments({ id, skip, take }: {
@@ -37849,6 +37883,19 @@ export enum StudioProjectSort {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum StudioCaptionLanguage {
+    En = "en",
+    Fr = "fr",
+    Es = "es",
+    De = "de",
+    It = "it",
+    Pt = "pt",
+    Nl = "nl",
+    Pl = "pl",
+    Sv = "sv",
+    Da = "da",
+    Nb = "nb"
 }
 export enum StudioReframeSubject {
     Face = "face",

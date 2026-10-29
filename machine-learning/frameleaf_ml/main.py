@@ -36,6 +36,7 @@ from frameleaf_ml.models.transcribe import (
     wav_memory_bytes,
 )
 from frameleaf_ml.models.transforms import decode_pil
+from frameleaf_ml.models.translate import MAX_LINE_CHARS, MAX_LINES, TranslateModel
 from frameleaf_ml.sessions.ort import flush_denormals
 
 from .config import PreloadModelData, log, model_source, settings
@@ -622,6 +623,64 @@ async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingRe
             active_requests -= 1
 
     return StreamingResponse(body(), media_type="application/x-ndjson")
+
+
+# The largest `lines` field the server can send: MAX_LINES lines of MAX_LINE_CHARS characters, each
+# character at most 6 bytes once JSON-escaped (`\uXXXX`), plus quotes, commas and brackets. Starlette's
+# default 1 MiB form part limit would refuse a long project's captions.
+TRANSLATE_FORM_PART_BYTES = MAX_LINES * (MAX_LINE_CHARS * 6 + 3) + 2
+
+
+@app.post("/translate")
+async def translate(request: Request) -> ORJSONResponse:
+    """Studio captions in other languages (FL-641): caption lines translated with M2M100 418M.
+
+    The request names one entry, `{"translate": {"textual": {"modelName": "frameleaf-translate", "options":
+    {"source", "target"}}}}`, and `lines`, a JSON array of the caption lines as text. Only text is sent. The
+    answer is `{"model", "translations"}`: one translation per line, in order. Problems are HTTP errors (400
+    bad lines or language, 422 bad options, 503 no model or runtime).
+    """
+    async with request.form(max_files=0, max_fields=2, max_part_size=TRANSLATE_FORM_PART_BYTES) as form:
+        raw_entries, lines = form.get("entries"), form.get("lines")
+    if not isinstance(raw_entries, str):
+        raise HTTPException(422, "Invalid request format.")
+    if not isinstance(lines, str):
+        raise HTTPException(400, "The lines must be a JSON array of text")
+    without_deps, with_deps = get_entries(raw_entries)
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.TRANSLATE:
+        raise HTTPException(400, "A translation request names exactly one translate entry")
+    entry = without_deps[0]
+    try:
+        texts = orjson.loads(lines)
+    except orjson.JSONDecodeError as error:
+        raise HTTPException(400, "The lines must be a JSON array of text") from error
+    if (
+        not isinstance(texts, list)
+        or len(texts) > MAX_LINES
+        or not all(isinstance(text, str) and len(text) <= MAX_LINE_CHARS for text in texts)
+    ):
+        raise HTTPException(400, f"Send at most {MAX_LINES} lines of at most {MAX_LINE_CHARS} characters")
+    options = dict(entry["options"])
+    model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
+    try:
+        model = await load(model)
+    except HTTPException as error:
+        # After repeated failed loads `load` answers 500; for translation that still means "this worker
+        # cannot translate now" (503), so the server tries the next place in the processing order.
+        if error.status_code == 500:
+            raise HTTPException(503, error.detail) from error
+        raise
+    assert isinstance(model, TranslateModel)
+    global active_requests, last_called
+    active_requests += 1
+    last_called = time.time()
+    try:
+        result = await run(model.predict, texts, **options)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    finally:
+        active_requests -= 1
+    return ORJSONResponse(result)
 
 
 async def run_inference(

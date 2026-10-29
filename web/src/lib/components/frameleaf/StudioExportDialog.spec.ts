@@ -298,6 +298,33 @@ describe('Studio export dialog', () => {
     }
   });
 
+  it('names the other caption languages saved as subtitle files, unless captions are off (FL-641)', async () => {
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      captionLanguages: ['French', 'German'],
+      onExport: vi.fn(),
+    });
+    expect(screen.getByTestId('studio-export-caption-languages')).toHaveTextContent(
+      'frameleaf_studio_export_caption_languages',
+    );
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_subtitles'), {
+      target: { value: StudioExportSubtitleMode.Off },
+    });
+    expect(screen.queryByTestId('studio-export-caption-languages')).toBeNull();
+  });
+
+  it('shows no caption languages note without translations (FL-641)', () => {
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      onExport: vi.fn(),
+    });
+    expect(screen.queryByTestId('studio-export-caption-languages')).toBeNull();
+  });
+
   it('requires Embedded paired writer proof on the same candidate and refuses withdrawal before submission', async () => {
     const onExport = vi.fn();
     const row = evidence();

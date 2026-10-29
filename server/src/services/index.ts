@@ -145,6 +145,7 @@ import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioCaptionTranslationService } from 'src/services/studio-caption-translation.service.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
@@ -344,6 +345,7 @@ export const services = [
   StudioProjectService,
   StudioReverseConformService,
   StudioReverseConformCommandService,
+  StudioCaptionTranslationService,
   StudioMovieService,
   StudioStabiliseService,
   StudioTranscriptionService,

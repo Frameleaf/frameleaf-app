@@ -50314,6 +50314,72 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/caption-translations": {
+      "post": {
+        "description": "Owner only. Translates caption lines, sent as plain text, from one language into another on the first place in the processing order that can (this server, then a computer at home). The answer has one translation per line in the same order, so each keeps its timing; the editor keeps them as their own caption track. Only the text is sent; nothing is stored.",
+        "operationId": "translateStudioCaptions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioCaptionTranslationCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCaptionTranslationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Translate Studio captions",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/comments": {
       "get": {
         "description": "Comments pinned to the timeline, oldest first.",
@@ -133695,6 +133761,86 @@
           "renderWorker",
           "restorationWorker",
           "transcriptionWorker"
+        ],
+        "type": "object"
+      },
+      "StudioCaptionLanguage": {
+        "description": "A language Studio translates captions into or from",
+        "enum": [
+          "en",
+          "fr",
+          "es",
+          "de",
+          "it",
+          "pt",
+          "nl",
+          "pl",
+          "sv",
+          "da",
+          "nb"
+        ],
+        "type": "string"
+      },
+      "StudioCaptionTranslationCreateDto": {
+        "properties": {
+          "lines": {
+            "description": "The caption lines, in order, as plain text. Timing stays with the caller.",
+            "items": {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioCaptionLanguage",
+            "description": "The language the captions are in"
+          },
+          "target": {
+            "$ref": "#/components/schemas/StudioCaptionLanguage",
+            "description": "The language to translate them into"
+          }
+        },
+        "required": [
+          "lines",
+          "source",
+          "target"
+        ],
+        "type": "object"
+      },
+      "StudioCaptionTranslationDto": {
+        "properties": {
+          "destinationId": {
+            "description": "The machine-learning destination that translated the lines",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "lines": {
+            "description": "One translation per line asked for, in the same order",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "The translation model the worker used",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioCaptionLanguage"
+          },
+          "target": {
+            "$ref": "#/components/schemas/StudioCaptionLanguage"
+          }
+        },
+        "required": [
+          "destinationId",
+          "lines",
+          "model",
+          "source",
+          "target"
         ],
         "type": "object"
       },
