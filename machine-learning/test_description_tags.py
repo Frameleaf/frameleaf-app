@@ -1,5 +1,10 @@
 """Tags derived from AI description text (FL-659)."""
 
+from contextlib import nullcontext
+from types import SimpleNamespace
+
+from PIL import Image
+
 from frameleaf_ml.models.florence_manifest import FLORENCE_MODELS
 from frameleaf_ml.models.image_description import TAG_LIMIT, ImageDescriptionModel, tags_from_text
 
@@ -38,3 +43,37 @@ def test_model_paths_use_the_filter(tmp_path):
     )
 
     assert response["tags"] == ["chair", "chairs", "dog"]
+
+
+def test_drops_words_with_digits_whole_and_contractions():
+    assert tags_from_text("A 3d-rendering and 3d_model of a kite; they're sure it's fine, don't worry") == [
+        "kite",
+        "sure",
+        "fine",
+        "worry",
+    ]
+
+
+def test_keeps_detector_labels_whole_even_when_they_are_colour_words():
+    assert tags_from_text("an orange on a white plate", labels=["orange", "dining table", "x", "4k tv"]) == [
+        "orange",
+        "dining-table",
+        "plate",
+    ]
+
+
+def test_florence_detector_labels_win_the_tag_budget(tmp_path):
+    model = ImageDescriptionModel(next(iter(FLORENCE_MODELS)), acceleration="cuda", device="cpu", cache_dir=tmp_path)
+    model.session = {"torch": SimpleNamespace(inference_mode=nullcontext)}
+    caption = " ".join(f"thing{letter}" for letter in "abcdefghijklmnopqrstuvwxy")
+    outputs = {
+        "<MORE_DETAILED_CAPTION>": {"<MORE_DETAILED_CAPTION>": caption},
+        "<OCR>": {"<OCR>": "sign"},
+        "<OD>": {"<OD>": {"labels": ["chair", "orange"]}},
+    }
+    model._run_florence_task = lambda task, image: outputs[task]  # type: ignore[method-assign]
+
+    tags = model._predict_florence(Image.new("RGB", (4, 4)))["tags"]
+
+    assert tags[:3] == ["chair", "orange", "thinga"]
+    assert len(tags) == TAG_LIMIT

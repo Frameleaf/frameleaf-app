@@ -4,7 +4,7 @@ import os
 import re
 import threading
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from hashlib import sha256
 from importlib.util import find_spec
 from pathlib import Path
@@ -143,21 +143,42 @@ TAG_MIN_LENGTH = 3
 TAG_LIMIT = 20
 
 
-def tags_from_text(text: str) -> list[str]:
-    """Searchable single-word tags from free text, without filler words, numbers or duplicates."""
+def _label_tag(label: str) -> str | None:
+    """A detector label as one tag: it already names a thing, so only its form is checked."""
+    tag = re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", label.lower().strip())).strip("-")
+    if len(tag) < TAG_MIN_LENGTH or any(char.isdigit() for char in tag):
+        return None
+    return tag
+
+
+def _word_tag(word: str) -> str | None:
+    """A word of free text as a tag, or None for filler, numbers and contractions."""
+    word = word.strip("'_-")
+    if word.endswith("'s"):
+        word = word[:-2]
+    # A contraction ("don't", "they're") or any word with a digit ("3d-rendering", "a4") is never a tag.
+    if "'" in word or any(char.isdigit() for char in word):
+        return None
+    tag = re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", word)).strip("-")
+    if len(tag) < TAG_MIN_LENGTH or tag in TAG_STOP_WORDS:
+        return None
+    return tag
+
+
+def tags_from_text(text: str, labels: Iterable[str] = ()) -> list[str]:
+    """
+    Searchable tags: detector `labels` first (kept whole, even when a label is also a colour such as
+    "orange"), then single words of free text without filler words, numbers or duplicates.
+    """
+    candidates = [_label_tag(label) for label in labels]
+    # Whole words only, so a digit anywhere in a word drops the word rather than leaving a fragment.
+    candidates += [_word_tag(word) for word in re.findall(r"[a-z0-9][a-z0-9_'-]*", text.lower())]
     tags: list[str] = []
-    for word in re.findall(r"[a-z][a-z0-9_'-]*", text.lower()):
-        word = word.strip("'_-")
-        if word.endswith("'s"):
-            word = word[:-2]
-        if len(word) < TAG_MIN_LENGTH or word in TAG_STOP_WORDS or any(char.isdigit() for char in word):
-            continue
-        tag = re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", word)).strip("-")
-        if len(tag) < TAG_MIN_LENGTH or tag in TAG_STOP_WORDS or tag in tags:
-            continue
-        tags.append(tag)
-        if len(tags) >= TAG_LIMIT:
-            break
+    for tag in candidates:
+        if tag and tag not in tags:
+            tags.append(tag)
+            if len(tags) >= TAG_LIMIT:
+                break
     return tags
 
 
@@ -571,7 +592,7 @@ class ImageDescriptionModel(InferenceModel):
             "visible_text": visible_text,
             "context": "",
             # Detector labels are the most reliable tags, so they fill the tag budget first.
-            "tags": self._tags_from_text(" ".join([*objects, description, *visible_text])),
+            "tags": self._tags_from_text(" ".join([description, *visible_text]), labels=objects),
         }
 
     def _run_florence_task(self, task_prompt: str, image: Image.Image) -> dict[str, Any]:
@@ -759,12 +780,12 @@ class ImageDescriptionModel(InferenceModel):
                         description,
                         environment,
                         context,
-                        *objects,
                         *visible_text,
                         *self._signal_indicators(safety),
                         *self._signal_indicators(medical),
                     ]
-                )
+                ),
+                labels=objects,
             )
         tags = self._augment_tags(tags, safety, medical)
 
@@ -916,8 +937,8 @@ class ImageDescriptionModel(InferenceModel):
             return []
         return [item for item in value if isinstance(item, dict)]
 
-    def _tags_from_text(self, text: str) -> list[str]:
-        return tags_from_text(text)
+    def _tags_from_text(self, text: str, labels: Iterable[str] = ()) -> list[str]:
+        return tags_from_text(text, labels)
 
     def _normalize_tag(self, tag: str) -> str:
         return re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", tag.lower().strip())).strip("-")
