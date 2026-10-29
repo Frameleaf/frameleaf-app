@@ -146,7 +146,13 @@ export class StudioTranscriptionService {
   /** The job and, once it completed, its cues. Owner only; anyone else is told it does not exist. */
   async get(auth: AuthDto, projectId: string, id: string): Promise<StudioTranscriptionDto> {
     const operation = auth.sharedLink ? undefined : await this.operations.getForOwner(id, auth.user.id);
-    if (!operation || operation.kind !== MediaOperationKind.StudioTranscription || operation.projectId !== projectId) {
+    if (
+      !operation ||
+      operation.kind !== MediaOperationKind.StudioTranscription ||
+      // Other Studio clip jobs share this kind (FL-637, FL-638); they are not transcriptions.
+      (operation.snapshot as { kind?: unknown } | null)?.kind !== 'studio-transcription' ||
+      operation.projectId !== projectId
+    ) {
       throw new NotFoundException('Transcription not found');
     }
     await this.studio.requireOwnedProject(auth, projectId, 'Only the project owner can read its transcriptions');

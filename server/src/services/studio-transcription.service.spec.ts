@@ -400,6 +400,12 @@ if (process.argv.at(-1) === 'ordinary') {
   });
 
   describe('get', () => {
+    it('does not know another Studio clip job of the same kind', async () => {
+      const { sut, operation, operations } = setup();
+      operations.getForOwner.mockResolvedValue({ ...operation, snapshot: { ...snapshot, kind: 'studio-stabilise' } });
+      await expect(sut.get(owner, projectId, operationId)).rejects.toThrow(NotFoundException);
+    });
+
     it('answers the result once the job completed', async () => {
       const { sut, operation, operations } = setup();
       const result = { language: 'en', languageProbability: 1, model: 'whisper-small', cues: [], words: [] };

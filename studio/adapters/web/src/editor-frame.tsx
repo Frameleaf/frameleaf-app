@@ -1000,7 +1000,14 @@ async function mount(context: StudioHostContext): Promise<void> {
     )
   state.render()
   // FL-638: Stabilise queues its analysis for the project this editor is showing.
-  state.unsubscribe.push(registerStabiliseHost(() => (state.disposed ? null : state.mount.projectId)))
+  // The route takes the Studio project's id (a UUID), not the engine's; an unsaved draft has none.
+  state.unsubscribe.push(
+    registerStabiliseHost(() =>
+      state.disposed || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(state.context.project.id)
+        ? null
+        : state.context.project.id,
+    ),
+  )
   watchDrafts(state)
   watchImports(state)
   watchLocalImportsFor(state)
