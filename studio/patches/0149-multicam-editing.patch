@@ -26,7 +26,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/multicam-section.tsx
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,178 @@
 +import { useEffect, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Clapperboard } from 'lucide-react'
@@ -89,7 +89,9 @@ new file mode 100644
 +        return {
 +          itemId: item.id,
 +          offsetSeconds: frames / fps,
-+          manual: !proposal || proposal.sync.flags.length > 0 || frames !== Math.round(proposal.sync.offsetSeconds * fps),
++          // The reference is the zero point; only other angles can be manual.
++          manual: item.id !== referenceId
++            && (!proposal || proposal.sync.flags.length > 0 || frames !== Math.round(proposal.sync.offsetSeconds * fps)),
 +        }
 +      }),
 +    })
@@ -99,14 +101,17 @@ new file mode 100644
 +
 +  const select = (label: string, value: string, onChange: (id: string) => void) => (
 +    <select className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs" aria-label={label}
-+      value={value} onChange={(event) => { onChange(event.target.value); setProposals(null) }}>
++      value={value} onChange={(event) => onChange(event.target.value)}>
 +      {items.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
 +    </select>
 +  )
 +
 +  return (
 +    <>
-+      <PropertyRow label={t('editor.multicam.reference')}>{select(t('editor.multicam.reference'), referenceId, setReferenceId)}</PropertyRow>
++      <PropertyRow label={t('editor.multicam.reference')}>
++        {/* Offsets are relative to the reference: a new reference discards them and the sync results. */}
++        {select(t('editor.multicam.reference'), referenceId, (id) => { setReferenceId(id); setProposals(null); setOffsets({}) })}
++      </PropertyRow>
 +      <PropertyRow label={t('editor.multicam.masterAudio')}>{select(t('editor.multicam.masterAudio'), masterId, setMasterId)}</PropertyRow>
 +      {items.filter((item) => item.id !== referenceId).map((item) => {
 +        const proposal = proposals?.find((p) => p.itemId === item.id)
@@ -221,7 +226,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/multicam-actions.test.ts
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,135 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -319,8 +324,8 @@ new file mode 100644
 +    const outcome = createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
 +    if (!outcome.ok) throw new Error(outcome.reason)
 +    const before = structuredClone(useItemsStore.getState().items)
-+    // Camera 2 starts at frame 45.
-+    expect(cutToAngle(outcome.groupId, 1, 10)).toMatchObject({ ok: false, reason: 'no-coverage' })
++    // Camera 2 starts at frame 45: frames 10..45 of the program interval have no picture.
++    expect(cutToAngle(outcome.groupId, 1, 10)).toEqual({ ok: false, reason: 'no-coverage', missing: [10, 45] })
 +    expect(useItemsStore.getState().items).toEqual(before)
 +  })
 +
@@ -343,12 +348,25 @@ new file mode 100644
 +    expect(outcome).toEqual({ ok: false, reason })
 +    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
 +  })
++
++  it('refuses to line up a recording that would start before the timeline', () => {
++    // Camera 2 started 2 s before the reference, which sits at frame 0.
++    const outcome = createMulticamEdit({ referenceId: 'v1', angles: [angles[0]!, { itemId: 'v2', offsetSeconds: 2 }], masterItemId: 'v1' })
++    expect(outcome).toEqual({ ok: false, reason: 'before-start' })
++  })
++
++  it('reports where an angle ends before the next cut', () => {
++    useItemsStore.getState().setItems([...camera(1, 0, 0), ...camera(2, 0, 0, 150), ...camera(3, 0, 60)])
++    const outcome = createMulticamEdit({ referenceId: 'v1', angles: [angles[0]!, { itemId: 'v2', offsetSeconds: 0 }], masterItemId: 'v1' })
++    if (!outcome.ok) throw new Error(outcome.reason)
++    expect(cutToAngle(outcome.groupId, 1, 100)).toEqual({ ok: false, reason: 'no-coverage', missing: [150, 300] })
++  })
 +})
 diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src/features/timeline/stores/actions/edit/multicam-actions.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/multicam-actions.ts
-@@ -0,0 +1,285 @@
+@@ -0,0 +1,295 @@
 +import type { AudioItem, TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
 +import { useTimelineSettingsStore } from '../../timeline-settings-store'
@@ -412,6 +430,7 @@ new file mode 100644
 +  | 'no-group'
 +  | 'no-program-clip'
 +  | 'no-coverage'
++  | 'before-start'
 +
 +export interface MulticamSyncProposal {
 +  itemId: string
@@ -437,13 +456,15 @@ new file mode 100644
 +  const owner = linkedAudioOf(items, item) ?? item
 +  if (!owner.mediaId) return null
 +  const url = await resolveMediaUrl(owner.mediaId)
-+  if (!url || signal?.aborted) return null
++  if (signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError')
++  if (!url) return null
 +  const durationSeconds = (owner as VideoItem).sourceDuration !== undefined
 +    ? (owner as VideoItem).sourceDuration! / ((owner as VideoItem).sourceFps ?? 30)
 +    : 3600
 +  const slice = await getOrDecodeAudioSliceForPlayback(owner.mediaId, url, {
 +    targetTimeSeconds: 0, minReadySeconds: durationSeconds, preRollSeconds: 0, waitTimeoutMs: 0,
 +  })
++  if (signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError')
 +  const { buffer } = slice
 +  return onsetEnvelope({
 +    sampleRate: buffer.sampleRate,
@@ -464,6 +485,7 @@ new file mode 100644
 +  const fps = useTimelineSettingsStore.getState().fps
 +  try {
 +    const reference = await decodeEnvelope(items.find((item) => item.id === referenceId)!, items, signal)
++    if (signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError')
 +    if (!reference) return { ok: false, reason: 'decode-failed' }
 +    const proposals: MulticamSyncProposal[] = []
 +    for (const id of itemIds) {
@@ -471,6 +493,7 @@ new file mode 100644
 +      if (id === referenceId) continue
 +      const item = items.find((candidate) => candidate.id === id)!
 +      const envelope = await decodeEnvelope(item, items, signal)
++      if (signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError')
 +      proposals.push({
 +        itemId: id,
 +        label: item.label,
@@ -533,7 +556,8 @@ new file mode 100644
 +      moves.push({ id: member.id, from: member.from + delta })
 +    }
 +  }
-+  if (moves.some((move) => move.from < 0)) return { ok: false, reason: 'no-coverage' }
++  // Lining up would put a recording that started earlier before the start of the timeline.
++  if (moves.some((move) => move.from < 0)) return { ok: false, reason: 'before-start' }
 +
 +  const programTrackId = `multicam-program-${groupId}`
 +  const topOrder = Math.min(...tracks.map((track) => track.order))
@@ -614,7 +638,11 @@ new file mode 100644
 +  if (program.multicam?.angle === angleIndex) return { ok: true }
 +  const end = program.from + program.durationInFrames
 +  if (angle.from > frame || angle.from + angle.durationInFrames < end) {
-+    return { ok: false, reason: 'no-coverage', missing: [Math.max(frame, Math.min(end, angle.from + angle.durationInFrames)), Math.min(end, Math.max(frame, angle.from))] }
++    const angleEnd = angle.from + angle.durationInFrames
++    const missing: [number, number] = angle.from > frame
++      ? [frame, Math.min(end, angle.from)]
++      : [Math.max(frame, angleEnd), end]
++    return { ok: false, reason: 'no-coverage', missing }
 +  }
 +  if (hasLockedEditParticipants([program])) return { ok: false, reason: 'locked' }
 +
@@ -637,7 +665,7 @@ new file mode 100644
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -881,6 +881,41 @@
+@@ -881,6 +881,42 @@
      "colorPanel": {
        "emptyState": "Wähle einen Clip für die Farbkorrektur aus",
        "adjustmentLayerLabel": "Farbkorrektur"
@@ -674,7 +702,8 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 +        "no-group": "Diesem Multicam-Schnitt fehlen die Winkel.",
 +        "no-program-clip": "Setze den Abspielkopf über die Clips der Multicam-Spur.",
 +        "no-coverage": "Dieser Winkel hat dort kein Bild.",
-+        "no-coverage-range": "Dieser Winkel hat von Bild {{from}} bis {{to}} kein Bild; es wurde nicht geschnitten."
++        "no-coverage-range": "Dieser Winkel hat von Bild {{from}} bis {{to}} kein Bild; es wurde nicht geschnitten.",
++        "before-start": "Beim Ausrichten läge eine früher begonnene Aufnahme vor dem Anfang der Zeitleiste. Verschiebe die Clips zuerst nach hinten."
 +      }
      }
    }
@@ -682,7 +711,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -894,6 +894,41 @@
+@@ -894,6 +894,42 @@
        "dockTitle": "Color",
        "emptyState": "Select a clip to grade",
        "adjustmentLayerLabel": "Grade"
@@ -719,7 +748,8 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 +        "no-group": "This multicam edit is missing its angles.",
 +        "no-program-clip": "Move the playhead over the Multicam track's clips.",
 +        "no-coverage": "That angle has no picture there.",
-+        "no-coverage-range": "That angle has no picture from frame {{from}} to {{to}}; the cut was not made."
++        "no-coverage-range": "That angle has no picture from frame {{from}} to {{to}}; the cut was not made.",
++        "before-start": "Lining up would place a recording that started earlier before the start of the timeline. Move the clips later first."
 +      }
      }
    }
@@ -727,7 +757,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -881,6 +881,41 @@
+@@ -881,6 +881,42 @@
      "colorPanel": {
        "emptyState": "Selecciona un clip para etalonar",
        "adjustmentLayerLabel": "Etalonaje"
@@ -764,7 +794,8 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 +        "no-group": "A esta edición multicámara le faltan ángulos.",
 +        "no-program-clip": "Mueve el cabezal sobre los clips de la pista Multicámara.",
 +        "no-coverage": "Ese ángulo no tiene imagen ahí.",
-+        "no-coverage-range": "Ese ángulo no tiene imagen del fotograma {{from}} al {{to}}; no se hizo el corte."
++        "no-coverage-range": "Ese ángulo no tiene imagen del fotograma {{from}} al {{to}}; no se hizo el corte.",
++        "before-start": "Al alinear, una grabación que empezó antes quedaría antes del inicio de la línea de tiempo. Mueve primero los clips más tarde."
 +      }
      }
    }
@@ -772,7 +803,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -881,6 +881,41 @@
+@@ -881,6 +881,42 @@
      "colorPanel": {
        "emptyState": "Sélectionnez un clip à étalonner",
        "adjustmentLayerLabel": "Étalonnage"
@@ -809,7 +840,8 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 +        "no-group": "Il manque les angles de ce montage multicam.",
 +        "no-program-clip": "Placez la tête de lecture sur les clips de la piste Multicam.",
 +        "no-coverage": "Cet angle n’a pas d’image à cet endroit.",
-+        "no-coverage-range": "Cet angle n’a pas d’image de l’image {{from}} à {{to}} ; la coupe n’a pas été faite."
++        "no-coverage-range": "Cet angle n’a pas d’image de l’image {{from}} à {{to}} ; la coupe n’a pas été faite.",
++        "before-start": "L’alignement placerait un enregistrement commencé plus tôt avant le début de la timeline. Décalez d’abord les clips plus tard."
 +      }
      }
    }
@@ -817,7 +849,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -881,6 +881,41 @@
+@@ -881,6 +881,42 @@
      "colorPanel": {
        "emptyState": "グレーディングするクリップを選択してください",
        "adjustmentLayerLabel": "グレーディング"
@@ -854,7 +886,8 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 +        "no-group": "このマルチカム編集にはアングルがありません。",
 +        "no-program-clip": "再生ヘッドをマルチカムトラックのクリップ上に移動してください。",
 +        "no-coverage": "そのアングルはそこに映像がありません。",
-+        "no-coverage-range": "そのアングルはフレーム {{from}}〜{{to}} に映像がないため、カットしませんでした。"
++        "no-coverage-range": "そのアングルはフレーム {{from}}〜{{to}} に映像がないため、カットしませんでした。",
++        "before-start": "揃えると、先に始まった録画がタイムラインの先頭より前になります。先にクリップを後ろへ移動してください。"
 +      }
      }
    }
@@ -862,7 +895,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -881,6 +881,41 @@
+@@ -881,6 +881,42 @@
      "colorPanel": {
        "emptyState": "색 보정할 클립을 선택하세요",
        "adjustmentLayerLabel": "색 보정"
@@ -899,7 +932,8 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 +        "no-group": "이 멀티캠 편집에 앵글이 없습니다.",
 +        "no-program-clip": "재생 헤드를 멀티캠 트랙의 클립 위로 옮기세요.",
 +        "no-coverage": "그 앵글에는 그곳에 영상이 없습니다.",
-+        "no-coverage-range": "그 앵글은 프레임 {{from}}~{{to}}에 영상이 없어 컷하지 않았습니다."
++        "no-coverage-range": "그 앵글은 프레임 {{from}}~{{to}}에 영상이 없어 컷하지 않았습니다.",
++        "before-start": "맞추면 먼저 시작한 녹화가 타임라인 시작보다 앞에 놓입니다. 먼저 클립을 뒤로 옮기세요."
 +      }
      }
    }
@@ -907,7 +941,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -881,6 +881,41 @@
+@@ -881,6 +881,42 @@
      "colorPanel": {
        "emptyState": "Selecione um clipe para corrigir as cores",
        "adjustmentLayerLabel": "Correção de cor"
@@ -944,7 +978,8 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 +        "no-group": "Esta edição multicâmera está sem ângulos.",
 +        "no-program-clip": "Mova o cursor sobre os clipes da faixa Multicâmera.",
 +        "no-coverage": "Esse ângulo não tem imagem ali.",
-+        "no-coverage-range": "Esse ângulo não tem imagem do quadro {{from}} ao {{to}}; o corte não foi feito."
++        "no-coverage-range": "Esse ângulo não tem imagem do quadro {{from}} ao {{to}}; o corte não foi feito.",
++        "before-start": "Alinhar colocaria uma gravação que começou antes antes do início da linha do tempo. Mova os clipes para mais tarde primeiro."
 +      }
      }
    }
@@ -952,7 +987,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -881,6 +881,41 @@
+@@ -881,6 +881,42 @@
      "colorPanel": {
        "emptyState": "Renk düzenlemek için bir klip seçin",
        "adjustmentLayerLabel": "Renk düzenleme"
@@ -989,7 +1024,8 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 +        "no-group": "Bu çoklu kamera kurgusunun açıları eksik.",
 +        "no-program-clip": "Oynatma kafasını Çoklu kamera izinin kliplerinin üzerine getirin.",
 +        "no-coverage": "O açının orada görüntüsü yok.",
-+        "no-coverage-range": "O açının {{from}}–{{to}} kareleri arasında görüntüsü yok; kesme yapılmadı."
++        "no-coverage-range": "O açının {{from}}–{{to}} kareleri arasında görüntüsü yok; kesme yapılmadı.",
++        "before-start": "Hizalama, daha önce başlamış bir kaydı zaman çizelgesinin başından önceye koyar. Önce klipleri daha ileri taşıyın."
 +      }
      }
    }
@@ -997,7 +1033,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -881,6 +881,41 @@
+@@ -881,6 +881,42 @@
      "colorPanel": {
        "emptyState": "选择要调色的剪辑",
        "adjustmentLayerLabel": "调色"
@@ -1034,7 +1070,8 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
 +        "no-group": "此多机位剪辑缺少机位。",
 +        "no-program-clip": "请把播放头移到多机位轨道的片段上。",
 +        "no-coverage": "该机位在那里没有画面。",
-+        "no-coverage-range": "该机位在第 {{from}} 到 {{to}} 帧没有画面，未进行剪切。"
++        "no-coverage-range": "该机位在第 {{from}} 到 {{to}} 帧没有画面，未进行剪切。",
++        "before-start": "对齐会把更早开始的录制放到时间线开头之前。请先把片段往后移。"
 +      }
      }
    }
@@ -1110,7 +1147,7 @@ diff --git a/src/shared/utils/multicam-sync.ts b/src/shared/utils/multicam-sync.
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/multicam-sync.ts
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,198 @@
 +/**
 + * Multicamera audio sync (FL-595). Each recording is reduced to an onset
 + * envelope (rises in 1 ms RMS energy), and the lag between two envelopes is
@@ -1289,7 +1326,9 @@ new file mode 100644
 +  if (!whole) return { offsetSeconds: 0, score: 0, flags: ['no-match'], driftSeconds: null }
 +
 +  // Drift: align the first and last thirds of the recording separately. Clock drift smears the
-+  // whole-file peak, so two strong windows that disagree are drift, not "no match".
++  // whole-file peak, so two strong windows that disagree are drift, not "no match". Each window
++  // needs more than 10 s of sound, so recordings of 30 s or less are not checked for drift; one
++  // frame of drift over 30 s would need a clock error above about 1,100 ppm.
 +  const third = Math.floor(other.length / 3)
 +  const early = third > 10 * ENVELOPE_RATE ? windowLag(0, third) : null
 +  const late = third > 10 * ENVELOPE_RATE ? windowLag(other.length - third, third) : null

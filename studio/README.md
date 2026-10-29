@@ -198,7 +198,7 @@ embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the 
 FFT cross-correlation (`onset-xcorr-1ms-v1`), reported only when it clearly beats every other lag. Silent,
 unrelated and ambiguous recordings are flagged, never matched, and stay manually alignable in frames. The
 first and last thirds are aligned separately, so clock drift beyond one frame is reported instead of
-being hidden by one offset. Create moves each angle (with its audio) so one frame shows the same moment
+being hidden by one offset. Each window needs more than 10 s of sound, so recordings of 30 s or less are not checked for drift (one frame over 30 s would need a clock error above about 1,100 ppm). Create moves each angle (with its audio) so one frame shows the same moment
 everywhere, hides the angle tracks, mutes every camera's audio except the master's, and adds a Multicam
 program track on top with a video-only copy of the reference, all in one undo step. Selecting a program
 clip shows angle buttons (number keys 1–4 while focused). A cut replaces the program from the playhead to
