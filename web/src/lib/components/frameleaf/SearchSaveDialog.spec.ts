@@ -40,6 +40,15 @@ describe('SearchSaveDialog', () => {
     return { onSaved };
   };
 
+  it('does not offer lossy saving or workflow creation for spoken words', async () => {
+    setup({ ...emptyDiscoveryQuery(), mode: 'speech', text: '“hello world”' });
+    expect(
+      screen.getByText('Save Search, Create Workflow and Play on TV are unavailable for spoken words.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Automate this search/ })).not.toBeInTheDocument();
+    expect(sdkMock.createAlbum).not.toHaveBeenCalled();
+  });
+
   it('opens a copied workflow draft without creating an album or running actions', async () => {
     sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: true } as never);
     const query = { ...emptyDiscoveryQuery(), text: 'Holiday', filter: { rating: { gte: 4 } } };

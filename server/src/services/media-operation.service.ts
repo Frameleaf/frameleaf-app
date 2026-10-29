@@ -264,6 +264,22 @@ const admissionRefusalOf = (
 
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): MediaOperationDto => {
+  // Speech details are read through its live scope-filtered endpoint, never a cached Activity row.
+  if (operation.kind === MediaOperationKind.SpeechTranscription) {
+    operation = {
+      ...operation,
+      assetId: null,
+      resultAssetId: null,
+      destinationDetail: null,
+      label: 'Spoken words',
+      settings: {},
+      result: null,
+      estimate: null,
+      error: null,
+      totalUnits: null,
+      processedUnits: 0,
+    };
+  }
   const privateWeekly = isPrivateICloudOperation(operation);
   return {
     id: operation.id,
@@ -702,6 +718,9 @@ export class MediaOperationService {
 
     if (operation.kind === MediaOperationKind.StudioReverseConform) {
       throw new BadRequestException('Source reversal must be submitted again with current source authorization');
+    }
+    if (operation.kind === MediaOperationKind.SpeechTranscription) {
+      throw new BadRequestException('Retry speech indexing from Spoken words settings with current scope');
     }
 
     // FL-106: a Studio export is a version of its project. Its render and its publication each had

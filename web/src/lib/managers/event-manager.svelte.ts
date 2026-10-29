@@ -18,6 +18,7 @@ import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
 
 export type Events = {
+  SpeechIndexChange: [];
   AppInit: [];
   AppNavigate: [];
 
@@ -117,6 +118,7 @@ export type Events = {
   FrameleafCloudUpdate: [{ topic: 'link' | 'license' | 'account' }];
 
   WebsocketConnect: [];
+  WebsocketDisconnect: [];
 };
 
 export const eventManager = new BaseEventManager<Events>();

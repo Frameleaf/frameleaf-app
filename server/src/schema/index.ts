@@ -185,6 +185,12 @@ import { SmartSearchDescriptionTable } from 'src/schema/tables/smart-search-desc
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { SourceOriginalTable, SourceResourceReadTable } from 'src/schema/tables/source-resource-read.table.js';
 import { SourceResourceGrantNonceTable, SourceResourceGrantTable } from 'src/schema/tables/source-resource.table.js';
+import {
+  SpeechCheckpointTable,
+  SpeechSettingsTable,
+  SpeechTranscriptTable,
+  SpeechWindowTable,
+} from 'src/schema/tables/speech.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import {
@@ -437,6 +443,10 @@ export class ImmichDatabase {
     WorkflowLogDetailTable,
     WorkflowRunStepTable,
     DevelopBatchTable,
+    SpeechSettingsTable,
+    SpeechTranscriptTable,
+    SpeechWindowTable,
+    SpeechCheckpointTable,
     DevelopBatchItemTable,
     DevelopBatchReturnTable,
     WorkflowBatchTable,
@@ -666,6 +676,10 @@ export interface DB extends QueueDatabase {
 
   develop_export: DevelopExportTable;
   develop_batch: DevelopBatchTable;
+  speech_settings: SpeechSettingsTable;
+  speech_transcript: SpeechTranscriptTable;
+  speech_window: SpeechWindowTable;
+  speech_checkpoint: SpeechCheckpointTable;
   develop_batch_item: DevelopBatchItemTable;
   develop_batch_return: DevelopBatchReturnTable;
   develop_preset: DevelopPresetTable;

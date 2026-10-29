@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
   import { browser } from '$app/env';
   import { replaceState } from '$app/navigation';
@@ -335,7 +336,15 @@
   });
 
   let requestedOriginalVideo = $state($alwaysLoadOriginalVideo);
-  const isPlayingOriginalVideo = $derived(requestedOriginalVideo && (!sharedLink || sendCopyPermitted(sharedLink)));
+  const speechOriginal = $derived(videoSeek.pending?.assetId === asset.id && videoSeek.pending.original === true);
+  $effect(() => {
+    if (speechOriginal) {
+      requestedOriginalVideo = true;
+    }
+  });
+  const isPlayingOriginalVideo = $derived(
+    (requestedOriginalVideo || speechOriginal) && (!sharedLink || sendCopyPermitted(sharedLink)),
+  );
   let slideshowStartAssetId = $state<string>();
 
   const setPlayOriginalVideo = (value: boolean) => {

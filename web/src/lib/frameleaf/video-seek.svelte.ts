@@ -3,13 +3,13 @@
  * video viewer answers once the video's metadata has loaded, then forgets the request, so a later
  * visit to the same video starts from the beginning as usual.
  */
-type SeekRequest = { assetId: string; seconds: number };
+type SeekRequest = { assetId: string; seconds: number; original?: boolean };
 
 class VideoSeek {
   pending = $state<SeekRequest | null>(null);
 
-  request(assetId: string, timestampMs: number) {
-    this.pending = { assetId, seconds: Math.max(0, timestampMs) / 1000 };
+  request(assetId: string, timestampMs: number, original = false) {
+    this.pending = { assetId, original, seconds: Math.max(0, timestampMs) / 1000 };
   }
 
   /** The seconds to seek to for this video, consuming the request; null when there is none. */

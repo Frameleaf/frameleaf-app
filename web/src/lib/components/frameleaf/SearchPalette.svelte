@@ -5,6 +5,7 @@
   import FilterPanel from '$lib/components/frameleaf/FilterPanel.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
+  import { getSpeechCapabilities } from '@frameleaf/sdk';
   import SearchSaveDialog from '$lib/components/frameleaf/SearchSaveDialog.svelte';
   import SearchPaletteSide from '$lib/components/frameleaf/SearchPaletteSide.svelte';
   import {
@@ -108,7 +109,7 @@
     mdiTextRecognition,
     mdiTuneVariant,
   } from '@mdi/js';
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import type { Attachment } from 'svelte/attachments';
   import { t } from 'svelte-i18n';
 
@@ -208,7 +209,19 @@
    * it can find something: smart search needs its model, and the text in photos is only read while
    * text recognition is on.
    */
+  let speechAvailable = $state(false);
+  onMount(() => {
+    const valid = authManager.captureSession();
+    void Promise.resolve(getSpeechCapabilities())
+      .then((value) => {
+        if (valid()) {
+          speechAvailable = value?.version === 1;
+        }
+      })
+      .catch(() => {});
+  });
   const capabilities = $derived<PaletteCapabilities>({
+    speech: speechAvailable,
     smartSearch: smartEnabled,
     ocr: featureFlagsManager.value.ocr,
   });
@@ -323,7 +336,15 @@
     return () => clearTimeout(timer);
   });
 
-  const parsed = $derived(parseSearchInput(deferredInput, catalog));
+  const parsed = $derived(
+    mode === 'speech'
+      ? {
+          text: text.slice(0, MAX_PALETTE_TEXT),
+          filter: parseSearchInput(tokens.join(' '), catalog).filter,
+          tokens: [],
+        }
+      : parseSearchInput(deferredInput, catalog),
+  );
 
   const compileFor = (target: DiscoveryQuery) =>
     compilePaletteQuery(target, parsed, mode) ??
@@ -360,7 +381,10 @@
       ...emptyDiscoveryQuery(),
       text,
       mode: textMode === 'smart' ? 'smart' : 'text',
-      ...(textMode !== 'smart' && textMode !== 'all' && textMode !== 'originalFileName' && { textField: textMode }),
+      ...(textMode !== 'speech' &&
+        textMode !== 'smart' &&
+        textMode !== 'all' &&
+        textMode !== 'originalFileName' && { textField: textMode }),
     },
   });
   const EXAMPLES = $derived(
@@ -559,6 +583,12 @@
   });
 
   const runRemote = (signal: AbortSignal) => {
+    if (mode === 'speech') {
+      loading = false;
+      counts = { current: null, library: null };
+      results = [];
+      return;
+    }
     const currentBody = paletteSearchBody(currentQuery, includeArchived);
     const libraryBody = paletteSearchBody(libraryQuery, includeArchived);
     const searchBody = scopeChoice === 'library' ? libraryBody : currentBody;
@@ -679,6 +709,10 @@
 
   /** Completed operators become chips as they are typed; ">" hands off to the command palette. */
   const onInput = (value: string, field?: HTMLInputElement) => {
+    if (mode === 'speech') {
+      text = value;
+      return;
+    }
     if (isCommandQuery(value) && onOpenPalette) {
       onOpenPalette(value);
       return;
@@ -712,7 +746,7 @@
    * reopened from the URL, from Back, from a recent or a saved search comes back as typed chips).
    */
   const readBackChips = () => {
-    if (decompiled || !optionsLoaded) {
+    if (mode === 'speech' || decompiled || !optionsLoaded) {
       return;
     }
     const scoped = scope ? withoutPaletteScope(base, scope) : base;
@@ -726,6 +760,11 @@
   };
 
   const addToken = (raw: string) => {
+    if (mode === 'speech') {
+      base = { ...base, filter: { ...base.filter, ...parseSearchInput(raw, catalog).filter } };
+      input?.focus();
+      return;
+    }
     if (!tokens.includes(raw)) {
       tokens = [...tokens, raw];
     }
@@ -812,12 +851,18 @@
 
   /** Recent searches keep the compiled query (ids, not names); their rows are labelled from it. */
   const remember = () => {
+    if (mode === 'speech') {
+      return;
+    }
     searchStore.recentSearches = rememberRecentSearch(searchStore.recentSearches, { query: submitted() });
   };
 
   /** The query submitted now, compiled from the live input rather than the deferred one. */
   const submitted = () => {
-    const live = parseSearchInput(liveInput, catalog);
+    const live =
+      mode === 'speech'
+        ? { text, filter: parseSearchInput(tokens.join(' '), catalog).filter }
+        : parseSearchInput(liveInput, catalog);
     const target = scopeChoice === 'library' ? withoutPaletteScope(base, scope) : base;
     return compilePaletteQuery(target, live, mode) ?? compilePaletteQuery(target, live, 'originalFileName')!;
   };
@@ -835,7 +880,7 @@
       return;
     }
     remember();
-    if (section && applyFilterQuery(query)) {
+    if (query.mode !== 'speech' && section && applyFilterQuery(query)) {
       onClose();
       return;
     }
@@ -1014,11 +1059,14 @@
   };
 
   /** Save search needs something to save: text, a chip or a filter. */
-  const canSave = $derived(typing || baseChips.length > 0 || !!base.imageEnrichment);
+  const canSave = $derived(mode !== 'speech' && (typing || baseChips.length > 0 || !!base.imageEnrichment));
 
   /** The compiled search the save dialog keeps, frozen when it opens. */
   let saveQuery = $state.raw<DiscoveryQuery>(emptyDiscoveryQuery());
   const openSave = () => {
+    if (mode === 'speech') {
+      return;
+    }
     saveQuery = submitted();
     saving = true;
   };

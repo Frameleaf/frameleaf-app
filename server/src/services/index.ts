@@ -134,6 +134,7 @@ import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
+import { SpeechService } from 'src/services/speech.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
@@ -176,6 +177,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  SpeechService,
   DevelopBatchService,
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,

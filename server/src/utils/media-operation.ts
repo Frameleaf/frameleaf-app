@@ -152,6 +152,7 @@ export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSAB
 
 /** Automatically replayable local work; remote and destructive operations require explicit review. */
 export const SAFE_MEDIA_OPERATION_REPLAY_KINDS: readonly MediaOperationKind[] = [
+  MediaOperationKind.SpeechTranscription,
   // Publication records queue admission atomically; uncertain external follow-ups never replay.
   MediaOperationKind.StudioExportPublish,
   MediaOperationKind.QuickEdit,

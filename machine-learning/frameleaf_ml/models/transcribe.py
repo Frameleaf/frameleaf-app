@@ -120,6 +120,15 @@ def resolve_transcribe_model(model_name: str) -> str:
     return default_transcribe_model(gpu=cuda_device_count() > 0)
 
 
+def transcription_identity(model_name: str = TRANSCRIBE_MODEL_ALIAS) -> dict[str, str]:
+    model = resolve_transcribe_model(model_name)
+    source = get_transcribe_model_file(model)
+    if source is None:
+        raise ModelUnavailableError("No pinned transcription model is configured")
+    digest = hashlib.sha256("\n".join(f"{path}:{sha}" for path, sha in sorted(source.files)).encode()).hexdigest()
+    return {"model": model, "fingerprint": digest}
+
+
 class TranscribeModel(InferenceModel):
     depends = []
     identity = (ModelType.AUDIO, ModelTask.TRANSCRIBE)
@@ -196,7 +205,7 @@ class TranscribeModel(InferenceModel):
         )
         yield {
             "type": "info",
-            "model": self.model_name,
+            **transcription_identity(self.model_name),
             "language": info.language,
             "languageProbability": round(float(info.language_probability), 4),
             "duration": round(float(info.duration), 3),

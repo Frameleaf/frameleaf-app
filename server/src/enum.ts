@@ -1412,6 +1412,7 @@ export enum MediaOperationKind {
    * the job's result, and nothing else is kept once it settles.
    */
   StudioTranscription = 'studio_transcription',
+  SpeechTranscription = 'speech_transcription',
   /**
    * Make a movie (FL-561): the best moments of an album, a memory or a selection, cut on the beat of
    * music made for it or a song from the library, saved as a Studio project.
