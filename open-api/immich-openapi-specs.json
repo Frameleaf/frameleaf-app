@@ -19870,6 +19870,56 @@
         "x-immich-permission": "capture.create"
       }
     },
+    "/capture/cancel": {
+      "post": {
+        "operationId": "cancelCapture",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureCommitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureCancelResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel an unpublished capture UUID or return its existing saved receipt",
+        "tags": [
+          "Capture"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "capture.create"
+      }
+    },
     "/capture/capabilities": {
       "get": {
         "operationId": "getCaptureCapabilities",
@@ -74581,8 +74631,42 @@
         ],
         "type": "string"
       },
+      "CaptureCancelResponseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "captureId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/CaptureResponseDto"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaptureCancelStatus"
+          }
+        },
+        "required": [
+          "captureId",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CaptureCancelStatus": {
+        "enum": [
+          "cancelled",
+          "already-published"
+        ],
+        "type": "string"
+      },
       "CaptureCapabilitiesDto": {
         "properties": {
+          "cancellationSupported": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
           "captureSupported": {
             "enum": [
               true

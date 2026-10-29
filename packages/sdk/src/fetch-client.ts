@@ -6231,25 +6231,6 @@ export type CaptureAlbumCreateDto = {
     name: string;
     parentId?: string;
 };
-export type CaptureCapabilitiesDto = {
-    captureSupported: true;
-    maxFileBytes: number;
-    serverId: string;
-    userId: string;
-    version: CaptureProtocolVersion;
-};
-export type CaptureAlbumChoice = {
-    /** Album name */
-    albumName: string;
-    /** Album ID */
-    id: string;
-    /** Parent album or collection (null = top-level) */
-    parentId: string | null;
-};
-export type CaptureCatalogDto = {
-    albums: CaptureAlbumChoice[];
-    tags: TagResponseDto[];
-};
 export type CaptureCommitDto = {
     albumId: string;
     bookmark?: {
@@ -6275,6 +6256,31 @@ export type CaptureResponseDto = {
     captureId: string;
     item: LibraryItemDto;
     status: CaptureStatus;
+};
+export type CaptureCancelResponseDto = {
+    captureId: string;
+    receipt?: CaptureResponseDto;
+    status: CaptureCancelStatus;
+};
+export type CaptureCapabilitiesDto = {
+    cancellationSupported?: true;
+    captureSupported: true;
+    maxFileBytes: number;
+    serverId: string;
+    userId: string;
+    version: CaptureProtocolVersion;
+};
+export type CaptureAlbumChoice = {
+    /** Album name */
+    albumName: string;
+    /** Album ID */
+    id: string;
+    /** Parent album or collection (null = top-level) */
+    parentId: string | null;
+};
+export type CaptureCatalogDto = {
+    albums: CaptureAlbumChoice[];
+    tags: TagResponseDto[];
 };
 export type CaptureUploadStateDto = {
     expiresAt: string;
@@ -23992,6 +23998,21 @@ export function createCaptureAlbum({ captureAlbumCreateDto }: {
     })));
 }
 /**
+ * Cancel an unpublished capture UUID or return its existing saved receipt
+ */
+export function cancelCapture({ captureCommitDto }: {
+    captureCommitDto: CaptureCommitDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CaptureCancelResponseDto;
+    }>("/capture/cancel", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: captureCommitDto
+    })));
+}
+/**
  * Discover versioned design capture support and account binding
  */
 export function getCaptureCapabilities(opts?: Oazapfts.RequestOpts) {
@@ -35535,12 +35556,16 @@ export enum AssetWaveformChannelMode {
 export enum CaptureAlbumScope {
     Design = "design"
 }
-export enum CaptureProtocolVersion {
-    $1 = 1
-}
 export enum CaptureStatus {
     Created = "created",
     Duplicate = "duplicate"
+}
+export enum CaptureCancelStatus {
+    Cancelled = "cancelled",
+    AlreadyPublished = "already-published"
+}
+export enum CaptureProtocolVersion {
+    $1 = 1
 }
 export enum ClassificationMatchDecision {
     Matched = "matched",
