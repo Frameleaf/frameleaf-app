@@ -84,8 +84,10 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === '076073e60d0baee97812afe90c3c2a8eb65681ac91e68093548baec1a989c229' ||
     // FL-596 motion tracking: superseded runs discarded, time-sliced yields
     sourceSha256 === '1f842a0736b43b605bcb1d4cf73c16ffc8bd54ba9199a1b05d79ca46e03b7385' ||
+    // FL-596 motion tracking: early binding, stored direction
+    sourceSha256 === '021d92421f193e92216cf60dc88efd8f11ffa10a2d195231b5b0ac663ab0754a' ||
     // FL-627 tracking box and provenance
-    sourceSha256 === 'da07bcf4c8a585cae6e0e7645be5a6f68caca0174f1139e217770f36a936eefd'
+    sourceSha256 === 'ce66d6e8466872c198721953211ba2df7911e55687e654402d9a6004d8235ed4'
   )
     return {
       ...COMPOSITION_SOURCES,
