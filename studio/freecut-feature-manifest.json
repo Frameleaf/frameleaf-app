@@ -7842,9 +7842,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. The FL-107 server HDR10/HLG master (studio/tools/hdr-master.mjs, HEVC Main10) exists but its precision gate does not pass yet (FL-107 reopened), so it does not deliver this row either.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity. Rendering runs on the worker, not in the person’s browser.",
+        "status": "shipped"
       },
       "id": "readme.export.1",
       "source": [
@@ -7917,8 +7917,8 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "Not reachable: an export renders the main timeline (optionally a range of it); the export request has no sequence choice. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "not-started"
       },
       "id": "readme.export.2",
@@ -7992,9 +7992,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. Only MP4 is accepted.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "MP4, MOV, MKV and WebM. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.3",
       "source": [
@@ -8067,9 +8067,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. Only H.264 is accepted. The FL-107 server HDR10/HLG master (studio/tools/hdr-master.mjs, HEVC Main10) exists but its precision gate does not pass yet (FL-107 reopened), so it does not deliver this row either.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "H.264, H.265, VP8, VP9 and AV1 (plus ProRes 422 in MOV), each offered only where the worker’s own encoder passed its admission check. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.4",
       "source": [
@@ -8142,9 +8142,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "Sound-only exports as MP3, AAC and WAV/PCM from the master’s audio. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.5",
       "source": [
@@ -8221,10 +8221,11 @@
           "0023-export-subtitle-admission.patch",
           "0050-caption-import-export-modes.patch",
           "0051-extracted-caption-export-modes.patch",
-          "0105-subtitle-sidecar-shared-producer.patch"
+          "0105-subtitle-sidecar-shared-producer.patch",
+          "fd9eaf9e0c"
         ],
-        "note": "Subtitle admission and the four modes are implemented and the executor accepts them, but only for its still-image MP4 timelines. The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
-        "status": "not-started"
+        "note": "Off, burn-in (the default), a private SRT sibling, or an embedded text track (mov_text, SubRip or WebVTT by container), admitted per format by server/src/utils/render-admission.ts. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.6",
       "source": [
@@ -8297,9 +8298,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. The executor carries the four engine bitrate presets for that narrow case only.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "Low, medium, high and ultra (StudioExportQuality); the runtime capability check is the worker’s admission probe, and the dialog offers only formats an admitted worker advertises. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.7",
       "source": [
@@ -13236,8 +13237,8 @@
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "Freecut's segmented render queue is replaced by host export jobs followed in Activity. The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "Replaced by design: Freecut’s segmented render queue is not used; each export is a host export job, leased by the bundled worker and followed in Activity.",
         "status": "not-started"
       },
       "id": "extra.render-queue",
@@ -15346,9 +15347,9 @@
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "The engine’s export renderer is what the bundled worker runs headlessly to make every export; the in-editor export dialog is replaced by the host dialog. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "module.export",
       "source": [

@@ -268,14 +268,13 @@
       const result = await cancelPublication(receipt.importId, receipt.publicationId, origin.scope);
       receiptOperation =
         result.status === 'already-published'
-          ? 'Already published in this project; cancellation did not erase the retained file.'
+          ? $t('frameleaf_studio_receipts_already_published')
           : result.receipt.cleanupPending
-            ? 'Cancelled; private file cleanup is pending.'
-            : 'Cancelled.';
+            ? $t('frameleaf_studio_receipts_cancelled_cleanup')
+            : $t('frameleaf_studio_receipts_state_cancelled');
     } catch {
       if (!origin.controller.signal.aborted && isImportScopeCurrent(origin.scope)) {
-        receiptOperation =
-          'Cancellation unavailable; the publication outcome is unknown. Refresh receipts to reconcile.';
+        receiptOperation = $t('frameleaf_studio_receipts_cancel_unknown');
       }
     }
   };
@@ -1418,40 +1417,34 @@
 />
 
 {#if sessionState?.access === 'owner' && !accessLost && !forbidden && project.id !== STUDIO_DRAFT_PROJECT_ID}
-  <Dialog bind:open={receiptsOpen} title="Import receipts" closeLabel={$t('close')}>
-    <section aria-label="Generated import retention" class="fl-import-receipts">
-      <p>
-        Retained generated imports may carry historical processing and source labels into exported bundles. These labels
-        grant no access to the original source.
-      </p>
-      <Button disabled={receiptsBusy} onclick={() => void readReceipts()}>Refresh receipts</Button>
-      {#if receiptsUnavailable}<p role="status">
-          Receipts unavailable; publication outcomes are unknown. No files were resent.
-        </p>{/if}
+  <Dialog bind:open={receiptsOpen} title={$t('frameleaf_studio_receipts_title')} closeLabel={$t('close')}>
+    <section aria-label={$t('frameleaf_studio_receipts_section')} class="fl-import-receipts">
+      <p>{$t('frameleaf_studio_receipts_intro')}</p>
+      <Button disabled={receiptsBusy} onclick={() => void readReceipts()}
+        >{$t('frameleaf_studio_receipts_refresh')}</Button
+      >
+      {#if receiptsUnavailable}<p role="status">{$t('frameleaf_studio_receipts_unavailable')}</p>{/if}
       {#if receiptOperation}<p role="status">{receiptOperation}</p>{/if}
       {#if receiptPage}
         {#each receiptPage.items as receipt (receipt.publicationId)}
           <p>
             <code>{receipt.importId}</code>:
-            {#if receipt.state === 'registered'}Incomplete: registered before upload; vanished local bytes cannot be
-              recovered.
-            {:else if receipt.state === 'preparing'}Pending or unknown; refresh receipts to reconcile.
-            {:else if receipt.state === 'published'}Published in this project.
-            {:else}Cancelled.{/if}
-            {#if receipt.cleanupPending}Private file cleanup pending.{/if}
+            {#if receipt.state === 'registered'}{$t('frameleaf_studio_receipts_state_registered')}
+            {:else if receipt.state === 'preparing'}{$t('frameleaf_studio_receipts_state_preparing')}
+            {:else if receipt.state === 'published'}{$t('frameleaf_studio_receipts_state_published')}
+            {:else}{$t('frameleaf_studio_receipts_state_cancelled')}{/if}
+            {#if receipt.cleanupPending}{$t('frameleaf_studio_receipts_cleanup_pending')}{/if}
             {#if receipt.state === 'registered' || receipt.state === 'preparing'}
               <Button disabled={receiptsBusy} onclick={() => void onCancelPublication(receipt)}
-                >Cancel publication</Button
+                >{$t('frameleaf_studio_receipts_cancel')}</Button
               >
             {/if}
           </p>
         {/each}
-        {#if receiptPage.items.length === 0}<p>
-            No publication receipts on this page. Retained files load separately.
-          </p>{/if}
+        {#if receiptPage.items.length === 0}<p>{$t('frameleaf_studio_receipts_empty')}</p>{/if}
         {#if receiptPage.nextCursor}
           <Button disabled={receiptsBusy} onclick={() => void readReceipts(receiptPage?.nextCursor ?? undefined)}
-            >Older receipts</Button
+            >{$t('frameleaf_studio_receipts_older')}</Button
           >
         {/if}
       {/if}
