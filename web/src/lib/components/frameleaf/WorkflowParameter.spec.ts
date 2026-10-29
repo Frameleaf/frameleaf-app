@@ -6,7 +6,10 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import WorkflowParameter from '$lib/components/frameleaf/WorkflowParameter.svelte';
 import { clearWorkflowReferenceNames } from '$lib/frameleaf/workflow-references';
 import type { WorkflowParameterSchema } from '$lib/frameleaf/workflows';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 
 const TRIP = '7f9a1c2e-1111-4a6b-9c3d-000000000001';
 const FAMILY = '7f9a1c2e-1111-4a6b-9c3d-000000000002';
@@ -54,6 +57,40 @@ describe('WorkflowParameter tag and album pickers (FL-647)', () => {
 
     expect(await screen.findByText(`Unavailable selection: ${TRIP}`)).toBeInTheDocument();
     expect(screen.queryByText('Private/Trip')).toBeNull();
+    expect(sdkMock.getTagById).toHaveBeenCalledTimes(2);
+  });
+
+  it('looks the chosen names up again when the session locks before the first lookup lands', async () => {
+    let finish!: (value: never) => void;
+    sdkMock.getTagById.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)) as never);
+    render(WorkflowParameter, { schema: tags, value: [TRIP], label: 'Tags', onChange: vi.fn() });
+    await waitFor(() => expect(sdkMock.getTagById).toHaveBeenCalledTimes(1));
+
+    sdkMock.getTagById.mockResolvedValueOnce(tag(TRIP, 'Travel/Trip'));
+    eventManager.emit('SessionLocked');
+    finish(tag(TRIP, 'Read before the lock'));
+
+    expect(await screen.findByText('Travel/Trip')).toBeInTheDocument();
+    expect(screen.queryByText('Read before the lock')).toBeNull();
+    expect(sdkMock.getTagById).toHaveBeenCalledTimes(2);
+  });
+
+  it('forgets names and matches when another account signs in, but not when the same one reloads', async () => {
+    sdkMock.getTagById.mockResolvedValueOnce(tag(TRIP, 'First account tag'));
+    render(WorkflowParameter, { schema: tags, value: [TRIP], label: 'Tags', onChange: vi.fn() });
+    expect(await screen.findByText('First account tag')).toBeInTheDocument();
+
+    sdkMock.getTagById.mockRejectedValueOnce(new Error('not found'));
+    // as the auth manager does: the new user is set, then announced
+    const another = userAdminFactory.build({ id: 'another-account' });
+    authManager.setUser(another);
+    authManager.setPreferences(preferencesFactory.build());
+    eventManager.emit('AuthUserLoaded', another);
+    expect(await screen.findByText(`Unavailable selection: ${TRIP}`)).toBeInTheDocument();
+    expect(screen.queryByText('First account tag')).toBeNull();
+
+    eventManager.emit('AuthUserLoaded', another);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sdkMock.getTagById).toHaveBeenCalledTimes(2);
   });
 

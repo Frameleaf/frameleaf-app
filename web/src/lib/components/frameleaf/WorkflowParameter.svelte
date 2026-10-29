@@ -25,6 +25,7 @@
     updateWorkflowParameter,
     type WorkflowParameterSchema,
   } from '$lib/frameleaf/workflows';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { onDestroy, untrack } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
@@ -64,8 +65,9 @@
   let pending = $state(0);
   const resolving = $derived(pending > 0);
   let destroyed = false;
-  // bumped by a session lock: lookups that were out then neither fill nor count
-  let epoch = 0;
+  // bumped by a session lock or an account change: lookups that were out then neither fill nor count,
+  // and (being reactive) the chosen names are looked up again
+  let epoch = $state(0);
   let matches = $state<ComboBoxOption[]>([]);
   let picked = $state<ComboBoxOption | undefined>();
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -142,8 +144,9 @@
     picked = undefined;
   };
 
-  // A session lock forgets every tag and album name this picker read while unlocked; the chosen ones
-  // are read again under the locked session's rules.
+  // A session lock forgets every tag and album name this picker read while unlocked, and an account
+  // change everything the previous account read; the chosen ones are read again for the session now.
+  let owner = authManager.authenticated ? authManager.user.id : '';
   const forgetOnLock = () => {
     epoch++;
     clearTimeout(searchTimer);
@@ -153,7 +156,18 @@
     attempted.clear();
     referenceNames.clear();
   };
-  const stopListening = eventManager.on({ SessionLocked: forgetOnLock, SessionLockedRemote: forgetOnLock });
+  const forgetOnAccountChange = (userId: string) => {
+    if (userId !== owner) {
+      owner = userId;
+      forgetOnLock();
+    }
+  };
+  const stopListening = eventManager.on({
+    SessionLocked: forgetOnLock,
+    SessionLockedRemote: forgetOnLock,
+    AuthUserLoaded: (user) => forgetOnAccountChange(user.id),
+    AuthLogout: () => forgetOnAccountChange(''),
+  });
 
   onDestroy(() => {
     stopListening();
