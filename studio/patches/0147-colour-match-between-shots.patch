@@ -195,7 +195,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,121 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -204,6 +204,7 @@ new file mode 100644
 +import { useItemsStore } from '../../items-store'
 +import { useTimelineCommandStore } from '../../timeline-command-store'
 +import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { useProjectStore } from '@/features/timeline/deps/projects'
 +import {
 +  analyzeColourMatch,
 +  applyColourMatches,
@@ -226,9 +227,11 @@ new file mode 100644
 +const blur: ItemEffect = { id: 'blur', enabled: true, effect: { type: 'gpu-effect', gpuEffectType: 'gpu-gaussian-blur', params: { radius: 2 } } }
 +const grade: ItemEffect = { id: 'grade', enabled: true, effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure', params: { exposure: 0.2 } } }
 +
++const referenceClip = (overrides: Partial<VideoItem> = {}) => video({ id: 'ref', trackId: 't1', from: 500, ...overrides })
++
 +function result(item: VideoItem, flags: ColourMatchTargetResult['proposal']['flags'] = []): ColourMatchTargetResult {
 +  return {
-+    itemId: item.id, label: item.label, binding: colourMatchBinding(item, 1),
++    itemId: item.id, label: item.label, binding: colourMatchBinding(item, 1, referenceClip(), 0.5),
 +    provenance: { referenceItemId: 'ref', referenceSeconds: 0.5, targetSeconds: 1 },
 +    proposal: { params: { exposure: 0.4, temperature: 0.2, tint: -0.1 }, flags },
 +  }
@@ -245,7 +248,7 @@ new file mode 100644
 +
 +  it('adds the match after existing effects and replaces it instead of stacking', () => {
 +    const item = video({ effects: [blur] })
-+    useItemsStore.getState().setItems([item])
++    useItemsStore.getState().setItems([item, referenceClip()])
 +    expect(applyColourMatches([{ result: result(item), strength: 1 }]).applied).toEqual(['v1'])
 +    expect(effectTypes('v1')).toEqual(['gpu-gaussian-blur', 'gpu-exposure', 'gpu-temperature'])
 +
@@ -260,7 +263,7 @@ new file mode 100644
 +
 +  it('changes strength and removes the match exactly at zero, each in one undo step', () => {
 +    const item = video({ effects: [blur] })
-+    useItemsStore.getState().setItems([item])
++    useItemsStore.getState().setItems([item, referenceClip()])
 +    applyColourMatches([{ result: result(item), strength: 1 }])
 +    expect(setColourMatchStrength('v1', 0.25)).toBe(true)
 +    expect(readColourMatch(useItemsStore.getState().itemById['v1']!)?.strength).toBe(0.25)
@@ -276,7 +279,7 @@ new file mode 100644
 +    const trimmed = video()
 +    const flagged = video({ id: 'v2', from: 60 })
 +    const locked = video({ id: 'v3', trackId: 't2' })
-+    useItemsStore.getState().setItems([{ ...trimmed, sourceEnd: 40 } as VideoItem, flagged, locked])
++    useItemsStore.getState().setItems([{ ...trimmed, sourceEnd: 40 } as VideoItem, flagged, locked, referenceClip()])
 +    const outcome = applyColourMatches([
 +      { result: result(trimmed), strength: 1 },
 +      { result: result(flagged, ['clipped']), strength: 1 },
@@ -291,12 +294,34 @@ new file mode 100644
 +    await expect(analyzeColourMatch('ref', ['v1'], 0)).resolves.toEqual({ ok: false, reason: 'graded', itemId: 'v1' })
 +    await expect(analyzeColourMatch('ref', ['ref'], 0)).resolves.toMatchObject({ ok: false, reason: 'same-clip' })
 +  })
++
++  it('treats a result as stale when the reference or either clip direction changes', () => {
++    const item = video()
++    useItemsStore.getState().setItems([item, referenceClip({ effects: [grade] })])
++    expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
++    useItemsStore.getState().setItems([{ ...item, isReversed: true } as VideoItem, referenceClip()])
++    expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
++    useItemsStore.getState().setItems([item])
++    expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
++  })
++
++  it('refuses every result when the project has become HDR since analysis', () => {
++    const item = video()
++    useItemsStore.getState().setItems([item, referenceClip()])
++    useProjectStore.setState({ currentProject: { metadata: { colorManagement: { workingRange: 'hdr' } } } } as never)
++    try {
++      expect(applyColourMatches([{ result: result(item), strength: 1 }]).refused).toEqual([{ itemId: 'v1', reason: 'hdr' }])
++      expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++    } finally {
++      useProjectStore.setState({ currentProject: null } as never)
++    }
++  })
 +})
 diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,279 @@
 +import type { ItemEffect } from '@/types/effects'
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
@@ -365,12 +390,20 @@ new file mode 100644
 +  return ((item.sourceStart ?? 0) + timelineToSourceFrames(offset, item.speed ?? 1, fps, sourceFps)) / sourceFps
 +}
 +
-+/** Binds a result to the clip's source, timing and grade (match effects excluded). */
-+export function colourMatchBinding(item: TimelineItem, seconds: number): string {
-+  const video = item as VideoItem
++/**
++ * Binds a result to the target's source, timing, playback direction and grade
++ * (its match effects excluded), the reference's source, timing, direction and
++ * full grade, and the project's colour management.
++ */
++export function colourMatchBinding(item: TimelineItem, seconds: number, reference?: TimelineItem, referenceSeconds?: number): string {
++  const describe = (clip: TimelineItem, effects: readonly ItemEffect[]) => {
++    const video = clip as VideoItem
++    return [clip.id, clip.mediaId, video.sourceStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1, video.isReversed === true, effects]
++  }
 +  return JSON.stringify([
-+    item.mediaId, video.sourceStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1, seconds,
-+    (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect)),
++    describe(item, (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect))), seconds,
++    reference ? [describe(reference, reference.effects ?? []), referenceSeconds] : null,
++    useProjectStore.getState().currentProject?.metadata.colorManagement ?? null,
 +  ])
 +}
 +
@@ -442,7 +475,7 @@ new file mode 100644
 +      targets.push({
 +        itemId: id,
 +        label: target.label,
-+        binding: colourMatchBinding(target, targetSeconds),
++        binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds),
 +        provenance: { referenceItemId: referenceId, referenceSeconds, targetSeconds },
 +        proposal: proposeColourMatch(referenceStats, await sampleFrame(target, targetSeconds)),
 +      })
@@ -493,9 +526,16 @@ new file mode 100644
 +  const outcome: ColourMatchApplyOutcome = { applied: [], stale: [], refused: [] }
 +  const items = useItemsStore.getState().items
 +  const updates: Array<{ itemId: string; effects: ItemEffect[] }> = []
++  // The project may have become HDR since analysis; SDR proposals do not apply there.
++  if (projectIsHdr(items)) {
++    outcome.refused = approvals.map(({ result }) => ({ itemId: result.itemId, reason: 'hdr' as const }))
++    return outcome
++  }
 +  for (const { result, strength } of approvals) {
 +    const item = items.find((candidate) => candidate.id === result.itemId)
-+    if (!item || colourMatchBinding(item, result.provenance.targetSeconds) !== result.binding) {
++    const reference = items.find((candidate) => candidate.id === result.provenance.referenceItemId)
++    if (!item || !reference
++      || colourMatchBinding(item, result.provenance.targetSeconds, reference, result.provenance.referenceSeconds) !== result.binding) {
 +      outcome.stale.push(result.itemId)
 +      continue
 +    }

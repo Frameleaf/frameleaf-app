@@ -145,7 +145,7 @@ diff --git a/src/features/export/utils/canvas-render-orchestrator.ts b/src/featu
 diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
 --- a/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
-@@ -88,9 +88,26 @@ describe('colour match actions', () => {
+@@ -91,10 +91,19 @@ describe('colour match actions', () => {
      expect(useTimelineCommandStore.getState().canUndo).toBe(false)
    })
  
@@ -159,22 +159,32 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
 +    await expect(analyzeColourMatch('ref', ['v2'], 0)).resolves.toEqual({ ok: false, reason: 'unsupported-clip', itemId: 'v2' })
 +  })
 +
-+  it('treats a result as stale when the reference grade changes', () => {
-+    const reference = video({ id: 'ref', from: 60, effects: [grade] })
++  it('matches graded clips after their grade', () => {
 +    const target = video({ effects: [grade] })
-+    useItemsStore.getState().setItems([reference, target])
-+    const bound: ColourMatchTargetResult = {
-+      ...result(target),
-+      binding: colourMatchBinding(target, 1, reference, 0.5),
-+    }
-+    useItemsStore.getState()._updateItem('ref', { effects: [] })
-+    expect(applyColourMatches([{ result: bound, strength: 1 }]).stale).toEqual(['v1'])
-+    useItemsStore.getState()._updateItem('ref', { effects: [grade] })
++    useItemsStore.getState().setItems([target, referenceClip({ effects: [grade] })])
++    const bound: ColourMatchTargetResult = { ...result(target), binding: colourMatchBinding(target, 1, referenceClip({ effects: [grade] }), 0.5) }
 +    expect(applyColourMatches([{ result: bound, strength: 1 }]).applied).toEqual(['v1'])
-+    // Graded clips keep their grade; the match goes after it.
 +    expect(effectTypes('v1')).toEqual(['gpu-exposure', 'gpu-exposure', 'gpu-temperature'])
    })
- })
+ 
+   it('treats a result as stale when the reference or either clip direction changes', () => {
+@@ -107,13 +116,13 @@ describe('colour match actions', () => {
+     expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
+   })
+ 
+-  it('refuses every result when the project has become HDR since analysis', () => {
++  it('treats results as stale when the project colour management changes (e.g. becomes HDR)', () => {
+     const item = video()
+     useItemsStore.getState().setItems([item, referenceClip()])
++    const bound = result(item)
+     useProjectStore.setState({ currentProject: { metadata: { colorManagement: { workingRange: 'hdr' } } } } as never)
+     try {
+-      expect(applyColourMatches([{ result: result(item), strength: 1 }]).refused).toEqual([{ itemId: 'v1', reason: 'hdr' }])
+-      expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++      expect(applyColourMatches([{ result: bound, strength: 1 }]).stale).toEqual(['v1'])
+     } finally {
+       useProjectStore.setState({ currentProject: null } as never)
+     }
 diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
 --- a/src/features/timeline/stores/actions/edit/colour-match-actions.ts
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
@@ -238,25 +248,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  function projectIsHdr(items: readonly TimelineItem[]): boolean {
    const project = useProjectStore.getState().currentProject
    if (project?.metadata.colorManagement?.workingRange === 'hdr') return true
-@@ -66,35 +65,56 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
-   return ((item.sourceStart ?? 0) + timelineToSourceFrames(offset, item.speed ?? 1, fps, sourceFps)) / sourceFps
- }
- 
--/** Binds a result to the clip's source, timing and grade (match effects excluded). */
--export function colourMatchBinding(item: TimelineItem, seconds: number): string {
-+/**
-+ * Binds a result to the target's source, timing and grade (its match effects
-+ * excluded), the reference's source, timing and full grade, and the project's
-+ * colour management.
-+ */
-+export function colourMatchBinding(item: TimelineItem, seconds: number, reference?: TimelineItem, referenceSeconds?: number): string {
-   const video = item as VideoItem
-+  const ref = reference as VideoItem | undefined
-   return JSON.stringify([
-     item.mediaId, video.sourceStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1, seconds,
-     (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect)),
-+    ref ? [ref.id, ref.mediaId, ref.sourceStart ?? 0, ref.sourceEnd ?? null, ref.speed ?? 1, referenceSeconds, ref.effects ?? []] : null,
-+    useProjectStore.getState().currentProject?.metadata.colorManagement ?? null,
+@@ -83,26 +82,40 @@ export function colourMatchBinding(item: TimelineItem, seconds: number, referenc
    ])
  }
  
@@ -317,7 +309,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  }
  
  function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { reason: ColourMatchRefusal; itemId?: string } | null {
-@@ -103,9 +123,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
+@@ -111,9 +124,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
      if (!item) return { reason: 'not-found', itemId: id }
      if (item.type !== 'video') return { reason: 'unsupported-clip', itemId: id }
      if (item.isReversed === true) return { reason: 'reversed', itemId: id }
@@ -327,7 +319,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    return null
  }
  
-@@ -134,25 +152,29 @@ export async function analyzeColourMatch(
+@@ -142,25 +153,29 @@ export async function analyzeColourMatch(
    const referenceSeconds = sourceSecondsAt(reference, frameFor(reference), fps)
  
    try {
@@ -344,8 +336,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
        targets.push({
          itemId: id,
          label: target.label,
--        binding: colourMatchBinding(target, targetSeconds),
-+        binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds),
+         binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds),
          provenance: { referenceItemId: referenceId, referenceSeconds, targetSeconds },
 -        proposal: proposeColourMatch(referenceStats, await sampleFrame(target, targetSeconds)),
 +        proposal: proposeColourMatch(reference_.stats, sampled.stats),
@@ -362,16 +353,19 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    }
  }
  
-@@ -196,7 +218,8 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+@@ -202,11 +217,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+   const outcome: ColourMatchApplyOutcome = { applied: [], stale: [], refused: [] }
+   const items = useItemsStore.getState().items
    const updates: Array<{ itemId: string; effects: ItemEffect[] }> = []
+-  // The project may have become HDR since analysis; SDR proposals do not apply there.
+-  if (projectIsHdr(items)) {
+-    outcome.refused = approvals.map(({ result }) => ({ itemId: result.itemId, reason: 'hdr' as const }))
+-    return outcome
+-  }
++  // A change of colour management (e.g. the project becoming HDR) changes the binding, so such results are stale.
    for (const { result, strength } of approvals) {
      const item = items.find((candidate) => candidate.id === result.itemId)
--    if (!item || colourMatchBinding(item, result.provenance.targetSeconds) !== result.binding) {
-+    const reference = items.find((candidate) => candidate.id === result.provenance.referenceItemId)
-+    if (!item || colourMatchBinding(item, result.provenance.targetSeconds, reference, result.provenance.referenceSeconds) !== result.binding) {
-       outcome.stale.push(result.itemId)
-       continue
-     }
+     const reference = items.find((candidate) => candidate.id === result.provenance.referenceItemId)
 diff --git a/src/features/timeline/utils/colour-match.test.ts b/src/features/timeline/utils/colour-match.test.ts
 --- a/src/features/timeline/utils/colour-match.test.ts
 +++ b/src/features/timeline/utils/colour-match.test.ts
