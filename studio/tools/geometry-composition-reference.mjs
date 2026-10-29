@@ -102,7 +102,11 @@ export function compositionSourcesFor(sourceSha256) {
     }
   // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
   // renderer, which draws it through its correction; every other clip renders as before.
-  if (sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a')
+  if (
+    sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' ||
+    // FL-641 caption languages (translated caption tracks, voice-over and the Languages card) on Stabilise; changes no composition or raster producer.
+    sourceSha256 === 'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb'
+  )
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':
@@ -111,7 +115,7 @@ export function compositionSourcesFor(sourceSha256) {
         '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
     }
   // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
-  if (sourceSha256 === 'b75f35884e7b63572c0920bdd2e810a1fd6b7d6402f1c2e76c0cc1f6a9a939b5')
+  if (sourceSha256 === '81cd71b8c0925546cd17979960a4d34463768231cdab7060deb4091d863da192')
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/canvas-item-renderer/gpu.ts':

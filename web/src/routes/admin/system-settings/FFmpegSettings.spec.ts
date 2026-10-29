@@ -110,7 +110,7 @@ describe('Video playback copies (FL-366)', () => {
     expect(status.getByRole('heading', { name: 'Every video plays on every device' })).toBeInTheDocument();
     expect(status.getByText(/get a 1080p playback copy/)).toBeInTheDocument();
     expect(
-      group('Which videos get a copy').getByRole('button', { name: 'Only those that need one', pressed: true }),
+      group('Which videos get a copy').getByRole('button', { name: 'Only videos that need one', pressed: true }),
     ).toBeInTheDocument();
     expect(
       group('Playback quality').getByRole('button', { name: 'Better (1080p)', pressed: true }),
@@ -295,5 +295,74 @@ describe('Video playback copies (FL-366)', () => {
     expect(
       group('Which videos get a copy').getByRole('button', { name: 'Never make copies', pressed: true }),
     ).toBeInTheDocument();
+  });
+
+  it('re-reads the copies only when the conversion queue changed (FL-630)', async () => {
+    vi.useFakeTimers();
+    try {
+      sdkMock.getMediaCopies.mockReset().mockResolvedValue({
+        photos: 0,
+        withoutPreview: 0,
+        videos: 1,
+        withCopy: 0,
+        previewsBytes: null,
+        playbackBytes: 0,
+        measuredAt: null,
+        tonight: [],
+        ...copyMinutes,
+      });
+      draft.store = newStore();
+      render(FFmpegSettings);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(1);
+
+      // nothing happened between two checks: the whole-library count is not read again
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(1);
+
+      // a copy made and finished between two checks
+      sdkMock.getQueue.mockResolvedValue({
+        ...queue(0),
+        statistics: { ...queue(0).statistics, completed: 1 },
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('reads the copies one at a time, and once more for refreshes asked meanwhile (FL-630)', async () => {
+    vi.useFakeTimers();
+    try {
+      let answer: (value: never) => void = () => {};
+      sdkMock.getMediaCopies.mockReset().mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+      draft.store = newStore();
+      render(FFmpegSettings);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(1);
+
+      // two conversions finish while the first read is still counting
+      for (const completed of [1, 2]) {
+        sdkMock.getQueue.mockResolvedValue({ ...queue(0), statistics: { ...queue(0).statistics, completed } });
+        await vi.advanceTimersByTimeAsync(5000);
+      }
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(1);
+
+      answer({
+        photos: 0,
+        withoutPreview: 0,
+        videos: 1,
+        withCopy: 1,
+        previewsBytes: null,
+        playbackBytes: 5000,
+        measuredAt: null,
+        tonight: [],
+        ...copyMinutes,
+      } as never);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

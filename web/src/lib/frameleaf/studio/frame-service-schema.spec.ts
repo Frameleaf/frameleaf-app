@@ -5,9 +5,40 @@ import { STUDIO_FRAME_PROTOCOL_VERSION } from './frame-protocol';
 import {
   STUDIO_FRAME_SERVICE_SCHEMA_V7,
   STUDIO_FRAME_SERVICE_SCHEMA_V8,
+  STUDIO_FRAME_SERVICE_SCHEMA_V9,
   isStudioFrameServiceName,
   isStudioSourceRequest,
 } from './frame-service-schema';
+
+describe('FL-641 caption translation in protocol 9', () => {
+  const check = STUDIO_FRAME_SERVICE_SCHEMA_V9.translateCaptions;
+
+  it('adds translateCaptions only to protocol 9', () => {
+    expect(Object.keys(STUDIO_FRAME_SERVICE_SCHEMA_V9)).toEqual([
+      ...Object.keys(STUDIO_FRAME_SERVICE_SCHEMA_V8),
+      'translateCaptions',
+    ]);
+    expect(Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, 'translateCaptions')).toBe(false);
+    expect(isStudioFrameServiceName('translateCaptions')).toBe(true);
+  });
+
+  it('accepts two offered languages and caption text, nothing else', () => {
+    expect(check([{ source: 'en', target: 'fr', lines: ['Hello', ''] }])).toBe(true);
+    for (const bad of [
+      [],
+      [{ source: 'en', target: 'fr', lines: ['Hi'] }, true],
+      [{ source: 'en', target: 'ja', lines: ['Hi'] }],
+      [{ source: 'en', target: 'en', lines: ['Hi'] }],
+      [{ source: 'en', target: 'fr', lines: [] }],
+      [{ source: 'en', target: 'fr', lines: [1] }],
+      [{ source: 'en', target: 'fr', lines: ['x'.repeat(1001)] }],
+      [{ source: 'en', target: 'fr', lines: Array.from({ length: 501 }, () => 'x') }],
+      [{ source: 'en', target: 'fr', lines: ['Hi'], projectId: 'other' }],
+    ]) {
+      expect(check(bad)).toBe(false);
+    }
+  });
+});
 
 const oldNames = [
   'submitCommands',
@@ -20,7 +51,7 @@ const oldNames = [
 ];
 describe('one explicitly versioned Studio service schema', () => {
   it('preserves the seven old names and retains cancellation and adds canonical source resolution only to protocol8', () => {
-    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(8);
+    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(9);
     expect(Object.keys(STUDIO_FRAME_SERVICE_SCHEMA_V7)).toEqual(oldNames);
     expect(Object.keys(STUDIO_FRAME_SERVICE_SCHEMA_V8)).toEqual([
       ...oldNames,

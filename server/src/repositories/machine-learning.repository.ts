@@ -502,6 +502,21 @@ export const musicStreamItemSchema = z.discriminatedUnion('type', [
 const MUSIC_LINE_BYTES = 1024 * 1024;
 const MUSIC_TOTAL_BYTES = 64 * 1024 * 1024;
 
+/** The translation model Studio captions ask for (FL-641, owner decision 2026-10-29: M2M100 418M). */
+export const TRANSLATE_MODEL_NAME = 'frameleaf-translate';
+
+/** The worker cannot translate: no `/translate` route (an older worker), no runtime or no model. */
+export class TranslationUnavailableError extends Error {}
+
+/** A worker's `/translate` answer (machine-learning/frameleaf_ml/main.py). */
+const translationResultSchema = z.object({
+  model: z.string().max(128),
+  translations: z.array(z.string().max(8192)).max(2000),
+});
+
+/** A translation answer above this is not caption text. */
+const TRANSLATION_TOTAL_BYTES = 16 * 1024 * 1024;
+
 /** FL-639: the worker cannot cut out a subject: no `/subject-matte` route (an older worker) or no pinned model. */
 export class CutoutUnavailableError extends Error {}
 /** The worker could not follow the subject, in words a person can read (no subject on the first frame). */
@@ -989,6 +1004,89 @@ export class MachineLearningRepository implements RestorationInference {
     }
     record('success');
     return { seconds };
+  }
+
+  /**
+   * Studio captions in other languages (FL-641): send caption lines, as text only, to exactly the admitted
+   * local or home-network worker and read one translation per line, in order. Nothing else of the project
+   * leaves this server.
+   */
+  async translateCaptions(
+    selection: MlSelection,
+    options: { source: string; target: string; lines: readonly string[] },
+    signal: AbortSignal,
+  ): Promise<{ model: string; translations: string[] }> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    const body = JSON.stringify(options.lines);
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({
+        bytesSent: Buffer.byteLength(body),
+        bytesReceived,
+        durationMs: Date.now() - started,
+        outcome,
+      });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({
+        translate: {
+          textual: { modelName: TRANSLATE_MODEL_NAME, options: { source: options.source, target: options.target } },
+        },
+      }),
+    );
+    form.append('lines', body);
+    let result: z.infer<typeof translationResultSchema>;
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('translate', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no runtime or model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new TranslationUnavailableError(`The worker cannot translate (${response.status})`);
+        }
+        throw new Error(`The translation worker answered ${response.status}`);
+      }
+      // Bound the answer while it is read, before any JSON allocation.
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('The translation worker sent no answer');
+      const chunks: Uint8Array[] = [];
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > TRANSLATION_TOTAL_BYTES) throw new Error('The translation is too large');
+          chunks.push(value);
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      result = translationResultSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      if (result.translations.length !== options.lines.length) {
+        throw new Error('The translation worker did not answer every line');
+      }
+      await this.authorize(selection.endpoint);
+    } catch (error) {
+      if (!(error instanceof TranslationUnavailableError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    }
+    record('success');
+    return result;
   }
 
   /**

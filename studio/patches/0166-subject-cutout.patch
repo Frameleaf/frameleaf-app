@@ -13,7 +13,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.test.tsx
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,184 @@
 +import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import type { ReactNode } from 'react'
@@ -120,6 +120,48 @@ new file mode 100644
 +    })
 +  })
 +
++  it('keeps a Main subject cut-out selected when people are found in the clip', async () => {
++    const main: SubjectCutout = { subject: { kind: 'subject' }, background: 'remove', softness: 40, matte }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: main }], fps: 30 })
++    registerSubjectCutoutHost(host([]))
++    render(<SubjectCutoutSection item={current()} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    expect(screen.queryByRole('button', { name: 'cutout.find:Jamie' })).toBeNull()
++    expect(screen.getByRole('button', { name: 'cutout.remove' })).toBeInTheDocument()
++  })
++
++  it('keeps a background chosen while the subject is being found', async () => {
++    const fake = host([
++      { id: 'job', status: 'running', progress: 40, error: null, matte: null },
++      { id: 'job', status: 'completed', progress: 100, error: null, matte },
++    ])
++    const found: SubjectCutout = {
++      subject: { kind: 'person', personId: '0195e2a0-0000-4000-8000-000000000051', name: 'Jamie' },
++      background: 'blur',
++      softness: 40,
++      matte: { ...matte, importId: '0195e2a0-0000-4000-8000-000000000054' },
++    }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: found }], fps: 30 })
++    registerSubjectCutoutHost(fake)
++    render(<SubjectCutoutSection item={current()} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    act(() => {
++      useSubjectCutoutPaintStore.getState().finish({ itemId: 'clip-1', label: 1, frame: 0, points: [{ x: 0.5, y: 0.5 }] })
++    })
++    await waitFor(() => expect(fake.start).toHaveBeenCalled())
++    // The person picks Colour while the job runs.
++    act(() => {
++      useItemsStore.getState()._updateItem('clip-1', {
++        subjectCutout: { ...current().subjectCutout!, background: 'colour', colour: '#2da44e' },
++      } as Partial<VideoItem>)
++    })
++    await act(async () => {
++      await vi.advanceTimersByTimeAsync(1100)
++    })
++    await waitFor(() => expect(current().subjectCutout?.matte.importId).toBe(matte.importId))
++    expect(current().subjectCutout).toMatchObject({ background: 'colour', colour: '#2da44e' })
++  })
++
 +  it('changes the background, and paints Take away points that make the matte again', async () => {
 +    const found: SubjectCutout = {
 +      subject: { kind: 'person', personId: '0195e2a0-0000-4000-8000-000000000051', name: 'Jamie' },
@@ -160,7 +202,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.tsx
-@@ -0,0 +1,284 @@
+@@ -0,0 +1,313 @@
 +import { useEffect, useMemo, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Brush, Eraser, UserSquare } from 'lucide-react'
@@ -173,6 +215,7 @@ new file mode 100644
 +  cutoutRequestPoints,
 +  setSubjectCutout,
 +  updateSubjectCutout,
++  useItemsStore,
 +  useTimelineStore,
 +} from '@/features/editor/deps/timeline-store'
 +import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
@@ -191,12 +234,17 @@ new file mode 100644
 +const POLL_MS = 1000
 +
 +const MAIN_SUBJECT: SubjectCutoutPerson = { kind: 'subject', personId: null, name: null }
++const aborted = () => new DOMException('Aborted', 'AbortError')
 +const sleep = (ms: number, signal: AbortSignal) =>
 +  new Promise<void>((resolve, reject) => {
++    if (signal.aborted) {
++      reject(aborted())
++      return
++    }
 +    const timer = setTimeout(resolve, ms)
 +    signal.addEventListener('abort', () => {
 +      clearTimeout(timer)
-+      reject(new DOMException('Aborted', 'AbortError'))
++      reject(aborted())
 +    }, { once: true })
 +  })
 +
@@ -213,11 +261,22 @@ new file mode 100644
 +  const host = getSubjectCutoutHost()
 +  const fps = useTimelineStore((s) => s.fps)
 +  const cutout = item.subjectCutout
-+  const [subjects, setSubjects] = useState<SubjectCutoutPerson[]>([MAIN_SUBJECT])
++  const [listed, setSubjects] = useState<SubjectCutoutPerson[]>([MAIN_SUBJECT])
++  // A clip already cut out on its main subject keeps that choice beside the people found in it.
++  const subjects = useMemo(
++    () =>
++      cutout?.subject.kind === 'subject' && !listed.some((entry) => entry.kind === 'subject')
++        ? [...listed, MAIN_SUBJECT]
++        : listed,
++    [listed, cutout?.subject.kind],
++  )
 +  const [chosen, setChosen] = useState<string | null>(cutout?.subject.personId ?? null)
 +  const [progress, setProgress] = useState<number | null>(null)
 +  const [refining, setRefining] = useState(false)
 +  const abortRef = useRef<AbortController | null>(null)
++  // Only a clip with no cut-out yet gets a person chosen for it when the people load.
++  const hasCutout = useRef(!!cutout)
++  hasCutout.current = !!cutout
 +  const painting = useSubjectCutoutPaintStore((s) => (s.itemId === item.id ? s.label : null))
 +  const pendingStrokes = useSubjectCutoutPaintStore((s) => s.strokes.some((stroke) => stroke.itemId === item.id))
 +  const photos = useMediaLibraryStore((s) => s.mediaItems)
@@ -236,7 +295,7 @@ new file mode 100644
 +      (found) => {
 +        if (controller.signal.aborted || found.length === 0) return
 +        setSubjects(found)
-+        setChosen((current) => current ?? found.find((entry) => entry.kind === 'person')?.personId ?? null)
++        if (!hasCutout.current) setChosen((current) => current ?? found.find((entry) => entry.kind === 'person')?.personId ?? null)
 +      },
 +      () => {},
 +    )
@@ -259,26 +318,33 @@ new file mode 100644
 +    setRefining(refine)
 +    try {
 +      let job: SubjectCutoutJob = await host.start({ clipId: item.id, personId: who.personId, points })
++      controller.signal.throwIfAborted()
 +      while (job.status === 'queued' || job.status === 'running') {
 +        setProgress(job.progress)
 +        await sleep(POLL_MS, controller.signal)
 +        job = await host.read(job.id)
++        controller.signal.throwIfAborted()
 +      }
 +      if (job.status === 'failed' || !job.matte) {
 +        const known = job.errorCode === 'faceDetectionOff' || job.errorCode === 'personNotInFirstFrame'
 +        toast.error(t('cutout.failed', { name, reason: known ? t(`cutout.errors.${job.errorCode}`) : (job.error ?? '') }))
 +        return
 +      }
-+      if (!(await host.whenMatteReady(job.matte.importId, controller.signal))) {
++      const ready = await host.whenMatteReady(job.matte.importId, controller.signal)
++      controller.signal.throwIfAborted()
++      if (!ready) {
 +        toast.error(t('cutout.failed', { name, reason: t('cutout.notKept') }))
 +        return
 +      }
++      // What the person chose while the job ran (background, colour, photo, softness) wins: read the
++      // clip's cut-out as it is now, not as it was when the job started.
++      const latest = (useItemsStore.getState().itemById[item.id] as VideoItem | undefined)?.subjectCutout
 +      const kept = setSubjectCutout(item.id, {
 +        subject: { kind: who.kind, ...(who.personId && { personId: who.personId }), ...(who.name && { name: who.name }) },
-+        background: cutout?.background ?? 'blur',
-+        ...(cutout?.colour && { colour: cutout.colour }),
-+        ...(cutout?.photo && { photo: cutout.photo }),
-+        softness: cutout?.softness ?? DEFAULT_SOFTNESS,
++        background: latest?.background ?? 'blur',
++        ...(latest?.colour && { colour: latest.colour }),
++        ...(latest?.photo && { photo: latest.photo }),
++        softness: latest?.softness ?? DEFAULT_SOFTNESS,
 +        matte: job.matte,
 +        ...(points.length > 0 && { points }),
 +      })
@@ -364,7 +430,12 @@ new file mode 100644
 +                  role="radio"
 +                  aria-checked={cutout!.background === background}
 +                  className={`rounded border px-2 py-1 text-start ${cutout!.background === background ? 'border-primary bg-primary/10' : 'border-border'}`}
-+                  onClick={() => updateSubjectCutout(item.id, { background })}
++                  onClick={() =>
++                    updateSubjectCutout(item.id, {
++                      background,
++                      ...(background === 'photo' && !cutout!.photo && photos[0] && { photo: { mediaId: photos[0].id } }),
++                    })
++                  }
 +                >
 +                  <b className="block">{t(`cutout.backgrounds.${background}.label`)}</b>
 +                  <span className="text-muted-foreground">{t(`cutout.backgrounds.${background}.note`)}</span>
@@ -648,7 +719,7 @@ diff --git a/src/features/export/utils/subject-cutout.test.ts b/src/features/exp
 new file mode 100644
 --- /dev/null
 +++ b/src/features/export/utils/subject-cutout.test.ts
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,195 @@
 +import { describe, expect, it, vi } from 'vite-plus/test'
 +import type { SubjectCutout, VideoItem } from '@/types/timeline'
 +import { createItemRenderContext } from './canvas-item-renderer-test-helpers'
@@ -801,6 +872,27 @@ new file mode 100644
 +      expect(ensureImageItemReady).not.toHaveBeenCalled()
 +    })
 +
++    it('exports a Photo background with no photo chosen without asking for one', async () => {
++      const ensureImageItemReady = vi.fn()
++      const item = clip(cutout('photo')) as VideoItem & { subjectCutout: SubjectCutout }
++      await expect(
++        renderVideoWithSubjectCutout(
++          target(),
++          item,
++          { x: 0, y: 0, width: 1920, height: 1080, rotation: 0, opacity: 1, cornerRadius: 0 },
++          70,
++          createItemRenderContext({ ensureImageItemReady }),
++          0,
++          undefined,
++          vi.fn().mockResolvedValue(true),
++        ),
++      ).rejects.toThrow(SUBJECT_MATTE_UNAVAILABLE)
++      // Only the matte was asked for (it is missing here); no photo was.
++      expect(ensureImageItemReady.mock.calls.map(([image]) => image.id)).toEqual([
++        `clip::cutout-matte::${matte.importId}`,
++      ])
++    })
++
 +    it('refuses to export a frame whose matte cannot be read, and previews it uncut', async () => {
 +      const drawClip = vi.fn().mockResolvedValue(true)
 +      const item = clip(cutout('remove')) as VideoItem & { subjectCutout: SubjectCutout }
@@ -827,7 +919,7 @@ diff --git a/src/features/export/utils/subject-cutout.ts b/src/features/export/u
 new file mode 100644
 --- /dev/null
 +++ b/src/features/export/utils/subject-cutout.ts
-@@ -0,0 +1,303 @@
+@@ -0,0 +1,309 @@
 +/**
 + * Frameleaf (FL-639): Cut out the subject in a video clip.
 + *
@@ -1004,7 +1096,11 @@ new file mode 100644
 +  /** Applies to the matte what `drawClip` applies to the clip beyond its transform (stabilisation). */
 +  alignMatte?: (target: OffscreenCanvasRenderingContext2D) => void,
 +): Promise<boolean> {
-+  const cutout = item.subjectCutout
++  // A Photo background with no photo chosen is drawn as Blur: a defined, opaque fallback.
++  const cutout: SubjectCutout =
++    item.subjectCutout.background === 'photo' && !item.subjectCutout.photo?.mediaId
++      ? { ...item.subjectCutout, background: 'blur' }
++      : item.subjectCutout
 +  const { matte } = cutout
 +  const sourceSeconds = resolveVideoRenderSourceTimeSeconds(
 +    item,
@@ -1024,9 +1120,11 @@ new file mode 100644
 +    cutout.background === 'photo' && cutout.photo?.mediaId
 +      ? await loadImage(rctx, cutoutImageItem(item, 'photo', cutout.photo.mediaId))
 +      : null
++  // A chosen photo that cannot be read fails export; preview draws the clip blurred behind instead.
 +  if (cutout.background === 'photo' && !photo && rctx.renderMode === 'export') {
 +    throw new Error(SUBJECT_MATTE_UNAVAILABLE)
 +  }
++  const background = cutout.background === 'photo' && !photo ? 'blur' : cutout.background
 +
 +  const held: OffscreenCanvas[] = []
 +  try {
@@ -1055,14 +1153,14 @@ new file mode 100644
 +    // Background, inside the clip's own visible pixels.
 +    const out = scratch(rctx, ctx, held)
 +    out.ctx.setTransform(1, 0, 0, 1, 0, 0)
-+    if (cutout.background === 'blur') {
++    if (background === 'blur') {
 +      out.ctx.filter = `blur(${blur.background.toFixed(2)}px)`
 +      out.ctx.drawImage(clip.canvas, 0, 0)
 +      out.ctx.filter = 'none'
-+    } else if (cutout.background === 'colour') {
++    } else if (background === 'colour') {
 +      out.ctx.fillStyle = /^#[\da-f]{6}$/i.test(cutout.colour ?? '') ? cutout.colour! : '#000000'
 +      out.ctx.fillRect(0, 0, out.canvas.width, out.canvas.height)
-+    } else if (cutout.background === 'photo' && photo) {
++    } else if (background === 'photo' && photo) {
 +      // The photo fills the clip's frame, centred and cropped to its shape.
 +      out.ctx.setTransform(ctx.getTransform())
 +      const box = layout.viewportRect
@@ -1072,7 +1170,7 @@ new file mode 100644
 +      out.ctx.drawImage(photo.source, box.x + (box.width - width) / 2, box.y + (box.height - height) / 2, width, height)
 +      out.ctx.setTransform(1, 0, 0, 1, 0, 0)
 +    }
-+    if (cutout.background !== 'remove') {
++    if (background !== 'remove') {
 +      out.ctx.globalCompositeOperation = 'destination-in'
 +      out.ctx.drawImage(clip.canvas, 0, 0)
 +      out.ctx.globalCompositeOperation = 'source-over'

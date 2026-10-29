@@ -766,10 +766,15 @@
       "sha256": "75a01bae7be8e0dcf4bb849b107dba50781d9812f6531bc465568a320bdb65d2"
     },
     {
+      "path": "patches/0170-caption-languages.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ddf70ec8b8038d204aeb9da5f5c77a0fa71f9866df924b3df1f6fc107eee629c"
+    },
+    {
       "path": "patches/0166-subject-cutout.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "d97d4188e5233efcaba3409359816caf1d1e9d6240d08ce4b84298e042cf3915"
+      "sha256": "a7b9acbeb137ec78f3eb9672426f4b619b7750208a100c5be76d444b24041f10"
     }
   ],
-  "sourceSha256": "b75f35884e7b63572c0920bdd2e810a1fd6b7d6402f1c2e76c0cc1f6a9a939b5"
+  "sourceSha256": "81cd71b8c0925546cd17979960a4d34463768231cdab7060deb4091d863da192"
 }

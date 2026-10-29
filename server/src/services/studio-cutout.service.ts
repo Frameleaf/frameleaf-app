@@ -227,6 +227,7 @@ export class StudioCutoutService {
   ): Promise<void> {
     job.status = 'running';
     let folder: string | undefined;
+    let matteFile: string | undefined;
     const controller = new AbortController();
     // A deadline of its own: a stalled worker must not hold the queue for every later cut-out.
     const deadline = setTimeout(
@@ -294,8 +295,12 @@ export class StudioCutoutService {
       const incoming = studioImportIncomingFolder(job.ownerId);
       await mkdir(incoming, { recursive: true });
       const file = path.join(incoming, `${importId}.png`);
+      matteFile = file;
       await writeFile(file, atlas, { flag: 'wx' });
       const { size } = await stat(file);
+      // From here the import admission owns the file: it removes it on a refusal before retention, and
+      // the publication journal recovers it after retention starts.
+      matteFile = undefined;
       await this.imports.upload(auth, job.projectId, importId, {
         path: file,
         size,
@@ -328,6 +333,10 @@ export class StudioCutoutService {
       job.settledAt = Date.now();
       if (folder) {
         await rm(folder, { recursive: true, force: true }).catch(() => {});
+      }
+      // A matte written but never handed to the import admission is not kept.
+      if (matteFile) {
+        await rm(matteFile, { force: true }).catch(() => {});
       }
     }
   }

@@ -23,17 +23,19 @@
   let showWaiting = $state(false);
   const tabButtons: Record<string, HTMLButtonElement> = {};
   async function discover(
-    type: "discover" | "bookmark" | "visible" | "area" = "discover",
+    type: "discover" | "bookmark" | "visible" | "area" | "whole" = "discover",
   ) {
     discovering = true;
     error = "";
     try {
       const reply = await sendRequest(
-        type === "visible" || type === "area"
+        type === "visible" || type === "area" || type === "whole"
           ? { type: "screenshot", mode: type }
           : { type },
       );
       if (!reply.ok) error = reply.error;
+      // The popup closes so it isn't in the picture; the page shows progress and Cancel.
+      else if (type === "whole") window.close();
     } catch {
       error =
         "Could not read this page. Go back to the web page and try again.";
@@ -215,11 +217,20 @@
           ><Icon name="selectDrag" size={22} /><strong>Select an area</strong
           ><small>Drag, or use the arrow keys</small></button
         >
+        <button
+          type="button"
+          disabled={discovering}
+          onclick={() => void discover("whole")}
+          ><Icon name="arrowExpandVertical" size={22} /><strong
+            >Whole page</strong
+          ><small>Scrolls to the end for you</small></button
+        >
       </div>
       <p class="hint">
         You see the screenshot before anything is saved. To select an area, drag
         on the page, or move with the arrow keys and press Enter at each corner.
-        Esc cancels.
+        For the whole page, this window closes while the page scrolls; Cancel on
+        the page stops it. Esc cancels either.
       </p>
     </div>
     <div

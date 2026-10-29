@@ -17,6 +17,7 @@
  * - **Complete disposal.** `dispose` asks the editor to release what it holds, then removes the
  *   frame, which ends every AudioContext, GPU device, worker and object URL it created.
  */
+import { isStudioCaptionTranslationRequest } from './caption-languages';
 import type { StudioCommandEnvelope } from './commands';
 import { registerStudioEngine, StudioEngineNotBuiltError } from './engine-loader';
 import {
@@ -282,6 +283,15 @@ const serviceCalls: ServiceHandlers = {
       return Promise.reject(new Error('Invalid publication cancellation'));
     }
     return services.cancelProjectImportPublication(importId, publicationId, scope);
+  },
+  // FL-641: only two offered languages and caption text reach the host; the server checks again.
+  translateCaptions: (services, [request]) => {
+    if (!services.translateCaptions) {
+      return Promise.reject(new Error('Caption translation unavailable'));
+    }
+    return isStudioCaptionTranslationRequest(request)
+      ? services.translateCaptions(request)
+      : Promise.reject(new Error('Invalid caption translation'));
   },
   reloadProject: (services) => services.reloadProject(),
   saveWorkspace: (services, [layout]) =>

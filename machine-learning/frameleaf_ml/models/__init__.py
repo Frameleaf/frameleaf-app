@@ -35,6 +35,10 @@ def get_model_class(model_name: str, model_type: ModelType, model_task: ModelTas
         from frameleaf_ml.models.musicgen import MusicGenModel
 
         return MusicGenModel
+    if model_task == ModelTask.TRANSLATE and model_type == ModelType.TEXTUAL:
+        from frameleaf_ml.models.translate import TranslateModel
+
+        return TranslateModel
     source = get_model_source(model_name)
     match source, model_type, model_task:
         case ModelSource.OPENCLIP | ModelSource.MCLIP, ModelType.VISUAL, ModelTask.SEARCH:

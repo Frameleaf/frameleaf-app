@@ -103,6 +103,8 @@ describe(LibraryProgressService.name, () => {
       withCopy: 12,
       videoMs: 6_000_000,
       copyMs: 900_000,
+      copyBytes: 7e9,
+      unsizedCopies: 3,
     });
     analytics.getLatestHostSamples.mockResolvedValue([
       { series: AnalyticsSeriesId.HostThumbnailBytes, value: 41e9, observedAt: new Date('2026-10-22T03:00:00Z') },
@@ -129,6 +131,28 @@ describe(LibraryProgressService.name, () => {
     });
   });
 
+  it('says the space playback copies take from their recorded sizes, not the folder reading (FL-630)', async () => {
+    const { sut, assetJob, analytics } = setup();
+    assetJob.countMediaCopies.mockResolvedValue({
+      photos: 0,
+      withoutPreview: 0,
+      videos: 1,
+      withCopy: 0,
+      videoMs: 60_000,
+      copyMs: 0,
+      copyBytes: 0,
+      unsizedCopies: 0,
+    });
+    // the folder holds only its 13-byte marker file
+    analytics.getLatestHostSamples.mockResolvedValue([
+      { series: AnalyticsSeriesId.HostEncodedVideoBytes, value: 13, observedAt: new Date('2026-10-22T03:05:00Z') },
+    ]);
+
+    await expect(sut.getMediaCopies()).resolves.toEqual(
+      expect.objectContaining({ withCopy: 0, playbackBytes: 0, measuredAt: null }),
+    );
+  });
+
   describe('the graphics card for video (FL-537)', () => {
     it('says when the card stopped helping', async () => {
       const { sut, assetJob } = setup({
@@ -146,6 +170,8 @@ describe(LibraryProgressService.name, () => {
         withCopy: 0,
         videoMs: 0,
         copyMs: 0,
+        copyBytes: 0,
+        unsizedCopies: 0,
       });
       await expect(sut.getMediaCopies()).resolves.toEqual(
         expect.objectContaining({
