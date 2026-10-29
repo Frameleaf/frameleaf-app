@@ -2610,11 +2610,6 @@ export enum DatabaseLock {
    * uploads of the same new content never store it twice.
    */
   UniversalStorageChecksum = 980,
-  /**
-   * FL-657: library data snapshots, queued ("Take a snapshot now") or made by the backup run, are
-   * written one at a time, so a newer snapshot file always comes from a dump that finished later.
-   */
-  DatabaseBackupDump = 981,
 }
 
 export enum MaintenanceAction {

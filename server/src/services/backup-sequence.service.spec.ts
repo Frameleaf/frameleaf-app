@@ -11,6 +11,8 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
   const stored: { state?: BackupSequenceState } = {};
   let lockTail = Promise.resolve();
   const buddy: Place = { on: true, busy: false };
+  // The snapshot job the run queues: it finishes at once unless a test keeps it busy.
+  const local = { busy: false };
   const cloud: Place = { on: true, busy: false };
   const config = {
     backup: {
@@ -46,15 +48,21 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
       }),
     },
     cron: { create: vi.fn(), update: vi.fn() },
-    job: { queue: vi.fn().mockResolvedValue(undefined) },
-    event: { emit: vi.fn().mockResolvedValue(undefined) },
-    buddyRepository: { state: vi.fn().mockResolvedValue({ settings: { schedule: '0 4 * * *' } }) },
-    databaseBackup: {
-      handleBackupDatabase: vi.fn(() => {
-        order.push('local');
-        return Promise.resolve(JobStatus.Success);
-      }),
+    /** Queuing the snapshot job ("local"). */
+    snapshot: vi.fn((): Promise<unknown> => {
+      order.push('local');
+      return Promise.resolve();
+    }),
+    job: {
+      queue: vi.fn((item: { name: JobName }) =>
+        item.name === JobName.DatabaseBackup ? mocks.snapshot() : Promise.resolve(),
+      ),
+      isPaused: vi.fn().mockResolvedValue(false),
+      getJobCounts: vi.fn(() =>
+        Promise.resolve({ active: local.busy ? 1 : 0, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 }),
+      ),
     },
+    buddyRepository: { state: vi.fn().mockResolvedValue({ settings: { schedule: '0 4 * * *' } }) },
     buddyBackup: {
       sequenceStatus: vi.fn(() => Promise.resolve({ ...buddy })),
       startScheduled: vi.fn(() => {
@@ -81,15 +89,13 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
       mocks.cron as never,
       mocks.job as never,
       mocks.buddyRepository as never,
-      mocks.databaseBackup as never,
       mocks.buddyBackup as never,
       mocks.cloudBackup as never,
-      mocks.event as never,
     );
     (sut as unknown as { readConfig: () => Promise<unknown> }).readConfig = () => Promise.resolve(config);
     return sut;
   };
-  return { sut: createService(), createService, mocks, order, stored, buddy, cloud, config };
+  return { sut: createService(), createService, mocks, order, stored, local, buddy, cloud, config };
 };
 
 describe('the one backup schedule (FL-362)', () => {
@@ -145,7 +151,7 @@ describe('the one backup schedule (FL-362)', () => {
       cloud.on = false;
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      mocks.databaseBackup.handleBackupDatabase.mockImplementationOnce(async () => {
+      mocks.snapshot.mockImplementationOnce(async () => {
         entered.resolve();
         await release.promise;
         return JobStatus.Success;
@@ -155,7 +161,7 @@ describe('the one backup schedule (FL-362)', () => {
       const advancing = createService().move();
       release.resolve();
       await Promise.all([starting, advancing]);
-      expect(mocks.databaseBackup.handleBackupDatabase).toHaveBeenCalledOnce();
+      expect(mocks.snapshot).toHaveBeenCalledOnce();
       expect(mocks.database.withLock).toHaveBeenCalledTimes(2);
       for (const [lock] of mocks.database.withLock.mock.calls) expect(lock).toBe(DatabaseLock.BackupSequenceRun);
     });
@@ -165,7 +171,7 @@ describe('the one backup schedule (FL-362)', () => {
       buddy.on = false;
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      mocks.databaseBackup.handleBackupDatabase.mockImplementationOnce(async () => {
+      mocks.snapshot.mockImplementationOnce(async () => {
         entered.resolve();
         await release.promise;
         return JobStatus.Success;
@@ -177,7 +183,7 @@ describe('the one backup schedule (FL-362)', () => {
       expect(await Promise.all([starting, ticking])).toEqual([JobStatus.Success, JobStatus.Skipped]);
       expect(stored.state?.dueAt).toEqual(expect.any(String));
       expect(stored.state?.run).toMatchObject({ place: 'cloud', begun: true });
-      expect(mocks.databaseBackup.handleBackupDatabase).toHaveBeenCalledOnce();
+      expect(mocks.snapshot).toHaveBeenCalledOnce();
     });
 
     it('backs up this server, then the buddy, then the cloud, each when the one before has finished', async () => {
@@ -240,68 +246,41 @@ describe('the one backup schedule (FL-362)', () => {
       },
     );
 
-    it('still backs up the others when the library data copy fails', async () => {
+    it('still backs up the others when the snapshot job cannot be queued', async () => {
       const { sut, mocks, order, stored } = setup();
-      mocks.databaseBackup.handleBackupDatabase.mockRejectedValue(new Error('disk full'));
+      mocks.snapshot.mockRejectedValue(new Error('queue unavailable'));
 
       await sut.handleStart();
       expect(order).toEqual(['buddy']);
       expect(stored.state?.run?.results).toEqual({ local: 'failed' });
-      // FL-657: tried again as the queued snapshot job, whose failure the Backup page and the notice report
+    });
+
+    it('makes the library data copy as the queued snapshot job and waits for it (FL-657)', async () => {
+      const { sut, mocks, order, stored, local } = setup();
+      local.busy = true;
+
+      await sut.handleStart();
+      // The same job "Take a snapshot now" queues, so its outcome is reported the same way.
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
-      expect(mocks.event.emit).not.toHaveBeenCalled();
+      expect(order).toEqual(['local']);
+      expect(stored.state?.run).toMatchObject({ place: 'local', begun: true });
+
+      await sut.move();
+      expect(order).toEqual(['local']);
+
+      local.busy = false;
+      await sut.move();
+      expect(order).toEqual(['local', 'buddy']);
+      expect(stored.state?.run).toMatchObject({ place: 'buddy', results: { local: 'done' } });
     });
 
-    it('queues the snapshot job again when the library data copy reports a failure (FL-657)', async () => {
-      const { sut, mocks, stored, buddy, cloud } = setup();
-      buddy.on = false;
-      cloud.on = false;
-      mocks.databaseBackup.handleBackupDatabase.mockResolvedValue(JobStatus.Failed);
+    it('does not wait for a snapshot held in a paused queue', async () => {
+      const { sut, mocks, order, local } = setup();
+      local.busy = true;
+      mocks.job.isPaused.mockResolvedValue(true);
 
       await sut.handleStart();
-      expect(stored.state?.run).toBeNull();
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
-    });
-
-    it('reports the failed copy itself when the retry cannot be queued (FL-657)', async () => {
-      const { sut, mocks, stored, buddy, cloud } = setup();
-      buddy.on = false;
-      cloud.on = false;
-      const failure = new Error('disk full');
-      mocks.databaseBackup.handleBackupDatabase.mockRejectedValue(failure);
-      mocks.job.queue.mockRejectedValueOnce(new Error('queue unavailable'));
-
-      await sut.handleStart();
-      expect(stored.state?.run).toBeNull();
-      expect(mocks.event.emit).toHaveBeenCalledWith('JobError', {
-        job: { name: JobName.DatabaseBackup, data: {} },
-        error: failure,
-      });
-    });
-
-    it('keeps a finished copy finished when reporting it fails (FL-657)', async () => {
-      const { sut, mocks, stored, buddy, cloud } = setup();
-      buddy.on = false;
-      cloud.on = false;
-      mocks.event.emit.mockRejectedValueOnce(new Error('listener failed'));
-
-      await sut.handleStart();
-      expect(stored.state?.run).toBeNull();
-      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('reporting it failed'));
-      expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
-    });
-
-    it('reports a scheduled library data copy that finished like a queued one (FL-657)', async () => {
-      const { sut, mocks, buddy, cloud } = setup();
-      buddy.on = false;
-      cloud.on = false;
-
-      await sut.handleStart();
-      expect(mocks.event.emit).toHaveBeenCalledWith('JobSuccess', {
-        job: { name: JobName.DatabaseBackup, data: {} },
-        response: JobStatus.Success,
-      });
-      expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: {} });
+      expect(order).toEqual(['local', 'buddy']);
     });
 
     it('moves on from a backup that is left waiting instead of holding the run up', async () => {
@@ -320,7 +299,7 @@ describe('the one backup schedule (FL-362)', () => {
 
       await sut.handleStart();
       expect(order).toEqual(['cloud']);
-      expect(mocks.databaseBackup.handleBackupDatabase).not.toHaveBeenCalled();
+      expect(mocks.snapshot).not.toHaveBeenCalled();
       expect(mocks.buddyBackup.startScheduled).not.toHaveBeenCalled();
       expect(stored.state?.run?.results).toEqual({ local: 'off', buddy: 'off' });
 
