@@ -47,7 +47,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
  
    if (item.type === 'audio') return null
  
-@@ -50,13 +61,25 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
+@@ -50,15 +61,31 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
      setReplaceExisting(false)
      setProgress(t('editor.motionTrack.decoding', { done: 0, total: '…' }))
      try {
@@ -62,8 +62,16 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
 +          showMotionTrackOverlay(sourceId, { progress: done / total })
 +        },
        })
+-      // A superseded run (cancelled, or the source or direction changed) never writes its result.
+-      if (controller.signal.aborted) return
 -      if (analysis.ok) setResult(analysis.result)
 -      else toast.warning(t(`editor.motionTrack.refusal.${analysis.reason}`))
++      // A superseded run (cancelled, or the source or direction changed) never writes its result;
++      // its overlay goes unless a newer run has taken over.
++      if (controller.signal.aborted) {
++        if (abortRef.current === controller) clearMotionTrackOverlay(sourceId)
++        return
++      }
 +      if (analysis.ok) {
 +        setResult(analysis.result)
 +        showMotionTrackOverlay(sourceId, { result: analysis.result })
@@ -72,11 +80,11 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
 +        toast.warning(t(`editor.motionTrack.refusal.${analysis.reason}`))
 +      }
      } catch (error) {
-+      clearMotionTrackOverlay(sourceId)
-       if (!(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.motionTrack.refusal.decode-failed'))
++      if (abortRef.current === controller) clearMotionTrackOverlay(sourceId)
+       if (!controller.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.motionTrack.refusal.decode-failed'))
      } finally {
        if (abortRef.current === controller) setProgress(null)
-@@ -91,6 +114,20 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
+@@ -93,6 +120,20 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
            })}
          </select>
        </PropertyRow>
@@ -97,7 +105,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
        <PropertyRow label={t('editor.motionTrack.direction')}>
          <div className="flex w-full gap-1" role="radiogroup" aria-label={t('editor.motionTrack.direction')}>
            {(['forward', 'backward'] as const).map((value) => (
-@@ -141,10 +178,10 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
+@@ -143,10 +184,10 @@ export function MotionTrackSection({ item }: { item: TimelineItem }) {
          </Button>
        </div>
  
@@ -304,7 +312,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    const fps = useTimelineSettingsStore.getState().fps
    const scale = ANALYSIS_WIDTH / clip.sourceWidth
    const analysisSeed = { cx: seedBox.cx * scale, cy: seedBox.cy * scale, width: seedBox.width * scale, height: seedBox.height * scale }
-@@ -197,7 +226,8 @@ export async function analyzeMotionTrack(
+@@ -201,7 +230,8 @@ export async function analyzeMotionTrack(
      result: {
        sourceId,
        targetId,
@@ -314,7 +322,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
        frames,
        samples: sourceSamples,
        values: followTrack(clip, sourceSamples, frames, targetPlacement),
-@@ -222,7 +252,9 @@ export function applyMotionTrack(
+@@ -226,7 +256,9 @@ export function applyMotionTrack(
    const source = items.find((item) => item.id === result.sourceId)
    const target = items.find((item) => item.id === result.targetId)
    const direction = result.frames.length > 1 && result.frames[1]! < result.frames[0]! ? 'backward' : 'forward'
@@ -325,7 +333,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
      return { ok: false, reason: 'stale' }
    }
    if (result.lostFrames.length > 0 && !decisions.keepTrackedPart) return { ok: false, reason: 'unreviewed-lost' }
-@@ -248,33 +280,94 @@ export function applyMotionTrack(
+@@ -252,33 +284,94 @@ export function applyMotionTrack(
      itemId: target.id, property, frame: value.frame - target.from, value: Math.round(value[property] * 100) / 100,
      easing: 'linear' as const, source: source_,
    })))
