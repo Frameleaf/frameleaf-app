@@ -4,6 +4,8 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 class FeatureFlagsManager {
   #value?: ServerFeaturesDto = $state();
   #loads = 0;
+  /** Sign-in's answer, not yet used by an `init`: that one `init` needs no request of its own. */
+  #fromSignIn = false;
 
   constructor() {
     eventManager.on({
@@ -15,15 +17,18 @@ class FeatureFlagsManager {
       ServerFeaturesLoaded: (features) => {
         if (!this.#value && this.#loads === 0) {
           this.#value = features;
+          this.#fromSignIn = true;
         }
       },
     });
   }
 
   async init() {
-    if (!this.#value) {
-      await this.#loadFeatureFlags();
+    if (this.#fromSignIn) {
+      this.#fromSignIn = false;
+      return;
     }
+    await this.#loadFeatureFlags();
   }
 
   get value() {
