@@ -3936,7 +3936,7 @@
   "frameleaf_boards_delete_people_lose_access": "{names} {count, plural, one {loses} other {lose}} access to this {kind}.",
   "frameleaf_boards_download_backup_note": "For a full copy you can restore, use Backup in settings.",
   "frameleaf_boards_download_library": "Include a library file",
-  "frameleaf_boards_download_library_hint": "Adds frameleaf-library.json with collections, tags, ratings, notes, sources and links, so the work can move to another app. Server paths and other people’s details are never included.",
+  "frameleaf_boards_download_library_hint": "Adds frameleaf-library.json with collections, tags, ratings, notes, annotations, sources and links, so the work can move to another app. Server paths and other people’s details are never included.",
   "frameleaf_boards_download_library_unavailable": "A library file can be added for up to 10,000 items, all of them your own.",
   "frameleaf_boards_download_originals": "Originals from <b>{name}</b>, exactly as saved.",
   "frameleaf_boards_download_title": "Download {count, plural, one {# item} other {# items}}",
