@@ -84,6 +84,8 @@ const LIBRARY_TYPES: ReadonlySet<StudioLibraryType> = new Set(['all', 'photo', '
 export const STUDIO_LIBRARY_ADD_LIMIT = 50;
 /** The longest search text the host accepts; the Library view's box stops typing there. */
 export const STUDIO_LIBRARY_TEXT_LIMIT = 500;
+/** The last results page the frame may ask for; the host never offers a page after it. */
+export const STUDIO_LIBRARY_PAGE_LIMIT = 1000;
 
 /**
  * Whether a Library view query from the frame has the shape the host accepts (FL-636). The frame is
@@ -103,7 +105,8 @@ export const isStudioLibraryQuery = (value: unknown): value is StudioLibraryQuer
     (absent(value.personId) || id(value.personId)) &&
     text(value.city, 200) &&
     (absent(value.month) || (typeof value.month === 'string' && LIBRARY_MONTH.test(value.month))) &&
-    (value.page === undefined || (count(value.page) && (value.page as number) >= 1 && (value.page as number) <= 1000))
+    (value.page === undefined ||
+      (count(value.page) && (value.page as number) >= 1 && (value.page as number) <= STUDIO_LIBRARY_PAGE_LIMIT))
   );
 };
 export const isStudioLibraryAssetIds = (value: unknown): value is string[] =>

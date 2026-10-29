@@ -91,6 +91,14 @@ describe('FL-636 Studio library search', () => {
     expect(result.nextPage).toBe(3);
   });
 
+  it('offers no page after the last one the frame may ask for', async () => {
+    const sdk = api({ searchAssets: vi.fn().mockResolvedValue(page([asset('recent')], '1001')) });
+    const last = await searchStudioLibrary({ page: 1000 }, { language: 'en', elevated: false, api: sdk as never });
+    expect(last.nextPage).toBeNull();
+    const before = await searchStudioLibrary({ page: 999 }, { language: 'en', elevated: false, api: sdk as never });
+    expect(before.nextPage).toBe(1000);
+  });
+
   it('asks for Locked items only while the session is unlocked, and keeps them only then', async () => {
     const locked = asset('locked', { visibility: AssetVisibility.Locked });
     const sdk = api({

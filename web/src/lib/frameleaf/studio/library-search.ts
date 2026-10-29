@@ -34,6 +34,7 @@ import {
   type SmartSearchDto,
 } from '@frameleaf/sdk';
 import { isStudioEligibleAsset, resolveStudioAssets, toStudioAsset } from './assets';
+import { STUDIO_LIBRARY_PAGE_LIMIT } from './frame-service-schema';
 import type {
   StudioAssetRef,
   StudioHostServices,
@@ -122,7 +123,8 @@ export const searchStudioLibrary = async (
   }
   return {
     items: found.map((asset) => toStudioAsset(asset)),
-    nextPage: timeline.assets.nextPage ? page + 1 : null,
+    // The frame may not ask past the last page it is allowed, so none is offered after it.
+    nextPage: timeline.assets.nextPage && page < STUDIO_LIBRARY_PAGE_LIMIT ? page + 1 : null,
     found,
   };
 };
