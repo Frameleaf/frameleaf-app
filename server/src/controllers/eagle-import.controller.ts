@@ -14,9 +14,10 @@ import {
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { EagleImportService } from 'src/services/eagle-import.service.js';
-import { UUIDParamDto } from 'src/validation.js';
+import { UUIDv7ParamDto } from 'src/validation.js';
 
 const history = () => new HistoryBuilder().added('v3');
+// Import ids are UUID v7 (`eagle_import.id`), so the routes that name one validate v7.
 
 /**
  * FL-653: import an Eagle library from a folder the server can open, so it keeps going with the
@@ -74,7 +75,7 @@ export class EagleImportController {
   @Endpoint({ summary: 'Get an Eagle import from the server', history: history() })
   getEagleImport(
     @Auth() auth: AuthDto,
-    @Param() { id }: UUIDParamDto,
+    @Param() { id }: UUIDv7ParamDto,
     @Query() query: EagleImportQueryDto,
   ): Promise<EagleImportResponseDto> {
     return this.service.get(auth, id, query);
@@ -88,7 +89,7 @@ export class EagleImportController {
     description: 'Stops after the item being brought over now. Everything already brought over stays.',
     history: history(),
   })
-  stopEagleImport(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<EagleImportResponseDto> {
+  stopEagleImport(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<EagleImportResponseDto> {
     return this.service.stop(auth, id);
   }
 }

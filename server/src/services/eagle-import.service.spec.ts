@@ -112,6 +112,7 @@ describe('FL-653 Eagle import from a server folder', () => {
       resolveDirectory: vitest.fn((base: string, relative: string) => Promise.resolve(path.resolve(base, relative))),
       isInsideRoots: vitest.fn().mockResolvedValue(true),
       copyToLibrary: vitest.fn(),
+      remove: vitest.fn().mockResolvedValue(undefined),
     };
     service = new EagleImportService(
       logger as unknown as LoggingRepository,
@@ -413,6 +414,19 @@ describe('FL-653 Eagle import from a server folder', () => {
       expect(repository.addOutcome).toHaveBeenCalledTimes(2);
       expect(repository.save).toHaveBeenCalledWith(expect.any(String), workerId, { failed: ['I1'] });
       expect(repository.finish).toHaveBeenCalledWith(expect.any(String), workerId, 'finished');
+    });
+
+    it('removes a whole copy it can no longer hand to the upload, and nothing else', async () => {
+      staging.copyToLibrary.mockImplementationOnce(async (_from: unknown, size: number) => {
+        // The server starts shutting down just as the copy finishes.
+        await worker.onShutdown();
+        return { size, checksum: Buffer.from('aa', 'hex'), legacyChecksum: Buffer.from('bb', 'hex') };
+      });
+      await worker.run(row({ fingerprint }) as never);
+      const destination = staging.copyToLibrary.mock.calls[0][2];
+      expect(staging.remove.mock.calls).toEqual([[destination]]);
+      expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      expect(repository.release).toHaveBeenCalled();
     });
 
     it('copies from the checked handle, never by opening the path again', async () => {

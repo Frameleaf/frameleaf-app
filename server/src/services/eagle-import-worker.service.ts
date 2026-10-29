@@ -405,7 +405,14 @@ export class EagleImportWorkerService {
     const digest = await this.staging
       .copyToLibrary(file.handle, file.size, destination, run.signal, () => Promise.resolve())
       .finally(() => file.handle.close());
-    this.throwIfReleased(run);
+    // `copyToLibrary` removes a partial copy itself; a whole copy the run can no longer hand to the
+    // upload (the lease went just after it finished) is removed here, so no orphan is left behind.
+    try {
+      this.throwIfReleased(run);
+    } catch (error) {
+      await this.staging.remove(destination);
+      throw error;
+    }
     const name = eagleFileName(item);
     const response = await this.assetMedia.uploadAsset(
       auth,

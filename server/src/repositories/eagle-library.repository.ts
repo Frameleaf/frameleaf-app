@@ -108,9 +108,11 @@ export class EagleLibraryRepository {
    * entries; a server that can't list through a handle refuses (`EagleListingUnavailableError`).
    */
   private async listDirectory(directory: string, expected: string): Promise<Dirent[]> {
-    const handle = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW).catch(
-      () => {},
-    );
+    // Non-blocking, so a named pipe planted in the library can never hold the open (as for files).
+    const handle = await open(
+      directory,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    ).catch(() => {});
     if (!handle) {
       return [];
     }
@@ -218,9 +220,15 @@ export class EagleLibraryRepository {
     return this.openInside(path.join(library, 'images', `${id}.info`, fileName), library);
   }
 
-  /** A regular file inside `within`, opened without following a link and checked through its handle. */
+  /**
+   * A regular file inside `within`, opened without following a link and checked through its handle.
+   * Opened non-blocking: a named pipe (FIFO) would otherwise hold the open, and a worker thread, until
+   * something wrote to it. It then fails the regular-file check; for a regular file it changes nothing.
+   */
   private async openInside(filePath: string, within: string): Promise<EagleOpenFile | undefined> {
-    const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => {});
+    const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(
+      () => {},
+    );
     if (!handle) {
       return;
     }

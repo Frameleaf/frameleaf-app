@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -101,6 +102,17 @@ describe(EagleLibraryRepository.name, () => {
     }
     const found = await new Swapping().findLibraries(root);
     expect(found.some((relative) => relative.includes('Elsewhere'))).toBe(false);
+  });
+
+  onLinux('never waits on a named pipe planted as a metadata.json', async () => {
+    const folder = await library('Studio.library');
+    const metadata = path.join(folder, 'images', 'I1.info', 'metadata.json');
+    await rm(metadata);
+    execFileSync('mkfifo', [metadata]);
+    // Without O_NONBLOCK this open would wait for a writer that never comes.
+    const folders = await sut.readInfoFolders(folder);
+    expect(folders).toEqual([expect.objectContaining({ id: 'I1', metadata: undefined })]);
+    await expect(sut.openItemFile(folder, 'I1', 'metadata.json')).resolves.toBeUndefined();
   });
 
   it.skipIf(linux)('refuses to list folders where it can’t list through the checked handle', async () => {
