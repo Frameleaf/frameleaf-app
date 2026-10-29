@@ -132,7 +132,7 @@ diff --git a/src/features/export/components/export-loudness-report.tsx b/src/fea
  /** Reported tolerance for the integrated level and the true-peak reading. */
  const TARGET_TOLERANCE_LU = 1
  const PEAK_TOLERANCE_DB = 0.2
-@@ -27,6 +28,9 @@ async function decodeDeliverable(blob: Blob): Promise<AudioBuffer> {
+@@ -43,6 +44,9 @@ async function decodeDeliverable(blob: Blob): Promise<AudioBuffer> {
   */
  export function ExportLoudnessReport({ blob }: { blob: Blob | null | undefined }) {
    const { t } = useTranslation()
@@ -779,7 +779,7 @@ diff --git a/src/shared/state/playback/types.ts b/src/shared/state/playback/type
 diff --git a/src/shared/utils/loudness.ts b/src/shared/utils/loudness.ts
 --- a/src/shared/utils/loudness.ts
 +++ b/src/shared/utils/loudness.ts
-@@ -130,23 +130,33 @@ const PHASES: Float64Array[] = Array.from({ length: OVERSAMPLE }, (_, phase) =>
+@@ -131,23 +131,33 @@ const PHASES: Float64Array[] = Array.from({ length: OVERSAMPLE }, (_, phase) =>
    return taps.map((tap) => tap / sum)
  })
  
