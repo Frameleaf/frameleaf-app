@@ -290,7 +290,8 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     fileModifiedAt: asDateTimeString(entity.fileModifiedAt),
     localDateTime: asDateTimeString(entity.localDateTime),
     updatedAt: asDateTimeString(entity.updatedAt),
-    isFavorite: options.auth?.user.id === entity.ownerId && entity.isFavorite,
+    // the viewer's own mark: a shared link acts as its owner, but a visitor never sees the owner's favorites
+    isFavorite: !options.auth?.sharedLink && options.auth?.user.id === entity.ownerId && entity.isFavorite,
     isArchived: visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility,

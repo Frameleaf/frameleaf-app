@@ -489,7 +489,7 @@ describe(SharedLinkService.name, () => {
       const newAsset = AssetFactory.create();
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
       mocks.sharedLink.create.mockResolvedValue(getForSharedLink(sharedLink));
-      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.addAssets.mockResolvedValue([]);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([newAsset.id]));
 
       await expect(
@@ -501,12 +501,24 @@ describe(SharedLinkService.name, () => {
       ]);
 
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledTimes(1);
-      expect(mocks.sharedLink.update).toHaveBeenCalled();
-      expect(mocks.sharedLink.update).toHaveBeenCalledWith({
-        ...getForSharedLink(sharedLink),
-        slug: null,
-        assetIds: [newAsset.id],
-      });
+      expect(mocks.sharedLink.addAssets).toHaveBeenCalledWith(sharedLink.id, [newAsset.id]);
+      expect(mocks.sharedLink.update).not.toHaveBeenCalled();
+    });
+
+    it('adds an asset repeated in one request once', async () => {
+      const sharedLink = SharedLinkFactory.from().build();
+      const newAsset = AssetFactory.create();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.addAssets.mockResolvedValue([]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([newAsset.id]));
+
+      await expect(
+        sut.addAssets(authStub.admin, sharedLink.id, { assetIds: [newAsset.id, newAsset.id] }),
+      ).resolves.toEqual([
+        { assetId: newAsset.id, success: true },
+        { assetId: newAsset.id, success: false, error: AssetIdErrorReason.DUPLICATE },
+      ]);
+      expect(mocks.sharedLink.addAssets).toHaveBeenCalledWith(sharedLink.id, [newAsset.id]);
     });
   });
 
@@ -648,7 +660,7 @@ describe(SharedLinkService.name, () => {
         .build();
       const [locked, plain] = [AssetFactory.create(), AssetFactory.create()];
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
-      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.addAssets.mockResolvedValue([]);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id, plain.id]));
       mocks.asset.getLockedAssetIds.mockResolvedValue(new Set([locked.id]));
 
@@ -657,11 +669,7 @@ describe(SharedLinkService.name, () => {
         { assetId: plain.id, success: true },
       ]);
 
-      expect(mocks.sharedLink.update).toHaveBeenCalledWith({
-        ...getForSharedLink(sharedLink),
-        slug: null,
-        assetIds: [plain.id],
-      });
+      expect(mocks.sharedLink.addAssets).toHaveBeenCalledWith(sharedLink.id, [plain.id]);
     });
   });
 

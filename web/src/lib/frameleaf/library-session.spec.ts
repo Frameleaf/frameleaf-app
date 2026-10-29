@@ -16,6 +16,7 @@ import {
   readLibraryView,
   readLibraryViewValue,
   reduceLibrarySession,
+  scopeForDestination,
   selectGroup,
   selectRange,
   toStoredLibrarySession,
@@ -652,5 +653,23 @@ describe('what survives a reload', () => {
     const restored = fromStoredLibrarySession(stored, incoming);
     expect(restored.state).toEqual(incoming);
     expect(restored.layout).toBe('work');
+  });
+});
+
+describe('scopeForDestination', () => {
+  it('puts a page that is not an album or a space back on the library scope', () => {
+    const album = { kind: 'album' as const, id: 'album-1' };
+    for (const kind of ['library', 'favorites', 'archive', 'person', 'tag']) {
+      expect(scopeForDestination(album, kind)).toEqual({ kind: 'library' });
+      expect(scopeForDestination({ kind: 'space', id: 'space-1' }, kind)).toEqual({ kind: 'library' });
+    }
+  });
+
+  it('leaves the scope of an album or space page, a library scope and an unknown page alone', () => {
+    const album = { kind: 'album' as const, id: 'album-1' };
+    expect(scopeForDestination(album, 'album')).toBeNull();
+    expect(scopeForDestination({ kind: 'space', id: 'space-1' }, 'space')).toBeNull();
+    expect(scopeForDestination({ kind: 'library' }, 'favorites')).toBeNull();
+    expect(scopeForDestination(album, undefined)).toBeNull();
   });
 });

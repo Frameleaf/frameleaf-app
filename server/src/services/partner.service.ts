@@ -11,6 +11,10 @@ import { startPartnerBackfill, stopPartnerSharing } from 'src/services/partner-c
 @Injectable()
 export class PartnerService extends BaseService {
   async create(auth: AuthDto, { sharedWithId }: PartnerCreateDto): Promise<PartnerResponseDto> {
+    // a library shared with its own owner would start copying every item back into that same library
+    if (sharedWithId === auth.user.id) {
+      throw new BadRequestException('Cannot share your library with yourself');
+    }
     if (!auth.session?.hasElevatedPermission) {
       const credentials = await this.userRepository.getForPinCode(auth.user.id);
       const locked = await this.assetRepository.getStatistics(auth.user.id, { visibility: AssetVisibility.Locked });
