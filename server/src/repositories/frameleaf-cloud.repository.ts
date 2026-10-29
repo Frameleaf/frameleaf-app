@@ -264,14 +264,15 @@ export class FrameleafCloudRepository {
     if (problem) {
       throw new BoundTokenRefusedError(problem);
     }
-    // a token minted with another key of this server (one a rotation replaced) is never used again
-    for (const key of this.tokenCache.keys()) {
-      if (key.startsWith(`${instanceId} ${resource} `)) {
-        this.tokenCache.delete(key);
-      }
-    }
     // a token asked for before `forget` (a rotation, a new link) still answers its callers, but isn't kept
+    // and doesn't evict a token cached since
     if (generation === this.generation) {
+      // a token minted with another key of this server (one a rotation replaced) is never used again
+      for (const key of this.tokenCache.keys()) {
+        if (key.startsWith(`${instanceId} ${resource} `)) {
+          this.tokenCache.delete(key);
+        }
+      }
       this.tokenCache.set(cacheKey, { token: response.access_token, expiresAt: now + response.expires_in * 1000 });
     }
     return { accessToken: response.access_token, signer };
