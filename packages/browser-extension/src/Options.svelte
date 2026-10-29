@@ -16,6 +16,7 @@
     RecentServer,
     SignInNotice,
   } from "./settings";
+  import { settledView } from "./views";
 
   let connection = $state<ConnectionStatus | null>(null);
   let recent = $state<RecentServer[]>([]);
@@ -28,6 +29,16 @@
   let showWaiting = $state(false);
   let waiting = $state(0);
   const connected = $derived(connection?.status === "connected");
+  /** The server Switch server started from, so a finished switch shows Settings again. */
+  let switchFrom = $state<string | null>(null);
+  $effect(() => {
+    if (loading) return;
+    view = settledView(view, {
+      connected,
+      origin: connection?.binding.origin ?? null,
+      switchFrom,
+    });
+  });
   const problem = $derived(
     notice?.kind === "problem"
       ? { problem: notice.problem, origin: notice.origin }
@@ -133,7 +144,10 @@
     <SettingsPanel
       {connection}
       bind:allowLocalhost
-      onSwitch={() => (view = "switch")}
+      onSwitch={() => {
+        switchFrom = connection?.binding.origin ?? null;
+        view = "switch";
+      }}
     />
   {/if}
   {#if error && !loading}<p class="error banner" role="alert">{error}</p>{/if}

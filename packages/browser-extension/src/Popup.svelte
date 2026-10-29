@@ -10,6 +10,7 @@
   import type { IconName } from "./icons";
   import { openOptions, sendRequest, watchConnection } from "./platform";
   import { hostOf } from "./sign-in-words";
+  import { settledView } from "./views";
   import type {
     ConnectionStatus,
     RecentServer,
@@ -41,6 +42,16 @@
       : null,
   );
   const connected = $derived(connection?.status === "connected");
+  /** The server Switch server started from, so a finished switch closes the form. */
+  let switchFrom = $state<string | null>(null);
+  $effect(() => {
+    if (loading) return;
+    view = settledView(view, {
+      connected,
+      origin: connection?.binding.origin ?? null,
+      switchFrom,
+    });
+  });
   async function loadSignIn() {
     try {
       const reply = await sendRequest({ type: "sign-in-state" });
@@ -186,7 +197,10 @@
       {connection}
       bind:allowLocalhost
       onBack={() => (view = "main")}
-      onSwitch={() => (view = "switch")}
+      onSwitch={() => {
+        switchFrom = connection?.binding.origin ?? null;
+        view = "switch";
+      }}
     />
   {:else if view === "switch"}
     <Connect
