@@ -98,6 +98,9 @@
         title = result.title ?? '';
       }
     } catch {
+      if (parsed?.href !== address) {
+        return;
+      }
       preview = { for: address, title: null, image: null };
       if (!titleEdited) {
         title = '';
