@@ -771,10 +771,15 @@
       "sha256": "ddf70ec8b8038d204aeb9da5f5c77a0fa71f9866df924b3df1f6fc107eee629c"
     },
     {
+      "path": "patches/0160-library-view-in-media-bin.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "120d336ee47621b17a8266c380e1de04a6419377cf597e107c0bed06b023e5b7"
+    },
+    {
       "path": "patches/0166-subject-cutout.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "2bea6c0895e3804d0cbe17856b9f21aaa92d2a0c4952e2eb207604f44cbc80e6"
+      "sha256": "f907e4a4ac4f116f4161e4ca2eb598a16320040707814ee9beeb22ffcc42aad5"
     }
   ],
-  "sourceSha256": "848ba71c8f8f7977337bc05284f951dba7c65729f357c802521ea340a72279ad"
+  "sourceSha256": "cc27d56ffadc8a6c112aeaf2a2096f983f9448786ccd1eab3fded898d899565c"
 }

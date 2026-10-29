@@ -36,6 +36,7 @@ import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, St
 import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
 import type { CutoutEngineString } from './cutout-strings';
 import type { StudioGeneratedMedia } from './generated-media';
+import type { LibraryPanelString } from './library-strings';
 import type { StudioPreviewView } from './preview';
 import type { StabiliseEngineString } from './stabilise-strings';
 import type { TranscriptEngineString } from './transcript-strings';
@@ -99,6 +100,50 @@ export interface StudioAssetRef {
    * HDR pixels; until then the engine reads the SDR playback stream.
    */
   hdrSourceUrl?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Add from your library (FL-636)                                       */
+/* ------------------------------------------------------------------ */
+
+export type StudioLibraryType = 'all' | 'photo' | 'video';
+
+/**
+ * A search of the person's whole library from the bin's Library view: smart search for `text`, with
+ * the same filters as the library's Search. `month` is `YYYY-MM`; `page` starts at 1.
+ */
+export interface StudioLibraryQuery {
+  text?: string | null;
+  type?: StudioLibraryType;
+  personId?: string | null;
+  city?: string | null;
+  month?: string | null;
+  page?: number;
+}
+
+/** One page of results, already projected and authorized by the host like `StudioHostContext.assets`. */
+export interface StudioLibraryResults {
+  items: StudioAssetRef[];
+  nextPage: number | null;
+}
+
+export interface StudioLibraryPerson {
+  id: string;
+  name: string;
+  count: number;
+  thumbnailUrl: string;
+}
+
+export interface StudioLibraryFacetValue {
+  value: string;
+  count: number;
+}
+
+/** What the Library view's filters offer: named people, places and months (`YYYY-MM`, newest first). */
+export interface StudioLibraryFacets {
+  people: StudioLibraryPerson[];
+  places: StudioLibraryFacetValue[];
+  months: StudioLibraryFacetValue[];
 }
 
 /**
@@ -322,6 +367,12 @@ export interface StudioHostContext {
    */
   strings?: Readonly<Partial<Record<StudioAdapterString, string>>>;
   /**
+   * The host answers the bin's Library view (FL-636): `searchLibrary`, `libraryFacets` and
+   * `addLibraryAssets` are all present. Set by the frame engine from the services it was given; absent
+   * or false means the bin offers no Library view.
+   */
+  librarySearch?: boolean;
+  /**
    * Where the quick editor that opened Studio had its playhead (FL-113), as exact seconds. The engine
    * starts there once, when it mounts; later updates never move the playhead.
    */
@@ -372,7 +423,9 @@ export type StudioAdapterString =
   /** The Caption style card's words (FL-640), written over the engine's English the same way. */
   | CaptionStyleEngineString
   /** The captions Languages card's words (FL-641), the same way. */
-  | CaptionLanguageEngineString;
+  | CaptionLanguageEngineString
+  /** The bin's Library view (FL-636), drawn by the adapter. */
+  | LibraryPanelString;
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 
@@ -543,6 +596,19 @@ export interface StudioHostServices {
    * timing. Optional: without it the editor says translation is not available.
    */
   translateCaptions?(request: StudioCaptionTranslationRequest): Promise<StudioCaptionTranslationResult>;
+  /**
+   * Search the whole library for the bin's Library view (FL-636), with the scope and privacy of the
+   * library's Search. Optional: without it the bin offers only `assets`.
+   */
+  searchLibrary?(query: StudioLibraryQuery): Promise<StudioLibraryResults>;
+  /** The people, places and months the Library view's filters offer (FL-636). */
+  libraryFacets?(): Promise<StudioLibraryFacets>;
+  /**
+   * Bring library results into this session (FL-636): the host adds each one it may still offer to
+   * `StudioHostContext.assets` and answers with their refs, so the engine can place them at once.
+   * An id it may not offer (Locked after a relock, trashed, no longer shared) is left out.
+   */
+  addLibraryAssets?(assetIds: readonly string[]): Promise<StudioAssetRef[]>;
 }
 
 /* ------------------------------------------------------------------ */

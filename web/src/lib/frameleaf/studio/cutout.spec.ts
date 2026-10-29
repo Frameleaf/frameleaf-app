@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import en from '../../../../../i18n/en.json';
 import { createStudioCutoutServices, isStudioCutoutRequest, type StudioCutoutApi } from './cutout';
 import { CUTOUT_ENGINE_STRINGS, cutoutEngineStrings } from './cutout-strings';
-import { STUDIO_FRAME_SERVICE_SCHEMA_V8, isStudioFrameServiceName } from './frame-service-schema';
+import { STUDIO_FRAME_SERVICE_SCHEMA_V9, isStudioFrameServiceName } from './frame-service-schema';
 
 const projectId = '0195e2a0-0000-7000-8000-000000000060';
 const jamie = '0195e2a0-0000-4000-8000-000000000061';
@@ -33,11 +33,11 @@ describe('FL-639 Cut out the subject (host)', () => {
     for (const name of ['listCutoutSubjects', 'startCutout', 'readCutout']) {
       expect(isStudioFrameServiceName(name), name).toBe(true);
     }
-    expect(STUDIO_FRAME_SERVICE_SCHEMA_V8.listCutoutSubjects(['clip-1'])).toBe(true);
-    expect(STUDIO_FRAME_SERVICE_SCHEMA_V8.listCutoutSubjects([''])).toBe(false);
-    expect(STUDIO_FRAME_SERVICE_SCHEMA_V8.readCutout([matte.importId])).toBe(true);
-    expect(STUDIO_FRAME_SERVICE_SCHEMA_V8.readCutout(['../imports'])).toBe(false);
-    expect(STUDIO_FRAME_SERVICE_SCHEMA_V8.startCutout([{ clipId: 'clip-1', personId: null, points: [] }])).toBe(true);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.listCutoutSubjects(['clip-1'])).toBe(true);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.listCutoutSubjects([''])).toBe(false);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.readCutout([matte.importId])).toBe(true);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.readCutout(['../imports'])).toBe(false);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.startCutout([{ clipId: 'clip-1', personId: null, points: [] }])).toBe(true);
   });
 
   it('passes only the request the server takes', () => {

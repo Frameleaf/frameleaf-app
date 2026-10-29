@@ -13,7 +13,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.test.tsx
-@@ -0,0 +1,194 @@
+@@ -0,0 +1,205 @@
 +import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import type { ReactNode } from 'react'
@@ -120,6 +120,17 @@ new file mode 100644
 +    })
 +  })
 +
++  it('always offers Main subject beside the people found, for a new cut-out', async () => {
++    const fake = host([{ id: 'job', status: 'completed', progress: 100, error: null, matte }])
++    registerSubjectCutoutHost(fake)
++    render(<SubjectCutoutSection item={CLIP} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    fireEvent.click(screen.getByRole('radio', { name: /cutout.mainSubject/ }))
++    fireEvent.click(await screen.findByRole('button', { name: 'cutout.findSubject' }))
++    await waitFor(() => expect(fake.start).toHaveBeenCalledWith({ clipId: 'clip-1', personId: null, points: [] }))
++    await waitFor(() => expect(current().subjectCutout?.subject).toEqual({ kind: 'subject' }))
++  })
++
 +  it('keeps a Main subject cut-out selected when people are found in the clip', async () => {
 +    const main: SubjectCutout = { subject: { kind: 'subject' }, background: 'remove', softness: 40, matte }
 +    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: main }], fps: 30 })
@@ -212,7 +223,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.tsx
-@@ -0,0 +1,320 @@
+@@ -0,0 +1,318 @@
 +import { useEffect, useMemo, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Brush, Eraser, UserSquare } from 'lucide-react'
@@ -272,13 +283,11 @@ new file mode 100644
 +  const fps = useTimelineStore((s) => s.fps)
 +  const cutout = item.subjectCutout
 +  const [listed, setSubjects] = useState<SubjectCutoutPerson[]>([MAIN_SUBJECT])
-+  // A clip already cut out on its main subject keeps that choice beside the people found in it.
++  // Main subject is always offered beside the people found, so a new cut-out (or one refused for a
++  // person) can follow the main subject instead.
 +  const subjects = useMemo(
-+    () =>
-+      cutout?.subject.kind === 'subject' && !listed.some((entry) => entry.kind === 'subject')
-+        ? [...listed, MAIN_SUBJECT]
-+        : listed,
-+    [listed, cutout?.subject.kind],
++    () => (listed.some((entry) => entry.kind === 'subject') ? listed : [...listed, MAIN_SUBJECT]),
++    [listed],
 +  )
 +  const [chosen, setChosen] = useState<string | null>(cutout?.subject.personId ?? null)
 +  const [progress, setProgress] = useState<number | null>(null)

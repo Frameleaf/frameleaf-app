@@ -35,7 +35,13 @@ import {
   type StudioFrameToHostMessage,
   type StudioHostToFrameMessage,
 } from './frame-protocol';
-import { STUDIO_FRAME_SERVICE_SCHEMA_V8, isStudioFrameServiceName } from './frame-service-schema';
+import {
+  STUDIO_FRAME_SERVICE_SCHEMA_V8,
+  STUDIO_FRAME_SERVICE_SCHEMA_V9,
+  isStudioFrameServiceName,
+  isStudioLibraryAssetIds,
+  isStudioLibraryQuery,
+} from './frame-service-schema';
 import { storeGeneratedMedia } from './generated-media';
 import { createStudioGeneratedAccess } from './generated-media-client';
 import type {
@@ -235,15 +241,15 @@ const serviceCalls: ServiceHandlers = {
   },
   authorizeGeneratedMedia: () => Promise.resolve(false),
   listCutoutSubjects: (services, args) =>
-    services.listCutoutSubjects && STUDIO_FRAME_SERVICE_SCHEMA_V8.listCutoutSubjects(args)
+    services.listCutoutSubjects && STUDIO_FRAME_SERVICE_SCHEMA_V9.listCutoutSubjects(args)
       ? services.listCutoutSubjects(args[0])
       : Promise.reject(new Error('CUTOUT_UNAVAILABLE')),
   startCutout: (services, args) =>
-    services.startCutout && STUDIO_FRAME_SERVICE_SCHEMA_V8.startCutout(args)
+    services.startCutout && STUDIO_FRAME_SERVICE_SCHEMA_V9.startCutout(args)
       ? services.startCutout(args[0])
       : Promise.reject(new Error('CUTOUT_UNAVAILABLE')),
   readCutout: (services, args) =>
-    services.readCutout && STUDIO_FRAME_SERVICE_SCHEMA_V8.readCutout(args)
+    services.readCutout && STUDIO_FRAME_SERVICE_SCHEMA_V9.readCutout(args)
       ? services.readCutout(args[0])
       : Promise.reject(new Error('CUTOUT_UNAVAILABLE')),
   submitCommands: (services, [envelopes]) =>
@@ -294,6 +300,32 @@ const serviceCalls: ServiceHandlers = {
       : Promise.reject(new Error('Invalid caption translation'));
   },
   reloadProject: (services) => services.reloadProject(),
+  // FL-636: the bin's Library view. Shapes are checked here, the search scope by the server.
+  // The whole tuple is checked, so a call with extra arguments is refused rather than trimmed.
+  searchLibrary: (services, args) => {
+    if (!services.searchLibrary) {
+      return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
+    }
+    return STUDIO_FRAME_SERVICE_SCHEMA_V9.searchLibrary(args) && isStudioLibraryQuery(args[0])
+      ? services.searchLibrary(args[0])
+      : Promise.reject(new Error('Invalid library search'));
+  },
+  libraryFacets: (services, args) => {
+    if (!services.libraryFacets) {
+      return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
+    }
+    return STUDIO_FRAME_SERVICE_SCHEMA_V9.libraryFacets(args)
+      ? services.libraryFacets()
+      : Promise.reject(new Error('Invalid library facets'));
+  },
+  addLibraryAssets: (services, args) => {
+    if (!services.addLibraryAssets) {
+      return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
+    }
+    return STUDIO_FRAME_SERVICE_SCHEMA_V9.addLibraryAssets(args) && isStudioLibraryAssetIds(args[0])
+      ? services.addLibraryAssets(args[0])
+      : Promise.reject(new Error('Invalid library assets'));
+  },
   saveWorkspace: (services, [layout]) =>
     services.saveWorkspace ? services.saveWorkspace(layout) : Promise.resolve({ status: 'unavailable' } as const),
   // The frame is not trusted to send an upload of the right shape; the server checks the bytes.
@@ -333,10 +365,13 @@ export const createFrameStudioEngine = ({
       pendingRevocation = error;
       revoke(error);
     });
+    // FL-636: the frame offers the Library view only when this host can answer all three of its calls.
+    const librarySearch = !!(services.searchLibrary && services.libraryFacets && services.addLibraryAssets);
     let current: StudioHostContext;
     try {
       current = {
         ...context,
+        librarySearch,
         generatedMedia: await access.admit(context.project.id, context.project.graph, context.project.revision),
       };
     } catch (error) {
@@ -588,7 +623,7 @@ export const createFrameStudioEngine = ({
             if (disposed || revoking || disposing) {
               return;
             }
-            current = { ...next, generatedMedia };
+            current = { ...next, generatedMedia, librarySearch };
             send({ type: 'update', context: toFrameData(current) });
           })
           .catch((error) => revoke(error instanceof Error ? error : new Error(String(error))));

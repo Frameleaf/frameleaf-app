@@ -135,6 +135,7 @@
   import { cutoutEngineStrings } from '$lib/frameleaf/studio/cutout-strings';
   import { captionStyleEngineStrings } from '$lib/frameleaf/studio/caption-style-strings';
   import { captionLanguageEngineStrings } from '$lib/frameleaf/studio/caption-language-strings';
+  import { libraryPanelStrings } from '$lib/frameleaf/studio/library-strings';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
   import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@frameleaf/sdk';
   import type { Translations } from 'svelte-i18n';
@@ -560,6 +561,7 @@
       ...stabiliseEngineStrings($t),
       ...captionStyleEngineStrings($t),
       ...captionLanguageEngineStrings($t),
+      ...libraryPanelStrings($t),
     },
   });
 
