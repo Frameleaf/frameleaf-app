@@ -168,7 +168,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
    })
  
    it('treats a result as stale when the reference or either clip direction changes', () => {
-@@ -107,13 +116,13 @@ describe('colour match actions', () => {
+@@ -110,13 +119,13 @@ describe('colour match actions', () => {
      expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
    })
  
@@ -248,7 +248,16 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  function projectIsHdr(items: readonly TimelineItem[]): boolean {
    const project = useProjectStore.getState().currentProject
    if (project?.metadata.colorManagement?.workingRange === 'hdr') return true
-@@ -83,26 +82,40 @@ export function colourMatchBinding(item: TimelineItem, seconds: number, referenc
+@@ -72,7 +71,7 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
+  * full grade, and the project's colour management.
+  */
+ export function colourMatchBinding(item: TimelineItem, seconds: number, reference?: TimelineItem, referenceSeconds?: number): string {
+-  // Timing and cadence too: they choose which source frame a timeline time samples.
++  // Timing and cadence as well: they choose which source frame a timeline time samples.
+   const fps = useTimelineSettingsStore.getState().fps
+   const describe = (clip: TimelineItem, effects: readonly ItemEffect[]) => {
+     const video = clip as VideoItem
+@@ -86,26 +85,40 @@ export function colourMatchBinding(item: TimelineItem, seconds: number, referenc
    ])
  }
  
@@ -309,7 +318,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  }
  
  function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { reason: ColourMatchRefusal; itemId?: string } | null {
-@@ -111,9 +124,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
+@@ -114,9 +127,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
      if (!item) return { reason: 'not-found', itemId: id }
      if (item.type !== 'video') return { reason: 'unsupported-clip', itemId: id }
      if (item.isReversed === true) return { reason: 'reversed', itemId: id }
@@ -319,7 +328,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    return null
  }
  
-@@ -142,25 +153,29 @@ export async function analyzeColourMatch(
+@@ -145,25 +156,29 @@ export async function analyzeColourMatch(
    const referenceSeconds = sourceSecondsAt(reference, frameFor(reference), fps)
  
    try {
@@ -353,7 +362,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    }
  }
  
-@@ -202,11 +217,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+@@ -205,11 +220,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
    const outcome: ColourMatchApplyOutcome = { applied: [], stale: [], refused: [] }
    const items = useItemsStore.getState().items
    const updates: Array<{ itemId: string; effects: ItemEffect[] }> = []

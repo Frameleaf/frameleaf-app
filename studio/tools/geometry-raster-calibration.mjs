@@ -199,9 +199,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-599 colour matching adds effects through existing effect definitions; it changes no producer.
           binding.sourceSha256 ===
             '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185' ||
-          // FL-626 colour matching reads frames through the export renderer without changing it.
+          // FL-599 colour match: binding covers clip timing and cadence
           binding.sourceSha256 ===
-            'f97d6ee3f30edadf065fd23ea746d8dce6cb1b1d1adef0bbcaf7eed0242b95d2')),
+            'cca7f77f944f52b51154b35abae8209ad1d3b9854d3a5c428a2172b572c7f9ba' ||
+          // FL-626 graded and HDR colour match
+          binding.sourceSha256 ===
+            '81c9cdd3dc18a3c274e7cda9a1f833237ec2d67e5bee27cbdde3a64f4d970872')),
     'SOURCE_BROWSER',
   )
   check(
