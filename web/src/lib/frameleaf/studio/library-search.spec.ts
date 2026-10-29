@@ -40,7 +40,7 @@ const page = (items: AssetResponseDto[], nextPage: string | null = null) =>
     albums: { items: [], count: 0, total: 0, facets: [] },
   }) as SearchResponseDto;
 const api = (overrides: Record<string, unknown> = {}) => ({
-  searchSmart: vi.fn().mockResolvedValue(page([asset('smart')])),
+  searchSmart: vi.fn().mockResolvedValue(page([asset('0f0f0f0f-0000-4000-8000-00000000000a')])),
   searchAssets: vi.fn().mockResolvedValue(page([asset('recent')])),
   searchFacets: vi.fn().mockResolvedValue({ facets: [], total: 0 }),
   searchHistogram: vi.fn().mockResolvedValue({ buckets: [], granularity: SearchHistogramGranularity.Month, total: 0 }),
@@ -77,7 +77,7 @@ describe('FL-636 Studio library search', () => {
       },
       { signal: undefined },
     );
-    expect(result.items.map((item) => item.id)).toEqual(['smart']);
+    expect(result.items.map((item) => item.id)).toEqual(['0f0f0f0f-0000-4000-8000-00000000000a']);
   });
 
   it('lists the library newest first when there are no words, and reports the next page', async () => {
@@ -216,7 +216,7 @@ describe('FL-636 Studio library search', () => {
 describe('FL-636 adopting library results into the session', () => {
   const setup = (sdk = api(), offered: StudioAssetRef[] = []) => {
     const adopted: AssetResponseDto[] = [];
-    const lookup = vi.fn((id: string) => Promise.resolve(asset(id)));
+    const lookup = vi.fn((ids: string[]) => Promise.resolve(ids.map((id) => asset(id))));
     const services = createStudioLibraryServices({
       language: () => 'en',
       elevated: () => sessionAccess.isElevated,
@@ -235,42 +235,51 @@ describe('FL-636 adopting library results into the session', () => {
   it('reads a search result again as this session before adopting it, and answers with its bin ref', async () => {
     const { services, adopted, lookup } = setup();
     await services.searchLibrary({ text: 'lake' });
-    const refs = await services.addLibraryAssets(['SMART']);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith('smart');
-    expect(adopted.map((item) => item.id)).toEqual(['smart']);
-    expect(refs).toEqual([toStudioAsset(asset('smart'))]);
+    const refs = await services.addLibraryAssets(['0F0F0F0F-0000-4000-8000-00000000000A']);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(['0f0f0f0f-0000-4000-8000-00000000000a']);
+    expect(adopted.map((item) => item.id)).toEqual(['0f0f0f0f-0000-4000-8000-00000000000a']);
+    expect(refs).toEqual([toStudioAsset(asset('0f0f0f0f-0000-4000-8000-00000000000a'))]);
   });
 
   it('does not adopt a result whose access was revoked after the search', async () => {
     const { services, adopted, lookup } = setup();
     await services.searchLibrary({ text: 'lake' });
-    lookup.mockRejectedValueOnce(new Error('403'));
-    expect(await services.addLibraryAssets(['smart'])).toEqual([]);
+    // a batch read leaves out what is no longer readable
+    lookup.mockResolvedValueOnce([]);
+    expect(await services.addLibraryAssets(['0f0f0f0f-0000-4000-8000-00000000000a'])).toEqual([]);
     expect(adopted).toEqual([]);
   });
 
   it('does not read or adopt what is already offered', async () => {
-    const present = toStudioAsset(asset('handoff'));
+    const present = toStudioAsset(asset('0f0f0f0f-0000-4000-8000-00000000000c'));
     const { services, adopted, lookup } = setup(api(), [present]);
-    const refs = await services.addLibraryAssets(['handoff', 'other']);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith('other');
-    expect(adopted.map((item) => item.id)).toEqual(['other']);
-    expect(refs.map((item) => item.id)).toEqual(['handoff', 'other']);
+    const refs = await services.addLibraryAssets([
+      '0f0f0f0f-0000-4000-8000-00000000000c',
+      '0f0f0f0f-0000-4000-8000-00000000000b',
+    ]);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(['0f0f0f0f-0000-4000-8000-00000000000b']);
+    expect(adopted.map((item) => item.id)).toEqual(['0f0f0f0f-0000-4000-8000-00000000000b']);
+    expect(refs.map((item) => item.id)).toEqual([
+      '0f0f0f0f-0000-4000-8000-00000000000c',
+      '0f0f0f0f-0000-4000-8000-00000000000b',
+    ]);
   });
 
   it('does not adopt a Locked result once the session has locked again', async () => {
     sessionAccess.isElevated = true;
-    const locked = asset('locked', { visibility: AssetVisibility.Locked });
+    const locked = asset('0f0f0f0f-0000-4000-8000-00000000000d', { visibility: AssetVisibility.Locked });
     const sdk = api({
       searchAssets: vi.fn(({ metadataSearchDto }) =>
         Promise.resolve(page(metadataSearchDto.visibility === AssetVisibility.Locked ? [locked] : [])),
       ),
     });
     const { services, adopted, lookup } = setup(sdk);
-    lookup.mockResolvedValue(locked);
-    expect((await services.searchLibrary({})).items.map((item) => item.id)).toEqual(['locked']);
+    lookup.mockResolvedValue([locked]);
+    expect((await services.searchLibrary({})).items.map((item) => item.id)).toEqual([
+      '0f0f0f0f-0000-4000-8000-00000000000d',
+    ]);
     sessionAccess.isElevated = false;
-    expect(await services.addLibraryAssets(['locked'])).toEqual([]);
+    expect(await services.addLibraryAssets(['0f0f0f0f-0000-4000-8000-00000000000d'])).toEqual([]);
     expect(adopted).toEqual([]);
   });
 
