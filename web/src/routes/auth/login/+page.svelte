@@ -63,6 +63,8 @@
   let passwordChanged = $state(false);
 
   const serverConfig = $derived(serverConfigManager.value);
+  /** FL-655: signing in from Save to Frameleaf, in the browser's sign-in window; Allow comes next. */
+  const forExtension = $derived(new URL(String(data.continueUrl), data.serverUrl).pathname === '/auth/allow-extension');
   const publicConfig = $derived(data.publicConfig);
 
   // FL-158: Sign in with Frameleaf. Through remote access it is the only way in; at home it is offered
@@ -437,6 +439,11 @@
       {onsubmit}
       novalidate
     >
+      {#if forExtension}
+        <p class="auth-info" role="note">
+          <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_extension_note')}</span>
+        </p>
+      {/if}
       {#if publicConfig.passwordLogin.enabled}
         {#if passwordChanged}
           <p class="auth-info auth-success" role="status">

@@ -25,8 +25,9 @@
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
+  import { readAuthStatus } from '$lib/utils/auth-status-read';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
-  import { LibraryScope, type AlbumResponseDto, getAuthStatus } from '@frameleaf/sdk';
+  import { LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
   import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiBellOutline,
@@ -139,7 +140,7 @@
     if (sessionAccess.lockPending) {
       void lockSession();
     } else {
-      void refreshAuthStatus();
+      void refreshAuthStatus('recent');
     }
 
     const stopEvents = eventManager.on({
@@ -175,12 +176,13 @@
     }
   };
 
-  const refreshAuthStatus = async () => {
+  // FL-647: opening a page shares the status the privacy guard just read instead of asking again
+  const refreshAuthStatus = async (mode: 'passive' | 'recent' = 'passive') => {
     const revision = sessionRevision;
     const privacyRevision = sessionAccess.revision;
     isSessionLoading = true;
     try {
-      const status = await getAuthStatus();
+      const { status } = await readAuthStatus(mode);
       if (revision === sessionRevision && privacyRevision === sessionAccess.revision && !sessionAccess.lockPending) {
         isElevated = status.isElevated;
       }

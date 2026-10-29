@@ -33,6 +33,7 @@ import {
 } from '$lib/frameleaf/activity';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import { UploadState } from '$lib/types';
+import en from '../../../../i18n/en.json';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -97,6 +98,21 @@ describe('fromMediaOperation', () => {
     expect(fromMediaOperation(operation({ destination: MediaOperationDestination.Lan })).destinationKey).toBe(
       'frameleaf_activity_destination_lan',
     );
+  });
+
+  describe('Studio clip jobs that share a kind (FL-637)', () => {
+    it('names a voice clean-up by its work, not by the shared captions kind', () => {
+      const voice = operation({ kind: MediaOperationKind.StudioTranscription, studioWork: 'voice-cleanup' });
+      expect(fromMediaOperation(voice).kindKey).toBe('frameleaf_activity_kind_studio_voice_cleanup');
+      expect(mediaOperationKindKey(voice)).toBe('frameleaf_activity_kind_studio_voice_cleanup');
+      expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioTranscription })).kindKey).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+      expect(mediaOperationKindKey(operation({ kind: MediaOperationKind.StudioTranscription, studioWork: null }))).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+      expect(en.frameleaf_activity_kind_studio_voice_cleanup).toBe('Clean up voice');
+    });
   });
 
   describe('edits the server renders (FL-43)', () => {

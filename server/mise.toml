@@ -26,8 +26,7 @@ run = "prettier --write ."
 
 [tasks.lint]
 env._.path = "./node_modules/.bin"
-# Type-aware linting of src and test together outgrew Node's default 4 GB heap on the CI runner.
-env.NODE_OPTIONS = "--max-old-space-size=6144"
+# The lint script raises the heap itself; an inherited NODE_OPTIONS heap limit overrides it.
 run = "pnpm run lint"
 
 [tasks."lint-fix"]

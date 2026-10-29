@@ -36,6 +36,7 @@ class ModelTask(StrEnum):
     INPAINT = "inpaint"
     TRANSCRIBE = "transcribe"
     MUSIC = "music"
+    VOICE_CLEANUP = "voice-cleanup"
     TRANSLATE = "translate"
 
 
@@ -271,6 +272,20 @@ class MusicOptions(_OptionsBase):
     seed: int = Field(default=0, ge=0, le=2**31 - 1)
 
 
+class VoiceCleanupOptions(_OptionsBase):
+    """Options for the voice clean-up task (Studio "Clean up voice", FL-637, DeepFilterNet3).
+
+    `mode` is `analyze` (what is in the sound) or `clean`. For `clean`, `strength` is Light, Standard or
+    Strong and `noises` the problems to remove. `humHz` is the mains frequency the analysis found; absent,
+    the worker looks for it again.
+    """
+
+    mode: Literal["analyze", "clean"] = "clean"
+    strength: Literal["light", "standard", "strong"] = "standard"
+    noises: list[Literal["wind", "hum", "background", "echo"]] = Field(default_factory=list, max_length=4)
+    humHz: Literal[50, 60] | None = None
+
+
 class TranslateOptions(_OptionsBase):
     """Options for the translate task (Studio captions in other languages, FL-641).
 
@@ -296,6 +311,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.INPAINT, ModelType.VISUAL): InpaintOptions,
     (ModelTask.TRANSCRIBE, ModelType.AUDIO): TranscribeOptions,
     (ModelTask.MUSIC, ModelType.AUDIO): MusicOptions,
+    (ModelTask.VOICE_CLEANUP, ModelType.AUDIO): VoiceCleanupOptions,
     (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
 }
 

@@ -110,8 +110,10 @@ export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
   return fileUploadHandler({ files, albumId, isLockedAssets, libraryScope });
 };
 
-type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile'> & {
+type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile' | 'checksums'> & {
   files: File[];
+  /** Checksums already worked out for these files (by file), so they are not read twice. */
+  checksums?: Map<File, UploadChecksums>;
 };
 
 export const fileUploadHandler = async ({
@@ -119,6 +121,8 @@ export const fileUploadHandler = async ({
   albumId,
   isLockedAssets = false,
   libraryScope,
+  checksums,
+  onResult,
 }: FileUploadHandlerParams): Promise<string[]> => {
   const extensions = uploadManager.getExtensions();
   const context: UploadContext = {
@@ -135,7 +139,18 @@ export const fileUploadHandler = async ({
       uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId, isLockedAssets, libraryScope });
       promises.push(
         uploadExecutionQueue.addTask(() =>
-          fileUploader({ deviceAssetId, assetFile: file, albumId, isLockedAssets, libraryScope }, context),
+          fileUploader(
+            {
+              deviceAssetId,
+              assetFile: file,
+              albumId,
+              isLockedAssets,
+              libraryScope,
+              checksums: checksums?.get(file),
+              onResult,
+            },
+            context,
+          ),
         ),
       );
     } else {
@@ -196,7 +211,10 @@ function getDeviceAssetId(asset: File) {
   return `web-${asset.name}-${asset.lastModified}-${generateId()}`;
 }
 
-async function hashFile(file: File, signal: AbortSignal): Promise<{ sha256: string; sha1: string }> {
+export type UploadChecksums = { sha256: string; sha1: string };
+
+/** Both checksums of a file, read once in a worker: what the upload checks against the library. */
+export async function hashUploadFile(file: File, signal: AbortSignal): Promise<UploadChecksums> {
   signal.throwIfAborted();
   const worker = new Worker(new URL('$lib/workers/hash-file.ts', import.meta.url), { type: 'module' });
   let abort: () => void;
@@ -235,13 +253,17 @@ type FileUploaderParams = {
   replaceAssetId?: string;
   libraryScope?: LibraryScope;
   isLockedAssets?: boolean;
+  /** Checksums worked out before the upload started (the Eagle import's check). */
+  checksums?: UploadChecksums;
+  /** Told the item and whether the file was already in the library, once it is safely in. */
+  onResult?: (file: File, result: { id: string; duplicate: boolean }) => void;
   // TODO rework the asset uploader and remove this
   deviceAssetId: string;
 };
 
 // TODO: should probably use the @api SDK
 async function fileUploader(
-  { assetFile, deviceAssetId, albumId, isLockedAssets = false, libraryScope }: FileUploaderParams,
+  { assetFile, deviceAssetId, albumId, isLockedAssets = false, libraryScope, checksums, onResult }: FileUploaderParams,
   context: UploadContext,
 ): Promise<string | undefined> {
   const fileCreatedAt = new Date(assetFile.lastModified).toISOString();
@@ -277,7 +299,7 @@ async function fileUploader(
       try {
         assertCurrent();
         // New rows store SHA-256 and rows adopted from Immich keep SHA-1, so check both (FL-529).
-        const { sha256, sha1 } = await hashFile(assetFile, signal);
+        const { sha256, sha1 } = checksums ?? (await hashUploadFile(assetFile, signal));
         assertCurrent();
 
         const { results } = await checkBulkUpload(
@@ -388,6 +410,10 @@ async function fileUploader(
       assetId: responseData.id || undefined,
       isTrashed: responseData.isTrashed,
     });
+
+    if (responseData.id) {
+      onResult?.(assetFile, { id: responseData.id, duplicate: responseData.status === AssetMediaStatus.Duplicate });
+    }
 
     if (responseData.status !== AssetMediaStatus.Duplicate) {
       setTimeout(() => {

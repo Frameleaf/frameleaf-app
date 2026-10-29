@@ -79,6 +79,7 @@
   "/admin/users/(list)/new": 420248,
   "/admin/users/[id]": 420261,
   "/admin/users/[id]/edit": 420260,
+  "/auth/allow-extension": 426189,
   "/auth/change-password": 425175,
   "/auth/choose-password": 425236,
   "/auth/login": 440393,

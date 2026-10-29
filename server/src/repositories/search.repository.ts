@@ -260,11 +260,16 @@ type SearchSuggestionPrivacyOptions = HiddenContentQueryOptions;
 // distance, without letting text-only matches dominate visual matches.
 const OCR_FUSION_WEIGHT = 0.15;
 const DESCRIPTION_FUSION_WEIGHT = 0.1;
-// Best-of-both retrieval: when an asset has a CLIP-text embedding of its
-// description, use the smaller of (visual cosine, description-text cosine).
-// This lets the VLM's understanding of an image surface matches the visual
-// encoder missed, without ever making the rank worse.
-const DESCRIPTION_EMBEDDING_WEIGHT = 0.5;
+// Description-embedding boost (FL-656). Query-to-description distances are
+// text-to-text CLIP distances, which sit on a much smaller scale than the
+// query-to-image distance (an unrelated description is ~0.58 away, a matching
+// photo ~0.85), so the two are never compared directly. Instead a description
+// closer than DESCRIPTION_MATCH_MAX_DISTANCE earns a bonus that grows linearly
+// to DESCRIPTION_MATCH_MAX_BONUS for an exact match. Unrelated descriptions
+// earn nothing, and a photo whose visual match is more than the cap better
+// always stays ahead of a described photo.
+export const DESCRIPTION_MATCH_MAX_DISTANCE = 0.45;
+export const DESCRIPTION_MATCH_MAX_BONUS = 0.1;
 
 export interface FaceEmbeddingSearch extends Omit<SearchEmbeddingOptions, 'userIds'> {
   clusterGroupId: string;
@@ -1212,16 +1217,19 @@ export class SearchRepository {
     // <=> returns [0, 2]; (1 - <->>>) returns [0, 1] when the sidecar row
     // exists, NULL otherwise.
     const visualDistance = sql`(smart_search.embedding <=> ${options.embedding})`;
-    // Visual distance vs. (description-text embedding distance scaled toward
-    // visual). Take the smaller, so a strong description match can rescue
-    // a weak visual one, but never penalizes the rank. NULL distance (no
-    // description embedding yet) drops out of the LEAST.
-    const blendedClipDistance = sql`least(
-      ${visualDistance},
-      coalesce(
-        ${DESCRIPTION_EMBEDDING_WEIGHT} * (select embedding <=> ${options.embedding} from smart_search_description where "assetId" = asset.id),
-        ${visualDistance}
-      )
+    // Visual distance minus a capped bonus for a close description match (see
+    // DESCRIPTION_MATCH_MAX_DISTANCE). No description embedding yet means no
+    // bonus.
+    const blendedClipDistance = sql`(
+      ${visualDistance}
+      - ${DESCRIPTION_MATCH_MAX_BONUS / DESCRIPTION_MATCH_MAX_DISTANCE} * coalesce(
+          greatest(
+            0,
+            ${DESCRIPTION_MATCH_MAX_DISTANCE}
+              - (select embedding <=> ${options.embedding} from smart_search_description where "assetId" = asset.id)
+          ),
+          0
+        )
     )`;
     const orderExpr = fusionText
       ? sql`

@@ -25,6 +25,12 @@
     removalOutcome,
   } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
+  import {
+    canIncludeLibrary,
+    collectionItems,
+    downloadBoardsCollection,
+    type CollectionItems,
+  } from '$lib/frameleaf/boards-download';
   import { publishCollectionPage } from '$lib/frameleaf/collection-page-request';
   import { albumSearchContext } from '$lib/frameleaf/search-context';
   import { writeLibraryView, readLibraryView, createLibrarySession } from '$lib/frameleaf/library-session';
@@ -462,6 +468,36 @@
       itemGeneration++;
     }),
   );
+  /** A Boards collection asks what goes in the .zip (FL-660). */
+  const boardsCollection = $derived(designContext && mixedAlbum && !isSpace);
+  let downloadOpen = $state(false);
+  /** The collection's items, read when the dialog opens: the library file needs them all to be yours. */
+  let downloadItems = $state<CollectionItems | null>(null);
+  $effect(() => {
+    if (!downloadOpen) {
+      return;
+    }
+    const id = albumId;
+    const current = authManager.captureSession();
+    const controller = new AbortController();
+    downloadItems = null;
+    collectionItems(id, currentUserId, controller.signal)
+      .then((items) => {
+        if (!controller.signal.aborted && current() && albumId === id) {
+          downloadItems = items;
+        }
+      })
+      // Unread items keep the library file off, with its reason; the originals still download.
+      .catch(() => {});
+    return () => controller.abort();
+  });
+  const downloadCollection = (includeLibrary: boolean) =>
+    void downloadBoardsCollection({
+      album,
+      fileName: albumDownloadFileName,
+      items: downloadItems,
+      includeLibrary,
+    });
   const updateMixedQuery = (query: import('$lib/components/discovery/query').DiscoveryQuery) => {
     const url = new URL(Route.viewAlbum({ id: albumId }), page.url.origin);
     const previous = readLibraryView(new URL(page.url.href)) ?? createLibrarySession().state;
@@ -643,6 +679,7 @@
       onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
       onToggleActivity={() => (activityOpen = !activityOpen)}
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
+      onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
     />
   {/key}
 {/snippet}
@@ -757,6 +794,16 @@
     </Theme>
   {/if}
 </UserPageLayout>
+
+{#if downloadOpen}{#await import('$lib/components/frameleaf/BoardsDownloadDialog.svelte') then { default: BoardsDownloadDialog }}
+    <BoardsDownloadDialog
+      bind:open={downloadOpen}
+      count={assetCount + bookmarkCount}
+      name={album.albumName || $t('unnamed_album')}
+      libraryAvailable={canIncludeLibrary(downloadItems)}
+      onDownload={downloadCollection}
+    />
+  {/await}{/if}
 
 {#if isCollection}
   <ResultsAssetViewer

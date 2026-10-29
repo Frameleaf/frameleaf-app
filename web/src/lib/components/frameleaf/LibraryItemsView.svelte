@@ -48,19 +48,24 @@
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import SearchSaveDialog from '$lib/components/frameleaf/SearchSaveDialog.svelte';
+  import BoardsEaglePausedBanner from '$lib/components/frameleaf/eagle/BoardsEaglePausedBanner.svelte';
+  import { eagleImportUi } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import { activeFilterFields } from '$lib/components/discovery/query';
   import { withFilterCondition } from '$lib/frameleaf/search-filters';
   import { shouldIgnoreEvent } from '$lib/actions/shortcut';
   import { downloadArchive, ignoreCancelledDownload } from '$lib/utils/asset-utils';
+  import { downloadBoardsItems, LIBRARY_FILE_LIMIT } from '$lib/frameleaf/boards-download';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     mdiAspectRatio,
     mdiChevronDown,
     mdiClose,
     mdiContentSaveOutline,
+    mdiImport,
     mdiLinkVariantPlus,
     mdiPaletteOutline,
     mdiPaletteSwatchOutline,
+    mdiPlus,
     mdiPuzzleOutline,
     mdiSort,
     mdiTrayArrowUp,
@@ -138,7 +143,7 @@
   let popover = $state<'color' | 'shape' | null>(null);
   let colorTrigger: HTMLButtonElement | undefined = $state();
   let shapeTrigger: HTMLButtonElement | undefined = $state();
-  let dialog = $state<'album' | 'tags' | 'save' | null>(null);
+  let dialog = $state<'album' | 'tags' | 'save' | 'download' | null>(null);
   let lastExternal = '';
   let requestIdentity = '';
   const assets = $derived(
@@ -475,13 +480,32 @@
       (keys, owner, current) => trashLibraryItems(results.items, keys, owner, current),
       (count) => toastManager.primary($t('frameleaf_boards_trashed', { values: { count } })),
     );
+  const downloadName = $derived(album?.albumName || 'frameleaf');
+  const selectedBookmarkIds = $derived(
+    session.selection.filter((key) => key.startsWith('bookmark:')).map((key) => key.slice(9)),
+  );
+  /** Boards asks what goes in the .zip (FL-660); elsewhere a download starts at once. */
   const download = () => {
-    if (selectedAssetIds.length > 0) {
-      void downloadArchive(album?.albumName || 'frameleaf', { assetIds: [...selectedAssetIds] }).catch(
-        ignoreCancelledDownload,
-      );
+    if (selectedAssetIds.length === 0) {
+      return;
     }
+    if (workspace === 'design') {
+      dialog = 'download';
+      return;
+    }
+    void downloadArchive(downloadName, { assetIds: [...selectedAssetIds] }).catch(ignoreCancelledDownload);
   };
+  /** The library file lists only the account's own items, up to the server's limit. */
+  const libraryAvailable = $derived(
+    ownsSelection && selectedAssetIds.length + selectedBookmarkIds.length <= LIBRARY_FILE_LIMIT,
+  );
+  const downloadSelection = (includeLibrary: boolean) =>
+    void downloadBoardsItems({
+      fileName: downloadName,
+      assetIds: [...selectedAssetIds],
+      bookmarkIds: [...selectedBookmarkIds],
+      includeLibrary,
+    });
   const closeBookmark = () => {
     const key = selectedBookmark ? `bookmark:${selectedBookmark}` : undefined;
     activeBookmark = null;
@@ -504,8 +528,35 @@
         <h1>{title}</h1>
         <p class="fl-items-description">{$t('frameleaf_pro_description')}</p>
       </div>{/if}
-    <LibraryLayoutSwitch {session} />
+    <div class="fl-items-heading-actions">
+      {#if workspace === 'design'}
+        <!-- Boards' Add menu (prototype screen 33): upload, save a link, Import from Eagle, the extension. -->
+        <Menu label={$t('add')} align="end">
+          {#snippet trigger()}<Icon icon={mdiPlus} size="18" aria-hidden={true} /><span aria-hidden="true"
+              >{$t('add')}</span
+            >{/snippet}
+          <MenuItem onSelect={upload}
+            ><Icon icon={mdiTrayArrowUp} size="18" aria-hidden={true} />{$t('frameleaf_boards_upload')}</MenuItem
+          >
+          {#if saveLink}<MenuItem onSelect={() => saveLink?.()}
+              ><Icon icon={mdiLinkVariantPlus} size="18" aria-hidden={true} />{$t(
+                'frameleaf_boards_save_link',
+              )}</MenuItem
+            >{/if}
+          <MenuItem onSelect={() => eagleImportUi.show()}
+            ><Icon icon={mdiImport} size="18" aria-hidden={true} />{$t('frameleaf_eagle_import_open')}</MenuItem
+          >
+          {#if getExtension}<MenuItem onSelect={getExtension}
+              ><Icon icon={mdiPuzzleOutline} size="18" aria-hidden={true} />{$t(
+                'frameleaf_boards_get_extension',
+              )}</MenuItem
+            >{/if}
+        </Menu>
+      {/if}
+      <LibraryLayoutSwitch {session} />
+    </div>
   </header>
+  {#if workspace === 'design'}<BoardsEaglePausedBanner />{/if}
   <ResultsToolbar
     {session}
     count={results.count}
@@ -860,6 +911,22 @@
 {#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
     <BoardsExtensionDialog bind:open={extensionOpen} />
   {/await}{/if}
+{#if dialog === 'download'}{#await import('$lib/components/frameleaf/BoardsDownloadDialog.svelte') then { default: BoardsDownloadDialog }}
+    <BoardsDownloadDialog
+      bind:open={
+        () => dialog === 'download',
+        (open) => {
+          if (!open) {
+            dialog = null;
+          }
+        }
+      }
+      count={session.selection.length}
+      name={album ? collectionName : title}
+      {libraryAvailable}
+      onDownload={downloadSelection}
+    />
+  {/await}{/if}
 
 <style>
   .fl-items-view {
@@ -867,6 +934,11 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .fl-items-heading-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
   }
   .fl-items-heading {
     display: flex;
