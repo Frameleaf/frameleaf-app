@@ -81,15 +81,18 @@
   const invalid = $derived(touched && !parsed);
 
   /** Reads the page once per address; a page that cannot be read just leaves the fields empty. */
+  /** Only the latest read may change the fields; an older one (A → B → A) is ignored. */
+  let readGeneration = 0;
   const read = async () => {
     const address = parsed?.href;
     if (!address || preview?.for === address) {
       return;
     }
+    const generation = ++readGeneration;
     reading = true;
     try {
       const result = await previewBookmark({ bookmarkPreviewRequestDto: { url: address } });
-      if (parsed?.href !== address) {
+      if (generation !== readGeneration || parsed?.href !== address) {
         return;
       }
       preview = { for: address, ...result };
@@ -98,7 +101,7 @@
         title = result.title ?? '';
       }
     } catch {
-      if (parsed?.href !== address) {
+      if (generation !== readGeneration || parsed?.href !== address) {
         return;
       }
       preview = { for: address, title: null, image: null };
@@ -106,9 +109,12 @@
         title = '';
       }
     } finally {
-      reading = false;
+      if (generation === readGeneration) {
+        reading = false;
+      }
     }
   };
+
   const picture = $derived(
     preview?.for === parsed?.href && preview?.image
       ? `data:${preview.image.contentType};base64,${preview.image.data}`
