@@ -229,8 +229,9 @@
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    const value = await response.json();
-    if (!response.ok) {
+    // A proxy or a restarting Manager can answer with an HTML page or nothing: say so plainly.
+    const value = await response.json().catch(() => ({ code: 'manager_unexpected_response' }));
+    if (!response.ok || value.code === 'manager_unexpected_response') {
       if (response.status === 401 && value.code === 'sign_in_required') {
         signedIn = false;
         dashboard = null;
@@ -558,12 +559,18 @@
         if (!(e instanceof Error && e.message === 'sign_in_required')) throw e;
       }
     }).finally(() => (loading = false));
+    // A slow Docker host can take longer than one interval to answer: never stack dashboard requests.
+    let polling = false;
     const timer = setInterval(() => {
-      if (signedIn && !document.hidden && !busy)
-        void refresh().catch((e) => {
-          disconnected = true;
-          if (!signedIn) error = 'Your session expired. Sign in to continue.';
-        });
+      if (signedIn && !document.hidden && !busy && !polling) {
+        polling = true;
+        void refresh()
+          .catch(() => {
+            disconnected = true;
+            if (!signedIn) error = 'Your session expired. Sign in to continue.';
+          })
+          .finally(() => (polling = false));
+      }
     }, 10_000);
     return () => clearInterval(timer);
   });
