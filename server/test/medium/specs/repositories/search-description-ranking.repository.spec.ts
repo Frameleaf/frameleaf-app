@@ -88,7 +88,8 @@ describe('smart search ranking with description embeddings (FL-656)', () => {
   it('caps the boost so even an exact description cannot beat a clearly better visual match', async () => {
     await expect(
       rank([
-        { name: 'described', visual: 1.1, description: 0 },
+        // 0.15 behind: a bonus above the 0.1 cap would move it ahead.
+        { name: 'described', visual: 1, description: 0 },
         { name: 'dog', visual: 0.85 },
       ]),
     ).resolves.toEqual(['dog', 'described']);
@@ -114,5 +115,15 @@ describe('smart search ranking with description embeddings (FL-656)', () => {
         },
       ]),
     ).resolves.toEqual(['visual-only', 'described']);
+  });
+
+  it('never pushes a photo down for a description beyond the threshold', async () => {
+    // Without the floor at zero, the 0.05 overshoot would add ~0.011 and drop it behind the rival.
+    await expect(
+      rank([
+        { name: 'visual-only', visual: 0.86 },
+        { name: 'described', visual: 0.855, description: DESCRIPTION_MATCH_MAX_DISTANCE + 0.05 },
+      ]),
+    ).resolves.toEqual(['described', 'visual-only']);
   });
 });
