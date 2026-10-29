@@ -179,6 +179,7 @@ export class AssetUploadResourceService {
     });
     await this.refuseClaimedItem(ownerId, parsed.metadata.sourceIdentity);
     // The committed resource exists before its URI is sent, including on an interrupted POST.
+    if (mode === 'capture') await this.captures.assertNotCancelled(auth, id);
     const resource = await this.uploads.create(id, ownerId, { ...parsed, maxSize: limits.maxSize });
     resume(resource);
     return this.receive(auth, resource.id, input, 0, parsed.complete, parsed.size);
@@ -290,6 +291,8 @@ export class AssetUploadResourceService {
     await this.owner(auth);
     const resource = await this.uploads.get(id, auth.user.id);
     await this.sourceAdmission(auth, resource);
+    if (resource.metadata.publication === 'capture')
+      await this.captures.assertNotCancelled(auth, resource.metadata.captureId!);
     const token = randomUUID();
     let acquired: boolean;
     try {
@@ -302,6 +305,8 @@ export class AssetUploadResourceService {
     }
     const check: UploadAdmissionCheck = async (tx) => {
       await this.sourceAdmission(auth, resource, tx);
+      if (resource.metadata.publication === 'capture')
+        await this.captures.assertNotCancelled(auth, resource.metadata.captureId!, tx);
       let current: boolean;
       try {
         current = await this.rateLimits.isUploadStreamCurrent(id, token);

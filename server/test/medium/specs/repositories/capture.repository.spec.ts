@@ -51,6 +51,55 @@ const setup = async () => {
 };
 
 describe('durable capture transactions', () => {
+  it('serializes cancellation against bookmark publication and never recreates a cancelled UUID', async () => {
+    for (const cancelFirst of [true, false]) {
+      const { auth, dto, repo } = await setup();
+      const operations = cancelFirst
+        ? [() => repo.cancel(auth, dto), () => repo.commitBookmark(auth, dto)]
+        : [() => repo.commitBookmark(auth, dto), () => repo.cancel(auth, dto)];
+      const outcomes = await Promise.allSettled(operations.map((operation) => operation()));
+      const rows = await db
+        .selectFrom('capture_receipt')
+        .selectAll()
+        .where('ownerId', '=', auth.user.id)
+        .where('captureId', '=', dto.captureId)
+        .execute();
+      expect(rows).toHaveLength(1);
+      const bookmarks = await db.selectFrom('bookmark').select('id').where('ownerId', '=', auth.user.id).execute();
+      if (rows[0].status === 'cancelled') {
+        expect(bookmarks).toHaveLength(0);
+        expect(outcomes.some((result) => result.status === 'rejected')).toBe(true);
+        await expect(repo.commitBookmark(auth, dto)).rejects.toThrow('cancelled');
+        expect((await repo.cancel(auth, dto)).status).toBe('cancelled');
+      } else {
+        expect(rows[0].status).toBe('created');
+        expect(bookmarks).toEqual([{ id: rows[0].itemId }]);
+        expect(outcomes.every((result) => result.status === 'fulfilled')).toBe(true);
+        expect((await repo.cancel(auth, dto)).itemId).toBe(rows[0].itemId);
+      }
+    }
+  });
+  it('lets the original actor cancel after destination loss but never lets another key replace the outcome', async () => {
+    const { auth, dto, repo } = await setup();
+    await db.deleteFrom('album_user').where('albumId', '=', dto.albumId).where('userId', '=', auth.user.id).execute();
+    const cancelled = await repo.cancel(auth, dto);
+    expect(cancelled).toMatchObject({ status: 'cancelled', itemId: dto.captureId });
+    const key = await db
+      .insertInto('api_key')
+      .values({
+        userId: auth.user.id,
+        name: 'Other capture key',
+        key: randomBytes(32),
+        permissions: [Permission.CaptureCreate],
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    await expect(repo.cancel({ ...auth, apiKey: { id: key.id, permissions: key.permissions } }, dto)).rejects.toThrow(
+      'Capture unavailable',
+    );
+    await expect(repo.cancel(auth, { ...dto, note: 'Changed' })).rejects.toThrow('Capture payload changed');
+    expect(await db.selectFrom('bookmark').select('id').where('ownerId', '=', auth.user.id).execute()).toEqual([]);
+  });
   it('does not reveal a tag carried only by a Locked bookmark in the shared tag directory', async () => {
     const { auth, dto, repo, tag } = await setup();
     const receipt = await repo.commitBookmark(auth, dto);

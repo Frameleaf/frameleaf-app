@@ -31,6 +31,87 @@ const admitted = (sql: string) => {
 };
 
 describe('atomic capture receipt admission', () => {
+  it('records cancellation on the same immutable ledger before a future publisher can proceed', async () => {
+    const cancelled = { ...receipt, status: 'cancelled', itemId: dto.captureId };
+    let saved = false;
+    const { db, queries } = scriptedKysely(({ sql }) => {
+      if (sql.includes('from "capture_receipt"')) return { rows: saved ? [cancelled] : [] };
+      if (sql.startsWith('insert into "capture_receipt"')) {
+        saved = true;
+        return { rows: [cancelled] };
+      }
+      return admitted(sql);
+    });
+    try {
+      const repo = new CaptureRepository(db);
+      expect(await repo.cancel(auth, dto)).toEqual(cancelled);
+      expect(await repo.cancel(auth, dto)).toEqual(cancelled);
+      expect(queries.filter(({ sql }) => sql.startsWith('insert into "capture_receipt"'))).toHaveLength(1);
+      expect(queries.find(({ sql }) => sql.includes('from "user"'))?.sql).toContain('for update');
+      const publish = vi.fn();
+      await expect(db.transaction().execute((tx) => repo.commitFile(tx, auth, dto, publish))).rejects.toThrow(
+        'cancelled',
+      );
+      await expect(repo.getCompleted(auth, dto)).rejects.toThrow('cancelled');
+      expect(publish).not.toHaveBeenCalled();
+      expect(queries.some(({ sql }) => sql.startsWith('delete from "asset"'))).toBe(false);
+    } finally {
+      await db.destroy();
+    }
+  });
+  it('preserves an already completed receipt and enforces its original actor and request on cancellation', async () => {
+    for (const existing of [
+      receipt,
+      { ...receipt, actorId: 'key:other' },
+      { ...receipt, requestHash: Buffer.alloc(32) },
+    ]) {
+      const { db, queries } = scriptedKysely(({ sql }) =>
+        sql.includes('from "capture_receipt"') ? { rows: [existing] } : admitted(sql),
+      );
+      try {
+        const result = new CaptureRepository(db).cancel(auth, dto);
+        if (existing === receipt) expect(await result).toEqual(receipt);
+        else await expect(result).rejects.toThrow();
+        expect(queries.some(({ sql }) => sql.startsWith('insert into "capture_receipt"'))).toBe(false);
+      } finally {
+        await db.destroy();
+      }
+    }
+  });
+  it('cannot cancel a staged capture owned by another key or a changed checksum', async () => {
+    for (const resource of [
+      {
+        metadata: { publication: 'capture', captureId: dto.captureId, captureActor: 'key:other' },
+        expectedChecksum: Buffer.from('a'.repeat(64), 'hex'),
+      },
+      {
+        metadata: { publication: 'capture', captureId: dto.captureId, captureActor: 'key:capture-key' },
+        expectedChecksum: Buffer.alloc(32),
+      },
+    ]) {
+      const { db, queries } = scriptedKysely(({ sql }) =>
+        sql.includes('from "asset_upload_resource"') ? { rows: [resource] } : admitted(sql),
+      );
+      try {
+        await expect(new CaptureRepository(db).cancel(auth, dto)).rejects.toThrow('Capture unavailable');
+        expect(queries.some(({ sql }) => sql.startsWith('insert into "capture_receipt"'))).toBe(false);
+      } finally {
+        await db.destroy();
+      }
+    }
+  });
+  it('blocks byte admission for a cancelled UUID without changing old completed receipts', async () => {
+    for (const status of ['cancelled', 'created']) {
+      const { db } = scriptedKysely(() => ({ rows: [{ status, actorId: 'key:capture-key' }] }));
+      try {
+        const check = new CaptureRepository(db).assertNotCancelled(auth, dto.captureId);
+        if (status === 'cancelled') await expect(check).rejects.toThrow('cancelled');
+        else await expect(check).resolves.toBeUndefined();
+      } finally {
+        await db.destroy();
+      }
+    }
+  });
   it('replays the same payload without publishing another asset', async () => {
     const { db } = scriptedKysely(({ sql }) =>
       sql.includes('from "capture_receipt"') ? { rows: [receipt] } : admitted(sql),

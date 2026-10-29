@@ -24,6 +24,7 @@ import {
   CaptureCapabilitiesDto,
   CaptureCatalogDto,
   CaptureCommitDto,
+  CaptureCancelResponseDto,
   CaptureResponseDto,
   CaptureUploadStateDto,
 } from 'src/dtos/capture.dto.js';
@@ -76,6 +77,18 @@ export class CaptureController {
   })
   commitCapture(@Auth() auth: AuthDto, @Body() dto: CaptureCommitDto): Promise<CaptureResponseDto> {
     return this.service.commit(auth, dto);
+  }
+
+  @Post('cancel')
+  @Header('Cache-Control', 'private, no-store')
+  @HttpCode(200)
+  @Authenticated({ permission: Permission.CaptureCreate })
+  @Endpoint({
+    summary: 'Cancel an unpublished capture UUID or return its existing saved receipt',
+    history: new HistoryBuilder().added('v3'),
+  })
+  cancelCapture(@Auth() auth: AuthDto, @Body() dto: CaptureCommitDto): Promise<CaptureCancelResponseDto> {
+    return this.service.cancel(auth, dto);
   }
 
   @Post('albums')

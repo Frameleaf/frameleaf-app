@@ -19,12 +19,13 @@ export class CaptureReceiptTable {
   @Column({ type: 'text' })
   kind!: 'asset' | 'bookmark';
 
+  // Cancelled tombstones use captureId here; they never identify a published item.
   // A removed item must never turn a retry of its receipt into another creation.
   @Column({ type: 'uuid' })
   itemId!: string;
 
   @Column({ type: 'text' })
-  status!: 'created' | 'duplicate';
+  status!: 'created' | 'duplicate' | 'cancelled';
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

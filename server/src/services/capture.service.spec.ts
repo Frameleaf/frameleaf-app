@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { CaptureCommitDto, CaptureResponseDto } from 'src/dtos/capture.dto.js';
+import { CaptureCommitDto, CaptureResponseDto, CaptureCancelResponseDto } from 'src/dtos/capture.dto.js';
 import { LibraryScope, Permission } from 'src/enum.js';
 import { CaptureReceipt, CaptureRepository } from 'src/repositories/capture.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -71,6 +71,55 @@ describe('capture application boundary', () => {
     });
   });
 
+  it('acknowledges a bookmark cancellation without creating or exposing an item', async () => {
+    captures.cancel.mockResolvedValue({ ...receipt, status: 'cancelled', itemId: dto.captureId });
+    const result = await service.cancel(auth, dto);
+    expect(result).toEqual({ captureId: dto.captureId, status: 'cancelled' });
+    expect(CaptureCancelResponseDto.schema.safeParse(result).success).toBe(true);
+    expect(captures.commitBookmark).not.toHaveBeenCalled();
+    expect(bookmarks.get).not.toHaveBeenCalled();
+    expect(uploads.cancel).not.toHaveBeenCalled();
+    expect(
+      CaptureCancelResponseDto.schema.safeParse({ ...result, receipt: { captureId: dto.captureId } }).success,
+    ).toBe(false);
+    expect(
+      CaptureCancelResponseDto.schema.safeParse({ captureId: dto.captureId, status: 'already-published' }).success,
+    ).toBe(false);
+  });
+  it('returns an already published receipt without cancelling its media', async () => {
+    captures.cancel.mockResolvedValue(receipt);
+    const result = await service.cancel(auth, dto);
+    expect(result).toMatchObject({
+      captureId: dto.captureId,
+      status: 'already-published',
+      receipt: {
+        captureId: dto.captureId,
+        status: 'created',
+        item: { kind: 'bookmark', bookmark: { title: 'Reference', url: 'https://example.org' } },
+      },
+    });
+    expect(CaptureCancelResponseDto.schema.safeParse(result).success).toBe(true);
+    expect(uploads.cancel).not.toHaveBeenCalled();
+    expect(captures.commitBookmark).not.toHaveBeenCalled();
+  });
+  it('cleans an unpublished resource after its tombstone, accepts absent resources and retains cleanup failures', async () => {
+    const file = { ...dto, bookmark: undefined, uploadResourceId: dto.captureId, sha256: 'a'.repeat(64) };
+    uploads.cancel.mockResolvedValue(undefined);
+    captures.cancel.mockResolvedValue({ ...receipt, kind: 'asset', status: 'cancelled', itemId: dto.captureId });
+    expect(await service.cancel(auth, file)).toEqual({ captureId: dto.captureId, status: 'cancelled' });
+    expect(uploads.cancel).toHaveBeenCalledWith(auth, dto.captureId);
+    uploads.cancel.mockRejectedValueOnce(new NotFoundException());
+    expect((await service.cancel(auth, file)).status).toBe('cancelled');
+    uploads.cancel.mockRejectedValueOnce(new Error('cleanup failed'));
+    await expect(service.cancel(auth, file)).rejects.toThrow('cleanup failed');
+  });
+  it('never interprets a cancellation tombstone as a normal saved receipt', async () => {
+    captures.getCompleted.mockReset().mockResolvedValue({ ...receipt, status: 'cancelled', itemId: dto.captureId });
+    await expect(service.commit(auth, dto)).rejects.toThrow('cancelled');
+    expect(bookmarks.get).not.toHaveBeenCalled();
+    expect(captures.commitBookmark).not.toHaveBeenCalled();
+  });
+
   it('acknowledges a durable bookmark receipt using its submitted fields, without exposing later private edits', async () => {
     const result = await service.commit(auth, dto);
     expect(CaptureResponseDto.schema.safeParse(result).success).toBe(true);
@@ -126,6 +175,7 @@ describe('capture application boundary', () => {
       userId: auth.user.id,
       maxFileBytes: 1024,
       captureSupported: true,
+      cancellationSupported: true,
     });
   });
 

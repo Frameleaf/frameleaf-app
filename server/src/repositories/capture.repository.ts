@@ -13,7 +13,7 @@ import { isLocked, isNotLocked } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
 export type CaptureReceipt = Selectable<CaptureReceiptTable>;
-type PublishedCapture = Pick<CaptureReceipt, 'kind' | 'itemId' | 'status'>;
+type PublishedCapture = Pick<CaptureReceipt, 'kind' | 'itemId'> & { status: 'created' | 'duplicate' };
 
 @Injectable()
 export class CaptureRepository {
@@ -56,8 +56,64 @@ export class CaptureRepository {
     return this.db.transaction().execute(async (tx) => {
       await this.assertActor(auth, tx, Permission.CaptureCreate, !!dto.uploadResourceId);
       await this.targets(tx, auth, dto);
-      return this.receipt(tx, auth, dto);
+      const receipt = await this.receipt(tx, auth, dto);
+      if (receipt?.status === 'cancelled') throw new ConflictException('Capture was cancelled');
+      return receipt;
     });
+  }
+
+  cancel(auth: AuthDto, dto: CaptureCommitDto): Promise<CaptureReceipt> {
+    return this.db.transaction().execute(async (tx) => {
+      const actorId = await this.assertActor(auth, tx);
+      const existing = await this.receipt(tx, auth, dto);
+      if (existing) {
+        if (existing.status !== 'cancelled') await this.targets(tx, auth, dto);
+        return existing;
+      }
+      if (dto.uploadResourceId) {
+        // Metadata is immutable; resource locks here would reverse publication's resource/user lock order.
+        const resource = await tx
+          .selectFrom('asset_upload_resource')
+          .select(['metadata', 'expectedChecksum'])
+          .where('ownerId', '=', auth.user.id)
+          .where('id', '=', dto.captureId)
+          .executeTakeFirst();
+        if (
+          resource &&
+          (resource.metadata.publication !== 'capture' ||
+            resource.metadata.captureId !== dto.captureId ||
+            resource.metadata.captureActor !== actorId ||
+            !resource.expectedChecksum.equals(Buffer.from(dto.sha256!, 'hex')))
+        )
+          throw new NotFoundException('Capture unavailable');
+      }
+      return tx
+        .insertInto('capture_receipt')
+        .values({
+          ownerId: auth.user.id,
+          captureId: dto.captureId,
+          actorId,
+          requestHash: captureRequestHash(dto),
+          kind: dto.bookmark ? 'bookmark' : 'asset',
+          itemId: dto.captureId,
+          status: 'cancelled',
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    });
+  }
+
+  async assertNotCancelled(auth: AuthDto, captureId: string, tx: Kysely<DB> = this.db) {
+    const receipt = await tx
+      .selectFrom('capture_receipt')
+      .select(['status', 'actorId'])
+      .where('ownerId', '=', auth.user.id)
+      .where('captureId', '=', captureId)
+      .executeTakeFirst();
+    if (receipt?.status === 'cancelled') {
+      if (receipt.actorId !== captureActor(auth)) throw new NotFoundException('Capture unavailable');
+      throw new ConflictException('Capture was cancelled');
+    }
   }
 
   catalog(auth: AuthDto) {
@@ -172,6 +228,7 @@ export class CaptureRepository {
     const actorId = await this.assertActor(auth, tx, Permission.CaptureCreate, !!dto.uploadResourceId);
     const tagIds = await this.targets(tx, auth, dto);
     const existing = await this.receipt(tx, auth, dto);
+    if (existing?.status === 'cancelled') throw new ConflictException('Capture was cancelled');
     if (existing) return existing;
     const item = await publish();
     if (item.kind === 'asset') {

@@ -41,6 +41,22 @@ export class CaptureResponseDto extends createZodDto(
     .meta({ id: 'CaptureResponseDto' }),
 ) {}
 
+export class CaptureCancelResponseDto extends createZodDto(
+  z
+    .object({
+      captureId: z.uuidv4(),
+      status: z.enum(['cancelled', 'already-published']).meta({ id: 'CaptureCancelStatus' }),
+      receipt: CaptureResponseDto.schema.optional(),
+    })
+    .strict()
+    .refine(
+      (value) =>
+        value.status === 'cancelled' ? value.receipt === undefined : value.receipt?.captureId === value.captureId,
+      'Cancellation must contain either no published item or its matching receipt',
+    )
+    .meta({ id: 'CaptureCancelResponseDto' }),
+) {}
+
 export class CaptureCapabilitiesDto extends createZodDto(
   z
     .object({
@@ -49,6 +65,7 @@ export class CaptureCapabilitiesDto extends createZodDto(
       userId: z.uuidv4(),
       maxFileBytes: z.int().min(0),
       captureSupported: z.literal(true),
+      cancellationSupported: z.literal(true).optional(),
     })
     .meta({ id: 'CaptureCapabilitiesDto' }),
 ) {}

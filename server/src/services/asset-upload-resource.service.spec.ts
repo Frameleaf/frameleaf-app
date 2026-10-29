@@ -139,7 +139,10 @@ describe('resumable asset byte commit boundaries', () => {
       }),
     };
     const sources = { assertUpload: vi.fn().mockResolvedValue(undefined) };
-    const captures = { assertActor: vi.fn().mockResolvedValue('key:capture-key') };
+    const captures = {
+      assertActor: vi.fn().mockResolvedValue('key:capture-key'),
+      assertNotCancelled: vi.fn().mockResolvedValue(undefined),
+    };
     const service = new AssetUploadResourceService(
       uploads as never,
       media as never,
@@ -276,6 +279,33 @@ describe('resumable asset byte commit boundaries', () => {
     expect(harness.uploads.publish).not.toHaveBeenCalled();
   });
 
+  it('stops a cancelled capture before media preparation or publication', async () => {
+    const harness = setup();
+    const captureAuth = { ...auth, apiKey: { id: 'capture-key', permissions: [] } };
+    harness.mutate({
+      state: 'verified',
+      metadata: {
+        ...harness.row().metadata,
+        publication: 'capture',
+        captureId: harness.row().id,
+        captureActor: 'key:capture-key',
+        libraryScope: 'design',
+      } as never,
+    });
+    harness.captures.assertNotCancelled.mockRejectedValue(new ConflictException('Capture was cancelled'));
+    const publish = vi.fn();
+    await expect(
+      harness.service.commitCapture(
+        captureAuth,
+        harness.row().id,
+        harness.row().expectedChecksum.toString('hex'),
+        publish,
+      ),
+    ).rejects.toThrow('cancelled');
+    expect(publish).not.toHaveBeenCalled();
+    expect(harness.media.prepareUploadAsset).not.toHaveBeenCalled();
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+  });
   it('publishes capture bytes only inside the metadata and receipt callback transaction', async () => {
     const harness = setup();
     const captureAuth = { ...auth, apiKey: { id: 'capture-key', permissions: [] } };

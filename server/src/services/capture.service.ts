@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { AlbumResponseDto } from 'src/dtos/album.dto.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -7,6 +7,7 @@ import {
   CaptureCapabilitiesDto,
   CaptureCatalogDto,
   CaptureCommitDto,
+  CaptureCancelResponseDto,
   CaptureResponseDto,
 } from 'src/dtos/capture.dto.js';
 import { mapTag } from 'src/dtos/tag.dto.js';
@@ -36,7 +37,14 @@ export class CaptureService {
       stableServerId({ systemMetadataRepository: this.system }),
       this.uploads.limits(),
     ]);
-    return { version: 1, serverId, userId: auth.user.id, maxFileBytes: limits.maxSize, captureSupported: true };
+    return {
+      version: 1,
+      serverId,
+      userId: auth.user.id,
+      maxFileBytes: limits.maxSize,
+      captureSupported: true,
+      cancellationSupported: true,
+    };
   }
 
   async catalog(auth: AuthDto): Promise<CaptureCatalogDto> {
@@ -65,7 +73,26 @@ export class CaptureService {
     return this.response(auth, dto, receipt);
   }
 
+  async cancel(auth: AuthDto, dto: CaptureCommitDto): Promise<CaptureCancelResponseDto> {
+    const receipt = await this.captures.cancel(auth, dto);
+    if (receipt.status !== 'cancelled')
+      return {
+        captureId: dto.captureId,
+        status: 'already-published',
+        receipt: await this.response(auth, dto, receipt),
+      };
+    if (dto.uploadResourceId) {
+      try {
+        await this.uploads.cancel(auth, dto.uploadResourceId);
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) throw error;
+      }
+    }
+    return { captureId: dto.captureId, status: 'cancelled' };
+  }
+
   private async response(auth: AuthDto, dto: CaptureCommitDto, receipt: CaptureReceipt): Promise<CaptureResponseDto> {
+    if (receipt.status === 'cancelled') throw new ConflictException('Capture was cancelled');
     if (receipt.kind === 'asset') {
       const asset = await this.captures.getCapturedAsset(auth, receipt.itemId);
       if (!asset) throw new NotFoundException('Capture unavailable');
