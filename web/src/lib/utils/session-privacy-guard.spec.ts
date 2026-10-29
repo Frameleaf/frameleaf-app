@@ -138,6 +138,19 @@ describe('watchSessionPrivacy', () => {
     expect(revalidate).toHaveBeenCalledOnce();
   });
 
+  it('still revalidates on retry after a failed revalidation cleared the tab record', async () => {
+    sessionStorage.setItem('frameleaf:session:elevated-tab', '1');
+    const gate = vi.fn();
+    const revalidate = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined);
+    vi.mocked(getAuthStatus).mockImplementation(respond(status(false)));
+    guard = watchSessionPrivacy(() => true, gate, revalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate).toHaveBeenLastCalledWith('error');
+    await guard.refresh();
+    expect(revalidate).toHaveBeenCalledTimes(2);
+    expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
   it('records the elevation for other tabs where a lock does not erase it', async () => {
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
     guard = watchSessionPrivacy(() => true);

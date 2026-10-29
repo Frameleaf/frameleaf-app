@@ -222,7 +222,11 @@ export const watchSessionPrivacy = (
       // extend elevation. Fail closed if the server time cannot be established.
       const remaining = expiresAt - serverTime - 1000 - (performance.now() - started);
       // decided before anything below clears this tab's records
-      const revalidateLoaders = loadedUnderOtherAccess || loadersCouldHaveSeenElevation(status);
+      // kept until a revalidation succeeds: a failed one must not let a retry skip it
+      if (!verified && loadersCouldHaveSeenElevation(status)) {
+        loadedUnderOtherAccess = true;
+      }
+      const revalidateLoaders = loadedUnderOtherAccess;
       let isElevated = status.isElevated;
       if (
         isElevated &&

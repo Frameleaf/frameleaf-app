@@ -135,7 +135,7 @@ describe(LanDiscoveryService.name, () => {
       await sut.onBootstrap();
 
       expect(publish).toHaveBeenCalledWith({
-        name: 'My Server (server-1)',
+        name: expect.stringMatching(/^My Server \([\da-f]{8}\)$/),
         type: 'frameleaf',
         protocol: 'tcp',
         port: 2283,
@@ -281,11 +281,13 @@ describe(dnsSdInstanceName.name, () => {
   it('fits a multibyte server name and the id suffix in 63 UTF-8 bytes without splitting a character', () => {
     const name = dnsSdInstanceName('写真'.repeat(20), '0123456789abcdef');
     expect(Buffer.byteLength(name)).toBeLessThanOrEqual(63);
-    expect(name.endsWith(' (01234567)')).toBe(true);
+    expect(name).toMatch(/ \([\da-f]{8}\)$/);
     expect(name).not.toContain('\u{FFFD}');
   });
 
-  it('keeps a short name whole', () => {
-    expect(dnsSdInstanceName('My Server', 'server-1')).toBe('My Server (server-1)');
+  it('keeps a short name whole and tells apart ids that share a prefix', () => {
+    const first = dnsSdInstanceName('My Server', '019a2b3c-0000-7000-8000-000000000001');
+    expect(first.startsWith('My Server (')).toBe(true);
+    expect(dnsSdInstanceName('My Server', '019a2b3c-0000-7000-8000-000000000002')).not.toBe(first);
   });
 });

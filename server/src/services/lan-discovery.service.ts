@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import Bonjour, { Service } from 'bonjour-service';
+import { createHash } from 'node:crypto';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { FrameleafWorker } from 'src/enum.js';
@@ -36,9 +37,12 @@ const settle = (run: (done: () => void) => void) =>
  * Runs on the API worker only (one process). Not unit-testable against real multicast without
  * flaking in CI, so tests mock the `bonjour-service` module rather than exercising real UDP.
  */
-/** A DNS-SD instance name is at most 63 UTF-8 bytes: the suffix always fits, the name is cut by bytes. */
+/**
+ * A DNS-SD instance name is at most 63 UTF-8 bytes: the suffix always fits, the name is cut by bytes.
+ * The suffix hashes the whole id: time-ordered ids (UUIDv7) share their first characters.
+ */
 export const dnsSdInstanceName = (name: string, id: string) => {
-  const suffix = ` (${id.slice(0, 8)})`;
+  const suffix = ` (${createHash('sha256').update(id).digest('hex').slice(0, 8)})`;
   let budget = 63 - Buffer.byteLength(suffix);
   let kept = '';
   for (const character of name) {
