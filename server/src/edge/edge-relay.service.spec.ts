@@ -698,12 +698,35 @@ describe(EdgeRelayService.name, () => {
       connected = relay.nextTunnel();
       tunnel.goaway('replaced');
       tunnel = await connected;
+      // uptime counts from READY: the clock moves only once the server has it
+      await until(() => sut.status().connected);
       clock += RELAY_STABLE_TUNNEL_MS;
       connected = relay.nextTunnel();
       tunnel.goaway('replaced');
       await connected;
       await sut.stop();
       expect(delays.slice(0, 2)).toEqual([500, 500]);
+    });
+
+    it('counts a tunnel as up from READY, not from before its handshake', async () => {
+      let clock = 1_000_000;
+      sut.now = () => clock;
+      const dial = sut.dial;
+      // a slow handshake: the clock moves a minute while the tunnel is still being set up
+      sut.dial = (options) => {
+        clock += RELAY_STABLE_TUNNEL_MS;
+        return dial(options);
+      };
+      let connected = relay.nextTunnel();
+      await sut.ensure(target);
+      for (let index = 0; index < 2; index++) {
+        const tunnel = await connected;
+        connected = relay.nextTunnel();
+        tunnel.goaway('replaced');
+      }
+      await connected;
+      await sut.stop();
+      expect(delays.slice(0, 2)).toEqual([500, 1000]);
     });
   });
 

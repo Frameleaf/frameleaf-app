@@ -136,6 +136,8 @@ export class EdgeRelayService {
   dial = (options: tls.ConnectionOptions): TLSSocket => tls.connect(options);
   random = () => Math.random();
   now = () => Date.now();
+  /** When the current tunnel got READY: its uptime counts from here, not from the handshake. */
+  private readyAt: number | undefined;
   /** Extra certificate authorities for the relay's certificate (the public roots otherwise). */
   ca: string | undefined = undefined;
   wait = (ms: number, signal: AbortSignal) => sleep(ms, undefined, { signal }).catch(() => {});
@@ -277,9 +279,9 @@ export class EdgeRelayService {
           this.failures = 0;
         }
         const grant = await this.token(target);
-        const opened = this.now();
+        this.readyAt = undefined;
         end = await this.connect(target, grant, signal);
-        upFor = this.now() - opened;
+        upFor = this.readyAt === undefined ? 0 : this.now() - this.readyAt;
       } catch (error) {
         if (signal.aborted) {
           return;
@@ -532,6 +534,7 @@ export class EdgeRelayService {
       // every handshake write completes before HTTP/2 takes the socket over
       await write(socket, encodeFrame({ type: TunnelFrame.PROOF, sig: sig.toString('base64url') }));
       ready = expectFrame(await reader.next(), TunnelFrame.READY);
+      this.readyAt = this.now();
       const rest = reader.detach();
       if (rest.length > 0) {
         socket.unshift(rest);
