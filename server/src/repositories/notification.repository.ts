@@ -70,6 +70,17 @@ export class NotificationRepository {
     return row ?? null;
   }
 
+  /** Soft-deletes `userId`'s notifications carrying `dedupeKey` (in `data`), so a condition keeps one current notice. */
+  async deleteByDedupeKey(userId: string, dedupeKey: string) {
+    await this.db
+      .updateTable('notification')
+      .set({ deletedAt: DateTime.now().toJSDate() })
+      .where('userId', '=', userId)
+      .where(sql<string>`"data"->>'dedupeKey'`, '=', dedupeKey)
+      .where('deletedAt', 'is', null)
+      .execute();
+  }
+
   create(notification: Insertable<NotificationTable>) {
     return this.db
       .insertInto('notification')

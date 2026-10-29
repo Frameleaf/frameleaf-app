@@ -94,6 +94,12 @@
   );
   /** The last snapshot failed: just now while this page waited, or earlier and not made good since. */
   const showFailure = $derived(failed || placeState.status.key === 'frameleaf_backup_state_failed');
+  /** A recorded reason explains only a failure newer than the newest snapshot; otherwise say it plainly. */
+  const failureMessage = $derived(
+    placeState.status.key === 'frameleaf_backup_state_failed' && lastFailure
+      ? snapshotFailureKey(lastFailure.reason)
+      : 'frameleaf_backup_local_failed',
+  );
 
   /** The backup queue, or undefined when it cannot be read. */
   /** The database backup queue alone; reading every queue's counts on each poll is far more work. */
@@ -177,7 +183,7 @@
     <progress aria-label={$t('frameleaf_backup_local_running')}></progress>
   </p>
 {:else if showFailure}
-  <InlineError compact message={$t(snapshotFailureKey(lastFailure?.reason ?? ''))} onRetry={takeSnapshot} />
+  <InlineError compact message={$t(failureMessage)} onRetry={takeSnapshot} />
 {/if}
 
 <Notice title={$t('frameleaf_backup_local_not_photos')}>{$t('frameleaf_backup_local_not_photos_body')}</Notice>

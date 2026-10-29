@@ -120,12 +120,8 @@
 
       // FL-657: a library data snapshot that didn't finish opens Backup › On this server, with its retry.
       case NotificationType.BackupFailed: {
-        // Cloud backup failures carry other data, which may not be JSON, so it is not parsed.
         const data: unknown = notification.data;
-        const kind =
-          typeof data === 'string'
-            ? data.includes('"library-snapshot-failed"') && 'library-snapshot-failed'
-            : (data as { kind?: unknown } | undefined)?.kind;
+        const kind = data && typeof data === 'object' ? (data as { kind?: unknown }).kind : undefined;
         if (kind === 'library-snapshot-failed') {
           await goto(backupPageUrl('local'));
         }

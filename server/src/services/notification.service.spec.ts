@@ -351,6 +351,7 @@ describe(NotificationService.name, () => {
   describe('onJobError (FL-71)', () => {
     beforeEach(() => {
       mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+      mocks.notification.deleteByDedupeKey.mockResolvedValue();
     });
 
     it.each([
@@ -385,13 +386,29 @@ describe(NotificationService.name, () => {
           type: NotificationType.BackupFailed,
           level: NotificationLevel.Error,
           title: 'Library data snapshot didn’t finish',
-          data: JSON.stringify({ kind: 'library-snapshot-failed' }),
+          data: { kind: 'library-snapshot-failed', dedupeKey: 'library-snapshot-failed' },
         }),
+      );
+      // A retry of the same snapshot replaces the earlier notice instead of adding a second one.
+      expect(mocks.notification.deleteByDedupeKey).toHaveBeenCalledWith(expect.any(String), 'library-snapshot-failed');
+      expect(mocks.notification.deleteByDedupeKey.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.notification.create.mock.invocationCallOrder[0],
       );
       const notice = JSON.stringify(mocks.notification.create.mock.calls);
       expect(notice).not.toContain('pg_dump');
       expect(notice).not.toContain('DatabaseBackup');
       expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('pg_dump'), expect.any(String), '{}');
+    });
+
+    it('removes the notice once a library data snapshot finishes, and ignores other jobs (FL-657)', async () => {
+      const admin = UserFactory.create({ isAdmin: true });
+      mocks.user.getAdmin.mockResolvedValue(admin);
+
+      await sut.onJobSuccess({ job: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } } as never);
+      expect(mocks.notification.deleteByDedupeKey).not.toHaveBeenCalled();
+
+      await sut.onJobSuccess({ job: { name: JobName.DatabaseBackup, data: {} } } as never);
+      expect(mocks.notification.deleteByDedupeKey).toHaveBeenCalledWith(admin.id, 'library-snapshot-failed');
     });
 
     it('still logs the data of other jobs', async () => {

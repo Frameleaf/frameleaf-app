@@ -92,6 +92,23 @@ describe('Backup › On this server (FL-362)', () => {
     expect(screen.queryByText(en.frameleaf_backup_local_failed_space)).not.toBeInTheDocument();
   });
 
+  it('does not blame a full disk from an older failure for a snapshot that just failed', async () => {
+    sdkMock.listDatabaseBackups.mockResolvedValue({
+      backups: [{ filename: 'frameleaf-db-backup-20260924T070000-v1.0.0-pg19.sql.gz', filesize: 10, timezone: 'UTC' }],
+    });
+    // The full disk was before the newest snapshot, so it is not why this one failed.
+    sdkMock.getQueueJobs.mockResolvedValue([
+      { name: 'DatabaseBackup', timestamp: 1, failedReason: 'ENOSPC: no space left on device', data: {} },
+    ] as never);
+    sdkMock.getQueue.mockResolvedValueOnce(queue(0, false)).mockResolvedValue(queue(0, false));
+    render(BackupLocalPage, { pollMs: 5 });
+
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_backup_local_take }));
+
+    expect(await screen.findByText(en.frameleaf_backup_local_failed)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_backup_local_failed_space)).not.toBeInTheDocument();
+  });
+
   it('offers to try again when the saved snapshots cannot be listed', async () => {
     sdkMock.listDatabaseBackups.mockRejectedValue(new Error('500'));
     render(BackupLocalPage);

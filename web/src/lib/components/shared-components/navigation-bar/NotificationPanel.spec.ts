@@ -109,8 +109,7 @@ describe('NotificationPanel', () => {
         ...notification('snapshot', 'Library data snapshot didn’t finish'),
         level: NotificationLevel.Error,
         type: NotificationType.BackupFailed,
-        // The server stores the data as a JSON string, whatever the DTO type says.
-        data: JSON.stringify({ kind: 'library-snapshot-failed' }) as never,
+        data: { kind: 'library-snapshot-failed', dedupeKey: 'library-snapshot-failed' },
       },
     ];
     render(NotificationPanel, { onNavigate: vi.fn() });
