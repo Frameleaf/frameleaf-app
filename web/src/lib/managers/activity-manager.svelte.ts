@@ -88,7 +88,10 @@ class ActivityManager {
 
   async init(albumId: string, assetId?: string) {
     this.#prepareSession();
-    if (albumId === this.#albumId && assetId && assetId === this.#assetId) {
+    // The same view (an album's own activity, or one of its items) is already loaded or loading. The
+    // album page asks again whenever its effect re-runs, which used to fetch the album's activity
+    // twice on every visit and drop the first answer.
+    if (albumId === this.#albumId && assetId === this.#assetId) {
       return;
     }
 

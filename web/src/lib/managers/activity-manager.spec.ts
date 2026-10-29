@@ -40,6 +40,20 @@ describe('activity view ownership', () => {
     expect(activityManager.isLoading).toBe(false);
   });
 
+  it('loads an album’s own activity once while the album stays open', async () => {
+    await Promise.all([activityManager.init('open-album'), activityManager.init('open-album')]);
+    await activityManager.init('open-album');
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(1);
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['open-album']);
+
+    // one of its items is a view of its own; coming back shows the album's activity again
+    await activityManager.init('open-album', 'item');
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['item']);
+    await activityManager.init('open-album');
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['open-album']);
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(2);
+  });
+
   it('discards a response after reset', async () => {
     const old = deferred<ActivityResponseDto[]>();
     sdkMock.getActivities.mockImplementation((args) => (args.userId ? Promise.resolve([]) : old.promise));
