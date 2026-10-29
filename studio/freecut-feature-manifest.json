@@ -5056,9 +5056,10 @@
           "0076-master-gain-envelope.patch",
           "0087-preview-track-gain.patch",
           "0090-track-gain-automation.patch",
-          "0145-dialogue-loudness-match-and-export-report.patch"
+          "0145-dialogue-loudness-match-and-export-report.patch",
+          "0150-master-true-peak-limiter.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter.",
         "status": "shipped"
       },
       "id": "readme.audio.1",
