@@ -82,6 +82,11 @@ test('only this managed project can be exported, with private atomic template fi
     const other = fixture();
     other.Config.Labels['app.frameleaf.manager'] = 'bbbbbbbbbbbb';
     await assert.rejects(saveDockermanTemplates([other], project, directory), /dockerman_container_identity/);
+    const lan = fixture();
+    lan.Name = `/${project}-frameleaf-lan-discovery-1`;
+    lan.Config.Labels['com.docker.compose.service'] = 'frameleaf-lan-discovery';
+    await saveDockermanTemplates([fixture(), lan], project, directory);
+    await assert.rejects(stat(join(directory, `my-${project}-frameleaf-lan-discovery-1.xml`)), { code: 'ENOENT' });
     await saveDockermanTemplates([], project, directory);
     await assert.rejects(stat(path), { code: 'ENOENT' });
     await assert.rejects(saveDockermanTemplates([], '../../outside', directory), /dockerman_container_identity/);
