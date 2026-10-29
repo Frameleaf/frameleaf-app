@@ -1223,3 +1223,17 @@ Memory and execution time estimates were obtained without acceleration on a 7800
 :::note
 Feel free to make a feature request if there's a model you want to use that we don't currently support.
 :::
+
+## Spoken words in videos
+
+In **Your preferences → Tools & sidebar → Spoken words**, choose this server or a home-network transcription worker, then enable indexing for your whole library or selected albums you own. Indexing is off by default. It backfills existing videos and picks up new additions. The selected worker must support local Whisper transcription; speech audio is never routed to Frameleaf Cloud. Progress and failed work appear in the account controls and Activity. Retry failed work after the worker is available again.
+
+Choose **Spoken words** in the search mode picker. Words are literal: `Paris 2024` searches for those spoken words. Use double quotes for an exact consecutive phrase, such as `"ask not"`. Separate terms must all occur in the video, but can occur at different times. Matching ignores case and punctuation, without stemming. Straight and smart double quotes both mark phrases. Chinese, Japanese and Korean characters are matched consecutively independent of how the recognizer split its words; each character counts toward the token limit. A query accepts up to 64 normalized words; oversized words and incomplete quotes are rejected. Apply dates, albums and other metadata conditions with the filter controls.
+
+Results are grouped by video with quoted context and original-video timestamps. **More videos** continues the matching videos; **More moments in this video** reaches later occurrences without a transcript-length cutoff. Selecting a timestamp rechecks current access and opens the original video timeline, including when an edited version has been trimmed. Browsers that cannot decode the original format report the existing playback error rather than treating an edited timeline as the original.
+
+Only your own eligible videos are indexed and returned. Locked content, owner suppression rules, trash and unavailable sources are excluded, including from counts and quotes. Scope and privacy changes invalidate open results. Transcripts are independent of Studio captions and edits. Videos with no audio or no recognized speech complete successfully with no matches. Long videos use bounded audio chunks and resumable checkpoints; partial transcripts never appear in search. A source checksum, pinned model identity or index-version change invalidates old results and schedules indexing again. Language is detected by the worker.
+
+Turning indexing off hides results and cancels pending work while retaining stored transcripts. **Delete speech index** also deletes completed and partial transcripts and keeps indexing off; original videos are unchanged. Enabling it again deliberately rebuilds the selected scope. Settings reject stale writes from other tabs or devices; refresh before saving again.
+
+Save Search, Create Workflow and Play on TV are unavailable in Spoken words mode. Older servers do not offer the mode or its settings. A link to a spoken search on an older server reports that it is unsupported instead of changing it into another search mode.

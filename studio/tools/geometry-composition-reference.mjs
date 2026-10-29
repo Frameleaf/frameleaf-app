@@ -93,7 +93,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
     sourceSha256 === 'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
     // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
-    sourceSha256 === '59b8569f29f0eb58d2d9d42daeba048a3682990c1144652d629483805b11a1b4'
+    sourceSha256 === 'f1c27d1a0b1a60b3b117bacfcf2b11c6d93315e45d927dadf74f16a062de38ab'
   )
     return {
       ...COMPOSITION_SOURCES,

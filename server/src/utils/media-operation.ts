@@ -1,4 +1,15 @@
-import { MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  MediaOperationCheckpointState,
+  MediaOperationKind,
+  MediaOperationKindSchema,
+  MediaOperationStatus,
+} from 'src/enum.js';
+
+/** Public API boundary only; internal workers still use the full stored operation-kind set. */
+export const PUBLIC_MEDIA_OPERATION_KINDS = MediaOperationKindSchema.options;
+export type PublicMediaOperationKind = (typeof PUBLIC_MEDIA_OPERATION_KINDS)[number];
+export const isPublicMediaOperationKind = (kind: unknown): kind is PublicMediaOperationKind =>
+  MediaOperationKindSchema.safeParse(kind).success;
 
 /**
  * The durable rules for media operations (FL-43, FL-104), kept free of the database so they can
@@ -152,6 +163,7 @@ export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSAB
 
 /** Automatically replayable local work; remote and destructive operations require explicit review. */
 export const SAFE_MEDIA_OPERATION_REPLAY_KINDS: readonly MediaOperationKind[] = [
+  MediaOperationKind.SpeechTranscription,
   // Publication records queue admission atomically; uncertain external follow-ups never replay.
   MediaOperationKind.StudioExportPublish,
   MediaOperationKind.QuickEdit,

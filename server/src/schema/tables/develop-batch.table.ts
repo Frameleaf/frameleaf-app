@@ -18,7 +18,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 export class DevelopBatchTable {
   @PrimaryGeneratedColumn() id!: Generated<string>;
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', index: false }) ownerId!: string;
-  @Column({ type: 'text', default: "'open'" }) status!: Generated<string>;
+  @Column({ type: 'text', default: 'open' }) status!: Generated<string>;
   @Column({ type: 'boolean', default: true }) includeSidecars!: Generated<boolean>;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
 }
@@ -38,7 +38,7 @@ export class DevelopBatchItemTable {
   @Column({ type: 'text', nullable: true }) error!: string | null;
   @Column({ type: 'text', nullable: true }) errorCode!: string | null;
   @Column({ type: 'text' }) exportName!: string;
-  @Column({ type: 'text', default: "'pending'" }) status!: Generated<string>;
+  @Column({ type: 'text', default: 'pending' }) status!: Generated<string>;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
 }
 @Table('develop_batch_return')
@@ -67,7 +67,7 @@ export class DevelopBatchReturnTable {
   @Column({ type: 'boolean' }) locked!: boolean;
   @Column({ type: 'uuid', nullable: true }) sessionId!: string | null;
   @Column({ type: 'uuid', nullable: true }) apiKeyId!: string | null;
-  @Column({ type: 'text', default: "'confirmed'" }) status!: Generated<string>;
+  @Column({ type: 'text', default: 'confirmed' }) status!: Generated<string>;
   @Column({ type: 'text', nullable: true }) error!: string | null;
   @Column({ type: 'text', nullable: true }) errorCode!: string | null;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
