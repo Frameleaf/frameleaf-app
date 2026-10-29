@@ -153,7 +153,8 @@ test('existing Unraid stacks refresh video devices without changing storage or M
       assert.deepEqual(actual.volumes, server.volumes);
       assert.deepEqual(actual.environment, server.environment);
       assert.deepEqual(compose.services['frameleaf-machine-learning'].devices, ml.devices);
-      assert.deepEqual(compose.services['frameleaf-lan-discovery'].healthcheck.test, ['CMD', 'node', '-e', '']);
+      assert.deepEqual(compose.services['frameleaf-lan-discovery'].healthcheck,
+        { test: ['CMD', 'node', '-e', ''], interval: '30s', timeout: '10s', retries: 3 });
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
