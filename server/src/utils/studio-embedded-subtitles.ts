@@ -70,8 +70,11 @@ export function sealStudioEmbeddedSubtitles(
     'textRole',
     'text',
     'cues',
+    // FL-640: the word-by-word look only draws the picture; the text track keeps whole lines.
+    'wordLook',
   ]);
-  const cueFields = new Set(['id', 'startSeconds', 'endSeconds', 'text']);
+  // FL-640: `words` are the transcript's word times for the picture; the text track keeps whole lines.
+  const cueFields = new Set(['id', 'startSeconds', 'endSeconds', 'text', 'words']);
   const timeline = graph.timeline as {
     tracks: unknown[];
     items: Record<string, unknown>[];

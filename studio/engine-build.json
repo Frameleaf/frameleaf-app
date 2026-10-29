@@ -756,10 +756,10 @@
       "sha256": "e95e06fb8f85485b43b08cdf5fdd953b4a70f310fdeebfdab418954af5ca3eae"
     },
     {
-      "path": "patches/0166-subject-cutout.patch",
+      "path": "patches/0168-word-by-word-captions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "6918427f7ee9cd8ee76c381f1dde642de273bed779508922df701fb161408f94"
+      "sha256": "c1728386c5702a182af284678aa74ff3330583dc2779959540ae2b299ec99722"
     }
   ],
-  "sourceSha256": "8c198309e4368dea3779cc88c718def0b82c9bbd2dfad13963b9cf8ddfdee0a5"
+  "sourceSha256": "b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9"
 }

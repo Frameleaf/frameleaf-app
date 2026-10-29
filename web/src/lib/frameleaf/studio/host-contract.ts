@@ -28,6 +28,7 @@
  */
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
+import type { CaptionStyleEngineString } from './caption-style-strings';
 import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
@@ -362,7 +363,9 @@ export type StudioAdapterString =
   /** The transcript panel's words (FL-562), written over the engine's English the same way. */
   | TranscriptEngineString
   /** The cut-out card's words (FL-639), the same way. */
-  | CutoutEngineString;
+  | CutoutEngineString
+  /** The Caption style card's words (FL-640), written over the engine's English the same way. */
+  | CaptionStyleEngineString;
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 
