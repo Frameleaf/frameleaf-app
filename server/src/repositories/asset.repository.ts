@@ -3345,6 +3345,10 @@ export class AssetRepository {
       return;
     }
     const locked: LockableProperty[] = ['tags'];
+    // Two tag edits on the same items at once: the second waits here, then reads the first one's
+    // committed tags, so neither writes a tag list that misses the other's change. Ordered by id, so
+    // overlapping edits never deadlock; NO KEY UPDATE leaves other tables' references to the items alone.
+    await sql`SELECT id FROM asset WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR NO KEY UPDATE`.execute(this.db);
     await this.db
       .insertInto('asset_exif')
       .columns(['assetId', 'tags', 'lockedProperties'])
