@@ -25,6 +25,7 @@
     backupWhen,
     buddyPlaceState,
     cloudPlaceState,
+    lastSnapshotFailure,
     localPlaceState,
     localSnapshots,
     type BackupPlaceId,
@@ -44,12 +45,16 @@
     getBackupSchedule,
     getBuddyBackupStatus,
     getCloudBackupStatus,
+    getQueueJobs,
     getServerStatistics,
     listDatabaseBackups,
+    QueueJobStatus,
+    QueueName,
     type BackupScheduleResponseDto,
     type BuddyStatusDto,
     type CloudBackupStatusResponseDto,
     type DatabaseBackupDto,
+    type QueueJobResponseDto,
     type ServerStatsResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -73,6 +78,8 @@
   let cloud = $state<CloudBackupStatusResponseDto | null>(null);
   let buddy = $state<BuddyStatusDto | null>(null);
   let snapshots = $state<DatabaseBackupDto[] | null>(null);
+  /** Failed snapshot jobs, so a snapshot that failed is not shown as still waiting (FL-657). */
+  let failedSnapshots = $state<QueueJobResponseDto[] | null>(null);
   let stats = $state<ServerStatsResponseDto | null>(null);
   let plan = $state<BackupScheduleResponseDto | null>(null);
   let loaded = $state(false);
@@ -86,13 +93,14 @@
    * would only repeat the same totals.
    */
   const load = async (full = true) => {
-    const [cloudResult, buddyResult, localResult, statsResult, planResult] = await Promise.allSettled([
+    const [cloudResult, buddyResult, localResult, statsResult, planResult, failedResult] = await Promise.allSettled([
       getCloudBackupStatus(),
       getBuddyBackupStatus(),
       listDatabaseBackups(),
       full ? getServerStatistics() : Promise.resolve(stats),
       // the schedule names the step a running backup is on, so it is read again with the statuses
       getBackupSchedule(),
+      getQueueJobs({ name: QueueName.BackupDatabase, status: [QueueJobStatus.Failed] }),
     ]);
     if (disposed) {
       return;
@@ -102,6 +110,7 @@
     snapshots = localResult.status === 'fulfilled' ? localResult.value.backups : null;
     stats = statsResult.status === 'fulfilled' ? statsResult.value : null;
     plan = planResult.status === 'fulfilled' ? planResult.value : null;
+    failedSnapshots = failedResult.status === 'fulfilled' ? failedResult.value : null;
     unread = [
       ...(cloudResult.status === 'rejected' ? (['cloud'] as const) : []),
       ...(buddyResult.status === 'rejected' ? (['buddy'] as const) : []),
@@ -130,7 +139,13 @@
   const places = $derived({
     cloud: cloudPlaceState(cloud, now, behind),
     buddy: buddyPlaceState(buddy, { linked }, now, behind),
-    local: localPlaceState(snapshots, settingsDraft?.baseline.backup.database.enabled ?? true, now, behind),
+    local: localPlaceState(
+      snapshots,
+      settingsDraft?.baseline.backup.database.enabled ?? true,
+      now,
+      behind,
+      lastSnapshotFailure(failedSnapshots)?.at ?? null,
+    ),
   });
 
   $effect(() => {
