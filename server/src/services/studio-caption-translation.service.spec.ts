@@ -23,7 +23,11 @@ const lan = '0195e2a0-0000-4000-8000-000000000032';
 const cloud = '0195e2a0-0000-4000-8000-000000000033';
 const desktopPool = '0195e2a0-0000-4000-8000-000000000034';
 
-const request = { source: 'en', target: 'fr', lines: ['Good morning', '', 'See you soon'] } as const;
+const request: StudioCaptionTranslationCreateDto = {
+  source: 'en',
+  target: 'fr',
+  lines: ['Good morning', '', 'See you soon'],
+};
 
 const setup = (
   route = [
