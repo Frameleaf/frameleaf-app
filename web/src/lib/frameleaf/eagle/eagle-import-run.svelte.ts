@@ -349,6 +349,7 @@ export class EagleImportRun implements EagleRunStatus {
       ...(note && !current.description.trim() && { description: note }),
     };
     if (Object.keys(changes).length > 0) {
+      this.#assertCurrent();
       await this.#options.api.update(assetId, changes);
     }
   }

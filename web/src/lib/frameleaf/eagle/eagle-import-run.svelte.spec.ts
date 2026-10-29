@@ -255,6 +255,22 @@ describe('EagleImportRun', () => {
     expect(importing.failed.size).toBe(0);
   });
 
+  it('writes no rating or note once the account changes while reading an item already here', async () => {
+    const server = fakeApi({ existing: new Set(['already.png']) });
+    let signedIn = true;
+    server.api.describe = vi.fn(() => {
+      signedIn = false;
+      return Promise.resolve({ rating: null, description: '' });
+    });
+    const importing = run(server.api, { isCurrent: () => signedIn });
+    await importing.start();
+    expect(server.api.describe).toHaveBeenCalledWith('existing-already.png');
+    expect(server.updates.has('existing-already.png')).toBe(false);
+    expect(Object.hasOwn(importing.outcomes, 'I6')).toBe(false);
+    expect(importing.failed.has('I6')).toBe(false);
+    expect(importing.state).toBe('stopped');
+  });
+
   it('makes no tags once the account changes', async () => {
     const server = fakeApi();
     let signedIn = true;
