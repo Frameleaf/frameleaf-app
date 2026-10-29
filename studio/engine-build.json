@@ -713,8 +713,8 @@
     {
       "path": "patches/0145-speed-ramps-and-linked-freeze-frames.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "422073d3fd071cbb63410a5046c0af85ed4b9c14cf9d1e95ca0e450f46e8fb8f"
+      "sha256": "725580584dc56673a97b8b51f93cf6874de71e3c5978539453add1e32a6a0d6c"
     }
   ],
-  "sourceSha256": "0e86af6f2f90bf9edc96a7969ada96b24b3a6706baed7882679b67ce1b0261fe"
+  "sourceSha256": "93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a"
 }

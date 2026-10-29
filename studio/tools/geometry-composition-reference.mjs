@@ -79,7 +79,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-505 Node 22.23.4 pin changes only the engine package/lockfile, not composition producers.
     sourceSha256 === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
     // FL-562 transcript editing changes no geometry/composition producer.
-    sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b'
+    sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
+    // FL-597 speed ramps and freeze frames change timeline edits only.
+    sourceSha256 === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -7,7 +7,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/speed-
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/speed-ramp-section.tsx
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,182 @@
 +import { useMemo, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Gauge, Plus, Trash2 } from 'lucide-react'
@@ -23,6 +23,7 @@ new file mode 100644
 +  type SpeedRampEasing,
 +  type SpeedRampPoint,
 +} from '@/features/editor/deps/timeline-store'
++import { useEditorStore } from '@/shared/state/editor'
 +import { PropertySection, PropertyRow } from '../components'
 +
 +const DEFAULT_POINTS: SpeedRampPoint[] = [
@@ -43,8 +44,12 @@ new file mode 100644
 +export function SpeedRampSection({ itemId }: { itemId: string }) {
 +  const { t } = useTranslation()
 +  const fps = useTimelineStore((s) => s.fps)
-+  // Re-evaluate when the clip or its neighbours change.
++  // Re-evaluate when anything the preview reads changes: clips, tracks (locks), transitions, keyframes, linking.
 +  const items = useTimelineStore((s) => s.items)
++  const tracks = useTimelineStore((s) => s.tracks)
++  const transitions = useTimelineStore((s) => s.transitions)
++  const keyframes = useTimelineStore((s) => s.keyframes)
++  const linkedSelection = useEditorStore((s) => s.linkedSelectionEnabled)
 +  const [points, setPoints] = useState<SpeedRampPoint[]>(DEFAULT_POINTS)
 +  const [easing, setEasing] = useState<SpeedRampEasing>('ease')
 +  const [muteLinkedAudio, setMuteLinkedAudio] = useState(false)
@@ -52,7 +57,7 @@ new file mode 100644
 +  const preview = useMemo(
 +    () => previewSpeedRamp(itemId, { points, easing }),
 +    // eslint-disable-next-line react-hooks/exhaustive-deps
-+    [itemId, points, easing, items, fps],
++    [itemId, points, easing, items, tracks, transitions, keyframes, linkedSelection, fps],
 +  )
 +
 +  const updatePoint = (index: number, change: Partial<SpeedRampPoint>) => {
@@ -340,9 +345,10 @@ new file mode 100644
 diff --git a/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts b/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts
 --- a/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts
 +++ b/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts
-@@ -1,25 +1,35 @@
+@@ -1,25 +1,36 @@
  import type { ImageItem } from '@/types/timeline'
 +import { toast } from 'sonner'
++import { i18n } from '@/i18n'
  import { useItemsStore } from '../../items-store'
 -import { useTransitionsStore } from '../../transitions-store'
  import { useTimelineSettingsStore } from '../../timeline-settings-store'
@@ -380,7 +386,7 @@ diff --git a/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts b
    const items = useItemsStore.getState().items
    const item = items.find((i) => i.id === itemId)
    if (!item || item.type !== 'video') return false
-@@ -35,6 +45,23 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
+@@ -35,6 +46,23 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
    }
  
    const fps = useTimelineSettingsStore.getState().fps
@@ -398,25 +404,25 @@ diff --git a/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts b
 +    (i) => touchedTrackIds.has(i.trackId) && !participantIds.has(i.id) && i.from >= playheadFrame,
 +  )
 +  if (hasLockedEditParticipants([...participants, ...downstream])) {
-+    toast.warning('Unlock the tracks this freeze frame would move')
++    toast.warning(i18n.t('editor.videoSection.freezeFrame.locked'))
 +    return false
 +  }
    const speed = item.speed ?? 1
    const sourceStart = item.sourceStart ?? 0
    const sourceFps = item.sourceFps ?? fps
-@@ -49,6 +76,11 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
+@@ -49,6 +77,11 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
      getLogger().error('[insertFreezeFrame] Media not found for item:', item.mediaId)
      return false
    }
 +  // The held frame is stored as an 8-bit PNG; an HDR source would lose its signal.
 +  if (media.colorTransfer !== undefined && media.colorTransfer !== 'sdr') {
-+    toast.warning('Freeze frames are not available for HDR video yet')
++    toast.warning(i18n.t('editor.videoSection.freezeFrame.hdr'))
 +    return false
 +  }
  
    // Calculate timestamp in seconds for frame extraction
    const mediaFps = media.fps || 30
-@@ -148,29 +180,28 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
+@@ -148,29 +181,28 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
      // Prepend the media item to the store only after execute() succeeds so a
      // failed _splitItem (e.g. the source clip was removed between validation
      // and execute) doesn't leave an orphaned entry in the media library UI.
@@ -462,7 +468,7 @@ diff --git a/src/features/timeline/stores/actions/edit/freeze-frame-actions.ts b
  
          // Create ImageItem for the freeze frame
          const freezeFrameItem: ImageItem = {
-@@ -187,29 +218,13 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
+@@ -187,29 +219,13 @@ export async function insertFreezeFrame(itemId: string, playheadFrame: number):
            transform: item.transform ? { ...item.transform } : undefined,
          }
  
@@ -501,7 +507,7 @@ diff --git a/src/features/timeline/stores/actions/edit/speed-ramp-actions.test.t
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/speed-ramp-actions.test.ts
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,197 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -663,11 +669,47 @@ new file mode 100644
 +      .toBe('invalid-ramp')
 +  })
 +})
++
++describe('speed ramps: edges and captions (review)', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useEditorStore.setState({ linkedSelectionEnabled: true })
++    useItemsStore.getState().setTracks([track('v1', 0), track('a1', 1), track('c1', 2)])
++    useTransitionsStore.getState().setTransitions([])
++    useKeyframesStore.getState().setKeyframes([])
++  })
++
++  it('keeps fades only at the outer edges of the ramped range', () => {
++    useItemsStore.getState().setItems([
++      video({ fadeIn: 0.5, fadeOut: 0.5 }),
++      audio({ audioFadeIn: 0.25, audioFadeOut: 0.25 }),
++    ])
++    applySpeedRamp('video-1', slowMiddle)
++    const videos = ramped('video')
++    const audios = ramped('audio')
++    expect(videos[0]).toMatchObject({ fadeIn: 0.5, fadeOut: undefined })
++    expect(videos.at(-1)).toMatchObject({ fadeIn: undefined, fadeOut: 0.5 })
++    expect(videos.slice(1, -1).every((item) => item.fadeIn === undefined && item.fadeOut === undefined)).toBe(true)
++    expect(audios[0]).toMatchObject({ audioFadeIn: 0.25, audioFadeOut: undefined })
++    expect(audios.at(-1)).toMatchObject({ audioFadeIn: undefined, audioFadeOut: 0.25 })
++  })
++
++  it('refuses when a moved caption would land on another item on its track', () => {
++    useItemsStore.getState().setItems([
++      video(), audio(),
++      caption({ from: 110, durationInFrames: 10 }),
++      caption({ id: 'title-1', textRole: undefined, captionSource: undefined, from: 140, durationInFrames: 20 }),
++    ])
++    expect(applySpeedRamp('video-1', slowMiddle)).toBe('needs-room')
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++})
 diff --git a/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts b/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/speed-ramp-actions.ts
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,224 @@
 +import type { AudioItem, TextItem, TimelineItem, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
 +import { useTransitionsStore } from '../../transitions-store'
@@ -780,6 +822,21 @@ new file mode 100644
 +      && item.from + item.durationInFrames > oldEnd)
 +    if (blocked) return { ok: false, reason: 'needs-room' }
 +  }
++  // Moved captions must also land in free space on their own tracks.
++  const captionIdSet = new Set(captions.map((caption) => caption.id))
++  const toNewFrame = captionFrameMapper(anchor, plan, fps)
++  for (const caption of captions) {
++    const from = toNewFrame(caption.from)
++    const end = toNewFrame(caption.from + caption.durationInFrames)
++    if (end <= from) continue
++    const overlaps = items.some((item) =>
++      item.trackId === caption.trackId
++      && !captionIdSet.has(item.id)
++      && !participantIds.has(item.id)
++      && item.from < end
++      && item.from + item.durationInFrames > from)
++    if (overlaps) return { ok: false, reason: 'needs-room' }
++  }
 +
 +  return { ok: true, plan, oldDurationInFrames: anchor.durationInFrames, captionCount: captions.length }
 +}
@@ -805,14 +862,7 @@ new file mode 100644
 +      const anchor = participants.find((item) => item.id === itemId)!
 +      const linked = participants.length > 1
 +
-+      // Captions: old timeline offset -> source seconds (constant speed) -> new offset.
-+      const anchorSourceFps = anchor.sourceFps ?? fps
-+      const anchorSpeed = anchor.speed ?? 1
-+      const toNewFrame = (frame: number): number => {
-+        const oldOffset = Math.min(anchor.durationInFrames, Math.max(0, frame - anchor.from))
-+        const sourceSeconds = (oldOffset / fps) * anchorSpeed
-+        return anchor.from + Math.round(plan.offsetAt(Math.min(sourceSeconds, (anchor.sourceEnd! - (anchor.sourceStart ?? 0)) / anchorSourceFps)))
-+      }
++      const toNewFrame = captionFrameMapper(anchor, plan, fps)
 +      for (const captionId of participants.flatMap((item) => getAttachedCaptionItemIds(items, item.id))) {
 +        const caption = items.find((item) => item.id === captionId) as TextItem | undefined
 +        if (!caption) continue
@@ -839,7 +889,12 @@ new file mode 100644
 +        const segments = segmentsByItem[participantIndex]!
 +        const originId = item.originId ?? item.id
 +        segments.forEach((segment, index) => {
++          // Fades belong to the outer edges of the ramped range, not to every segment.
++          const first = index === 0
++          const last = index === segments.length - 1
 +          const geometry: Partial<RampableItem> = {
++            ...(!first && { fadeIn: undefined, audioFadeIn: undefined }),
++            ...(!last && { fadeOut: undefined, audioFadeOut: undefined }),
 +            from: anchor.from + segment.offset,
 +            durationInFrames: segment.durationInFrames,
 +            sourceStart: segment.sourceStart,
@@ -867,6 +922,17 @@ new file mode 100644
 +    { itemId, points: request.points.map((point) => ({ ...point })), easing: request.easing, muteLinkedAudio: request.muteLinkedAudio === true },
 +  )
 +  return null
++}
++
++/** Captions: old timeline frame -> source seconds (at the clip's current constant speed) -> ramped frame. */
++function captionFrameMapper(anchor: RampableItem, plan: SpeedRampPlan, fps: number): (frame: number) => number {
++  const sourceFps = anchor.sourceFps ?? fps
++  const speed = anchor.speed ?? 1
++  const sourceSeconds = (anchor.sourceEnd! - (anchor.sourceStart ?? 0)) / sourceFps
++  return (frame) => {
++    const oldOffset = Math.min(anchor.durationInFrames, Math.max(0, frame - anchor.from))
++    return anchor.from + Math.round(plan.offsetAt(Math.min((oldOffset / fps) * speed, sourceSeconds)))
++  }
 +}
 diff --git a/src/features/timeline/utils/speed-ramp.test.ts b/src/features/timeline/utils/speed-ramp.test.ts
 new file mode 100644
@@ -1199,7 +1265,7 @@ new file mode 100644
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -674,7 +674,36 @@
+@@ -674,7 +674,40 @@
        "resetSpeed": "Geschwindigkeit zuruecksetzen",
        "resetToZero": "Auf null zuruecksetzen",
        "softness": "Weichheit",
@@ -1233,6 +1299,10 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 +          "needs-room": "Der Clip braucht mehr Platz. Verschiebe den nächsten Clip oder nutze zuerst Ripple.",
 +          "invalid-ramp": "Nutze mindestens zwei Punkte an verschiedenen Positionen mit 0,25x bis 4x."
 +        }
++      },
++      "freezeFrame": {
++        "locked": "Entsperre die Spuren, die dieses Standbild verschieben würde.",
++        "hdr": "Standbilder sind für HDR-Video noch nicht verfügbar."
 +      }
      },
      "mediaSidebar": {
@@ -1240,7 +1310,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -685,7 +685,36 @@
+@@ -685,7 +685,40 @@
        "resetSpeed": "Reset Speed",
        "resetToZero": "Reset to zero",
        "softness": "Softness",
@@ -1274,6 +1344,10 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 +          "needs-room": "The ramped clip needs more room. Move the next clip or use ripple first.",
 +          "invalid-ramp": "Use at least two points at different positions, with speeds from 0.25x to 4x."
 +        }
++      },
++      "freezeFrame": {
++        "locked": "Unlock the tracks this freeze frame would move.",
++        "hdr": "Freeze frames aren't available for HDR video yet."
 +      }
      },
      "mediaSidebar": {
@@ -1281,7 +1355,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -674,7 +674,36 @@
+@@ -674,7 +674,40 @@
        "resetSpeed": "Restablecer velocidad",
        "resetToZero": "Restablecer a cero",
        "softness": "Suavidad",
@@ -1315,6 +1389,10 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 +          "needs-room": "El clip necesita más espacio. Mueve el siguiente clip o usa primero el desplazamiento.",
 +          "invalid-ramp": "Usa al menos dos puntos en posiciones distintas, con velocidades de 0,25x a 4x."
 +        }
++      },
++      "freezeFrame": {
++        "locked": "Desbloquea las pistas que movería esta imagen congelada.",
++        "hdr": "Las imágenes congeladas aún no están disponibles para vídeo HDR."
 +      }
      },
      "mediaSidebar": {
@@ -1322,7 +1400,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -674,7 +674,36 @@
+@@ -674,7 +674,40 @@
        "resetSpeed": "Reinitialiser la vitesse",
        "resetToZero": "Remettre a zero",
        "softness": "Douceur",
@@ -1356,6 +1434,10 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 +          "needs-room": "Le clip a besoin de plus de place. Déplacez le clip suivant ou utilisez d’abord le décalage.",
 +          "invalid-ramp": "Utilisez au moins deux points à des positions différentes, entre 0,25x et 4x."
 +        }
++      },
++      "freezeFrame": {
++        "locked": "Déverrouillez les pistes que cet arrêt sur image déplacerait.",
++        "hdr": "Les arrêts sur image ne sont pas encore disponibles pour la vidéo HDR."
 +      }
      },
      "mediaSidebar": {
@@ -1363,7 +1445,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -674,7 +674,36 @@
+@@ -674,7 +674,40 @@
        "resetSpeed": "速度をリセット",
        "resetToZero": "ゼロにリセット",
        "softness": "ソフトさ",
@@ -1397,6 +1479,10 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 +          "needs-room": "クリップにはもっとスペースが必要です。次のクリップを移動するか、先にリップルを使ってください。",
 +          "invalid-ramp": "異なる位置に2つ以上のポイントを置き、速度は0.25x〜4xにしてください。"
 +        }
++      },
++      "freezeFrame": {
++        "locked": "このフリーズフレームで動くトラックのロックを解除してください。",
++        "hdr": "HDR 動画ではフリーズフレームをまだ使えません。"
 +      }
      },
      "mediaSidebar": {
@@ -1404,7 +1490,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -674,7 +674,36 @@
+@@ -674,7 +674,40 @@
        "resetSpeed": "속도 재설정",
        "resetToZero": "0으로 재설정",
        "softness": "부드러움",
@@ -1438,6 +1524,10 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 +          "needs-room": "클립에 공간이 더 필요합니다. 다음 클립을 옮기거나 먼저 리플을 사용하세요.",
 +          "invalid-ramp": "서로 다른 위치에 포인트를 두 개 이상 두고 속도는 0.25x~4x로 설정하세요."
 +        }
++      },
++      "freezeFrame": {
++        "locked": "이 정지 프레임이 옮길 트랙의 잠금을 해제하세요.",
++        "hdr": "HDR 비디오에서는 아직 정지 프레임을 사용할 수 없습니다."
 +      }
      },
      "mediaSidebar": {
@@ -1445,7 +1535,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -674,7 +674,36 @@
+@@ -674,7 +674,40 @@
        "resetSpeed": "Redefinir velocidade",
        "resetToZero": "Redefinir para zero",
        "softness": "Suavidade",
@@ -1479,6 +1569,10 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 +          "needs-room": "O clipe precisa de mais espaço. Mova o próximo clipe ou use o deslocamento primeiro.",
 +          "invalid-ramp": "Use pelo menos dois pontos em posições diferentes, com velocidades de 0,25x a 4x."
 +        }
++      },
++      "freezeFrame": {
++        "locked": "Desbloqueie as faixas que este quadro congelado moveria.",
++        "hdr": "Quadros congelados ainda não estão disponíveis para vídeo HDR."
 +      }
      },
      "mediaSidebar": {
@@ -1486,7 +1580,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -674,7 +674,36 @@
+@@ -674,7 +674,40 @@
        "resetSpeed": "Hızı sıfırla",
        "resetToZero": "Sıfıra ayarla",
        "softness": "Yumuşaklık",
@@ -1520,6 +1614,10 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 +          "needs-room": "Klibin daha fazla yere ihtiyacı var. Sonraki klibi taşıyın veya önce kaydırma kullanın.",
 +          "invalid-ramp": "Farklı konumlarda en az iki nokta kullanın; hız 0,25x ile 4x arasında olmalı."
 +        }
++      },
++      "freezeFrame": {
++        "locked": "Bu dondurulmuş karenin taşıyacağı izlerin kilidini açın.",
++        "hdr": "Dondurulmuş kareler HDR video için henüz kullanılamıyor."
 +      }
      },
      "mediaSidebar": {
@@ -1527,7 +1625,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -674,7 +674,36 @@
+@@ -674,7 +674,40 @@
        "resetSpeed": "重置速度",
        "resetToZero": "重置为零",
        "softness": "柔和度",
@@ -1561,6 +1659,10 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
 +          "needs-room": "片段需要更多空间。请移动下一个片段或先使用波纹编辑。",
 +          "invalid-ramp": "请至少在不同位置设置两个点，速度为 0.25x 到 4x。"
 +        }
++      },
++      "freezeFrame": {
++        "locked": "请解锁此定格画面会移动的轨道。",
++        "hdr": "HDR 视频暂不支持定格画面。"
 +      }
      },
      "mediaSidebar": {
