@@ -52053,6 +52053,138 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/stabilisations": {
+      "post": {
+        "description": "Owner only. Queues the camera movement analysis Stabilise needs for one video clip on the main timeline of the head revision. It runs on this server, never on Frameleaf Cloud. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`); read the camera path with `GET /studio/projects/{id}/stabilisations/{stabiliseId}` and write it into the clip as `stabilisation.motion`. The graph is never edited.",
+        "operationId": "createStudioStabilise",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioStabiliseCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioStabiliseQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Analyse the camera movement of a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/stabilisations/{stabiliseId}": {
+      "get": {
+        "description": "Owner only. The job status and progress, and once it has completed the clip's camera path: cumulative shift and turn per sample, packed as float32 base64.",
+        "operationId": "getStudioStabilise",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "stabiliseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioStabiliseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio clip camera movement analysis",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/transcriptions": {
       "post": {
         "description": "Owner only. Queues Whisper speech to text for one video or audio clip on the main timeline of the head revision, on the named machine-learning destination (this server or a home-network worker that serves Studio AI). `language` is a BCP 47 tag or `auto`. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`); read the cues with `GET /studio/projects/{id}/transcriptions/{transcriptionId}` and apply them with `captions.set`. The graph is never edited.",
@@ -97689,6 +97821,11 @@
           "status": {
             "$ref": "#/components/schemas/MediaOperationStatus"
           },
+          "studioWork": {
+            "description": "Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
           "totalUnits": {
             "nullable": true,
             "type": "string"
@@ -97914,6 +98051,11 @@
           },
           "status": {
             "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "studioWork": {
+            "description": "Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise",
+            "nullable": true,
+            "type": "string"
           },
           "totalUnits": {
             "nullable": true,
@@ -137584,6 +137726,176 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "StudioStabiliseCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "A video clip on the main timeline of the head revision",
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clipId"
+        ],
+        "type": "object"
+      },
+      "StudioStabiliseDto": {
+        "properties": {
+          "clipId": {
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioStabiliseMotionDto"
+              }
+            ],
+            "description": "Present once the job has completed: the clip's camera path, for its `stabilisation.motion`",
+            "nullable": true
+          },
+          "revision": {
+            "description": "The revision whose clip was analysed",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "clipId",
+          "error",
+          "id",
+          "progress",
+          "projectId",
+          "result",
+          "revision",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioStabiliseMotionDto": {
+        "properties": {
+          "a": {
+            "description": "Cumulative camera turn in radians, float32 little-endian, base64",
+            "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+            "type": "string"
+          },
+          "count": {
+            "description": "Samples in each path",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "found": {
+            "description": "Share of frames whose movement was found",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "height": {
+            "description": "Height of the analysed picture",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "method": {
+            "description": "How the movement was estimated, such as `block-similarity-v1`",
+            "type": "string"
+          },
+          "rate": {
+            "description": "Samples a second",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "maximum": 30,
+            "minimum": 0,
+            "type": "number"
+          },
+          "start": {
+            "description": "Source seconds of the first sample",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "version": {
+            "description": "Format version of the path; 1",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "width": {
+            "description": "Width of the analysed picture",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "x": {
+            "description": "Cumulative horizontal camera path, fractions of the frame width, float32 little-endian, base64",
+            "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+            "type": "string"
+          },
+          "y": {
+            "description": "Cumulative vertical camera path, fractions of the frame height, float32 little-endian, base64",
+            "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "a",
+          "count",
+          "found",
+          "height",
+          "method",
+          "rate",
+          "start",
+          "version",
+          "width",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "StudioStabiliseQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; follow it in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
         "type": "object"
       },
       "StudioTimeDto": {

@@ -100,6 +100,16 @@ export function compositionSourcesFor(sourceSha256) {
       'src/features/export/utils/client-render-engine.ts':
         'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
     }
+  // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
+  // renderer, which draws it through its correction; every other clip renders as before.
+  if (sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a')
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/client-render-engine.ts':
+        'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+      'src/features/export/utils/canvas-item-renderer/gpu.ts':
+        '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
+    }
   assert(legacyCompositionSources.has(sourceSha256), 'COMPOSITION_SOURCE_UNREGISTERED')
   return COMPOSITION_SOURCES
 }
