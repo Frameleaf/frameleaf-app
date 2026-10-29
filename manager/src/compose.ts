@@ -28,6 +28,8 @@ export async function detectTranscoding(
 }
 
 /** Refresh saved installations too; starting an older stack must not retain missing or stale GPU mappings. */
+// `up --wait` rejects a disabled healthcheck on some Compose releases (Unraid); report healthy once running.
+const LAN_DISCOVERY_HEALTHCHECK = { test: ['CMD', 'node', '-e', ''], interval: '30s', timeout: '10s', retries: 3 };
 export async function configureUnraidCompose(directory: string, hardware?: Record<string, unknown>): Promise<void> {
   const path = join(directory, 'compose.json');
   const compose = JSON.parse(await readFile(path, 'utf8'));
@@ -37,6 +39,9 @@ export async function configureUnraidCompose(directory: string, hardware?: Recor
     service.labels = { ...service.labels, 'net.unraid.docker.managed': 'dockerman', 'net.unraid.docker.icon': UNRAID_ICON,
       ...(name === 'frameleaf-server' ? { 'net.unraid.docker.webui': 'http://[IP]:[PORT:2283]' } : {}) };
   }
+  // Saved projects from earlier releases still disable it; resumes and restarts reuse compose.json.
+  const lan = compose.services['frameleaf-lan-discovery'];
+  if (lan) lan.healthcheck = LAN_DISCOVERY_HEALTHCHECK;
   const server = compose.services['frameleaf-server'];
   if (server) {
     const detected: any = hardware ?? await detectTranscoding();
@@ -295,8 +300,7 @@ export async function renderCompose(
       environment: {
         FRAMELEAF_DISCOVERY_URL: `http://${host}:${installation.port}`,
       },
-      // `up --wait` rejects a disabled healthcheck on some Compose releases (Unraid); report healthy once running.
-      healthcheck: { test: ['CMD', 'node', '-e', ''], interval: '30s', timeout: '10s', retries: 3 },
+      healthcheck: LAN_DISCOVERY_HEALTHCHECK,
       depends_on: { 'frameleaf-server': { condition: 'service_started' } },
     };
   }
