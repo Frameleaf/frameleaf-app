@@ -213,7 +213,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
    it('blocks unreviewed lost frames, and keeps the tracked part only when told to', async () => {
      const result = resultFor(path, [23])
      expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'unreviewed-lost' })
-@@ -145,6 +158,79 @@ describe('motion track actions', () => {
+@@ -145,6 +158,82 @@ describe('motion track actions', () => {
      useKeyframesStore.getState()._addKeyframes([{ itemId: 'title', property: 'x', frame: 70, value: 3 }])
      expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'stale' })
    })
@@ -235,8 +235,11 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 +  })
 +
 +  it('tracks a separate box clip and refuses parented targets', async () => {
-+    useItemsStore.getState().setItems([source(), title({ transformParent: { parentId: 'null-1' } as never }), title({ id: 'box' })])
++    useItemsStore.getState().setItems([source(), title({ transformParent: { parentItemId: 'null-1' } as never }), title({ id: 'box' })])
 +    await expect(analyzeMotionTrack('v1', 'title', 20, 'forward', { boxItemId: 'box' })).resolves.toEqual({ ok: false, reason: 'parented-target' })
++    // A detached binding has no parent item, so it does not refuse as parented.
++    useItemsStore.getState().setItems([source(), title({ transformParent: {} as never }), title({ id: 'box', transformParent: {} as never })])
++    await expect(analyzeMotionTrack('v1', 'title', 20, 'forward', { boxItemId: 'box' })).resolves.not.toMatchObject({ reason: expect.stringMatching(/parented-target|unsupported-box/) })
 +    useItemsStore.getState().setItems([source(), title()])
 +    await expect(analyzeMotionTrack('v1', 'title', 20, 'forward', { boxItemId: 'v1' })).resolves.toEqual({ ok: false, reason: 'unsupported-box' })
 +    await expect(analyzeMotionTrack('v1', 'title', 20, 'forward', { boxItemId: 'missing' })).resolves.toEqual({ ok: false, reason: 'not-found' })
@@ -293,7 +296,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
  
    it('applies a one-frame backward result instead of calling it stale', () => {
      expect(applyMotionTrack(resultFor([path[0]!], [], 'backward', [20]), {})).toMatchObject({ ok: true })
-@@ -154,7 +240,7 @@ describe('motion track actions', () => {
+@@ -154,7 +243,7 @@ describe('motion track actions', () => {
      const outcome = applyMotionTrack(resultFor(path))
      if (!outcome.ok) throw new Error(outcome.reason)
      useItemsStore.getState().setTracks([track('t1', true)])
@@ -369,7 +372,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    ])
  }
  
-@@ -124,16 +146,30 @@ export async function analyzeMotionTrack(
+@@ -124,16 +146,31 @@ export async function analyzeMotionTrack(
    targetId: string,
    seedFrame: number,
    direction: 'forward' | 'backward',
@@ -392,17 +395,18 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    if (source.isReversed === true) return { ok: false, reason: 'reversed' }
    if (target.type === 'audio') return { ok: false, reason: 'unsupported-target' }
 +  // Keyframes hold canvas offsets; a parented target's offsets are relative to its parent.
-+  if (target.transformParent) return { ok: false, reason: 'parented-target' }
++  // A detached binding (no parentItemId) keeps canvas offsets, so only an active parent refuses.
++  if (target.transformParent?.parentItemId) return { ok: false, reason: 'parented-target' }
 +  // The seed is an axis-aligned box, so a rotated separate box (static or animated) would track the wrong
 +  // region; the default box (the target itself) keeps its earlier behaviour.
-+  if (boxItem.type === 'audio' || boxItem.id === sourceId || boxItem.transformParent
++  if (boxItem.type === 'audio' || boxItem.id === sourceId || boxItem.transformParent?.parentItemId
 +    || (boxItem.id !== targetId && ((boxItem.transform?.rotation ?? 0) !== 0 || hasKeyframes(boxItem.id, ['rotation'])))) {
 +    return { ok: false, reason: 'unsupported-box' }
 +  }
    if (hasKeyframes(targetId, ['position', 'scale'])) return { ok: false, reason: 'vector-keys' }
    const clip = placedClip(source)
    if (typeof clip === 'string') return { ok: false, reason: clip }
-@@ -150,12 +186,20 @@ export async function analyzeMotionTrack(
+@@ -150,12 +187,20 @@ export async function analyzeMotionTrack(
    const targetPlacement = resolveItemTransformAtFrame(target, {
      canvas: canvasSize(), frame: seedFrame, keyframes: useKeyframesStore.getState().keyframesByItemId[target.id],
    })
@@ -425,7 +429,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
  
    // Decode, track and drop one frame at a time: only the previous box and the template are kept.
    const samples: TrackSample[] = []
-@@ -216,6 +260,7 @@ export async function analyzeMotionTrack(
+@@ -216,6 +261,7 @@ export async function analyzeMotionTrack(
        targetId,
        binding,
        direction,
@@ -433,7 +437,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
        frames,
        samples: sourceSamples,
        values: followTrack(clip, sourceSamples, frames, targetPlacement),
-@@ -239,7 +284,9 @@ export function applyMotionTrack(
+@@ -239,7 +285,9 @@ export function applyMotionTrack(
    const items = useItemsStore.getState().items
    const source = items.find((item) => item.id === result.sourceId)
    const target = items.find((item) => item.id === result.targetId)
@@ -444,7 +448,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
      return { ok: false, reason: 'stale' }
    }
    if (result.lostFrames.length > 0 && !decisions.keepTrackedPart) return { ok: false, reason: 'unreviewed-lost' }
-@@ -262,6 +309,15 @@ export function applyMotionTrack(
+@@ -262,6 +310,15 @@ export function applyMotionTrack(
      .some((property) => property.keyframes.some((keyframe) => keyframe.frame < low)
        && property.keyframes.some((keyframe) => keyframe.frame > high))
    if ((conflicting.length > 0 || spanned) && !decisions.replaceExisting) return { ok: false, reason: 'conflict' }
@@ -460,7 +464,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
  
    const applicationId = crypto.randomUUID()
    const source_: AnimationKeyframeSource = {
-@@ -286,34 +342,105 @@ export function applyMotionTrack(
+@@ -286,34 +343,105 @@ export function applyMotionTrack(
      }
    }
  

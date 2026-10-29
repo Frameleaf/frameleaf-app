@@ -120,7 +120,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
              </div>
            </PropertyRow>
          )
-@@ -125,6 +150,33 @@ function CutControls({ groupId }: { groupId: string }) {
+@@ -125,6 +150,48 @@ function CutControls({ groupId }: { groupId: string }) {
    const angles = group?.record.angles ?? []
    const labels = useTimelineStore((s) => angles.map((angle) => s.items.find((item) => item.id === angle.itemId)?.label ?? '?').join('\u0000')).split('\u0000')
  
@@ -130,14 +130,29 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
 +  const timelineItems = useTimelineStore((s) => s.items)
 +  const angleItems = angles.map((angle) => timelineItems.find((item) => item.id === angle.itemId))
 +  const [strips, setStrips] = useState<Record<string, Filmstrip | null>>({})
-+  const mediaKey = angleItems.map((item) => item?.mediaId ?? '').join(',')
++  // Media id and source duration in seconds, per angle: filmstrips extracted or hydrated later arrive
++  // through the cache subscription, and a cold cache is hydrated from disk.
++  const mediaKey = angleItems.map((item) => item?.mediaId
++    ? `${item.mediaId}|${(item.sourceDuration ?? 0) / ((item as { sourceFps?: number }).sourceFps ?? fps)}`
++    : '').filter(Boolean).join(',')
 +  useEffect(() => {
 +    let live = true
++    const unsubscribes: Array<() => void> = []
 +    void importFilmstripCache().then(({ filmstripCache }) => {
 +      if (!live) return
-+      setStrips(Object.fromEntries(mediaKey.split(',').filter(Boolean).map((id) => [id, filmstripCache.getFromCacheSync(id)])))
++      const set = (id: string, strip: Filmstrip | null) => { if (live) setStrips((current) => ({ ...current, [id]: strip })) }
++      for (const entry of mediaKey.split(',').filter(Boolean)) {
++        const [id, duration] = entry.split('|') as [string, string]
++        unsubscribes.push(filmstripCache.subscribe(id, (strip) => set(id, strip)))
++        if (!filmstripCache.getFromCacheSync(id) && Number(duration) > 0) {
++          void filmstripCache.loadFromDisk(id, Number(duration)).then((strip) => { if (strip) set(id, strip) }).catch(() => {})
++        }
++      }
 +    })
-+    return () => { live = false }
++    return () => {
++      live = false
++      for (const unsubscribe of unsubscribes) unsubscribe()
++    }
 +  }, [mediaKey])
 +  // Each angle's picture at the playhead is its nearest cached filmstrip frame (FL-628).
 +  const thumbnail = (item: TimelineItem | undefined): string | undefined => {
@@ -154,7 +169,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
    const cut = (index: number) => {
      const outcome = cutToAngle(groupId, index, usePlaybackStore.getState().currentFrame)
      if (!outcome.ok) {
-@@ -147,14 +199,19 @@ function CutControls({ groupId }: { groupId: string }) {
+@@ -147,14 +214,19 @@ function CutControls({ groupId }: { groupId: string }) {
          }
        }}
      >
@@ -182,7 +197,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
        <p className="col-span-2 text-xs text-muted-foreground">{t('editor.multicam.cutNote')}</p>
      </div>
    )
-@@ -166,7 +223,12 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+@@ -166,7 +238,12 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
    const programGroupId = items.length === 1
      ? (tracks.find((track) => track.id === items[0]!.trackId) as { multicam?: { role: string; groupId: string } } | undefined)?.multicam
      : undefined
@@ -195,7 +210,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multic
    const canCreate = videos.length >= 2 && videos.length <= 4 && videos.length === items.filter((item) => item.type !== 'audio').length
    if (!canCreate && programGroupId?.role !== 'program') return null
  
-@@ -174,7 +236,7 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
+@@ -174,7 +251,7 @@ export function MulticamSection({ items }: { items: TimelineItem[] }) {
      <PropertySection title={t('editor.multicam.title')} icon={Clapperboard} defaultOpen={true}>
        {programGroupId?.role === 'program'
          ? <CutControls groupId={programGroupId.groupId} />

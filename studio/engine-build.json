@@ -743,7 +743,7 @@
     {
       "path": "patches/0152-tracking-box-and-provenance.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "1d9f67ab599a1c452e705b1457c90ba4157e79cef5ad8e09bc8f33b399680a1e"
+      "sha256": "df3a49b76f1c245b2c35472e9f425e1e9d1fabce9436841f1f157d76e4aa2f21"
     },
     {
       "path": "patches/0149-multicam-editing.patch",
@@ -753,8 +753,8 @@
     {
       "path": "patches/0153-multicam-viewer-master-audio-drift.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "34b00d92096789396e170130be993067b873114e35f77eaa84a98e7ab5dfc82b"
+      "sha256": "160bd02425843794e1e88bacc24ede4d12e6bb1bb2c737cd474ca6a21acad0f4"
     }
   ],
-  "sourceSha256": "99e38e689c7a49abf44c9cf846b34c95241ec88a939d68ea1b8cce109f4e71ba"
+  "sourceSha256": "2a51d0d6ba8e72625d5ec75f6a8304b677fa60e2ac7ed8669dfa5d34aaabe414"
 }
