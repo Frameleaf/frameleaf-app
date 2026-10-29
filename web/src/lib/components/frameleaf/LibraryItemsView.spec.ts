@@ -1,4 +1,5 @@
 import {
+  AssetTypeEnum,
   ColorTolerance,
   LibraryAssetItemKind,
   LibraryBookmarkItemKind,
@@ -240,7 +241,8 @@ it('rates and trashes a selected link from the Boards selection bar', async () =
 });
 
 it('opens the Download dialog from the Boards selection bar and adds the library file with the links', async () => {
-  const file = assetFactory.build({ ownerId: user.id });
+  // an image, so its checkbox reads "Image taken on…" (the factory picks a random type)
+  const file = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
   sdkMock.searchLibraryItems.mockResolvedValue({
     count: 2,
     countCapped: false,
