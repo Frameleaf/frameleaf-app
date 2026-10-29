@@ -9,11 +9,15 @@ class FeatureFlagsManager {
       SystemConfigUpdate: () => void this.#loadFeatureFlags(),
       // FL-156: the Frameleaf Cloud link and licence decide the cloud flags
       FrameleafCloudUpdate: () => void this.#loadFeatureFlags(),
+      // Sign-in reads the flags for the supporter badge; app start uses that answer instead of asking again.
+      ServerFeaturesLoaded: (features) => (this.#value = features),
     });
   }
 
   async init() {
-    await this.#loadFeatureFlags();
+    if (!this.#value) {
+      await this.#loadFeatureFlags();
+    }
   }
 
   get value() {
