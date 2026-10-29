@@ -90,22 +90,21 @@ describe(StudioMediaService.name, () => {
   });
 
   describe('filmstrip', () => {
-    it('cuts frames from the playback rendition, never the original, and composes a sprite', async () => {
+    it('cuts a short video in one pass from the playback rendition, never the original, and composes a sprite', async () => {
       mocks.media.probe.mockResolvedValue(videoInfo(false));
       const index = await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });
 
-      expect(mocks.media.transcode).toHaveBeenCalledTimes(4);
-      for (const call of mocks.media.transcode.mock.calls) {
-        expect(call[0]).toBe(encodedPath);
-      }
-      expect(mocks.media.transcode.mock.calls.map((call) => call[2].inputOptions)).toEqual([
-        ['-ss', '1.250'],
-        ['-ss', '3.750'],
-        ['-ss', '6.250'],
-        ['-ss', '8.750'],
-      ]);
+      // FL-650: one decoding pass, starting at the centre of the first slice, one frame per slice
+      expect(mocks.media.transcode).toHaveBeenCalledOnce();
+      const [input, output, command] = mocks.media.transcode.mock.calls[0];
+      expect(input).toBe(encodedPath);
+      expect(output).toMatch(/\.work-.*\/pass-%d\.jpg$/);
+      expect(command.inputOptions).toEqual(['-ss', '1.250']);
+      expect(command.outputOptions).toEqual(
+        expect.arrayContaining(['-frames:v', '4', '-vf', 'fps=4000/10000,scale=-2:90:flags=bilinear']),
+      );
       expect(mocks.media.composeFilmstrip).toHaveBeenCalledWith(
-        expect.arrayContaining([expect.stringMatching(/\.work-.*\/0\.jpg$/)]),
+        [1, 2, 3, 4].map((frame) => expect.stringMatching(new RegExp(String.raw`\.work-.*/pass-${frame}\.jpg$`))),
         expect.objectContaining({ columns: 4, rows: 1, tileWidth: 160, tileHeight: 90, format: 'jpeg' }),
       );
       const spritePath = `${folder}/filmstrip-${version}-4x90.jpg`;
@@ -139,6 +138,42 @@ describe(StudioMediaService.name, () => {
       });
     });
 
+    it('seeks once per frame in a video longer than ten minutes', async () => {
+      mocks.media.probe.mockResolvedValue({
+        ...videoInfo(false),
+        format: { ...videoInfo(false).format, duration: 1200 },
+      });
+      await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });
+
+      expect(mocks.media.transcode.mock.calls.map((call) => call[2].inputOptions)).toEqual([
+        ['-ss', '150.000'],
+        ['-ss', '450.000'],
+        ['-ss', '750.000'],
+        ['-ss', '1050.000'],
+      ]);
+      for (const call of mocks.media.transcode.mock.calls) {
+        expect(call[0]).toBe(encodedPath);
+      }
+    });
+
+    it('falls back to a seek per frame when the single pass fails', async () => {
+      mocks.media.probe.mockResolvedValue(videoInfo(false));
+      mocks.media.transcode.mockRejectedValueOnce(new Error('decoder error'));
+      await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });
+
+      expect(mocks.media.transcode.mock.calls.map((call) => call[2].inputOptions)).toEqual([
+        ['-ss', '1.250'],
+        ['-ss', '1.250'],
+        ['-ss', '3.750'],
+        ['-ss', '6.250'],
+        ['-ss', '8.750'],
+      ]);
+      expect(mocks.media.composeFilmstrip).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.stringMatching(/\.work-.*\/0\.jpg$/)]),
+        expect.anything(),
+      );
+    });
+
     it('serves the cached index and sprite without running ffmpeg', async () => {
       const cached = { assetId, version, mimeType: 'image/webp', frames: [] };
       mocks.storage.readFile.mockResolvedValue(Buffer.from(JSON.stringify(cached)));
@@ -163,7 +198,10 @@ describe(StudioMediaService.name, () => {
         await expect(sut.handleWarmFilmstrip({ id: assetId })).resolves.toBe(JobStatus.Success);
 
         expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
-        expect(mocks.media.transcode).toHaveBeenCalledTimes(120);
+        expect(mocks.media.transcode).toHaveBeenCalledOnce();
+        expect(mocks.media.transcode.mock.calls[0][2].outputOptions).toEqual(
+          expect.arrayContaining(['-frames:v', '120']),
+        );
         expect(mocks.storage.rename).toHaveBeenCalledWith(
           expect.stringContaining('/.work-'),
           `${folder}/filmstrip-${version}-120x180.jpg`,

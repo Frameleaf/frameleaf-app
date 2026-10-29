@@ -135,6 +135,58 @@ export const getFilmstripFrameCommand = (
   };
 };
 
+/**
+ * FL-650: up to this length a filmstrip is cut in one decoding pass, which for a phone clip takes
+ * a fraction of a second where a seek per frame starts ffmpeg up to 120 times. Longer videos keep
+ * the per-frame seeks, which skip decoding everything in between.
+ */
+export const FILMSTRIP_SINGLE_PASS_MAX_MS = 10 * 60 * 1000;
+
+/**
+ * All the frames of a filmstrip in one pass, as `<n>.jpg` (1-based) in the output pattern's folder:
+ * the first at the centre of the first slice, then one per slice, like `getFilmstripFrameCommand`.
+ */
+export const getFilmstripPassCommand = (
+  config: ConfigFFmpegDto,
+  video: VideoStreamInfo,
+  durationMs: number,
+  count: number,
+  height: number,
+): TranscodeCommand => {
+  const tonemap = new ThumbnailConfig({ ...config, targetResolution: 'original' }).getToneMapping(video);
+  const slice = Math.max(0, durationMs) / count;
+  return {
+    inputOptions: ['-ss', (slice / 2 / 1000).toFixed(3)],
+    outputOptions: [
+      '-map',
+      `0:${video.index}`,
+      '-map_metadata',
+      '-1',
+      '-an',
+      '-sn',
+      '-dn',
+      '-frames:v',
+      String(count),
+      '-vf',
+      [
+        `fps=${count * 1000}/${Math.max(1, Math.round(durationMs))}`,
+        ...tonemap,
+        `scale=-2:${height}:flags=bilinear`,
+      ].join(','),
+      '-pix_fmt',
+      'yuvj420p',
+      '-c:v',
+      'mjpeg',
+      '-q:v',
+      '3',
+      '-f',
+      'image2',
+    ],
+    twoPass: false,
+    progress: { frameCount: count, percentInterval: 100 },
+  };
+};
+
 /** The channel count a waveform is decoded at. */
 export const waveformChannelCount = (audio: AudioStreamInfo, mode: WaveformChannelMode) =>
   mode === 'mono' ? 1 : Math.max(1, Math.min(WAVEFORM_MAX_CHANNELS, audio.channels ?? 2));
