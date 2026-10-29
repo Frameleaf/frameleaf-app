@@ -22,6 +22,12 @@ const { createStudioLibraryServices, histogramMonths, monthRange, searchStudioLi
 const { toStudioAsset } = await import('./assets');
 
 const PERSON = '11111111-1111-4111-8111-111111111111';
+// asset reads skip anything that is not a UUID (FL-647), so the ids are real ones
+const SMART = '00000000-0000-4000-8000-000000000001';
+const HANDOFF = '00000000-0000-4000-8000-000000000002';
+const OTHER = '00000000-0000-4000-8000-000000000003';
+const LOCKED = '00000000-0000-4000-8000-000000000004';
+
 const asset = (id: string, overrides: Partial<AssetResponseDto> = {}): AssetResponseDto =>
   ({
     id,
@@ -40,7 +46,7 @@ const page = (items: AssetResponseDto[], nextPage: string | null = null) =>
     albums: { items: [], count: 0, total: 0, facets: [] },
   }) as SearchResponseDto;
 const api = (overrides: Record<string, unknown> = {}) => ({
-  searchSmart: vi.fn().mockResolvedValue(page([asset('smart')])),
+  searchSmart: vi.fn().mockResolvedValue(page([asset(SMART)])),
   searchAssets: vi.fn().mockResolvedValue(page([asset('recent')])),
   searchFacets: vi.fn().mockResolvedValue({ facets: [], total: 0 }),
   searchHistogram: vi.fn().mockResolvedValue({ buckets: [], granularity: SearchHistogramGranularity.Month, total: 0 }),
@@ -77,7 +83,7 @@ describe('FL-636 Studio library search', () => {
       },
       { signal: undefined },
     );
-    expect(result.items.map((item) => item.id)).toEqual(['smart']);
+    expect(result.items.map((item) => item.id)).toEqual([SMART]);
   });
 
   it('lists the library newest first when there are no words, and reports the next page', async () => {
@@ -100,7 +106,7 @@ describe('FL-636 Studio library search', () => {
   });
 
   it('asks for Locked items only while the session is unlocked, and keeps them only then', async () => {
-    const locked = asset('locked', { visibility: AssetVisibility.Locked });
+    const locked = asset(LOCKED, { visibility: AssetVisibility.Locked });
     const sdk = api({
       searchAssets: vi.fn(({ metadataSearchDto }) =>
         Promise.resolve(page(metadataSearchDto.visibility === AssetVisibility.Locked ? [locked] : [asset('plain')])),
@@ -117,7 +123,7 @@ describe('FL-636 Studio library search', () => {
       { metadataSearchDto: expect.objectContaining({ visibility: AssetVisibility.Locked }) },
       { signal: undefined },
     );
-    expect(open.items.map((item) => item.id)).toEqual(['plain', 'locked']);
+    expect(open.items.map((item) => item.id)).toEqual(['plain', LOCKED]);
   });
 
   it('pages through Locked items too while the session is unlocked', async () => {
@@ -145,7 +151,7 @@ describe('FL-636 Studio library search', () => {
             asset('ok'),
             asset('trashed', { isTrashed: true }),
             asset('audio', { type: AssetTypeEnum.Audio }),
-            asset('locked', { visibility: AssetVisibility.Locked }),
+            asset(LOCKED, { visibility: AssetVisibility.Locked }),
           ]),
         ),
     });
@@ -216,7 +222,7 @@ describe('FL-636 Studio library search', () => {
 describe('FL-636 adopting library results into the session', () => {
   const setup = (sdk = api(), offered: StudioAssetRef[] = []) => {
     const adopted: AssetResponseDto[] = [];
-    const lookup = vi.fn((id: string) => Promise.resolve(asset(id)));
+    const lookup = vi.fn((ids: string[]) => Promise.resolve(ids.map((id) => asset(id))));
     const services = createStudioLibraryServices({
       language: () => 'en',
       elevated: () => sessionAccess.isElevated,
@@ -235,42 +241,43 @@ describe('FL-636 adopting library results into the session', () => {
   it('reads a search result again as this session before adopting it, and answers with its bin ref', async () => {
     const { services, adopted, lookup } = setup();
     await services.searchLibrary({ text: 'lake' });
-    const refs = await services.addLibraryAssets(['SMART']);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith('smart');
-    expect(adopted.map((item) => item.id)).toEqual(['smart']);
-    expect(refs).toEqual([toStudioAsset(asset('smart'))]);
+    // ids are matched case-insensitively
+    const refs = await services.addLibraryAssets([SMART.toUpperCase()]);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith([SMART]);
+    expect(adopted.map((item) => item.id)).toEqual([SMART]);
+    expect(refs).toEqual([toStudioAsset(asset(SMART))]);
   });
 
   it('does not adopt a result whose access was revoked after the search', async () => {
     const { services, adopted, lookup } = setup();
     await services.searchLibrary({ text: 'lake' });
     lookup.mockRejectedValueOnce(new Error('403'));
-    expect(await services.addLibraryAssets(['smart'])).toEqual([]);
+    expect(await services.addLibraryAssets([SMART])).toEqual([]);
     expect(adopted).toEqual([]);
   });
 
   it('does not read or adopt what is already offered', async () => {
-    const present = toStudioAsset(asset('handoff'));
+    const present = toStudioAsset(asset(HANDOFF));
     const { services, adopted, lookup } = setup(api(), [present]);
-    const refs = await services.addLibraryAssets(['handoff', 'other']);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith('other');
-    expect(adopted.map((item) => item.id)).toEqual(['other']);
-    expect(refs.map((item) => item.id)).toEqual(['handoff', 'other']);
+    const refs = await services.addLibraryAssets([HANDOFF, OTHER]);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith([OTHER]);
+    expect(adopted.map((item) => item.id)).toEqual([OTHER]);
+    expect(refs.map((item) => item.id)).toEqual([HANDOFF, OTHER]);
   });
 
   it('does not adopt a Locked result once the session has locked again', async () => {
     sessionAccess.isElevated = true;
-    const locked = asset('locked', { visibility: AssetVisibility.Locked });
+    const locked = asset(LOCKED, { visibility: AssetVisibility.Locked });
     const sdk = api({
       searchAssets: vi.fn(({ metadataSearchDto }) =>
         Promise.resolve(page(metadataSearchDto.visibility === AssetVisibility.Locked ? [locked] : [])),
       ),
     });
     const { services, adopted, lookup } = setup(sdk);
-    lookup.mockResolvedValue(locked);
-    expect((await services.searchLibrary({})).items.map((item) => item.id)).toEqual(['locked']);
+    lookup.mockResolvedValue([locked]);
+    expect((await services.searchLibrary({})).items.map((item) => item.id)).toEqual([LOCKED]);
     sessionAccess.isElevated = false;
-    expect(await services.addLibraryAssets(['locked'])).toEqual([]);
+    expect(await services.addLibraryAssets([LOCKED])).toEqual([]);
     expect(adopted).toEqual([]);
   });
 
