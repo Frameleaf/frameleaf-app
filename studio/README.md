@@ -192,6 +192,20 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0147 (FL-599) adds colour matching between shots. The video panel's Match colour section takes a
+reference clip and samples the frame at the playhead (or each clip's middle) from the source, downscaled,
+in the SDR working space. A match is an editable `gpu-exposure` then `gpu-temperature` pair after the
+clip's effects: because both act linearly on SDR working values, the exposure, temperature and tint that
+move the target's unclipped channel means onto the reference's solve three linear equations exactly
+(`mean-gain-wb-v1`). Clipped, flat and extreme proposals are flagged and not applied. Strength scales the
+three values from identity; zero removes the effects. The effects carry `colour-match:` ids and undeclared
+`matchStrength`/`matchSource` parameters (protocol 13.3.3), so a new match replaces the old one in place and
+reopens with its provenance. Results are bound to the clip's source, timing, sampled time and non-match
+effects, so stale results are skipped; apply, strength and remove are each one undo step. HDR projects,
+graded clips (enabled colour effects other than the match) and reverse playback are refused. Calibrated
+chart tests require mean CIEDE2000 error to fall by at least half (sRGB to CIELAB D65). Matching through an
+existing grade, HDR working space, scope before/after review and browser/worker export parity remain open.
+
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.

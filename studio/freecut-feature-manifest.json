@@ -12782,9 +12782,10 @@
         "evidence": [
           "0031-managed-color-working-range.patch",
           "0136-project-colour-policy-disclosure.patch",
-          "e6bca4d7d8"
+          "e6bca4d7d8",
+          "0147-colour-match-between-shots.patch"
         ],
-        "note": "FL-97 closeout: managed floating-point colour.",
+        "note": "FL-97 closeout: managed floating-point colour. FL-599 adds colour matching to a reference shot as an editable exposure and temperature/tint pair.",
         "status": "shipped"
       },
       "id": "extra.color-workspace",

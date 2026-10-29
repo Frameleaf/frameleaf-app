@@ -1715,6 +1715,10 @@ Removes one effect. Payload: `clipId`, `effectId`.
 
 **Implementation-defined.** Keyframes on the removed effect's parameters (`effect:…:<effect id>:…`) are left in the graph (`effect.remove/keeps-parameter-keyframes`). **Native rule:** reproduce it. A native client that wants them gone removes them with `keyframe.remove` first.
 
+#### 13.3.3 Colour match effects (FL-599)
+
+The web editor's colour match is not a command and adds no field. It writes a `gpu-exposure` effect followed by a `gpu-temperature` effect after the clip's other effects, with ids beginning `colour-match:` and two parameters the catalogue does not declare: `matchStrength` (0 to 1) and `matchSource` (a JSON string naming the algorithm, the reference clip and the sampled source times). Undeclared parameters pass through rendering unchanged (render spec [C9]), so these are ordinary effects. A new match replaces the clip's `colour-match:` effects in place; strength 0 removes them. **Native rule:** render, keep and edit them like any effect, and keep the two undeclared parameters when editing others.
+
 ### 13.4 Transitions
 
 #### 13.4.1 `clip.setTransition`
