@@ -508,7 +508,7 @@ new file mode 100644
 +  const fps = useTimelineSettingsStore.getState().fps
 +  const scale = ANALYSIS_WIDTH / clip.sourceWidth
 +  const analysisSeed = { cx: seedBox.cx * scale, cy: seedBox.cy * scale, width: seedBox.width * scale, height: seedBox.height * scale }
-+  // Bound now, with the seed box: an edit to the target during decoding makes the result stale.
++  // Bound now, with the seed box, so an edit to the target during decoding makes the result stale.
 +  const binding = motionTrackBinding(source, target, seedFrame, direction)
 +
 +  // Decode, track and drop one frame at a time: only the previous box and the template are kept.
