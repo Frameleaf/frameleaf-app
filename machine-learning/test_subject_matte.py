@@ -10,6 +10,7 @@ import base64
 import io
 import json
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -178,15 +179,23 @@ class TestStream:
         model.video_processor = transformers.Sam2VideoProcessor(
             image_processor=Sam2ImageProcessor(), video_processor=Sam2VideoVideoProcessor()
         )
-        items = list(
-            model.stream(
-                synthetic_clip(3),
-                seedKind="subject",
-                points=[{"frame": 1, "x": 0.4, "y": 0.4, "label": 1}, {"frame": 2, "x": 0.9, "y": 0.9, "label": 0}],
-                matteWidth=16,
-                matteHeight=12,
-            )
+        stream = model.stream(
+            synthetic_clip(3),
+            seedKind="subject",
+            points=[{"frame": 1, "x": 0.4, "y": 0.4, "label": 1}, {"frame": 2, "x": 0.9, "y": 0.9, "label": 0}],
+            matteWidth=16,
+            matteHeight=12,
         )
+        # The endpoint advances the stream on whichever pool thread is free: a new thread for every
+        # step here, so inference mode must not be carried across a yield.
+        items = []
+        while True:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                item = pool.submit(next, stream, None).result()
+            if item is None:
+                break
+            assert not torch.is_inference_mode_enabled()
+            items.append(item)
         frames = [item for item in items if item["type"] == "frame"]
         assert [item["index"] for item in frames] == [0, 1, 2]
         for item in frames:

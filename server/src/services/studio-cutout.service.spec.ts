@@ -5,14 +5,17 @@ import sharp from 'sharp';
 import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { CutoutUnavailableError, CutoutWorkerError } from 'src/repositories/machine-learning.repository.js';
 import { StudioCutoutService, composeAtlas } from 'src/services/studio-cutout.service.js';
+import { getConfig } from 'src/utils/config.js';
 import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { rational } from 'src/utils/rational-time.js';
 import {
   CUTOUT_ATLAS_MAX_WIDTH,
   CUTOUT_MAX_FRAMES,
   atlasCell,
+  cutoutDeadlineMs,
   cutoutPlan,
   faceFraction,
+  matchFirstFrameFace,
   workerPoints,
 } from 'src/utils/studio-cutout.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -27,6 +30,14 @@ vi.mock('src/utils/ml-destination.js', async (importOriginal) => ({
   selectMlDestination: vi.fn(),
   homeMlDestinationId: vi.fn(),
 }));
+vi.mock('src/utils/config.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/config.js')>()),
+  getConfig: vi.fn(),
+}));
+vi.mock('src/utils/studio-cutout.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('src/utils/studio-cutout.js')>();
+  return { ...actual, cutoutDeadlineMs: vi.fn(actual.cutoutDeadlineMs) };
+});
 vi.mock('src/services/studio-project-import.service.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/services/studio-project-import.service.js')>()),
   studioImportIncomingFolder: () => incomingFolder,
@@ -51,6 +62,7 @@ const graph = {
 };
 
 const face = (personId: string | null, name: string, x1: number, x2: number, isHidden = false) => ({
+  id: `face-${personId ?? 'unnamed'}-${x1}`,
   boundingBoxX1: x1,
   boundingBoxX2: x2,
   boundingBoxY1: 100,
@@ -66,7 +78,19 @@ const grayPng = (width: number, height: number, value: number) =>
     .png()
     .toBuffer();
 
+/** Faces found on a 640x360 first frame, with embeddings: Sam's twin on the left, Jamie on the right. */
+const firstFrame = {
+  imageWidth: 640,
+  imageHeight: 360,
+  faces: [
+    { boundingBox: { x1: 64, y1: 36, x2: 128, y2: 108 }, embedding: '[0, 1, 0]', score: 0.9 },
+    { boundingBox: { x1: 448, y1: 72, x2: 512, y2: 144 }, embedding: '[0.9, 0.1, 0]', score: 0.9 },
+  ],
+};
+
 const setup = ({
+  faceDetection = true,
+  detected = firstFrame,
   kind = MlDestinationKind.Local,
   faces = [face(jamie, 'Jamie', 400, 600), face(sam, 'Sam', 100, 150), face(null, '', 700, 900)],
   matte = async (...args: any[]) => {
@@ -105,7 +129,10 @@ const setup = ({
     listImportDeclarations: vi.fn().mockResolvedValue([]),
     listGeneratedResources: vi.fn().mockResolvedValue([]),
   };
-  const persons = { getFaces: vi.fn().mockResolvedValue(faces) };
+  const persons = {
+    getFaces: vi.fn().mockResolvedValue(faces),
+    getFaceForFacialRecognitionJob: vi.fn().mockResolvedValue({ faceSearch: { embedding: '[1, 0, 0]' } }),
+  };
   const media = {
     probe: vi.fn().mockResolvedValue({ videoStreams: [{ width: 1920, height: 1080, rotation: 0 }], audioStreams: [] }),
   };
@@ -116,7 +143,10 @@ const setup = ({
       }
     }),
   };
-  const machineLearning = { subjectMatte: vi.fn().mockImplementation(matte) };
+  const machineLearning = {
+    subjectMatte: vi.fn().mockImplementation(matte),
+    detectFaces: vi.fn().mockResolvedValue(detected),
+  };
   const mlDestinations = { getById: vi.fn().mockResolvedValue({ id: destinationId, kind }) };
   const uploads: Array<{ id: string; png: Buffer; name: string }> = [];
   const imports = {
@@ -127,7 +157,14 @@ const setup = ({
   };
   vi.mocked(homeMlDestinationId).mockResolvedValue(destinationId);
   vi.mocked(selectMlDestination).mockResolvedValue({ destinationId, kind, workload: MlWorkload.StudioAi } as never);
-  const logger = { setContext: vi.fn(), warn: vi.fn() };
+  vi.mocked(getConfig).mockResolvedValue({
+    machineLearning: {
+      enabled: true,
+      urls: ['http://ml:3003'],
+      facialRecognition: { enabled: faceDetection, modelName: 'buffalo_l', minScore: 0.7 },
+    },
+  } as never);
+  const logger = { setContext: vi.fn(), warn: vi.fn(), debug: vi.fn() };
   const sut = new StudioCutoutService(
     logger as never,
     studio as never,
@@ -139,6 +176,8 @@ const setup = ({
     machineLearning as never,
     mlDestinations as never,
     imports as never,
+    {} as never,
+    {} as never,
   );
   return { sut, studio, resources, persons, clips, machineLearning, imports, uploads };
 };
@@ -206,6 +245,20 @@ describe('studio cut-out plan', () => {
         { sourceSeconds: 6, x: 0.5, y: 0.5, label: 0 },
       ]),
     ).toEqual([{ frame: 5, x: 0.5, y: 0.25, label: 1 }]);
+  });
+
+  it('finds the chosen person again on the first frame, by face recognition or else by position', () => {
+    expect(matchFirstFrameFace(firstFrame, [0.4, 0.1, 0.6, 0.3], '[1, 0, 0]')).toEqual([0.7, 0.2, 0.8, 0.4]);
+    // Nobody similar enough: no seed rather than someone else.
+    expect(matchFirstFrameFace(firstFrame, [0.4, 0.1, 0.6, 0.3], '[0, 0, 1]')).toBeNull();
+    // No library embedding: the face nearest the library box.
+    expect(matchFirstFrameFace(firstFrame, [0.05, 0.1, 0.15, 0.3], null)).toEqual([0.1, 0.1, 0.2, 0.3]);
+    expect(matchFirstFrameFace({ ...firstFrame, faces: [] }, [0.4, 0.1, 0.6, 0.3], null)).toBeNull();
+  });
+
+  it('gives every cut-out a deadline that grows with its frames, up to an hour', () => {
+    expect(cutoutDeadlineMs(20)).toBe(320_000);
+    expect(cutoutDeadlineMs(100_000)).toBe(3_600_000);
   });
 
   it('reads face boxes as fractions of the picture', () => {
@@ -293,7 +346,8 @@ describe(StudioCutoutService.name, () => {
     expect(framePaths).toHaveLength(3);
     expect(options).toEqual({
       seedKind: 'face',
-      seedBox: [0.4, 0.1, 0.6, 0.3],
+      // Jamie found again on the clip's first frame, not the cover picture's box.
+      seedBox: [0.7, 0.2, 0.8, 0.4],
       points: [{ frame: 1, x: 0.5, y: 0.5, label: 0 }],
       matteWidth: 192,
       matteHeight: 108,
@@ -313,6 +367,61 @@ describe(StudioCutoutService.name, () => {
       frameHeight: 108,
     });
     expect(job.progress).toBe(100);
+  });
+
+  it("refuses a person who is not in the clip's first frame, and uses the library box without face detection", async () => {
+    const elsewhere = setup({ detected: { ...firstFrame, faces: [firstFrame.faces[0]] } });
+    const refused = await settled(
+      elsewhere.sut,
+      (await elsewhere.sut.create(authStub.user1, projectId, { clipId: 'clip', personId: jamie, points: [] })).id,
+    );
+    expect(refused.status).toBe('failed');
+    expect(refused.error).toContain("isn't in the clip's first frame");
+    expect(elsewhere.machineLearning.subjectMatte).not.toHaveBeenCalled();
+
+    const offline = setup({ faceDetection: false });
+    const kept = await settled(
+      offline.sut,
+      (await offline.sut.create(authStub.user1, projectId, { clipId: 'clip', personId: jamie, points: [] })).id,
+    );
+    expect(kept.status).toBe('completed');
+    expect(offline.machineLearning.detectFaces).not.toHaveBeenCalled();
+    expect(offline.machineLearning.subjectMatte.mock.calls[0][2].seedBox).toEqual([0.4, 0.1, 0.6, 0.3]);
+  });
+
+  it('holds the per-person limit for creations still being admitted', async () => {
+    const { sut } = setup();
+    const request = { clipId: 'clip', personId: null, points: [] };
+    const results = await Promise.allSettled([
+      sut.create(authStub.user1, projectId, request),
+      sut.create(authStub.user1, projectId, request),
+      sut.create(authStub.user1, projectId, request),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled', 'rejected']);
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        await settled(sut, result.value.id);
+      }
+    }
+    // Settled jobs and finished admissions free the slots again.
+    await expect(sut.create(authStub.user1, projectId, request)).resolves.toMatchObject({ status: 'queued' });
+  });
+
+  it('stops a cut-out the worker never finishes, so later ones can run', async () => {
+    vi.mocked(cutoutDeadlineMs).mockReturnValueOnce(50);
+    const stalled = setup({
+      matte: (...args: any[]) =>
+        new Promise((_resolve, reject) => {
+          const signal = args[3] as AbortSignal;
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+    });
+    const job = await settled(
+      stalled.sut,
+      (await stalled.sut.create(authStub.user1, projectId, { clipId: 'clip', personId: null, points: [] })).id,
+    );
+    expect(job).toMatchObject({ status: 'failed', matte: null });
+    expect(job.error).toContain('took too long');
   });
 
   it('follows the main subject when no person is chosen', async () => {

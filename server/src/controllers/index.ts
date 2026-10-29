@@ -103,6 +103,7 @@ import { StackController } from 'src/controllers/stack.controller.js';
 import { StorageMigrationAdminController } from 'src/controllers/storage-migration-admin.controller.js';
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
+import { StudioCutoutController } from 'src/controllers/studio-cutout.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
 import { StudioMovieController } from 'src/controllers/studio-movie.controller.js';
@@ -110,7 +111,6 @@ import { StudioPreviewStreamController } from 'src/controllers/studio-preview-st
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
 import { StudioProjectImportController } from 'src/controllers/studio-project-import.controller.js';
 import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
-import { StudioCutoutController } from 'src/controllers/studio-cutout.controller.js';
 import { StudioReframeController } from 'src/controllers/studio-reframe.controller.js';
 import { StudioSourceResolutionController } from 'src/controllers/studio-source-resolution.controller.js';
 import { StudioSourceController } from 'src/controllers/studio-source.controller.js';

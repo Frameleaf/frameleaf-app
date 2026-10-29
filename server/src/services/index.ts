@@ -145,6 +145,7 @@ import { StorageTemplateService } from 'src/services/storage-template.service.js
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
+import { StudioCutoutService } from 'src/services/studio-cutout.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
@@ -153,7 +154,6 @@ import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.s
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
-import { StudioCutoutService } from 'src/services/studio-cutout.service.js';
 import { StudioReframeService } from 'src/services/studio-reframe.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';

@@ -237,8 +237,11 @@ class SubjectMatteModel(InferenceModel):
             raise ValueError(f"A matte has an edge of at most {MAX_MATTE_EDGE} pixels")
         rgb = [frame.convert("RGB") for frame in frames]
         total = len(rgb)
-        with self._inference_lock, torch.inference_mode():
-            box = self.seed_box(rgb[0], seedKind, seedBox)
+        # The handler advances this generator on any thread of the pool, and inference mode is
+        # thread-local: it is entered around each unit of model work, never across a yield.
+        with self._inference_lock:
+            with torch.inference_mode():
+                box = self.seed_box(rgb[0], seedKind, seedBox)
             refinements = prompt_points(points, total, width, height)
             yield {"type": "progress", "done": 0, "total": total, "seedBox": [round(value, 2) for value in box]}
             for index, probability in self.follow(rgb, box, refinements):
@@ -252,34 +255,38 @@ class SubjectMatteModel(InferenceModel):
         refinements: dict[int, tuple[list[list[float]], list[int]]],
     ) -> Generator[tuple[int, NDArray[np.float32]], None, None]:
         """SAM2 video in streaming mode: the subject's probability on each frame, frame by frame."""
+        import torch
+
         processor, model = self.video_processor, self.video_model
-        session = processor.init_video_session(inference_device=self.device_name, dtype=_float32())
+        with torch.inference_mode():
+            session = processor.init_video_session(inference_device=self.device_name, dtype=_float32())
         for index, frame in enumerate(frames):
-            inputs = processor(images=frame, device=self.device_name, return_tensors="pt")
-            original_size = inputs["original_sizes"][0]
-            if index == 0:
-                processor.add_inputs_to_inference_session(
-                    inference_session=session,
-                    frame_idx=0,
-                    obj_ids=1,
-                    input_boxes=[[list(box)]],
-                    original_size=original_size,
-                )
-            if index in refinements:
-                coordinates, labels = refinements[index]
-                processor.add_inputs_to_inference_session(
-                    inference_session=session,
-                    frame_idx=index,
-                    obj_ids=1,
-                    input_points=[[coordinates]],
-                    input_labels=[[labels]],
-                    original_size=original_size,
-                    clear_old_inputs=False,
-                )
-            output = model(inference_session=session, frame=inputs["pixel_values"][0])
-            post_process = cast(Callable[..., list[Any]], processor.post_process_masks)
-            logits = post_process([output.pred_masks], original_sizes=inputs["original_sizes"], binarize=False)[0]
-            values = np.asarray(logits.float().cpu().numpy(), dtype=np.float32).reshape(-1, *logits.shape[-2:])
+            with torch.inference_mode():
+                inputs = processor(images=frame, device=self.device_name, return_tensors="pt")
+                original_size = inputs["original_sizes"][0]
+                if index == 0:
+                    processor.add_inputs_to_inference_session(
+                        inference_session=session,
+                        frame_idx=0,
+                        obj_ids=1,
+                        input_boxes=[[list(box)]],
+                        original_size=original_size,
+                    )
+                if index in refinements:
+                    coordinates, labels = refinements[index]
+                    processor.add_inputs_to_inference_session(
+                        inference_session=session,
+                        frame_idx=index,
+                        obj_ids=1,
+                        input_points=[[coordinates]],
+                        input_labels=[[labels]],
+                        original_size=original_size,
+                        clear_old_inputs=False,
+                    )
+                output = model(inference_session=session, frame=inputs["pixel_values"][0])
+                post_process = cast(Callable[..., list[Any]], processor.post_process_masks)
+                logits = post_process([output.pred_masks], original_sizes=inputs["original_sizes"], binarize=False)[0]
+                values = np.asarray(logits.float().cpu().numpy(), dtype=np.float32).reshape(-1, *logits.shape[-2:])
             yield index, sigmoid(values.max(axis=0))
 
 

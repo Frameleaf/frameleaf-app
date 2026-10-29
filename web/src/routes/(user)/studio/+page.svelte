@@ -858,8 +858,17 @@
       create: (id, studioCutoutCreateDto) => createStudioCutout({ id, studioCutoutCreateDto }),
       get: (id, cutoutId) => getStudioCutout({ id, cutoutId }),
     },
+    // The same origin checks as the canonical import load: a sign-out, relock or Save as copy while
+    // the files reload must not write one project's files into another's list.
     matteKept: async () => {
-      const loaded = await loadStudioProjectImports(project.id);
+      const origin = importOrigin;
+      if (!origin || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
+      }
+      const loaded = await loadStudioProjectImports(origin.scope.projectId, origin.controller.signal);
+      if (origin.controller.signal.aborted || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
+      }
       const loadedIds = new Set(loaded.map((item) => item.id));
       projectImports = [...loaded, ...projectImports.filter((item) => !loadedIds.has(item.id))];
       await tick();

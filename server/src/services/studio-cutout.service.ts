@@ -14,6 +14,7 @@ import {
   StudioCutoutSubjectsDto,
 } from 'src/dtos/studio-cutout.dto.js';
 import { MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CutoutUnavailableError,
@@ -25,11 +26,23 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { getConfig } from 'src/utils/config.js';
+import { isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
-import { CutoutFace, CutoutPlan, atlasCell, cutoutPlan, faceFraction, workerPoints } from 'src/utils/studio-cutout.js';
+import {
+  CutoutFace,
+  CutoutPlan,
+  atlasCell,
+  cutoutDeadlineMs,
+  cutoutPlan,
+  faceFraction,
+  matchFirstFrameFace,
+  workerPoints,
+} from 'src/utils/studio-cutout.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
 import { TranscriptionClip, transcriptionClipOf } from 'src/utils/studio-transcription.js';
 
@@ -51,7 +64,15 @@ type Job = {
   settledAt: number | null;
 };
 
-type Face = CutoutFace & { person?: { id: string; name: string; isHidden: boolean } | null };
+type Face = CutoutFace & { id: string; person?: { id: string; name: string; isHidden: boolean } | null };
+type FaceSeed = { faceId: string; box: [number, number, number, number] };
+type FaceDetector = {
+  selection: Awaited<ReturnType<typeof selectMlDestination>>;
+  options: { modelName: string; minScore: number };
+};
+
+/** A cut-out that outlived its deadline: the worker stalled or the clip was too long for it. */
+class CutoutDeadlineError extends Error {}
 
 /**
  * FL-639: Cut out the subject in a video.
@@ -71,6 +92,8 @@ type Face = CutoutFace & { person?: { id: string; name: string; isHidden: boolea
 export class StudioCutoutService {
   private readonly jobs = new Map<string, Job>();
   private queue: Promise<void> = Promise.resolve();
+  /** Creations still between their admission check and their job being recorded, per owner. */
+  private readonly creating = new Map<string, number>();
 
   constructor(
     private logger: LoggingRepository,
@@ -83,6 +106,8 @@ export class StudioCutoutService {
     private machineLearning: MachineLearningRepository,
     private mlDestinations: MlDestinationRepository,
     private imports: StudioProjectImportService,
+    private configRepository: ConfigRepository,
+    private systemMetadata: SystemMetadataRepository,
   ) {
     this.logger.setContext(StudioCutoutService.name);
   }
@@ -102,12 +127,28 @@ export class StudioCutoutService {
       .values()
       .filter((job) => job.ownerId === auth.user.id && (job.status === 'queued' || job.status === 'running'))
       .toArray();
-    if (pending.length >= MAX_PENDING_PER_OWNER) {
+    // Reserved before the first await, so concurrent requests cannot all pass the check.
+    const owner = auth.user.id;
+    if (pending.length + (this.creating.get(owner) ?? 0) >= MAX_PENDING_PER_OWNER) {
       throw new BadRequestException('Wait for the cut-outs already running to finish');
     }
+    this.creating.set(owner, (this.creating.get(owner) ?? 0) + 1);
+    try {
+      return await this.admit(auth, projectId, dto);
+    } finally {
+      const left = (this.creating.get(owner) ?? 1) - 1;
+      if (left > 0) {
+        this.creating.set(owner, left);
+      } else {
+        this.creating.delete(owner);
+      }
+    }
+  }
+
+  private async admit(auth: AuthDto, projectId: string, dto: StudioCutoutCreateDto): Promise<StudioCutoutDto> {
     const resolved = await this.source(auth, projectId, dto.clipId);
     let subject = mainSubject();
-    let seedBox: [number, number, number, number] | null = null;
+    let seed: FaceSeed | null = null;
     if (dto.personId) {
       const person = resolved.assetId
         ? (await this.people(auth, resolved.assetId)).find((item) => item.subject.personId === dto.personId)
@@ -116,7 +157,7 @@ export class StudioCutoutService {
         throw new BadRequestException('That person is not recognised in this clip');
       }
       subject = person.subject;
-      seedBox = person.box;
+      seed = { faceId: person.faceId, box: person.box };
     }
     const selection = await this.destination();
     const info = await this.media.probe(resolved.path, { countFrames: false });
@@ -143,7 +184,7 @@ export class StudioCutoutService {
     };
     this.jobs.set(job.id, job);
     const points = workerPoints(plan, dto.points ?? []);
-    const run = () => this.run(auth, job, { path: resolved.path, plan, seedBox, points, selection });
+    const run = () => this.run(auth, job, { path: resolved.path, plan, seed, points, selection });
     this.queue = this.queue
       .then(run)
       .catch((error) => this.logger.warn(`Studio cut-out ${job.id} did not run: ${error}`));
@@ -164,7 +205,7 @@ export class StudioCutoutService {
     input: {
       path: string;
       plan: CutoutPlan;
-      seedBox: [number, number, number, number] | null;
+      seed: FaceSeed | null;
       points: Array<{ frame: number; x: number; y: number; label: 0 | 1 }>;
       selection: Awaited<ReturnType<typeof selectMlDestination>>;
     },
@@ -172,6 +213,11 @@ export class StudioCutoutService {
     job.status = 'running';
     let folder: string | undefined;
     const controller = new AbortController();
+    // A deadline of its own: a stalled worker must not hold the queue for every later cut-out.
+    const deadline = setTimeout(
+      () => controller.abort(new CutoutDeadlineError('Following the subject took too long')),
+      cutoutDeadlineMs(input.plan.frames),
+    );
     try {
       const frameFolder = await mkdtemp(path.join(tmpdir(), 'frameleaf-cutout-'));
       folder = frameFolder;
@@ -193,14 +239,17 @@ export class StudioCutoutService {
       const frames = framePaths.length;
       const columns = Math.min(frames, plan.columns);
       const layout: CutoutPlan = { ...plan, frames, columns, rows: Math.ceil(frames / columns) };
+      // The library's face box is from the video's cover picture, not this clip's first frame: find the
+      // person again there, so SAM2 starts from them and not from whoever stands where they stood.
+      const seedBox = input.seed ? await this.firstFrameSeed(input.seed, framePaths[0], controller.signal) : null;
       job.progress = 5;
       const mattes: Buffer[] = Array.from({ length: frames });
       await this.machineLearning.subjectMatte(
         input.selection,
         framePaths,
         {
-          seedKind: input.seedBox ? 'face' : 'subject',
-          seedBox: input.seedBox,
+          seedKind: seedBox ? 'face' : 'subject',
+          seedBox,
           points: input.points.filter((point) => point.frame < frames),
           matteWidth: layout.matteWidth,
           matteHeight: layout.matteHeight,
@@ -240,15 +289,67 @@ export class StudioCutoutService {
       job.status = 'completed';
     } catch (error) {
       job.status = 'failed';
-      job.error = readableFailure(error);
+      job.error = readableFailure(
+        controller.signal.reason instanceof CutoutDeadlineError ? controller.signal.reason : error,
+      );
       if (!(error instanceof BadRequestException || error instanceof CutoutWorkerError)) {
         this.logger.warn(`Studio cut-out ${job.id} failed: ${error}`);
       }
     } finally {
+      clearTimeout(deadline);
       job.settledAt = Date.now();
       if (folder) {
         await rm(folder, { recursive: true, force: true }).catch(() => {});
       }
+    }
+  }
+
+  /**
+   * The chosen person's face on the clip's first extracted frame, as fractions of it: of the faces found
+   * there, the one closest to their library face (by face recognition), or failing an embedding the one
+   * nearest their library box. Without face detection on this network the library box is used as is.
+   */
+  private async firstFrameSeed(seed: FaceSeed, framePath: string, signal: AbortSignal) {
+    const detector = await this.faceDetector();
+    if (!detector) {
+      return seed.box;
+    }
+    signal.throwIfAborted();
+    const reference = await this.persons.getFaceForFacialRecognitionJob(seed.faceId);
+    const detected = await this.machineLearning.detectFaces(detector.selection, framePath, detector.options);
+    const box = matchFirstFrameFace(
+      detected,
+      seed.box,
+      (reference as { faceSearch?: { embedding?: string } | null } | undefined)?.faceSearch?.embedding ?? null,
+    );
+    if (!box) {
+      throw new BadRequestException(
+        "The person isn't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject.",
+      );
+    }
+    return box;
+  }
+
+  /** Face detection on this server or a computer at home, or null when it is off or cannot be reached. */
+  private async faceDetector(): Promise<FaceDetector | null> {
+    try {
+      const { machineLearning } = await getConfig(
+        { configRepo: this.configRepository, metadataRepo: this.systemMetadata, logger: this.logger },
+        { withCache: true },
+      );
+      if (!isFacialRecognitionEnabled(machineLearning)) {
+        return null;
+      }
+      const destinationId = await homeMlDestinationId(this.mlDestinations, MlWorkload.Face);
+      const selection = await selectMlDestination(
+        { mlDestinationRepository: this.mlDestinations, machineLearningRepository: this.machineLearning },
+        { workload: MlWorkload.Face, destinationId, jobId: null, jobName: 'studio-cutout', homeOnly: true },
+      );
+      const { modelName, minScore } = machineLearning.facialRecognition;
+      return { selection, options: { modelName, minScore } };
+    } catch (error) {
+      this.logger.debug(`Studio cut-out seeds from the library face: ${(error as Error)?.message ?? error}`);
+      return null;
     }
   }
 
@@ -279,7 +380,7 @@ export class StudioCutoutService {
     const faces = (await this.persons.getFaces(assetId, { viewingUserId: auth.user.id })) as unknown as Face[];
     const best = new Map<
       string,
-      { subject: StudioCutoutSubject; box: [number, number, number, number]; area: number }
+      { subject: StudioCutoutSubject; faceId: string; box: [number, number, number, number]; area: number }
     >();
     for (const face of faces) {
       const person = face.person;
@@ -289,7 +390,12 @@ export class StudioCutoutService {
       }
       const area = (box[2] - box[0]) * (box[3] - box[1]);
       if ((best.get(person.id)?.area ?? -1) < area) {
-        best.set(person.id, { subject: { kind: 'person', personId: person.id, name: person.name }, box, area });
+        best.set(person.id, {
+          subject: { kind: 'person', personId: person.id, name: person.name },
+          faceId: face.id,
+          box,
+          area,
+        });
       }
     }
     return best
@@ -367,6 +473,9 @@ const toDto = (job: Job): StudioCutoutDto => ({
 const readableFailure = (error: unknown) => {
   if (error instanceof BadRequestException || error instanceof CutoutWorkerError) {
     return (error as Error).message;
+  }
+  if (error instanceof CutoutDeadlineError) {
+    return 'Following the subject took too long. Try a shorter clip, or a computer at home with a GPU.';
   }
   if (error instanceof CutoutUnavailableError) {
     return 'The machine learning that cuts out subjects is not set up on this server or computer';
