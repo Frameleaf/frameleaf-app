@@ -285,6 +285,15 @@ describe('stored project library hydration', () => {
     expect(lookup).toHaveBeenCalledTimes(3);
   });
 
+  it('leaves a malformed id out on its own instead of sending it with the others', async () => {
+    const lookup = vi.fn(async (page: string[]) => page.map((id) => asset({ id })));
+    expect(await resolveStudioAssets(['not-a-uuid', first, '1234', second.toUpperCase()], lookup)).toEqual([
+      asset({ id: first }),
+      asset({ id: second }),
+    ]);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith([first, second]);
+  });
+
   it('asks for at most two pages at once', async () => {
     let active = 0;
     let maximum = 0;
