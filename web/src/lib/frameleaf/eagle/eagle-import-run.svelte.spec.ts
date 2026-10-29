@@ -14,8 +14,13 @@ function fakeApi({ existing = new Set<string>(), failing = new Set<string>() } =
   const tags = new Map<string, string[]>();
   const updates = new Map<string, { rating?: number; description?: string }>();
   const library = new Map<string, string>();
+  const sources = new Map<string, string[]>();
+  const added = new Map<string, Date>();
+  /** When each item came into the library. Items already there came in long before the import. */
+  const addedAt = new Map<string, string>();
   for (const name of existing) {
     library.set(name, `existing-${name}`);
+    addedAt.set(`existing-${name}`, '2020-01-01T00:00:00.000Z');
   }
   const api: EagleImportApi = {
     createCollection: vi.fn((input) => {
@@ -37,9 +42,12 @@ function fakeApi({ existing = new Set<string>(), failing = new Set<string>() } =
       }
       const assetId = `asset-${file.name}`;
       library.set(file.name, assetId);
+      addedAt.set(assetId, new Date().toISOString());
       return Promise.resolve({ assetId, duplicate: false });
     }),
-    describe: vi.fn(() => Promise.resolve({ rating: 4, description: '' })),
+    describe: vi.fn((assetId: string) =>
+      Promise.resolve({ rating: 4, description: '', addedAt: addedAt.get(assetId) ?? new Date().toISOString() }),
+    ),
     addToCollections: vi.fn((albumIds: string[], assetId: string) => {
       for (const albumId of albumIds) {
         albumAssets.set(albumId, [...(albumAssets.get(albumId) ?? []), assetId]);
@@ -54,8 +62,17 @@ function fakeApi({ existing = new Set<string>(), failing = new Set<string>() } =
       updates.set(assetId, changes);
       return Promise.resolve();
     }),
+    addSource: vi.fn((assetId: string, pageUrl: string) => {
+      sources.set(assetId, [...new Set([...(sources.get(assetId) ?? []), pageUrl])]);
+      return Promise.resolve();
+    }),
+    setAdded: vi.fn((assetId: string, date: Date) => {
+      added.set(assetId, date);
+      addedAt.set(assetId, date.toISOString());
+      return Promise.resolve();
+    }),
   };
-  return { api, collections, uploads, albumAssets, tags, updates, library };
+  return { api, collections, uploads, albumAssets, tags, updates, library, sources, added };
 }
 
 describe('EagleImportRun', () => {
@@ -118,6 +135,80 @@ describe('EagleImportRun', () => {
     expect(result).toMatchObject({ added: 5, already: 1, notReached: 0 });
     expect(reconciles(plan, result)).toBe(true);
     expect((await store.get(importing.key))?.record.status).toBe('finished');
+  });
+
+  it('brings web addresses over as sources and the date changed in Eagle as the Added date', async () => {
+    const server = fakeApi({ existing: new Set(['already.png']) });
+    const importing = run(server.api);
+    await importing.start();
+
+    expect(Object.fromEntries(server.sources)).toEqual({
+      'asset-hero.jpg': ['https://gallery.example.test/shot/1'],
+      'asset-loop.mp4': ['https://gallery.example.test/clip'],
+      'asset-loose.webp': ['https://gallery.example.test/loose'],
+    });
+    const changedInEagle = new Date(1_789_000_000_000);
+    expect(new Set(server.added.keys())).toEqual(
+      new Set(['asset-display.svg', 'asset-hero.jpg', 'asset-logo.png', 'asset-loop.mp4', 'asset-loose.webp']),
+    );
+    for (const date of server.added.values()) {
+      expect(date.getTime()).toBe(changedInEagle.getTime());
+    }
+    // Already in the library before the import: it keeps its own Added date.
+    expect(server.added.has('existing-already.png')).toBe(false);
+
+    const plan = planEagleImport(library, { supported, existing: new Set(['I6']) });
+    const result = importResult(plan, library, {
+      outcomes: importing.outcomes,
+      failed: importing.failed,
+      collections: importing.collections,
+      stopped: false,
+      supported,
+    });
+    expect(result.sources).toBe(plan.sources);
+    expect(reconciles(plan, result)).toBe(true);
+  });
+
+  it('sets the Added date of an item an earlier run sent but did not record', async () => {
+    const server = fakeApi();
+    const first = run(server.api);
+    const upload = server.api.upload;
+    let sent = 0;
+    // The tab closes just after the second file reached the server, before it was filed.
+    server.api.upload = (file, checksums) =>
+      ++sent === 2 ? upload(file, checksums).then(() => new Promise(() => {})) : upload(file, checksums);
+    void first.start();
+    await vi.waitFor(() => expect(sent).toBe(2));
+    const [paused] = await store.unfinished('user-1');
+    expect(Object.keys(paused.outcomes)).toHaveLength(1);
+    const unrecorded = `asset-${server.uploads[1]}`;
+    expect(server.added.has(unrecorded)).toBe(false);
+
+    server.api.upload = upload;
+    await run(server.api, { saved: paused }).start();
+    expect(server.added.get(unrecorded)?.getTime()).toBe(1_789_000_000_000);
+  });
+
+  it('keeps the item when the server refuses its Added date', async () => {
+    const server = fakeApi();
+    server.api.setAdded = vi.fn(() => Promise.reject(new Error('400')));
+    const importing = run(server.api);
+    await importing.start();
+    expect(importing.state).toBe('finished');
+    expect(importing.failed.size).toBe(0);
+    expect(importing.done).toBe(6);
+  });
+
+  it('lists an item again when its source could not be recorded, and adds it once when carrying on', async () => {
+    const server = fakeApi();
+    const addSource = server.api.addSource;
+    server.api.addSource = vi.fn(() => Promise.reject(new Error('offline')));
+    const first = run(server.api);
+    await first.start();
+    expect(new Set(first.failed)).toEqual(new Set(['I1', 'I4', 'I5']));
+    server.api.addSource = addSource;
+    await run(server.api, { saved: await store.get(first.key) }).start();
+    expect(server.sources.get('asset-hero.jpg')).toEqual(['https://gallery.example.test/shot/1']);
   });
 
   it('leaves unfiled items unfiled and renames clashing top folders at the top level', async () => {
@@ -260,7 +351,7 @@ describe('EagleImportRun', () => {
     let signedIn = true;
     server.api.describe = vi.fn(() => {
       signedIn = false;
-      return Promise.resolve({ rating: null, description: '' });
+      return Promise.resolve({ rating: null, description: '', addedAt: '2020-01-01T00:00:00.000Z' });
     });
     const importing = run(server.api, { isCurrent: () => signedIn });
     await importing.start();
@@ -338,7 +429,8 @@ describe('EagleImportRun', () => {
       const { importing, calls } = instrumented(0);
       await importing.start();
       expect(importing.state).toBe('finished');
-      // Collections, tags, uploads, filing, tagging, rating and note, annotations and the record.
+      // Collections, tags, uploads, filing, tagging, rating and note, source, Added date, annotations
+      // and the record.
       expect(new Set(calls.map(({ name }) => name))).toEqual(
         new Set([
           'store.remove',
@@ -350,6 +442,8 @@ describe('EagleImportRun', () => {
           'api.tag',
           'api.update',
           'api.describe',
+          'api.addSource',
+          'api.setAdded',
           'api.annotate',
           'store.saveOutcome',
         ]),

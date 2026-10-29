@@ -304,6 +304,29 @@ export function isComing(item: EagleItem, supported: ReadonlySet<string>) {
   return !item.unreadable && !item.isDeleted && supported.has(item.ext) && !!item.file;
 }
 
+/**
+ * The item's web address as Boards records it (Source › Page): an http(s) address without a
+ * sign-in in it, as the server takes. Anything else (a file path, a note in the address field) is
+ * not a web address and doesn't come over.
+ */
+export function eagleSourceUrl(item: Pick<EagleItem, 'url'>) {
+  const value = item.url.trim();
+  if (!value || value.length > 8192 || !URL.canParse(value)) {
+    return;
+  }
+  const url = new URL(value);
+  return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? value : undefined;
+}
+
+/**
+ * The Added date an item gets: when it was last changed in Eagle, if that is a time in the past.
+ * Eagle's times are milliseconds since 1970.
+ */
+export function eagleAddedDate(item: Pick<EagleItem, 'modificationTime'>, now = Date.now()) {
+  const time = item.modificationTime;
+  return time > 0 && time < now ? new Date(time) : undefined;
+}
+
 /** Area comments on a picture: the ones that can become annotations. */
 export const areaComments = (item: EagleItem) =>
   VIDEO_EXTENSIONS.has(item.ext) ? [] : item.comments.filter((comment) => comment.width > 0 && comment.height > 0);
@@ -390,8 +413,10 @@ export function planEagleImport(library: EagleLibrary, options: EaglePlanOptions
     tags: new Set(coming.flatMap(({ tags }) => tags)).size,
     rated: coming.filter(({ star }) => star > 0).length,
     notes: coming.filter(({ annotation }) => annotation.trim()).length,
-    /** Web addresses. Boards has no way to record them for an uploaded file yet, so they are listed. */
-    sources: coming.filter(({ url }) => url).length,
+    /** Web addresses, which become Source › Page. */
+    sources: coming.filter((item) => eagleSourceUrl(item)).length,
+    /** Addresses that aren't web addresses, so they can't become a source. */
+    notWebAddresses: coming.filter((item) => item.url.trim() && !eagleSourceUrl(item)).length,
     annotations: options.annotations ? areas : 0,
     /** Area comments that can't come over until annotations can be written. */
     areaCommentsWaiting: options.annotations ? 0 : areas,
@@ -491,6 +516,7 @@ export function importResult(plan: EaglePlan, library: EagleLibrary, input: Eagl
     tags: new Set(done.flatMap(({ tags }) => tags)).size,
     rated: done.filter(({ star }) => star > 0).length,
     notes: done.filter(({ annotation }) => annotation.trim()).length,
+    sources: done.filter((item) => eagleSourceUrl(item)).length,
     annotations: input.annotations ? done.flatMap((item) => areaComments(item)).length : 0,
   };
 }
@@ -510,7 +536,7 @@ export function reconciles(plan: EaglePlan, result: EagleResult) {
     result.added === plan.newFiles &&
     result.already === plan.already &&
     result.collections === plan.collections &&
-    (['tags', 'rated', 'notes', 'annotations'] as const).every((key) => result[key] === plan[key])
+    (['tags', 'rated', 'notes', 'sources', 'annotations'] as const).every((key) => result[key] === plan[key])
   );
 }
 
