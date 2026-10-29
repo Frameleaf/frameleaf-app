@@ -29,14 +29,7 @@ import { StudioProjectImportService, studioImportIncomingFolder } from 'src/serv
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
-import {
-  CutoutFace,
-  CutoutPlan,
-  atlasCell,
-  cutoutPlan,
-  faceFraction,
-  workerPoints,
-} from 'src/utils/studio-cutout.js';
+import { CutoutFace, CutoutPlan, atlasCell, cutoutPlan, faceFraction, workerPoints } from 'src/utils/studio-cutout.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
 import { TranscriptionClip, transcriptionClipOf } from 'src/utils/studio-transcription.js';
 
@@ -105,9 +98,10 @@ export class StudioCutoutService {
 
   async create(auth: AuthDto, projectId: string, dto: StudioCutoutCreateDto): Promise<StudioCutoutDto> {
     this.sweep();
-    const pending = [...this.jobs.values()].filter(
-      (job) => job.ownerId === auth.user.id && (job.status === 'queued' || job.status === 'running'),
-    );
+    const pending = this.jobs
+      .values()
+      .filter((job) => job.ownerId === auth.user.id && (job.status === 'queued' || job.status === 'running'))
+      .toArray();
     if (pending.length >= MAX_PENDING_PER_OWNER) {
       throw new BadRequestException('Wait for the cut-outs already running to finish');
     }
@@ -150,7 +144,9 @@ export class StudioCutoutService {
     this.jobs.set(job.id, job);
     const points = workerPoints(plan, dto.points ?? []);
     const run = () => this.run(auth, job, { path: resolved.path, plan, seedBox, points, selection });
-    this.queue = this.queue.then(run, run);
+    this.queue = this.queue
+      .then(run)
+      .catch((error) => this.logger.warn(`Studio cut-out ${job.id} did not run: ${error}`));
     return toDto(job);
   }
 
@@ -174,9 +170,10 @@ export class StudioCutoutService {
     },
   ): Promise<void> {
     job.status = 'running';
-    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-cutout-'));
+    let folder: string | undefined;
     const controller = new AbortController();
     try {
+      folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-cutout-'));
       const { plan } = input;
       await this.clips.extractFrames(
         input.path,
@@ -248,7 +245,9 @@ export class StudioCutoutService {
       }
     } finally {
       job.settledAt = Date.now();
-      await rm(folder, { recursive: true, force: true }).catch(() => {});
+      if (folder) {
+        await rm(folder, { recursive: true, force: true }).catch(() => {});
+      }
     }
   }
 
@@ -277,7 +276,10 @@ export class StudioCutoutService {
   /** Named, visible people with a face in the asset, each with their largest face as fractions of the picture. */
   private async people(auth: AuthDto, assetId: string) {
     const faces = (await this.persons.getFaces(assetId, { viewingUserId: auth.user.id })) as unknown as Face[];
-    const best = new Map<string, { subject: StudioCutoutSubject; box: [number, number, number, number]; area: number }>();
+    const best = new Map<
+      string,
+      { subject: StudioCutoutSubject; box: [number, number, number, number]; area: number }
+    >();
     for (const face of faces) {
       const person = face.person;
       const box = faceFraction(face);
@@ -289,7 +291,10 @@ export class StudioCutoutService {
         best.set(person.id, { subject: { kind: 'person', personId: person.id, name: person.name }, box, area });
       }
     }
-    return [...best.values()].sort((a, b) => b.area - a.area);
+    return best
+      .values()
+      .toArray()
+      .sort((a, b) => b.area - a.area);
   }
 
   /** The video clip on the head revision and the file its source is read from, for the owner. */

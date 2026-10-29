@@ -6,6 +6,7 @@ import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { CutoutUnavailableError, CutoutWorkerError } from 'src/repositories/machine-learning.repository.js';
 import { StudioCutoutService, composeAtlas } from 'src/services/studio-cutout.service.js';
 import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
+import { rational } from 'src/utils/rational-time.js';
 import {
   CUTOUT_ATLAS_MAX_WIDTH,
   CUTOUT_MAX_FRAMES,
@@ -15,10 +16,11 @@ import {
   workerPoints,
 } from 'src/utils/studio-cutout.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
-import { rational } from 'src/utils/rational-time.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 
-const someoneElse = { user: { ...authStub.user1.user, id: '0195e2a0-0000-7000-8000-000000000097' } } as typeof authStub.user1;
+const someoneElse = {
+  user: { ...authStub.user1.user, id: '0195e2a0-0000-7000-8000-000000000097' },
+} as typeof authStub.user1;
 
 vi.mock('src/utils/ml-destination.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/ml-destination.js')>()),
@@ -315,7 +317,10 @@ describe(StudioCutoutService.name, () => {
 
   it('follows the main subject when no person is chosen', async () => {
     const { sut, machineLearning } = setup({ faces: [] });
-    const job = await settled(sut, (await sut.create(authStub.user1, projectId, { clipId: 'clip', personId: null, points: [] })).id);
+    const job = await settled(
+      sut,
+      (await sut.create(authStub.user1, projectId, { clipId: 'clip', personId: null, points: [] })).id,
+    );
     expect(job.status).toBe('completed');
     expect(machineLearning.subjectMatte.mock.calls[0][2]).toMatchObject({ seedKind: 'subject', seedBox: null });
   });

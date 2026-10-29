@@ -49,9 +49,9 @@ describe('FL-639 Cut out the subject (host)', () => {
     expect(isStudioCutoutRequest({ clipId: 'clip-1', personId: 'jamie', points: [] })).toBe(false);
     expect(isStudioCutoutRequest({ clipId: 'clip-1', personId: null, points: [{ ...point, x: 2 }] })).toBe(false);
     expect(isStudioCutoutRequest({ clipId: 'clip-1', personId: null, points: [{ ...point, label: 2 }] })).toBe(false);
-    expect(isStudioCutoutRequest({ clipId: 'clip-1', personId: null, points: Array.from({ length: 65 }, () => point) })).toBe(
-      false,
-    );
+    expect(
+      isStudioCutoutRequest({ clipId: 'clip-1', personId: null, points: Array.from({ length: 65 }, () => point) }),
+    ).toBe(false);
   });
 
   it('asks the server for the open project and reloads its files before a completed cut-out is answered', async () => {
@@ -74,13 +74,17 @@ describe('FL-639 Cut out the subject (host)', () => {
     await expect(services.readCutout('c1')).resolves.toMatchObject({ status: 'running', progress: 50, matte: null });
     expect(matteKept).not.toHaveBeenCalled();
 
-    server.get.mockImplementation(async () => {
-      order.push('read');
-      return { id: 'c1', status: 'completed', progress: 100, error: null, matte: { ...matte, extra: 'dropped' } };
+    server.get.mockResolvedValueOnce({
+      id: 'c1',
+      status: 'completed',
+      progress: 100,
+      error: null,
+      matte: { ...matte, extra: 'dropped' },
     });
     const done = await services.readCutout('c1');
     expect(done.matte).toEqual(matte);
-    expect(order).toEqual(['read', 'reloaded']);
+    expect(order).toEqual(['reloaded']);
+    expect(server.get.mock.invocationCallOrder[1]).toBeLessThan(matteKept.mock.invocationCallOrder[0]);
   });
 
   it('has an English host message for every cut-out card string, with its run-time values', () => {

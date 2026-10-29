@@ -116,8 +116,11 @@ export const faceFraction = (face: CutoutFace): [number, number, number, number]
   if (!(width > 0 && height > 0)) {
     return null;
   }
-  const box = [face.boundingBoxX1 / width, face.boundingBoxY1 / height, face.boundingBoxX2 / width, face.boundingBoxY2 / height].map(
-    (value) => Math.max(0, Math.min(1, value)),
-  ) as [number, number, number, number];
+  const box = [
+    face.boundingBoxX1 / width,
+    face.boundingBoxY1 / height,
+    face.boundingBoxX2 / width,
+    face.boundingBoxY2 / height,
+  ].map((value) => Math.max(0, Math.min(1, value))) as [number, number, number, number];
   return box[0] < box[2] && box[1] < box[3] ? box : null;
 };

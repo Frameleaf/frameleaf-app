@@ -30,11 +30,11 @@ import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
 import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
+import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
+import type { CutoutEngineString } from './cutout-strings';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
 import type { TranscriptEngineString } from './transcript-strings';
-import type { CutoutEngineString } from './cutout-strings';
-import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
 
 /* ------------------------------------------------------------------ */
 /* What the host tells the engine                                       */

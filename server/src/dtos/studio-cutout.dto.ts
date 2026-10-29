@@ -31,9 +31,23 @@ const StudioCutoutSubjectsQuerySchema = z
 
 const StudioCutoutPointSchema = z
   .object({
-    sourceSeconds: z.number().min(0).describe('When in the source video the point was painted, in seconds').meta({ format: 'double' }),
-    x: z.number().min(0).max(1).describe('Across the picture, 0 at the left edge and 1 at the right').meta({ format: 'double' }),
-    y: z.number().min(0).max(1).describe('Down the picture, 0 at the top and 1 at the bottom').meta({ format: 'double' }),
+    sourceSeconds: z
+      .number()
+      .min(0)
+      .describe('When in the source video the point was painted, in seconds')
+      .meta({ format: 'double' }),
+    x: z
+      .number()
+      .min(0)
+      .max(1)
+      .describe('Across the picture, 0 at the left edge and 1 at the right')
+      .meta({ format: 'double' }),
+    y: z
+      .number()
+      .min(0)
+      .max(1)
+      .describe('Down the picture, 0 at the top and 1 at the bottom')
+      .meta({ format: 'double' }),
     label: z.union([z.literal(0), z.literal(1)]).describe('1 adds to the subject, 0 takes away'),
   })
   .meta({ id: 'StudioCutoutPointDto' });
@@ -58,8 +72,16 @@ const StudioCutoutStatusSchema = z
 const StudioCutoutMatteSchema = z
   .object({
     importId: z.uuid().describe('The matte, kept with the project as a file: frames side by side, row after row'),
-    startSeconds: z.number().min(0).describe('Where the followed part of the source starts, in seconds').meta({ format: 'double' }),
-    durationSeconds: z.number().positive().describe('How long the followed part is, in seconds').meta({ format: 'double' }),
+    startSeconds: z
+      .number()
+      .min(0)
+      .describe('Where the followed part of the source starts, in seconds')
+      .meta({ format: 'double' }),
+    durationSeconds: z
+      .number()
+      .positive()
+      .describe('How long the followed part is, in seconds')
+      .meta({ format: 'double' }),
     fps: z.number().positive().describe('Matte frames a second').meta({ format: 'double' }),
     frames: z.int().min(1).describe('Matte frames in the file'),
     columns: z.int().min(1).describe('Matte frames in each row of the file'),

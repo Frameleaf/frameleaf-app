@@ -11,16 +11,46 @@ export const CUTOUT_ENGINE_STRINGS = {
   cutoutBackground: { host: 'frameleaf_studio_cutout_background', engine: 'cutout.background' },
   cutoutBackgroundColour: { host: 'frameleaf_studio_cutout_background_colour', engine: 'cutout.backgroundColour' },
   cutoutBackgroundPhoto: { host: 'frameleaf_studio_cutout_background_photo', engine: 'cutout.backgroundPhoto' },
-  cutoutBackgroundsBlurLabel: { host: 'frameleaf_studio_cutout_backgrounds_blur_label', engine: 'cutout.backgrounds.blur.label' },
-  cutoutBackgroundsBlurNote: { host: 'frameleaf_studio_cutout_backgrounds_blur_note', engine: 'cutout.backgrounds.blur.note' },
-  cutoutBackgroundsColourLabel: { host: 'frameleaf_studio_cutout_backgrounds_colour_label', engine: 'cutout.backgrounds.colour.label' },
-  cutoutBackgroundsColourNote: { host: 'frameleaf_studio_cutout_backgrounds_colour_note', engine: 'cutout.backgrounds.colour.note' },
-  cutoutBackgroundsKeepLabel: { host: 'frameleaf_studio_cutout_backgrounds_keep_label', engine: 'cutout.backgrounds.keep.label' },
-  cutoutBackgroundsKeepNote: { host: 'frameleaf_studio_cutout_backgrounds_keep_note', engine: 'cutout.backgrounds.keep.note' },
-  cutoutBackgroundsPhotoLabel: { host: 'frameleaf_studio_cutout_backgrounds_photo_label', engine: 'cutout.backgrounds.photo.label' },
-  cutoutBackgroundsPhotoNote: { host: 'frameleaf_studio_cutout_backgrounds_photo_note', engine: 'cutout.backgrounds.photo.note' },
-  cutoutBackgroundsRemoveLabel: { host: 'frameleaf_studio_cutout_backgrounds_remove_label', engine: 'cutout.backgrounds.remove.label' },
-  cutoutBackgroundsRemoveNote: { host: 'frameleaf_studio_cutout_backgrounds_remove_note', engine: 'cutout.backgrounds.remove.note' },
+  cutoutBackgroundsBlurLabel: {
+    host: 'frameleaf_studio_cutout_backgrounds_blur_label',
+    engine: 'cutout.backgrounds.blur.label',
+  },
+  cutoutBackgroundsBlurNote: {
+    host: 'frameleaf_studio_cutout_backgrounds_blur_note',
+    engine: 'cutout.backgrounds.blur.note',
+  },
+  cutoutBackgroundsColourLabel: {
+    host: 'frameleaf_studio_cutout_backgrounds_colour_label',
+    engine: 'cutout.backgrounds.colour.label',
+  },
+  cutoutBackgroundsColourNote: {
+    host: 'frameleaf_studio_cutout_backgrounds_colour_note',
+    engine: 'cutout.backgrounds.colour.note',
+  },
+  cutoutBackgroundsKeepLabel: {
+    host: 'frameleaf_studio_cutout_backgrounds_keep_label',
+    engine: 'cutout.backgrounds.keep.label',
+  },
+  cutoutBackgroundsKeepNote: {
+    host: 'frameleaf_studio_cutout_backgrounds_keep_note',
+    engine: 'cutout.backgrounds.keep.note',
+  },
+  cutoutBackgroundsPhotoLabel: {
+    host: 'frameleaf_studio_cutout_backgrounds_photo_label',
+    engine: 'cutout.backgrounds.photo.label',
+  },
+  cutoutBackgroundsPhotoNote: {
+    host: 'frameleaf_studio_cutout_backgrounds_photo_note',
+    engine: 'cutout.backgrounds.photo.note',
+  },
+  cutoutBackgroundsRemoveLabel: {
+    host: 'frameleaf_studio_cutout_backgrounds_remove_label',
+    engine: 'cutout.backgrounds.remove.label',
+  },
+  cutoutBackgroundsRemoveNote: {
+    host: 'frameleaf_studio_cutout_backgrounds_remove_note',
+    engine: 'cutout.backgrounds.remove.note',
+  },
   cutoutFailed: { host: 'frameleaf_studio_cutout_failed', engine: 'cutout.failed', values: ['name', 'reason'] },
   cutoutFind: { host: 'frameleaf_studio_cutout_find', engine: 'cutout.find', values: ['name'] },
   cutoutFindSubject: { host: 'frameleaf_studio_cutout_find_subject', engine: 'cutout.findSubject' },

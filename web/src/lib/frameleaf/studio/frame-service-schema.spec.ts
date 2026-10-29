@@ -26,6 +26,10 @@ describe('one explicitly versioned Studio service schema', () => {
       ...oldNames,
       'cancelProjectImportPublication',
       'resolveStudioProjectSource',
+      // FL-639: Cut out the subject, optional host services.
+      'listCutoutSubjects',
+      'startCutout',
+      'readCutout',
     ]);
     expect(Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V7, 'resolveStudioProjectSource')).toBe(false);
     for (const name of ['resolveVectorSource', 'vector-sources', '__proto__', 'constructor', 'unknown']) {
