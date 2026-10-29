@@ -216,7 +216,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
           // FL-639 cut out the subject on multicam, motion tracking, colour match, loudness and speed ramps; client-render-engine.ts refuses cut-outs on the linear HDR route, raster unchanged.
           binding.sourceSha256 ===
-            '308e10ee96992b0da5f967281c51fbe3ea90f714a52d688c1a19d33eaf87097b')),
+            '8c198309e4368dea3779cc88c718def0b82c9bbd2dfad13963b9cf8ddfdee0a5')),
     'SOURCE_BROWSER',
   )
   check(

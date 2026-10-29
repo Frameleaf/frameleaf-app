@@ -160,7 +160,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.tsx
-@@ -0,0 +1,283 @@
+@@ -0,0 +1,284 @@
 +import { useEffect, useMemo, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Brush, Eraser, UserSquare } from 'lucide-react'
@@ -265,7 +265,8 @@ new file mode 100644
 +        job = await host.read(job.id)
 +      }
 +      if (job.status === 'failed' || !job.matte) {
-+        toast.error(t('cutout.failed', { name, reason: job.error ?? '' }))
++        const known = job.errorCode === 'faceDetectionOff' || job.errorCode === 'personNotInFirstFrame'
++        toast.error(t('cutout.failed', { name, reason: known ? t(`cutout.errors.${job.errorCode}`) : (job.error ?? '') }))
 +        return
 +      }
 +      if (!(await host.whenMatteReady(job.matte.importId, controller.signal))) {
@@ -1336,11 +1337,11 @@ new file mode 100644
 +      .map((point) => ({ sourceSeconds, x: point.x, y: point.y, label: stroke.label }))
 +  })
 +}
-diff --git a/src/i18n/locales/partials/en/cutout.json b/src/i18n/locales/partials/en/cutout.json
+diff --git a/src/i18n/locales/partials/de/cutout.json b/src/i18n/locales/partials/de/cutout.json
 new file mode 100644
 --- /dev/null
-+++ b/src/i18n/locales/partials/en/cutout.json
-@@ -0,0 +1,35 @@
++++ b/src/i18n/locales/partials/de/cutout.json
+@@ -0,0 +1,54 @@
 +{
 +  "cutout": {
 +    "addToSubject": "Add to subject",
@@ -1348,11 +1349,26 @@ new file mode 100644
 +    "backgroundColour": "Background colour",
 +    "backgroundPhoto": "Background photo",
 +    "backgrounds": {
-+      "blur": { "label": "Blur", "note": "Soft background, like portrait mode." },
-+      "colour": { "label": "Colour", "note": "A solid colour behind the subject." },
-+      "keep": { "label": "Keep", "note": "Subject found and followed; nothing changes yet." },
-+      "photo": { "label": "Photo", "note": "A photo from your library behind the subject." },
-+      "remove": { "label": "Remove", "note": "See-through, to layer the subject over another clip." }
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
 +    },
 +    "failed": "Couldn't cut out {{name}}. {{reason}}",
 +    "find": "Find {{name}}",
@@ -1373,14 +1389,490 @@ new file mode 100644
 +    "subject": "Subject",
 +    "takeAway": "Take away",
 +    "title": "Cut out the subject",
-+    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes."
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/en/cutout.json b/src/i18n/locales/partials/en/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/en/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/es/cutout.json b/src/i18n/locales/partials/es/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/es/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/fr/cutout.json b/src/i18n/locales/partials/fr/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/fr/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/ja/cutout.json b/src/i18n/locales/partials/ja/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ja/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/ko/cutout.json b/src/i18n/locales/partials/ko/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ko/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/pt-BR/cutout.json b/src/i18n/locales/partials/pt-BR/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/pt-BR/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/tr/cutout.json b/src/i18n/locales/partials/tr/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/tr/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/zh/cutout.json b/src/i18n/locales/partials/zh/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/zh/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
 +  }
 +}
 diff --git a/src/shared/state/subject-cutout-host.ts b/src/shared/state/subject-cutout-host.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/state/subject-cutout-host.ts
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,43 @@
 +/**
 + * Frameleaf (FL-639): the host side of Cut out the subject.
 + *
@@ -1397,6 +1889,8 @@ new file mode 100644
 +  status: 'queued' | 'running' | 'completed' | 'failed'
 +  progress: number
 +  error: string | null
++  /** A refusal the card words itself: `faceDetectionOff` or `personNotInFirstFrame`. */
++  errorCode?: string | null
 +  matte: SubjectCutout['matte'] | null
 +}
 +

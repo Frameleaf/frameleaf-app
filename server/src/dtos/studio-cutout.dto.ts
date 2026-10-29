@@ -99,6 +99,12 @@ const StudioCutoutSchema = z
     status: StudioCutoutStatusSchema,
     progress: z.number().min(0).max(100).describe('Frames followed so far, in percent').meta({ format: 'double' }),
     error: z.string().nullable().describe('Why it failed, in words a person can read'),
+    errorCode: z
+      .string()
+      .nullable()
+      .describe(
+        'For a refusal a client words itself: faceDetectionOff (a person needs face recognition) or personNotInFirstFrame',
+      ),
     matte: StudioCutoutMatteSchema.nullable().describe('Once completed: the matte to name on the clip'),
   })
   .meta({ id: 'StudioCutoutDto' });

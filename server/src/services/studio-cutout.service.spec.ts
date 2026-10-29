@@ -341,6 +341,13 @@ describe(StudioCutoutService.name, () => {
       { fps: 10, frames: 20, width: 640, height: 360 },
       expect.any(AbortSignal),
     );
+    // First-frame face detection runs under the cut-out's own deadline.
+    expect(machineLearning.detectFaces).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringMatching(/00001\.jpg$/),
+      { modelName: 'buffalo_l', minScore: 0.7 },
+      expect.any(AbortSignal),
+    );
     const [selection, framePaths, options] = machineLearning.subjectMatte.mock.calls[0];
     expect(selection).toMatchObject({ destinationId });
     expect(framePaths).toHaveLength(3);
@@ -369,24 +376,31 @@ describe(StudioCutoutService.name, () => {
     expect(job.progress).toBe(100);
   });
 
-  it("refuses a person who is not in the clip's first frame, and uses the library box without face detection", async () => {
+  it("refuses a person who is not in the clip's first frame, or when face recognition is off", async () => {
     const elsewhere = setup({ detected: { ...firstFrame, faces: [firstFrame.faces[0]] } });
     const refused = await settled(
       elsewhere.sut,
       (await elsewhere.sut.create(authStub.user1, projectId, { clipId: 'clip', personId: jamie, points: [] })).id,
     );
-    expect(refused.status).toBe('failed');
+    expect(refused).toMatchObject({ status: 'failed', errorCode: 'personNotInFirstFrame' });
     expect(refused.error).toContain("isn't in the clip's first frame");
     expect(elsewhere.machineLearning.subjectMatte).not.toHaveBeenCalled();
 
+    // The library's cover-picture box could be someone else on this clip: no person cut-out without detection.
     const offline = setup({ faceDetection: false });
-    const kept = await settled(
+    const off = await settled(
       offline.sut,
       (await offline.sut.create(authStub.user1, projectId, { clipId: 'clip', personId: jamie, points: [] })).id,
     );
-    expect(kept.status).toBe('completed');
-    expect(offline.machineLearning.detectFaces).not.toHaveBeenCalled();
-    expect(offline.machineLearning.subjectMatte.mock.calls[0][2].seedBox).toEqual([0.4, 0.1, 0.6, 0.3]);
+    expect(off).toMatchObject({ status: 'failed', errorCode: 'faceDetectionOff', matte: null });
+    expect(offline.clips.extractFrames).not.toHaveBeenCalled();
+    expect(offline.machineLearning.subjectMatte).not.toHaveBeenCalled();
+    // Main subject still works.
+    const main = await settled(
+      offline.sut,
+      (await offline.sut.create(authStub.user1, projectId, { clipId: 'clip', personId: null, points: [] })).id,
+    );
+    expect(main).toMatchObject({ status: 'completed', errorCode: null });
   });
 
   it('holds the per-person limit for creations still being admitted', async () => {

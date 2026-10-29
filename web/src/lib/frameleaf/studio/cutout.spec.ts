@@ -71,7 +71,20 @@ describe('FL-639 Cut out the subject (host)', () => {
     await expect(services.startCutout(request)).resolves.toMatchObject({ id: 'c1', status: 'queued' });
     expect(server.create).toHaveBeenCalledWith(projectId, request);
 
-    await expect(services.readCutout('c1')).resolves.toMatchObject({ status: 'running', progress: 50, matte: null });
+    await expect(services.readCutout('c1')).resolves.toMatchObject({
+      status: 'running',
+      progress: 50,
+      errorCode: null,
+      matte: null,
+    });
+    server.get.mockResolvedValueOnce({
+      id: 'c1',
+      status: 'failed',
+      progress: 5,
+      error: 'off',
+      errorCode: 'faceDetectionOff',
+    });
+    await expect(services.readCutout('c1')).resolves.toMatchObject({ status: 'failed', errorCode: 'faceDetectionOff' });
     expect(matteKept).not.toHaveBeenCalled();
 
     server.get.mockResolvedValueOnce({

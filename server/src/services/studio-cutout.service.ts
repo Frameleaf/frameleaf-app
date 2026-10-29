@@ -60,6 +60,7 @@ type Job = {
   status: StudioCutoutStatus;
   progress: number;
   error: string | null;
+  errorCode: string | null;
   matte: StudioCutoutMatte | null;
   settledAt: number | null;
 };
@@ -70,6 +71,19 @@ type FaceDetector = {
   selection: Awaited<ReturnType<typeof selectMlDestination>>;
   options: { modelName: string; minScore: number };
 };
+
+/**
+ * A refusal the editor words itself in the person's language: `code` is stable (`StudioCutoutDto.errorCode`),
+ * the message is the English for logs and other clients.
+ */
+class CutoutRefusal extends BadRequestException {
+  constructor(
+    readonly code: 'faceDetectionOff' | 'personNotInFirstFrame',
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 /** A cut-out that outlived its deadline: the worker stalled or the clip was too long for it. */
 class CutoutDeadlineError extends Error {}
@@ -179,6 +193,7 @@ export class StudioCutoutService {
       status: 'queued',
       progress: 0,
       error: null,
+      errorCode: null,
       matte: null,
       settledAt: null,
     };
@@ -219,6 +234,15 @@ export class StudioCutoutService {
       cutoutDeadlineMs(input.plan.frames),
     );
     try {
+      // A named person is found again on the clip's first frame; without face detection on this network
+      // the library's cover-picture box could seed someone else, so the cut-out is refused instead.
+      const detector = input.seed ? await this.faceDetector() : null;
+      if (input.seed && !detector) {
+        throw new CutoutRefusal(
+          'faceDetectionOff',
+          'Turn on face recognition on this server or a computer at home to follow a person, or choose Main subject.',
+        );
+      }
       const frameFolder = await mkdtemp(path.join(tmpdir(), 'frameleaf-cutout-'));
       folder = frameFolder;
       const { plan } = input;
@@ -241,7 +265,10 @@ export class StudioCutoutService {
       const layout: CutoutPlan = { ...plan, frames, columns, rows: Math.ceil(frames / columns) };
       // The library's face box is from the video's cover picture, not this clip's first frame: find the
       // person again there, so SAM2 starts from them and not from whoever stands where they stood.
-      const seedBox = input.seed ? await this.firstFrameSeed(input.seed, framePaths[0], controller.signal) : null;
+      const seedBox =
+        input.seed && detector
+          ? await this.firstFrameSeed(detector, input.seed, framePaths[0], controller.signal)
+          : null;
       job.progress = 5;
       const mattes: Buffer[] = Array.from({ length: frames });
       await this.machineLearning.subjectMatte(
@@ -289,6 +316,7 @@ export class StudioCutoutService {
       job.status = 'completed';
     } catch (error) {
       job.status = 'failed';
+      job.errorCode = error instanceof CutoutRefusal ? error.code : null;
       job.error = readableFailure(
         controller.signal.reason instanceof CutoutDeadlineError ? controller.signal.reason : error,
       );
@@ -309,21 +337,19 @@ export class StudioCutoutService {
    * there, the one closest to their library face (by face recognition), or failing an embedding the one
    * nearest their library box. Without face detection on this network the library box is used as is.
    */
-  private async firstFrameSeed(seed: FaceSeed, framePath: string, signal: AbortSignal) {
-    const detector = await this.faceDetector();
-    if (!detector) {
-      return seed.box;
-    }
+  private async firstFrameSeed(detector: FaceDetector, seed: FaceSeed, framePath: string, signal: AbortSignal) {
     signal.throwIfAborted();
     const reference = await this.persons.getFaceForFacialRecognitionJob(seed.faceId);
-    const detected = await this.machineLearning.detectFaces(detector.selection, framePath, detector.options);
+    signal.throwIfAborted();
+    const detected = await this.machineLearning.detectFaces(detector.selection, framePath, detector.options, signal);
     const box = matchFirstFrameFace(
       detected,
       seed.box,
       (reference as { faceSearch?: { embedding?: string } | null } | undefined)?.faceSearch?.embedding ?? null,
     );
     if (!box) {
-      throw new BadRequestException(
+      throw new CutoutRefusal(
+        'personNotInFirstFrame',
         "The person isn't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject.",
       );
     }
@@ -348,7 +374,7 @@ export class StudioCutoutService {
       const { modelName, minScore } = machineLearning.facialRecognition;
       return { selection, options: { modelName, minScore } };
     } catch (error) {
-      this.logger.debug(`Studio cut-out seeds from the library face: ${(error as Error)?.message ?? error}`);
+      this.logger.debug(`Studio cut-out has no face detection: ${(error as Error)?.message ?? error}`);
       return null;
     }
   }
@@ -467,6 +493,7 @@ const toDto = (job: Job): StudioCutoutDto => ({
   status: job.status,
   progress: job.progress,
   error: job.error,
+  errorCode: job.errorCode,
   matte: job.matte,
 });
 

@@ -186,15 +186,21 @@ class TestStream:
             matteWidth=16,
             matteHeight=12,
         )
+
         # The endpoint advances the stream on whichever pool thread is free: a new thread for every
         # step here, so inference mode must not be carried across a yield.
+        def step() -> tuple[dict[str, Any] | None, bool]:
+            item = next(stream, None)
+            # Checked on the worker thread that ran the step: a leaked mode would stay on here.
+            return item, torch.is_inference_mode_enabled()
+
         items = []
         while True:
             with ThreadPoolExecutor(max_workers=1) as pool:
-                item = pool.submit(next, stream, None).result()
+                item, leaked = pool.submit(step).result()
+            assert not leaked
             if item is None:
                 break
-            assert not torch.is_inference_mode_enabled()
             items.append(item)
         frames = [item for item in items if item["type"] == "frame"]
         assert [item["index"] for item in frames] == [0, 1, 2]

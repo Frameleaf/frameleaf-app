@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
   import BackgroundWorkRows from '$lib/components/frameleaf/BackgroundWorkRows.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -389,6 +390,8 @@
       {/if}
     </div>
   </header>
+
+  <SpokenWordsActivity />
 
   {#if activitySession.unreachable}
     <div class="fla-offline" role="status">

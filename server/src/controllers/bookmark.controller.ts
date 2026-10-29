@@ -2,7 +2,14 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { BookmarkCreateDto, BookmarkResponseDto, BookmarkTagsDto, BookmarkUpdateDto } from 'src/dtos/bookmark.dto.js';
+import {
+  BookmarkCreateDto,
+  BookmarkPreviewRequestDto,
+  BookmarkPreviewResponseDto,
+  BookmarkResponseDto,
+  BookmarkTagsDto,
+  BookmarkUpdateDto,
+} from 'src/dtos/bookmark.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { BookmarkService } from 'src/services/bookmark.service.js';
@@ -18,6 +25,19 @@ export class BookmarkController {
   @Endpoint({ summary: 'Create a bookmark', history: new HistoryBuilder().added('v3') })
   createBookmark(@Auth() auth: AuthDto, @Body() dto: BookmarkCreateDto): Promise<BookmarkResponseDto> {
     return this.service.create(auth, dto);
+  }
+
+  @Post('preview')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.BookmarkCreate })
+  @Endpoint({
+    summary: "Read a public page's title and picture",
+    description:
+      'For Save a link. Only public http(s) addresses are read; private, loopback and link-local addresses are refused, also after redirects. Nothing is stored.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  previewBookmark(@Auth() auth: AuthDto, @Body() dto: BookmarkPreviewRequestDto): Promise<BookmarkPreviewResponseDto> {
+    return this.service.preview(auth, dto);
   }
 
   @Get(':id')

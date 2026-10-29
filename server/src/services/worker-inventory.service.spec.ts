@@ -108,6 +108,17 @@ describe(WorkerInventoryService.name, () => {
     );
   });
 
+  it('does not expose internal speech as a public runner kind or count', async () => {
+    operations.getClaimants.mockResolvedValue([
+      { workerId: 'speech-only', kind: MediaOperationKind.SpeechTranscription, count: 3, lastHeartbeatAt: null },
+      { workerId: 'restoration', kind: MediaOperationKind.Restoration, count: 2, lastHeartbeatAt: null },
+    ]);
+    const result = await sut.getInventory();
+    expect(result.runners).toEqual([
+      { workerId: 'restoration', kinds: [MediaOperationKind.Restoration], activeOperations: 2, lastHeartbeatAt: null },
+    ]);
+  });
+
   it('admits Frameleaf Cloud work with the chosen model, and names the Studio AI model still missing (FL-186)', async () => {
     const facts = mlDestinationStub.frameleafCloudConsented.lastProbeCloud!;
     const workloads = [MlWorkload.Enrichment, MlWorkload.StudioAi];

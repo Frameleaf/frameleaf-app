@@ -48,7 +48,7 @@ import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
 /* -------------------------------------------------------------------------- */
 
 /** The palette's search modes: smart search, "All text" (every text field) or one text field. */
-export type PaletteMode = 'smart' | 'all' | DiscoveryTextField;
+export type PaletteMode = 'speech' | 'smart' | 'all' | DiscoveryTextField;
 
 export const PALETTE_MODES: readonly {
   value: PaletteMode;
@@ -56,6 +56,7 @@ export const PALETTE_MODES: readonly {
   /** @mdi/js icon name, matching `SearchPalette.jsx` `searchModes`. */
   icon: 'smart' | 'all' | 'file' | 'description' | 'ocr' | 'path';
 }[] = [
+  { value: 'speech', labelKey: 'frameleaf_speech_title', icon: 'description' },
   { value: 'smart', labelKey: 'frameleaf_search_mode_smart', icon: 'smart' },
   { value: 'all', labelKey: 'frameleaf_search_mode_all_text', icon: 'all' },
   { value: 'originalFileName', labelKey: 'frameleaf_search_mode_filename', icon: 'file' },
@@ -69,9 +70,12 @@ export const PALETTE_MODES: readonly {
  * photos is only read while text recognition (OCR) is on. The palette offers a mode, an example or
  * an operator only when a search with it can find something.
  */
-export type PaletteCapabilities = { smartSearch: boolean; ocr: boolean };
+export type PaletteCapabilities = { smartSearch: boolean; ocr: boolean; speech?: boolean };
 
-export const isPaletteModeAvailable = (mode: PaletteMode, { smartSearch, ocr }: PaletteCapabilities) => {
+export const isPaletteModeAvailable = (mode: PaletteMode, { smartSearch, ocr, speech }: PaletteCapabilities) => {
+  if (mode === 'speech') {
+    return speech === true;
+  }
   if (mode === 'smart') {
     return smartSearch;
   }
@@ -923,8 +927,8 @@ export const compilePaletteQuery = (
   result.filter = { ...result.filter, ...structuredClone(parsed.filter) };
   const text = parsed.text.trim();
   delete result.textField;
-  if (mode === 'smart') {
-    result.mode = 'smart';
+  if (mode === 'smart' || mode === 'speech') {
+    result.mode = mode;
     result.text = text;
     return result;
   }
@@ -962,8 +966,8 @@ export const readPaletteState = (query: DiscoveryQuery): PaletteState => {
   }
   const input = base.text;
   const mode: PaletteMode =
-    base.mode === 'smart'
-      ? 'smart'
+    base.mode === 'smart' || base.mode === 'speech'
+      ? base.mode
       : base.filter.libraryScope === LibraryViewScope.Design && !base.textField
         ? 'all'
         : discoveryTextField(base);

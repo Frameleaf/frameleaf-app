@@ -99,7 +99,7 @@ export function compositionSourcesFor(sourceSha256) {
         'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
     }
   // FL-639 cut out the subject on multicam, motion tracking, colour match, loudness and speed ramps; client-render-engine.ts refuses cut-outs on the linear HDR route, raster unchanged.
-  if (sourceSha256 === '308e10ee96992b0da5f967281c51fbe3ea90f714a52d688c1a19d33eaf87097b')
+  if (sourceSha256 === '8c198309e4368dea3779cc88c718def0b82c9bbd2dfad13963b9cf8ddfdee0a5')
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':

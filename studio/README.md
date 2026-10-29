@@ -218,8 +218,8 @@ rectangle drawn on the preview with the shape tool, while the target (a title, o
 which moves a blur region) keeps its own offset from that box. Parented targets are refused, because
 tracking writes canvas positions. During tracking the source clip's timeline bar shows progress; the
 result marks the tracked range, or the lost range in red, until it is applied or discarded. Each applied
-track is recorded on the target as `motionTracks` (`{ applicationId, algorithm, sourceId, keyFrames,
-lostFrames }`; protocol 12.6 note), so Remove still works after save and reopen, when keyframes have
+track is recorded on the target as `motionTracks: [{ applicationId, algorithm, sourceId, keyFrames,
+lostFrames }]` (protocol 12.6 note), so Remove still works after save and reopen, when keyframes have
 lost their tags: it deletes x, y, width and height keys at the recorded frames, leaving other keys
 alone. Tests cover the separate box, parented and invalid boxes, the lost-range overlay and
 remove-after-reopen. Preview/export pixel comparisons and browser journeys remain open.

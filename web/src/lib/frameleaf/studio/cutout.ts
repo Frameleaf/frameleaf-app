@@ -29,6 +29,8 @@ export type StudioCutoutState = {
   status: 'queued' | 'running' | 'completed' | 'failed';
   progress: number;
   error: string | null;
+  /** A refusal the editor words itself: `faceDetectionOff` or `personNotInFirstFrame`. */
+  errorCode: string | null;
   matte: StudioCutoutMatte | null;
 };
 
@@ -68,6 +70,7 @@ type CutoutDto = {
   status: StudioCutoutState['status'];
   progress: number;
   error?: string | null;
+  errorCode?: string | null;
   matte?: StudioCutoutMatte | null;
 };
 
@@ -77,6 +80,7 @@ export const toStudioCutoutState = (dto: CutoutDto): StudioCutoutState => ({
   status: dto.status,
   progress: dto.progress,
   error: dto.error ?? null,
+  errorCode: dto.errorCode ?? null,
   matte: dto.matte
     ? {
         importId: dto.matte.importId,

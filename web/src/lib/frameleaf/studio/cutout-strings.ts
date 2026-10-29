@@ -71,6 +71,14 @@ export const CUTOUT_ENGINE_STRINGS = {
   cutoutTakeAway: { host: 'frameleaf_studio_cutout_take_away', engine: 'cutout.takeAway' },
   cutoutTitle: { host: 'frameleaf_studio_cutout_title', engine: 'cutout.title' },
   cutoutWhereItRuns: { host: 'frameleaf_studio_cutout_where_it_runs', engine: 'cutout.whereItRuns' },
+  cutoutErrorsFaceDetectionOff: {
+    host: 'frameleaf_studio_cutout_errors_face_detection_off',
+    engine: 'cutout.errors.faceDetectionOff',
+  },
+  cutoutErrorsPersonNotInFirstFrame: {
+    host: 'frameleaf_studio_cutout_errors_person_not_in_first_frame',
+    engine: 'cutout.errors.personNotInFirstFrame',
+  },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 
 export type CutoutEngineString = keyof typeof CUTOUT_ENGINE_STRINGS;
