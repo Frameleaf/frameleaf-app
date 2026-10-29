@@ -88,7 +88,7 @@ const BrowserExtensionSignInErrorSchema = z
 
 const BrowserExtensionSignInInfoSchema = z
   .object({
-    version: z.literal(1).describe('The extension sign-in this server supports'),
+    version: z.int().describe('The extension sign-in this server supports (1)'),
   })
   .meta({ id: 'BrowserExtensionSignInInfoDto' });
 
