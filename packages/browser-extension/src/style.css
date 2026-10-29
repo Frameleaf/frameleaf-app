@@ -906,6 +906,9 @@ details.source[open] {
   position: relative;
   width: 36px;
   height: 22px;
+  /* the shared .frameleaf touch-target rule would stretch it to 44px; the whole row is the target */
+  min-width: 36px;
+  min-height: 22px;
   margin: 0;
   border-radius: 11px;
   background: var(--fl-border-strong);
