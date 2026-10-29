@@ -1,6 +1,14 @@
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
 import {
+  isStudioCutoutClipId,
+  isStudioCutoutId,
+  isStudioCutoutRequest,
+  type StudioCutoutRequest,
+  type StudioCutoutState,
+  type StudioCutoutSubjectRef,
+} from './cutout';
+import {
   isStudioProjectImportUpload,
   isStudioPublicationId,
   isStudioEditorScope as isPublicationEditorScope,
@@ -92,6 +100,10 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V8 = Object.freeze({
     isPublicationEditorScope(args[2]),
   resolveStudioProjectSource: (args: unknown[]) =>
     args.length === 2 && isStudioSourceRequest(args[0]) && isStudioEditorScope(args[1]),
+  // FL-639: Cut out the subject. Optional host services; an older host answers them as unknown.
+  listCutoutSubjects: (args: unknown[]) => args.length === 1 && isStudioCutoutClipId(args[0]),
+  startCutout: (args: unknown[]) => args.length === 1 && isStudioCutoutRequest(args[0]),
+  readCutout: (args: unknown[]) => args.length === 1 && isStudioCutoutId(args[0]),
 });
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
   commitEditorDraft: {
@@ -107,6 +119,9 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
     args: [request: StudioSourceResolutionRequestDto, scope: StudioEditorScope];
     result: StudioSourceResolutionDto;
   };
+  listCutoutSubjects: { args: [clipId: string]; result: StudioCutoutSubjectRef[] };
+  startCutout: { args: [request: StudioCutoutRequest]; result: StudioCutoutState };
+  readCutout: { args: [cutoutId: string]; result: StudioCutoutState };
 };
 export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V8;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };

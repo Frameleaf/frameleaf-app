@@ -233,6 +233,18 @@ const serviceCalls: ServiceHandlers = {
     );
   },
   authorizeGeneratedMedia: () => Promise.resolve(false),
+  listCutoutSubjects: (services, args) =>
+    services.listCutoutSubjects && STUDIO_FRAME_SERVICE_SCHEMA_V8.listCutoutSubjects(args)
+      ? services.listCutoutSubjects(args[0])
+      : Promise.reject(new Error('CUTOUT_UNAVAILABLE')),
+  startCutout: (services, args) =>
+    services.startCutout && STUDIO_FRAME_SERVICE_SCHEMA_V8.startCutout(args)
+      ? services.startCutout(args[0])
+      : Promise.reject(new Error('CUTOUT_UNAVAILABLE')),
+  readCutout: (services, args) =>
+    services.readCutout && STUDIO_FRAME_SERVICE_SCHEMA_V8.readCutout(args)
+      ? services.readCutout(args[0])
+      : Promise.reject(new Error('CUTOUT_UNAVAILABLE')),
   submitCommands: (services, [envelopes]) =>
     services.submitCommands(Array.isArray(envelopes) ? (envelopes as StudioCommandEnvelope[]) : []),
   stageDraft: (services, [graph, commandIds, baseRevision, graphVersion]) => {

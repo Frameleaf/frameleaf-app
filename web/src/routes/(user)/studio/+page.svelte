@@ -11,7 +11,7 @@
    */
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@frameleaf/ui';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -31,6 +31,7 @@
   } from '$lib/frameleaf/studio/assets';
   import { createStudioSourceResolution, studioSourceJson } from '$lib/frameleaf/studio/source-resolution';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import { createStudioCutoutServices } from '$lib/frameleaf/studio/cutout';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { decideStudioDraft, studioDraftHeld, studioDraftResult } from '$lib/frameleaf/studio/draft-staging';
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
@@ -94,7 +95,10 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetRestorationMode,
+    createStudioCutout,
     createStudioExport,
+    getStudioCutout,
+    getStudioCutoutSubjects,
     getMediaOperation,
     resolveStudioProjectSource,
     getStudioRestoredVersion,
@@ -846,8 +850,24 @@
     resolve: (id, studioSourceResolutionRequestDto, signal) =>
       resolveStudioProjectSource({ id, studioSourceResolutionRequestDto }, { signal }),
   });
+  // FL-639: Cut out the subject. A completed cut-out's matte is a project file; reload the files first.
+  const cutouts = createStudioCutoutServices({
+    projectId: () => project.id,
+    api: {
+      subjects: (id, clipId) => getStudioCutoutSubjects({ id, clipId }),
+      create: (id, studioCutoutCreateDto) => createStudioCutout({ id, studioCutoutCreateDto }),
+      get: (id, cutoutId) => getStudioCutout({ id, cutoutId }),
+    },
+    matteKept: async () => {
+      const loaded = await loadStudioProjectImports(project.id);
+      const loadedIds = new Set(loaded.map((item) => item.id));
+      projectImports = [...loaded, ...projectImports.filter((item) => !loadedIds.has(item.id))];
+      await tick();
+    },
+  });
   const services: StudioHostServices = {
     resolveStudioProjectSource: resolveSource,
+    ...cutouts,
     submitCommands: (envelopes) => bridge.submit(envelopes),
     stageDraft,
     commitEditorDraft: async (graph, baseRevision, scope) => {

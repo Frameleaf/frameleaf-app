@@ -99,6 +99,7 @@ import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
 import { publishScopeOwner, scopeTimelineContent } from './scope-owner'
 import { createMediaFileRelinker, publishRelinkSources, type RelinkCapture } from './media-file-relink'
 import { registerMediaFileRelink } from '@/features/media-library/stores/media-relinking-actions'
+import { registerSubjectCutoutHost } from '@/shared/state/subject-cutout-host'
 import { captureSnapshot, restoreSnapshot } from '@/features/timeline/stores/commands/snapshot'
 import { useCompositionNavigationStore } from '@/features/timeline/stores/composition-navigation-store'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
@@ -680,6 +681,20 @@ function installMediaRelink(state: Session) {
       }
     },
   })
+  // FL-639: Cut out the subject reaches the server through the host.
+  registerSubjectCutoutHost({
+    subjects: (clipId) => call('listCutoutSubjects', clipId),
+    start: (request) => call('startCutout', request),
+    read: (cutoutId) => call('readCutout', cutoutId),
+    whenMatteReady: async (importId, signal) => {
+      for (let attempt = 0; attempt < 150 && !signal.aborted; attempt++) {
+        if (blobUrlManager.get(importId)) return true
+        await new Promise((resolve) => setTimeout(resolve, 200))
+      }
+      return Boolean(blobUrlManager.get(importId))
+    },
+  })
+  state.unsubscribe.push(() => registerSubjectCutoutHost(null))
   state.unsubscribe.push(
     registerMediaFileRelink(async (id) => {
       const success = await relink(id)

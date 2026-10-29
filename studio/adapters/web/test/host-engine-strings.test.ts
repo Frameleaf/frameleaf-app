@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 import { changeAppLanguage, i18n } from '@/i18n'
 import { TRANSCRIPT_ENGINE_STRINGS, transcriptEngineStrings } from '@frameleaf/host/transcript-strings'
+import { CUTOUT_ENGINE_STRINGS } from '@frameleaf/host/cutout-strings'
 import { applyHostEngineStrings } from '../src/host-engine-strings'
 
 describe('FL-450 host-translated engine messages', () => {
@@ -27,6 +28,17 @@ describe('FL-450 host-translated engine messages', () => {
     for (const entry of Object.values(TRANSCRIPT_ENGINE_STRINGS)) {
       const english = i18n.t(entry.engine)
       expect(english, entry.engine).not.toBe(entry.engine)
+      const markers = [...(i18n.getResource('en', 'translation', entry.engine) as string).matchAll(/\{\{(\w+)\}\}/g)]
+        .map((match) => match[1])
+        .toSorted()
+      expect(markers, entry.engine).toEqual([...('values' in entry ? entry.values : [])].toSorted())
+    }
+  })
+
+  it('FL-639: every cut-out card string has engine English with the same run-time values', async () => {
+    await changeAppLanguage('en')
+    for (const entry of Object.values(CUTOUT_ENGINE_STRINGS)) {
+      expect(i18n.t(entry.engine), entry.engine).not.toBe(entry.engine)
       const markers = [...(i18n.getResource('en', 'translation', entry.engine) as string).matchAll(/\{\{(\w+)\}\}/g)]
         .map((match) => match[1])
         .toSorted()

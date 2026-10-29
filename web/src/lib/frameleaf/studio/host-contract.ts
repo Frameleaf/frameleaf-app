@@ -33,6 +33,8 @@ import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, St
 import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
 import type { TranscriptEngineString } from './transcript-strings';
+import type { CutoutEngineString } from './cutout-strings';
+import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
 
 /* ------------------------------------------------------------------ */
 /* What the host tells the engine                                       */
@@ -358,7 +360,9 @@ export type StudioAdapterString =
    */
   | 'lockedTrackRefused'
   /** The transcript panel's words (FL-562), written over the engine's English the same way. */
-  | TranscriptEngineString;
+  | TranscriptEngineString
+  /** The cut-out card's words (FL-639), the same way. */
+  | CutoutEngineString;
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 
@@ -513,6 +517,16 @@ export interface StudioHostServices {
    * job followed in Activity (FL-104, FL-106); the editor never renders or saves an export itself.
    */
   requestExport?(kind: 'video'): void;
+  /**
+   * Cut out the subject (FL-639): who the editor's cut-out card can follow in a clip of the head
+   * revision (the named people recognised in it, or the main subject). Optional: without these three
+   * the card is not offered.
+   */
+  listCutoutSubjects?(clipId: string): Promise<StudioCutoutSubjectRef[]>;
+  /** Start following the subject through the clip on this server or a computer at home. */
+  startCutout?(request: StudioCutoutRequest): Promise<StudioCutoutState>;
+  /** Where a cut-out is. A completed one's matte is already among `projectImports` when it answers. */
+  readCutout?(cutoutId: string): Promise<StudioCutoutState>;
 }
 
 /* ------------------------------------------------------------------ */

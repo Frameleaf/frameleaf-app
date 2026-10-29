@@ -1071,6 +1071,24 @@
       "code": "const context = canvas.getContext('2d')",
       "class": "canvas2d-context",
       "reason": "Colour-match working-frame readback (FL-626): SDR projects read the rendered 8-bit canvas; HDR projects read the float route signal instead."
+    },
+    {
+      "file": "features/export/utils/subject-cutout.ts",
+      "code": "const context = canvas.getContext('2d', { willReadFrequently: true })",
+      "class": "canvas2d-context",
+      "reason": "Cut-out matte frame (FL-639): one small 8-bit grayscale matte frame read back to alpha; the matte is coverage, not picture colour."
+    },
+    {
+      "file": "features/export/utils/subject-cutout.ts",
+      "code": "let { canvas, ctx } = rctx.canvasPool.acquire()",
+      "class": "canvas2d-legacy",
+      "reason": "Cut-out staging (FL-639) for the legacy Canvas2D route: the clip, its matte and the background are composed before the clip is drawn."
+    },
+    {
+      "file": "features/export/utils/subject-cutout.ts",
+      "code": "const own = canvas.getContext('2d')",
+      "class": "canvas2d-legacy",
+      "reason": "Cut-out staging (FL-639) on the legacy Canvas2D route, for a target canvas of another size than the pool's."
     }
   ]
 }

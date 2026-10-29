@@ -6104,8 +6104,10 @@
       "frameleaf": {
         "evidence": [
           "0021-chroma-hard-edge.patch",
-          "0026-chroma-hard-edge-precision.patch"
+          "0026-chroma-hard-edge-precision.patch",
+          "0166-subject-cutout.patch"
         ],
+        "note": "FL-639 adds Cut out the subject: one person (from face recognition) or the main subject is followed through a video clip by SAM2.1 video on the server or a home computer, and the clip is drawn through that matte with a blurred, removed, coloured or photo background in preview and export (studio/tools/subject-cutout.browser.mjs).",
         "status": "shipped"
       },
       "id": "readme.effects-masks-compositing.5",

@@ -11,6 +11,7 @@ import {
   TRANSCRIPT_ENGINE_STRINGS,
   type TranscriptEngineString,
 } from '@frameleaf/host/transcript-strings'
+import { CUTOUT_ENGINE_STRINGS, type CutoutEngineString } from '@frameleaf/host/cutout-strings'
 
 type EngineI18n = {
   readonly language?: string
@@ -25,6 +26,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(TRANSCRIPT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<TranscriptEngineString, string>),
+  // The cut-out card (FL-639).
+  ...(Object.fromEntries(
+    Object.entries(CUTOUT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<CutoutEngineString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {
