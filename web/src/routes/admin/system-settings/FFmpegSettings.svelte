@@ -193,14 +193,19 @@
     }
   };
 
+  /** Conversions finished so far, as the queue last said; undefined until the first check. */
+  let finished: number | undefined;
   const readWaiting = async () => {
     try {
       const queue = await getQueue({ name: QueueName.VideoConversion });
       const before = waiting;
       waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
-      // FL-630: while copies are being made, and once more when they are done, the count and the
-      // space they take follow along
-      if (waiting > 0 || before > 0) {
+      const finishedBefore = finished;
+      finished = (queue?.statistics.completed ?? 0) + (queue?.statistics.failed ?? 0);
+      // FL-630: while copies are being made, once more when they are done, and after a copy made
+      // between two checks, the count and the space they take follow along. Only then: the count
+      // reads the whole library.
+      if (waiting > 0 || before > 0 || (finishedBefore !== undefined && finished !== finishedBefore)) {
         void readCopies();
       }
     } catch {

@@ -296,4 +296,39 @@ describe('Video playback copies (FL-366)', () => {
       group('Which videos get a copy').getByRole('button', { name: 'Never make copies', pressed: true }),
     ).toBeInTheDocument();
   });
+
+  it('re-reads the copies only when the conversion queue changed (FL-630)', async () => {
+    vi.useFakeTimers();
+    try {
+      sdkMock.getMediaCopies.mockReset().mockResolvedValue({
+        photos: 0,
+        withoutPreview: 0,
+        videos: 1,
+        withCopy: 0,
+        previewsBytes: null,
+        playbackBytes: 0,
+        measuredAt: null,
+        tonight: [],
+        ...copyMinutes,
+      });
+      draft.store = newStore();
+      render(FFmpegSettings);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(1);
+
+      // nothing happened between two checks: the whole-library count is not read again
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(1);
+
+      // a copy made and finished between two checks
+      sdkMock.getQueue.mockResolvedValue({
+        ...queue(0),
+        statistics: { ...queue(0).statistics, completed: 1 },
+      });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(sdkMock.getMediaCopies).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
