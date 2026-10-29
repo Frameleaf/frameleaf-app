@@ -99,3 +99,26 @@ The gate fails visibly for absent/tampered models, unsupported imports/ABI, no p
 IoU, timeout or egress attempts. A passed fixture cannot establish general subject/sky/thin-edge quality;
 representative photographer, native transform/refinement, failure/retry and resource qualification
 remain required. The real-model provisioning and qualification commands above remain unrun.
+
+## Video cut-outs (FL-639)
+
+Studio's "Cut out the subject" uses the same pinned snapshots through the `subject-matte` visual task
+(`subject_matte.py`, endpoint `/subject-matte`). No new weights are added: the `sam2.1-hiera-small`
+snapshot already carries `video_preprocessor_config.json`, which the native Transformers `Sam2Video`
+model and processor read, and the model loads its cache from this task's `semantic-mask` folder.
+
+- The server sends the clip's frames in order (at most 600, at most 1024 pixels a side) and the seed:
+  the chosen person's face box from the library's face recognition (`seedKind: face`), or `subject`
+  for "Main subject". Florence-2 proposes `person` boxes (or the main foreground subject) on the first
+  frame; the person around the face is the seed, or the face grown to head and shoulders.
+- SAM2.1 video runs in streaming mode, one frame at a time, so memory is bounded by one frame and its
+  memory bank. "Add to subject" / "Take away" are positive / negative points on their own frame and
+  are followed from that frame on.
+- The answer is NDJSON: one grayscale PNG matte per frame at the requested matte size (area-downscaled,
+  so the edge stays soft), with progress lines.
+
+`test_subject_matte.py` runs the real Transformers streaming video code on a synthetic clip with a
+randomly initialised model (Florence-2 stubbed), so it proves the plumbing, not segmentation quality.
+Still unrun, as for photo masks: loading the real snapshot as `Sam2VideoModel`, subject-following
+quality on representative clips, CPU time per frame (roughly one second per frame for the hiera-small
+size is expected on a modern CPU) and peak memory, and optional CUDA.

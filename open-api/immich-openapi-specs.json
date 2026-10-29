@@ -50961,6 +50961,207 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/cutouts": {
+      "post": {
+        "description": "Owner only. Follows one person (from their face) or the main subject through one video clip of the head revision on this server or a computer on your home network, never Frameleaf Cloud. When it completes, the matte is kept with the project as a file; name it on the clip. The original video never changes. Follow the job with `GET /studio/projects/{id}/cutouts/{cutoutId}`.",
+        "operationId": "createStudioCutout",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioCutoutCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCutoutDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cut out the subject in a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/cutouts/subjects": {
+      "get": {
+        "description": "Owner only. The named people face recognition found in the video of one clip on the main timeline of the head revision, largest first, or just the main subject when there is no one.",
+        "operationId": "getStudioCutoutSubjects",
+        "parameters": [
+          {
+            "name": "clipId",
+            "required": true,
+            "in": "query",
+            "description": "A video clip on the main timeline of the head revision",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCutoutSubjectsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List who a Studio cut-out can follow in a clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/cutouts/{cutoutId}": {
+      "get": {
+        "description": "Owner only. Where the cut-out is and, once it completed, the matte to name on the clip.",
+        "operationId": "getStudioCutout",
+        "parameters": [
+          {
+            "name": "cutoutId",
+            "required": true,
+            "in": "path",
+            "description": "Cut-out job id",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Studio project id",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCutoutDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio cut-out",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/duplicate": {
       "post": {
         "description": "Creates a new project of yours whose first version is this project as it is now. The copy is not shared for review. Owner only.",
@@ -134899,6 +135100,285 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "StudioCutoutCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "A video clip on the main timeline of the head revision",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "personId": {
+            "description": "The person to cut out, or null for the main subject",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "points": {
+            "default": [],
+            "description": "Add to subject and Take away points, followed through the shot from where they were painted",
+            "items": {
+              "$ref": "#/components/schemas/StudioCutoutPointDto"
+            },
+            "maxItems": 64,
+            "type": "array"
+          }
+        },
+        "required": [
+          "clipId",
+          "personId"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutDto": {
+        "properties": {
+          "clipId": {
+            "description": "The video clip",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why it failed, in words a person can read",
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "For a refusal a client words itself: faceDetectionOff (a person needs face recognition) or personNotInFirstFrame",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "The cut-out job",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "matte": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioCutoutMatteDto"
+              }
+            ],
+            "description": "Once completed: the matte to name on the clip",
+            "nullable": true
+          },
+          "progress": {
+            "description": "Frames followed so far, in percent",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "description": "The Studio project",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StudioCutoutStatus"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/StudioCutoutSubjectDto"
+          }
+        },
+        "required": [
+          "clipId",
+          "error",
+          "errorCode",
+          "id",
+          "matte",
+          "progress",
+          "projectId",
+          "status",
+          "subject"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutMatteDto": {
+        "properties": {
+          "columns": {
+            "description": "Matte frames in each row of the file",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "durationSeconds": {
+            "description": "How long the followed part is, in seconds",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "fps": {
+            "description": "Matte frames a second",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "frameHeight": {
+            "description": "Height of one matte frame in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "frameWidth": {
+            "description": "Width of one matte frame in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "frames": {
+            "description": "Matte frames in the file",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "importId": {
+            "description": "The matte, kept with the project as a file: frames side by side, row after row",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "startSeconds": {
+            "description": "Where the followed part of the source starts, in seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "columns",
+          "durationSeconds",
+          "fps",
+          "frameHeight",
+          "frameWidth",
+          "frames",
+          "importId",
+          "startSeconds"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutPointDto": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  0
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              }
+            ],
+            "description": "1 adds to the subject, 0 takes away"
+          },
+          "sourceSeconds": {
+            "description": "When in the source video the point was painted, in seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "x": {
+            "description": "Across the picture, 0 at the left edge and 1 at the right",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Down the picture, 0 at the top and 1 at the bottom",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "sourceSeconds",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutStatus": {
+        "description": "Where the cut-out is",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "StudioCutoutSubjectDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/StudioCutoutSubjectKind"
+          },
+          "name": {
+            "description": "The person’s name, for a person subject",
+            "nullable": true,
+            "type": "string"
+          },
+          "personId": {
+            "description": "The person, for a person subject",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "personId"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutSubjectKind": {
+        "description": "A person recognised in the clip, or the main subject when there is no one",
+        "enum": [
+          "person",
+          "subject"
+        ],
+        "type": "string"
+      },
+      "StudioCutoutSubjectsDto": {
+        "properties": {
+          "subjects": {
+            "description": "The named people face recognition found in the clip’s video, or just the main subject",
+            "items": {
+              "$ref": "#/components/schemas/StudioCutoutSubjectDto"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "subjects"
+        ],
+        "type": "object"
+      },
+      "StudioCutoutSubjectsQueryDto": {
+        "properties": {
+          "clipId": {
+            "description": "A video clip on the main timeline of the head revision",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "clipId"
+        ],
         "type": "object"
       },
       "StudioExportAudio": {

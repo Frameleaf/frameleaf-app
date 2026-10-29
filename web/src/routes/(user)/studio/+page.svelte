@@ -31,6 +31,7 @@
   } from '$lib/frameleaf/studio/assets';
   import { createStudioSourceResolution, studioSourceJson } from '$lib/frameleaf/studio/source-resolution';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import { createStudioCutoutServices } from '$lib/frameleaf/studio/cutout';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { decideStudioDraft, studioDraftHeld, studioDraftResult } from '$lib/frameleaf/studio/draft-staging';
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
@@ -103,7 +104,10 @@
     type AssetResponseDto,
     type PersonResponseDto,
     AssetRestorationMode,
+    createStudioCutout,
     createStudioExport,
+    getStudioCutout,
+    getStudioCutoutSubjects,
     getMediaOperation,
     resolveStudioProjectSource,
     getStudioRestoredVersion,
@@ -868,6 +872,30 @@
     resolve: (id, studioSourceResolutionRequestDto, signal) =>
       resolveStudioProjectSource({ id, studioSourceResolutionRequestDto }, { signal }),
   });
+  // FL-639: Cut out the subject. A completed cut-out's matte is a project file; reload the files first.
+  const cutouts = createStudioCutoutServices({
+    projectId: () => project.id,
+    api: {
+      subjects: (id, clipId) => getStudioCutoutSubjects({ id, clipId }),
+      create: (id, studioCutoutCreateDto) => createStudioCutout({ id, studioCutoutCreateDto }),
+      get: (id, cutoutId) => getStudioCutout({ id, cutoutId }),
+    },
+    // The same origin checks as the canonical import load: a sign-out, relock or Save as copy while
+    // the files reload must not write one project's files into another's list.
+    matteKept: async () => {
+      const origin = importOrigin;
+      if (!origin || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
+      }
+      const loaded = await loadStudioProjectImports(origin.scope.projectId, origin.controller.signal);
+      if (origin.controller.signal.aborted || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
+      }
+      const loadedIds = new Set(loaded.map((item) => item.id));
+      projectImports = [...loaded, ...projectImports.filter((item) => !loadedIds.has(item.id))];
+      await tick();
+    },
+  });
   const libraryServices = createStudioLibraryServices({
     language: () => $locale ?? 'en',
     elevated: () => sessionAccess.isElevated,
@@ -882,6 +910,7 @@
   const services: StudioHostServices = {
     ...libraryServices,
     resolveStudioProjectSource: resolveSource,
+    ...cutouts,
     submitCommands: (envelopes) => bridge.submit(envelopes),
     stageDraft,
     commitEditorDraft: async (graph, baseRevision, scope) => {

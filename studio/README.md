@@ -251,8 +251,8 @@ rectangle drawn on the preview with the shape tool, while the target (a title, o
 which moves a blur region) keeps its own offset from that box. Parented targets are refused, because
 tracking writes canvas positions. During tracking the source clip's timeline bar shows progress; the
 result marks the tracked range, or the lost range in red, until it is applied or discarded. Each applied
-track is recorded on the target as `motionTracks` (`{ applicationId, algorithm, sourceId, keyFrames,
-lostFrames }`; protocol 12.6 note), so Remove still works after save and reopen, when keyframes have
+track is recorded on the target as `motionTracks: [{ applicationId, algorithm, sourceId, keyFrames,
+lostFrames }]` (protocol 12.6 note), so Remove still works after save and reopen, when keyframes have
 lost their tags: it deletes x, y, width and height keys at the recorded frames, leaving other keys
 alone. Tests cover the separate box, parented and invalid boxes, the lost-range overlay and
 remove-after-reopen. Preview/export pixel comparisons and browser journeys remain open.
@@ -892,6 +892,10 @@ Patch `0144-transcript-editing.patch` replaces the engine's Transcript tab with 
 ## Locked tracks refuse drags and adds (FL-450)
 
 Patch `0141-locked-track-drop-refusal.patch` makes a lock binding for a person's drags in the editor. Dragging library media, files, a compound clip or a timeline clip over a locked track (or one inside a locked layer group) shows a not-allowed cursor and no drop marker; releasing it adds, moves and duplicates nothing. A drag that would put any dragged clip, or a video's linked sound, on a locked track is refused the same way. Insert and overwrite edits that target a locked track give the same short message, `timeline.track.lockedTrackRefused`. A drag hovering a locked track is announced through a polite status region, and the refusal toast is announced by the editor's toaster. The host translates the message (`lockedTrackRefused` in the host strings, `frameleaf_studio_locked_track_refused`) and the adapter writes it over the engine's English after each language change. The graph command `clip.add` refuses the same inputs in the command layer (protocol 12.3.1). The existing Freecut MIT notice covers the adapted sources and tests.
+
+## Cut out the subject (FL-639)
+
+The Edit inspector's **Cut out the subject** card (patch `0166-subject-cutout.patch`) follows one subject through a video clip: a person face recognition found in the clip, or the main subject. The server (`StudioCutoutService`, `/studio/projects/{id}/cutouts`) reads the part of the source the clip plays a few frames a second (at most 300 frames, clips up to five minutes) and sends the frames only to this server's machine learning or a computer at home, where the `subject-matte` task runs SAM2.1 video from the pinned photo-mask snapshots. The mattes come back as one grayscale PNG kept with the project through the ordinary import admission; the clip's `subjectCutout` names it, and the export worker receives it like any project file. The engine draws the clip through it in `features/export/utils/subject-cutout.ts`, which preview and export share; `studio/tools/subject-cutout.browser.mjs` reads the pixels back in Chromium. Add to subject / Take away paint points on the viewer and make the matte again from that frame on. Not yet: several subjects at once, cut-outs of stills on the timeline, and HDR projects (refused on the linear HDR route rather than drawn uncut).
 
 ## Captions in other languages (FL-641)
 

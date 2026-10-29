@@ -121,6 +121,8 @@ Common optional fields: `originId` (lineage shared by the parts of a split clip)
 
 `generatedId` replaces `mediaId` on an item that shows Frameleaf-generated media (for example a reversed conform). Such an item never carries `mediaId`, `src`, `audioSrc`, `thumbnailUrl`, `waveformData` or any `reverseConform*` field in a stored graph.
 
+**Cut out the subject (FL-639).** A `video` item may carry `subjectCutout`: `{subject, background, colour?, photo?, softness, matte, points?}`. `background` is `keep`, `blur`, `remove`, `colour` or `photo`; `colour` is `#rrggbb`; `photo` is `{mediaId}`, a still the project may read (a library reference, so it is resolved and access-checked like any clip source); `softness` is 0 to 100. `matte` names a project import (`importId`) the server made with `POST /studio/projects/{id}/cutouts`: a grayscale PNG of `frames` matte frames, `frameWidth` x `frameHeight` each, `columns` to a row, one every `1 / fps` seconds of the source from `startSeconds` (white is the subject). The clip is drawn through the matte of the moment shown (the two nearest frames blended) inside its own media rectangle, over the chosen background; outside the matte's window it draws unchanged, and `keep` changes nothing. `remove` makes the rest of the clip see-through. It is not a command: the editor writes the field. **Native rule:** a client that cannot draw a cut-out must refuse to export a graph with a `subjectCutout` other than `keep`, and must preserve the object.
+
 ### 2.5 Unknown fields
 
 - Fields of the project object and of items that this page does not know survive every command unchanged. A native client must carry them through without reordering or rewriting them.
