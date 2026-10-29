@@ -1,3 +1,8 @@
+import {
+  initializeCaptureMenus,
+  registerCaptureMenus,
+  discoverMenuPage,
+} from './context-menus';
 import { wakeDelivery, stopDelivery, deliveryError } from './delivery';
 import {
   listCaptures,
@@ -24,6 +29,7 @@ import {
 } from './api';
 import {
   hasServerAccess,
+  openOptions,
   ensureDeliveryAlarm,
   registerDeliveryAlarm,
   openCapturePreview,
@@ -403,6 +409,42 @@ export function handleMessage(
     }
   });
 }
+async function handleMenu(
+  info: chrome.contextMenus.OnClickData,
+  tab?: chrome.tabs.Tab,
+) {
+  return serialize(async () => {
+    try {
+      const current = await connectionStatus();
+      if (!current || current.status !== 'connected') {
+        await openOptions();
+        return;
+      }
+      if (!(await hasServerAccess(current.binding.origin))) {
+        stopDelivery();
+        clearPreview();
+        await pauseConnection(current.binding);
+        await openOptions();
+        return;
+      }
+      const discovery = await discoverMenuPage(info, tab);
+      const latest = await connectionStatus();
+      if (
+        !latest ||
+        latest.status !== 'connected' ||
+        !sameBinding(latest.binding, current.binding)
+      )
+        throw new CaptureFailure('credential');
+      const preview = createPreview(current.binding, discovery);
+      await openCapturePreview(preview.id);
+    } catch {
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL('capture.html?error=page'),
+      });
+    }
+  });
+}
+registerCaptureMenus(handleMenu);
 registerDeliveryAlarm(wake);
 registerBackground(
   handleMessage,
@@ -410,6 +452,7 @@ registerBackground(
     await initializeStorage();
     await ensureDeliveryAlarm();
     wake();
+    await initializeCaptureMenus();
   },
   () => {
     stopDelivery();

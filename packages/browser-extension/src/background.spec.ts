@@ -1,3 +1,8 @@
+import { discoverMenuPage } from './context-menus';
+vi.mock('./context-menus', async (original) => ({
+  ...(await original<typeof import('./context-menus')>()),
+  discoverMenuPage: vi.fn(),
+}));
 import { wakeDelivery, stopDelivery } from './delivery';
 import { listCaptures } from './queue';
 vi.mock('./delivery', () => ({
@@ -48,6 +53,7 @@ beforeEach(() => {
   vi.stubGlobal('chrome', {
     runtime: {
       id: 'frameleaf',
+      openOptionsPage: vi.fn().mockResolvedValue(undefined),
       getURL: (path: string) => `chrome-extension://frameleaf/${path}`,
       onMessage: event(),
       onInstalled: event(),
@@ -69,6 +75,14 @@ beforeEach(() => {
     },
     permissions: { contains, onRemoved: event() },
     tabs: { create: vi.fn().mockResolvedValue({ id: 10 }) },
+    contextMenus: {
+      removeAll: vi.fn((callback) => callback?.()),
+      create: vi.fn((_properties, callback) => {
+        callback?.();
+        return 'menu';
+      }),
+      onClicked: event(),
+    },
     alarms: { create: vi.fn().mockResolvedValue(undefined), onAlarm: event() },
   });
   vi.mocked(discoverActivePage).mockResolvedValue({
@@ -78,11 +92,71 @@ beforeEach(() => {
     title: 'Inspiration',
     candidates: [],
   });
+  vi.mocked(discoverMenuPage).mockResolvedValue({
+    tabId: 42,
+    documentId: 'menu-doc',
+    pageUrl: 'https://example.com/',
+    title: 'Clicked',
+    candidates: [],
+  });
   vi.mocked(connectServer).mockResolvedValue(binding);
   vi.mocked(getCatalog).mockResolvedValue({ albums: [], tags: [] });
 });
 
 describe('trusted extension operations', () => {
+  it('routes menu events through the bound preview, shows connection settings when disconnected and exposes only static failure URLs', async () => {
+    const { handleMessage } = await import('./background');
+    const clicked = vi.mocked(chrome.contextMenus.onClicked.addListener).mock
+      .calls[0][0];
+    const info = {
+      menuItemId: 'frameleaf-save-page',
+      pageUrl: 'https://example.com/',
+      frameId: 0,
+      editable: false,
+    };
+    const tab = { id: 42, url: info.pageUrl } as chrome.tabs.Tab;
+    clicked(info, tab);
+    await handleMessage({ type: 'status' }, sender);
+    expect(chrome.runtime.openOptionsPage).toHaveBeenCalledOnce();
+    expect(discoverMenuPage).not.toHaveBeenCalled();
+    await handleMessage(
+      { type: 'connect', address: binding.origin, token: 'private-key' },
+      sender,
+    );
+    clicked(info, tab);
+    await handleMessage({ type: 'status' }, sender);
+    expect(discoverMenuPage).toHaveBeenCalledWith(info, tab);
+    const opened = vi.mocked(chrome.tabs.create).mock.calls.at(-1)![0].url!;
+    const id = new URL(opened).searchParams.get('id')!;
+    expect(
+      await handleMessage(
+        { type: 'preview', id },
+        { ...sender, url: 'chrome-extension://frameleaf/capture.html' },
+      ),
+    ).toMatchObject({
+      ok: true,
+      preview: { discovery: { documentId: 'menu-doc', title: 'Clicked' } },
+    });
+    expect(opened).not.toContain('private-key');
+    vi.mocked(discoverMenuPage).mockRejectedValue(
+      new Error('private diagnostic https://secret.example/?token=value'),
+    );
+    clicked(info, tab);
+    await handleMessage({ type: 'status' }, sender);
+    expect(chrome.tabs.create).toHaveBeenLastCalledWith({
+      url: 'chrome-extension://frameleaf/capture.html?error=page',
+    });
+    contains.mockResolvedValue(false);
+    const count = vi.mocked(discoverMenuPage).mock.calls.length;
+    clicked(info, tab);
+    const state = await handleMessage({ type: 'status' }, sender);
+    expect(discoverMenuPage).toHaveBeenCalledTimes(count);
+    expect(state).toMatchObject({
+      ok: true,
+      connection: { status: 'needs-attention', catalog: null },
+    });
+    expect(JSON.stringify(values)).not.toContain('private-key');
+  });
   it('creates nested albums only for the current capture preview and visible parent', async () => {
     const { handleMessage } = await import('./background');
     const popup = { ...sender, url: 'chrome-extension://frameleaf/popup.html' };

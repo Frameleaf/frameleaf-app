@@ -23,6 +23,12 @@
     "open_in_tab": true,
     "page": "options.html"
   },
-  "permissions": ["storage", "activeTab", "scripting", "alarms"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "contextMenus"
+  ],
   "version": "0.1.0"
 }

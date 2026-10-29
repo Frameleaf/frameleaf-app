@@ -115,6 +115,12 @@
     }),
   );
   async function load() {
+    if (new URL(location.href).searchParams.get("error") === "page") {
+      loading = false;
+      error =
+        "Could not inspect the selected page or image. Return to its top-level webpage and try again, or use Save page bookmark from the toolbar.";
+      return;
+    }
     try {
       const reply = await sendRequest({
         type: "preview",

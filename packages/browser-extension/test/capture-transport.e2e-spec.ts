@@ -278,6 +278,15 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       await readFile(join(extensionPath, 'manifest.json'), 'utf8'),
     );
     manifest.host_permissions = ['http://127.0.0.1/*'];
+    // Test-only callback capture exercises the registered production listener; native menu clicks remain a separate gate.
+    await writeFile(
+      join(extensionPath, 'menu-background-test.js'),
+      `
+      const add=chrome.contextMenus.onClicked.addListener.bind(chrome.contextMenus.onClicked);
+      chrome.contextMenus.onClicked.addListener=(listener)=>{globalThis.frameleafMenuClick=listener;add(listener);};
+    ` + (await readFile(join(extensionPath, 'background.js'), 'utf8')),
+    );
+    manifest.background.service_worker = 'menu-background-test.js';
     await writeFile(
       join(extensionPath, 'manifest.json'),
       JSON.stringify(manifest),
@@ -751,6 +760,134 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       path: testInfo.outputPath('bookmark-saved.png'),
       fullPage: true,
     });
+    await popup.bringToFront();
+    const menuImageOpened = context.waitForEvent('page');
+    const clickedImage = await content.locator('img').getAttribute('src');
+    await restartedWorker.evaluate(
+      async ({ url, src }) => {
+        const tab = (await chrome.tabs.query({})).find(
+          (tab) => tab.url === url,
+        )!;
+        (
+          globalThis as typeof globalThis & {
+            frameleafMenuClick: (
+              info: chrome.contextMenus.OnClickData,
+              tab: chrome.tabs.Tab,
+            ) => void;
+          }
+        ).frameleafMenuClick(
+          {
+            menuItemId: 'frameleaf-save-image',
+            pageUrl: url,
+            srcUrl: src!,
+            mediaType: 'image',
+            frameId: 0,
+            editable: false,
+          },
+          tab,
+        );
+      },
+      { url: content.url(), src: clickedImage },
+    );
+    const menuImagePage = await menuImageOpened;
+    await expect(
+      menuImagePage.getByRole('heading', {
+        name: 'Collect images',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(menuImagePage.locator('.candidate-list li')).toHaveCount(1);
+    await menuImagePage
+      .getByLabel('Album', { exact: true })
+      .selectOption(nestedId);
+    await menuImagePage
+      .locator('.candidate-list')
+      .getByRole('checkbox')
+      .check();
+    await menuImagePage
+      .getByRole('button', { name: 'Save selected images', exact: true })
+      .click();
+    await expect(
+      menuImagePage.getByText('Queued 1 image.', { exact: true }),
+    ).toBeVisible();
+    await menuImagePage.close();
+    await expect.poll(() => sourceCount).toBe(5);
+    await expect(
+      popup.locator('.queue-list li').filter({ hasText: 'capture.svg' }),
+    ).toHaveCount(2);
+    await expect(
+      popup
+        .locator('.queue-list li')
+        .filter({ hasText: 'capture.svg' })
+        .first()
+        .getByText('Saved', { exact: true }),
+    ).toBeVisible();
+    const menuPageOpened = context.waitForEvent('page');
+    await restartedWorker.evaluate(async (url) => {
+      const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url)!;
+      await chrome.contextMenus.update('frameleaf-save-page', {});
+      await chrome.contextMenus.update('frameleaf-save-image', {});
+      (
+        globalThis as typeof globalThis & {
+          frameleafMenuClick: (
+            info: chrome.contextMenus.OnClickData,
+            tab: chrome.tabs.Tab,
+          ) => void;
+        }
+      ).frameleafMenuClick(
+        {
+          menuItemId: 'frameleaf-save-page',
+          pageUrl: url,
+          frameId: 0,
+          editable: false,
+        },
+        tab,
+      );
+    }, content.url());
+    const menuPage = await menuPageOpened;
+    await expect(
+      menuPage.getByRole('heading', {
+        name: 'Save page bookmark',
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      menuPage.getByLabel('Bookmark address', { exact: true }),
+    ).toHaveValue(content.url());
+    await menuPage.getByLabel('Album', { exact: true }).selectOption(nestedId);
+    await menuPage
+      .getByRole('button', { name: 'Save page bookmark', exact: true })
+      .click();
+    await expect(
+      menuPage.getByText('Queued 1 bookmark.', { exact: true }),
+    ).toBeVisible();
+    await menuPage.close();
+    await expect.poll(() => sourceCount).toBe(6);
+    const failedMenuOpened = context.waitForEvent('page');
+    await restartedWorker.evaluate(async (url) => {
+      const tab = (await chrome.tabs.query({})).find((tab) => tab.url === url)!;
+      (
+        globalThis as typeof globalThis & {
+          frameleafMenuClick: (
+            info: chrome.contextMenus.OnClickData,
+            tab: chrome.tabs.Tab,
+          ) => void;
+        }
+      ).frameleafMenuClick(
+        {
+          menuItemId: 'frameleaf-save-page',
+          pageUrl: url,
+          frameId: 1,
+          editable: false,
+        },
+        tab,
+      );
+    }, content.url());
+    const failedMenu = await failedMenuOpened;
+    await expect(failedMenu.getByRole('alert')).toContainText(
+      'Could not inspect the selected page or image',
+    );
+    await failedMenu.close();
     const polling = await context.newPage();
     await polling.clock.install();
     await polling.addInitScript(() => {
