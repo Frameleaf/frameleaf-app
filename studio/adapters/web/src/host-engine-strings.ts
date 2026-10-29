@@ -15,6 +15,7 @@ import {
   STABILISE_ENGINE_STRINGS,
   type StabiliseEngineString,
 } from '@frameleaf/host/stabilise-strings'
+import {
   CAPTION_STYLE_ENGINE_STRINGS,
   type CaptionStyleEngineString,
 } from '@frameleaf/host/caption-style-strings'
