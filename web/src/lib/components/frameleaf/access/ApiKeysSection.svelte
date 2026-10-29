@@ -8,7 +8,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import { keyPurpose, summarizePermissions } from '$lib/frameleaf/personal-access';
+  import { keyPermissions, keyPurpose, summarizePermissions } from '$lib/frameleaf/personal-access';
   import { handleDeleteApiKey, handleRotateApiKey } from '$lib/services/api-key.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getApiKeys, Permission, type ApiKeyResponseDto } from '@frameleaf/sdk';
@@ -38,14 +38,15 @@
       : $t('frameleaf_access_key_never_used');
 
   const permissionText = (key: ApiKeyResponseDto) => {
-    if (key.permissions.includes(Permission.All)) {
+    const permissions = keyPermissions(key);
+    if (permissions.includes(Permission.All)) {
       return $t('frameleaf_access_key_full_access');
     }
-    const purpose = keyPurpose(key.permissions);
+    const purpose = keyPurpose(permissions);
     if (purpose !== 'custom') {
       return $t(`frameleaf_access_key_purpose_${purpose.replace('-', '_')}_row` as Translations);
     }
-    const { shown, more } = summarizePermissions(key.permissions);
+    const { shown, more } = summarizePermissions(permissions);
     const list = shown.join(' · ');
     return more > 0 ? $t('frameleaf_access_key_permissions_more', { values: { list, count: more } }) : list;
   };

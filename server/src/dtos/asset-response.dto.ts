@@ -21,6 +21,8 @@ import {
   AssetVisibility,
   AssetVisibilitySchema,
   ChecksumAlgorithm,
+  LibraryScope,
+  LibraryScopeSchema,
 } from 'src/enum.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
@@ -128,6 +130,7 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     isTrashed: z.boolean().describe('Is trashed'),
     isOffline: z.boolean().describe('Is offline'),
     visibility: AssetVisibilitySchema,
+    libraryScope: LibraryScopeSchema.optional(),
     exifInfo: ExifResponseSchema.optional(),
     tags: z.array(TagResponseSchema).optional(),
     people: z.array(PersonResponseSchema).optional(),
@@ -173,6 +176,7 @@ export type MapAsset = {
   isFavorite: boolean;
   isOffline: boolean;
   visibility: AssetVisibility;
+  libraryScope?: LibraryScope;
   /** FL-34: selected by reads that know the lock (`isLocked()` in `src/utils/locked.ts`) */
   isLocked?: boolean | null;
   libraryId: string | null;
@@ -305,6 +309,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     isArchived: visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility,
+    libraryScope: entity.libraryScope,
     duration: entity.duration,
     exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
     livePhotoVideoId: entity.livePhotoVideoId,

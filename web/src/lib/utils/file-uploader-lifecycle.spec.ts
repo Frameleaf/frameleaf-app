@@ -212,6 +212,18 @@ describe('upload preflight lifetime', () => {
     expect(workers[0].terminate).toHaveBeenCalledTimes(1);
   });
 
+  it('does not continue an older upload after the same account signs in again', async () => {
+    workerAction = () => {};
+    const pending = fileUploadHandler({ files: [file] });
+    await vi.waitFor(() => expect(workers).toHaveLength(1));
+    authManager.reset();
+    authManager.setUser({ id: 'owner-a', email: 'a@example.com' } as UserAdminResponseDto);
+    authManager.setPreferences(preferencesFactory.build());
+    workers[0].message({ result: digests });
+    await pending;
+    expect(utils.uploadRequest).not.toHaveBeenCalled();
+  });
+
   it('does not send a file selected by one account after a different account takes over', async () => {
     workerAction = () => {};
     const pending = fileUploadHandler({ files: [file] });

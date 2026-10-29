@@ -1,4 +1,12 @@
-import { getMyApiKey, getMyUser, init, isHttpError, isMalformedResponseError, Permission } from '@frameleaf/sdk';
+import {
+  ApiKeyResponseDto,
+  getMyApiKey,
+  getMyUser,
+  init,
+  isHttpError,
+  isMalformedResponseError,
+  Permission,
+} from '@frameleaf/sdk';
 import { convertPathToPattern, glob } from 'fast-glob';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -35,8 +43,14 @@ export const authenticate = async (options: BaseOptions): Promise<AuthDto> => {
 
 export const s = (count: number) => (count === 1 ? '' : 's');
 
+/** Every permission a key holds; the server lists design permissions in their own field. */
+export const keyPermissions = (key: Pick<ApiKeyResponseDto, 'permissions' | 'designPermissions'>): Permission[] => [
+  ...(key.permissions as string[] as Permission[]),
+  ...((key.designPermissions ?? []) as string[] as Permission[]),
+];
+
 export const requirePermissions = async (permissions: Permission[]) => {
-  const { permissions: granted } = await getMyApiKey();
+  const granted = keyPermissions(await getMyApiKey());
   if (granted.includes(Permission.All)) {
     return;
   }

@@ -136,6 +136,9 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       enabled: true,
       sidebarWeb: true,
     },
+    clients: {
+      enabled: false,
+    },
     memories: {
       enabled: true,
       duration: 5,

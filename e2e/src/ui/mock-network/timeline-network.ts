@@ -241,6 +241,11 @@ export const setupTimelineMockApiRoutes = async (
       const album = getAlbum(timelineRestData, testContext.adminId, timelineRestData.album.id, changes);
       return route.fulfill({ json: { albums: [album], collections: [], spaces: [] } });
     }
+    if (pathname === '/api/albums/hierarchy') {
+      // The same rail data in the nested shape the rail now reads.
+      const album = getAlbum(timelineRestData, testContext.adminId, timelineRestData.album.id, changes);
+      return route.fulfill({ json: { roots: [{ album, children: [] }] } });
+    }
     // Only the album itself: sub-resources (descendant counts, members, ...) are not mocked.
     const albumsMatch = pathname.match(/^\/api\/albums\/(?<albumId>[0-9a-f-]{36})$/);
     if (albumsMatch && request.method() === 'GET') {

@@ -1,4 +1,4 @@
-import { AssetVisibility } from '@frameleaf/sdk';
+import { AssetVisibility, LibraryViewScope, ColorTolerance } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   activeFilterCount,
@@ -394,4 +394,40 @@ describe('structured search results request (FL-58)', () => {
     structuredSearchRequest({ filter });
     expect(filter).toEqual({ petIds: { any: ['a'] } });
   });
+});
+
+it('round-trips free designer scope, color and subtree through the shared saved-query format', () => {
+  const source: DiscoveryQuery = {
+    ...emptyDiscoveryQuery(),
+    filter: {
+      libraryScope: LibraryViewScope.Design,
+      color: { hex: '#609060', tolerance: ColorTolerance.Normal, minWeight: 0.05 },
+      albumSubtreeIds: { any: [albumId] },
+      hasTransparency: { eq: true },
+    },
+  };
+  expect(isDiscoveryFilter(source.filter)).toBe(true);
+  expect(readDiscoveryQuery(new URL(`http://localhost${discoveryUrl(source)}`))).toEqual(source);
+});
+
+it('keeps the workspace scope when clearing user filters and excludes it from the filter badge', () => {
+  const original = {
+    ...emptyDiscoveryQuery(),
+    filter: {
+      libraryScope: LibraryViewScope.Design,
+      color: { hex: '#609060', tolerance: ColorTolerance.Normal, minWeight: 0.05 },
+    },
+  } satisfies DiscoveryQuery;
+  expect(activeFilterCount(original)).toBe(1);
+  expect(withoutDiscoveryFilters(original).filter).toEqual({ libraryScope: LibraryViewScope.Design });
+});
+
+it('round-trips source dimensions, aspect ratio and duration filters', () => {
+  const filter = {
+    width: { gte: 1920 },
+    height: { gte: 1080 },
+    aspectRatio: { gte: 1.7, lte: 1.8 },
+    durationMs: { lte: 30_000 },
+  };
+  expect(isDiscoveryFilter(filter)).toBe(true);
 });

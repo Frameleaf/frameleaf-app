@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { getAlbumInfo, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { libraryUploadScope, searchContextFor } from '$lib/frameleaf/search-context';
   import { page } from '$app/state';
   import { shouldIgnoreEvent } from '$lib/actions/shortcut';
   import '$lib/frameleaf/tokens.css';
@@ -15,16 +17,52 @@
   import { DURATION } from '$lib/frameleaf/tokens';
 
   /**
-   * The card says where the files will go, because it depends on the page: on an album they also
-   * join that album, and in Locked they are uploaded as Locked. The page shows through a frosted
-   * veil rather than being covered, so the album you are dropping into stays in view.
+   * The card says where the files will go, because it depends on the page: on an album or a
+   * collection they also join it, in Boards they join Boards (and the collection open there), and in
+   * Locked they are uploaded as Locked. The page shows through a frosted veil rather than being
+   * covered, so the album you are dropping into stays in view.
+   *
+   * It appears only while files are dragged over the window and never at rest (prototype
+   * `useDragActive`, README point 30): window `dragenter` and `dragleave` are counted for drags that
+   * carry `Files`, and the count resets on drop and on `dragend`.
    */
 
-  let albumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : undefined);
+  const isBoards = $derived(/^\/pro(?:\/|$)/.test(page.url.pathname));
+  /** Boards' current collection: the one album its filter is narrowed to, if there is exactly one. */
+  const boardsAlbumId = $derived.by(() => {
+    if (!isBoards) {
+      return;
+    }
+    const ids = searchContextFor(new URL(page.url.href)).query.filter.albumIds?.any;
+    return ids?.length === 1 ? ids[0] : undefined;
+  });
+  let albumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : isBoards ? boardsAlbumId : undefined);
   let isInLockedFolder = $derived(isLockedFolderRoute(page.route.id));
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+
+  /** A collection open in Boards has no album in the page data, so its name is read once per drag. */
+  let boardsAlbum = $state<{ id: string; name: string | null } | undefined>();
+  const loadBoardsAlbumName = (id: string) => {
+    if (boardsAlbum?.id === id) {
+      return;
+    }
+    boardsAlbum = { id, name: null };
+    void getAlbumInfo({ id })
+      .then((album) => {
+        if (boardsAlbum?.id === id) {
+          boardsAlbum = { id, name: album.albumName.trim() || null };
+        }
+      })
+      .catch(() => {
+        // The card falls back to "this collection"; the drop still goes there.
+      });
+  };
+
   /** The album page's own album, when its loader put one in the page data. */
   const albumName = $derived.by(() => {
+    if (albumId && albumId === boardsAlbumId) {
+      return boardsAlbum?.id === albumId ? boardsAlbum.name : null;
+    }
     const album = albumId ? (page.data as { album?: { id?: string; albumName?: string } } | undefined)?.album : null;
     return album && album.id === albumId ? album.albumName?.trim() || null : null;
   });
@@ -35,38 +73,36 @@
         ? albumName
           ? $t('frameleaf_transfer_drop_title_album', { values: { album: albumName } })
           : $t('frameleaf_transfer_drop_title_this_album')
-        : $t('frameleaf_transfer_drop_title'),
+        : isBoards
+          ? $t('frameleaf_boards_drop_title')
+          : $t('frameleaf_transfer_drop_title'),
   );
   const dropHint = $derived(
     isInLockedFolder
       ? $t('frameleaf_transfer_drop_hint_locked')
       : albumId
         ? $t('frameleaf_transfer_drop_hint_album')
-        : $t('frameleaf_transfer_drop_hint'),
+        : isBoards
+          ? $t('frameleaf_boards_drop_hint')
+          : $t('frameleaf_transfer_drop_hint'),
   );
 
-  let dragStartTarget: EventTarget | null = $state(null);
+  /** Files are being dragged over the window from outside the page. */
+  let dragActive = $state(false);
+  let dragDepth = 0;
   let isInternalDrag = false;
+  const resetDrag = () => {
+    dragDepth = 0;
+    dragActive = false;
+  };
   const dropUploads = getDropUploadContext();
   let mounted = true;
   onDestroy(() => {
     mounted = false;
   });
 
-  const onDragEnter = (e: DragEvent) => {
-    if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
-      dragStartTarget = e.target;
-    }
-  };
-
-  const onDragLeave = (e: DragEvent) => {
-    if (dragStartTarget === e.target) {
-      dragStartTarget = null;
-    }
-  };
-
   const onDrop = async (e: DragEvent) => {
-    dragStartTarget = null;
+    resetDrag();
     await handleDataTransfer(e.dataTransfer);
   };
 
@@ -89,6 +125,10 @@
     const sharedLink = authManager.isSharedLink;
     const { key, slug } = authManager.params;
     const targetAlbumId = albumId;
+    const libraryScope = libraryUploadScope(
+      new URL(page.url.href),
+      (page.data as { album?: AlbumResponseDto } | undefined)?.album,
+    );
     const isLockedAssets = isInLockedFolder;
     const receiveSharedFiles = dropUploads?.capture();
     // Directory reads can outlive the route or session that admitted the drop.
@@ -107,7 +147,7 @@
     if (sharedLink) {
       receiveSharedFiles?.(files);
     } else {
-      await fileUploadHandler({ files, albumId: targetAlbumId, isLockedAssets });
+      await fileUploadHandler({ files, albumId: targetAlbumId, isLockedAssets, libraryScope });
     }
   };
 
@@ -118,7 +158,7 @@
     const entries: FileSystemEntry[] = [];
     const files: File[] = [];
     for (const item of dataTransfer.items) {
-      // eslint-disable-next-line tscompat/tscompat
+      // eslint-disable-next-line tscompat/tscompat -- The directory API is feature-checked above; other browsers use files.
       const entry = item.webkitGetAsEntry();
       if (entry) {
         entries.push(entry);
@@ -132,7 +172,7 @@
     return [...files, ...(await getAllFilesFromTransferEntries(entries, isCurrent))];
   };
 
-  // eslint-disable-next-line tscompat/tscompat
+  // eslint-disable-next-line tscompat/tscompat -- Reading the optional method is the feature check itself.
   const browserSupportsDirectoryUpload = () => typeof DataTransferItem.prototype.webkitGetAsEntry === 'function';
 
   const getAllFilesFromTransferEntries = async (
@@ -188,32 +228,53 @@
     return files;
   };
 
+  const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes('Files');
+
   const ondragstart = () => {
     isInternalDrag = true;
   };
 
   const ondragend = () => {
     isInternalDrag = false;
+    resetDrag();
   };
 
   const ondragenter = (e: DragEvent) => {
-    if (isInternalDrag) {
+    if (isInternalDrag || !hasFiles(e)) {
       return;
     }
-
     e.preventDefault();
-    e.stopPropagation();
-    onDragEnter(e);
+    dragDepth += 1;
+    if (!dragActive && boardsAlbumId) {
+      loadBoardsAlbumName(boardsAlbumId);
+    }
+    dragActive = true;
   };
 
   const ondragleave = (e: DragEvent) => {
+    if (isInternalDrag || !hasFiles(e)) {
+      return;
+    }
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) {
+      dragActive = false;
+    }
+  };
+
+  const ondragover = (e: DragEvent) => {
+    if (isInternalDrag || !hasFiles(e)) {
+      return;
+    }
+    // Allowing the drop anywhere on the page; the window, not one element, is the target.
     e.preventDefault();
-    e.stopPropagation();
-    onDragLeave(e);
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
   };
 
   const ondrop = async (e: DragEvent) => {
     if (isInternalDrag) {
+      resetDrag();
       return;
     }
 
@@ -221,25 +282,19 @@
     e.stopPropagation();
     await onDrop(e);
   };
-
-  const onDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
 </script>
 
-<svelte:window onpaste={onPaste} />
+<svelte:window onpaste={onPaste} {ondragenter} {ondragleave} {ondragover} {ondragend} />
 
-<svelte:body {ondragstart} {ondragend} {ondragenter} {ondragleave} {ondrop} />
+<svelte:body {ondragstart} {ondrop} />
 
-{#if dragStartTarget}
+{#if dragActive}
   <div
     class="frameleaf fl-drop-overlay"
     data-theme={appTheme}
     role="status"
     aria-live="polite"
     transition:motionFade={{ duration: DURATION.fade }}
-    ondragover={onDragOver}
   >
     <div class="fl-drop-frame" aria-hidden="true"></div>
     <div class="fl-drop-card fl-pop fl-origin-center">

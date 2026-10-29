@@ -158,6 +158,7 @@ const toolWords = Object.fromEntries(
 export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   ...toolWords,
   'cast.gCastEnabled': { label: 'frameleaf_prefs_tools_cast' },
+  'clients.enabled': { label: 'frameleaf_prefs_tools_clients' },
   'lockedPin.relockMinutes': {
     label: 'frameleaf_access_relock_label',
     values: count('frameleaf_access_relock_minutes'),

@@ -7,7 +7,7 @@ import type { PinnedCollectionsResponseDto } from 'src/dtos/pinned-collection.dt
 import type { SyncAck } from 'src/types.js';
 import { mapAlbumSourceLink } from 'src/dtos/album-source.dto.js';
 import { mapPet, mapPetObservation } from 'src/dtos/pet.dto.js';
-import { AlbumKind, AlbumUserRole, SyncEntityType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, LibraryScope, SyncEntityType } from 'src/enum.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
@@ -23,6 +23,7 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { everyOwnersRules, getHiddenContentQueryOptions, getRevealQueryOptions } from 'src/utils/hidden-content.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
@@ -129,6 +130,13 @@ export class TagSync {
       const memories = db
         .selectFrom('memory')
         .where('memory.ownerId', '=', auth.user.id)
+        .where(
+          sql<boolean>`(
+          not exists(select 1 from memory_asset where memory_asset."memoriesId" = memory.id)
+          or exists(select 1 from memory_asset join asset on asset.id = memory_asset."assetId"
+            where memory_asset."memoriesId" = memory.id and ${libraryScopePredicate(LibraryScope.Personal)})
+        )`,
+        )
         .where(memoryHasNoHiddenItem(sql.ref('memory.id'), options));
       if (kind === 'memory') {
         const rows = await memories
@@ -145,6 +153,8 @@ export class TagSync {
       }
       const rows = await memories
         .innerJoin('memory_asset', 'memory_asset.memoriesId', 'memory.id')
+        .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .select(['memory.id as memoryId', 'memory_asset.assetId', 'memory_asset.updateId'])
         .$if(!!key, (qb) =>
           qb.where('memory.id', '=', key!.split(':', 2)[0]).where('memory_asset.assetId', '=', key!.split(':', 2)[1]),

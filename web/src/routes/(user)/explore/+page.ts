@@ -89,7 +89,7 @@ export const load = (async ({ url }) => {
     // Every section loads on its own: a request that fails leaves `null`, the page still opens, and
     // only that section says it could not load (`failed` below) instead of the whole page erroring.
     getAllPeople({ withHidden: false }).catch(() => null),
-    getAlbumTree().catch(() => null),
+    getAlbumTree({}).catch(() => null),
     loadMemories().catch(() => null),
     // Card counts share the same scope/archive/privacy rules as the destinations they link to.
     // Favorites: the Favorites timeline's own query (its `options`), summed over its buckets, so the

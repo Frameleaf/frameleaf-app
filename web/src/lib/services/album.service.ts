@@ -3,6 +3,7 @@ import {
   addAssetsToAlbums as addToAlbums,
   addUsersToAlbum,
   AlbumUserRole,
+  LibraryScope,
   BulkIdErrorReason,
   createAlbum,
   deleteAlbum,
@@ -43,12 +44,16 @@ export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseD
   return { SetCover };
 };
 
-export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponseDto) => {
+export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponseDto, libraryScope?: LibraryScope) => {
   const Upload: ActionItem = {
     title: $t('select_from_computer'),
     description: $t('album_upload_assets'),
     icon: mdiUpload,
-    onAction: () => void openFileUploadDialog({ albumId: album.id }),
+    onAction: () =>
+      void openFileUploadDialog({
+        albumId: album.id,
+        libraryScope: libraryScope ?? (album.libraryScope === LibraryScope.Design ? LibraryScope.Design : undefined),
+      }),
   };
 
   return { Upload };

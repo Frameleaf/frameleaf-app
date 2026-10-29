@@ -10,6 +10,8 @@
    *
    * Together they retire the legacy shared gallery grid and the legacy asset select bar.
    */
+  import type { LibraryItemDto, BookmarkResponseDto } from '@frameleaf/sdk';
+  import type { LibraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import AssetGrid from '$lib/components/frameleaf/AssetGrid.svelte';
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import type { BulkActionContext, BulkActionId, BulkAsset } from '$lib/frameleaf/bulk-actions';
@@ -28,6 +30,9 @@
   type Props = {
     /** The results, in the order the page loaded them. */
     assets: TimelineAsset[];
+    items?: LibraryItemDto[];
+    preferences?: LibraryGridPreferences;
+    onOpenBookmark?: (bookmark: BookmarkResponseDto) => void;
     session?: LibrarySessionStore;
     /** Ask for the next page. */
     onEndReached?: () => void;
@@ -73,6 +78,9 @@
 
   let {
     assets,
+    items,
+    preferences,
+    onOpenBookmark,
     session = librarySession,
     onEndReached,
     onOpen,
@@ -203,6 +211,9 @@
 
 <div class="frameleaf fl-results" data-testid="frameleaf-results">
   <AssetGrid
+    {items}
+    {preferences}
+    {onOpenBookmark}
     {assets}
     {session}
     {onEndReached}

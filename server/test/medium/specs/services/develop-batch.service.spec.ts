@@ -12,6 +12,7 @@ import { AssetLockReason, AssetType, ChecksumAlgorithm, JobStatus, Permission } 
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetPaletteRepository } from 'src/repositories/asset-palette.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -73,6 +74,7 @@ const setup = () => {
     new SystemMetadataRepository(db),
     new MediaOperationRepository(db),
     {} as never,
+    { emit: vi.fn().mockResolvedValue(undefined) } as never,
   );
   const sut = new DevelopBatchService(
     repository,
@@ -201,6 +203,7 @@ it('imports concurrent/repeated bytes once, survives a repository restart, rende
   expect(await f.revisions.getCurrent(f.asset.id)).toBeUndefined();
   expect(await f.develop.handleRender({ id: returned.revisionId! })).toBe(JobStatus.Success);
   expect((await f.revisions.getCurrent(f.asset.id))?.id).toBe(returned.revisionId);
+  expect(await new AssetPaletteRepository(db).currentDevelopAssetId(returned.revisionId!)).toBe(f.asset.id);
   expect((await f.sut.get(f.auth, f.batch.id)).items[0].returns[0].status).toBe('completed');
   await f.sut.import(f.auth, f.batch.id, f.item.id, f.dto, await stage(f.user.id, f.batch.id, f.bytes));
   expect(await f.revisions.listByAsset(f.asset.id)).toHaveLength(1);
@@ -234,6 +237,8 @@ it('keeps a returned preview inactive when the working version changes after con
   const revisionId = batch.returns[0].revisionId!;
   expect(await f.develop.handleRender({ id: revisionId })).toBe(JobStatus.Success);
   expect((await f.revisions.getCurrent(f.asset.id))?.id).toBe(edited.id);
+  expect(await new AssetPaletteRepository(db).currentDevelopAssetId(revisionId)).toBeUndefined();
+  expect(await new AssetPaletteRepository(db).currentDevelopAssetId(edited.id)).toBe(f.asset.id);
   expect((await f.repository.get(f.user.id, f.batch.id)).items[0].returns[0]).toMatchObject({
     status: 'conflict',
     error: expect.stringContaining('kept inactive'),

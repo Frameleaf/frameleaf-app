@@ -17,6 +17,7 @@ import { migrateStacks } from 'src/commands/migrate/stacks';
 import { migrateTags } from 'src/commands/migrate/tags';
 import { transfer } from 'src/commands/migrate/transfer';
 import type { MigrateOptions, MigrateRawOptions } from 'src/commands/migrate/types';
+import { keyPermissions } from 'src/utils';
 
 const SOURCE_REQUIRED = [Permission.AssetRead, Permission.AssetDownload, Permission.AlbumRead, Permission.TagRead];
 const SOURCE_OPTIONAL = [Permission.StackRead, Permission.PersonRead];
@@ -235,8 +236,8 @@ async function runMigrate(raw: MigrateRawOptions) {
   ]);
 
   const [fromKey, toKey] = await Promise.all([from.getMyApiKey(), to.getMyApiKey()]);
-  checkPermissions(fromKey.permissions, SOURCE_REQUIRED, SOURCE_OPTIONAL, 'Source');
-  checkPermissions(toKey.permissions, DEST_REQUIRED, DEST_OPTIONAL, 'Destination');
+  checkPermissions(keyPermissions(fromKey), SOURCE_REQUIRED, SOURCE_OPTIONAL, 'Source');
+  checkPermissions(keyPermissions(toKey), DEST_REQUIRED, DEST_OPTIONAL, 'Destination');
   if (fromUser.email !== toUser.email) {
     console.warn(
       `Warning: source user (${fromUser.email}) differs from destination user (${toUser.email}). ` +

@@ -16,6 +16,7 @@
 
   interface Props {
     hideNavbar?: boolean;
+    onUploadClick?: () => void;
     title?: string | undefined;
     description?: string | undefined;
     scrollbar?: boolean;
@@ -39,6 +40,7 @@
 
   let {
     hideNavbar = false,
+    onUploadClick = () => void openFileUploadDialog(),
     title = undefined,
     description = undefined,
     scrollbar = true,
@@ -117,7 +119,7 @@
 
 <header>
   {#if !hideNavbar}
-    <NavigationBar onUploadClick={() => openFileUploadDialog()} hasRail={rail} />
+    <NavigationBar {onUploadClick} hasRail={rail} />
   {/if}
 </header>
 <div

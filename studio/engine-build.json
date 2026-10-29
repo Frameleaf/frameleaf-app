@@ -709,7 +709,12 @@
       "path": "patches/0144-transcript-editing.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "73362d1a65af63134f396e20e89e5b9ab5133db7155ec449b8b3e92a53de897f"
+    },
+    {
+      "path": "patches/0145-speed-ramps-and-linked-freeze-frames.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e9cc60f8e795da201025e9ba35de8895853d48d796edc68f6f00e0967df86c5e"
     }
   ],
-  "sourceSha256": "d13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b"
+  "sourceSha256": "82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e"
 }

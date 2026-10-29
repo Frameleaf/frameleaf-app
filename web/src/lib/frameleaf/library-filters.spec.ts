@@ -1,3 +1,4 @@
+import { ColorTolerance } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import {
@@ -5,6 +6,13 @@ import {
   describeFilterFields,
   filterFieldEntityIds,
   filterFieldLabelKey,
+  boardShapeCondition,
+  boardShapeOf,
+  colorChoiceOf,
+  colorFilterFrom,
+  colorFilterText,
+  looseColorFilter,
+  minimumWidthOf,
 } from './library-filters';
 
 const withFilter = (filter: Record<string, unknown>): DiscoveryQuery =>
@@ -137,5 +145,55 @@ describe('pet filters (FL-58)', () => {
   it('offers the pets a download may be named after, never the excluded ones', () => {
     expect(filterFieldEntityIds(withFilter({ petIds: { any: ['a', 'b'] } }), 'petIds')).toEqual(['a', 'b']);
     expect(filterFieldEntityIds(withFilter({ petIds: { none: ['a'] } }), 'petIds')).toBeNull();
+  });
+});
+
+it('describes designer filters without dropping their values', () => {
+  expect(
+    describeFilterField(withFilter({ color: { hex: '#609060', tolerance: 'normal', minWeight: 0.05 } }), 'color'),
+  ).toMatchObject({
+    labelKey: 'frameleaf_color_filter',
+    detailText: { key: 'frameleaf_boards_colour_pill', values: { name: 'other', hex: '#609060', closeness: 'normal' } },
+  });
+  expect(describeFilterField(withFilter({ source: { contains: 'publisher' } }), 'source')).toMatchObject({
+    labelKey: 'frameleaf_sources_title',
+    detail: 'publisher',
+  });
+  expect(filterFieldLabelKey('albumSubtreeIds')).toBe('frameleaf_filter_nested_albums');
+});
+
+describe('Boards colour, shape and width', () => {
+  it('names a preset colour and its closeness for the pill', () => {
+    const color = colorFilterFrom({ hex: '#3F8F8A', tolerance: ColorTolerance.Normal, mainOnly: false });
+    expect(color).toEqual({ hex: '#3f8f8a', tolerance: 'normal', minWeight: 0.05 });
+    expect(colorFilterText(color)).toEqual({
+      key: 'frameleaf_boards_colour_pill',
+      values: { name: 'teal', hex: '#3F8F8A', closeness: 'normal' },
+    });
+    expect(describeFilterField(withFilter({ color }), 'color')?.detailText?.key).toBe('frameleaf_boards_colour_pill');
+  });
+
+  it('reads "Only the main colour" back from coverage, and loosens to any coverage', () => {
+    const main = colorFilterFrom({ hex: '#123456', tolerance: ColorTolerance.Tight, mainOnly: true });
+    expect(colorChoiceOf(main)).toEqual({ hex: '#123456', tolerance: 'tight', mainOnly: true });
+    expect(looseColorFilter(main)).toEqual({ hex: '#123456', tolerance: 'broad', minWeight: 0.05 });
+    expect(colorFilterText(main)?.values?.name).toBe('other');
+  });
+
+  it('round-trips shapes and minimum widths, and leaves other ranges as custom', () => {
+    for (const shape of ['landscape', 'portrait', 'square', 'wide'] as const) {
+      expect(boardShapeOf(boardShapeCondition(shape))).toBe(shape);
+    }
+    expect(boardShapeOf(undefined)).toBe('any');
+    expect(boardShapeOf({ gte: 3 })).toBe('custom');
+    expect(minimumWidthOf({ gte: 1920 })).toBe(1920);
+    expect(minimumWidthOf({ eq: 1920 })).toBe('custom');
+    expect(describeFilterField(withFilter({ aspectRatio: { lt: 0.95 } }), 'aspectRatio')?.detailText?.key).toBe(
+      'frameleaf_boards_shape_portrait',
+    );
+    expect(describeFilterField(withFilter({ width: { gte: 800 } }), 'width')?.detailText).toEqual({
+      key: 'frameleaf_boards_min_width_value',
+      values: { width: 800 },
+    });
   });
 });

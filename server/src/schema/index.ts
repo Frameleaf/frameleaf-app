@@ -5,14 +5,17 @@ import {
   asset_face_source_type,
   asset_visibility_enum,
   assets_status_enum,
+  library_scope_enum,
 } from 'src/schema/enums.js';
 import {
+  album_library_scope_refresh,
   album_user_after_insert,
   album_user_delete,
   album_user_delete_audit,
   asset_delete_audit,
   asset_exif_landmark_match,
   asset_face_audit,
+  asset_library_scope_refresh,
   asset_metadata_audit,
   asset_ocr_delete_audit,
   desktop_clip_producer_guard,
@@ -35,6 +38,7 @@ import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
+import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
 import { AlbumUserAuditTable } from 'src/schema/tables/album-user-audit.table.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
@@ -68,11 +72,16 @@ import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
+import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
+import { BookmarkTable } from 'src/schema/tables/bookmark.table.js';
+import { CaptureReceiptTable } from 'src/schema/tables/capture-receipt.table.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
 import {
@@ -280,6 +289,13 @@ export class ImmichDatabase {
     PushDeviceActivityTable,
     AssetBackupDeletionTable,
     BackupReconciliationTable,
+    AssetPaletteTable,
+    AssetPaletteSwatchTable,
+    CaptureReceiptTable,
+    BookmarkTable,
+    AlbumBookmarkTable,
+    BookmarkTagTable,
+    AssetSourceTable,
     ActivityTable,
     AdminAuditEventTable,
     AlbumAssetTable,
@@ -456,6 +472,8 @@ export class ImmichDatabase {
     user_delete_audit,
     partner_delete_audit,
     asset_delete_audit,
+    asset_library_scope_refresh,
+    album_library_scope_refresh,
     album_user_after_insert,
     album_user_delete_audit,
     memory_delete_audit,
@@ -470,7 +488,7 @@ export class ImmichDatabase {
     album_user_delete,
   ];
 
-  enum = [album_user_role_enum, assets_status_enum, asset_face_source_type, asset_visibility_enum];
+  enum = [album_user_role_enum, assets_status_enum, asset_face_source_type, asset_visibility_enum, library_scope_enum];
 }
 
 export interface Migrations {
@@ -531,6 +549,13 @@ export interface DB extends QueueDatabase {
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
+  asset_palette: AssetPaletteTable;
+  asset_palette_swatch: AssetPaletteSwatchTable;
+  capture_receipt: CaptureReceiptTable;
+  bookmark: BookmarkTable;
+  album_bookmark: AlbumBookmarkTable;
+  bookmark_tag: BookmarkTagTable;
+  asset_source: AssetSourceTable;
   asset_lock: AssetLockTable;
   asset_document_edit: AssetDocumentEditTable;
   asset_ocr: AssetOcrTable;

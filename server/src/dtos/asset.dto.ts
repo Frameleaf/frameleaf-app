@@ -2,12 +2,19 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetType, AssetVisibilitySchema, EnrichmentStaleReasonSchema } from 'src/enum.js';
+import {
+  AssetType,
+  AssetVisibilitySchema,
+  EnrichmentStaleReasonSchema,
+  LibraryScopeSchema,
+  LibraryViewScopeSchema,
+} from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
 const UpdateAssetBaseSchema = z
   .object({
+    libraryScope: LibraryScopeSchema.optional(),
     isFavorite: z.boolean().optional().describe('Mark as favorite'),
     visibility: AssetVisibilitySchema.optional(),
     dateTimeOriginal: z.string().optional().describe('Original date and time'),
@@ -190,6 +197,7 @@ const AssetImageEnrichmentResponseSchema = z
 
 const AssetStatsSchema = z
   .object({
+    libraryScope: LibraryViewScopeSchema.optional(),
     visibility: AssetVisibilitySchema.optional(),
     isFavorite: stringToBool.optional().describe('Filter by favorite status'),
     isTrashed: stringToBool.optional().describe('Filter by trash status'),

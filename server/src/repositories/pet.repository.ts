@@ -4,7 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { JobName, PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
+import { JobName, LibraryScope, PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
 import { selectionItemContext, selectionItemState, unfinishedRunItems } from 'src/queue/selection-state.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -19,6 +19,7 @@ import {
   lockedOwnerScope,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { planObservationMerge } from 'src/utils/pets.js';
 
 export type Pet = Selectable<PetTable>;
@@ -140,6 +141,7 @@ export class PetRepository {
               .whereRef('asset.id', '=', 'pet.featuredAssetId')
               .where('asset.ownerId', '=', ownerId)
               .where('asset.deletedAt', 'is', null)
+              .where(libraryScopePredicate(LibraryScope.Personal))
               .where((inner) => inner.not(isLockedAsset(inner)))
               .$if(!!hiddenContent, (inner) =>
                 inner.where(sql<boolean>`not ${hiddenContentAssetIdExists(sql.ref('asset.id'), hiddenContent!)}`),
@@ -154,6 +156,7 @@ export class PetRepository {
             .whereRef('pet_observation.petId', '=', 'pet.id')
             .where('pet_observation.state', '=', PetObservationState.Confirmed)
             .where('asset.deletedAt', 'is', null)
+            .where(libraryScopePredicate(LibraryScope.Personal))
             .$if(!!forSync, (qb) => qb.where('asset.ownerId', '=', ownerId))
             .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
             .$if(!!visiblePhoto, (qb) => qb.where(visiblePhoto!))
@@ -188,6 +191,7 @@ export class PetRepository {
               .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
               .where('asset.ownerId', '=', ownerId)
               .where('asset.deletedAt', 'is', null)
+              .where(libraryScopePredicate(LibraryScope.Personal))
               .where((inner) => lockedOwnerScope(inner, lockedOwnerId))
               .$if(!!visiblePhoto, (inner) => inner.where(visiblePhoto!));
             return eb.or([eb.not(eb.exists(confirmed())), eb.exists(visible)]);
@@ -219,6 +223,7 @@ export class PetRepository {
           .whereRef('pet_observation.petId', '=', 'pet.id')
           .where('pet_observation.state', '=', PetObservationState.Confirmed)
           .where('asset.deletedAt', 'is', null)
+          .where(libraryScopePredicate(LibraryScope.Personal))
           .$call((qb) => withHiddenContentFilter(qb, privacy))
           .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
           .select((inner) => inner.fn.countAll<number>().as('count'))
@@ -544,6 +549,7 @@ export class PetRepository {
       ])
       .where('pet.ownerId', '=', ownerId)
       .where('asset.ownerId', '=', ownerId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .limit(limit)
@@ -580,6 +586,7 @@ export class PetRepository {
       .where('pet_candidate.id', '=', id)
       .where('pet.ownerId', '=', ownerId)
       .where('asset.ownerId', '=', ownerId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .executeTakeFirst()
       .then((row) => (row ? { ...row, score: Number(row.score ?? 0) } : undefined));
@@ -648,6 +655,7 @@ export class PetRepository {
   getRecognitionAsset(assetId: string): Promise<RecognitionAsset | undefined> {
     return this.db
       .selectFrom('asset')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .innerJoin('smart_search', 'smart_search.assetId', 'asset.id')
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select([
@@ -698,6 +706,7 @@ export class PetRepository {
           .where('pet_observation.state', '=', PetObservationState.Confirmed)
           .where('pet_observation.assetId', '!=', excludeAssetId)
           .where('asset.ownerId', '=', ownerId)
+          .where(libraryScopePredicate(LibraryScope.Personal))
           .where('asset.deletedAt', 'is', null)
           .as('ranked'),
       )
@@ -738,6 +747,7 @@ export class PetRepository {
   selectionForPetRecognition(runs: Array<{ ownerId: string; id: string }>) {
     return this.db
       .selectFrom('asset')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .innerJoin('smart_search', 'smart_search.assetId', 'asset.id')
       .innerJoin(
         sql<{
@@ -767,6 +777,7 @@ export class PetRepository {
   getRecognizableAssetIds(ownerId: string): Promise<string[]> {
     return this.db
       .selectFrom('asset')
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .innerJoin('smart_search', 'smart_search.assetId', 'asset.id')
       .select('asset.id')
       .where('asset.ownerId', '=', ownerId)
@@ -782,6 +793,9 @@ export class PetRepository {
   async getNearestAssetIds(ownerId: string, assetId: string, limit: number): Promise<string[]> {
     const reference = await this.db
       .selectFrom('smart_search')
+      .innerJoin('asset', 'asset.id', 'smart_search.assetId')
+      .where('asset.ownerId', '=', ownerId)
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .select(sql<string>`smart_search.embedding::text`.as('embedding'))
       .where('smart_search.assetId', '=', assetId)
       .executeTakeFirst();
@@ -793,6 +807,7 @@ export class PetRepository {
       await sql`set local hnsw.ef_search = 100`.execute(trx);
       const rows = await trx
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .innerJoin('smart_search', 'smart_search.assetId', 'asset.id')
         .select('asset.id')
         .where('asset.ownerId', '=', ownerId)

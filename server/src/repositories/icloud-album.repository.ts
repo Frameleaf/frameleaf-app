@@ -2,7 +2,8 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
-import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AlbumRepository, lockAlbumHierarchy } from 'src/repositories/album.repository.js';
 import { DB } from 'src/schema/index.js';
 
 export type AlbumSyncState = {
@@ -76,6 +77,7 @@ export class ICloudAlbumRepository {
   ) {}
   async reconcile(connectionId: string, ownerId: string): Promise<boolean> {
     return this.db.transaction().execute(async (db) => {
+      await lockAlbumHierarchy(db);
       const connection = await sql<{
         label: string;
         config: ICloudConfig;
@@ -131,7 +133,8 @@ export class ICloudAlbumRepository {
           await sql`UPDATE album SET "albumName"=${merged.albumName} WHERE id=${row.albumId}::uuid`.execute(db);
         }
         if (merged.parentId !== current.parentId) {
-          await this.reparent(db, row.albumId, merged.parentId);
+          await new AlbumRepository(db).reparentIn(db, row.albumId, merged.parentId);
+          if (merged.parentId) await this.promoteToCollection(db, merged.parentId);
         }
         await this.saveState(db, row, merged.state);
       }
@@ -210,39 +213,18 @@ export class ICloudAlbumRepository {
     ownerId: string,
     kind: 'album' | 'collection' = 'album',
   ) {
-    const id = await sql<{
-      id: string;
-    }>`INSERT INTO album ("albumName","parentId",kind) VALUES (${name},${parentId}::uuid,${kind}) RETURNING id`
-      .execute(db)
-      .then(({ rows }) => rows[0].id);
-    await sql`INSERT INTO album_user ("albumId","userId",role) VALUES (${id}::uuid,${ownerId}::uuid,'owner')`.execute(
-      db,
+    const { id } = await new AlbumRepository(db).create(
+      { albumName: name, parentId, kind: kind as AlbumKind },
+      [],
+      [{ userId: ownerId, role: AlbumUserRole.Owner }],
+      ownerId,
     );
-    await sql`INSERT INTO album_closure (id_ancestor,id_descendant) VALUES (${id}::uuid,${id}::uuid)`.execute(db);
-    if (parentId) {
-      await sql`INSERT INTO album_closure (id_ancestor,id_descendant) SELECT id_ancestor,${id}::uuid FROM album_closure
-        WHERE id_descendant=${parentId}::uuid`.execute(db);
-      await this.promoteToCollection(db, parentId);
-    }
+    if (parentId) await this.promoteToCollection(db, parentId);
     return id;
   }
   /** An album that holds albums is a collection; mirrored iCloud folders become collections the first time they get a child. */
   private async promoteToCollection(db: Kysely<DB>, id: string) {
     await sql`UPDATE album SET kind='collection' WHERE id=${id}::uuid AND kind='album'`.execute(db);
-  }
-  private async reparent(db: Kysely<DB>, id: string, parentId: string | null) {
-    // The existing album_parent_cycle_check trigger guards self/descendant cycles atomically.
-    await sql`UPDATE album SET "parentId"=${parentId}::uuid WHERE id=${id}::uuid`.execute(db);
-    await sql`DELETE FROM album_closure WHERE id_descendant IN (SELECT id_descendant FROM album_closure WHERE id_ancestor=${id}::uuid)
-      AND id_ancestor NOT IN (SELECT id_descendant FROM album_closure WHERE id_ancestor=${id}::uuid)`.execute(db);
-    if (parentId) {
-      await sql`INSERT INTO album_closure (id_ancestor,id_descendant) SELECT super.id_ancestor,sub.id_descendant
-        FROM album_closure super CROSS JOIN album_closure sub WHERE super.id_descendant=${parentId}::uuid AND sub.id_ancestor=${id}::uuid`.execute(
-        db,
-      );
-      await this.promoteToCollection(db, parentId);
-    }
-    // Same closure rewrite as AlbumRepository.reparent, mirrored in SQL without loading a large subtree.
   }
   private async saveState(db: Kysely<DB>, row: SourceAlbum, state: AlbumSyncState) {
     await sql`UPDATE public.icloud_album SET "albumId"=${row.albumId}::uuid,

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { locale } from '$lib/stores/preferences.store';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import ColorFilter from '$lib/components/frameleaf/ColorFilter.svelte';
+  import DimensionFilters from '$lib/components/frameleaf/DimensionFilters.svelte';
   import FilterMultiSelect from '$lib/components/frameleaf/FilterMultiSelect.svelte';
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
@@ -68,6 +70,7 @@
     embedded = false,
     facets = {},
     enrichmentCounts = {},
+    showEnrichment = true,
     onChange,
     onClose,
     onSave,
@@ -86,6 +89,7 @@
     facets?: PaletteFacets;
     /** Live counts per enrichment value for the current search. */
     enrichmentCounts?: Partial<Record<ImageEnrichmentFilter, number>>;
+    showEnrichment?: boolean;
     onChange: (query: DiscoveryQuery) => void;
     onClose?: () => void;
     /** Docked beside a library (LIB-P1): the footer's "Save search", the template's "Save preset". */
@@ -339,6 +343,11 @@
       />
     </section>
 
+    <section class="filter-section" data-section="media">
+      <ColorFilter color={query.filter.color} onChange={(value) => setCondition('color', value)} />
+      <DimensionFilters filter={query.filter} onChange={setCondition} />
+    </section>
+
     <section class="filter-section" data-section="date">
       <h3>{$t('frameleaf_search_field_taken_at')}</h3>
       {#if captureDateHasCustomCondition(filter[dateField])}
@@ -417,6 +426,29 @@
       onChange={setCondition}
     />
 
+    <FilterMultiSelect
+      field="albumSubtreeIds"
+      anchor="albums"
+      label={$t('frameleaf_filter_nested_albums')}
+      options={options.albums}
+      condition={filter.albumSubtreeIds as SetCondition}
+      onChange={setCondition}
+    />
+    <section class="filter-section" data-section="sources">
+      <label
+        >{$t('frameleaf_filter_source')}<input
+          type="text"
+          maxlength="500"
+          value={query.filter.source?.contains ?? ''}
+          onchange={(event) =>
+            setCondition(
+              'source',
+              event.currentTarget.value.trim() ? { contains: event.currentTarget.value.trim() } : null,
+            )}
+        /></label
+      >
+    </section>
+
     <section class="filter-section" data-section="camera">
       <h3>{$t('frameleaf_search_camera_and_lens')}</h3>
       {#each cameraFacets as facet (facet.field)}
@@ -429,7 +461,7 @@
       {/each}
     </section>
 
-    {#each ENRICHMENT_GROUPS as group (group.section)}
+    {#each showEnrichment ? ENRICHMENT_GROUPS : [] as group (group.section)}
       <section class="filter-section" data-section={group.section}>
         <h3>{$t(group.headingKey)}</h3>
         <p class="muted">{$t(group.helpKey)}</p>

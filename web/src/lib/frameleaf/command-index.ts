@@ -604,7 +604,7 @@ export const loadCommandCatalogue = async (term: string, signal?: AbortSignal): 
           ),
       [],
     ),
-    settle<AlbumTreeResponseDto>(getAlbumTree({ signal }), { albums: [], collections: [], spaces: [] }),
+    settle<AlbumTreeResponseDto>(getAlbumTree({}, { signal }), { albums: [], collections: [], spaces: [] }),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.City }, { signal }), []),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.State }, { signal }), []),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.Country }, { signal }), []),

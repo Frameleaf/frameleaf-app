@@ -1,4 +1,5 @@
 import { ActivityService } from 'src/services/activity.service.js';
+import { AlbumItemsService } from 'src/services/album-items.service.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
@@ -8,7 +9,9 @@ import { ArchiveOperationService } from 'src/services/archive-operation.service.
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetPaletteService } from 'src/services/asset-palette.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
+import { AssetSourceService } from 'src/services/asset-source.service.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -18,6 +21,7 @@ import { AuthService } from 'src/services/auth.service.js';
 import { BackupDeviceService } from 'src/services/backup-device.service.js';
 import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
+import { BookmarkService } from 'src/services/bookmark.service.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
@@ -25,6 +29,7 @@ import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.ser
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { BundledRenderWorkerService } from 'src/services/bundled-render-worker.service.js';
+import { CaptureService } from 'src/services/capture.service.js';
 import { CastService } from 'src/services/cast.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
@@ -79,6 +84,7 @@ import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
 import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
+import { LibraryItemService } from 'src/services/library-item.service.js';
 import { LibraryProgressService } from 'src/services/library-progress.service.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
@@ -176,6 +182,12 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  LibraryItemService,
+  AssetPaletteService,
+  CaptureService,
+  AlbumItemsService,
+  AssetSourceService,
+  BookmarkService,
   DevelopBatchService,
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,

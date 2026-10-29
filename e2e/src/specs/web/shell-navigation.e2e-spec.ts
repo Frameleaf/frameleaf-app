@@ -85,7 +85,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
       'Documents',
       'All albums',
       'Shared links',
-      'Photography',
+      'Clients',
       // FL-420: LibraryRail.jsx lists RAW support right under Photography.
       'RAW support',
       'Workflows',
@@ -118,8 +118,8 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           await expect(rail(page)).toBeVisible();
           return;
         }
-        if (name === 'Photography') {
-          // Like Studio, the photography workspace is a full-page tool without the library rail (App.jsx).
+        if (name === 'Clients') {
+          // Like Studio, Clients (and its introduction until it is started) is a full page without the library rail.
           await expect(rail(page)).toHaveCount(0);
           await page.goBack();
           await page.waitForURL(at(previous));
