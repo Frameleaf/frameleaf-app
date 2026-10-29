@@ -295,7 +295,8 @@ export async function renderCompose(
       environment: {
         FRAMELEAF_DISCOVERY_URL: `http://${host}:${installation.port}`,
       },
-      healthcheck: { disable: true },
+      // `up --wait` rejects a disabled healthcheck on some Compose releases (Unraid); report healthy once running.
+      healthcheck: { test: ['CMD', 'node', '-e', ''], interval: '30s', timeout: '10s', retries: 3 },
       depends_on: { 'frameleaf-server': { condition: 'service_started' } },
     };
   }

@@ -50,7 +50,8 @@ services:
     depends_on: [frameleaf-server]
     restart: always
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "-e", ""]
+      interval: 30s
 
   frameleaf-machine-learning:
     networks:
