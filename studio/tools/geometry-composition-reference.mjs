@@ -89,7 +89,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-596 motion tracking: trimStart honoured
     sourceSha256 === '4750757a0c3b48cd342bd886a63c9233e4d1024584793b10bd952e39f3938601' ||
     // FL-596 motion tracking: boundary pins, locked remove, source mapping binding
-    sourceSha256 === '3fb72aceffb0e9c6ef31eb15008c1fe64997c783697fcab58dd669941eebda63'
+    sourceSha256 === '3fb72aceffb0e9c6ef31eb15008c1fe64997c783697fcab58dd669941eebda63' ||
+    // FL-596 motion tracking: trim-aware binding, clamped decode time
+    sourceSha256 === '0570f1bad5f49930c62c06b5731236632671b5e32c3639f6aec8424cafb32ebb'
   )
     return {
       ...COMPOSITION_SOURCES,
