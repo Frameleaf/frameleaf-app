@@ -13,12 +13,19 @@
    * In Boards (`boards`, or any Boards-only item) the panel follows the approved Boards prototype's
    * `Inspector` instead: colours, rating with Rejected, editable tags, a note, the collections the
    * item is in with "Add to…", its source, file facts and the owner's "Show in Photos too" switch.
+   * For a picture there it also shows its annotations (FL-652): drawn over the preview, an
+   * Annotations section under the name, and "View large" opening the Boards viewer to annotate.
    */
   import AssetPalette from '$lib/components/frameleaf/AssetPalette.svelte';
   import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
   import BoardsRating from '$lib/components/frameleaf/BoardsRating.svelte';
+  import {
+    acquireAnnotations,
+    releaseAnnotations,
+    type BoardsAnnotationsState,
+  } from '$lib/frameleaf/boards-annotations-store.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { getExifRating } from '$lib/frameleaf/rating';
   import { formatDuration, cameraLabel, dimensionsLabel } from '$lib/frameleaf/viewer-headline';
   import { locationLabel } from '$lib/frameleaf/info-panel';
@@ -28,6 +35,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetMediaSize,
+    AssetTypeEnum,
     getAssetInfo,
     LibraryScope,
     LibraryViewScope,
@@ -36,7 +44,7 @@
     type ColorFilter,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiClose, mdiMapMarker, mdiPlay } from '@mdi/js';
+  import { mdiArrowExpand, mdiClose, mdiMapMarker, mdiPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -148,6 +156,30 @@
   const boardsMode = $derived(boards || (!!detail && loadedScope === LibraryScope.Design));
   const canRate = $derived(isOwner && (boardsMode || authManager.preferences.ratings.enabled));
 
+  // FL-652: a Boards picture's annotations, shared by the preview, the section and the viewer.
+  const annotatedId = $derived(boardsMode && detail?.type === AssetTypeEnum.Image ? detail.id : null);
+  let annotations = $state<BoardsAnnotationsState | null>(null);
+  let showAnnotations = $state(true);
+  let viewer = $state<'view' | 'annotate' | null>(null);
+  $effect(() => {
+    const id = annotatedId;
+    viewer = null;
+    if (!id) {
+      annotations = null;
+      return;
+    }
+    // Shared with every other view of this picture, so a save that failed earlier shows here with
+    // Retry. Untracked: reading the annotations reads their status, and this effect must run again
+    // only when the picture changes, never because a read finished or failed.
+    const next = untrack(() => {
+      const state = acquireAnnotations(id);
+      void state.load();
+      return state;
+    });
+    annotations = next;
+    return () => void releaseAnnotations(next);
+  });
+
   const rate = async (next: number | null) => {
     if (!detail || ratingBusy) {
       return;
@@ -170,7 +202,18 @@
 </script>
 
 {#snippet boardsDetails(item: AssetResponseDto)}
-  <section class="part first">
+  {#if annotations}
+    {@const current = annotations}
+    <section class="part first">
+      {#await import('$lib/components/frameleaf/BoardsAnnotationsSection.svelte') then { default: BoardsAnnotationsSection }}<BoardsAnnotationsSection
+          annotations={current}
+          show={showAnnotations}
+          onShowChange={(show) => (showAnnotations = show)}
+          onAnnotate={() => (viewer = 'annotate')}
+        />{/await}
+    </section>
+  {/if}
+  <section class="part" class:first={!annotations}>
     <AssetPalette assetId={item.id} canRetry={isOwner} onChoose={onChooseColor} />
   </section>
   {#if canRate}
@@ -250,23 +293,53 @@
   </div>
 
   {#if asset}
-    <button
-      type="button"
-      class="preview"
-      disabled={!detail}
-      aria-label={$t('frameleaf_work_inspector_open')}
-      onclick={() => onOpen(asset)}
-    >
-      {#if detail}<img
-          src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
-          alt=""
-        />
-        {#if asset.isVideo}
-          <span class="play" aria-hidden="true"><Icon icon={mdiPlay} size="38" /></span>
-          {#if duration}<span class="duration">{duration}</span>{/if}
+    {#if annotations && detail}
+      {@const current = annotations}
+      <figure class="preview annotated">
+        {#await import('$lib/components/frameleaf/BoardsAnnotatedImage.svelte')}
+          <img
+            src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+            alt=""
+          />
+        {:then { default: BoardsAnnotatedImage }}
+          <BoardsAnnotatedImage
+            src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+            name={detail.originalFileName}
+            items={current.items}
+            show={showAnnotations}
+            selected={current.selected}
+            maxHeight="260px"
+          />
+        {/await}
+        <button
+          type="button"
+          class="open-large"
+          aria-label={$t('frameleaf_boards_viewer_view_large_name', { values: { name: detail.originalFileName } })}
+          title={$t('frameleaf_boards_viewer_view_large')}
+          onclick={() => (viewer = 'view')}
+        >
+          <Icon icon={mdiArrowExpand} size="18" aria-hidden />
+        </button>
+      </figure>
+    {:else}
+      <button
+        type="button"
+        class="preview"
+        disabled={!detail}
+        aria-label={$t('frameleaf_work_inspector_open')}
+        onclick={() => onOpen(asset)}
+      >
+        {#if detail}<img
+            src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
+            alt=""
+          />
+          {#if asset.isVideo}
+            <span class="play" aria-hidden="true"><Icon icon={mdiPlay} size="38" /></span>
+            {#if duration}<span class="duration">{duration}</span>{/if}
+          {/if}
         {/if}
-      {/if}
-    </button>
+      </button>
+    {/if}
     <h2>{detail?.originalFileName ?? ' '}</h2>
     {#if detail && selectedCount > 1}
       <p class="muted" aria-live="polite">
@@ -389,6 +462,18 @@
         {/if}
       </div>
     {/if}
+    {#if viewer && annotations && detail}
+      {@const current = annotations}
+      {#await import('$lib/components/frameleaf/BoardsViewer.svelte') then { default: BoardsViewer }}<BoardsViewer
+          name={detail.originalFileName}
+          src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash })}
+          annotations={current}
+          startMode={viewer}
+          show={showAnnotations}
+          onShowChange={(show) => (showAnnotations = show)}
+          onClose={() => (viewer = null)}
+        />{/await}
+    {/if}
   {:else}
     <p class="muted empty">
       {$t(selectedCount > 1 ? 'frameleaf_work_inspector_many' : 'frameleaf_work_inspector_empty', {
@@ -448,6 +533,32 @@
     width: 100%;
     aspect-ratio: 1.38;
     object-fit: cover;
+  }
+  .preview.annotated {
+    display: grid;
+    place-items: center;
+    margin: 0;
+    min-height: 120px;
+    background: var(--fl-viewer-canvas);
+  }
+  .preview.annotated > img {
+    width: auto;
+    max-width: 100%;
+    max-height: 260px;
+    aspect-ratio: auto;
+    object-fit: contain;
+  }
+  .open-large {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: grid;
+    place-items: center;
+    min-width: 32px;
+    min-height: 32px;
+    border-radius: var(--fl-radius-sm);
+    color: white;
+    background: rgb(0 0 0 / 0.55);
   }
   .play {
     position: absolute;

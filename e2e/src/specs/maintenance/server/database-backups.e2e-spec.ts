@@ -287,7 +287,7 @@ describe('/admin/database-backups', () => {
 
     it(
       'refuses a noncanonical source before changing the current database',
-      { concurrent: false, timeout: 90_000 },
+      { concurrent: false, timeout: 120_000 },
       async () => {
         const filename = 'noncanonical.sql';
         await utils.putTextFile('SELECT 1;\n-- PostgreSQL database dump complete\n', `/data/backups/${filename}`);
@@ -314,6 +314,8 @@ describe('/admin/database-backups', () => {
             }),
           );
         await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' }).expect(201);
+        // Ending maintenance restarts the API worker, which takes 8–11 s on the CI runners; wait for it
+        // as the other restore tests here do, rather than racing a 10 s window against a cold boot.
         await expect
           .poll(
             async () => {
@@ -321,7 +323,6 @@ describe('/admin/database-backups', () => {
               expect(answer.status).toBe(200);
               return answer.body.id;
             },
-            // Leaving maintenance restarts the server: the same restart budget as the other restore tests.
             { interval: 500, timeout: 60_000 },
           )
           .toBe(admin.userId);

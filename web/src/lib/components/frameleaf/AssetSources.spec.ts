@@ -22,6 +22,7 @@ const source = {
   capturedAt: '2026-10-28T10:00:00Z',
   createdAt: '2026-10-28T10:00:00Z',
   note: '<script>private</script>',
+  importedFrom: null,
 };
 
 describe('private asset sources', () => {
@@ -63,6 +64,25 @@ describe('private asset sources', () => {
       'href',
       'https://cdn.example.org/a.jpg',
     );
+  });
+  it('says a source an Eagle import brought over came from Eagle, with its page and Added date', async () => {
+    sdkMock.getAssetSources.mockResolvedValue([
+      { ...source, title: '', creator: null, licenseUrl: null, note: null, importedFrom: 'eagle' },
+    ]);
+    render(AssetSources, { assetId: 'asset', canRead: true, added: '2024-03-01T12:00:00Z' });
+    expect(await screen.findByText('Eagle import')).toBeInTheDocument();
+    expect(screen.queryByText('Browser extension')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: source.pageUrl })).toHaveAttribute('href', source.pageUrl);
+    expect(screen.getByText('Added').nextElementSibling?.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2024-03-01T12:00:00Z',
+    );
+  });
+  it('says the extension saved it when it saved any of its sources', async () => {
+    sdkMock.getAssetSources.mockResolvedValue([source, { ...source, id: 'imported', importedFrom: 'eagle' }]);
+    render(AssetSources, { assetId: 'asset', canRead: true });
+    expect(await screen.findByText('Browser extension')).toBeInTheDocument();
+    expect(screen.queryByText('Eagle import')).not.toBeInTheDocument();
   });
   it('says an item without a saved source was uploaded', async () => {
     sdkMock.getAssetSources.mockResolvedValue([]);

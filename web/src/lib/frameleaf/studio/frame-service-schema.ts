@@ -6,6 +6,14 @@ import {
 } from './caption-languages';
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
 import {
+  isStudioCutoutClipId,
+  isStudioCutoutId,
+  isStudioCutoutRequest,
+  type StudioCutoutRequest,
+  type StudioCutoutState,
+  type StudioCutoutSubjectRef,
+} from './cutout';
+import {
   isStudioProjectImportUpload,
   isStudioPublicationId,
   isStudioEditorScope as isPublicationEditorScope,
@@ -140,7 +148,10 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V8 = Object.freeze({
   resolveStudioProjectSource: (args: unknown[]) =>
     args.length === 2 && isStudioSourceRequest(args[0]) && isStudioEditorScope(args[1]),
 });
-/** Protocol 9: translate caption lines on the processing order (FL-641), and the bin's Library view (FL-636). */
+/**
+ * Protocol 9: translate caption lines on the processing order (FL-641), the bin's Library view (FL-636) and
+ * Cut out the subject (FL-639).
+ */
 export const STUDIO_FRAME_SERVICE_SCHEMA_V9 = Object.freeze({
   ...STUDIO_FRAME_SERVICE_SCHEMA_V8,
   translateCaptions: (args: unknown[]) => args.length === 1 && isStudioCaptionTranslationRequest(args[0]),
@@ -149,6 +160,10 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V9 = Object.freeze({
   searchLibrary: (args: unknown[]) => args.length === 1 && isStudioLibraryQuery(args[0]),
   libraryFacets: (args: unknown[]) => args.length === 0,
   addLibraryAssets: (args: unknown[]) => args.length === 1 && isStudioLibraryAssetIds(args[0]),
+  // FL-639: Cut out the subject. Protocol 9, optional host services; an older host answers them as unknown.
+  listCutoutSubjects: (args: unknown[]) => args.length === 1 && isStudioCutoutClipId(args[0]),
+  startCutout: (args: unknown[]) => args.length === 1 && isStudioCutoutRequest(args[0]),
+  readCutout: (args: unknown[]) => args.length === 1 && isStudioCutoutId(args[0]),
 });
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
   translateCaptions: { args: [request: StudioCaptionTranslationRequest]; result: StudioCaptionTranslationResult };
@@ -168,6 +183,9 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
   searchLibrary: { args: [query: StudioLibraryQuery]; result: StudioLibraryResults };
   libraryFacets: { args: []; result: StudioLibraryFacets };
   addLibraryAssets: { args: [assetIds: string[]]; result: StudioAssetRef[] };
+  listCutoutSubjects: { args: [clipId: string]; result: StudioCutoutSubjectRef[] };
+  startCutout: { args: [request: StudioCutoutRequest]; result: StudioCutoutState };
+  readCutout: { args: [cutoutId: string]; result: StudioCutoutState };
 };
 export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V9;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };

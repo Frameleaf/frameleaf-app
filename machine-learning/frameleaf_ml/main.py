@@ -28,6 +28,8 @@ from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
 from frameleaf_ml.models.musicgen import MusicGenModel
+from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
+from frameleaf_ml.models.subject_matte import SubjectMatteModel
 from frameleaf_ml.models.transcribe import (
     AudioFormatError,
     TranscribeModel,
@@ -777,6 +779,74 @@ async def translate(request: Request) -> ORJSONResponse:
     finally:
         active_requests -= 1
     return ORJSONResponse(result)
+
+
+@app.post("/subject-matte")
+async def subject_matte(
+    entries: InferenceEntries = Depends(get_entries),
+    frames: list[UploadFile] = File(),
+) -> StreamingResponse:
+    """Cut out the subject in a video (FL-639): SAM2.1 video follows one subject through a clip.
+
+    The request names one entry, `{"subject-matte": {"visual": {"modelName": "frameleaf-florence2-sam2.1",
+    "options": {"seedKind", "seedBox"?, "points"?, "matteWidth", "matteHeight"}}}}`, and sends the clip's
+    frames in order as `frames` parts (JPEG or PNG, every one the same size). Problems found before any
+    work starts are HTTP errors (400 bad frames, 422 bad options, 503 no model or runtime). Otherwise the
+    answer is newline-delimited JSON: `progress` lines, a `frame` line per frame (its matte as a base64
+    grayscale PNG), then `done` (or `error`). Closing the connection stops the work at the next frame.
+    """
+    without_deps, with_deps = entries
+    if with_deps or len(without_deps) != 1 or without_deps[0]["task"] != ModelTask.SUBJECT_MATTE:
+        raise HTTPException(400, "A cut-out request names exactly one subject-matte entry")
+    if not 1 <= len(frames) <= SUBJECT_MATTE_MAX_FRAMES:
+        raise HTTPException(400, f"A cut-out needs between 1 and {SUBJECT_MATTE_MAX_FRAMES} frames")
+    entry = without_deps[0]
+    options = dict(entry["options"])
+    device = options.pop("device", None)
+    try:
+        images = [await run(decode_pil, await frame.read()) for frame in frames]
+    except Exception as error:
+        raise HTTPException(400, "A cut-out frame is not an image") from error
+    sizes = {image.size for image in images}
+    if len(sizes) != 1 or min(next(iter(sizes))) <= 0:
+        raise HTTPException(400, "Every cut-out frame must be the same, non-empty size")
+    model = await model_cache.get(
+        entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **({"device": device} if device else {})
+    )
+    model = await load(model)
+    assert isinstance(model, SubjectMatteModel)
+    items = model.stream(images, **options)
+
+    async def body() -> AsyncGenerator[bytes, None]:
+        global active_requests, last_called
+        # Counted here, as for /music: the stream outlives the handler.
+        active_requests += 1
+        try:
+            while True:
+                last_called = time.time()
+                try:
+                    item = await run(next, items, None)
+                except ValueError as error:
+                    # The server reads at most 512 characters of a message (its stream schema).
+                    yield orjson.dumps({"type": "error", "message": str(error)[:512]}) + b"\n"
+                    return
+                except Exception as error:
+                    log.error(f"Cut-out failed: {error}")
+                    yield orjson.dumps({"type": "error", "message": "Cut-out failed"}) + b"\n"
+                    return
+                if item is None:
+                    break
+                yield orjson.dumps(item) + b"\n"
+            yield orjson.dumps({"type": "done"}) + b"\n"
+        finally:
+            try:
+                items.close()
+            except ValueError:
+                # Still running in the thread pool after a disconnect; it is never advanced again.
+                pass
+            active_requests -= 1
+
+    return StreamingResponse(body(), media_type="application/x-ndjson")
 
 
 async def run_inference(

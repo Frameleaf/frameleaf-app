@@ -22,8 +22,19 @@ describe('FL-641 caption translation in protocol 9', () => {
       'searchLibrary',
       'libraryFacets',
       'addLibraryAssets',
+      // FL-639: Cut out the subject, optional host services.
+      'listCutoutSubjects',
+      'startCutout',
+      'readCutout',
     ]);
-    for (const name of ['searchLibrary', 'libraryFacets', 'addLibraryAssets']) {
+    for (const name of [
+      'searchLibrary',
+      'libraryFacets',
+      'addLibraryAssets',
+      'listCutoutSubjects',
+      'startCutout',
+      'readCutout',
+    ]) {
       expect(Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, name), name).toBe(false);
     }
     expect(Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, 'translateCaptions')).toBe(false);

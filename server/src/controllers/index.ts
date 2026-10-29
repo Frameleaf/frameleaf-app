@@ -6,6 +6,7 @@ import { AnalyticsController } from 'src/controllers/analytics.controller.js';
 import { ApiKeyController } from 'src/controllers/api-key.controller.js';
 import { AppController } from 'src/controllers/app.controller.js';
 import { ArchiveOperationController } from 'src/controllers/archive-operation.controller.js';
+import { AssetAnnotationController } from 'src/controllers/asset-annotation.controller.js';
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
@@ -106,6 +107,7 @@ import { StorageMigrationAdminController } from 'src/controllers/storage-migrati
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
 import { StudioCaptionTranslationController } from 'src/controllers/studio-caption-translation.controller.js';
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
+import { StudioCutoutController } from 'src/controllers/studio-cutout.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
 import { StudioMovieController } from 'src/controllers/studio-movie.controller.js';
@@ -136,6 +138,7 @@ import { WorkflowController } from 'src/controllers/workflow.controller.js';
 export const controllers = [
   SpeechController,
   LibraryItemController,
+  AssetAnnotationController,
   AssetPaletteController,
   CaptureController,
   BrowserExtensionSignInController,
@@ -250,6 +253,7 @@ export const controllers = [
   StudioVoiceCleanupController,
   StudioBundleController,
   StudioExportController,
+  StudioCutoutController,
   StudioReframeController,
   StudioPreviewController,
   StudioPreviewStreamController,

@@ -9,7 +9,6 @@
   import { workflowFromSearch } from '$lib/frameleaf/workflow-source';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import WorkflowDesigner from '$lib/components/frameleaf/WorkflowDesigner.svelte';
-  import type { ReferenceOption } from '$lib/components/frameleaf/WorkflowParameter.svelte';
   import {
     draftFromWorkflow,
     emptyDraft,
@@ -23,14 +22,7 @@
   import { pluginManager } from '$lib/managers/plugin-manager.svelte';
   import { downloadJson } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import {
-    getAllAlbums,
-    getAllTags,
-    getWorkflowForShare,
-    searchWorkflows,
-    updateWorkflow,
-    type WorkflowResponseDto,
-  } from '@frameleaf/sdk';
+  import { getWorkflowForShare, searchWorkflows, updateWorkflow, type WorkflowResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiDownload, mdiFileImportOutline, mdiPlus, mdiTuneVariant } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
@@ -77,8 +69,6 @@
   let designerOpen = $state(false);
   let notice = $state('');
   let error = $state('');
-  let references = $state<Record<string, ReferenceOption[]>>({});
-  let referencesLoaded = false;
 
   const triggerLabel = (trigger: string) => {
     const key = `frameleaf_workflows.trigger_${trigger}`;
@@ -86,28 +76,10 @@
     return label === key ? trigger : label;
   };
 
-  const loadReferences = async () => {
-    if (referencesLoaded) {
-      return;
-    }
-    referencesLoaded = true;
-    try {
-      const [tags, albums] = await Promise.all([getAllTags(), getAllAlbums({})]);
-      references = {
-        TagId: tags.map((tag) => ({ id: tag.id, label: tag.value })),
-        AlbumId: albums.map((album) => ({ id: album.id, label: album.albumName })),
-      };
-    } catch {
-      // identifiers can still be entered directly
-      referencesLoaded = false;
-    }
-  };
-
   const openDesigner = (workflow?: WorkflowResponseDto, draft?: WorkflowDraft) => {
     error = '';
     editing = { workflow, draft: draft ?? (workflow ? draftFromWorkflow(workflow) : emptyDraft()) };
     designerOpen = true;
-    void loadReferences();
   };
 
   // a workflow's own address opens it once, when the page loads
@@ -281,7 +253,6 @@
       methods={pluginManager.methods}
       triggers={pluginManager.triggers}
       templates={pluginManager.templates}
-      {references}
       {onSaved}
       {onDeleted}
     />

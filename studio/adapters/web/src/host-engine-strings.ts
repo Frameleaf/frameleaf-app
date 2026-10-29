@@ -11,6 +11,7 @@ import {
   TRANSCRIPT_ENGINE_STRINGS,
   type TranscriptEngineString,
 } from '@frameleaf/host/transcript-strings'
+import { CUTOUT_ENGINE_STRINGS, type CutoutEngineString } from '@frameleaf/host/cutout-strings'
 import {
   VOICE_CLEANUP_ENGINE_STRINGS,
   type VoiceCleanupEngineString,
@@ -41,6 +42,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(TRANSCRIPT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<TranscriptEngineString, string>),
+  // The cut-out card (FL-639).
+  ...(Object.fromEntries(
+    Object.entries(CUTOUT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<CutoutEngineString, string>),
   // The Stabilise card (FL-638).
   ...(Object.fromEntries(
     Object.entries(STABILISE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),

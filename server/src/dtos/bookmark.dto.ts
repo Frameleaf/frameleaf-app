@@ -99,6 +99,28 @@ export class AssetSourceResponseDto extends createZodDto(
       id: z.uuidv4(),
       assetId: z.uuidv4(),
       createdAt: z.string().meta({ format: 'date-time' }),
+      // A plain string rather than an enum, so a later importer is not a breaking change for strict clients.
+      importedFrom: z.string().nullable().meta({
+        description: 'The app the source was imported from, such as "eagle"; null when the browser extension saved it',
+      }),
     })
     .meta({ id: 'AssetSourceResponseDto' }),
+) {}
+
+/** FL-653: a web address an Eagle import brings over as the item's Source › Page. */
+export class AssetSourceImportDto extends createZodDto(
+  z
+    .object({
+      importedFrom: z.literal('eagle').meta({ description: 'The app the address was imported from' }),
+      pageUrl: referenceUrl,
+      title: z.string().max(2000).optional(),
+    })
+    .meta({ id: 'AssetSourceImportDto' }),
+) {}
+
+/** FL-653: the Added date of an item an import brought over, such as when it was last changed in Eagle. */
+export class AssetAddedDateDto extends createZodDto(
+  z
+    .object({ addedAt: z.iso.datetime({ offset: true }).meta({ description: 'A time in the past' }) })
+    .meta({ id: 'AssetAddedDateDto' }),
 ) {}

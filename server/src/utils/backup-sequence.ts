@@ -15,6 +15,8 @@ export type BackupSequenceRun = {
   place: BackupSequencePlace;
   /** Its backup has been started; the run waits for it to finish before moving on. */
   begun: boolean;
+  /** FL-657: the snapshot job the library data copy waits for, so its own outcome is the one recorded. */
+  jobId?: string;
   /** What each place the run has left behind did. */
   results: Partial<Record<BackupSequencePlace, 'done' | 'off' | 'failed'>>;
 };

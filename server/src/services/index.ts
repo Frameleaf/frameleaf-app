@@ -6,6 +6,7 @@ import { AnalyticsService } from 'src/services/analytics.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { ApiService } from 'src/services/api.service.js';
 import { ArchiveOperationService } from 'src/services/archive-operation.service.js';
+import { AssetAnnotationService } from 'src/services/asset-annotation.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
@@ -148,6 +149,7 @@ import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioCaptionTranslationService } from 'src/services/studio-caption-translation.service.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
+import { StudioCutoutService } from 'src/services/studio-cutout.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
@@ -189,6 +191,7 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 export const services = [
   SpeechService,
   LibraryItemService,
+  AssetAnnotationService,
   AssetPaletteService,
   CaptureService,
   BrowserExtensionSignInService,
@@ -336,6 +339,7 @@ export const services = [
   ZeroShotTaggingService,
   StackService,
   StudioExportService,
+  StudioCutoutService,
   StudioReframeService,
   StudioPreviewService,
   StudioPreviewStreamService,

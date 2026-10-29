@@ -22,6 +22,8 @@ import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CloudJobsUnavailableError,
+  CutoutUnavailableError,
+  CutoutWorkerError,
   FRAMELEAF_CLOUD_ENDPOINT,
   MachineLearningRepository,
   MlSelection,
@@ -1263,6 +1265,101 @@ describe(MachineLearningRepository.name, () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
 
       await expect(sut.getRestorationModels({ url: localUrl })).rejects.toThrow('does not run the restoration worker');
+    });
+  });
+
+  describe('subjectMatte (FL-639)', () => {
+    const stream = (lines: unknown[]) =>
+      new Response(lines.map((line) => JSON.stringify(line)).join('\n') + '\n', {
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson' },
+      });
+    const options = {
+      seedKind: 'face' as const,
+      seedBox: [0.4, 0.1, 0.6, 0.3] as [number, number, number, number],
+      points: [{ frame: 1, x: 0.5, y: 0.5, label: 0 as const }],
+      matteWidth: 192,
+      matteHeight: 108,
+    };
+
+    it('sends the frames and the seed to the named home worker and reads one matte per frame', async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          stream([
+            { type: 'progress', done: 0, total: 2, seedBox: [1, 2, 3, 4] },
+            { type: 'frame', index: 0, png: Buffer.from('a').toString('base64') },
+            { type: 'progress', done: 1, total: 2 },
+            { type: 'frame', index: 1, png: Buffer.from('b').toString('base64') },
+            { type: 'done' },
+          ]),
+        );
+      vi.stubGlobal('fetch', fetch);
+      const frames: Array<[number, string]> = [];
+      const progress = vi.fn();
+      const usage = vi.fn();
+      await sut.subjectMatte(
+        selection(MlDestinationKind.Lan, lanUrl, usage),
+        [imagePath, imagePath],
+        options,
+        new AbortController().signal,
+        (index, png) => {
+          frames.push([index, png.toString()]);
+        },
+        progress,
+      );
+      expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/subject-matte`);
+      const form = fetch.mock.calls[0][1].body as FormData;
+      expect(JSON.parse(form.get('entries') as string)).toEqual({
+        'subject-matte': { visual: { modelName: 'frameleaf-florence2-sam2.1', options } },
+      });
+      expect(form.getAll('frames')).toHaveLength(2);
+      expect(frames).toEqual([
+        [0, 'a'],
+        [1, 'b'],
+      ]);
+      expect(progress).toHaveBeenLastCalledWith(1, 2);
+      expect(usage).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+    });
+
+    it('says when the worker cannot cut out, could not find the subject, or stopped early', async () => {
+      const run = () =>
+        sut.subjectMatte(
+          selection(MlDestinationKind.Local, localUrl),
+          [imagePath],
+          options,
+          new AbortController().signal,
+          vi.fn(),
+          vi.fn(),
+        );
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
+      await expect(run()).rejects.toBeInstanceOf(CutoutUnavailableError);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(stream([{ type: 'error', message: 'No subject found in the first frame' }])),
+      );
+      await expect(run()).rejects.toThrow(new CutoutWorkerError('No subject found in the first frame'));
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(stream([{ type: 'done' }])));
+      await expect(run()).rejects.toThrow('stopped before it finished');
+    });
+
+    it('never sends frames to Frameleaf Cloud', async () => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      await expect(
+        sut.subjectMatte(
+          {
+            ...selection(MlDestinationKind.FrameleafCloud, FRAMELEAF_CLOUD_ENDPOINT.url),
+            endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+          },
+          [imagePath],
+          options,
+          new AbortController().signal,
+          vi.fn(),
+          vi.fn(),
+        ),
+      ).rejects.toBeInstanceOf(CloudJobsUnavailableError);
+      expect(fetch).not.toHaveBeenCalled();
     });
   });
 });

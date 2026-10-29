@@ -69,7 +69,17 @@ export const FIXTURE_ITEMS: FixtureItem[] = [
     comments: [{ id: 'C1', x: 100, y: 50, width: 200, height: 100, annotation: 'This corner' }],
   },
   { id: 'I2', name: 'logo', ext: 'png', folders: ['F2'], tags: ['logo'], width: 400, height: 400 },
-  { id: 'I3', name: 'display', ext: 'svg', folders: ['F3'], star: 3, width: 800, height: 600 },
+  {
+    id: 'I3',
+    name: 'display',
+    ext: 'svg',
+    folders: ['F3'],
+    star: 3,
+    // Not a web address, so it can't become a source.
+    url: 'file:///Users/designer/Type/display.svg',
+    width: 800,
+    height: 600,
+  },
   {
     id: 'I4',
     name: 'loop',

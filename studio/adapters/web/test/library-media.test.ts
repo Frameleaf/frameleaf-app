@@ -23,10 +23,12 @@ import type { StudioAssetRef } from '@frameleaf/host/host-contract'
 import {
   createLibraryMediaSeeder,
   followRetiredImports,
+  isSubjectMatteImport,
   retireProject,
   type LibraryMediaSeeder,
 } from '../src/library-media'
 import { VirtualWorkspace } from '../src/virtual-workspace'
+import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
 import { getHdrSourceUrl } from '@/features/export/utils/hdr-video-sources'
 
 // Folder handles for imported files live in IndexedDB, which jsdom does not have; none are used here.
@@ -238,6 +240,29 @@ describe('library media across editor remounts', () => {
       await media.seed([{ ...libraryAsset, hdr: true, hdrSourceUrl: hdrUrl }, hdrVideo])
       expect(getHdrSourceUrl(LIBRARY)).toBe(hdrUrl)
       expect(getHdrSourceUrl(IMPORTED)).toBeUndefined()
+    } finally {
+      media.dispose()
+    }
+  })
+
+  it('hands a cut-out matte to the renderer by its id, never to the bin (FL-639)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-cutout', onChange: () => {} })
+    try {
+      const matte = {
+        id: UNUSED,
+        kind: 'image' as const,
+        name: `frameleaf-subject-matte-${UNUSED}.png`,
+        mimeType: 'image/png',
+        sizeBytes: 2048,
+        url: `/api/studio/projects/p/imports/${UNUSED}`,
+      }
+      expect(isSubjectMatteImport(matte)).toBe(true)
+      expect(isSubjectMatteImport({ ...matte, name: 'holiday.png' })).toBe(false)
+      await media.seedImports([matte])
+      expect(blobUrlManager.get(UNUSED)).toBe(matte.url)
+      expect(await getMedia(UNUSED)).toBeUndefined()
+      expect(await getProjectMediaIds('fl-cutout')).not.toContain(UNUSED)
+      expect(media.known(UNUSED)).toBe(true)
     } finally {
       media.dispose()
     }
