@@ -85,7 +85,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-598 loudness match: binding covers link state
     sourceSha256 === 'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d' ||
     // FL-598 loudness: layout-specific channel weights
-    sourceSha256 === '7423283e576bff16bdc54221cff8d87bd7b3bb26dc3e516b635e12dce3f3bd72'
+    sourceSha256 === '7423283e576bff16bdc54221cff8d87bd7b3bb26dc3e516b635e12dce3f3bd72' ||
+    // FL-598 loudness: streamed meter, export length cutoff
+    sourceSha256 === 'ba3a4877d25762b942453aa282e7a666aa3397bdda2c1efa7ad098c5187c9fd6'
   )
     return {
       ...COMPOSITION_SOURCES,

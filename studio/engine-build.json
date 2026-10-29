@@ -713,8 +713,8 @@
     {
       "path": "patches/0145-dialogue-loudness-match-and-export-report.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "c77e7a4fac647d9745ad0471e77440ea8ca086cf6e0247532ec1c9c5efac4580"
+      "sha256": "484f01c016d5f95a752ab7ff0eee664c75a4626fa254cd8df058289828d6ea4b"
     }
   ],
-  "sourceSha256": "7423283e576bff16bdc54221cff8d87bd7b3bb26dc3e516b635e12dce3f3bd72"
+  "sourceSha256": "ba3a4877d25762b942453aa282e7a666aa3397bdda2c1efa7ad098c5187c9fd6"
 }

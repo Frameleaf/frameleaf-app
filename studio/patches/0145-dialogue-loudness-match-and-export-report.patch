@@ -221,7 +221,7 @@ diff --git a/src/features/export/components/export-loudness-report.tsx b/src/fea
 new file mode 100644
 --- /dev/null
 +++ b/src/features/export/components/export-loudness-report.tsx
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,108 @@
 +import { useEffect, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Gauge } from 'lucide-react'
@@ -233,12 +233,28 @@ new file mode 100644
 +/** Reported tolerance for the integrated level and the true-peak reading. */
 +const TARGET_TOLERANCE_LU = 1
 +const PEAK_TOLERANCE_DB = 0.2
++/**
++ * Longer files are not measured here: the decoded PCM and the worker's copy alone are about
++ * 2 × 46 MB per stereo minute, enough to end a browser tab on long exports.
++ */
++const MAX_MEASURE_SECONDS = 15 * 60
 +
 +type Report =
 +  | { state: 'measuring' }
 +  | { state: 'unknown' }
++  | { state: 'too-long' }
 +  | { state: 'silent' }
 +  | { state: 'measured'; measurement: LoudnessMeasurement }
++
++async function durationOf(blob: Blob): Promise<number> {
++  const { Input, BlobSource, ALL_FORMATS } = await import('mediabunny')
++  const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS })
++  try {
++    return await input.computeDuration()
++  } finally {
++    input.dispose()
++  }
++}
 +
 +async function decodeDeliverable(blob: Blob): Promise<AudioBuffer> {
 +  const context = new OfflineAudioContext(1, 1, 48000)
@@ -261,6 +277,11 @@ new file mode 100644
 +    const controller = new AbortController()
 +    void (async () => {
 +      try {
++        // Checked before decoding, from the container, so a long file is never held in memory.
++        if (await durationOf(blob) > MAX_MEASURE_SECONDS) {
++          if (!controller.signal.aborted) setReport({ state: 'too-long' })
++          return
++        }
 +        const buffer = await decodeDeliverable(blob)
 +        const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c))
 +        const measurement = await measureLoudnessInWorker({ sampleRate: buffer.sampleRate, channels }, controller.signal)
@@ -279,6 +300,8 @@ new file mode 100644
 +    body = t('export.loudness.measuring')
 +  } else if (report.state === 'unknown') {
 +    body = t('export.loudness.unknown')
++  } else if (report.state === 'too-long') {
++    body = t('export.loudness.tooLong', { minutes: MAX_MEASURE_SECONDS / 60 })
 +  } else if (report.state === 'silent') {
 +    body = t('export.loudness.silent')
 +  } else {
@@ -685,7 +708,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/de/export.json b/src/i18n/locales/partials/de/export.json
 --- a/src/i18n/locales/partials/de/export.json
 +++ b/src/i18n/locales/partials/de/export.json
-@@ -184,6 +184,16 @@
+@@ -184,6 +184,17 @@
            "detail": "Der Export-Worker kann diese Komposition ohne bekannten Fallback zum Hauptthread rendern."
          }
        }
@@ -693,6 +716,7 @@ diff --git a/src/i18n/locales/partials/de/export.json b/src/i18n/locales/partial
 +    "loudness": {
 +      "measuring": "Exportierter Ton wird gemessen…",
 +      "unknown": "Lautheit unbekannt: Der exportierte Ton konnte nicht gemessen werden.",
++      "tooLong": "Nicht gemessen: Exporte über {{minutes}} Minuten sind zu lang für die Prüfung im Browser.",
 +      "silent": "Kein messbarer Ton in diesem Export.",
 +      "measured": "Export-Lautheit {{lufs}} LUFS, True Peak {{peak}} dBTP (Studio-Ziel {{target}} LUFS, Grenze {{ceiling}} dBTP).",
 +      "tooQuiet": "Leiser als das Ziel; nutze „Lautheit angleichen“ für die Dialog-Clips.",
@@ -748,7 +772,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/export.json b/src/i18n/locales/partials/en/export.json
 --- a/src/i18n/locales/partials/en/export.json
 +++ b/src/i18n/locales/partials/en/export.json
-@@ -212,6 +212,16 @@
+@@ -212,6 +212,17 @@
            "detail": "The export worker can render this composition without a known main-thread fallback."
          }
        }
@@ -756,6 +780,7 @@ diff --git a/src/i18n/locales/partials/en/export.json b/src/i18n/locales/partial
 +    "loudness": {
 +      "measuring": "Measuring the exported sound…",
 +      "unknown": "Loudness unknown: the exported sound couldn't be measured.",
++      "tooLong": "Not measured: exports longer than {{minutes}} minutes are too long to check in the browser.",
 +      "silent": "No measurable sound in this export.",
 +      "measured": "Export loudness {{lufs}} LUFS, true peak {{peak}} dBTP (Studio target {{target}} LUFS, ceiling {{ceiling}} dBTP).",
 +      "tooQuiet": "Quieter than the target; use Match loudness on the dialogue clips.",
@@ -811,7 +836,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/export.json b/src/i18n/locales/partials/es/export.json
 --- a/src/i18n/locales/partials/es/export.json
 +++ b/src/i18n/locales/partials/es/export.json
-@@ -184,6 +184,16 @@
+@@ -184,6 +184,17 @@
            "detail": "El worker de exportación puede renderizar esta composición sin un modo alternativo conocido al hilo principal."
          }
        }
@@ -819,6 +844,7 @@ diff --git a/src/i18n/locales/partials/es/export.json b/src/i18n/locales/partial
 +    "loudness": {
 +      "measuring": "Midiendo el sonido exportado…",
 +      "unknown": "Sonoridad desconocida: no se pudo medir el sonido exportado.",
++      "tooLong": "Sin medir: las exportaciones de más de {{minutes}} minutos son demasiado largas para comprobarlas en el navegador.",
 +      "silent": "No hay sonido medible en esta exportación.",
 +      "measured": "Sonoridad exportada {{lufs}} LUFS, pico real {{peak}} dBTP (objetivo de Studio {{target}} LUFS, techo {{ceiling}} dBTP).",
 +      "tooQuiet": "Más bajo que el objetivo; usa Igualar sonoridad en los clips de diálogo.",
@@ -874,7 +900,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/export.json b/src/i18n/locales/partials/fr/export.json
 --- a/src/i18n/locales/partials/fr/export.json
 +++ b/src/i18n/locales/partials/fr/export.json
-@@ -184,6 +184,16 @@
+@@ -184,6 +184,17 @@
            "detail": "Le worker d’exportation peut rendre cette composition sans repli connu sur le thread principal."
          }
        }
@@ -882,6 +908,7 @@ diff --git a/src/i18n/locales/partials/fr/export.json b/src/i18n/locales/partial
 +    "loudness": {
 +      "measuring": "Mesure du son exporté…",
 +      "unknown": "Volume inconnu : le son exporté n’a pas pu être mesuré.",
++      "tooLong": "Non mesuré : les exports de plus de {{minutes}} minutes sont trop longs pour être vérifiés dans le navigateur.",
 +      "silent": "Aucun son mesurable dans cet export.",
 +      "measured": "Volume exporté {{lufs}} LUFS, crête réelle {{peak}} dBTP (cible Studio {{target}} LUFS, plafond {{ceiling}} dBTP).",
 +      "tooQuiet": "Plus faible que la cible ; utilisez Harmoniser le volume sur les clips de dialogue.",
@@ -937,7 +964,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/export.json b/src/i18n/locales/partials/ja/export.json
 --- a/src/i18n/locales/partials/ja/export.json
 +++ b/src/i18n/locales/partials/ja/export.json
-@@ -184,6 +184,16 @@
+@@ -184,6 +184,17 @@
            "detail": "書き出しワーカーは、既知のメインスレッドフォールバックなしでこのコンポジションをレンダリングできます。"
          }
        }
@@ -945,6 +972,7 @@ diff --git a/src/i18n/locales/partials/ja/export.json b/src/i18n/locales/partial
 +    "loudness": {
 +      "measuring": "書き出した音声を測定中…",
 +      "unknown": "ラウドネス不明：書き出した音声を測定できませんでした。",
++      "tooLong": "測定していません：{{minutes}} 分を超える書き出しはブラウザーで確認するには長すぎます。",
 +      "silent": "この書き出しには測定できる音声がありません。",
 +      "measured": "書き出しのラウドネス {{lufs}} LUFS、トゥルーピーク {{peak}} dBTP（Studio の目標 {{target}} LUFS、上限 {{ceiling}} dBTP）。",
 +      "tooQuiet": "目標より小さいです。会話クリップで「ラウドネスを揃える」を使ってください。",
@@ -1000,7 +1028,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/export.json b/src/i18n/locales/partials/ko/export.json
 --- a/src/i18n/locales/partials/ko/export.json
 +++ b/src/i18n/locales/partials/ko/export.json
-@@ -184,6 +184,16 @@
+@@ -184,6 +184,17 @@
            "detail": "내보내기 워커가 알려진 메인 스레드 폴백 없이 이 컴포지션을 렌더링할 수 있습니다."
          }
        }
@@ -1008,6 +1036,7 @@ diff --git a/src/i18n/locales/partials/ko/export.json b/src/i18n/locales/partial
 +    "loudness": {
 +      "measuring": "내보낸 소리를 측정하는 중…",
 +      "unknown": "음량 알 수 없음: 내보낸 소리를 측정할 수 없습니다.",
++      "tooLong": "측정하지 않음: {{minutes}}분이 넘는 내보내기는 브라우저에서 확인하기에 너무 깁니다.",
 +      "silent": "이 내보내기에는 측정할 소리가 없습니다.",
 +      "measured": "내보내기 음량 {{lufs}} LUFS, 트루 피크 {{peak}} dBTP (Studio 목표 {{target}} LUFS, 상한 {{ceiling}} dBTP).",
 +      "tooQuiet": "목표보다 조용합니다. 대사 클립에 음량 맞추기를 사용하세요.",
@@ -1063,7 +1092,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/pt-BR/export.json b/src/i18n/locales/partials/pt-BR/export.json
 --- a/src/i18n/locales/partials/pt-BR/export.json
 +++ b/src/i18n/locales/partials/pt-BR/export.json
-@@ -184,6 +184,16 @@
+@@ -184,6 +184,17 @@
            "detail": "O worker de exportação pode renderizar esta composição sem fallback conhecido para a thread principal."
          }
        }
@@ -1071,6 +1100,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/export.json b/src/i18n/locales/part
 +    "loudness": {
 +      "measuring": "Medindo o som exportado…",
 +      "unknown": "Volume desconhecido: não foi possível medir o som exportado.",
++      "tooLong": "Não medido: exportações com mais de {{minutes}} minutos são longas demais para verificar no navegador.",
 +      "silent": "Não há som mensurável nesta exportação.",
 +      "measured": "Volume exportado {{lufs}} LUFS, pico real {{peak}} dBTP (alvo do Studio {{target}} LUFS, teto {{ceiling}} dBTP).",
 +      "tooQuiet": "Mais baixo que o alvo; use Igualar volume percebido nos clipes de diálogo.",
@@ -1126,7 +1156,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/tr/export.json b/src/i18n/locales/partials/tr/export.json
 --- a/src/i18n/locales/partials/tr/export.json
 +++ b/src/i18n/locales/partials/tr/export.json
-@@ -184,6 +184,16 @@
+@@ -184,6 +184,17 @@
            "detail": "Dışa aktarma worker’ı bu kompozisyonu bilinen bir ana iş parçacığı geri dönüşü olmadan render edebilir."
          }
        }
@@ -1134,6 +1164,7 @@ diff --git a/src/i18n/locales/partials/tr/export.json b/src/i18n/locales/partial
 +    "loudness": {
 +      "measuring": "Dışa aktarılan ses ölçülüyor…",
 +      "unknown": "Ses yüksekliği bilinmiyor: dışa aktarılan ses ölçülemedi.",
++      "tooLong": "Ölçülmedi: {{minutes}} dakikadan uzun dışa aktarmalar tarayıcıda denetlenemeyecek kadar uzun.",
 +      "silent": "Bu dışa aktarmada ölçülebilir ses yok.",
 +      "measured": "Dışa aktarma ses yüksekliği {{lufs}} LUFS, gerçek tepe {{peak}} dBTP (Studio hedefi {{target}} LUFS, sınır {{ceiling}} dBTP).",
 +      "tooQuiet": "Hedeften sessiz; konuşma kliplerinde Ses yüksekliğini eşitle'yi kullanın.",
@@ -1189,7 +1220,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/export.json b/src/i18n/locales/partials/zh/export.json
 --- a/src/i18n/locales/partials/zh/export.json
 +++ b/src/i18n/locales/partials/zh/export.json
-@@ -184,6 +184,16 @@
+@@ -184,6 +184,17 @@
            "detail": "导出 worker 可以渲染此合成，且没有已知的主线程回退。"
          }
        }
@@ -1197,6 +1228,7 @@ diff --git a/src/i18n/locales/partials/zh/export.json b/src/i18n/locales/partial
 +    "loudness": {
 +      "measuring": "正在测量导出的声音…",
 +      "unknown": "响度未知：无法测量导出的声音。",
++      "tooLong": "未测量：超过 {{minutes}} 分钟的导出太长，无法在浏览器中检查。",
 +      "silent": "此导出中没有可测量的声音。",
 +      "measured": "导出响度 {{lufs}} LUFS，真峰值 {{peak}} dBTP（Studio 目标 {{target}} LUFS，上限 {{ceiling}} dBTP）。",
 +      "tooQuiet": "低于目标；请对对白片段使用“统一响度”。",
@@ -1311,7 +1343,7 @@ diff --git a/src/shared/utils/loudness.ts b/src/shared/utils/loudness.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/loudness.ts
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,191 @@
 +/**
 + * Loudness measurement (FL-598): ITU-R BS.1770-4 integrated loudness with
 + * EBU R128 gating, and true peak by 4x oversampling. One implementation is
@@ -1364,20 +1396,27 @@ new file mode 100644
 +  ]
 +}
 +
-+function filter(samples: Float32Array, stages: readonly Biquad[]): Float64Array {
-+  let current = Float64Array.from(samples)
-+  for (const { b0, b1, b2, a1, a2 } of stages) {
-+    const out = new Float64Array(current.length)
-+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0
-+    for (let i = 0; i < current.length; i += 1) {
-+      const x = current[i]!
-+      const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
-+      x2 = x1; x1 = x; y2 = y1; y1 = y
-+      out[i] = y
++/**
++ * K-weight one channel and add weight × the energy of each `step`-sample segment into `energy`.
++ * Streams sample by sample, so memory is one value per 100 ms, not per sample.
++ */
++function addSegmentEnergy(samples: Float32Array, stages: readonly Biquad[], step: number, weight: number, energy: Float64Array): void {
++  const state = stages.map(() => ({ x1: 0, x2: 0, y1: 0, y2: 0 }))
++  for (let segment = 0; segment < energy.length; segment += 1) {
++    let sum = 0
++    for (let i = segment * step, end = i + step; i < end; i += 1) {
++      let value = samples[i]!
++      for (let s = 0; s < stages.length; s += 1) {
++        const { b0, b1, b2, a1, a2 } = stages[s]!
++        const z = state[s]!
++        const y = b0 * value + b1 * z.x1 + b2 * z.x2 - a1 * z.y1 - a2 * z.y2
++        z.x2 = z.x1; z.x1 = value; z.y2 = z.y1; z.y1 = y
++        value = y
++      }
++      sum += value * value
 +    }
-+    current = out
++    energy[segment]! += weight * sum
 +  }
-+  return current
 +}
 +
 +const toLufs = (power: number) => -0.691 + 10 * Math.log10(power)
@@ -1398,27 +1437,21 @@ new file mode 100644
 +
 +function integratedLoudness(input: LoudnessInput): number | null {
 +  const { sampleRate, channels } = input
-+  const blockSize = Math.round(0.4 * sampleRate)
++  // 400 ms blocks at a 100 ms step (75% overlap) are four consecutive 100 ms segments.
 +  const step = Math.round(0.1 * sampleRate)
++  const blockSize = 4 * step
 +  const length = channels[0]?.length ?? 0
 +  if (length < blockSize) return null
 +
 +  const stages = kWeighting(sampleRate)
 +  const weights = channelWeights(channels.length)
-+  // Prefix sums of squares make each 400 ms block O(channels).
-+  const prefix = channels.map((channel) => {
-+    const weighted = filter(channel, stages)
-+    const sums = new Float64Array(weighted.length + 1)
-+    for (let i = 0; i < weighted.length; i += 1) sums[i + 1] = sums[i]! + weighted[i]! * weighted[i]!
-+    return sums
++  const energy = new Float64Array(Math.floor(length / step))
++  channels.forEach((channel, c) => {
++    if (weights[c]! > 0) addSegmentEnergy(channel, stages, step, weights[c]!, energy)
 +  })
 +  const blocks: number[] = []
-+  for (let start = 0; start + blockSize <= length; start += step) {
-+    let power = 0
-+    for (let c = 0; c < prefix.length; c += 1) {
-+      power += (weights[c]! * (prefix[c]![start + blockSize]! - prefix[c]![start]!)) / blockSize
-+    }
-+    blocks.push(power)
++  for (let k = 0; k + 4 <= energy.length; k += 1) {
++    blocks.push((energy[k]! + energy[k + 1]! + energy[k + 2]! + energy[k + 3]!) / blockSize)
 +  }
 +
 +  const absolute = blocks.filter((power) => power > 0 && toLufs(power) > -70)
