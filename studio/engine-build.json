@@ -734,6 +734,11 @@
       "path": "patches/0151-graded-hdr-colour-match.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c4ffa7ec664778c178a45ff30f5a2f837415d7a23f9a07a81d434c4657c6940f"
+    },
+    {
+      "path": "patches/0162-voice-cleanup.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4b6d132d40331cda3d68ab8a36e005dc3b89d741d7906e194964f6332f70d440"
     }
   ],
   "sourceSha256": "e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232"

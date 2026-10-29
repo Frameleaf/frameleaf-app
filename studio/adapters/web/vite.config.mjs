@@ -35,6 +35,8 @@ const substitutedModules = {
   '@/features/export/components/export-dialog': 'export-dialog.tsx',
   '@/features/export/components/exports-dialog': 'exports-dialog.tsx',
   '@/features/project-bundle/components/bundle-export-dialog': 'bundle-export-dialog.tsx',
+  // FL-637: "Clean up voice" runs on the project's server, not in the editor.
+  '@/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service': 'voice-cleanup-service.ts',
 }
 
 /** Feature rows this build implements and tests (FL-92's command rows); FL-85 owns the rest. */
@@ -160,7 +162,7 @@ export default async () => ({
     alias: [
       // Freecut's own exports render in the browser and save into its workspace. In Frameleaf the
       // editor's Export, exports list and project bundle go to the host's export, Activity and
-      // portable-bundle paths instead (FL-88), so these three modules are substituted, never edited.
+      // portable-bundle paths instead (FL-88), so these modules are substituted, never edited (FL-637 adds the voice clean-up host).
       ...Object.entries(substitutedModules).map(([engineModule, shim]) => ({
         find: new RegExp(`^${engineModule.replaceAll('/', '\\/')}$`),
         replacement: path.join(here, 'src/shims', shim),

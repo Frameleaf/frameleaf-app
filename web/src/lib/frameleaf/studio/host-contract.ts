@@ -33,6 +33,7 @@ import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, St
 import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
 import type { TranscriptEngineString } from './transcript-strings';
+import type { VoiceCleanupEngineString } from './voice-cleanup-strings';
 
 /* ------------------------------------------------------------------ */
 /* What the host tells the engine                                       */
@@ -358,7 +359,9 @@ export type StudioAdapterString =
    */
   | 'lockedTrackRefused'
   /** The transcript panel's words (FL-562), written over the engine's English the same way. */
-  | TranscriptEngineString;
+  | TranscriptEngineString
+  /** The "Clean up voice" card's words (FL-637), the same way. */
+  | VoiceCleanupEngineString;
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 

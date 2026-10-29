@@ -4,8 +4,14 @@
     "license": "MIT OR Apache-2.0",
     "source": {
       "project": "Rikorose/DeepFilterNet",
+      "commit": "84d57ec2c08fe08e68a13fb32a58cd7092060a0f",
       "archive": "models/DeepFilterNet3_onnx.tar.gz",
-      "sha256": "c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616"
+      "sha256": "c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616",
+      "members": {
+        "audio/enc.onnx": "tmp/export/enc.onnx",
+        "audio/erb_dec.onnx": "tmp/export/erb_dec.onnx",
+        "audio/df_dec.onnx": "tmp/export/df_dec.onnx"
+      }
     },
     "files": {
       "audio/enc.onnx": "7c5399d3da8a50ebef1c1a0ae421b33376aa5e45d0e92df16da7e83c9c131916",

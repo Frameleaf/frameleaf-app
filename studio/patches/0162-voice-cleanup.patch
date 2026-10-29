@@ -1,0 +1,808 @@
+Subject: Clean up voice: one clip's cleaned sound as a project file, with the original kept (FL-637)
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
+@@ -18,6 +18,7 @@
+ import { getAudioSectionItems } from './audio-section-utils'
+ import { AudioEqPanelContent } from './audio-eq-panel-content'
+ import { LoudnessMatchSection } from './loudness-match-section'
++import { VoiceCleanupSection } from './voice-cleanup-section'
+ import {
+   AUDIO_PITCH_CENTS_MAX,
+   AUDIO_PITCH_CENTS_MIN,
+@@ -438,6 +439,8 @@
+       <PropertySection title={t('editor.audioSection.equalizer')} defaultOpen={true}>
+         <AudioEqPanelContent items={items} targetLabel="" layoutMode="compact" />
+       </PropertySection>
++
++      <VoiceCleanupSection key={itemIds.join(',')} items={items} />
+     </>
+   )
+ }
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.test.tsx
+@@ -0,0 +1,115 @@
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { ReactNode } from 'react'
++import type { AudioItem, TimelineTrack } from '@/types/timeline'
++import { useItemsStore } from '@/features/timeline/stores/items-store'
++import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
++import type { VoiceCleanupHost } from './voice-cleanup-service'
++import { VoiceCleanupSection } from './voice-cleanup-section'
++
++const host = vi.hoisted(() => ({ current: null as VoiceCleanupHost | null }))
++
++vi.mock('@/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service', () => ({
++  getVoiceCleanupHost: () => host.current,
++}))
++
++vi.mock('react-i18next', () => ({
++  useTranslation: () => ({
++    t: (key: string, values?: Record<string, unknown>) =>
++      values ? `${key}(${Object.values(values).join(',')})` : key,
++  }),
++}))
++
++vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
++
++vi.mock('../components', () => ({
++  PropertySection: ({ title, children }: { title: string; children: ReactNode }) => (
++    <section aria-label={title}>{children}</section>
++  ),
++}))
++
++const k = (key: string) => `editor.audioSection.voiceCleanup.${key}`
++
++const track = { id: 't1', name: 'A1', order: 0, height: 80, locked: false, syncLock: true, visible: true,
++  muted: false, solo: false, volume: 0, items: [], kind: 'audio' } as TimelineTrack
++
++const clip = (id: string, label: string, overrides: Partial<AudioItem> = {}): AudioItem => ({
++  id, type: 'audio', trackId: 't1', from: id === 'a1' ? 0 : 200, durationInFrames: 120, label, src: 'blob:a',
++  mediaId: `media-${id}`, sourceStart: 60, sourceEnd: 180, sourceFps: 30, ...overrides,
++} as AudioItem)
++
++const fakeHost = (overrides: Partial<VoiceCleanupHost> = {}): VoiceCleanupHost => ({
++  analyze: vi.fn().mockResolvedValue({ noises: ['background', 'wind'], humHz: null }),
++  clean: vi.fn().mockImplementation(async (_request, onProgress: (percent: number) => void) => {
++    onProgress(40)
++    return {
++      importId: 'cleaned-1', strength: 'standard', noises: ['wind', 'background'], humHz: null,
++      sourceStartSeconds: 1, durationSeconds: 6,
++    }
++  }),
++  ...overrides,
++})
++
++describe('Clean up voice card (FL-637)', () => {
++  beforeEach(() => {
++    useTimelineSettingsStore.setState({ fps: 30 })
++    useItemsStore.getState().setTracks([track])
++    useItemsStore.getState().setItems([clip('a1', 'Beach walk'), clip('a2', 'Interview')])
++    host.current = fakeHost()
++  })
++
++  it('is not shown without a host that can clean voices', () => {
++    host.current = null
++    const { container } = render(<VoiceCleanupSection items={[clip('a1', 'Beach walk')]} />)
++    expect(container).toBeEmptyDOMElement()
++  })
++
++  it('picks the selected clip and ticks what the quick analysis found', async () => {
++    render(<VoiceCleanupSection items={[clip('a2', 'Interview')]} />)
++    expect(screen.getByRole('combobox')).toHaveValue('a2')
++    expect(screen.getByText(k('checking'))).toBeInTheDocument()
++    await waitFor(() => expect(screen.getByLabelText(k('noise.wind'))).toBeChecked())
++    expect(screen.getByLabelText(k('noise.background'))).toBeChecked()
++    expect(screen.getByLabelText(k('noise.hum'))).not.toBeChecked()
++    expect(screen.getByLabelText(k('noise.echo'))).not.toBeChecked()
++    expect(host.current!.analyze).toHaveBeenCalledWith('a2', expect.any(AbortSignal))
++    // One clip at a time: no "all clips" action.
++    expect(screen.getAllByRole('button', { name: new RegExp(k('action')) })).toHaveLength(1)
++    expect(screen.getByText(k('where'))).toBeInTheDocument()
++  })
++
++  it('cleans the clip with the chosen strength, then offers the original and a clean-up again', async () => {
++    render(<VoiceCleanupSection items={[clip('a1', 'Beach walk')]} />)
++    await waitFor(() => expect(screen.getByLabelText(k('noise.wind'))).toBeChecked())
++    fireEvent.click(screen.getByRole('radio', { name: k('strength.strong') }))
++    expect(screen.getByText(k('strengthNote.strong'))).toBeInTheDocument()
++    fireEvent.click(screen.getByLabelText(k('noise.hum')))
++    await act(async () => {
++      fireEvent.click(screen.getByRole('button', { name: new RegExp(k('action')) }))
++    })
++    expect(host.current!.clean).toHaveBeenCalledWith(
++      { clipId: 'a1', strength: 'strong', noises: ['wind', 'hum', 'background'], humHz: null },
++      expect.any(Function),
++      expect.any(AbortSignal),
++    )
++    const cleaned = useItemsStore.getState().items.find((item) => item.id === 'a1') as AudioItem
++    expect(cleaned.mediaId).toBe('cleaned-1')
++    expect(cleaned.voiceCleanup?.original.mediaId).toBe('media-a1')
++    expect(await screen.findByText(`${k('done')}(${k('strength.standard')})`)).toBeInTheDocument()
++    // The clean-up was Standard and Strong is chosen: the settings changed.
++    expect(screen.getByRole('button', { name: k('again') })).toBeInTheDocument()
++    expect(screen.getByRole('option', { name: `${k('cleanedClip')}(Beach walk)` })).toBeInTheDocument()
++
++    fireEvent.click(screen.getByRole('button', { name: k('useOriginal') }))
++    const restored = useItemsStore.getState().items.find((item) => item.id === 'a1') as AudioItem
++    expect(restored.mediaId).toBe('media-a1')
++    expect(restored.voiceCleanup).toBeUndefined()
++  })
++
++  it('cannot clean with nothing to remove, and says when the sound could not be checked', async () => {
++    host.current = fakeHost({ analyze: vi.fn().mockRejectedValue(new Error('No computer is available now')) })
++    render(<VoiceCleanupSection items={[clip('a1', 'Beach walk')]} />)
++    expect(await screen.findByText(`${k('analysisFailed')}(No computer is available now)`)).toBeInTheDocument()
++    expect(screen.getByRole('button', { name: new RegExp(k('action')) })).toBeDisabled()
++  })
++})
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.tsx
+@@ -0,0 +1,304 @@
++import { useEffect, useMemo, useRef, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { CheckCircle2, Home, Mic, Play, Square, Wand2 } from 'lucide-react'
++import { toast } from 'sonner'
++import { Button } from '@/components/ui/button'
++import { Progress } from '@/components/ui/progress'
++import type { AudioItem, TimelineItem, VoiceCleanupNoise, VoiceCleanupStrength } from '@/types/timeline'
++import {
++  applyVoiceCleanup,
++  restoreOriginalSound,
++  useTimelineStore,
++  voiceCleanupOriginal,
++} from '@/features/editor/deps/timeline-store'
++import { resolveMediaUrl } from '@/features/editor/deps/media-library'
++import { PropertySection } from '../components'
++// By its alias, so a host build can substitute it (studio/adapters/web/vite.config.mjs).
++import { getVoiceCleanupHost } from '@/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service'
++
++const NOISES: readonly VoiceCleanupNoise[] = ['wind', 'hum', 'background', 'echo']
++const STRENGTHS: readonly VoiceCleanupStrength[] = ['light', 'standard', 'strong']
++/** The Before / After listen plays at most this much of the clip. */
++const LISTEN_SECONDS = 15
++
++const sameNoises = (a: readonly VoiceCleanupNoise[], b: readonly VoiceCleanupNoise[]) =>
++  a.length === b.length && a.every((noise) => b.includes(noise))
++const ordered = (noises: Iterable<VoiceCleanupNoise>) => {
++  const chosen = new Set(noises)
++  return NOISES.filter((noise) => chosen.has(noise))
++}
++
++function Segmented<T extends string>({ label, options, value, onChange, disabled }: {
++  label: string
++  options: ReadonlyArray<{ id: T; label: string }>
++  value: T
++  onChange: (value: T) => void
++  disabled?: boolean
++}) {
++  return (
++    <div role="radiogroup" aria-label={label} className="flex w-full gap-0.5 rounded-md border border-input p-0.5">
++      {options.map((option) => (
++        <button key={option.id} type="button" role="radio" aria-checked={value === option.id} disabled={disabled}
++          className={`h-6 flex-1 rounded px-1 text-xs ${value === option.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'}`}
++          onClick={() => onChange(option.id)}>
++          {option.label}
++        </button>
++      ))}
++    </div>
++  )
++}
++
++/**
++ * Clean up voice (FL-637, approved mock 2026-10-29): one clip with sound at a time. "Found in this
++ * clip" comes from a quick analysis and can be changed; Strength is Light, Standard or Strong. The
++ * cleaned sound is a project file the clip plays in preview and export; the original is kept, and
++ * "Use the original sound" puts it back. It runs on the person's own server or a computer at home.
++ */
++export function VoiceCleanupSection({ items }: { items: TimelineItem[] }) {
++  const { t } = useTranslation()
++  const host = getVoiceCleanupHost()
++  const timelineItems = useTimelineStore((s) => s.items)
++  const clips = useMemo(
++    () =>
++      timelineItems
++        .filter((item): item is AudioItem => item.type === 'audio' && !!item.mediaId && !item.isReversed)
++        .sort((a, b) => a.from - b.from),
++    [timelineItems],
++  )
++  const selected = items.find((item) => item.type === 'audio')?.id
++  const [clipId, setClipId] = useState<string | undefined>(selected)
++  const clip = clips.find((item) => item.id === clipId) ?? clips.find((item) => item.id === selected) ?? clips[0]
++  const done = clip?.voiceCleanup ?? null
++  const [strength, setStrength] = useState<VoiceCleanupStrength>(done?.strength ?? 'standard')
++  const [noises, setNoises] = useState<VoiceCleanupNoise[]>(done?.noises ?? [])
++  const [humHz, setHumHz] = useState<50 | 60 | null>(done?.humHz ?? null)
++  const [checking, setChecking] = useState(false)
++  const [unchecked, setUnchecked] = useState<string | null>(null)
++  const [progress, setProgress] = useState<number | null>(null)
++  const [listen, setListen] = useState<'before' | 'after'>('after')
++  const [playing, setPlaying] = useState(false)
++  const work = useRef<AbortController | null>(null)
++  const audio = useRef<HTMLAudioElement | null>(null)
++
++  // A new clip starts from what it was cleaned with, or from a fresh look at its sound.
++  useEffect(() => {
++    if (!host || !clip) return
++    work.current?.abort()
++    setProgress(null)
++    if (clip.voiceCleanup) {
++      setStrength(clip.voiceCleanup.strength)
++      setNoises(clip.voiceCleanup.noises)
++      setHumHz(clip.voiceCleanup.humHz)
++      setChecking(false)
++      return
++    }
++    const controller = new AbortController()
++    work.current = controller
++    setNoises([])
++    setUnchecked(null)
++    setChecking(true)
++    host
++      .analyze(clip.id, controller.signal)
++      .then((found) => {
++        if (controller.signal.aborted) return
++        setNoises(ordered(found.noises))
++        setHumHz(found.humHz)
++      })
++      .catch((error: unknown) => {
++        // Shown in the card, not as a toast: choosing a clip should not raise an alarm.
++        if (!controller.signal.aborted) setUnchecked(errorText(error))
++      })
++      .finally(() => {
++        if (work.current === controller) setChecking(false)
++      })
++    // Only a change of clip starts a new look; the record is read when it does.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [host, clip?.id])
++
++  useEffect(() => () => {
++    work.current?.abort()
++    audio.current?.pause()
++  }, [])
++
++  if (!host || !clip) return null
++
++  const busy = progress !== null
++  const changed = !!done && (done.strength !== strength || !sameNoises(done.noises, noises))
++  const strengthLabel = (id: VoiceCleanupStrength) => t(`editor.audioSection.voiceCleanup.strength.${id}`)
++
++  const clean = async () => {
++    work.current?.abort()
++    const controller = new AbortController()
++    work.current = controller
++    setProgress(0)
++    try {
++      const result = await host.clean(
++        { clipId: clip.id, strength, noises, humHz },
++        (percent) => {
++          if (!controller.signal.aborted) setProgress(percent)
++        },
++        controller.signal,
++      )
++      if (controller.signal.aborted) return
++      const outcome = applyVoiceCleanup(clip.id, result)
++      if (outcome === 'applied') toast.success(t('editor.audioSection.voiceCleanup.cleaned', { name: clip.label }))
++      else if (outcome === 'locked') toast.warning(t('editor.audioSection.voiceCleanup.locked'))
++      else toast.warning(t('editor.audioSection.voiceCleanup.clipGone'))
++    } catch (error) {
++      if (!controller.signal.aborted) {
++        toast.error(t('editor.audioSection.voiceCleanup.failed', { reason: errorText(error) }))
++      }
++    } finally {
++      if (work.current === controller) setProgress(null)
++    }
++  }
++
++  const keepOriginal = () => {
++    const outcome = restoreOriginalSound(clip.id)
++    if (outcome === 'locked') toast.warning(t('editor.audioSection.voiceCleanup.locked'))
++  }
++
++  const stop = () => {
++    audio.current?.pause()
++    setPlaying(false)
++  }
++
++  // Before plays the original from the clip's start; After plays the cleaned sound from the same place.
++  const play = async () => {
++    stop()
++    const original = voiceCleanupOriginal(clip)
++    const fps = clip.sourceFps ?? 30
++    const after = listen === 'after' && !!done
++    const mediaId = after ? done.importId : original.mediaId
++    const start = (after ? clip.sourceStart ?? 0 : original.sourceStart) / fps
++    const seconds = Math.min(LISTEN_SECONDS, (original.sourceEnd - original.sourceStart) / fps)
++    try {
++      const element = audio.current ?? new Audio()
++      audio.current = element
++      element.src = await resolveMediaUrl(mediaId)
++      element.currentTime = start
++      element.ontimeupdate = () => {
++        if (element.currentTime >= start + seconds) stop()
++      }
++      element.onended = () => setPlaying(false)
++      await element.play()
++      setPlaying(true)
++    } catch {
++      setPlaying(false)
++      toast.error(t('editor.audioSection.voiceCleanup.listenFailed'))
++    }
++  }
++
++  return (
++    <PropertySection title={t('editor.audioSection.voiceCleanup.title')} icon={Mic} defaultOpen={true}>
++      <div className="space-y-2 px-1 py-2 text-xs" aria-label={t('editor.audioSection.voiceCleanup.title')}>
++        <label className="flex flex-col gap-1">
++          <span className="text-muted-foreground">{t('editor.audioSection.voiceCleanup.clip')}</span>
++          <select
++            className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs"
++            value={clip.id}
++            disabled={busy}
++            onChange={(event) => {
++              stop()
++              setClipId(event.target.value)
++            }}
++          >
++            {clips.map((item) => (
++              <option key={item.id} value={item.id}>
++                {item.voiceCleanup
++                  ? t('editor.audioSection.voiceCleanup.cleanedClip', { name: item.label })
++                  : item.label}
++              </option>
++            ))}
++          </select>
++        </label>
++
++        <div role="group" aria-label={t('editor.audioSection.voiceCleanup.found')} className="space-y-1">
++          <span className="text-muted-foreground">
++            {checking ? t('editor.audioSection.voiceCleanup.checking') : t('editor.audioSection.voiceCleanup.found')}
++          </span>
++          <div className="flex flex-wrap gap-1">
++            {NOISES.map((noise) => {
++              const on = noises.includes(noise)
++              return (
++                <label key={noise}
++                  className={`flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 ${on ? 'border-primary bg-primary/10' : 'border-input'}`}>
++                  <input type="checkbox" className="h-3 w-3" checked={on} disabled={busy}
++                    onChange={(event) =>
++                      setNoises((current) =>
++                        ordered(event.target.checked ? [...current, noise] : current.filter((id) => id !== noise)),
++                      )
++                    } />
++                  {t(`editor.audioSection.voiceCleanup.noise.${noise}`)}
++                </label>
++              )
++            })}
++          </div>
++          {unchecked && (
++            <p className="text-amber-500">{t('editor.audioSection.voiceCleanup.analysisFailed', { reason: unchecked })}</p>
++          )}
++        </div>
++
++        <div className="space-y-1">
++          <span className="text-muted-foreground">{t('editor.audioSection.voiceCleanup.strengthLabel')}</span>
++          <Segmented label={t('editor.audioSection.voiceCleanup.strengthLabel')} value={strength} disabled={busy}
++            onChange={setStrength} options={STRENGTHS.map((id) => ({ id, label: strengthLabel(id) }))} />
++          <p className="text-muted-foreground">{t(`editor.audioSection.voiceCleanup.strengthNote.${strength}`)}</p>
++        </div>
++
++        <div className="flex items-center gap-1">
++          <Segmented label={t('editor.audioSection.voiceCleanup.listen')} value={listen} onChange={(value) => { stop(); setListen(value) }}
++            options={[
++              { id: 'before', label: t('editor.audioSection.voiceCleanup.before') },
++              { id: 'after', label: t('editor.audioSection.voiceCleanup.after') },
++            ]} />
++          <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0"
++            disabled={listen === 'after' && !done}
++            aria-label={playing ? t('editor.audioSection.voiceCleanup.stop') : t('editor.audioSection.voiceCleanup.play')}
++            title={listen === 'after' && !done ? t('editor.audioSection.voiceCleanup.afterNotYet') : undefined}
++            onClick={() => (playing ? stop() : void play())}>
++            {playing ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
++          </Button>
++        </div>
++
++        {busy && (
++          <div role="status" aria-live="polite" className="space-y-1">
++            <span>{t('editor.audioSection.voiceCleanup.progress', { percent: Math.round(progress) })}</span>
++            <Progress className="h-1.5" value={progress} />
++          </div>
++        )}
++
++        <div className="flex flex-wrap items-center gap-2">
++          {done ? (
++            <>
++              <span className="flex items-center gap-1 text-emerald-500">
++                <CheckCircle2 className="h-3.5 w-3.5" />
++                {t('editor.audioSection.voiceCleanup.done', { strength: strengthLabel(done.strength) })}
++              </span>
++              <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={busy} onClick={keepOriginal}>
++                {t('editor.audioSection.voiceCleanup.useOriginal')}
++              </Button>
++              {changed && (
++                <Button size="sm" className="h-7 text-xs" disabled={busy || noises.length === 0} onClick={() => void clean()}>
++                  {t('editor.audioSection.voiceCleanup.again')}
++                </Button>
++              )}
++            </>
++          ) : (
++            <Button size="sm" className="h-7 text-xs" disabled={busy || checking || noises.length === 0} onClick={() => void clean()}>
++              <Wand2 className="mr-1 h-3.5 w-3.5" />
++              {t('editor.audioSection.voiceCleanup.action')}
++            </Button>
++          )}
++        </div>
++
++        <p className="flex items-start gap-1 text-muted-foreground">
++          <Home className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
++          <span>{t('editor.audioSection.voiceCleanup.where')}</span>
++        </p>
++      </div>
++    </PropertySection>
++  )
++}
++
++const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service.ts b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service.ts
+@@ -0,0 +1,37 @@
++import type { VoiceCleanupNoise, VoiceCleanupStrength } from '@/types/timeline'
++import type { VoiceCleanupResult } from '@/features/editor/deps/timeline-store'
++
++/** What the quick analysis of a clip found (FL-637). */
++export interface VoiceAnalysis {
++  noises: VoiceCleanupNoise[]
++  humHz: 50 | 60 | null
++}
++
++export interface VoiceCleanupRequest {
++  clipId: string
++  strength: VoiceCleanupStrength
++  noises: VoiceCleanupNoise[]
++  humHz: 50 | 60 | null
++}
++
++/**
++ * Where "Clean up voice" runs: the host that keeps the project. The speech model runs on the person's
++ * own server or a computer at home; the cleaned sound comes back as a media id the bin already holds.
++ */
++export interface VoiceCleanupHost {
++  analyze(clipId: string, signal: AbortSignal): Promise<VoiceAnalysis>
++  /** Clean the clip; `onProgress` gets 0 to 100. Resolves once the cleaned sound is in the bin. */
++  clean(
++    request: VoiceCleanupRequest,
++    onProgress: (percent: number) => void,
++    signal: AbortSignal,
++  ): Promise<VoiceCleanupResult>
++}
++
++/**
++ * The editor on its own has no host to clean voices, so the card is not shown. A host build
++ * substitutes this module with one that answers (Frameleaf: `studio/adapters/web/src/shims`).
++ */
++export function getVoiceCleanupHost(): VoiceCleanupHost | null {
++  return null
++}
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -34,6 +34,13 @@
+   type SpeedRampPoint,
+ } from '@/features/timeline/stores/actions/edit/speed-ramp-actions'
+ export { applyLoudnessMatch, setMasterLoudness } from '@/features/timeline/stores/actions/edit/loudness-match-actions'
++export {
++  applyVoiceCleanup,
++  restoreOriginalSound,
++  voiceCleanupOriginal,
++  type VoiceCleanupOutcome,
++  type VoiceCleanupResult,
++} from '@/features/timeline/stores/actions/edit/voice-cleanup-actions'
+ export {
+   analyzeClipLoudness,
+   DEFAULT_CEILING_DBTP,
+diff --git a/src/features/timeline/stores/actions/edit/voice-cleanup-actions.test.ts b/src/features/timeline/stores/actions/edit/voice-cleanup-actions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/voice-cleanup-actions.test.ts
+@@ -0,0 +1,83 @@
++// @vitest-environment node
++
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import type { AudioItem, TimelineTrack } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTimelineCommandStore } from '../../timeline-command-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { buildTimelineFromStores } from '../../timeline-persistence'
++import { applyVoiceCleanup, restoreOriginalSound, type VoiceCleanupResult } from './voice-cleanup-actions'
++
++const track = (id: string, locked = false) => ({
++  id, name: id, order: 0, height: 80, locked, syncLock: true, visible: true, muted: false,
++  solo: false, volume: 0, items: [], kind: 'audio',
++}) as TimelineTrack
++
++const audio = (overrides: Partial<AudioItem> = {}): AudioItem => ({
++  id: 'a1', type: 'audio', trackId: 't1', from: 90, durationInFrames: 120, label: 'Beach walk',
++  src: 'blob:a', mediaId: 'm1', sourceStart: 300, sourceEnd: 420, sourceDuration: 1800, sourceFps: 30,
++  volume: -2, ...overrides,
++} as AudioItem)
++
++const cleaned: VoiceCleanupResult = {
++  importId: 'cleaned-1', strength: 'standard', noises: ['wind', 'background'], humHz: null,
++  sourceStartSeconds: 1, durationSeconds: 6,
++}
++
++const item = (id = 'a1') => useItemsStore.getState().items.find((candidate) => candidate.id === id) as AudioItem
++
++describe('clean up voice', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useItemsStore.getState().setTracks([track('t1'), track('t2', true)])
++  })
++
++  it('plays the same window of the cleaned sound, keeping the clip and what it played before', () => {
++    useItemsStore.getState().setItems([audio()])
++    expect(applyVoiceCleanup('a1', cleaned)).toBe('applied')
++    expect(item()).toMatchObject({
++      mediaId: 'cleaned-1', from: 90, durationInFrames: 120, volume: -2,
++      sourceStart: 30, sourceEnd: 150, sourceDuration: 180,
++      voiceCleanup: {
++        importId: 'cleaned-1', strength: 'standard', noises: ['wind', 'background'], humHz: null,
++        original: { mediaId: 'm1', sourceStart: 300, sourceEnd: 420, sourceDuration: 1800 },
++      },
++    })
++    expect(item().src).toBeUndefined()
++    expect(useTimelineSettingsStore.getState().isDirty).toBe(true)
++    // Kept with the project: the record is saved with the clip.
++    const saved = buildTimelineFromStores().items.find((candidate) => candidate.id === 'a1') as AudioItem
++    expect(saved.voiceCleanup?.original.mediaId).toBe('m1')
++  })
++
++  it('uses the original sound again, in one undoable step each way', () => {
++    useItemsStore.getState().setItems([audio()])
++    applyVoiceCleanup('a1', cleaned)
++    expect(restoreOriginalSound('a1')).toBe('applied')
++    expect(item()).toMatchObject({ mediaId: 'm1', sourceStart: 300, sourceEnd: 420, sourceDuration: 1800 })
++    expect(item().voiceCleanup).toBeUndefined()
++    useTimelineCommandStore.getState().undo()
++    expect(item().mediaId).toBe('cleaned-1')
++    useTimelineCommandStore.getState().undo()
++    expect(item().mediaId).toBe('m1')
++  })
++
++  it('cleans again from the original, never from the cleaned sound', () => {
++    useItemsStore.getState().setItems([audio()])
++    applyVoiceCleanup('a1', cleaned)
++    applyVoiceCleanup('a1', { ...cleaned, importId: 'cleaned-2', strength: 'strong', sourceStartSeconds: 0.5 })
++    expect(item()).toMatchObject({
++      mediaId: 'cleaned-2', sourceStart: 15, sourceEnd: 135,
++      voiceCleanup: { strength: 'strong', original: { mediaId: 'm1', sourceStart: 300 } },
++    })
++  })
++
++  it('refuses a locked track and a clip that is gone', () => {
++    useItemsStore.getState().setItems([audio({ trackId: 't2' })])
++    expect(applyVoiceCleanup('a1', cleaned)).toBe('locked')
++    expect(item().mediaId).toBe('m1')
++    expect(applyVoiceCleanup('gone', cleaned)).toBe('missing')
++    expect(restoreOriginalSound('a1')).toBe('missing')
++  })
++})
+diff --git a/src/features/timeline/stores/actions/edit/voice-cleanup-actions.ts b/src/features/timeline/stores/actions/edit/voice-cleanup-actions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/voice-cleanup-actions.ts
+@@ -0,0 +1,110 @@
++import type { AudioItem, VoiceCleanupNoise, VoiceCleanupRecord, VoiceCleanupStrength } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { execute } from '../shared'
++import { hasLockedEditParticipants } from '../linked-edit'
++
++/** A finished clean-up: the cleaned sound's media id and where the clip's window starts in it. */
++export interface VoiceCleanupResult {
++  importId: string
++  strength: VoiceCleanupStrength
++  noises: VoiceCleanupNoise[]
++  humHz: 50 | 60 | null
++  /** Seconds of handle before the clip's window in the cleaned sound. */
++  sourceStartSeconds: number
++  durationSeconds: number
++}
++
++export type VoiceCleanupOutcome = 'applied' | 'missing' | 'locked'
++
++const audioItem = (itemId: string): AudioItem | null => {
++  const item = useItemsStore.getState().items.find((candidate) => candidate.id === itemId)
++  return item?.type === 'audio' ? item : null
++}
++
++/** What the clip plays now, or what it played before an earlier clean-up. */
++export function voiceCleanupOriginal(item: AudioItem): NonNullable<VoiceCleanupRecord['original']> {
++  return (
++    item.voiceCleanup?.original ?? {
++      mediaId: item.mediaId!,
++      sourceStart: item.sourceStart ?? 0,
++      sourceEnd: item.sourceEnd ?? (item.sourceStart ?? 0) + item.durationInFrames,
++      ...(item.sourceDuration !== undefined && { sourceDuration: item.sourceDuration }),
++      ...(item.trimStart !== undefined && { trimStart: item.trimStart }),
++      ...(item.trimEnd !== undefined && { trimEnd: item.trimEnd }),
++      ...(item.offset !== undefined && { offset: item.offset }),
++    }
++  )
++}
++
++/**
++ * Clean up voice (FL-637): play the clip from the cleaned sound, as one undoable edit. The clip keeps
++ * its place, length and speed: only its source changes, to the same window of the cleaned sound. What
++ * it played before is kept under `voiceCleanup.original`, so the original sound can be put back.
++ */
++export function applyVoiceCleanup(itemId: string, result: VoiceCleanupResult): VoiceCleanupOutcome {
++  const item = audioItem(itemId)
++  if (!item || !item.mediaId) return 'missing'
++  if (hasLockedEditParticipants([item])) return 'locked'
++  const original = voiceCleanupOriginal(item)
++  const fps = item.sourceFps ?? useTimelineSettingsStore.getState().fps
++  const sourceStart = Math.max(0, Math.round(result.sourceStartSeconds * fps))
++  const sourceEnd = sourceStart + (original.sourceEnd - original.sourceStart)
++  const sourceDuration = Math.max(sourceEnd, Math.floor(result.durationSeconds * fps))
++  const voiceCleanup: VoiceCleanupRecord = {
++    importId: result.importId,
++    strength: result.strength,
++    noises: [...result.noises],
++    humHz: result.humHz,
++    original,
++  }
++  execute(
++    'APPLY_VOICE_CLEANUP',
++    () => {
++      useItemsStore.getState()._updateItem(itemId, {
++        mediaId: result.importId,
++        src: undefined,
++        waveformData: undefined,
++        sourceStart,
++        sourceEnd,
++        sourceDuration,
++        // `sourceStart` wins over these older fields; they follow it only where the clip had them.
++        trimStart: original.trimStart === undefined ? undefined : sourceStart,
++        trimEnd: original.trimEnd === undefined ? undefined : sourceDuration - sourceEnd,
++        offset: original.offset === undefined ? undefined : sourceStart,
++        voiceCleanup,
++      } as Partial<AudioItem>)
++      useTimelineSettingsStore.getState().markDirty()
++    },
++    { itemId, importId: result.importId, strength: result.strength },
++  )
++  return 'applied'
++}
++
++/** "Use the original sound": the clip plays what it played before the clean-up, as one undoable edit. */
++export function restoreOriginalSound(itemId: string): VoiceCleanupOutcome {
++  const item = audioItem(itemId)
++  const original = item?.voiceCleanup?.original
++  if (!item || !original) return 'missing'
++  if (hasLockedEditParticipants([item])) return 'locked'
++  execute(
++    'USE_ORIGINAL_SOUND',
++    () => {
++      useItemsStore.getState()._updateItem(itemId, {
++        mediaId: original.mediaId,
++        src: undefined,
++        waveformData: undefined,
++        sourceStart: original.sourceStart,
++        sourceEnd: original.sourceEnd,
++        sourceDuration: original.sourceDuration,
++        trimStart: original.trimStart,
++        trimEnd: original.trimEnd,
++        offset: original.offset,
++        voiceCleanup: undefined,
++      } as Partial<AudioItem>)
++      useTimelineSettingsStore.getState().markDirty()
++    },
++    { itemId },
++  )
++  return 'applied'
++}
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -624,6 +624,48 @@
+           "volume-range": "Limited by the clip's volume range (−60 to +12 dB)."
+         },
+         "limiter": "Limit true peaks at the ceiling on export"
++      },
++      "voiceCleanup": {
++        "title": "Clean up voice",
++        "clip": "Clip",
++        "cleanedClip": "{{name}} · cleaned",
++        "found": "Found in this clip",
++        "checking": "Checking the sound…",
++        "noise": {
++          "wind": "Wind",
++          "hum": "Hum and buzz",
++          "background": "Background noise",
++          "echo": "Room echo"
++        },
++        "strengthLabel": "Strength",
++        "strength": {
++          "light": "Light",
++          "standard": "Standard",
++          "strong": "Strong"
++        },
++        "strengthNote": {
++          "light": "Takes the edge off. Keeps the room's sound.",
++          "standard": "Removes wind, hum and most background noise.",
++          "strong": "Voice only. Best for very noisy places."
++        },
++        "listen": "Listen to",
++        "before": "Before",
++        "after": "After",
++        "play": "Play",
++        "stop": "Stop",
++        "afterNotYet": "Clean up the voice to hear it after",
++        "listenFailed": "This clip's sound can't be played here.",
++        "action": "Clean up voice",
++        "progress": "Cleaning up the voice… {{percent}}%",
++        "done": "Cleaned · {{strength}}",
++        "useOriginal": "Use the original sound",
++        "again": "Clean up again",
++        "cleaned": "Voice cleaned up on {{name}}. The original sound is kept.",
++        "failed": "The voice wasn't cleaned up: {{reason}}",
++        "analysisFailed": "Couldn't check this clip's sound: {{reason}}",
++        "locked": "This clip is on a locked track.",
++        "clipGone": "The clip changed while its voice was cleaned up. Try again.",
++        "where": "Runs on your Frameleaf server or a computer at home, following Where work runs."
+       }
+     },
+     "captionStyleControls": {
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -202,11 +202,36 @@
+   sourceHeight?: number
+ }
+ 
++export type VoiceCleanupNoise = 'wind' | 'hum' | 'background' | 'echo'
++export type VoiceCleanupStrength = 'light' | 'standard' | 'strong'
++
++/**
++ * Clean up voice (FL-637): the clip plays the cleaned sound (`mediaId` is its project import), and
++ * `original` is what it played before, so "Use the original sound" can put it back. The original
++ * file is never changed.
++ */
++export interface VoiceCleanupRecord {
++  importId: string
++  strength: VoiceCleanupStrength
++  noises: VoiceCleanupNoise[]
++  humHz: 50 | 60 | null
++  original: {
++    mediaId: string
++    sourceStart: number
++    sourceEnd: number
++    sourceDuration?: number
++    trimStart?: number
++    trimEnd?: number
++    offset?: number
++  }
++}
++
+ export type AudioItem = BaseTimelineItem & {
+   type: 'audio'
+   src: string
+   waveformData?: number[]
+   offset?: number // Trim offset in source audio
++  voiceCleanup?: VoiceCleanupRecord
+ }
+ 
+ export type { TextLayoutDrafts, TextSingleLayoutDraft, TextSpan } from './text'

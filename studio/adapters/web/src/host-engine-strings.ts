@@ -11,6 +11,10 @@ import {
   TRANSCRIPT_ENGINE_STRINGS,
   type TranscriptEngineString,
 } from '@frameleaf/host/transcript-strings'
+import {
+  VOICE_CLEANUP_ENGINE_STRINGS,
+  type VoiceCleanupEngineString,
+} from '@frameleaf/host/voice-cleanup-strings'
 
 type EngineI18n = {
   readonly language?: string
@@ -25,6 +29,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(TRANSCRIPT_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<TranscriptEngineString, string>),
+  // The "Clean up voice" card (FL-637).
+  ...(Object.fromEntries(
+    Object.entries(VOICE_CLEANUP_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<VoiceCleanupEngineString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {
