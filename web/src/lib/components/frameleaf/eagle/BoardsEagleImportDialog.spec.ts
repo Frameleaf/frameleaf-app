@@ -36,6 +36,7 @@ const library = {
   ],
   fingerprint: 'eagle:id:L1',
   supported: ['jpg'],
+  earlierImport: null,
 };
 
 describe('Import from Eagle: a library in a folder the server can open', () => {
@@ -114,8 +115,12 @@ describe('Import from Eagle: a library in a folder the server can open', () => {
     expect(sdkMock.checkBulkUpload).not.toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await fireEvent.click(await screen.findByRole('button', { name: /Import 1/ }));
+    const importButton = await screen.findByRole('button', { name: /Import 1/ });
+    // A double click starts it once: the button waits while the server starts it.
+    await fireEvent.click(importButton);
+    await fireEvent.click(importButton);
     await waitFor(() => expect(sdkMock.createEagleImport).toHaveBeenCalled());
+    expect(sdkMock.createEagleImport).toHaveBeenCalledTimes(1);
     expect(sdkMock.createEagleImport.mock.calls[0][0].eagleImportCreateDto).toMatchObject({
       rootId: '0',
       path: 'Design/Eagle/Studio References.library',

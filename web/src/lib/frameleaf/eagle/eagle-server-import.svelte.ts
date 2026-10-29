@@ -59,22 +59,22 @@ export function libraryFromServer(dto: EagleLibraryResponseDto): EagleLibrary {
 
 export const listServerLibraries = () => getEagleLibraries();
 
+/**
+ * The server's read of a library, with your earlier import of it that has more to do (stopped,
+ * interrupted, or finished with items left over), which the server looks up by place and identity.
+ */
 export async function readServerLibrary(location: EagleServerLocation, signal?: AbortSignal) {
   const dto = await checkEagleLibrary({ eagleLibraryCheckDto: location }, { signal });
-  return { library: libraryFromServer(dto), supported: new Set(dto.supported) };
+  return {
+    library: libraryFromServer(dto),
+    supported: new Set(dto.supported),
+    earlier: dto.earlierImport ?? undefined,
+  };
 }
 
 /** What earlier runs of a server import did, keyed by Eagle id, to carry it on. */
 export async function serverOutcomes(id: string): Promise<Record<string, EagleItemOutcome>> {
   return (await getEagleImport({ id, outcomes: true })).outcomes ?? {};
-}
-
-/** The server's unfinished import of this library, if there is one. */
-export async function findServerImport(location: EagleServerLocation, fingerprint: string) {
-  const { imports } = await getEagleImports();
-  return imports.find(
-    (item) => item.rootId === location.rootId && item.path === location.path && item.fingerprint === fingerprint,
-  );
 }
 
 /** The import the server is running for you now, if any, so Boards can show how far it has got. */
@@ -87,6 +87,8 @@ export async function runningServerImport() {
 }
 
 const POLL_MS = 2000;
+/** While the server can't be reached, it is asked again less often, up to this. */
+const POLL_MAX_MS = 30_000;
 
 /** An import the server is running, followed from this tab. Implements what the dialog and the rail show. */
 export class ServerEagleImportRun implements EagleRunStatus {
@@ -100,6 +102,8 @@ export class ServerEagleImportRun implements EagleRunStatus {
   recent = $state<EagleRecentItem[]>([]);
   collections = $state(0);
   error = $state<unknown>();
+  /** The server can't be reached just now. The import carries on there; this catches up when it's back. */
+  unreachable = $state(false);
   readonly id: string;
   readonly location: EagleServerLocation;
   readonly fingerprint: string;
@@ -156,33 +160,38 @@ export class ServerEagleImportRun implements EagleRunStatus {
       });
   }
 
+  /**
+   * Polls until the server says the import stopped or finished, and only then. While the server
+   * can't be reached (restarting, the network down) it keeps asking, less often, and says so.
+   */
   async #follow() {
-    let misses = 0;
-    while (this.state === 'running' || this.state === 'stopping') {
-      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    let wait = POLL_MS;
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
       try {
         const ended = await this.#refresh(false);
-        misses = 0;
+        this.unreachable = false;
+        wait = POLL_MS;
         if (ended) {
-          break;
-        }
-      } catch (error) {
-        // The server is restarting or the network blinked: the import carries on there regardless.
-        if (++misses >= 30) {
-          this.error = error;
           return;
         }
+      } catch {
+        this.unreachable = true;
+        wait = Math.min(POLL_MAX_MS, wait * 2);
       }
     }
-    await this.#refresh(true).catch((error: unknown) => {
-      this.error = error;
-    });
   }
 
+  /** Reads the import; once it has ended, reads it again with what became of every item. */
   async #refresh(withOutcomes: boolean) {
     const dto = await getEagleImport({ id: this.id, ...(withOutcomes && { outcomes: true }) });
+    const ended = dto.status === EagleImportStatus.Stopped || dto.status === EagleImportStatus.Finished;
+    if (ended && !dto.outcomes) {
+      this.#apply(await getEagleImport({ id: this.id, outcomes: true }));
+      return true;
+    }
     this.#apply(dto);
-    return dto.status === EagleImportStatus.Stopped || dto.status === EagleImportStatus.Finished;
+    return ended;
   }
 
   #apply(dto: EagleImportResponseDto) {

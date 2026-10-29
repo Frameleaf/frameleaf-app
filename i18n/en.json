@@ -6592,6 +6592,7 @@
   "frameleaf_eagle_server_no_roots": "Your server has no folders set up for imports yet. An administrator can add them with FRAMELEAF_IMPORT_ROOTS.",
   "frameleaf_eagle_server_none": "No Eagle library was found in the folders your server can import from. Choose the folder whose name ends in .library.",
   "frameleaf_eagle_server_pick": "Eagle libraries on your server",
+  "frameleaf_eagle_server_unreachable": "Your server can’t be reached just now. The import carries on there, and this catches up when it’s back.",
   "frameleaf_eagle_show_all": "Show all {count, number}",
   "frameleaf_eagle_show_fewer": "Show fewer",
   "frameleaf_eagle_show_in_boards": "Show in Boards",

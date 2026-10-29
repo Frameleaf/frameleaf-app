@@ -50,7 +50,6 @@
   import { eagleImportUi, eaglePercent } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import {
     ServerEagleImportRun as ServerRun,
-    findServerImport,
     listServerLibraries,
     readServerLibrary,
     runningServerImport,
@@ -149,6 +148,10 @@
   /** The server's earlier import of the chosen library, to carry on. */
   let serverSaved = $state<EagleImportResponseDto | undefined>();
   let startFailed = $state(false);
+  /** The import is being started on the server: Import and Carry on wait for it, so it starts once. */
+  let starting = $state(false);
+  /** The server's earlier import of the chosen library, from its read. */
+  let serverEarlier: EagleImportResponseDto | undefined;
   let saved = $state<EagleImportSaved | undefined>();
   let paused = $state<EagleImportSaved | undefined>();
   let reading = $state(false);
@@ -266,6 +269,7 @@
       const read = await readServerLibrary({ rootId: entry.rootId, path: entry.path });
       library = read.library;
       supported = read.supported;
+      serverEarlier = read.earlier;
       serverLocation = { rootId: entry.rootId, path: entry.path };
     } catch {
       readError = 'unreadable';
@@ -373,7 +377,8 @@
     saved = undefined;
     serverSaved = undefined;
     try {
-      const earlier = serverLocation ? await findServerImport(serverLocation, current.fingerprint) : undefined;
+      // The server looked this up by the library's place and identity, finished-with-leftovers included.
+      const earlier = serverEarlier?.fingerprint === current.fingerprint ? serverEarlier : undefined;
       const outcomes = earlier ? await serverOutcomes(earlier.id) : undefined;
       serverSaved = earlier;
       plan = planEagleImport(current, { supported, outcomes, annotations: EAGLE_ANNOTATIONS_AVAILABLE });
@@ -454,10 +459,11 @@
   }
 
   const beginOnServer = async (carryOn: boolean) => {
-    if (!library || !plan || !serverLocation) {
+    if (!library || !plan || !serverLocation || starting) {
       return;
     }
     startFailed = false;
+    starting = true;
     // Carrying on keeps where the earlier import was going.
     const earlier = carryOn ? (run instanceof ServerRun ? run.target : serverTarget(serverSaved)) : undefined;
     try {
@@ -465,6 +471,8 @@
       follow(next, library, plan);
     } catch {
       startFailed = true;
+    } finally {
+      starting = false;
     }
   };
   const serverTarget = (dto?: EagleImportResponseDto): EagleTarget | undefined =>
@@ -1086,6 +1094,9 @@
               ? run.error.message
               : $t('frameleaf_eagle_failed_start')}
           />{/if}
+        {#if run instanceof ServerRun && run.unreachable}<p class="note-line" role="status">
+            {$t('frameleaf_eagle_server_unreachable')}
+          </p>{/if}
         {#if run.state === 'stopping'}<p class="muted small" role="status">{$t('frameleaf_eagle_stopping')}</p>{/if}
         <ul class="phases">
           <li class:now={run.collections < (plan?.collections ?? 0)}>
@@ -1250,7 +1261,7 @@
       <span class="spacer"></span>
       <Button onclick={close}>{$t('cancel')}</Button>
       {#if resumable && plan}
-        <Button variant="primary" disabled={!!checking} onclick={() => begin(saved)}
+        <Button variant="primary" disabled={!!checking || starting} onclick={() => begin(saved)}
           >{$t('frameleaf_eagle_carry_on')}</Button
         >
       {:else}
@@ -1267,7 +1278,7 @@
       <Button onclick={() => (step = 'summary')}>{$t('back')}</Button>
       <span class="spacer"></span>
       <Button onclick={close}>{$t('cancel')}</Button>
-      <Button variant="primary" disabled={!plan || plan.coming === 0} onclick={() => begin()}
+      <Button variant="primary" disabled={!plan || plan.coming === 0 || starting} onclick={() => begin()}
         >{$t('frameleaf_eagle_import_count', { values: { count: plan?.coming ?? 0 } })}</Button
       >
     {:else if step === 'progress'}

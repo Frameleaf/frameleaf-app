@@ -3,7 +3,6 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { importResult, planEagleImport, reconciles } from '$lib/frameleaf/eagle/eagle-import';
 import {
   ServerEagleImportRun,
-  findServerImport,
   libraryFromServer,
   readServerLibrary,
   runningServerImport,
@@ -48,6 +47,7 @@ const libraryDto = {
   ],
   fingerprint: 'eagle:id:L1',
   supported: ['jpg', 'png'],
+  earlierImport: null,
 };
 
 const importDto = (overrides: Partial<EagleImportResponseDto> = {}): EagleImportResponseDto => ({
@@ -182,7 +182,47 @@ describe('Eagle import from a folder the server can open', () => {
     expect(sdkMock.stopEagleImport).toHaveBeenCalledWith({ id: 'import-1' });
   });
 
-  it('finds the import the server is running, and an earlier one of the same library', async () => {
+  it('takes the earlier import to carry on from the server’s read, finished-with-leftovers included', async () => {
+    const earlier = importDto({ id: 'old', status: EagleImportStatus.Finished, failed: ['I2'] });
+    sdkMock.checkEagleLibrary.mockResolvedValue({ ...libraryDto, earlierImport: earlier });
+    await expect(readServerLibrary({ rootId: '0', path: 'p.library' })).resolves.toMatchObject({
+      earlier: { id: 'old', failed: ['I2'] },
+    });
+    sdkMock.checkEagleLibrary.mockResolvedValue({ ...libraryDto, earlierImport: null });
+    await expect(readServerLibrary({ rootId: '0', path: 'p.library' })).resolves.toMatchObject({
+      earlier: undefined,
+    });
+  });
+
+  it('keeps following through a long outage, backing off, and never ends on its own', async () => {
+    sdkMock.createEagleImport.mockResolvedValue(importDto());
+    sdkMock.getEagleImport.mockRejectedValue(new Error('offline'));
+    const run = await ServerEagleImportRun.begin(
+      { rootId: '0', path: 'p.library' },
+      { fingerprint: 'f' },
+      { mode: 'top' },
+      [],
+    );
+    let ended = false;
+    void run.start().then(() => (ended = true));
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(ended).toBe(false);
+    expect(run.state).toBe('running');
+    expect(run.unreachable).toBe(true);
+    // Backed off: far fewer than one request every two seconds.
+    expect(sdkMock.getEagleImport.mock.calls.length).toBeLessThan(40);
+
+    sdkMock.getEagleImport.mockReset();
+    sdkMock.getEagleImport
+      .mockResolvedValueOnce(importDto({ status: EagleImportStatus.Finished, done: 2 }))
+      .mockResolvedValueOnce(importDto({ status: EagleImportStatus.Finished, done: 2, outcomes: {} }));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(ended).toBe(true);
+    expect(run).toMatchObject({ state: 'finished', unreachable: false });
+    expect(sdkMock.getEagleImport).toHaveBeenLastCalledWith({ id: 'import-1', outcomes: true });
+  });
+
+  it('finds the import the server is running', async () => {
     sdkMock.getEagleImports.mockResolvedValue({
       imports: [
         importDto({ id: 'old', status: EagleImportStatus.Stopped, path: 'other.library' }),
@@ -190,9 +230,5 @@ describe('Eagle import from a folder the server can open', () => {
       ],
     });
     await expect(runningServerImport()).resolves.toMatchObject({ id: 'live' });
-    await expect(findServerImport({ rootId: '0', path: 'other.library' }, 'eagle:id:L1')).resolves.toMatchObject({
-      id: 'old',
-    });
-    await expect(findServerImport({ rootId: '0', path: 'other.library' }, 'another')).resolves.toBeUndefined();
   });
 });
