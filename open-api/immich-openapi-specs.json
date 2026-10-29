@@ -97421,6 +97421,11 @@
           "status": {
             "$ref": "#/components/schemas/MediaOperationStatus"
           },
+          "studioWork": {
+            "description": "Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
           "totalUnits": {
             "nullable": true,
             "type": "string"
@@ -97646,6 +97651,11 @@
           },
           "status": {
             "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "studioWork": {
+            "description": "Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise",
+            "nullable": true,
+            "type": "string"
           },
           "totalUnits": {
             "nullable": true,

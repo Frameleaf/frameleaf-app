@@ -2499,6 +2499,7 @@
   "frameleaf_activity_kind_studio_preview": "Preview render",
   "frameleaf_activity_kind_studio_preview_stream": "Preview playback",
   "frameleaf_activity_kind_studio_reverse_conform": "Source reversal",
+  "frameleaf_activity_kind_studio_stabilise": "Stabilise",
   "frameleaf_activity_kind_studio_transcription": "Captions",
   "frameleaf_activity_kind_takeout_import": "Google Photos import",
   "frameleaf_activity_kind_upload": "Upload",

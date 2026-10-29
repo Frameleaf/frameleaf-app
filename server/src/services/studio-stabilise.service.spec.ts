@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { mapOperation } from 'src/services/media-operation.service.js';
 import { STABILISE_SNAPSHOT_KIND, StudioStabiliseService } from 'src/services/studio-stabilise.service.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -131,6 +132,22 @@ const setup = () => {
 };
 
 describe(StudioStabiliseService.name, () => {
+  describe('in Activity', () => {
+    it('names the job Stabilise through studioWork, while its kind stays studio_transcription', () => {
+      const { operation } = setup();
+      const dto = mapOperation(operation);
+      expect(dto.kind).toBe(MediaOperationKind.StudioTranscription);
+      expect(dto.studioWork).toBe('stabilise');
+      expect(mapOperation({ ...operation, snapshot: { ...snapshot, kind: 'studio-voice-cleanup' } }).studioWork).toBe(
+        'voice-cleanup',
+      );
+      expect(
+        mapOperation({ ...operation, snapshot: { ...snapshot, kind: 'studio-transcription' } }).studioWork,
+      ).toBeNull();
+      expect(mapOperation({ ...operation, kind: MediaOperationKind.StudioExport }).studioWork).toBeNull();
+    });
+  });
+
   describe('create', () => {
     it('queues the head revision clip on this server, as a Studio clip job Activity shows', async () => {
       const { sut, operations, studio, resources } = setup();

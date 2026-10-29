@@ -1064,6 +1064,9 @@ async function update(context: StudioHostContext): Promise<void> {
       })
     : 'hold'
   if (outcome !== 'remount' && !context.draftHeld) reconcileVectors(state)
+  // FL-638: the instance on screen keeps editing this context's project (a save as a copy can echo
+  // without a remount), so Stabilise follows it; a remount records its own project when it renders.
+  if (outcome !== 'remount') state.stabiliseProjectId = studioProjectUuidOf(context)
   if (outcome === 'remount') {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
     // command applied by the host. A fresh editor instance loads it.

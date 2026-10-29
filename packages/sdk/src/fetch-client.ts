@@ -2999,6 +2999,8 @@ export type MediaOperationDto = {
     };
     startedAt: string | null;
     status: MediaOperationStatus;
+    /** Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise */
+    studioWork?: string | null;
     totalUnits: string | null;
     updatedAt: string;
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
@@ -9502,6 +9504,8 @@ export type MediaOperationDetailDto = {
     };
     startedAt: string | null;
     status: MediaOperationStatus;
+    /** Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise */
+    studioWork?: string | null;
     totalUnits: string | null;
     updatedAt: string;
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */

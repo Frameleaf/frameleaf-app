@@ -262,6 +262,25 @@ const admissionRefusalOf = (
   };
 };
 
+/**
+ * FL-637/FL-638: Studio clip jobs that share the `studio_transcription` kind, by snapshot kind, so
+ * Activity names them (a new kind would change a response enum the native apps decode strictly).
+ */
+const STUDIO_WORK_BY_SNAPSHOT_KIND: Readonly<Record<string, string>> = {
+  'studio-stabilise': 'stabilise',
+  'studio-voice-cleanup': 'voice-cleanup',
+};
+
+const studioWorkOf = (operation: MediaOperation): string | null => {
+  if (operation.kind !== MediaOperationKind.StudioTranscription) {
+    return null;
+  }
+  const kind = (operation.snapshot as { kind?: unknown } | null)?.kind;
+  return typeof kind === 'string' && Object.hasOwn(STUDIO_WORK_BY_SNAPSHOT_KIND, kind)
+    ? STUDIO_WORK_BY_SNAPSHOT_KIND[kind]
+    : null;
+};
+
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): MediaOperationDto => {
   const privateWeekly = isPrivateICloudOperation(operation);
@@ -282,6 +301,7 @@ export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<stri
     estimate: privateWeekly ? null : mapEstimate(operation.estimate),
     bulk: privateWeekly ? null : mapBulkSummary(operation),
     cloudJob: privateWeekly ? null : cloudMlJobActivity(operation),
+    studioWork: studioWorkOf(operation),
     progress: privateWeekly ? 0 : operation.progress,
     processedUnits: privateWeekly ? '0' : String(operation.processedUnits ?? 0),
     totalUnits:
