@@ -27,6 +27,7 @@ import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-d
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { getConfig } from 'src/utils/config.js';
+import { isPublicMediaOperationKind } from 'src/utils/media-operation.js';
 import {
   CloudModelChoices,
   ML_BUDGET_WINDOW_DAYS,
@@ -42,7 +43,6 @@ import {
   storedAdmission,
 } from 'src/utils/ml-destination.js';
 import { RESTORATION_OPERATION_KINDS } from 'src/utils/restoration.js';
-import { isPublicMediaOperationKind } from 'src/utils/media-operation.js';
 import {
   ALL_LIBRARY_ANALYSIS_QUEUES,
   LIBRARY_ANALYSIS_QUEUES,

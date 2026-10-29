@@ -345,15 +345,14 @@
     return () => clearTimeout(timer);
   });
 
-  const parsed = $derived(
-    mode === 'speech'
-      ? {
-          text: text.slice(0, MAX_PALETTE_TEXT),
-          filter: parseSearchInput(tokens.join(' '), catalog).filter,
-          tokens: [],
-        }
-      : parseSearchInput(deferredInput, catalog),
-  );
+  const parsed = $derived.by(() => {
+    if (mode !== 'speech') {
+      return parseSearchInput(deferredInput, catalog);
+    }
+    // Keep the chips' tokens so their filters aren't shown again as a separate, unlinked Filters chip.
+    const fromChips = parseSearchInput(tokens.join(' '), catalog);
+    return { text: text.slice(0, MAX_PALETTE_TEXT), filter: fromChips.filter, tokens: fromChips.tokens };
+  });
 
   const compileFor = (target: DiscoveryQuery) =>
     compilePaletteQuery(target, parsed, mode) ??

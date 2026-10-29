@@ -83,7 +83,9 @@ export class SpeechRepository {
   async wake(ownerId: string) {
     await this.db
       .updateTable('speech_settings')
-      .set({ cursor: null, nextScanAt: new Date() })
+      // Keep the backfill position: resetting it on every event would stall large libraries during an
+      // event burst. Earlier assets are re-checked when the pass wraps.
+      .set({ nextScanAt: new Date() })
       .where('ownerId', '=', ownerId)
       .execute();
   }

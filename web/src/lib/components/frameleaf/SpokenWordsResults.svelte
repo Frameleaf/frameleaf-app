@@ -191,7 +191,10 @@
 <OnEvents
   onSpeechIndexChange={invalidate}
   onWebsocketConnect={invalidate}
-  onWebsocketDisconnect={clear}
+  onWebsocketDisconnect={() => {
+    clearTimeout(reloadTimer);
+    clear();
+  }}
   onSessionLockedRemote={clear}
   onAssetsDelete={invalidate}
   onAssetUpdate={invalidate}

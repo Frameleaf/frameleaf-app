@@ -132,9 +132,11 @@ it('completes system IntegrityDeleteReports and invalidates the real speech owne
     userId: '',
   });
   expect(websocket.clientSend).toHaveBeenCalledTimes(2);
+  const woken = new Date();
   for (const owner of owners) {
     expect(websocket.clientSend).toHaveBeenCalledWith('on_speech_index_change', owner.user.id);
-    expect(await repository.settings(owner.user.id)).toMatchObject({ cursor: null });
+    // Waking schedules a scan now and keeps the backfill cursor.
+    expect((await repository.settings(owner.user.id))!.nextScanAt.getTime()).toBeLessThanOrEqual(woken.getTime());
     expect((await owner.search()).total).toBe(0);
     await repository.reconcile(owner.user.id);
   }
