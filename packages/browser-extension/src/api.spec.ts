@@ -76,7 +76,7 @@ describe('capture server boundary', () => {
     try {
       await expect(
         createAlbum(binding, 'selected-key', 'Packaging'),
-      ).rejects.toThrow('Refresh albums');
+      ).rejects.toThrow('Refresh collections');
       expect(fetch).toHaveBeenCalledTimes(2);
       fetch
         .mockReset()
@@ -90,7 +90,7 @@ describe('capture server boundary', () => {
         );
       await expect(
         createAlbum(binding, 'selected-key', 'Packaging'),
-      ).rejects.toThrow('Refresh albums');
+      ).rejects.toThrow('Refresh collections');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -244,6 +244,8 @@ describe('capture server boundary', () => {
       id: '22222222-2222-4222-8222-222222222222',
       albumName: 'Inspiration',
       parentId: null,
+      color: 'teal' as const,
+      icon: 'mdiPalette',
     };
     const fetch = vi
       .fn()

@@ -101,7 +101,7 @@ describe('trusted connection storage', () => {
       token: 'private-key',
       catalog: null,
     };
-    await expect(settings.connectionStatus()).rejects.toThrow('Reconnect');
+    await expect(settings.connectionStatus()).rejects.toThrow('Connect again');
     expect(local.set).not.toHaveBeenCalled();
   });
   it('disconnect removes local credentials and catalog together', async () => {

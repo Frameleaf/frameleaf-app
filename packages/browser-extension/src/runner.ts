@@ -179,7 +179,7 @@ export async function resumeQueue(
             error instanceof CaptureFailure ||
             (error instanceof QueueFailure && error.code === 'cancel')
               ? error.message
-              : 'Could not confirm this capture. Its queue entry is retained.';
+              : 'Your server didn’t confirm this item. It stays here until it’s saved.';
           try {
             await deferCapture(task.id, owner, {
               kind: retry ? 'retry' : permanent ? 'failed' : 'attention',

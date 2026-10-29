@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { CaptureFailure, normalizeServerAddress } from "./api";
+  import Header from "./Header.svelte";
+  import Icon from "./Icon.svelte";
+  import Promises from "./Promises.svelte";
+  import QueuePanel from "./QueuePanel.svelte";
   import {
     requestServerAccess,
     sendRequest,
@@ -14,7 +18,16 @@
   let connection = $state<ConnectionStatus | null>(null);
   let working = $state(false);
   let error = $state("");
-  const settingsLink = $derived.by(() => {
+  let changing = $state(false);
+  let showWaiting = $state(false);
+  let waiting = $state(0);
+  const connected = $derived(connection?.status === "connected");
+  const removed = $derived(connection?.status === "needs-attention");
+  const server = $derived(
+    connection ? connection.binding.origin.replace(/^https?:\/\//, "") : "",
+  );
+  const collectionCount = $derived(connection?.catalog?.albums.length ?? 0);
+  const keysLink = $derived.by(() => {
     try {
       return (
         normalizeServerAddress(address, allowLocalhost) +
@@ -67,7 +80,11 @@
         allowLocalhost,
       });
       accept(reply);
-      if (reply.ok) token = "";
+      if (reply.ok) {
+        token = "";
+        changing = false;
+        showWaiting = false;
+      }
     } catch (reason) {
       error =
         reason instanceof CaptureFailure
@@ -82,6 +99,7 @@
     working = true;
     try {
       accept(await sendRequest({ type: "disconnect" }));
+      changing = false;
     } catch {
       error = "Could not disconnect. Reopen the extension and try again.";
     } finally {
@@ -90,97 +108,139 @@
   }
 </script>
 
-<main>
-  <header>
-    <img src="icons/icon48.png" width="40" height="40" alt="" />
-    <h1>Save to Frameleaf</h1>
-  </header>
-  <p class="muted">
-    Connect to your own Frameleaf server. No subscription required.
-  </p>
-  <section aria-labelledby="connection-title">
-    <h2 id="connection-title">Connection</h2>
-    <div aria-live="polite">
-      {#if connection}
-        <p>
-          <strong
-            >{connection.status === "connected"
-              ? "Connected"
-              : "Reconnect to continue"}</strong
-          ><br /><span class="address">{connection.binding.origin}</span>
-        </p>
-        {#if connection.status === "connected" && connection.catalog}
-          <p class="muted">
-            {connection.catalog.albums.length} writable {connection.catalog
-              .albums.length === 1
-              ? "album"
-              : "albums"} available.
-          </p>
-        {/if}
-        <button
-          type="button"
-          class="quiet"
-          onclick={disconnect}
-          disabled={working}>Disconnect</button
-        >
-      {:else}<p class="muted">
-          Choose where your inspiration will be saved.
-        </p>{/if}
-    </div>
-  </section>
-  <form onsubmit={connect}>
-    <label for="server">Server address</label>
-    <input
-      id="server"
-      type="url"
-      required
-      bind:value={address}
-      placeholder="https://photos.example.com"
-      autocomplete="url"
-      disabled={working}
-      aria-describedby="address-help"
-    />
-    <p class="hint" id="address-help">
-      Include the path if your server lives under one, such as /frameleaf.
-    </p>
-    {#if settingsLink}
-      <p>
-        <a href={settingsLink} target="_blank" rel="noopener noreferrer"
-          >Open your server’s access keys</a
-        >
-        and create a <strong>Browser capture</strong> key.
-      </p>
-    {/if}
-    <label for="capture-key">Browser capture key</label>
-    <input
-      id="capture-key"
-      type="password"
-      required
-      bind:value={token}
-      autocomplete="off"
-      spellcheck="false"
-      disabled={working}
-      aria-describedby="key-help"
-    />
-    <p class="hint" id="key-help">
-      Kept on this device in the extension. Never sent to the pages you collect
-      from.
-    </p>
-    <details>
-      <summary>Local development</summary><label class="check"
-        ><input
-          type="checkbox"
-          bind:checked={allowLocalhost}
-          disabled={working}
-        />Allow HTTP on this computer only</label
+{#snippet localSwitch()}
+  <label class="switch">
+    <span>
+      <strong>Allow a local server without HTTPS (this computer only)</strong>
+      <small
+        >For a server on this computer (localhost). Anywhere else needs HTTPS.
+        This applies when you connect.</small
       >
-    </details>
+    </span>
+    <input
+      type="checkbox"
+      role="switch"
+      bind:checked={allowLocalhost}
+      disabled={working}
+    />
+  </label>
+{/snippet}
+
+{#snippet connectForm(submitLabel: string)}
+  <form class="connect-form" onsubmit={connect}>
+    <div class="field">
+      <label for="server">Server address</label>
+      <input
+        id="server"
+        type="url"
+        required
+        bind:value={address}
+        placeholder="https://photos.example.com"
+        autocomplete="url"
+        disabled={working}
+        aria-describedby="address-help"
+      />
+      <small class="hint" id="address-help"
+        >Include the path if your server has one, such as /frameleaf.</small
+      >
+    </div>
+    <div class="field">
+      <label for="capture-key">Browser key</label>
+      <input
+        id="capture-key"
+        type="password"
+        required
+        bind:value={token}
+        placeholder="Paste the key from Frameleaf"
+        autocomplete="off"
+        spellcheck="false"
+        disabled={working}
+        aria-describedby="key-help"
+      />
+      <small class="hint" id="key-help"
+        >Make one in Frameleaf: Settings › API keys › New key › Browser
+        extension.{#if keysLink}
+          <a href={keysLink} target="_blank" rel="noopener noreferrer"
+            >Open API keys<span class="visually-hidden"> (opens a new tab)</span
+            ></a
+          >{/if}</small
+      >
+    </div>
+    {#if !connected}{@render localSwitch()}{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <button
       class="primary"
       type="submit"
       disabled={working || !address.trim() || !token.trim()}
-      >{working ? "Connecting…" : "Connect server"}</button
+      >{working ? "Connecting…" : submitLabel}</button
     >
   </form>
+{/snippet}
+
+<main class="sheet options-sheet">
+  <Header origin={connected ? connection?.binding.origin : null} />
+  {#if connected && connection}
+    <div class="sheet-body">
+      <h2>Settings</h2>
+      <dl class="facts">
+        <dt>Server</dt>
+        <dd class="address">{server}</dd>
+        {#if connection.binding.userName}
+          <dt>Signed in as</dt>
+          <dd>{connection.binding.userName}</dd>
+        {/if}
+        <dt>Collections</dt>
+        <dd>
+          {collectionCount}
+          {connection.catalog ? "you can save into" : "(refreshing…)"}
+        </dd>
+      </dl>
+      {@render localSwitch()}
+      <p class="hint">
+        To stop this browser saving to Frameleaf, disconnect here, or remove its
+        key in Frameleaf › Settings › API keys.
+      </p>
+      {#if error && !changing}<p class="error" role="alert">{error}</p>{/if}
+      <details bind:open={changing}>
+        <summary>Use a different server or key</summary>
+        {@render connectForm("Connect")}
+      </details>
+    </div>
+    <footer class="sheet-foot">
+      <button
+        type="button"
+        class="danger"
+        onclick={disconnect}
+        disabled={working}>Disconnect</button
+      >
+    </footer>
+  {:else}
+    <div class="sheet-body">
+      {#if removed}
+        <div class="notice">
+          <Icon name="keyRemove" size={28} />
+          <div>
+            <h2>This browser key was removed</h2>
+            <p>
+              Nothing more can be saved with it. {waiting
+                ? `${waiting} ${waiting === 1 ? "item" : "items"} still waiting ${waiting === 1 ? "is" : "are"}`
+                : "Items still waiting are"} kept until you connect again. Paste
+              a new browser key to carry on.
+            </p>
+            <button type="button" onclick={() => (showWaiting = !showWaiting)}
+              >{showWaiting ? "Hide waiting items" : "See waiting items"}</button
+            >
+          </div>
+        </div>
+        <div hidden={!showWaiting}><QueuePanel bind:unfinished={waiting} /></div>
+      {:else}
+        <p class="lead">
+          Connect to your Frameleaf server to save images, links and
+          screenshots into Boards.
+        </p>
+      {/if}
+      {@render connectForm(removed ? "Connect again" : "Connect")}
+      <Promises />
+    </div>
+  {/if}
 </main>

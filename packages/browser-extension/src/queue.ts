@@ -66,13 +66,13 @@ export class QueueFailure extends Error {
   }
 }
 export const CANCELLATION_PENDING =
-  'Cancellation requested. Waiting for a confirmed server outcome.';
+  'Cancelling… waiting for your server to confirm.';
 export type CaptureCancellation =
   | { captureId: string; status: 'cancelled' }
   | { captureId: string; status: 'already-published'; receipt: CaptureReceipt };
 const invalid = () =>
   new QueueFailure(
-    'This capture has invalid metadata. Review its destination and source before trying again.',
+    'This item’s details are damaged. Check its collection and source before trying again.',
   );
 const damaged = () =>
   new QueueFailure(
@@ -235,10 +235,10 @@ export function assertQueueCapacity(used: number, added: number) {
   )
     throw damaged();
   if (added > MAX_CAPTURE_BYTES)
-    throw new QueueFailure('Each image must be no larger than 100 MiB.');
+    throw new QueueFailure('Each image can be up to 100 MB.');
   if (used + added > MAX_QUEUE_BYTES)
     throw new QueueFailure(
-      'The capture queue has reached 512 MiB. Finish or cancel captures to continue.',
+      'The saving list is full (512 MB). Wait for items to finish, or cancel some, then try again.',
     );
 }
 async function storedBytes(tx: IDBTransaction): Promise<number> {
@@ -513,7 +513,7 @@ export async function claimCapture(
         ) {
           task.state = 'needs-attention';
           task.error =
-            'Original capture bytes are missing. Collect this image again.';
+            'The image kept in this browser is missing. Save it again from the page.';
           delete task.claim;
           await request(tx.objectStore('tasks').put(task));
           continue;
@@ -719,7 +719,7 @@ export const cancelQueuedCapture = (
       task.claim
     )
       throw new QueueFailure(
-        'This capture has already started. Check its server outcome before cancelling.',
+        'This item has already started saving. Wait for your server’s answer before cancelling.',
       );
     await releaseBytes(tx, task);
     task.state = 'cancelled';

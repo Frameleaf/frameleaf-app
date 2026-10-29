@@ -72,18 +72,22 @@ function pauseDeliveryBinding(binding: ServerBinding) {
     }
   });
 }
+const uuidPattern =
+  /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
 async function queueProgress(): Promise<QueueProgress> {
   const current = await connectionStatus();
   const empty: QueueProgress = { items: [], unfinished: 0, hasMore: false };
-  if (!current || current.status !== 'connected') return empty;
-  if (!(await hasServerAccess(current.binding.origin))) {
+  if (!current) return empty;
+  // A paused connection keeps its waiting items; list them read-only until the user connects again.
+  const paused = current.status !== 'connected';
+  if (!paused && !(await hasServerAccess(current.binding.origin))) {
     stopDelivery();
     stopScreenshot();
     clearPreview();
     await pauseConnection(current.binding);
     return empty;
   }
-  const error = deliveryError(current.binding);
+  const error = paused ? undefined : deliveryError(current.binding);
   if (error) return { ...empty, error };
   const tasks = await listCaptures(current.binding);
   const done = (state: string) =>
@@ -111,8 +115,18 @@ async function queueProgress(): Promise<QueueProgress> {
           typeof task.error === 'string'
             ? task.error.slice(0, 1000)
             : undefined,
-        canRetry: !done(task.state) && !busy && (task.retryAt ?? 0) <= now,
-        canCancel: !done(task.state) && !task.cancelRequested,
+        kind: task.bookmark ? 'link' : 'image',
+        albumId: task.albumId,
+        updatedAt: task.updatedAt,
+        ...(task.receipt &&
+          uuidPattern.test(task.receipt.itemId) && {
+            itemId: task.receipt.itemId,
+            itemKind: task.receipt.kind,
+          }),
+        cancelling: !!task.cancelRequested,
+        canRetry:
+          !paused && !done(task.state) && !busy && (task.retryAt ?? 0) <= now,
+        canCancel: !paused && !done(task.state) && !task.cancelRequested,
       };
     }),
   };
@@ -269,7 +283,7 @@ export function handleMessage(
             return {
               ok: false,
               error:
-                'This collection preview has expired. Return to the webpage and find its images again.',
+                'This list of images has expired. Go back to the page and find its images again.',
               connection: current,
             };
           }
@@ -287,7 +301,7 @@ export function handleMessage(
           const name = message.name.trim();
           if (!name || name.length > 255)
             throw new QueueFailure(
-              'Enter an album name of 1 to 255 characters.',
+              'Enter a collection name of 1 to 255 characters.',
             );
           const current = await connectionStatus();
           if (
@@ -305,7 +319,7 @@ export function handleMessage(
               !current.catalog?.albums.some((album) => album.id === parentId))
           )
             throw new QueueFailure(
-              'Refresh albums and choose an available parent.',
+              'Refresh collections and choose one to create it inside.',
             );
           let album;
           try {
@@ -379,7 +393,7 @@ export function handleMessage(
           );
           if (!preview)
             throw new QueueFailure(
-              'This collection preview has expired. Find its images again.',
+              'This list of images has expired. Find its images again.',
             );
           return { ok: true, connection: current, preview };
         }
@@ -410,7 +424,7 @@ export function handleMessage(
               message.id,
             )
           )
-            throw new QueueFailure('Choose a capture from your queue.');
+            throw new QueueFailure('Choose an item from your saving list.');
           const current = await connectionStatus();
           if (!current || current.status !== 'connected')
             throw new CaptureFailure('credential');
@@ -421,12 +435,12 @@ export function handleMessage(
           );
           if (!task)
             throw new QueueFailure(
-              'This capture is not in the selected account queue.',
+              'This item isn’t in this account’s saving list.',
             );
           if (message.type === 'retry-capture') {
             if ((task.retryAt ?? 0) > Date.now())
               throw new QueueFailure(
-                'This retry is scheduled. Wait until its retry time.',
+                'A retry is already scheduled. Wait until then.',
               );
             await retryCapture(message.id, current.binding);
             wake();

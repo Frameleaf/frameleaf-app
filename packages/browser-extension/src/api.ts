@@ -6,31 +6,34 @@ import {
   type CaptureCapabilitiesDto,
   type CaptureCatalogDto,
 } from '@frameleaf/sdk';
+import { isCollectionColour, type CollectionChoice } from './collections';
 
 export type ServerBinding = {
   serverId: string;
   userId: string;
   origin: string;
   credentialId: string;
+  /** Display only ("Signed in as"); never part of identity checks. */
+  userName?: string;
 };
 const messages = {
   album:
-    'Could not confirm album creation. Refresh albums and check the destination before trying again.',
+    'Could not confirm the new collection. Refresh collections and check where you are saving before trying again.',
   address:
-    'Use an HTTPS server address without credentials, a query, or a fragment.',
+    'Use an HTTPS server address without a user name, password, “?” or “#”.',
   connection:
-    'Could not connect. Check the server address, certificate, and site access. Redirects are not followed.',
+    'Could not connect to your server. Check the address, its certificate and site access. Redirects are not followed.',
   authorization:
-    'This key cannot capture. Create a Browser capture key on your server and reconnect.',
+    'This browser key can’t save. Make a new key in Frameleaf (Settings › API keys › New key › Browser extension) and connect again.',
   unsupported:
-    'This server does not support this version of Save to Frameleaf. Update the server before connecting.',
+    'This server doesn’t work with this version of Save to Frameleaf. Update the server, then connect again.',
   identity:
-    'This address now belongs to a different server or account. Reconnect before saving.',
+    'This address now belongs to a different server or account. Connect again before saving.',
   large:
-    'The server response is too large for the extension. Check your server and try again.',
-  credential: 'Reconnect to the original server and account before continuing.',
+    'Your server sent a reply too large for the extension to read. Check your server and try again.',
+  credential: 'Connect again to the same server and account to continue.',
   permission:
-    'Site access was not granted. Allow access to your Frameleaf server to connect.',
+    'Site access wasn’t allowed. Allow access to your Frameleaf server to connect.',
 };
 export class CaptureFailure extends Error {
   constructor(readonly code: keyof typeof messages) {
@@ -214,6 +217,9 @@ export async function connectServer(
     userId: found.userId,
     origin,
     credentialId: crypto.randomUUID(),
+    ...(typeof found.userName === 'string' &&
+      found.userName.length > 0 &&
+      found.userName.length <= 200 && { userName: found.userName }),
   };
 }
 export async function boundOptions(
@@ -258,11 +264,20 @@ export async function getCatalog(
     )
       throw new CaptureFailure('unsupported');
     return {
-      albums: result.albums.map(({ id, albumName, parentId }) => ({
-        id,
-        albumName,
-        parentId,
-      })),
+      albums: result.albums.map((album): CollectionChoice => {
+        // The colour is decoration: keep it only when it is one the extension knows.
+        const color: unknown = album.color;
+        return {
+          id: album.id,
+          albumName: album.albumName,
+          parentId: album.parentId,
+          color: isCollectionColour(color) ? color : null,
+          icon:
+            typeof album.icon === 'string' && album.icon.length <= 80
+              ? album.icon
+              : null,
+        };
+      }),
       tags: result.tags.map(
         ({ id, name, value, createdAt, updatedAt, parentId, color }) => ({
           id,

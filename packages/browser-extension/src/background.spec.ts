@@ -256,11 +256,15 @@ describe('trusted extension operations', () => {
       id: '22222222-2222-4222-8222-222222222222',
       albumName: 'Campaign',
       parentId: null,
+      color: null,
+      icon: null,
     };
     const child = {
       id: '33333333-3333-4333-8333-333333333333',
       albumName: 'Packaging',
       parentId: parent.id,
+      color: null,
+      icon: null,
     };
     vi.mocked(getCatalog).mockResolvedValue({ albums: [parent], tags: [] });
     await handleMessage(

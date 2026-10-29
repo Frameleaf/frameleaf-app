@@ -12,7 +12,7 @@ export function mediaOrigin(raw: string): string | null {
 }
 const unavailable = () =>
   new MediaFailure(
-    'Could not download this image. Redirects or protected images may need a bookmark or screenshot instead.',
+    'Could not download this image. Redirects and protected images can’t be downloaded here; save the page link or a screenshot instead.',
   );
 
 /** No Frameleaf request options, browser cookies, referrers or redirect following are used here. */
@@ -61,16 +61,16 @@ export async function acquireCandidate(
       (response.status >= 300 && response.status < 400)
     )
       throw new MediaFailure(
-        'Redirected images cannot be downloaded here. Save a bookmark or screenshot instead.',
+        'Redirected images can’t be downloaded here. Save the page link or a screenshot instead.',
       );
     if (response.status === 401 || response.status === 403)
       throw new MediaFailure(
-        'This image requires access the extension does not have. Save a bookmark or screenshot instead.',
+        'This image requires access the extension doesn’t have. Save the page link or a screenshot instead.',
       );
     if (!response.ok || !response.body) throw unavailable();
     const declared = Number(response.headers.get('content-length'));
     if (declared > MAX_CAPTURE_BYTES)
-      throw new MediaFailure('Images must be no larger than 100 MiB.');
+      throw new MediaFailure('Images can be up to 100 MB each.');
     const type = (response.headers.get('content-type') ?? '')
       .split(';')[0]
       .trim()
@@ -81,7 +81,7 @@ export async function acquireCandidate(
       type !== 'application/octet-stream'
     )
       throw new MediaFailure(
-        'This response is not an image. Save a bookmark or screenshot instead.',
+        'This address isn’t an image. Save the page link or a screenshot instead.',
       );
     reader = response.body.getReader();
     const chunks: BlobPart[] = [];
@@ -92,7 +92,7 @@ export async function acquireCandidate(
       if (done) break;
       size += value.byteLength;
       if (size > MAX_CAPTURE_BYTES)
-        throw new MediaFailure('Images must be no larger than 100 MiB.');
+        throw new MediaFailure('Images can be up to 100 MB each.');
       chunks.push(value);
     }
     if (!size) throw unavailable();

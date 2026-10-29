@@ -139,6 +139,28 @@ export function collectCandidates(document: Document): CaptureCandidate[] {
   );
 }
 
+const normalizeFormat = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/^jpg$/, 'jpeg')
+    .replace(/^svg\+xml$/, 'svg');
+
+/** The format a candidate's address suggests (a page hint), such as "jpeg" or "svg". */
+export function candidateFormat(
+  candidate: CaptureCandidate,
+): string | undefined {
+  try {
+    const url = new URL(candidate.url);
+    const format =
+      url.protocol === 'data:'
+        ? /^data:image\/([^;,]+)/i.exec(url.href)?.[1]
+        : /\.([a-z0-9]+)$/i.exec(url.pathname)?.[1];
+    return format ? normalizeFormat(format) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Dimensions and formats are page hints, not verified file metadata. */
 export function filterCandidates(
   candidates: CaptureCandidate[],
@@ -150,19 +172,10 @@ export function filterCandidates(
     if (filters.minHeight && (candidate.height ?? 0) < filters.minHeight)
       return false;
     if (!filters.formats?.length) return true;
-    const url = new URL(candidate.url);
-    const format =
-      url.protocol === 'data:'
-        ? /^data:image\/([^;,]+)/i.exec(url.href)?.[1]
-        : /\.([a-z0-9]+)$/i.exec(url.pathname)?.[1];
-    const normalize = (value: string) =>
-      value
-        .toLowerCase()
-        .replace(/^jpg$/, 'jpeg')
-        .replace(/^svg\+xml$/, 'svg');
+    const format = candidateFormat(candidate);
     return Boolean(
       format &&
-      filters.formats.some((value) => normalize(value) === normalize(format)),
+      filters.formats.some((value) => normalizeFormat(value) === format),
     );
   });
 }

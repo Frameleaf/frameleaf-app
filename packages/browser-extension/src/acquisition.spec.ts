@@ -111,7 +111,7 @@ describe('anonymous, explicitly authorized acquisition', () => {
           candidate,
           new Set(['https://images.example.com:8443']),
         ),
-      ).rejects.toThrow('100 MiB');
+      ).rejects.toThrow('100 MB');
       expect(cancel).toHaveBeenCalled();
     }
   });
@@ -124,7 +124,7 @@ describe('anonymous, explicitly authorized acquisition', () => {
     );
     await expect(
       acquireCandidate(candidate, new Set(['https://images.example.com:8443'])),
-    ).rejects.toThrow('100 MiB');
+    ).rejects.toThrow('100 MB');
     fetcher.mockRejectedValueOnce(
       new Error('private signed URL or server response'),
     );

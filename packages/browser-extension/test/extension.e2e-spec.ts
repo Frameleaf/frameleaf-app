@@ -125,20 +125,17 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     await options.getByLabel('Server address').fill(origin + '/frameleaf');
+    await options.getByLabel('Browser key', { exact: true }).fill(fixtureKey);
     await options
-      .getByLabel('Browser capture key', { exact: true })
-      .fill(fixtureKey);
-    await options.getByText('Local development', { exact: true }).click();
-    await options.getByLabel('Allow HTTP on this computer only').check();
-    await options
-      .getByRole('button', { name: 'Connect server', exact: true })
-      .click();
-    await expect(options.getByText('Connected', { exact: true })).toBeVisible();
+      .getByRole('switch', { name: /Allow a local server without HTTPS/ })
+      .check();
+    await options.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(
-      options.getByText('1 writable album available.'),
+      options.getByRole('heading', { name: 'Settings', exact: true }),
     ).toBeVisible();
+    await expect(options.getByText('1 you can save into')).toBeVisible();
     await expect(
-      options.getByLabel('Browser capture key', { exact: true }),
+      options.getByLabel('Browser key', { exact: true }),
     ).toHaveValue('');
     expect(requests).toContain('/frameleaf/api/capture/catalog');
     await options.screenshot({
@@ -180,7 +177,9 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
 
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(popup.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(
+      popup.getByRole('button', { name: 'Find images on this page' }),
+    ).toBeVisible();
     await content.waitForLoadState('networkidle');
     const beforeCollection = mediaHits;
     const initialRedirectHits = redirectTargetHits;
@@ -192,7 +191,7 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     expect(discovered).toMatchObject({ ok: true });
     const collection = await collectionOpened;
     await expect(
-      collection.getByRole('heading', { name: 'Collect images', exact: true }),
+      collection.getByRole('heading', { name: 'Save images', exact: true }),
     ).toBeVisible();
     await expect(
       collection.getByText('Synthetic collection page', { exact: true }),
@@ -213,12 +212,18 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     await expect(collection.getByRole('status')).toContainText(
       '0 of 100 selected',
     );
-    await collection.getByLabel('Minimum width').fill('1500');
-    await collection.getByLabel('Format', { exact: true }).selectOption('png');
+    await collection.getByLabel('At least').selectOption('1600');
+    await collection.getByRole('radio', { name: 'PNG', exact: true }).check();
     await expect(images).toHaveCount(1);
+    await collection.getByRole('button', { name: /^Save to/ }).click();
     await collection
-      .getByLabel('Album', { exact: true })
-      .selectOption('22222222-2222-4222-8222-222222222222');
+      .getByRole('group', { name: 'Collections' })
+      .getByRole('button')
+      .first()
+      .click();
+    await expect(
+      collection.getByRole('button', { name: /^Save to Choose/ }),
+    ).toHaveCount(0);
     await collection
       .getByLabel('Note', { exact: true })
       .fill('Synthetic reference');
@@ -226,10 +231,7 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       'transient=private',
     );
     await expect(
-      collection.getByText(
-        'This is a collection preview. Selected images have not been saved.',
-        { exact: true },
-      ),
+      collection.getByText(/^Previews aren’t loaded yet, so 127\.0\.0\.1/),
     ).toBeVisible();
     expect(mediaHits).toBe(beforeCollection);
     await context.addCookies([
@@ -284,8 +286,8 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       path: testInfo.outputPath('collection-narrow.png'),
       fullPage: true,
     });
-    await collection.getByLabel('Minimum width').fill('0');
-    await collection.getByLabel('Format', { exact: true }).selectOption('');
+    await collection.getByLabel('At least').selectOption('0');
+    await collection.getByRole('radio', { name: 'All', exact: true }).check();
     const embedded = collection
       .locator('.candidate-list li')
       .filter({ hasText: 'Embedded image' });
@@ -326,11 +328,12 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     revoked = true;
     await popup.reload();
     await expect(
-      popup.getByText('Reconnect to continue', { exact: true }),
+      popup.getByRole('heading', {
+        name: 'This browser key was removed',
+        exact: true,
+      }),
     ).toBeVisible();
-    await expect(
-      options.getByText('1 writable album available.'),
-    ).not.toBeVisible();
+    await expect(options.getByText('1 you can save into')).not.toBeVisible();
     await expect(collection.getByRole('alert')).toContainText('expired');
     expect(
       await collection.evaluate(
@@ -353,21 +356,18 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       ),
     ).toBe(false);
     revoked = false;
+    await options.getByLabel('Browser key', { exact: true }).fill(fixtureKey);
     await options
-      .getByLabel('Browser capture key', { exact: true })
-      .fill(fixtureKey);
-    await options
-      .getByRole('button', { name: 'Connect server', exact: true })
+      .getByRole('button', { name: 'Connect again', exact: true })
       .click();
-    await expect(popup.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(
+      popup.getByRole('button', { name: 'Find images on this page' }),
+    ).toBeVisible();
     await expect(popup.getByRole('alert')).not.toBeVisible();
+    await options.getByText('Use a different server or key').click();
     await options.getByLabel('Server address').fill(origin + '/redirect');
-    await options
-      .getByLabel('Browser capture key', { exact: true })
-      .fill(fixtureKey);
-    await options
-      .getByRole('button', { name: 'Connect server', exact: true })
-      .click();
+    await options.getByLabel('Browser key', { exact: true }).fill(fixtureKey);
+    await options.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(options.getByRole('alert')).toContainText(
       'Redirects are not followed',
     );
@@ -376,7 +376,9 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       .getByRole('button', { name: 'Disconnect', exact: true })
       .click();
     await expect(
-      options.getByText('Choose where your inspiration will be saved.'),
+      options.getByText(
+        'Connect to your Frameleaf server to save images, links and screenshots into Boards.',
+      ),
     ).toBeVisible();
     expect(
       await options.evaluate(async () =>

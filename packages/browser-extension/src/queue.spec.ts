@@ -458,10 +458,10 @@ describe('durable capture queue', () => {
   });
   it('enforces logical file and queue byte caps independently of browser quota estimates', () => {
     expect(() => queue.assertQueueCapacity(512 * 1024 * 1024 - 2, 3)).toThrow(
-      '512 MiB',
+      '512 MB',
     );
     expect(() => queue.assertQueueCapacity(0, 100 * 1024 * 1024 + 1)).toThrow(
-      '100 MiB',
+      '100 MB',
     );
     expect(() => queue.assertQueueCapacity(0, 3)).not.toThrow();
   });

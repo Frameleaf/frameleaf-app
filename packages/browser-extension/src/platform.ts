@@ -40,6 +40,13 @@ export interface QueueItem {
   total?: number;
   retryAt?: number;
   error?: string;
+  kind: 'image' | 'link';
+  albumId: string;
+  updatedAt: number;
+  /** The saved item, once the server has confirmed it. */
+  itemId?: string;
+  itemKind?: 'asset' | 'bookmark';
+  cancelling: boolean;
   canRetry: boolean;
   canCancel: boolean;
 }

@@ -1,16 +1,21 @@
 <script lang="ts">
   import { cropCapture, ScreenshotFailure } from "./capture";
   import QueuePanel from "./QueuePanel.svelte";
+  import CollectionPicker from "./CollectionPicker.svelte";
+  import Header from "./Header.svelte";
+  import Icon from "./Icon.svelte";
+  import TagPicker from "./TagPicker.svelte";
+  import type { CollectionChoice } from "./collections";
   import { enqueueCapture, QueueFailure } from "./queue";
   import { captureInput, bookmarkInput } from "./capture-input";
   import { sameBinding } from "./api";
-  import { requestMediaOrigins } from "./platform";
+  import { openOptions, requestMediaOrigins } from "./platform";
   import { onMount } from "svelte";
   import { acquireCandidate, mediaOrigin, MediaFailure } from "./acquisition";
   import { requestMediaAccess, watchMediaAccess } from "./platform";
   import {
+    candidateFormat,
     filterCandidates,
-    discoveryLimits,
     type CaptureCandidate,
   } from "./candidates";
   import { sanitizeSourceUrl } from "./source-url";
@@ -39,9 +44,9 @@
   let screenshotDone = $state(false);
   let screenshotDimensions = $state("");
   let busy = $derived(saving || creating || preparingScreenshot);
-  let newAlbumName = $state("");
-  let newAlbumParent = $state("");
   let creationNeedsRefresh = $state(false);
+  let queuedAny = $state(false);
+  let bulkPreview = $state<string | null>(null);
   let notice = $state("");
   let saveController: AbortController | undefined;
 
@@ -76,7 +81,7 @@
       if (origin && !approvedOrigins.has(origin)) {
         if (!(await requestMediaAccess(origin)))
           throw new MediaFailure(
-            "Image access was not granted. You can try again or choose a bookmark or screenshot.",
+            "Access to these images wasn’t allowed. You can try again, or save the page link or a screenshot instead.",
           );
         approvedOrigins.add(origin);
       }
@@ -92,7 +97,7 @@
       );
       if (used + blob.size > 512 * 1024 * 1024)
         throw new MediaFailure(
-          "Loaded previews have reached 512 MiB. Clear previews to continue.",
+          "Previews have reached 512 MB. Clear previews to load more.",
         );
       const thumbnail = URL.createObjectURL(blob);
       imageBytes.set(candidate.id, blob);
@@ -102,7 +107,7 @@
         previewErrors[candidate.id] =
           reason instanceof MediaFailure
             ? reason.message
-            : "Could not preview this image. Try again or choose a bookmark or screenshot.";
+            : "Could not preview this image. Try again, or save the page link or a screenshot instead.";
     } finally {
       if (download === controller) {
         download = undefined;
@@ -116,7 +121,7 @@
     delete thumbnails[id];
     imageBytes.delete(id);
     previewErrors[id] =
-      "This image cannot be displayed by your browser. Choose a bookmark or screenshot instead.";
+      "Your browser can’t show this image. Save the page link or a screenshot instead.";
   }
   const visible = $derived(
     filterCandidates(preview?.discovery.candidates ?? [], {
@@ -130,8 +135,8 @@
       loading = false;
       error =
         failure === "screenshot"
-          ? "Screenshot was not captured. Return to the same web tab, check the connection and try again. Nothing has been queued."
-          : "Could not inspect the selected page or image. Return to its top-level webpage and try again, or use Save page bookmark from the toolbar.";
+          ? "The screenshot wasn’t taken. Go back to the same tab, check the connection and try again. Nothing was saved."
+          : "Could not read that page or image. Go back to the page and try again, or save the page link from the toolbar.";
       return;
     }
     try {
@@ -149,9 +154,8 @@
         bookmarkQueued = false;
         screenshotDone = false;
         screenshotDimensions = "";
-        newAlbumName = "";
-        newAlbumParent = "";
         creationNeedsRefresh = false;
+        queuedAny = false;
         sourceTitle = (nextPreview?.discovery.title ?? "").slice(0, 2000);
       }
       preview = nextPreview;
@@ -174,7 +178,7 @@
       preview = null;
       selected = [];
       error =
-        "Could not reopen this collection. Return to the webpage and find its images again.";
+        "Could not reopen this page’s images. Go back to the page and find them again.";
     } finally {
       loading = false;
     }
@@ -201,7 +205,7 @@
     const shot = current.screenshot;
     if (!shot?.dataUrl) {
       error =
-        "This screenshot preview has been cleared. Capture it again from the toolbar.";
+        "This screenshot was cleared. Take it again from the toolbar.";
       return;
     }
     preparingScreenshot = true;
@@ -219,7 +223,7 @@
     } catch {
       if (preview?.id === current.id)
         error =
-          "Could not prepare this screenshot. Capture it again; nothing has been queued.";
+          "Could not prepare this screenshot. Take it again; nothing was saved.";
     } finally {
       if (preview?.id === current.id) preparingScreenshot = false;
     }
@@ -228,7 +232,8 @@
     if (!preview?.screenshot || busy) return;
     clearImages();
     screenshotDone = true;
-    notice = "Screenshot discarded. Capture again from the toolbar.";
+    notice =
+      "Screenshot discarded. To take another, open Save to Frameleaf from the toolbar and choose Screenshot.";
     preview.screenshot.dataUrl = null;
     await sendRequest({ type: "release-screenshot", id: preview.id }).catch(
       () => {},
@@ -268,7 +273,8 @@
         clearImages();
         screenshotDone = true;
         preview.screenshot.dataUrl = null;
-        notice = "Queued 1 screenshot.";
+        notice = "Saving the screenshot.";
+        queuedAny = true;
       }
       void sendRequest({ type: "wake-queue" }).catch(() => {});
       await sendRequest({ type: "release-screenshot", id }).catch(() => {});
@@ -277,7 +283,7 @@
         error =
           reason instanceof QueueFailure
             ? reason.message
-            : "Could not queue this screenshot. Its preview is retained; try again.";
+            : "Could not save this screenshot. It’s still here; try again.";
     } finally {
       saving = false;
     }
@@ -328,7 +334,7 @@
     try {
       if (origins.length && !(await requestMediaOrigins(origins)))
         throw new MediaFailure(
-          "Image access was not granted. Your selection is retained so you can try again.",
+          "Access to these images wasn’t allowed. Your selection is kept so you can try again.",
         );
       for (const origin of origins) approvedOrigins.add(origin);
       for (const candidate of batch) {
@@ -365,7 +371,8 @@
           preview.discovery.candidates = preview.discovery.candidates.filter(
             (value) => value.id !== candidate.id,
           );
-          notice = `Queued ${queued} ${queued === 1 ? "image" : "images"}.`;
+          notice = `Saving ${queued} ${queued === 1 ? "image" : "images"}.`;
+          queuedAny = true;
         }
         // Delivery owns its controller after the atomic enqueue; closing this page cannot cancel it.
         void sendRequest({ type: "wake-queue" }).catch(() => {});
@@ -380,7 +387,7 @@
         error =
           reason instanceof MediaFailure || reason instanceof QueueFailure
             ? reason.message
-            : "Could not queue this selection. Queued images are retained; try the remaining selection again.";
+            : "Could not save all of this selection. Images already saving carry on; try the rest again.";
     } finally {
       if (saveController === controller) {
         saveController = undefined;
@@ -412,7 +419,8 @@
       await enqueueCapture(input);
       if (preview?.id === previewId) {
         bookmarkQueued = true;
-        notice = "Queued 1 bookmark.";
+        notice = "Saving the link.";
+        queuedAny = true;
       }
       void sendRequest({ type: "wake-queue" }).catch(() => {});
     } catch (reason) {
@@ -420,41 +428,19 @@
         error =
           reason instanceof QueueFailure
             ? reason.message
-            : "Could not queue this bookmark. Check the address and try again.";
+            : "Could not save this link. Check the address and try again.";
     } finally {
       saving = false;
     }
   }
-  async function createDestination(refreshOnly = false) {
-    if (
-      !preview ||
-      connection?.status !== "connected" ||
-      busy ||
-      (!refreshOnly && creationNeedsRefresh)
-    )
-      return;
-    const name = newAlbumName.trim();
-    if (!refreshOnly && (!name || name.length > 255)) {
-      error = "Enter an album name of 1 to 255 characters.";
-      return;
-    }
+  async function refreshCollections() {
+    if (!preview || connection?.status !== "connected" || busy) return;
     const previewId = preview.id;
     const binding = connection.binding;
     creating = true;
     error = "";
-    notice = "";
-    if (!refreshOnly) creationNeedsRefresh = true;
     try {
-      const reply = await sendRequest(
-        refreshOnly
-          ? { type: "refresh" }
-          : {
-              type: "create-album",
-              previewId,
-              name,
-              ...(newAlbumParent && { parentId: newAlbumParent }),
-            },
-      );
+      const reply = await sendRequest({ type: "refresh" });
       if (preview?.id !== previewId) return;
       if (!reply.ok) {
         error = reply.error;
@@ -466,22 +452,67 @@
       )
         return;
       connection = reply.connection;
-      if (!refreshOnly) {
-        if (
-          !reply.albumId ||
-          !connection.catalog?.albums.some(
-            (album) => album.id === reply.albumId,
-          )
-        )
-          throw new Error();
-        albumId = reply.albumId;
-        newAlbumName = "";
-        notice = "Album created and selected. Captures have not been saved.";
-      }
       creationNeedsRefresh = false;
     } catch {
+      error = "Could not refresh collections. Try again.";
+    } finally {
+      creating = false;
+    }
+  }
+  async function createCollection(
+    rawName: string,
+    parentId: string,
+  ): Promise<boolean> {
+    if (
+      !preview ||
+      connection?.status !== "connected" ||
+      busy ||
+      creationNeedsRefresh
+    )
+      return false;
+    const name = rawName.trim();
+    if (!name || name.length > 255) {
+      error = "Enter a collection name of 1 to 255 characters.";
+      return false;
+    }
+    const previewId = preview.id;
+    const binding = connection.binding;
+    creating = true;
+    error = "";
+    notice = "";
+    // An interrupted request may still have worked, so creating again waits for a refresh.
+    creationNeedsRefresh = true;
+    try {
+      const reply = await sendRequest({
+        type: "create-album",
+        previewId,
+        name,
+        ...(parentId && { parentId }),
+      });
+      if (preview?.id !== previewId) return false;
+      if (!reply.ok) {
+        error = reply.error;
+        return false;
+      }
+      if (
+        reply.connection?.status !== "connected" ||
+        !sameBinding(reply.connection.binding, binding)
+      )
+        return false;
+      connection = reply.connection;
+      if (
+        !reply.albumId ||
+        !connection.catalog?.albums.some((album) => album.id === reply.albumId)
+      )
+        throw new Error();
+      albumId = reply.albumId;
+      notice = `Made “${name}” and chose it. Nothing has been saved yet.`;
+      creationNeedsRefresh = false;
+      return true;
+    } catch {
       error =
-        "Could not confirm album creation. Refresh albums and check the destination before trying again.";
+        "Could not confirm the new collection. Refresh collections and check where you are saving before trying again.";
+      return false;
     } finally {
       creating = false;
     }
@@ -493,18 +524,70 @@
         : selected
       : selected.filter((value) => value !== id);
   }
-  function albumName(id: string): string {
-    const albums = connection?.catalog?.albums ?? [];
-    const parts: string[] = [];
-    const seen = new Set<string>();
-    let current = albums.find((album) => album.id === id);
-    while (current && !seen.has(current.id) && parts.length < 32) {
-      seen.add(current.id);
-      parts.unshift(current.albumName);
-      current = albums.find((album) => album.id === current?.parentId);
+  const collections = $derived<CollectionChoice[]>(
+    connection?.catalog?.albums ?? [],
+  );
+  const widths = [
+    [0, "Any width"],
+    [800, "800 px wide"],
+    [1200, "1,200 px wide"],
+    [1600, "1,600 px wide"],
+  ] as const;
+  const formats = ["jpeg", "png", "webp", "avif", "gif", "svg"];
+  const host = (origin: string | null) =>
+    origin ? origin.replace(/^https?:\/\//, "") : "this page";
+  let approvedOriginsView = $state<string[]>([]);
+  $effect(() => {
+    // Keep a reactive copy so the privacy note updates when access is granted or cleared.
+    void thumbnails;
+    approvedOriginsView = [...approvedOrigins];
+  });
+  /** Image origins on screen that haven't been asked for anything yet. */
+  const unaskedOrigins = $derived(
+    [
+      ...new Set(
+        visible
+          .map((candidate) => mediaOrigin(candidate.url))
+          .filter((origin): origin is string => !!origin),
+      ),
+    ].filter(
+      (origin) =>
+        !approvedOriginsView.includes(origin) &&
+        !visible.some(
+          (candidate) =>
+            mediaOrigin(candidate.url) === origin && thumbnails[candidate.id],
+        ),
+    ),
+  );
+  async function previewOrigin(origin: string) {
+    if (!preview || downloading || busy || bulkPreview) return;
+    bulkPreview = origin;
+    const currentPreview = preview.id;
+    try {
+      for (const candidate of visible.filter(
+        (value) => mediaOrigin(value.url) === origin && !thumbnails[value.id],
+      )) {
+        if (bulkPreview !== origin || preview?.id !== currentPreview) break;
+        await previewImage(candidate);
+        // Stop if access was refused or the download was cancelled.
+        if (!approvedOrigins.has(origin) || previewErrors[candidate.id]) break;
+      }
+    } finally {
+      bulkPreview = null;
     }
-    return parts.join(" / ");
   }
+  function cancelPreviews() {
+    bulkPreview = null;
+    download?.abort();
+  }
+  function selectAllShown() {
+    const ids = visible.map((candidate) => candidate.id);
+    selected = [...new Set([...selected, ...ids])].slice(0, 100);
+  }
+  const imageWord = (count: number) => (count === 1 ? "image" : "images");
+  const screenshotSize = $derived(
+    screenshotDimensions ? ` · ${screenshotDimensions}` : "",
+  );
   function label(url: string) {
     if (url.startsWith("data:")) return "Embedded image";
     if (url.startsWith("blob:")) return "Page image";
@@ -512,124 +595,247 @@
   }
 </script>
 
-<main
-  class="collection"
-  class:bookmark-collection={!!preview?.discovery.bookmarkUrl ||
-    !!preview?.screenshot}
->
-  <header>
-    <img src="icons/icon48.png" width="32" height="32" alt="" />
-    <h1>
+{#snippet destination()}
+  <CollectionPicker
+    {collections}
+    bind:value={albumId}
+    disabled={busy}
+    createLocked={creationNeedsRefresh}
+    onCreate={createCollection}
+    onRefresh={refreshCollections}
+  />
+  <TagPicker
+    tags={connection?.catalog?.tags ?? []}
+    bind:selected={tagIds}
+    disabled={busy}
+  />
+  <div class="field">
+    <label for="note">Note</label><textarea
+      id="note"
+      rows="2"
+      maxlength="10000"
+      placeholder="Optional"
+      disabled={busy}
+      bind:value={note}></textarea>
+  </div>
+{/snippet}
+
+{#snippet source(includeTitle: boolean)}
+  <details class="source">
+    <summary>Where it came from</summary>
+    {#if includeTitle}<div class="field">
+        <label for="source-title">Source title</label><input
+          id="source-title"
+          maxlength="2000"
+          disabled={busy}
+          bind:value={sourceTitle}
+        />
+      </div>{/if}
+    <div class="field">
+      <label for="source-page">Source page</label><input
+        id="source-page"
+        type="url"
+        maxlength="8192"
+        disabled={busy}
+        bind:value={sourcePage}
+        aria-describedby="source-help"
+      />
+      <small class="hint" id="source-help"
+        >Saved with it as where you found it. Anything after “?” or “#” is
+        removed.</small
+      >
+    </div>
+  </details>
+{/snippet}
+
+<main class="sheet capture-sheet">
+  <Header
+    origin={connection?.status === "connected"
+      ? connection.binding.origin
+      : null}
+    onSettings={() => void openOptions()}
+  />
+  <div class="sheet-body">
+    <h2 class="mode-title">
       {preview?.screenshot
-        ? "Review screenshot"
+        ? "Screenshot"
         : preview?.discovery.bookmarkUrl
-          ? "Save page bookmark"
-          : "Collect images"}
-    </h1>
-  </header>
-  {#if loading}<p role="status">Reading your collection…</p>{/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if notice}<p role="status">{notice}</p>{/if}
-  {#if preview}
-    <p class="page-title">{preview.discovery.title || "Untitled page"}</p>
-    <p class="address">{preview.discovery.pageUrl}</p>
-    <div class="collection-layout">
-      {#if preview.screenshot}<section aria-label="Screenshot preview">
-          <h2>
-            {preview.screenshot.mode === "area"
-              ? "Selected area screenshot"
-              : "Visible tab screenshot"}
-          </h2>
-          <p>
-            Review these pixels before saving. This is a screenshot, not the
-            original image. Screenshots are limited to 40 million pixels and 24
-            MiB.
-          </p>
+          ? "Save this page"
+          : "Save images"}
+    </h2>
+    {#if loading}<p role="status">Reading the page…</p>{/if}
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if notice}<p class="notice-line" role="status">
+        <Icon name="checkCircle" />{notice}
+      </p>{/if}
+    {#if queuedAny}<p class="hint">
+        You can close this tab. Saving carries on in the background, even if
+        you close the browser.
+      </p>
+      <details class="progress">
+        <summary>See progress</summary>
+        <QueuePanel {collections} />
+      </details>{/if}
+    {#if preview}
+      {#if preview.screenshot}
+        <section aria-label="Screenshot preview" class="stack">
           {#if preparingScreenshot}<p role="status">
-              Preparing screenshot…
-            </p>{:else if screenshotUrl}<img
-              class="screenshot-preview"
-              src={screenshotUrl}
-              alt="Screenshot to confirm before saving"
-              onload={(event) => {
-                if (event.currentTarget instanceof HTMLImageElement)
-                  screenshotDimensions = `${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight} pixels`;
-              }}
-            />
-            <p>{screenshotDimensions}</p>
-            <button
-              type="button"
-              disabled={busy}
-              onclick={() => void discardScreenshot()}
-              >Discard screenshot</button
-            >{/if}
-        </section>
-      {:else if preview.discovery.bookmarkUrl}<section
-          aria-label="Bookmark preview"
-        >
-          <h2>Page bookmark</h2>
-          <p>
-            Save a link with your tags and note. The page and its images will
-            not be downloaded.
+              Preparing the screenshot…
+            </p>{:else if screenshotUrl}<figure class="shot">
+              <img
+                class="screenshot-preview"
+                src={screenshotUrl}
+                alt="The screenshot to check before saving"
+                onload={(event) => {
+                  if (event.currentTarget instanceof HTMLImageElement)
+                    screenshotDimensions = `${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight}`;
+                }}
+              />
+              <figcaption>
+                {preview.screenshot.mode === "area"
+                  ? "Area"
+                  : "Visible page"}{screenshotSize} · PNG
+              </figcaption>
+            </figure>{/if}
+          <p class="hint">
+            Check it before saving. This is a picture of the page, not its
+            original images. Screenshots can be up to 40 million pixels.
           </p>
-        </section>{:else}
-        <section aria-label="Discovered images">
-          <div class="filters">
-            <label
-              >Minimum width <input
-                type="number"
-                min="0"
-                max="100000"
-                bind:value={minWidth}
-              /></label
+        </section>
+        {@render destination()}
+        {@render source(true)}
+      {:else if preview.discovery.bookmarkUrl}
+        <section aria-label="Page link" class="stack">
+          <div class="page-card">
+            <span class="page-card-icon" aria-hidden="true"
+              ><Icon name="linkVariant" size={20} /></span
             >
-            <div class="format-filter">
-              <label for="format">Format</label>
-              <select id="format" bind:value={format}>
-                <option value="">All formats</option>
-                {#each ["jpeg", "png", "webp", "avif", "gif", "svg"] as value}
-                  <option {value}>{value.toUpperCase()}</option>
-                {/each}
-              </select>
-            </div>
+            <span>
+              <strong>{preview.discovery.title || "Untitled page"}</strong>
+              <small class="address">{preview.discovery.pageUrl}</small>
+            </span>
+          </div>
+          <div class="field">
+            <label for="bookmark-title">Title</label><input
+              id="bookmark-title"
+              maxlength="2000"
+              disabled={busy || bookmarkQueued}
+              bind:value={sourceTitle}
+            />
+          </div>
+          <div class="field">
+            <label for="bookmark-target">Address</label><input
+              id="bookmark-target"
+              type="url"
+              maxlength="8192"
+              disabled={busy || bookmarkQueued}
+              bind:value={bookmarkTarget}
+              aria-describedby="bookmark-help"
+            />
+            <small class="hint warning" id="bookmark-help"
+              >The whole address is kept, including anything after “?”. Remove
+              personal details, such as booking or tracking codes, before
+              saving.</small
+            >
           </div>
           <p class="hint">
-            Dimensions and formats are page hints. Unloaded content and other
-            frames are excluded. Discovery is limited to {discoveryLimits.candidates}
-            images and {discoveryLimits.elements.toLocaleString()} elements.
+            Saves the address and title as a link in Boards. The page itself
+            isn’t copied.
           </p>
+        </section>
+        {@render destination()}
+        {@render source(false)}
+      {:else}
+        <section aria-label="Discovered images" class="stack">
+          <p class="page-line">
+            <strong>{preview.discovery.title || "Untitled page"}</strong>
+            <span class="address">{preview.discovery.pageUrl}</span>
+          </p>
+          <div class="filters">
+            <div class="filter-width">
+              <label for="min-width">At least</label>
+              <select id="min-width" bind:value={minWidth}>
+                {#each widths as [value, text] (value)}<option {value}
+                    >{text}</option
+                  >{/each}
+              </select>
+            </div>
+            <fieldset class="chips">
+              <legend class="visually-hidden">Format</legend>
+              <label class="chip"
+                ><input
+                  type="radio"
+                  name="format"
+                  value=""
+                  bind:group={format}
+                /><span>All</span></label
+              >
+              {#each formats as value (value)}<label class="chip"
+                  ><input
+                    type="radio"
+                    name="format"
+                    {value}
+                    bind:group={format}
+                  /><span>{value.toUpperCase()}</span></label
+                >{/each}
+            </fieldset>
+          </div>
           <div class="selection-bar">
             <p role="status">
               {selected.length} of 100 selected · {visible.length} shown
             </p>
-            <button
-              type="button"
-              onclick={() => (selected = [])}
-              disabled={busy || !selected.length}>Clear selection</button
-            >
+            {#if selected.length}<button
+                type="button"
+                class="link-button"
+                onclick={() => (selected = [])}
+                disabled={busy}>Clear selection</button
+              >{:else}<button
+                type="button"
+                class="link-button"
+                onclick={selectAllShown}
+                disabled={busy || !visible.length}>Select all shown</button
+              >{/if}
           </div>
-          {#if !visible.length}<p>
-              No matching images are available on this page.
-            </p>{/if}
-          <p class="hint">
-            Previews download anonymously from the origin shown on each button.
-            Permission is requested when needed. Redirected and protected images
-            may need a bookmark or screenshot.
-          </p>
+          {#if unaskedOrigins.length}
+            <div class="privacy">
+              <Icon name="shieldLockOutline" size={18} />
+              <div>
+                <p>
+                  Previews aren’t loaded yet, so {unaskedOrigins.length === 1
+                    ? `${host(unaskedOrigins[0])} hasn’t`
+                    : "these sites haven’t"} been asked for anything.
+                </p>
+                {#each unaskedOrigins.slice(0, 3) as origin (origin)}<button
+                    type="button"
+                    class="link-button"
+                    disabled={busy || !!downloading || !!bulkPreview}
+                    onclick={() => void previewOrigin(origin)}
+                    >Show previews from {host(origin)}</button
+                  >{/each}
+              </div>
+            </div>
+          {/if}
           <div class="preview-actions">
+            {#if downloading || bulkPreview}<button
+                type="button"
+                class="small"
+                onclick={cancelPreviews}>Stop loading previews</button
+              >{/if}
             <button
               type="button"
+              class="small"
               disabled={busy || !Object.keys(thumbnails).length}
               onclick={clearImages}>Clear loaded previews</button
             >
-            {#if downloading}<button
-                type="button"
-                onclick={() => download?.abort()}>Cancel download</button
-              >{/if}
           </div>
+          {#if !visible.length}<p class="hint">
+              No images on this page match. Try a smaller width or another
+              format.
+            </p>{/if}
           <ul class="candidate-list">
             {#each visible as candidate (candidate.id)}
-              <li>
+              {@const origin = mediaOrigin(candidate.url)}
+              <li class:on={selected.includes(candidate.id)}>
                 <label class="candidate"
                   ><input
                     type="checkbox"
@@ -650,154 +856,82 @@
                         )}
                     />{:else}<span
                       class="candidate-placeholder"
-                      aria-hidden="true">Image</span
-                    >{/if}<span class="candidate-description"
-                    ><span class="address">{label(candidate.url)}</span><span
-                      class="muted"
-                      >{candidate.width
-                        ? `${candidate.width}px wide`
-                        : "Width unknown"}{candidate.height
-                        ? ` · ${candidate.height}px high`
-                        : ""}</span
-                    ></span
+                      aria-hidden="true"
+                      ><Icon name="imageOutline" size={20} /></span
+                    >{/if}<span class="candidate-meta"
+                    >{candidate.width
+                      ? `${candidate.width} px`
+                      : "Width unknown"} · {(
+                      candidateFormat(candidate) ?? "image"
+                    ).toUpperCase()}</span
+                  ><span class="candidate-name address"
+                    >{label(candidate.url)}</span
                   ></label
                 >
-                <button
-                  type="button"
-                  class="preview-button"
-                  disabled={busy || !!downloading || !!thumbnails[candidate.id]}
-                  onclick={() => void previewImage(candidate)}
-                  >{downloading === candidate.id
-                    ? "Loading preview…"
-                    : thumbnails[candidate.id]
-                      ? "Preview loaded"
-                      : `Preview from ${mediaOrigin(candidate.url) ?? "this page"}`}</button
-                >
+                {#if !thumbnails[candidate.id]}<button
+                    type="button"
+                    class="preview-button"
+                    aria-label={downloading === candidate.id
+                      ? undefined
+                      : `Preview from ${origin ?? "this page"}`}
+                    disabled={busy || !!downloading || !!bulkPreview}
+                    onclick={() => void previewImage(candidate)}
+                    >{downloading === candidate.id
+                      ? "Loading preview…"
+                      : "Preview"}</button
+                  >{/if}
                 {#if previewErrors[candidate.id]}<p class="error" role="alert">
                     {previewErrors[candidate.id]}
                   </p>{/if}
               </li>
             {/each}
           </ul>
-        </section>
-      {/if}
-      <aside aria-label="Destination">
-        <h2>Destination</h2>
-        <p class="address">{connection?.binding.origin}</p>
-        <label for="album">Album</label>
-        <select id="album" disabled={busy} bind:value={albumId}
-          ><option value="">Choose a design album</option
-          >{#each connection?.catalog?.albums ?? [] as album}<option
-              value={album.id}>{albumName(album.id)}</option
-            >{/each}</select
-        >
-        <details>
-          <summary>Create an album</summary>
-          <div class="album-create-form">
-            <label for="new-album-name">New album name</label><input
-              id="new-album-name"
-              maxlength="255"
-              disabled={busy || creationNeedsRefresh}
-              bind:value={newAlbumName}
-            />
-            <label for="new-album-parent">Parent album</label><select
-              id="new-album-parent"
-              disabled={busy || creationNeedsRefresh}
-              bind:value={newAlbumParent}
-              ><option value="">Top level</option
-              >{#each connection?.catalog?.albums ?? [] as album}<option
-                  value={album.id}>{albumName(album.id)}</option
-                >{/each}</select
-            >
-            <button
-              type="button"
-              disabled={busy || creationNeedsRefresh || !newAlbumName.trim()}
-              onclick={() => void createDestination()}
-              >Create and select album</button
-            >
-            {#if creationNeedsRefresh}<p class="hint">
-                Check the refreshed album list before creating again; an
-                interrupted request may have succeeded.
-              </p>{/if}
-            <button
-              type="button"
-              disabled={busy}
-              onclick={() => void createDestination(true)}
-              >Refresh albums</button
-            >
-          </div>
-        </details>
-        {#if connection?.catalog?.tags.length}<fieldset>
-            <legend>Tags</legend>{#each connection.catalog.tags as tag}<label
-                class="tag-choice"
-                ><input
-                  type="checkbox"
-                  disabled={busy}
-                  bind:group={tagIds}
-                  value={tag.id}
-                />{tag.value}</label
-              >{/each}
-          </fieldset>{/if}
-        <label for="note">Note</label><textarea
-          id="note"
-          rows="4"
-          maxlength="10000"
-          disabled={busy}
-          bind:value={note}></textarea>
-        <label for="source-title">Source title</label><input
-          id="source-title"
-          maxlength="2000"
-          disabled={busy}
-          bind:value={sourceTitle}
-        />
-        <label for="source-page">Source page</label><input
-          id="source-page"
-          type="url"
-          maxlength="8192"
-          disabled={busy}
-          bind:value={sourcePage}
-        />
-        <p class="hint">Source query parameters and fragments are removed.</p>
-        {#if preview.screenshot}<button
-            class="primary"
-            type="button"
-            disabled={busy || !screenshotBlob || screenshotDone || !albumId}
-            onclick={() => void saveScreenshot()}>Save screenshot</button
-          >
           <p class="hint">
-            Nothing is queued until you confirm with Save screenshot.
-          </p>{:else}
-          {#if !preview.discovery.bookmarkUrl}<button
-              class="primary"
-              type="button"
-              disabled={busy || !!downloading || !selected.length || !albumId}
-              onclick={() => void saveSelected()}
-              >{saving ? "Queuing images…" : "Save selected images"}</button
-            >
-            <p class="hint">
-              This is a collection preview. Selected images have not been saved.
-            </p>{/if}
-          <label for="bookmark-target">Bookmark address</label><input
-            id="bookmark-target"
-            type="url"
-            maxlength="8192"
-            disabled={busy || bookmarkQueued}
-            bind:value={bookmarkTarget}
-          />
-          <p class="hint">
-            The confirmed bookmark address keeps its query parameters and
-            fragment. Remove private values before saving.
+            Icons and tracking pixels are left out. Images are saved at full
+            size, up to 100 MB each.
           </p>
-          <button
-            type="button"
-            class:primary={!!preview.discovery.bookmarkUrl}
-            disabled={busy || !!downloading || !albumId || bookmarkQueued}
-            onclick={() => void saveBookmark()}
-            >{bookmarkQueued ? "Bookmark queued" : "Save page bookmark"}</button
-          >
-        {/if}
-      </aside>
-    </div>
+        </section>
+        {@render destination()}
+        {@render source(true)}
+      {/if}
+    {/if}
+  </div>
+  {#if preview}
+    <footer class="sheet-foot">
+      {#if preview.screenshot}
+        <button
+          type="button"
+          disabled={busy || !screenshotUrl || screenshotDone}
+          onclick={() => void discardScreenshot()}>Retake</button
+        >
+        <button
+          class="primary"
+          type="button"
+          disabled={busy || !screenshotBlob || screenshotDone || !albumId}
+          onclick={() => void saveScreenshot()}
+          >{saving ? "Saving…" : "Save screenshot"}</button
+        >
+      {:else if preview.discovery.bookmarkUrl}
+        <button
+          type="button"
+          class="primary"
+          disabled={busy || !!downloading || !albumId || bookmarkQueued}
+          onclick={() => void saveBookmark()}
+          >{bookmarkQueued ? "Link is saving" : "Save link"}</button
+        >
+      {:else}
+        <button
+          class="primary"
+          type="button"
+          disabled={busy || !!downloading || !selected.length || !albumId}
+          onclick={() => void saveSelected()}
+          >{saving
+            ? "Saving…"
+            : selected.length
+              ? `Save ${selected.length} ${imageWord(selected.length)}`
+              : "Save images"}</button
+        >
+      {/if}
+    </footer>
   {/if}
-  {#if connection?.status === "connected"}<QueuePanel />{/if}
 </main>

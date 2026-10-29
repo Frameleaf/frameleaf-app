@@ -1,4 +1,10 @@
-import { chromium, expect, test, type BrowserContext } from '@playwright/test';
+import {
+  chromium,
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+} from '@playwright/test';
 import { build } from 'vite';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -6,6 +12,17 @@ import type { AddressInfo } from 'node:net';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+
+async function chooseCollection(page: Page, name: string) {
+  await page.getByRole('button', { name: /^Save to/ }).click();
+  await page
+    .getByRole('group', { name: 'Collections' })
+    .getByRole('button', { name, exact: true })
+    .click();
+  await expect(
+    page.getByRole('button', { name: new RegExp(`^Save to ${name}`) }),
+  ).toBeVisible();
+}
 
 test('capture delivery preserves one receipt through HTTP faults and browser restart', async ({}, testInfo) => {
   const id = '33333333-3333-4333-8333-333333333333';
@@ -463,13 +480,14 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       filename: 'synthetic.svg',
     });
     await page.getByLabel('Server address').fill(origin + '/frameleaf');
-    await page.getByLabel('Browser capture key', { exact: true }).fill(key);
-    await page.getByText('Local development', { exact: true }).click();
-    await page.getByLabel('Allow HTTP on this computer only').check();
+    await page.getByLabel('Browser key', { exact: true }).fill(key);
     await page
-      .getByRole('button', { name: 'Connect server', exact: true })
-      .click();
-    await expect(page.getByText('Connected', { exact: true })).toBeVisible();
+      .getByRole('switch', { name: /Allow a local server without HTTPS/ })
+      .check();
+    await page.getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Settings', exact: true }),
+    ).toBeVisible();
     loseCreate = true;
     loseAppend = true;
     loseCommit = true;
@@ -594,7 +612,9 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     await popup.goto(
       `chrome-extension://${new URL(restartedWorker.url()).hostname}/popup.html`,
     );
-    await expect(popup.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(
+      popup.getByRole('button', { name: 'Find images on this page' }),
+    ).toBeVisible();
     await content.bringToFront();
     const opened = context.waitForEvent('page');
     await popup.evaluate(() => {
@@ -605,13 +625,13 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     });
     const chooser = await opened;
     await expect(
-      chooser.getByRole('heading', { name: 'Collect images', exact: true }),
+      chooser.getByRole('heading', { name: 'Save images', exact: true }),
     ).toBeVisible();
-    await chooser.getByLabel('Album', { exact: true }).selectOption(itemId);
+    await chooseCollection(chooser, 'Inspiration');
     await chooser.locator('.candidate-list').getByRole('checkbox').check();
     await expect(
       chooser.getByRole('button', {
-        name: 'Save selected images',
+        name: 'Save 1 image',
         exact: true,
       }),
     ).toBeVisible({ timeout: 1000 });
@@ -621,18 +641,19 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     });
     holdUiReceipt = true;
     await chooser
-      .getByRole('button', { name: 'Save selected images', exact: true })
+      .getByRole('button', { name: 'Save 1 image', exact: true })
       .click();
     await expect(
-      chooser.getByText('Queued 1 image.', { exact: true }),
+      chooser.getByText('Saving 1 image.', { exact: true }),
     ).toBeVisible();
     await chooser.close();
+    await popup.getByRole('tab', { name: /^Saving/ }).click();
     await expect.poll(() => !!releaseUiReceipt).toBe(true);
     releaseUiReceipt!();
     const saved = popup
       .locator('.queue-list li')
       .filter({ hasText: 'capture.svg' });
-    await expect(saved.getByText('Saved', { exact: true })).toBeVisible();
+    await expect(saved.getByText(/^Saved to Inspiration/)).toBeVisible();
     await popup.screenshot({
       path: testInfo.outputPath('saved-queue.png'),
       fullPage: true,
@@ -643,85 +664,85 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     const bookmarkOpened = context.waitForEvent('page');
     await popup.evaluate(() => {
       [...document.querySelectorAll('button')]
-        .find((button) => button.textContent?.trim() === 'Save page bookmark')!
+        .find((button) => button.textContent?.trim() === 'Save this page')!
         .click();
     });
     const bookmarkPage = await bookmarkOpened;
     await expect(
       bookmarkPage.getByRole('heading', {
-        name: 'Save page bookmark',
+        name: 'Save this page',
         exact: true,
       }),
     ).toBeVisible();
     await expect(
-      bookmarkPage.getByLabel('Bookmark address', { exact: true }),
+      bookmarkPage.getByLabel('Address', { exact: true }),
     ).toHaveValue(origin + '/page?variant=2#section');
     await expect(
       bookmarkPage.getByLabel('Source page', { exact: true }),
     ).toHaveValue(origin + '/page');
     await expect(bookmarkPage.locator('.candidate-list')).toHaveCount(0);
+    await chooseCollection(bookmarkPage, 'Inspiration');
+    await bookmarkPage.getByRole('button', { name: /^Save to/ }).click();
     await bookmarkPage
-      .getByLabel('Album', { exact: true })
-      .selectOption(itemId);
-    await bookmarkPage.getByText('Create an album', { exact: true }).click();
+      .getByRole('button', { name: 'New collection', exact: true })
+      .click();
+    await expect(bookmarkPage.getByText('Inside Inspiration')).toBeVisible();
     await bookmarkPage
-      .getByLabel('New album name', { exact: true })
+      .getByLabel('New collection name', { exact: true })
       .fill('Packaging');
     await bookmarkPage
-      .getByLabel('Parent album', { exact: true })
-      .selectOption(itemId);
-    await bookmarkPage
-      .getByRole('button', { name: 'Create and select album', exact: true })
+      .getByRole('button', { name: 'Create', exact: true })
       .click();
     await expect(
       bookmarkPage.getByText(
-        'Album created and selected. Captures have not been saved.',
+        'Made “Packaging” and chose it. Nothing has been saved yet.',
         { exact: true },
       ),
     ).toBeVisible();
     const nestedId = albums[1].id;
-    await expect(bookmarkPage.getByLabel('Album', { exact: true })).toHaveValue(
-      nestedId,
-    );
     await expect(
-      bookmarkPage
-        .getByLabel('Album', { exact: true })
-        .locator('option:checked'),
-    ).toHaveText('Inspiration / Packaging');
+      bookmarkPage.getByRole('button', {
+        name: 'Save to Packaging · in Inspiration',
+        exact: true,
+      }),
+    ).toBeVisible();
     expect(albumRequests).toEqual([
       { name: 'Packaging', parentId: itemId, libraryScope: 'design' },
     ]);
+    await bookmarkPage.getByRole('button', { name: /^Save to/ }).click();
     await bookmarkPage
-      .getByLabel('New album name', { exact: true })
+      .getByRole('button', { name: 'New collection', exact: true })
+      .click();
+    await expect(bookmarkPage.getByText('Inside Packaging')).toBeVisible();
+    await bookmarkPage
+      .getByLabel('New collection name', { exact: true })
       .fill('Interrupted');
-    await bookmarkPage
-      .getByLabel('Parent album', { exact: true })
-      .selectOption(nestedId);
     failNextAlbumResponse = true;
     await bookmarkPage
-      .getByRole('button', { name: 'Create and select album', exact: true })
+      .getByRole('button', { name: 'Create', exact: true })
       .click();
     await expect(bookmarkPage.getByRole('alert')).toContainText(
-      'Could not confirm album creation',
+      'Could not confirm the new collection',
     );
     await expect(
-      bookmarkPage.getByRole('button', {
-        name: 'Create and select album',
-        exact: true,
-      }),
+      bookmarkPage.getByRole('button', { name: 'Create', exact: true }),
     ).toBeDisabled();
     await bookmarkPage
-      .getByRole('button', { name: 'Refresh albums', exact: true })
+      .getByRole('button', { name: 'Refresh collections', exact: true })
       .click();
     await expect(
-      bookmarkPage.getByLabel('New album name', { exact: true }),
+      bookmarkPage.getByLabel('New collection name', { exact: true }),
     ).toBeEnabled();
+    await bookmarkPage.getByLabel('Find a collection').fill('Interrupted');
     await expect(
       bookmarkPage
-        .getByLabel('Album', { exact: true })
-        .locator('option')
-        .filter({ hasText: 'Inspiration / Packaging / Interrupted' }),
+        .getByRole('group', { name: 'Collections' })
+        .getByRole('button', {
+          name: 'Interrupted · in Inspiration › Packaging',
+          exact: true,
+        }),
     ).toHaveCount(1);
+    await bookmarkPage.keyboard.press('Escape');
     expect(albumRequests).toHaveLength(2);
     expect(albums).toHaveLength(3);
     const uploadsBeforeBookmark = creates;
@@ -730,14 +751,14 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       fullPage: true,
     });
     await bookmarkPage
-      .getByRole('button', { name: 'Save page bookmark', exact: true })
+      .getByRole('button', { name: 'Save link', exact: true })
       .click();
     await expect(
-      bookmarkPage.getByText('Queued 1 bookmark.', { exact: true }),
+      bookmarkPage.getByText('Saving the link.', { exact: true }),
     ).toBeVisible();
     await expect(
       bookmarkPage.getByRole('button', {
-        name: 'Bookmark queued',
+        name: 'Link is saving',
         exact: true,
       }),
     ).toBeDisabled();
@@ -745,7 +766,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     const bookmarkRow = popup
       .locator('.queue-list li')
       .filter({ hasText: 'Fixture inspiration' });
-    await expect(bookmarkRow.getByText('Saved', { exact: true })).toBeVisible();
+    await expect(bookmarkRow.getByText(/^Saved to Packaging/)).toBeVisible();
     expect(creates).toBe(uploadsBeforeBookmark);
     expect(sourceCount).toBe(4);
     const bookmarkBody = [...committedBodies.values()]
@@ -795,23 +816,21 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     const menuImagePage = await menuImageOpened;
     await expect(
       menuImagePage.getByRole('heading', {
-        name: 'Collect images',
+        name: 'Save images',
         exact: true,
       }),
     ).toBeVisible();
     await expect(menuImagePage.locator('.candidate-list li')).toHaveCount(1);
-    await menuImagePage
-      .getByLabel('Album', { exact: true })
-      .selectOption(nestedId);
+    await chooseCollection(menuImagePage, 'Packaging');
     await menuImagePage
       .locator('.candidate-list')
       .getByRole('checkbox')
       .check();
     await menuImagePage
-      .getByRole('button', { name: 'Save selected images', exact: true })
+      .getByRole('button', { name: 'Save 1 image', exact: true })
       .click();
     await expect(
-      menuImagePage.getByText('Queued 1 image.', { exact: true }),
+      menuImagePage.getByText('Saving 1 image.', { exact: true }),
     ).toBeVisible();
     await menuImagePage.close();
     await expect.poll(() => sourceCount).toBe(5);
@@ -823,7 +842,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
         .locator('.queue-list li')
         .filter({ hasText: 'capture.svg' })
         .first()
-        .getByText('Saved', { exact: true }),
+        .getByText(/^Saved to /),
     ).toBeVisible();
     const menuPageOpened = context.waitForEvent('page');
     await restartedWorker.evaluate(async (url) => {
@@ -850,19 +869,19 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     const menuPage = await menuPageOpened;
     await expect(
       menuPage.getByRole('heading', {
-        name: 'Save page bookmark',
+        name: 'Save this page',
         exact: true,
       }),
     ).toBeVisible();
-    await expect(
-      menuPage.getByLabel('Bookmark address', { exact: true }),
-    ).toHaveValue(content.url());
-    await menuPage.getByLabel('Album', { exact: true }).selectOption(nestedId);
+    await expect(menuPage.getByLabel('Address', { exact: true })).toHaveValue(
+      content.url(),
+    );
+    await chooseCollection(menuPage, 'Packaging');
     await menuPage
-      .getByRole('button', { name: 'Save page bookmark', exact: true })
+      .getByRole('button', { name: 'Save link', exact: true })
       .click();
     await expect(
-      menuPage.getByText('Queued 1 bookmark.', { exact: true }),
+      menuPage.getByText('Saving the link.', { exact: true }),
     ).toBeVisible();
     await menuPage.close();
     await expect.poll(() => sourceCount).toBe(6);
@@ -888,7 +907,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     }, content.url());
     const failedMenu = await failedMenuOpened;
     await expect(failedMenu.getByRole('alert')).toContainText(
-      'Could not inspect the selected page or image',
+      'Could not read that page or image',
     );
     await failedMenu.close();
     await content.bringToFront();
@@ -907,24 +926,22 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     const visibleOpened = context.waitForEvent('page');
     await popup.evaluate(() => {
       [...document.querySelectorAll('button')]
-        .find((button) => button.textContent?.trim() === 'Capture visible tab')!
+        .find((button) => button.textContent?.includes('What you can see'))!
         .click();
     });
     const visibleShot = await visibleOpened;
     await expect(
       visibleShot.getByRole('heading', {
-        name: 'Review screenshot',
+        name: 'Screenshot',
         exact: true,
       }),
     ).toBeVisible();
     await expect(
-      visibleShot.getByAltText('Screenshot to confirm before saving'),
+      visibleShot.getByAltText('The screenshot to check before saving'),
     ).toBeVisible();
     expect(sourceCount).toBe(6);
     expect(await queuedCount()).toBe(beforeScreenshots);
-    await visibleShot
-      .getByLabel('Album', { exact: true })
-      .selectOption(nestedId);
+    await chooseCollection(visibleShot, 'Packaging');
     await visibleShot.screenshot({
       path: testInfo.outputPath('screenshot-confirmation.png'),
       fullPage: true,
@@ -933,7 +950,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       .getByRole('button', { name: 'Save screenshot', exact: true })
       .click();
     await expect(
-      visibleShot.getByText('Queued 1 screenshot.', { exact: true }),
+      visibleShot.getByText('Saving the screenshot.', { exact: true }),
     ).toBeVisible();
     await visibleShot.close();
     await expect.poll(() => sourceCount).toBe(7);
@@ -941,15 +958,13 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       popup
         .locator('.queue-list li')
         .filter({ hasText: 'screenshot-visible.png' })
-        .getByText('Saved', { exact: true }),
+        .getByText(/^Saved to Packaging/),
     ).toBeVisible();
     await content.bringToFront();
     const areaOpened = context.waitForEvent('page');
     await popup.evaluate(() => {
       [...document.querySelectorAll('button')]
-        .find(
-          (button) => button.textContent?.trim() === 'Capture selected area',
-        )!
+        .find((button) => button.textContent?.includes('Select an area'))!
         .click();
     });
     await expect(content.locator('[id^="frameleaf-area-"]')).toHaveCount(1);
@@ -959,7 +974,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     await content.mouse.up();
     const areaShot = await areaOpened;
     const areaImage = areaShot.getByAltText(
-      'Screenshot to confirm before saving',
+      'The screenshot to check before saving',
     );
     await expect(areaImage).toBeVisible();
     expect(
@@ -970,12 +985,12 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     ).toEqual({ width: 100, height: 100 });
     expect(sourceCount).toBe(7);
     expect(await queuedCount()).toBe(beforeScreenshots + 1);
-    await areaShot.getByLabel('Album', { exact: true }).selectOption(nestedId);
+    await chooseCollection(areaShot, 'Packaging');
     await areaShot
       .getByRole('button', { name: 'Save screenshot', exact: true })
       .click();
     await expect(
-      areaShot.getByText('Queued 1 screenshot.', { exact: true }),
+      areaShot.getByText('Saving the screenshot.', { exact: true }),
     ).toBeVisible();
     await areaShot.close();
     await expect.poll(() => sourceCount).toBe(8);
@@ -983,25 +998,25 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       popup
         .locator('.queue-list li')
         .filter({ hasText: 'screenshot-area.png' })
-        .getByText('Saved', { exact: true }),
+        .getByText(/^Saved to Packaging/),
     ).toBeVisible();
     await content.bringToFront();
     const discardedOpened = context.waitForEvent('page');
     await popup.evaluate(() => {
       [...document.querySelectorAll('button')]
-        .find((button) => button.textContent?.trim() === 'Capture visible tab')!
+        .find((button) => button.textContent?.includes('What you can see'))!
         .click();
     });
     const discarded = await discardedOpened;
     await expect(
-      discarded.getByAltText('Screenshot to confirm before saving'),
+      discarded.getByAltText('The screenshot to check before saving'),
     ).toBeVisible();
     await discarded
-      .getByRole('button', { name: 'Discard screenshot', exact: true })
+      .getByRole('button', { name: 'Retake', exact: true })
       .click();
     await expect(
       discarded.getByText(
-        'Screenshot discarded. Capture again from the toolbar.',
+        'Screenshot discarded. To take another, open Save to Frameleaf from the toolbar and choose Screenshot.',
         { exact: true },
       ),
     ).toBeVisible();
@@ -1047,7 +1062,9 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
     await polling.goto(
       `chrome-extension://${new URL(restartedWorker.url()).hostname}/popup.html`,
     );
-    await expect(polling.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(
+      polling.getByRole('button', { name: 'Find images on this page' }),
+    ).toBeVisible();
     await polling.clock.runFor(6000);
     expect(
       await polling.evaluate(
