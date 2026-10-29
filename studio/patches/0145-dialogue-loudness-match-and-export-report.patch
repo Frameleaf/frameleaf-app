@@ -27,7 +27,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,152 @@
 +import { useEffect, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Gauge } from 'lucide-react'
@@ -81,7 +81,9 @@ new file mode 100644
 +    setBusy(true)
 +    setResults(null)
 +    try {
-+      setResults(await analyzeClipLoudness(audible, fps, controller.signal))
++      const measured = await analyzeClipLoudness(audible, fps, controller.signal)
++      // A superseded or cancelled run never writes its results.
++      if (abortRef.current === controller && !controller.signal.aborted) setResults(measured)
 +    } catch (error) {
 +      if (!(error instanceof DOMException && error.name === 'AbortError')) {
 +        toast.error(t('editor.audioSection.loudness.failed'))
@@ -221,7 +223,7 @@ diff --git a/src/features/export/components/export-loudness-report.tsx b/src/fea
 new file mode 100644
 --- /dev/null
 +++ b/src/features/export/components/export-loudness-report.tsx
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,111 @@
 +import { useEffect, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Gauge } from 'lucide-react'
@@ -233,31 +235,32 @@ new file mode 100644
 +/** Reported tolerance for the integrated level and the true-peak reading. */
 +const TARGET_TOLERANCE_LU = 1
 +const PEAK_TOLERANCE_DB = 0.2
-+/**
-+ * Longer files are not measured here: the decoded PCM and the worker's copy alone are about
-+ * 2 × 46 MB per stereo minute, enough to end a browser tab on long exports.
-+ */
-+const MAX_MEASURE_SECONDS = 15 * 60
++/** Files decoded at this rate (Float32) plus the worker's copy must fit this budget. */
++const DECODE_RATE = 48000
++const MAX_DECODED_BYTES = 512 * 1024 * 1024
++/** The longest file, in seconds, whose decoded PCM and worker copy fit the budget. */
++const maxSecondsFor = (channels: number) => MAX_DECODED_BYTES / (2 * 4 * DECODE_RATE * Math.max(1, channels))
 +
 +type Report =
 +  | { state: 'measuring' }
 +  | { state: 'unknown' }
-+  | { state: 'too-long' }
++  | { state: 'too-long'; minutes: number }
 +  | { state: 'silent' }
 +  | { state: 'measured'; measurement: LoudnessMeasurement }
 +
-+async function durationOf(blob: Blob): Promise<number> {
++async function probe(blob: Blob): Promise<{ seconds: number; channels: number }> {
 +  const { Input, BlobSource, ALL_FORMATS } = await import('mediabunny')
 +  const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS })
 +  try {
-+    return await input.computeDuration()
++    const track = await input.getPrimaryAudioTrack()
++    return { seconds: await input.computeDuration(), channels: track?.numberOfChannels ?? 2 }
 +  } finally {
 +    input.dispose()
 +  }
 +}
 +
 +async function decodeDeliverable(blob: Blob): Promise<AudioBuffer> {
-+  const context = new OfflineAudioContext(1, 1, 48000)
++  const context = new OfflineAudioContext(1, 1, DECODE_RATE)
 +  return context.decodeAudioData(await blob.arrayBuffer())
 +}
 +
@@ -277,9 +280,11 @@ new file mode 100644
 +    const controller = new AbortController()
 +    void (async () => {
 +      try {
-+        // Checked before decoding, from the container, so a long file is never held in memory.
-+        if (await durationOf(blob) > MAX_MEASURE_SECONDS) {
-+          if (!controller.signal.aborted) setReport({ state: 'too-long' })
++        // Checked before decoding, from the container: a file whose decoded PCM and worker copy
++        // would not fit the memory budget is never decoded.
++        const { seconds, channels: channelCount } = await probe(blob)
++        if (seconds > maxSecondsFor(channelCount)) {
++          if (!controller.signal.aborted) setReport({ state: 'too-long', minutes: Math.floor(maxSecondsFor(channelCount) / 60) })
 +          return
 +        }
 +        const buffer = await decodeDeliverable(blob)
@@ -301,7 +306,7 @@ new file mode 100644
 +  } else if (report.state === 'unknown') {
 +    body = t('export.loudness.unknown')
 +  } else if (report.state === 'too-long') {
-+    body = t('export.loudness.tooLong', { minutes: MAX_MEASURE_SECONDS / 60 })
++    body = t('export.loudness.tooLong', { minutes: report.minutes })
 +  } else if (report.state === 'silent') {
 +    body = t('export.loudness.silent')
 +  } else {
@@ -507,12 +512,13 @@ diff --git a/src/features/timeline/utils/loudness-match.ts b/src/features/timeli
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/utils/loudness-match.ts
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,168 @@
 +import type { AudioItem, TimelineItem, VideoItem } from '@/types/timeline'
 +import { getOrDecodeAudioSliceForPlayback } from '@/features/timeline/deps/composition-runtime'
 +import { resolveMediaUrl } from '@/features/timeline/deps/media-library-resolver'
 +import { measureLoudnessInWorker, type LoudnessMeasurement } from '@/shared/utils/loudness'
 +import { getItemSourceSpanSeconds } from './media-item-frames'
++import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
 +import { getLinkedItems } from './linked-items'
 +
 +/**
@@ -575,8 +581,10 @@ new file mode 100644
 +  return [...resolved.values()]
 +}
 +
-+export function loudnessBinding(item: AudibleItem): string {
++/** `fps` is the rate the source span was measured at; apply checks against the current rate. */
++export function loudnessBinding(item: AudibleItem, fps = useTimelineSettingsStore.getState().fps): string {
 +  return JSON.stringify([
++    fps,
 +    item.mediaId, item.sourceStart ?? 0, item.sourceEnd ?? null, item.sourceFps ?? null,
 +    item.speed ?? 1, item.volume ?? 0, item.muted === true, item.durationInFrames,
 +    // Unlinking or unmuting embedded sound changes which clip is heard.
@@ -624,6 +632,17 @@ new file mode 100644
 +  return new DOMException('Loudness analysis cancelled', 'AbortError')
 +}
 +
++/** Settle as soon as `signal` aborts; the operation itself runs on (neither call accepts a signal). */
++function untilAborted<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
++  if (!signal) return work
++  if (signal.aborted) return Promise.reject(abortError())
++  return new Promise<T>((resolve, reject) => {
++    const onAbort = () => reject(abortError())
++    signal.addEventListener('abort', onAbort, { once: true })
++    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
++  })
++}
++
 +/** Measure each clip's audible source range. Cancelling rejects with an AbortError and applies nothing. */
 +export async function analyzeClipLoudness(
 +  items: readonly AudibleItem[],
@@ -633,18 +652,18 @@ new file mode 100644
 +  const results: ClipLoudnessResult[] = []
 +  for (const item of items) {
 +    if (signal?.aborted) throw abortError()
-+    const base = { itemId: item.id, label: item.label, binding: loudnessBinding(item), measurement: null }
++    const base = { itemId: item.id, label: item.label, binding: loudnessBinding(item, timelineFps), measurement: null }
 +    if (item.muted === true) { results.push({ ...base, unavailable: 'muted' }); continue }
 +    const span = getItemSourceSpanSeconds(item, timelineFps)
-+    const url = item.mediaId ? await resolveMediaUrl(item.mediaId) : null
++    const url = item.mediaId ? await untilAborted(resolveMediaUrl(item.mediaId), signal) : null
 +    if (!span || !url || !item.mediaId) { results.push({ ...base, unavailable: 'no-source' }); continue }
 +    try {
-+      const slice = await getOrDecodeAudioSliceForPlayback(item.mediaId, url, {
++      const slice = await untilAborted(getOrDecodeAudioSliceForPlayback(item.mediaId, url, {
 +        targetTimeSeconds: span.start,
 +        minReadySeconds: Math.max(1, span.end - span.start),
 +        preRollSeconds: 0,
 +        waitTimeoutMs: 0,
-+      })
++      }), signal)
 +      if (signal?.aborted) throw abortError()
 +      const { buffer, startTime } = slice
 +      const start = Math.max(0, Math.round((span.start - startTime) * buffer.sampleRate))
@@ -679,7 +698,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 +        "analyzing": "Wird gemessen…",
 +        "cancel": "Abbrechen",
 +        "apply": "Anwenden",
-+        "measured": "Jetzt {{lufs}}, Spitze {{peak}}",
++        "measured": "Jetzt {{lufs}}, Quellspitze {{peak}}",
 +        "change": "Lautstärke um {{gain}} ändern",
 +        "overCeiling": "Die Spitze würde {{peak}} erreichen; der Export-Mix wird über 0 dBFS weich begrenzt. Senke das Ziel oder diesen Clip.",
 +        "changed": "Der Clip wurde seit der Messung geändert. Erneut analysieren.",
@@ -743,7 +762,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 +        "analyzing": "Measuring…",
 +        "cancel": "Cancel",
 +        "apply": "Apply",
-+        "measured": "Now {{lufs}}, peak {{peak}}",
++        "measured": "Now {{lufs}}, source peak {{peak}}",
 +        "change": "Change volume by {{gain}}",
 +        "overCeiling": "Peak would reach {{peak}}; the export mix soft-clips above 0 dBFS. Lower the target or this clip.",
 +        "changed": "Clip changed since it was measured. Analyze again.",
@@ -807,7 +826,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 +        "analyzing": "Midiendo…",
 +        "cancel": "Cancelar",
 +        "apply": "Aplicar",
-+        "measured": "Ahora {{lufs}}, pico {{peak}}",
++        "measured": "Ahora {{lufs}}, pico de origen {{peak}}",
 +        "change": "Cambiar el volumen {{gain}}",
 +        "overCeiling": "El pico llegaría a {{peak}}; la mezcla exportada se satura suavemente por encima de 0 dBFS. Baja el objetivo o este clip.",
 +        "changed": "El clip cambió desde que se midió. Vuelve a analizar.",
@@ -871,7 +890,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 +        "analyzing": "Mesure en cours…",
 +        "cancel": "Annuler",
 +        "apply": "Appliquer",
-+        "measured": "Actuellement {{lufs}}, crête {{peak}}",
++        "measured": "Actuellement {{lufs}}, crête source {{peak}}",
 +        "change": "Modifier le volume de {{gain}}",
 +        "overCeiling": "La crête atteindrait {{peak}} ; le mixage exporté est écrêté en douceur au-dessus de 0 dBFS. Baissez la cible ou ce clip.",
 +        "changed": "Le clip a changé depuis la mesure. Analysez à nouveau.",
@@ -935,7 +954,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 +        "analyzing": "測定中…",
 +        "cancel": "キャンセル",
 +        "apply": "適用",
-+        "measured": "現在 {{lufs}}、ピーク {{peak}}",
++        "measured": "現在 {{lufs}}、素材ピーク {{peak}}",
 +        "change": "音量を {{gain}} 変更",
 +        "overCeiling": "ピークが {{peak}} に達します。書き出しのミックスは 0 dBFS を超えるとソフトクリップされます。目標かこのクリップを下げてください。",
 +        "changed": "測定後にクリップが変更されました。もう一度分析してください。",
@@ -999,7 +1018,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 +        "analyzing": "측정 중…",
 +        "cancel": "취소",
 +        "apply": "적용",
-+        "measured": "현재 {{lufs}}, 피크 {{peak}}",
++        "measured": "현재 {{lufs}}, 원본 피크 {{peak}}",
 +        "change": "볼륨을 {{gain}} 변경",
 +        "overCeiling": "피크가 {{peak}}에 도달합니다. 내보내기 믹스는 0 dBFS를 넘으면 소프트 클리핑됩니다. 목표나 이 클립을 낮추세요.",
 +        "changed": "측정 후 클립이 변경되었습니다. 다시 분석하세요.",
@@ -1063,7 +1082,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 +        "analyzing": "Medindo…",
 +        "cancel": "Cancelar",
 +        "apply": "Aplicar",
-+        "measured": "Agora {{lufs}}, pico {{peak}}",
++        "measured": "Agora {{lufs}}, pico da origem {{peak}}",
 +        "change": "Alterar o volume em {{gain}}",
 +        "overCeiling": "O pico chegaria a {{peak}}; a mixagem exportada satura suavemente acima de 0 dBFS. Reduza o alvo ou este clipe.",
 +        "changed": "O clipe mudou desde a medição. Analise novamente.",
@@ -1127,7 +1146,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 +        "analyzing": "Ölçülüyor…",
 +        "cancel": "İptal",
 +        "apply": "Uygula",
-+        "measured": "Şu an {{lufs}}, tepe {{peak}}",
++        "measured": "Şu an {{lufs}}, kaynak tepe {{peak}}",
 +        "change": "Sesi {{gain}} değiştir",
 +        "overCeiling": "Tepe {{peak}} değerine ulaşır; dışa aktarılan miks 0 dBFS üzerinde yumuşak kırpılır. Hedefi veya bu klibi düşürün.",
 +        "changed": "Klip ölçümden sonra değişti. Yeniden analiz edin.",
@@ -1191,7 +1210,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
 +        "analyzing": "正在测量…",
 +        "cancel": "取消",
 +        "apply": "应用",
-+        "measured": "当前 {{lufs}}，峰值 {{peak}}",
++        "measured": "当前 {{lufs}}，源峰值 {{peak}}",
 +        "change": "将音量调整 {{gain}}",
 +        "overCeiling": "峰值将达到 {{peak}}；导出混音超过 0 dBFS 时会软削波。请降低目标或此片段。",
 +        "changed": "片段在测量后已更改。请重新分析。",
