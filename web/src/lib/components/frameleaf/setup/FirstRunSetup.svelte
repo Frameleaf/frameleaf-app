@@ -225,13 +225,13 @@
         storage = null;
       }
     })();
-    const [configResult, , , summary, hardwareResult, usersResult] = await Promise.allSettled([
+    const [configResult, summary, hardwareResult, usersResult] = await Promise.allSettled([
       getConfig(),
-      storageRequest,
-      libraryRequest,
       setup.flow === 'existing' ? getSummary({ allAccounts: true }) : Promise.resolve(null),
       getHardwareCheck(),
       setup.flow === 'existing' ? searchUsersAdmin({}) : Promise.resolve([]),
+      storageRequest,
+      libraryRequest,
     ]);
     config = configResult.status === 'fulfilled' ? configResult.value : null;
     if (summary.status === 'fulfilled' && summary.value) {
