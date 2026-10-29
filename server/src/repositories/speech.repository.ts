@@ -19,7 +19,7 @@ import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SpeechSettingsTable } from 'src/schema/tables/speech.table.js';
-import { hiddenFromOthers, searchAssetBuilder } from 'src/utils/database.js';
+import { anyUuid, hiddenFromOthers, searchAssetBuilder } from 'src/utils/database.js';
 import { getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isNotLocked } from 'src/utils/locked.js';
@@ -71,7 +71,12 @@ export class SpeechRepository {
     if (assetIds.length === 0) {
       return [];
     }
-    const rows = await this.db.selectFrom('asset').select('ownerId').distinct().where('id', 'in', assetIds).execute();
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('ownerId')
+      .distinct()
+      .where('id', '=', anyUuid(assetIds))
+      .execute();
     return rows.map(({ ownerId }) => ownerId);
   }
 

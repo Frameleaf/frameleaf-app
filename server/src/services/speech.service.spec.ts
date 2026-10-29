@@ -121,6 +121,8 @@ it('keeps live private search available when the worker identity is unavailable'
   await expect(f.service.search(factory.auth(), { query: 'hello', size: 25 })).resolves.toMatchObject({ total: 0 });
   expect(repository.setModel).not.toHaveBeenCalled();
   expect(repository.search).toHaveBeenCalledOnce();
+  // Search pages never pay for the library-wide status counts.
+  expect(repository.status).not.toHaveBeenCalled();
 });
 it('completes no-audio and no-speech videos as empty without leaving temporary audio', async () => {
   for (const audio of [false, true]) {

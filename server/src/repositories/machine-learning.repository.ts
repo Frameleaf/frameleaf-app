@@ -722,10 +722,13 @@ export class MachineLearningRepository implements RestorationInference {
       redirect: 'error',
       signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) throw new TranscriptionUnavailableError('The worker cannot report its speech model');
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new TranscriptionUnavailableError('The worker cannot report its speech model');
+    }
     const identity = z
       .object({ model: z.string().max(128), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) })
-      .parse(await response.json());
+      .parse(await this.readDiagnosticJson(response));
     await this.authorize(selection.endpoint);
     return identity;
   }

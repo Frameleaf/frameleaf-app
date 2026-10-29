@@ -156,11 +156,16 @@
       }
     }
   };
+  // Quotes leave the screen at once (privacy); a burst of events (ingestion, enrichment) reloads only once.
+  let reloadTimer: ReturnType<typeof setTimeout> | undefined;
   const invalidate = () => {
     clear();
-    if (validSession() && authManager.authenticated) {
-      void load();
-    }
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => {
+      if (validSession() && authManager.authenticated) {
+        void load();
+      }
+    }, 300);
   };
   const stop = onLibraryAccessChange(
     (change) => {
@@ -177,6 +182,7 @@
     return clear;
   });
   onDestroy(() => {
+    clearTimeout(reloadTimer);
     clear();
     stop();
   });

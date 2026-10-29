@@ -167,26 +167,34 @@ export class SpeechService {
     );
   }
 
+  /**
+   * Follows the worker's current model and re-reads the settings it left, or null when the worker did not answer.
+   * Search needs only this, not the library-wide counts.
+   */
+  private async refreshModel(ownerId: string, settings: Awaited<ReturnType<SpeechRepository['settings']>>) {
+    if (!settings?.destinationId) {
+      return null;
+    }
+    let identity: Awaited<ReturnType<MachineLearningRepository['transcriptionIdentity']>>;
+    try {
+      identity = await this.machineLearning.transcriptionIdentity(await this.admit(settings.destinationId));
+    } catch {
+      /* A missing worker is an explicit state; existing transcripts remain private and readable. */
+      return null;
+    }
+    if (settings.enabled && settings.modelFingerprint !== identity.fingerprint) {
+      await this.repository.setModel(ownerId, settings.generation, identity.fingerprint);
+      this.changed(ownerId);
+    }
+    return this.repository.settings(ownerId);
+  }
+
   async status(auth: AuthDto): Promise<SpeechStatusDto> {
     const ownerId = this.owner(auth);
-    let settings = await this.repository.settings(ownerId);
-    let workerAvailable = false;
-    if (settings?.destinationId) {
-      let identity: Awaited<ReturnType<MachineLearningRepository['transcriptionIdentity']>> | undefined;
-      try {
-        identity = await this.machineLearning.transcriptionIdentity(await this.admit(settings.destinationId));
-      } catch {
-        /* A missing worker is an explicit state; existing transcripts remain private and readable. */
-      }
-      workerAvailable = !!identity;
-      if (identity) {
-        if (settings.enabled && settings.modelFingerprint !== identity.fingerprint) {
-          await this.repository.setModel(ownerId, settings.generation, identity.fingerprint);
-          this.changed(ownerId);
-        }
-        settings = await this.repository.settings(ownerId);
-      }
-    }
+    const current = await this.repository.settings(ownerId);
+    const refreshed = await this.refreshModel(ownerId, current);
+    const workerAvailable = refreshed !== null;
+    const settings = refreshed ?? current;
     const counts = await this.repository.status(ownerId);
     const config = settings ?? speechDefaults;
     return {
@@ -228,14 +236,14 @@ export class SpeechService {
   }
 
   async search(auth: AuthDto, dto: SpeechSearchDto) {
-    this.owner(auth);
+    const ownerId = this.owner(auth);
     let clauses;
     try {
       clauses = speechQuery(dto.query);
     } catch (error) {
       throw new BadRequestException((error as Error).message);
     }
-    await this.status(auth);
+    await this.refreshModel(ownerId, await this.repository.settings(ownerId));
     return this.repository.search(auth, dto, clauses);
   }
 
