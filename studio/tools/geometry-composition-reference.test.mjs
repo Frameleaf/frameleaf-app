@@ -269,25 +269,23 @@ test('composition source bindings preserve every admitted legacy row and refuse 
   const admitted = [...raster.matchAll(/binding\.sourceSha256 ===\s*'([a-f0-9]{64})'/g)].map(
     (row) => row[1],
   )
-  assert.equal(admitted.length, 49)
-  assert.equal(new Set(admitted).size, 49)
+  assert.equal(admitted.length, 45)
+  assert.equal(new Set(admitted).size, 45)
   for (const source of admitted) {
     const a = fixture()
     a.contract.binding.sourceSha256 = source
-    if (source === current || source === 'bd9c1a7e73e0a360bf5ba0a5487ba722db6ce36d38489f204e9cdc00e1b87d9b' || source === '56d2c5603b9dfca47ad644106929a995f4ba37800e18445c8205165399a2a682' || source === 'b58035f0157f2216c3004669fce6345fbe1d429d1dcdb21bb400a5cb71e380a6' || source === '0570f1bad5f49930c62c06b5731236632671b5e32c3639f6aec8424cafb32ebb' || source === '3fb72aceffb0e9c6ef31eb15008c1fe64997c783697fcab58dd669941eebda63' || source === '4750757a0c3b48cd342bd886a63c9233e4d1024584793b10bd952e39f3938601' || source === '021d92421f193e92216cf60dc88efd8f11ffa10a2d195231b5b0ac663ab0754a' || source === '1f842a0736b43b605bcb1d4cf73c16ffc8bd54ba9199a1b05d79ca46e03b7385' || source === '076073e60d0baee97812afe90c3c2a8eb65681ac91e68093548baec1a989c229' || source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' || source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' || source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' || source === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' || source === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' || source === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' || source === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9')
+    if (source === current || source === 'efcc840ff88aa3bf6d1599f4f2fb64575608c8fa503f5bd3eb78548f4e40c975' || source === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' || source === '6a779671af62562b6238dbc3c639c85c36203c499cf08c4426b774e8322c8078' || source === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' || source === 'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa' || source === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' || source === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' || source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' || source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' || source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' || source === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' || source === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' || source === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' || source === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9')
       a.contract.binding.browser = '156.0.8078.4'
     a.contract.sourceHashes = compositionSourcesFor(source)
     if (
       source === current ||
-      source === 'bd9c1a7e73e0a360bf5ba0a5487ba722db6ce36d38489f204e9cdc00e1b87d9b' ||
-      source === '56d2c5603b9dfca47ad644106929a995f4ba37800e18445c8205165399a2a682' ||
-      source === 'b58035f0157f2216c3004669fce6345fbe1d429d1dcdb21bb400a5cb71e380a6' ||
-      source === '0570f1bad5f49930c62c06b5731236632671b5e32c3639f6aec8424cafb32ebb' ||
-      source === '3fb72aceffb0e9c6ef31eb15008c1fe64997c783697fcab58dd669941eebda63' ||
-      source === '4750757a0c3b48cd342bd886a63c9233e4d1024584793b10bd952e39f3938601' ||
-      source === '021d92421f193e92216cf60dc88efd8f11ffa10a2d195231b5b0ac663ab0754a' ||
-      source === '1f842a0736b43b605bcb1d4cf73c16ffc8bd54ba9199a1b05d79ca46e03b7385' ||
-      source === '076073e60d0baee97812afe90c3c2a8eb65681ac91e68093548baec1a989c229' ||
+      source === 'efcc840ff88aa3bf6d1599f4f2fb64575608c8fa503f5bd3eb78548f4e40c975' ||
+      source === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+      source === '6a779671af62562b6238dbc3c639c85c36203c499cf08c4426b774e8322c8078' ||
+      source === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
+      source === 'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa' ||
+      source === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+      source === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
       source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
       source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
       source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' ||

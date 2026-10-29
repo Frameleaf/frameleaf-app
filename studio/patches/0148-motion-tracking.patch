@@ -190,10 +190,10 @@ new file mode 100644
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -25,6 +25,13 @@ export {
-   type RetimePolicy,
- } from '@/features/timeline/utils/project-retime'
- export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
+@@ -49,6 +49,13 @@ export {
+   setColourMatchStrength,
+   type ColourMatchTargetResult,
+ } from '@/features/timeline/stores/actions/edit/colour-match-actions'
 +export {
 +  analyzeMotionTrack,
 +  applyMotionTrack,
@@ -201,9 +201,9 @@ diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/
 +  removeMotionTrack,
 +  type MotionTrackResult,
 +} from '@/features/timeline/stores/actions/edit/motion-track-actions'
+ export { applyColourMatch } from '@/features/timeline/utils/colour-match'
  export {
    addCompositionControl,
-   removeCompositionControl,
 diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test.ts b/src/features/timeline/stores/actions/edit/motion-track-actions.test.ts
 new file mode 100644
 --- /dev/null
@@ -791,10 +791,10 @@ new file mode 100644
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -881,6 +881,49 @@
-     "colorPanel": {
-       "emptyState": "Wähle einen Clip für die Farbkorrektur aus",
-       "adjustmentLayerLabel": "Farbkorrektur"
+@@ -985,6 +985,49 @@
+       "review": "Vorher und nachher",
+       "before": "Vorher",
+       "after": "Nachher"
 +    },
 +    "motionTrack": {
 +      "title": "Bewegung verfolgen",
@@ -844,10 +844,10 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -894,6 +894,49 @@
-       "dockTitle": "Color",
-       "emptyState": "Select a clip to grade",
-       "adjustmentLayerLabel": "Grade"
+@@ -998,6 +998,49 @@
+       "review": "Before and after",
+       "before": "Before",
+       "after": "After"
 +    },
 +    "motionTrack": {
 +      "title": "Track motion",
@@ -897,10 +897,10 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -881,6 +881,49 @@
-     "colorPanel": {
-       "emptyState": "Selecciona un clip para etalonar",
-       "adjustmentLayerLabel": "Etalonaje"
+@@ -985,6 +985,49 @@
+       "review": "Antes y después",
+       "before": "Antes",
+       "after": "Después"
 +    },
 +    "motionTrack": {
 +      "title": "Seguir movimiento",
@@ -950,10 +950,10 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -881,6 +881,49 @@
-     "colorPanel": {
-       "emptyState": "Sélectionnez un clip à étalonner",
-       "adjustmentLayerLabel": "Étalonnage"
+@@ -985,6 +985,49 @@
+       "review": "Avant et après",
+       "before": "Avant",
+       "after": "Après"
 +    },
 +    "motionTrack": {
 +      "title": "Suivre le mouvement",
@@ -1003,10 +1003,10 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -881,6 +881,49 @@
-     "colorPanel": {
-       "emptyState": "グレーディングするクリップを選択してください",
-       "adjustmentLayerLabel": "グレーディング"
+@@ -985,6 +985,49 @@
+       "review": "適用前と適用後",
+       "before": "適用前",
+       "after": "適用後"
 +    },
 +    "motionTrack": {
 +      "title": "モーションを追跡",
@@ -1056,10 +1056,10 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -881,6 +881,49 @@
-     "colorPanel": {
-       "emptyState": "색 보정할 클립을 선택하세요",
-       "adjustmentLayerLabel": "색 보정"
+@@ -985,6 +985,49 @@
+       "review": "적용 전과 후",
+       "before": "전",
+       "after": "후"
 +    },
 +    "motionTrack": {
 +      "title": "모션 추적",
@@ -1109,10 +1109,10 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -881,6 +881,49 @@
-     "colorPanel": {
-       "emptyState": "Selecione um clipe para corrigir as cores",
-       "adjustmentLayerLabel": "Correção de cor"
+@@ -985,6 +985,49 @@
+       "review": "Antes e depois",
+       "before": "Antes",
+       "after": "Depois"
 +    },
 +    "motionTrack": {
 +      "title": "Rastrear movimento",
@@ -1162,10 +1162,10 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -881,6 +881,49 @@
-     "colorPanel": {
-       "emptyState": "Renk düzenlemek için bir klip seçin",
-       "adjustmentLayerLabel": "Renk düzenleme"
+@@ -985,6 +985,49 @@
+       "review": "Önce ve sonra",
+       "before": "Önce",
+       "after": "Sonra"
 +    },
 +    "motionTrack": {
 +      "title": "Hareketi izle",
@@ -1215,10 +1215,10 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -881,6 +881,49 @@
-     "colorPanel": {
-       "emptyState": "选择要调色的剪辑",
-       "adjustmentLayerLabel": "调色"
+@@ -985,6 +985,49 @@
+       "review": "前后对比",
+       "before": "之前",
+       "after": "之后"
 +    },
 +    "motionTrack": {
 +      "title": "运动跟踪",

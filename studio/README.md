@@ -221,6 +221,81 @@ holds the centre within 5 px and size within 5% on at least 95% of frames, and a
 lost interval. Rotation and perspective, mask-path tracking, preview/export pixel checks and browser
 journeys remain open.
 
+Patch 0151 (FL-626) matches colour through existing grades and in HDR. Instead of decoding source
+frames, each clip is rendered alone through the export renderer at a small size of its own aspect
+(`renderWorkingFrame`). The reference keeps all of its effects, and the target leaves out only its own
+match, so the match lands after the grade and approximates the graded reference. SDR projects read the
+sRGB-encoded working values. HDR projects read the GPU float route's PQ BT.2020 signal, decoded to linear
+BT.709 in reference-white units; there exposure and temperature/tint are still linear, so the same exact
+solve applies, with values above reference white kept. HDR analysis without WebGPU is refused with an
+explanation. Results are now bound to the reference's source, timing and full grade and to the
+project's colour management as well as the target's, so changing any of them makes a proposal stale.
+The panel shows reference, before and after swatches (with values) at the chosen strength. Tests cover
+graded staleness and an HDR linear chart whose error falls by at least half. Browser rendering of the
+sampled frames and preview/export pixel comparisons remain open.
+
+Patch 0147 (FL-599) adds colour matching between shots. The video panel's Match colour section takes a
+reference clip and samples the frame at the playhead (or each clip's middle) from the source, downscaled,
+in the SDR working space. A match is an editable `gpu-exposure` then `gpu-temperature` pair after the
+clip's effects: because both act linearly on SDR working values, the exposure, temperature and tint that
+move the target's unclipped channel means onto the reference's solve three linear equations exactly
+(`mean-gain-wb-v1`). Clipped, flat and extreme proposals are flagged and not applied. Strength scales the
+three values from identity; zero removes the effects. The effects carry `colour-match:` ids and undeclared
+`matchStrength`/`matchSource` parameters (protocol 13.3.3), so a new match replaces the old one in place and
+reopens with its provenance. Results are bound to the clip's source, timing, sampled time and non-match
+effects, so stale results are skipped; apply, strength and remove are each one undo step. HDR projects,
+graded clips (enabled colour effects other than the match), a reference that is itself matched and reverse
+playback are refused. Synthetic 24-patch chart tests of the solve (not the renderer) require mean CIEDE2000 error to fall by at least half (sRGB to CIELAB D65). Matching through an
+existing grade, HDR working space, scope before/after review and browser/worker export parity remain open.
+
+Patch 0150 (FL-623) saves the loudness target and ceiling in the project (`timeline.masterLoudness`,
+protocol 3.2 table and schema) and adds an optional true-peak limiter at the ceiling as the last stage of
+the export mix, after master gain and automation. The limiter (`tp-lookahead-1.5ms-v1`) knows the whole
+mix, so it looks ahead without latency: each sample's required gain from its 4x-oversampled peak takes a
+±1.5 ms running minimum and a box average, which never exceeds what a peak needs, and release recovers
+over 50 ms; channels share one gain. While it is on, export mixes the whole range at once (no 30 s
+windows) and never copies audio packets. Preview routes the master through a Web Audio compressor set
+as a limiter at the ceiling only while the limiter is on (sample-peak, about 6 ms lookahead), so it
+approximates the export and adds no latency otherwise. The Match loudness section edits the target,
+ceiling and limiter as undoable project settings, and the export report checks against them. Tests
+hold the limited true peak within 0.2 dB of the ceiling at -0.3, -1 and -2 dBTP, keep quiet audio
+untouched and channels in step, and cover save, undo and serialization. Native clients must refuse to
+export a graph with the limiter on unless they apply it. Browser, worker and codec-overshoot checks
+remain open.
+
+Patch 0145 (FL-598) adds dialogue loudness matching and an export loudness report. One BS.1770-4
+meter (K-weighting derived for any sample rate, 400 ms blocks with EBU R128 absolute and relative
+gates, true peak by 4x polyphase oversampling; `bs1770-4/r128-gating/tp-4x-v1`) runs in a worker for
+both. The audio panel's Match loudness section measures the selected clips' source ranges (a video's
+linked audio when it has one), shows loudness and true peak as the clip plays now, and suggests a
+change to the clip's static volume toward an editable -16 LUFS target and -1 dBTP ceiling. Gain
+envelopes, fades and ducking stay relative to that volume, so they keep their shape. Boost is capped at
++12 dB and the clip volume range at -60..+12 dB, both flagged; muted, silent, shorter-than-0.4 s and
+undecodable clips get no suggestion. Every result is bound to the clip's audible state, so an edit since
+measuring, or applying the same result twice, is refused as stale; approved changes apply in one undo
+step. The export dialog measures the decoded deliverable and reports LUFS and dBTP against the Studio
+defaults with a warning, never blocking; a failed measurement reads unknown. The calibrated tests cover
+EBU 3341 levels at 44.1, 48 and 96 kHz, gating, silence and inter-sample peaks. There is no master
+limiter: the export path keeps its existing soft clip above 0 dBFS, so a ceiling overshoot is reported,
+not prevented. The target is not saved in the project, and browser decode, worker export and
+codec-overshoot qualification remain open.
+
+Patch 0145 (FL-597) adds speed ramps and fixes freeze-frame sync. The clip panel's Speed ramp section
+takes points (a position in the clip's source and a speed from 0.25x to 4x) with linear or eased
+boundaries, shows the resulting duration and caption count, and applies in one undo step. The curve
+is integrated over source time and written as constant-speed segments every six output frames, with
+boundaries rounded independently from the exact integral, so there is no cumulative drift, and the last
+segment ends on the clip's own source end. Linked video and audio share every cut, attached source
+captions move with the source they describe, and timeline-authored text stays put. Neighbours keep
+their positions: a longer result that needs their room, a locked participant, a transition, keyframes,
+reverse playback or partly linked companions refuse without changing the project. Dialogue keeps its
+pitch through SoundTouch, with an option to mute it; frames are repeated or skipped and none are
+generated. Freeze frames now split the synchronised linked audio too, leaving silence for the hold
+instead of letting the audio run ahead, take their length in project frames, move later clips only on
+the tracks they touch, and refuse HDR sources (the held frame is an 8-bit PNG) and locked tracks.
+Engine unit tests cover integrated positions, fractional rates, linked cuts, captions, refusals and
+the freeze audio gap. Browser, worker export and preview/export parity remain unqualified.
+
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.

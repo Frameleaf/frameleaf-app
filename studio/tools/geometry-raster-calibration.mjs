@@ -196,33 +196,21 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-562 transcript editing changes the transcript panel and timeline edits only.
           binding.sourceSha256 ===
             'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
-          // FL-596 motion tracking writes ordinary keyframes; it changes no producer.
+          // FL-597 speed ramps and freeze frames change timeline edits only.
           binding.sourceSha256 ===
-            '076073e60d0baee97812afe90c3c2a8eb65681ac91e68093548baec1a989c229' ||
-          // FL-596 motion tracking: superseded runs discarded, time-sliced yields
+            '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
+          // FL-597 speed ramps: captions follow their segments, mismatched companions refused
           binding.sourceSha256 ===
-            '1f842a0736b43b605bcb1d4cf73c16ffc8bd54ba9199a1b05d79ca46e03b7385' ||
-          // FL-596 motion tracking: early binding, stored direction
+            '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+          // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '021d92421f193e92216cf60dc88efd8f11ffa10a2d195231b5b0ac663ab0754a' ||
-          // FL-596 motion tracking: trimStart honoured
+            '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
+          // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '4750757a0c3b48cd342bd886a63c9233e4d1024584793b10bd952e39f3938601' ||
-          // FL-596 motion tracking: boundary pins, locked remove, source mapping binding
+            'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+          // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '3fb72aceffb0e9c6ef31eb15008c1fe64997c783697fcab58dd669941eebda63' ||
-          // FL-596 motion tracking: trim-aware binding, clamped decode time
-          binding.sourceSha256 ===
-            '0570f1bad5f49930c62c06b5731236632671b5e32c3639f6aec8424cafb32ebb' ||
-          // FL-596 motion tracking: removable pins only where values hold
-          binding.sourceSha256 ===
-            'b58035f0157f2216c3004669fce6345fbe1d429d1dcdb21bb400a5cb71e380a6' ||
-          // FL-596 motion tracking: spanned animation needs confirmation
-          binding.sourceSha256 ===
-            '56d2c5603b9dfca47ad644106929a995f4ba37800e18445c8205165399a2a682' ||
-          // FL-627 tracking box and provenance
-          binding.sourceSha256 ===
-            'efcc840ff88aa3bf6d1599f4f2fb64575608c8fa503f5bd3eb78548f4e40c975')),
+            'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f')),
     'SOURCE_BROWSER',
   )
   check(

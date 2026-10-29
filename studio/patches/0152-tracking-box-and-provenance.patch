@@ -154,7 +154,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/motion
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -28,6 +28,8 @@ export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/action
+@@ -52,6 +52,8 @@ export {
  export {
    analyzeMotionTrack,
    applyMotionTrack,
@@ -565,8 +565,8 @@ diff --git a/src/features/timeline/stores/items-store.ts b/src/features/timeline
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -883,6 +883,11 @@
-       "adjustmentLayerLabel": "Farbkorrektur"
+@@ -987,6 +987,11 @@
+       "after": "Nachher"
      },
      "motionTrack": {
 +      "overlay": {
@@ -577,7 +577,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
        "title": "Bewegung verfolgen",
        "source": "Zu verfolgendes Video",
        "chooseSource": "Videoclip wählen",
-@@ -898,7 +903,7 @@
+@@ -1002,7 +1007,7 @@
        "lost": "Ab Bild {{frame}} verloren ({{count}} Bilder). Lege diesen Clip dort über das Motiv und verfolge erneut, oder behalte den verfolgten Teil.",
        "keepTrackedPart": "Nur den verfolgten Teil behalten",
        "replaceExisting": "Vorhandene Positions- und Größen-Keyframes in diesem Bereich ersetzen",
@@ -586,7 +586,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
        "applied_one": "Verfolgung auf {{count}} Bild angewendet",
        "applied_other": "Verfolgung auf {{count}} Bilder angewendet",
        "appliedTrack": "Spur {{n}}",
-@@ -915,7 +920,9 @@
+@@ -1019,7 +1024,9 @@
          "no-overlap": "Setze den Abspielkopf dorthin, wo beide Clips liegen.",
          "outside-frame": "Lege diesen Clip zuerst innerhalb des Videobilds ab.",
          "low-texture": "Der Bereich unter diesem Clip hat zu wenig Details zum Verfolgen.",
@@ -597,7 +597,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "Die Clips wurden seit der Verfolgung geändert; erneut verfolgen.",
-@@ -923,7 +930,9 @@
+@@ -1027,7 +1034,9 @@
          "conflict": "Dieser Clip animiert Position oder Größe bereits in oder über diesen Bereich. Bestätige das Ersetzen.",
          "locked": "Der Clip liegt auf einer gesperrten Spur.",
          "nothing-tracked": "Es wurde nichts verfolgt."
@@ -611,8 +611,8 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -896,6 +896,11 @@
-       "adjustmentLayerLabel": "Grade"
+@@ -1000,6 +1000,11 @@
+       "after": "After"
      },
      "motionTrack": {
 +      "overlay": {
@@ -623,7 +623,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
        "title": "Track motion",
        "source": "Video to track",
        "chooseSource": "Choose a video clip",
-@@ -911,7 +916,7 @@
+@@ -1015,7 +1020,7 @@
        "lost": "Lost from frame {{frame}} ({{count}} frames). Move this clip over the subject there and track again, or keep the tracked part.",
        "keepTrackedPart": "Keep only the tracked part",
        "replaceExisting": "Replace existing position and size keyframes in this range",
@@ -632,7 +632,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
        "applied_one": "Applied tracking to {{count}} frame",
        "applied_other": "Applied tracking to {{count}} frames",
        "appliedTrack": "Track {{n}}",
-@@ -928,7 +933,9 @@
+@@ -1032,7 +1037,9 @@
          "no-overlap": "Move the playhead to where both clips are on the timeline.",
          "outside-frame": "Place this clip inside the video's frame first.",
          "low-texture": "The area under this clip has too little detail to track.",
@@ -643,7 +643,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "The clips changed since tracking; track again.",
-@@ -936,7 +943,9 @@
+@@ -1040,7 +1047,9 @@
          "conflict": "This clip already animates position or size in or across that range. Confirm replacing it.",
          "locked": "The clip is on a locked track.",
          "nothing-tracked": "Nothing was tracked."
@@ -657,8 +657,8 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -883,6 +883,11 @@
-       "adjustmentLayerLabel": "Etalonaje"
+@@ -987,6 +987,11 @@
+       "after": "Después"
      },
      "motionTrack": {
 +      "overlay": {
@@ -669,7 +669,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
        "title": "Seguir movimiento",
        "source": "Vídeo a seguir",
        "chooseSource": "Elige un clip de vídeo",
-@@ -898,7 +903,7 @@
+@@ -1002,7 +1007,7 @@
        "lost": "Perdido desde el fotograma {{frame}} ({{count}} fotogramas). Coloca este clip sobre el sujeto allí y vuelve a seguir, o conserva la parte seguida.",
        "keepTrackedPart": "Conservar solo la parte seguida",
        "replaceExisting": "Reemplazar los fotogramas clave de posición y tamaño en este rango",
@@ -678,7 +678,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
        "applied_one": "Seguimiento aplicado a {{count}} fotograma",
        "applied_other": "Seguimiento aplicado a {{count}} fotogramas",
        "appliedTrack": "Seguimiento {{n}}",
-@@ -915,7 +920,9 @@
+@@ -1019,7 +1024,9 @@
          "no-overlap": "Mueve el cabezal a donde estén ambos clips.",
          "outside-frame": "Coloca primero este clip dentro del encuadre del vídeo.",
          "low-texture": "La zona bajo este clip tiene muy poco detalle para seguirla.",
@@ -689,7 +689,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "Los clips cambiaron desde el seguimiento; vuelve a seguir.",
-@@ -923,7 +930,9 @@
+@@ -1027,7 +1034,9 @@
          "conflict": "Este clip ya anima la posición o el tamaño en ese rango o a través de él. Confirma que quieres reemplazarlo.",
          "locked": "El clip está en una pista bloqueada.",
          "nothing-tracked": "No se siguió nada."
@@ -703,8 +703,8 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -883,6 +883,11 @@
-       "adjustmentLayerLabel": "Étalonnage"
+@@ -987,6 +987,11 @@
+       "after": "Après"
      },
      "motionTrack": {
 +      "overlay": {
@@ -715,7 +715,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
        "title": "Suivre le mouvement",
        "source": "Vidéo à suivre",
        "chooseSource": "Choisir un clip vidéo",
-@@ -898,7 +903,7 @@
+@@ -1002,7 +1007,7 @@
        "lost": "Perdu à partir de l’image {{frame}} ({{count}} images). Placez ce clip sur le sujet à cet endroit et suivez à nouveau, ou gardez la partie suivie.",
        "keepTrackedPart": "Garder seulement la partie suivie",
        "replaceExisting": "Remplacer les images clés de position et de taille dans cette plage",
@@ -724,7 +724,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
        "applied_one": "Suivi appliqué à {{count}} image",
        "applied_other": "Suivi appliqué à {{count}} images",
        "appliedTrack": "Suivi {{n}}",
-@@ -915,7 +920,9 @@
+@@ -1019,7 +1024,9 @@
          "no-overlap": "Placez la tête de lecture là où se trouvent les deux clips.",
          "outside-frame": "Placez d’abord ce clip à l’intérieur de l’image de la vidéo.",
          "low-texture": "La zone sous ce clip a trop peu de détails pour être suivie.",
@@ -735,7 +735,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "Les clips ont changé depuis le suivi ; suivez à nouveau.",
-@@ -923,7 +930,9 @@
+@@ -1027,7 +1034,9 @@
          "conflict": "Ce clip anime déjà la position ou la taille dans cette plage ou à travers elle. Confirmez le remplacement.",
          "locked": "Le clip est sur une piste verrouillée.",
          "nothing-tracked": "Rien n’a été suivi."
@@ -749,8 +749,8 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -883,6 +883,11 @@
-       "adjustmentLayerLabel": "グレーディング"
+@@ -987,6 +987,11 @@
+       "after": "適用後"
      },
      "motionTrack": {
 +      "overlay": {
@@ -761,7 +761,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
        "title": "モーションを追跡",
        "source": "追跡する動画",
        "chooseSource": "動画クリップを選択",
-@@ -898,7 +903,7 @@
+@@ -1002,7 +1007,7 @@
        "lost": "フレーム {{frame}} から見失いました（{{count}} フレーム）。その位置でこのクリップを被写体に重ねて再追跡するか、追跡できた部分を残してください。",
        "keepTrackedPart": "追跡できた部分だけを残す",
        "replaceExisting": "この範囲の位置とサイズのキーフレームを置き換える",
@@ -770,7 +770,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
        "applied_one": "{{count}} フレームに追跡を適用しました",
        "applied_other": "{{count}} フレームに追跡を適用しました",
        "appliedTrack": "トラック {{n}}",
-@@ -915,7 +920,9 @@
+@@ -1019,7 +1024,9 @@
          "no-overlap": "両方のクリップがある位置に再生ヘッドを移動してください。",
          "outside-frame": "まずこのクリップを動画の画面内に置いてください。",
          "low-texture": "このクリップの下の領域は情報が少なく追跡できません。",
@@ -781,7 +781,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "追跡後にクリップが変更されました。もう一度追跡してください。",
-@@ -923,7 +930,9 @@
+@@ -1027,7 +1034,9 @@
          "conflict": "このクリップはその範囲内または範囲をまたいで位置やサイズのアニメーションがあります。置き換えを確認してください。",
          "locked": "クリップがロックされたトラックにあります。",
          "nothing-tracked": "何も追跡されませんでした。"
@@ -795,8 +795,8 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -883,6 +883,11 @@
-       "adjustmentLayerLabel": "색 보정"
+@@ -987,6 +987,11 @@
+       "after": "후"
      },
      "motionTrack": {
 +      "overlay": {
@@ -807,7 +807,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
        "title": "모션 추적",
        "source": "추적할 비디오",
        "chooseSource": "비디오 클립 선택",
-@@ -898,7 +903,7 @@
+@@ -1002,7 +1007,7 @@
        "lost": "프레임 {{frame}}부터 놓쳤습니다({{count}}개 프레임). 그 위치에서 이 클립을 대상 위에 놓고 다시 추적하거나 추적된 부분만 유지하세요.",
        "keepTrackedPart": "추적된 부분만 유지",
        "replaceExisting": "이 범위의 위치 및 크기 키프레임 바꾸기",
@@ -816,7 +816,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
        "applied_one": "{{count}}개 프레임에 추적을 적용했습니다",
        "applied_other": "{{count}}개 프레임에 추적을 적용했습니다",
        "appliedTrack": "트랙 {{n}}",
-@@ -915,7 +920,9 @@
+@@ -1019,7 +1024,9 @@
          "no-overlap": "두 클립이 모두 있는 곳으로 재생 헤드를 옮기세요.",
          "outside-frame": "먼저 이 클립을 비디오 화면 안에 두세요.",
          "low-texture": "이 클립 아래 영역은 추적하기에 정보가 너무 적습니다.",
@@ -827,7 +827,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "추적 후 클립이 변경되었습니다. 다시 추적하세요.",
-@@ -923,7 +930,9 @@
+@@ -1027,7 +1034,9 @@
          "conflict": "이 클립은 이미 그 범위 안이나 범위를 가로질러 위치 또는 크기가 애니메이션됩니다. 교체를 확인하세요.",
          "locked": "클립이 잠긴 트랙에 있습니다.",
          "nothing-tracked": "추적된 내용이 없습니다."
@@ -841,8 +841,8 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -883,6 +883,11 @@
-       "adjustmentLayerLabel": "Correção de cor"
+@@ -987,6 +987,11 @@
+       "after": "Depois"
      },
      "motionTrack": {
 +      "overlay": {
@@ -853,7 +853,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
        "title": "Rastrear movimento",
        "source": "Vídeo a rastrear",
        "chooseSource": "Escolha um clipe de vídeo",
-@@ -898,7 +903,7 @@
+@@ -1002,7 +1007,7 @@
        "lost": "Perdido a partir do quadro {{frame}} ({{count}} quadros). Coloque este clipe sobre o objeto ali e rastreie de novo, ou mantenha a parte rastreada.",
        "keepTrackedPart": "Manter só a parte rastreada",
        "replaceExisting": "Substituir quadros-chave de posição e tamanho neste intervalo",
@@ -862,7 +862,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
        "applied_one": "Rastreamento aplicado a {{count}} quadro",
        "applied_other": "Rastreamento aplicado a {{count}} quadros",
        "appliedTrack": "Rastreamento {{n}}",
-@@ -915,7 +920,9 @@
+@@ -1019,7 +1024,9 @@
          "no-overlap": "Mova o cursor para onde os dois clipes estão.",
          "outside-frame": "Coloque este clipe dentro do quadro do vídeo primeiro.",
          "low-texture": "A área sob este clipe tem pouco detalhe para rastrear.",
@@ -873,7 +873,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
        },
        "applyRefusal": {
          "stale": "Os clipes mudaram desde o rastreamento; rastreie de novo.",
-@@ -923,7 +930,9 @@
+@@ -1027,7 +1034,9 @@
          "conflict": "Este clipe já anima a posição ou o tamanho nesse intervalo ou através dele. Confirme a substituição.",
          "locked": "O clipe está em uma faixa bloqueada.",
          "nothing-tracked": "Nada foi rastreado."
@@ -887,8 +887,8 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -883,6 +883,11 @@
-       "adjustmentLayerLabel": "Renk düzenleme"
+@@ -987,6 +987,11 @@
+       "after": "Sonra"
      },
      "motionTrack": {
 +      "overlay": {
@@ -899,7 +899,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
        "title": "Hareketi izle",
        "source": "İzlenecek video",
        "chooseSource": "Bir video klibi seçin",
-@@ -898,7 +903,7 @@
+@@ -1002,7 +1007,7 @@
        "lost": "{{frame}}. kareden itibaren kaybedildi ({{count}} kare). Bu klibi oradaki öznenin üzerine koyup yeniden izleyin ya da izlenen kısmı tutun.",
        "keepTrackedPart": "Yalnızca izlenen kısmı tut",
        "replaceExisting": "Bu aralıktaki konum ve boyut anahtar karelerini değiştir",
@@ -908,7 +908,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
        "applied_one": "İzleme {{count}} kareye uygulandı",
        "applied_other": "İzleme {{count}} kareye uygulandı",
        "appliedTrack": "İz {{n}}",
-@@ -915,7 +920,9 @@
+@@ -1019,7 +1024,9 @@
          "no-overlap": "Oynatma kafasını iki klibin de olduğu yere taşıyın.",
          "outside-frame": "Önce bu klibi video karesinin içine yerleştirin.",
          "low-texture": "Bu klibin altındaki alanda izlemek için çok az ayrıntı var.",
@@ -919,7 +919,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "Klipler izlemeden sonra değişti; yeniden izleyin.",
-@@ -923,7 +930,9 @@
+@@ -1027,7 +1034,9 @@
          "conflict": "Bu klip o aralıkta veya aralık boyunca zaten konum ya da boyut animasyonu içeriyor. Değiştirmeyi onaylayın.",
          "locked": "Klip kilitli bir izde.",
          "nothing-tracked": "Hiçbir şey izlenmedi."
@@ -933,8 +933,8 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -883,6 +883,11 @@
-       "adjustmentLayerLabel": "调色"
+@@ -987,6 +987,11 @@
+       "after": "之后"
      },
      "motionTrack": {
 +      "overlay": {
@@ -945,7 +945,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
        "title": "运动跟踪",
        "source": "要跟踪的视频",
        "chooseSource": "选择视频片段",
-@@ -898,7 +903,7 @@
+@@ -1002,7 +1007,7 @@
        "lost": "从第 {{frame}} 帧起丢失（{{count}} 帧）。请在该处把此片段放到主体上重新跟踪，或保留已跟踪部分。",
        "keepTrackedPart": "仅保留已跟踪部分",
        "replaceExisting": "替换此范围内的位置和尺寸关键帧",
@@ -954,7 +954,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
        "applied_one": "已将跟踪应用到 {{count}} 帧",
        "applied_other": "已将跟踪应用到 {{count}} 帧",
        "appliedTrack": "跟踪 {{n}}",
-@@ -915,7 +920,9 @@
+@@ -1019,7 +1024,9 @@
          "no-overlap": "请把播放头移到两个片段都在的位置。",
          "outside-frame": "请先把此片段放在视频画面内。",
          "low-texture": "此片段下方区域细节太少，无法跟踪。",
@@ -965,7 +965,7 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
        },
        "applyRefusal": {
          "stale": "跟踪后片段已更改，请重新跟踪。",
-@@ -923,7 +930,9 @@
+@@ -1027,7 +1034,9 @@
          "conflict": "此片段在该范围内或跨越该范围已有位置或大小动画。请确认替换。",
          "locked": "片段位于锁定的轨道。",
          "nothing-tracked": "没有跟踪到任何内容。"
