@@ -951,9 +951,9 @@ export class MediaOperationRepository {
       destinationIds: readonly string[];
     };
     /**
-     * Only jobs whose `snapshot.kind` is one of these. Studio AI jobs on one clip share the
-     * `studio_transcription` kind (a response enum the native apps decode strictly) and are told apart
-     * by their snapshot, so each worker claims only its own (FL-637).
+     * Only jobs whose `snapshot.kind` is one of these. Several Studio jobs on one clip share the
+     * `studio_transcription` kind (a new kind would change a response enum the native apps decode),
+     * so each worker names its own snapshot kind and never takes another's job.
      */
     snapshotKinds?: readonly string[];
   }): Promise<
@@ -999,8 +999,8 @@ export class MediaOperationRepository {
                 sql<boolean>`not ("kind" = any(${[...holdBack!.kinds]}::text[]) and coalesce("snapshot"->>'destinationId', '') = any(${[...holdBack!.destinationIds]}::text[]))`,
               ),
             )
-            .$if(!!options.snapshotKinds, (qb) =>
-              qb.where(sql<boolean>`coalesce("snapshot"->>'kind', '') = any(${[...options.snapshotKinds!]}::text[])`),
+            .$if(!!options.snapshotKinds?.length, (qb) =>
+              qb.where(sql<boolean>`"snapshot"->>'kind' = any(${[...options.snapshotKinds!]}::text[])`),
             )
             .orderBy('createdAt', 'asc')
             .limit(1)

@@ -93,14 +93,23 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
     sourceSha256 === 'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47' ||
     // FL-640 word-by-word captions (caption cues, subtitle text and caption UI) on multicam; changes no composition or raster producer.
-    sourceSha256 === 'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9' ||
-    // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
-    sourceSha256 === '050cc08b84d62f8d15ca8fdcd3219953608795466a98927215fafe8b4546b1f4'
+    sourceSha256 === 'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9'
   )
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':
         'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+    }
+  // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
+  // renderer, which draws it through its correction; every other clip renders as before.
+  // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
+  if (sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' || sourceSha256 === 'bc5f6e0f3c2ec0b16379046fffa6554bfcf2fdfbd230f727919d8e623a9397db')
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/client-render-engine.ts':
+        'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+      'src/features/export/utils/canvas-item-renderer/gpu.ts':
+        '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
     }
   assert(legacyCompositionSources.has(sourceSha256), 'COMPOSITION_SOURCE_UNREGISTERED')
   return COMPOSITION_SOURCES

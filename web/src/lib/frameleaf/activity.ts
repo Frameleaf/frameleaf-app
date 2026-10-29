@@ -446,6 +446,21 @@ export const isWaitingICloudSync = (operation: Pick<MediaOperationDto, 'status' 
  * What an edit job rendered (FL-43). Edits the server's job queue renders carry it in
  * `settings.edit`, and Activity names the row by it rather than calling every one "Edit".
  */
+/**
+ * FL-637/FL-638: Studio clip jobs that share the `studio_transcription` kind with captions, named by
+ * the server's `studioWork`. An unknown value falls back to the kind's own name.
+ */
+const STUDIO_WORK_KIND_KEY: Readonly<Record<string, Translations>> = {
+  stabilise: 'frameleaf_activity_kind_studio_stabilise',
+  'voice-cleanup': 'frameleaf_activity_kind_studio_voice_cleanup',
+};
+
+/** What a job is called in Activity and on its status line: its Studio work, else its kind. */
+export const mediaOperationKindKey = (operation: Pick<MediaOperationDto, 'kind' | 'studioWork'>): Translations =>
+  (operation.studioWork && Object.hasOwn(STUDIO_WORK_KIND_KEY, operation.studioWork)
+    ? STUDIO_WORK_KIND_KEY[operation.studioWork]
+    : undefined) ?? `frameleaf_activity_kind_${operation.kind}`;
+
 const EDIT_KIND_KEY: Readonly<Record<string, Translations>> = {
   photo_edit: 'frameleaf_activity_kind_photo_edit',
   photo_version: 'frameleaf_activity_kind_photo_version',
@@ -480,17 +495,6 @@ const asPlanName = (value: unknown): string | null =>
  * `progress` is null while the job is queued and nothing has been counted: an empty bar is honest
  * where a bar sitting at zero looks stalled.
  */
-/** Studio clip jobs that share a kind (`studioWork`, FL-637, FL-638), named by the work they do. */
-const STUDIO_WORK_KIND_KEY: Readonly<Record<string, Translations>> = {
-  'voice-cleanup': 'frameleaf_activity_kind_studio_voice_cleanup',
-};
-
-/** The Activity name of a job: its kind, or for a Studio clip job that shares a kind, the work it does. */
-export const mediaOperationKindKey = (operation: Pick<MediaOperationDto, 'kind' | 'studioWork'>): Translations =>
-  (operation.studioWork && Object.hasOwn(STUDIO_WORK_KIND_KEY, operation.studioWork)
-    ? STUDIO_WORK_KIND_KEY[operation.studioWork]
-    : undefined) ?? (`frameleaf_activity_kind_${operation.kind}` as Translations);
-
 export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem => {
   if (operation.kind === MediaOperationKind.Bulk) {
     return fromBulkMediaOperation(operation);

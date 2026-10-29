@@ -761,10 +761,15 @@
       "sha256": "c1728386c5702a182af284678aa74ff3330583dc2779959540ae2b299ec99722"
     },
     {
+      "path": "patches/0164-stabilise-shaky-clips.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "75a01bae7be8e0dcf4bb849b107dba50781d9812f6531bc465568a320bdb65d2"
+    },
+    {
       "path": "patches/0162-voice-cleanup.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "74fea2283d9c53a2c5644c89fbad23033bd5774d2ea388e1d1eaf75b94df4ed7"
+      "sha256": "4615e2e9146c2653d8a2a3db433600ae134b2e6d52d00f003cb11e55a2fd9b13"
     }
   ],
-  "sourceSha256": "050cc08b84d62f8d15ca8fdcd3219953608795466a98927215fafe8b4546b1f4"
+  "sourceSha256": "bc5f6e0f3c2ec0b16379046fffa6554bfcf2fdfbd230f727919d8e623a9397db"
 }

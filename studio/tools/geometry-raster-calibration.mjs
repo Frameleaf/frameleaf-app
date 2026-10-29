@@ -217,9 +217,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-640 word-by-word captions (caption cues, subtitle text and caption UI) on multicam; changes no composition or raster producer.
           binding.sourceSha256 ===
             'b75d0abea46ecd78aab96879e706795b2c0c6b775d4e1c20174e9686f93b15a9' ||
+          // FL-638 Stabilise: only a stabilised video clip draws differently (through its correction).
+          binding.sourceSha256 ===
+            '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' ||
           // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '050cc08b84d62f8d15ca8fdcd3219953608795466a98927215fafe8b4546b1f4')),
+            'bc5f6e0f3c2ec0b16379046fffa6554bfcf2fdfbd230f727919d8e623a9397db')),
     'SOURCE_BROWSER',
   )
   check(

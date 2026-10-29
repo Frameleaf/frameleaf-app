@@ -198,12 +198,17 @@ export const MediaOperationSchema = z
     bulk: MediaOperationBulkSummarySchema.nullable(),
     /** FL-162: present only on `cloud_ml_job` jobs: the stage, the model and the cost. Null elsewhere. */
     cloudJob: CloudMlJobActivitySchema.nullable().optional(),
+    /**
+     * FL-637/FL-638: which Studio clip job a `studio_transcription` job is when it is not captions
+     * (`stabilise`, `voice-cleanup`). A plain string, never an enum, so clients built before a new value
+     * keep decoding; null for captions and every other kind.
+     */
     studioWork: z
       .string()
       .nullable()
       .optional()
       .describe(
-        'Which Studio clip job this is, when the kind is shared (`voice-cleanup`); null for every other job. A plain string, so new values never break a strict client (FL-637)',
+        'Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise',
       ),
     progress: z.number().meta({ format: 'double' }).describe('Percent complete, from counted work'),
     processedUnits: z.string(),

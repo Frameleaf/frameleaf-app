@@ -149,6 +149,7 @@ export class StudioTranscriptionService {
     if (
       !operation ||
       operation.kind !== MediaOperationKind.StudioTranscription ||
+      // Other Studio clip jobs share this kind (FL-637, FL-638); they are not transcriptions.
       (operation.snapshot as { kind?: unknown } | null)?.kind !== 'studio-transcription' ||
       operation.projectId !== projectId
     ) {
@@ -205,7 +206,7 @@ export class StudioTranscriptionService {
     while (!this.stopping) {
       const job = await this.operations.claimNext({
         kinds: [MediaOperationKind.StudioTranscription],
-        // Other Studio AI clip jobs share the kind (FL-637); a transcription worker takes only its own.
+        // Other Studio clip jobs share this kind (FL-637, FL-638); take only transcriptions.
         snapshotKinds: ['studio-transcription'],
         workerId: this.workerId,
         leaseMs: LEASE_MS,

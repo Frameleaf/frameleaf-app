@@ -311,6 +311,25 @@ describe('fromMediaOperation', () => {
   });
 });
 
+describe('Studio clip jobs that share the captions kind (FL-638)', () => {
+  it('names a stabilise job Stabilise, not Captions', () => {
+    const stabilise = operation({ kind: MediaOperationKind.StudioTranscription, studioWork: 'stabilise' });
+    expect(fromMediaOperation(stabilise).kindKey).toBe('frameleaf_activity_kind_studio_stabilise');
+    expect(mediaOperationKindKey(stabilise)).toBe('frameleaf_activity_kind_studio_stabilise');
+  });
+
+  it('keeps Captions for a transcription and the kind for an unknown or absent Studio work', () => {
+    for (const studioWork of [null, undefined, 'something-new']) {
+      expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioTranscription, studioWork })).kindKey).toBe(
+        'frameleaf_activity_kind_studio_transcription',
+      );
+    }
+    expect(mediaOperationKindKey({ kind: MediaOperationKind.StudioExport, studioWork: null })).toBe(
+      'frameleaf_activity_kind_studio_export',
+    );
+  });
+});
+
 describe('durable bulk jobs', () => {
   const bulkJob = (overrides: Partial<MediaOperationDto> = {}) =>
     operation({

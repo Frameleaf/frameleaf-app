@@ -831,8 +831,8 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/types/timeline.ts b/src/types/timeline.ts
 --- a/src/types/timeline.ts
 +++ b/src/types/timeline.ts
-@@ -207,11 +207,38 @@
-   sourceHeight?: number
+@@ -213,11 +213,38 @@
+   stabilisation?: VideoStabilisation
  }
  
 +export type VoiceCleanupNoise = 'wind' | 'hum' | 'background' | 'echo'
