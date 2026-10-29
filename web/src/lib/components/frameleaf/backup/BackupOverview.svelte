@@ -80,13 +80,18 @@
   let unread = $state<BackupPlaceId[]>([]);
   let disposed = false;
 
-  const load = async () => {
+  /**
+   * Every place's status, and on the first read also the library totals and the schedule. While a
+   * backup runs only the statuses are read again: counting the whole library every few seconds
+   * would only repeat the same totals.
+   */
+  const load = async (full = true) => {
     const [cloudResult, buddyResult, localResult, statsResult, planResult] = await Promise.allSettled([
       getCloudBackupStatus(),
       getBuddyBackupStatus(),
       listDatabaseBackups(),
-      getServerStatistics(),
-      getBackupSchedule(),
+      full ? getServerStatistics() : Promise.resolve(stats),
+      full ? getBackupSchedule() : Promise.resolve(plan),
     ]);
     if (disposed) {
       return;
@@ -133,7 +138,9 @@
     }
     const timer = setInterval(() => {
       now = new Date();
-      void load();
+      if (!document.hidden) {
+        void load(false);
+      }
     }, ACTIVE_POLL_MS);
     return () => clearInterval(timer);
   });

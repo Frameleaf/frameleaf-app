@@ -568,7 +568,10 @@ describe(AuthService.name, () => {
         name: 'immich admin',
       });
 
-      expect(mocks.user.create).toHaveBeenCalled();
+      // The administrator chose the password, so it is not one to change at first sign-in.
+      expect(mocks.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({ isAdmin: true, shouldChangePassword: false }),
+      );
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
         expect.objectContaining({ action: AdminAuditAction.AccountCreated, detail: 'server-claimed:web' }),
       ]);

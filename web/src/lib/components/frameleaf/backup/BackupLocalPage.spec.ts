@@ -8,12 +8,12 @@ import en from '../../../../../../i18n/en.json';
 const handleCreateJob = vi.fn();
 vi.mock('$lib/services/job.service', () => ({ handleCreateJob: (...args: unknown[]) => handleCreateJob(...args) }));
 
-const queue = (failed: number, isActive: boolean, active = 0) =>
+const queue = (failed: number, isActive: boolean, active = isActive ? 1 : 0) =>
   ({
-    backupDatabase: {
-      jobCounts: { failed, active, waiting: 0, delayed: 0, paused: 0, completed: 0 },
-      queueStatus: { isActive, isPaused: false },
-    },
+    name: 'backupDatabase',
+    isPaused: false,
+    hasUnfinishedWork: active > 0,
+    statistics: { failed, active, waiting: 0, delayed: 0, paused: 0, completed: 0 },
   }) as never;
 
 describe('Backup › On this server (FL-362)', () => {
@@ -34,7 +34,7 @@ describe('Backup › On this server (FL-362)', () => {
   });
 
   it('stops waiting and offers to try again when the snapshot fails, then takes one', async () => {
-    sdkMock.getQueuesLegacy.mockResolvedValueOnce(queue(0, false)).mockResolvedValue(queue(1, false));
+    sdkMock.getQueue.mockResolvedValueOnce(queue(0, false)).mockResolvedValue(queue(1, false));
     render(BackupLocalPage, { pollMs: 5 });
     const take = () => screen.getByRole('button', { name: en.frameleaf_backup_local_take });
 
@@ -42,13 +42,16 @@ describe('Backup › On this server (FL-362)', () => {
     expect(await screen.findByText(en.frameleaf_backup_local_failed)).toBeInTheDocument();
     expect(take()).toBeEnabled();
 
-    sdkMock.getQueuesLegacy.mockResolvedValueOnce(queue(1, false)).mockResolvedValue(queue(1, true, 1));
+    sdkMock.getQueue.mockResolvedValueOnce(queue(1, false)).mockResolvedValue(queue(1, true, 1));
     sdkMock.listDatabaseBackups.mockResolvedValue({
       backups: [{ filename: 'frameleaf-db-backup-20260924T070000-v1.0.0-pg19.sql.gz', filesize: 10, timezone: 'UTC' }],
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(handleCreateJob).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByText(en.frameleaf_backup_local_failed)).not.toBeInTheDocument());
+    // Only the backup queue is read while waiting, never every queue.
+    expect(sdkMock.getQueue).toHaveBeenCalledWith({ name: 'backupDatabase' });
+    expect(sdkMock.getQueuesLegacy).not.toHaveBeenCalled();
   });
 
   it('offers to try again when the saved snapshots cannot be listed', async () => {

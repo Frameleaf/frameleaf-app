@@ -1,3 +1,4 @@
+import { CloudBackupRunState, CloudBackupTask } from '@frameleaf/sdk';
 import { render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -91,5 +92,22 @@ describe('Backup › Overview (FL-362)', () => {
     sdkMock.getCloudBackupStatus.mockRejectedValue(new Error('500'));
     render(BackupOverview);
     expect(await screen.findByRole('alert')).toHaveTextContent('Frameleaf couldn’t check Cloud Backup just now');
+  });
+  it('reads only the statuses again while a backup runs, not the library totals or schedule', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      sdkMock.getCloudBackupStatus.mockResolvedValue(
+        cloud({ activeRun: { task: CloudBackupTask.Backup, state: CloudBackupRunState.Running } }),
+      );
+      render(BackupOverview);
+      await vi.waitFor(() => expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.waitFor(() => expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(2));
+      expect(sdkMock.listDatabaseBackups).toHaveBeenCalledTimes(2);
+      expect(sdkMock.getServerStatistics).toHaveBeenCalledTimes(1);
+      expect(sdkMock.getBackupSchedule).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
