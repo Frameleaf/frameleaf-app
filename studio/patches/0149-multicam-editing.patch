@@ -6,17 +6,17 @@ The immutable vendor snapshot is unchanged.
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 --- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
-@@ -43,6 +43,7 @@ import { getLinkedAudioCompanion } from '@/shared/utils/linked-media'
- import { useGizmoStore } from '@/features/editor/deps/preview'
+@@ -44,6 +44,7 @@ import { useGizmoStore } from '@/features/editor/deps/preview'
  
  import { LayoutSection } from './layout-section'
+ import { MotionTrackSection } from './motion-track-section'
 +import { MulticamSection } from './multicam-section'
  import { FillSection } from './fill-section'
  import { VideoSection } from './video-section'
  import { GifSection } from './gif-section'
-@@ -656,6 +657,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
-                   onAspectLockToggle={handleAspectLockToggle}
-                 />
+@@ -660,6 +661,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
+               {selectedItems.length === 1 && (
+                 <MotionTrackSection key={selectedItems[0]!.id} item={selectedItems[0]!} />
                )}
 +              <MulticamSection items={selectedItems} />
                <CompositionControlsSection items={selectedItems} />
@@ -210,10 +210,10 @@ new file mode 100644
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -25,6 +25,13 @@ export {
-   type RetimePolicy,
- } from '@/features/timeline/utils/project-retime'
- export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
+@@ -58,6 +58,13 @@ export {
+   removeMotionTrack,
+   type MotionTrackResult,
+ } from '@/features/timeline/stores/actions/edit/motion-track-actions'
 +export {
 +  analyzeMulticamSync,
 +  createMulticamEdit,
@@ -221,9 +221,9 @@ diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/
 +  getMulticamGroup,
 +  type MulticamSyncProposal,
 +} from '@/features/timeline/stores/actions/edit/multicam-actions'
+ export { applyColourMatch } from '@/features/timeline/utils/colour-match'
  export {
    addCompositionControl,
-   removeCompositionControl,
 diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts b/src/features/timeline/stores/actions/edit/multicam-actions.test.ts
 new file mode 100644
 --- /dev/null
@@ -708,10 +708,10 @@ new file mode 100644
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -881,6 +881,44 @@
-     "colorPanel": {
-       "emptyState": "Wähle einen Clip für die Farbkorrektur aus",
-       "adjustmentLayerLabel": "Farbkorrektur"
+@@ -1037,6 +1037,44 @@
+       },
+       "box": "Verfolgungsrahmen",
+       "thisClipBox": "Rahmen dieses Clips"
 +    },
 +    "multicam": {
 +      "title": "Multicam",
@@ -756,10 +756,10 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -894,6 +894,44 @@
-       "dockTitle": "Color",
-       "emptyState": "Select a clip to grade",
-       "adjustmentLayerLabel": "Grade"
+@@ -1050,6 +1050,44 @@
+       },
+       "box": "Tracking box",
+       "thisClipBox": "This clip's box"
 +    },
 +    "multicam": {
 +      "title": "Multicam",
@@ -804,10 +804,10 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -881,6 +881,44 @@
-     "colorPanel": {
-       "emptyState": "Selecciona un clip para etalonar",
-       "adjustmentLayerLabel": "Etalonaje"
+@@ -1037,6 +1037,44 @@
+       },
+       "box": "Recuadro de seguimiento",
+       "thisClipBox": "Recuadro de este clip"
 +    },
 +    "multicam": {
 +      "title": "Multicámara",
@@ -852,10 +852,10 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -881,6 +881,44 @@
-     "colorPanel": {
-       "emptyState": "Sélectionnez un clip à étalonner",
-       "adjustmentLayerLabel": "Étalonnage"
+@@ -1037,6 +1037,44 @@
+       },
+       "box": "Cadre de suivi",
+       "thisClipBox": "Cadre de ce clip"
 +    },
 +    "multicam": {
 +      "title": "Multicam",
@@ -900,10 +900,10 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -881,6 +881,44 @@
-     "colorPanel": {
-       "emptyState": "グレーディングするクリップを選択してください",
-       "adjustmentLayerLabel": "グレーディング"
+@@ -1037,6 +1037,44 @@
+       },
+       "box": "追跡ボックス",
+       "thisClipBox": "このクリップの枠"
 +    },
 +    "multicam": {
 +      "title": "マルチカム",
@@ -948,10 +948,10 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -881,6 +881,44 @@
-     "colorPanel": {
-       "emptyState": "색 보정할 클립을 선택하세요",
-       "adjustmentLayerLabel": "색 보정"
+@@ -1037,6 +1037,44 @@
+       },
+       "box": "추적 상자",
+       "thisClipBox": "이 클립의 상자"
 +    },
 +    "multicam": {
 +      "title": "멀티캠",
@@ -996,10 +996,10 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -881,6 +881,44 @@
-     "colorPanel": {
-       "emptyState": "Selecione um clipe para corrigir as cores",
-       "adjustmentLayerLabel": "Correção de cor"
+@@ -1037,6 +1037,44 @@
+       },
+       "box": "Caixa de rastreamento",
+       "thisClipBox": "Caixa deste clipe"
 +    },
 +    "multicam": {
 +      "title": "Multicâmera",
@@ -1044,10 +1044,10 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -881,6 +881,44 @@
-     "colorPanel": {
-       "emptyState": "Renk düzenlemek için bir klip seçin",
-       "adjustmentLayerLabel": "Renk düzenleme"
+@@ -1037,6 +1037,44 @@
+       },
+       "box": "İzleme kutusu",
+       "thisClipBox": "Bu klibin kutusu"
 +    },
 +    "multicam": {
 +      "title": "Çoklu kamera",
@@ -1092,10 +1092,10 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -881,6 +881,44 @@
-     "colorPanel": {
-       "emptyState": "选择要调色的剪辑",
-       "adjustmentLayerLabel": "调色"
+@@ -1037,6 +1037,44 @@
+       },
+       "box": "跟踪框",
+       "thisClipBox": "此片段的边框"
 +    },
 +    "multicam": {
 +      "title": "多机位",

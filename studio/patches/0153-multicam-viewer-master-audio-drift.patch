@@ -425,7 +425,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -890,6 +890,7 @@
+@@ -1046,6 +1046,7 @@
        "frames": "Bilder",
        "matched": "Per Ton abgeglichen ({{score}} %)",
        "syncByAudio": "Per Ton synchronisieren",
@@ -436,7 +436,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -903,6 +903,7 @@
+@@ -1059,6 +1059,7 @@
        "frames": "frames",
        "matched": "Matched by sound ({{score}}%)",
        "syncByAudio": "Sync by audio",
@@ -447,7 +447,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -890,6 +890,7 @@
+@@ -1046,6 +1046,7 @@
        "frames": "fotogramas",
        "matched": "Igualado por sonido ({{score}} %)",
        "syncByAudio": "Sincronizar por audio",
@@ -458,7 +458,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -890,6 +890,7 @@
+@@ -1046,6 +1046,7 @@
        "frames": "images",
        "matched": "Aligné par le son ({{score}} %)",
        "syncByAudio": "Synchroniser par le son",
@@ -469,7 +469,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -890,6 +890,7 @@
+@@ -1046,6 +1046,7 @@
        "frames": "フレーム",
        "matched": "音声で一致（{{score}}%）",
        "syncByAudio": "音声で同期",
@@ -480,7 +480,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -890,6 +890,7 @@
+@@ -1046,6 +1046,7 @@
        "frames": "프레임",
        "matched": "소리로 맞춤({{score}}%)",
        "syncByAudio": "오디오로 동기화",
@@ -491,7 +491,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -890,6 +890,7 @@
+@@ -1046,6 +1046,7 @@
        "frames": "quadros",
        "matched": "Alinhado pelo som ({{score}}%)",
        "syncByAudio": "Sincronizar pelo áudio",
@@ -502,7 +502,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -890,6 +890,7 @@
+@@ -1046,6 +1046,7 @@
        "frames": "kare",
        "matched": "Sesle eşleşti (%{{score}})",
        "syncByAudio": "Sesle eşitle",
@@ -513,7 +513,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -890,6 +890,7 @@
+@@ -1046,6 +1046,7 @@
        "frames": "帧",
        "matched": "已按声音匹配（{{score}}%）",
        "syncByAudio": "按音频同步",

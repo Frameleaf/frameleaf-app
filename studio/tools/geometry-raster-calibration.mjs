@@ -196,24 +196,24 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-562 transcript editing changes the transcript panel and timeline edits only.
           binding.sourceSha256 ===
             'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
-          // FL-595 multicam editing arranges ordinary clips and tracks; it changes no producer.
+          // FL-597 speed ramps and freeze frames change timeline edits only.
           binding.sourceSha256 ===
-            '4cd592b6f8fef4211afd5947eff79fd2c33ebc6db6b01d264a64ce12d540931c' ||
-          // FL-595 multicam: superseded sync results are discarded
+            '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
+          // FL-597 speed ramps: captions follow their segments, mismatched companions refused
           binding.sourceSha256 ===
-            '1705779f7c7de23bf9417fce0769a5a5b6dcfbbfc1bc2424a1e3211d2ecf3033' ||
-          // FL-595 multicam: generated and already-grouped angles refused
+            '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+          // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            'c47b6b1facd2f0faa7343899fd42cc28e62d65e8b6b1efc5817a637f7095c8ea' ||
-          // FL-595 multicam: generated-media refusal, program-claimed angles
+            '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
+          // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '32b53edcdbcd90b4bbbe41df1adde2494f34a0fed63ff2dd51025ba03334d5c2' ||
-          // FL-595 multicam: muted master audio unmuted
+            'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+          // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            'd3f4a569bd7006fde20b8348b99cbb9257c15b671f8c6d065824b20011d0d073' ||
-          // FL-628 multicam angle viewer, standalone master audio and drift correction
+            'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
+          // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '1a917ebfbf8987a7ae358270abd77ddbe309d46e6f5958920e03b0323a2223a1')),
+            '2fb0f7a0278c3710834eb34787a54e6c0a64430d0ab3e4eb0060f112a0198d34')),
     'SOURCE_BROWSER',
   )
   check(
