@@ -204,7 +204,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '1705779f7c7de23bf9417fce0769a5a5b6dcfbbfc1bc2424a1e3211d2ecf3033' ||
           // FL-595 multicam: generated and already-grouped angles refused
           binding.sourceSha256 ===
-            'c47b6b1facd2f0faa7343899fd42cc28e62d65e8b6b1efc5817a637f7095c8ea')),
+            'c47b6b1facd2f0faa7343899fd42cc28e62d65e8b6b1efc5817a637f7095c8ea' ||
+          // FL-595 multicam: generated-media refusal, program-claimed angles
+          binding.sourceSha256 ===
+            '32b53edcdbcd90b4bbbe41df1adde2494f34a0fed63ff2dd51025ba03334d5c2')),
     'SOURCE_BROWSER',
   )
   check(
