@@ -179,17 +179,26 @@
   /** FL-521: how many videos have a copy and the space the copies take. */
   let copies = $state<MediaCopiesResponseDto>();
 
-  // a newer read wins over an older one that answers later
-  let copiesRead = 0;
+  // FL-630: one read at a time (it counts the whole library); a refresh asked for meanwhile runs once after it
+  let reading = false;
+  let readAgain = false;
   const readCopies = async () => {
-    const read = ++copiesRead;
+    if (reading) {
+      readAgain = true;
+      return;
+    }
+    reading = true;
     try {
-      const response = await getMediaCopies();
-      if (read === copiesRead) {
-        copies = response;
-      }
-    } catch {
-      // Without the counts the status says what happens to videos, without numbers.
+      do {
+        readAgain = false;
+        try {
+          copies = await getMediaCopies();
+        } catch {
+          // Without the counts the status says what happens to videos, without numbers.
+        }
+      } while (readAgain);
+    } finally {
+      reading = false;
     }
   };
 
