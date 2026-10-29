@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
@@ -12,6 +12,7 @@
   import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
+  import MakeMovieSheet from '$lib/components/frameleaf/MakeMovieSheet.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import RuleChips from '$lib/components/frameleaf/RuleChips.svelte';
@@ -46,6 +47,7 @@
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     AlbumKind,
+    getWorkflowCapabilities,
     AlbumUserRole,
     getAlbumMapMarkers,
     createClassificationRule,
@@ -72,6 +74,7 @@
     mdiLogoutVariant,
     mdiMapOutline,
     mdiPencilOutline,
+    mdiMovieOpenPlayOutline,
     mdiPlayCircleOutline,
     mdiPlus,
     mdiRefresh,
@@ -146,6 +149,14 @@
   }: Props = $props();
 
   const currentUserId = $derived(authManager.user.id);
+  let automationAvailable = $state(false);
+  onMount(() => {
+    void Promise.resolve(getWorkflowCapabilities())
+      .then((value) => {
+        automationAvailable = value?.sourceFilters ?? false;
+      })
+      .catch(() => {});
+  });
   const owner = $derived(isOwner(album, currentUserId));
   const editor = $derived(canEdit(album, currentUserId));
   const isCollection = $derived(album.kind === AlbumKind.Collection);
@@ -171,6 +182,8 @@
   const compact = $derived(phone.current);
 
   let iconOpen = $state(false);
+  /** Make a movie (FL-561): beside Slideshow, in the "…" menu on phones. */
+  let movieOpen = $state(false);
   let shareOpen = $state(false);
   let shareSection = $state<'people' | 'links'>('people');
   const openShare = (section: 'people' | 'links' = 'people') => {
@@ -573,6 +586,11 @@
         <span>{$t('slideshow')}</span>
       </button>
 
+      <button type="button" class="action" disabled={assetCount === 0} onclick={() => (movieOpen = true)}>
+        <Icon icon={mdiMovieOpenPlayOutline} size="18" />
+        <span>{$t('frameleaf_movie_make')}</span>
+      </button>
+
       <button type="button" class="action" disabled={assetCount === 0} onclick={() => void handleDownloadAlbum(album)}>
         <Icon icon={mdiDownloadOutline} size="18" />
         <span>{$t('download')}</span>
@@ -620,6 +638,10 @@
           <Icon icon={mdiPlayCircleOutline} size="18" />
           {$t('slideshow')}
         </MenuItem>
+        <MenuItem disabled={assetCount === 0} onSelect={() => (movieOpen = true)}>
+          <Icon icon={mdiMovieOpenPlayOutline} size="18" />
+          {$t('frameleaf_movie_make')}
+        </MenuItem>
         <MenuItem disabled={assetCount === 0} onSelect={() => void handleDownloadAlbum(album)}>
           <Icon icon={mdiDownloadOutline} size="18" />
           {$t('download')}
@@ -635,6 +657,15 @@
         <div class="menu-separator" role="separator"></div>
       {/if}
       {#if editor && !rule && !album.isSmart}
+        {#if !isCollection && automationAvailable}
+          <MenuItem
+            onSelect={() =>
+              void goto(`${Route.workflows()}&${new URLSearchParams({ workflowAlbum: album.id, workflowName: name })}`)}
+          >
+            <Icon icon={mdiAutoFix} size="18" />
+            {$t('frameleaf_workflows.automate_album')}
+          </MenuItem>
+        {/if}
         <MenuItem onSelect={() => (editOpen = true)}>
           <Icon icon={mdiPencilOutline} size="18" />
           {$t('frameleaf_album_edit_details')}
@@ -716,6 +747,17 @@
     </section>
   {/if}
 </header>
+
+<MakeMovieSheet
+  bind:open={movieOpen}
+  source={{
+    kind: 'album',
+    albumId: album.id,
+    name,
+    itemCount: assetCount,
+    previewIds: album.albumThumbnailAssetId ? [album.albumThumbnailAssetId] : [],
+  }}
+/>
 
 <AlbumShareDialog
   {album}

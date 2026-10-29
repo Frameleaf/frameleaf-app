@@ -136,7 +136,7 @@ export const cloudTourSteps: readonly CloudTourStep[] = Object.freeze([
     ],
     links: [
       { id: 'plan', area: 'cloud', section: 'cloud-plan' },
-      { id: 'license', area: 'cloud', section: 'cloud-license' },
+      { id: 'license', area: 'cloud', section: 'cloud-plan' },
       { id: 'cloud', area: 'cloud' },
     ],
   },

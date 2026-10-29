@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 from shutil import rmtree
+from threading import Lock
 from typing import Any, ClassVar
 
 from huggingface_hub import snapshot_download
@@ -46,6 +47,7 @@ def _is_missing_model(error: BaseException) -> bool:
 class InferenceModel(ABC):
     depends: ClassVar[list[ModelIdentity]]
     identity: ClassVar[ModelIdentity]
+    threads: ClassVar[int] = 2  # how many threads one run takes for CPU inference
 
     def __init__(
         self,
@@ -57,6 +59,8 @@ class InferenceModel(ABC):
     ) -> None:
         self.loaded = session is not None
         self.load_attempts = 0
+        self.load_retry_at: float | None = None
+        self._load_lock = Lock()
         self.model_name = clean_name(model_name)
         self.cache_dir = Path(cache_dir) if cache_dir is not None else self._cache_dir_default
         self.model_format = model_format if model_format is not None else self._model_format_default
@@ -79,18 +83,27 @@ class InferenceModel(ABC):
             self._download()
 
     def load(self, *, allow_download: bool = True) -> None:
-        if self.loaded:
-            return
-        self.load_attempts += 1
+        with self._load_lock:  # two requests may arrive for a model neither has loaded
+            if self.loaded:
+                return
+            self.load_attempts += 1
 
-        if allow_download:
-            self.download()
-        elif not self.cached:
-            raise ModelUnavailableError("Verified model cache is unavailable")
-        attempt = f"Attempt #{self.load_attempts} to load" if self.load_attempts > 1 else "Loading"
-        log.info(f"{attempt} {self.model_type.replace('-', ' ')} model '{self.model_name}' to memory")
-        self.session = self._load()
-        self.loaded = True
+            if allow_download:
+                self.download()
+            elif not self.cached:
+                raise ModelUnavailableError("Verified model cache is unavailable")
+            attempt = f"Attempt #{self.load_attempts} to load" if self.load_attempts > 1 else "Loading"
+            log.info(f"{attempt} {self.model_type.replace('-', ' ')} model '{self.model_name}' to memory")
+            self.session = self._load()
+            self.loaded = True
+
+    def unload(self) -> None:
+        with self._load_lock:
+            if self.loaded:
+                del self.session
+                self.loaded = False
+                self.load_attempts = 0
+                self.load_retry_at = None
 
     def predict(self, *inputs: Any, **model_kwargs: Any) -> Any:
         self.load()
@@ -177,7 +190,7 @@ class InferenceModel(ABC):
             case ".armnn":
                 session: ModelSession = AnnSession(model_path)
             case ".onnx":
-                session = OrtSession(model_path)
+                session = OrtSession(model_path, threads=self.threads)
             case ".rknn":
                 session = rknn.RknnSession(model_path)
             case _:

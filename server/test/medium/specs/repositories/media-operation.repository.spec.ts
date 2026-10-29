@@ -9,6 +9,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
 } from 'src/enum.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   type CloudDescriptionBatchCreate,
@@ -20,6 +21,7 @@ import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit, JOB_QUEUE_CLAIMANT, editOperationCreate } from 'src/utils/edit-operation.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -525,6 +527,32 @@ describe(MediaOperationRepository.name, () => {
         .set({ retryAt: new Date(Date.now() - 1000) })
         .where('id', '=', id)
         .execute();
+
+    it('retries a resumable Frameleaf Cloud batch only when the runner says so', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const claimBatch = () =>
+        sut.claimNext({ kinds: [MediaOperationKind.CloudLibraryBatch], workerId: 'worker-a', leaseMs: LEASE_MS });
+      const cloud = {
+        kind: MediaOperationKind.CloudLibraryBatch,
+        destination: MediaOperationDestination.FrameleafCloud,
+      };
+      const failure = { error: 'Frameleaf Cloud is unavailable', errorCode: 'cloud_library_unavailable' };
+
+      const plain = await newOperation(sut, user.id, cloud);
+      await expect(sut.fail(plain.id, (await claimBatch())!.claimToken, failure, { retry: true })).resolves.toBe(
+        'failed',
+      );
+
+      const resumable = await newOperation(sut, user.id, cloud);
+      await expect(
+        sut.fail(resumable.id, (await claimBatch())!.claimToken, failure, { retry: true, resumable: true }),
+      ).resolves.toBe('retrying');
+      await expect(sut.getForOwner(resumable.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+      });
+    });
 
     it('retries a failed job once, after the delay, and reports the second failure', async () => {
       const { ctx, sut } = setup();
@@ -1268,6 +1296,29 @@ describe(MediaOperationRepository.name, () => {
       const mine = await sut.list({ ownerId: user.id, take: 50, skip: 0 });
       expect(mine.total).toBe(1);
       expect(mine.items.every((item) => item.ownerId === user.id)).toBe(true);
+    });
+
+    it('leaves out the scans of a removed library (FL-588)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const libraries = new LibraryRepository(ctx.database);
+      const kept = await libraries.create({ ownerId: user.id, name: 'Kept', importPaths: [], exclusionPatterns: [] });
+      const removed = await libraries.create({
+        ownerId: user.id,
+        name: 'Removed',
+        importPaths: [],
+        exclusionPatterns: [],
+      });
+      const scan = (libraryId: string) =>
+        newOperation(sut, user.id, { kind: MediaOperationKind.LibraryScan, snapshot: { libraryId } });
+      const keptScan = await scan(kept.id);
+      await scan(removed.id);
+      await scan(randomUUID());
+      await libraries.softDelete(removed.id);
+
+      const { items, total } = await sut.list({ ownerId: user.id, take: 50, skip: 0 });
+      expect(items.map((item) => item.id)).toEqual([keptScan.id]);
+      expect(total).toBe(1);
     });
   });
 
@@ -2222,7 +2273,7 @@ describe(MediaOperationRepository.name, () => {
         try {
           await expect(
             sut.createCloudDescriptionBatches(rows, () =>
-              Promise.try(() => {
+              tryPromise(() => {
                 acknowledged = true;
               }),
             ),

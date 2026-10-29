@@ -35,6 +35,7 @@ import { DesktopDeviceRepository } from 'src/repositories/desktop-device.reposit
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
+import { DevelopBatchRepository } from 'src/repositories/develop-batch.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
@@ -60,6 +61,7 @@ import { ICloudScheduledWorkerRepository } from 'src/repositories/icloud-schedul
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
+import { IdenticalFilesRepository } from 'src/repositories/identical-files.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
@@ -104,11 +106,13 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
+import { StudioMovieRepository } from 'src/repositories/studio-movie.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
@@ -130,9 +134,11 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  DevelopBatchRepository,
   DesktopClipIndexRepository,
   DesktopDeviceRepository,
   PhotoSourceRepository,
+  SourceResourceRepository,
   DesktopMlRepository,
   DesktopWorkerRepository,
   DesktopWorkerChallengeRepository,
@@ -220,6 +226,7 @@ export const repositories = [
   PetRepository,
   PhotoToolsRepository,
   PhysicalFileRepository,
+  IdenticalFilesRepository,
   PhysicalFileTrashRepository,
   RateLimitRepository,
   RawSupportRepository,
@@ -234,6 +241,7 @@ export const repositories = [
   StudioImportPublicationRepository,
   StudioImportFileRepository,
   StudioReverseConformRepository,
+  StudioMovieRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,
   DerivativePrivacyRepository,

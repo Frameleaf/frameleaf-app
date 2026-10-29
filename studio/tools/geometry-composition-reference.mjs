@@ -75,7 +75,11 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-450 locked-lane drag refusal leaves the composition producers unchanged.
     sourceSha256 === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' ||
     // Trackless-video audio admission changes no geometry/composition producer bytes.
-    sourceSha256 === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a'
+    sourceSha256 === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' ||
+    // FL-505 Node 22.23.4 pin changes only the engine package/lockfile, not composition producers.
+    sourceSha256 === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
+    // FL-562 transcript editing changes no geometry/composition producer.
+    sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b'
   )
     return {
       ...COMPOSITION_SOURCES,

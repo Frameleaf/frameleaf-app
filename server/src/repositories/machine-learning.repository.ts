@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
 import { open, readFile, rm, stat } from 'node:fs/promises';
@@ -36,6 +36,7 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { JobDependencyUnavailable, deferJobUntilDependency } from 'src/queue/dependency.js';
 import { fetchJobText } from 'src/queue/http.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
@@ -284,6 +285,11 @@ export type MlUsage = {
  */
 export type DesktopPoolOptions = {
   jobId?: string | null;
+  /**
+   * FL-456: take the job only when one of the owner's Frameleaf Desktop helpers is online and qualified
+   * for its model now; otherwise hand it back so the next place in the processing order can take it.
+   */
+  requireReady?: boolean;
   modelName: string;
   ocr?: MachineLearningConfig['ocr'];
   face?: MachineLearningConfig['facialRecognition'];
@@ -465,6 +471,33 @@ export type TranscriptInfo = Extract<TranscriptStreamItem, { type: 'info' }>;
 const TRANSCRIPT_LINE_BYTES = 256 * 1024;
 const TRANSCRIPT_TOTAL_BYTES = 64 * 1024 * 1024;
 
+/** The music model Make a movie asks for (FL-561, owner decision 2026-10-26: MusicGen small). */
+export const MUSIC_MODEL_NAME = 'frameleaf-music';
+
+/** The worker cannot make music: no `/music` route (an older worker) or the model is unavailable. */
+export class MusicUnavailableError extends Error {}
+
+/** One line of a worker's `/music` stream (machine-learning/frameleaf_ml/main.py). */
+export const musicStreamItemSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('progress'),
+    done: z.int().min(0).max(1e7),
+    total: z.int().min(1).max(1e7),
+  }),
+  z.object({
+    type: z.literal('info'),
+    sampleRate: z.int().min(8000).max(192_000),
+    seconds: z.number().min(0).max(600),
+  }),
+  z.object({ type: z.literal('audio'), data: z.string().max(1024 * 1024) }),
+  z.object({ type: z.literal('done') }),
+  z.object({ type: z.literal('error'), message: z.string().max(512) }),
+]);
+
+/** A music line above this is not music; the whole answer is bounded too (three minutes of WAV, base64). */
+const MUSIC_LINE_BYTES = 1024 * 1024;
+const MUSIC_TOTAL_BYTES = 64 * 1024 * 1024;
+
 /** The inpainting model the Clean Up Remove fill asks for: LaMa big-lama on the ML worker (owner decision 2026-10-08). */
 export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 
@@ -493,7 +526,11 @@ export class MachineLearningRepository implements RestorationInference {
   private desktopPoolSelector: DesktopPoolSelector | null = null;
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
-  private probeCache = new Map<string, { authToken?: string; authorityIdentity?: string; probe: MlEndpointProbe }>();
+  private probeCache = new Map<
+    string,
+    { authToken?: string; authorityIdentity?: string; hardwareChecked: boolean; probe: MlEndpointProbe }
+  >();
+  private probesInFlight = new Map<string, Promise<MlEndpointProbe>>();
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -708,7 +745,8 @@ export class MachineLearningRepository implements RestorationInference {
         signal,
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
         // no such route (404), an older worker that does not know the task (422), no runtime or model (503)
         if ([404, 422, 501, 503].includes(response.status)) {
           throw new TranscriptionUnavailableError(`The worker cannot transcribe (${response.status})`);
@@ -779,9 +817,138 @@ export class MachineLearningRepository implements RestorationInference {
     return { info, segments };
   }
 
+  /**
+   * Make a movie (FL-561): new music from `prompt` on the selected worker, written to `wavPath` as the
+   * 16-bit mono WAV the worker sends. Only the prompt leaves this server. Progress is the worker's
+   * decoder steps; aborting `signal` closes the connection, which stops the worker.
+   */
+  async generateMusic(
+    selection: MlSelection,
+    options: { prompt: string; durationSeconds: number; seed: number },
+    wavPath: string,
+    signal: AbortSignal,
+    onProgress: (done: number, total: number) => void,
+  ): Promise<{ seconds: number }> {
+    if (selection.endpoint.cloud) {
+      throw new CloudJobsUnavailableError(selection.workload);
+    }
+    const started = Date.now();
+    let bytesReceived = 0;
+    const record = (outcome: MlUsage['outcome']) =>
+      selection.record({ bytesSent: 0, bytesReceived, durationMs: Date.now() - started, outcome });
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({
+        music: {
+          audio: {
+            modelName: MUSIC_MODEL_NAME,
+            options: { prompt: options.prompt, duration: options.durationSeconds, seed: options.seed },
+          },
+        },
+      }),
+    );
+    const file = await open(wavPath, 'w');
+    let seconds: number | undefined;
+    let finished = false;
+    try {
+      await this.authorize(selection.endpoint);
+      const response = await fetch(new URL('music', selection.endpoint.url), {
+        method: 'POST',
+        headers: this.authHeaders(selection.endpoint),
+        body: form,
+        redirect: 'error',
+        signal,
+      });
+      if (!response.ok) {
+        if (response.status === 503) await this.checkWorkerCapacity(response);
+        else await response.body?.cancel();
+        // no such route (404), an older worker that does not know the task (422), no model (503)
+        if ([404, 422, 501, 503].includes(response.status)) {
+          throw new MusicUnavailableError(`The worker cannot make music (${response.status})`);
+        }
+        throw new Error(`The music worker answered ${response.status}`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('The music worker sent no answer');
+      }
+      let pending = Buffer.alloc(0);
+      const handle = async (line: Buffer) => {
+        if (line.length > MUSIC_LINE_BYTES * 2) throw new Error('A music line is too long');
+        if (line.length === 0) {
+          return;
+        }
+        const item = musicStreamItemSchema.parse(JSON.parse(line.toString('utf8')));
+        switch (item.type) {
+          case 'progress': {
+            onProgress(item.done, item.total);
+            break;
+          }
+          case 'info': {
+            seconds = item.seconds;
+            break;
+          }
+          case 'audio': {
+            if (seconds === undefined) throw new Error('The music worker sent audio before its info');
+            await file.write(Buffer.from(item.data, 'base64'));
+            break;
+          }
+          case 'error': {
+            throw new Error(`The music worker failed: ${item.message}`);
+          }
+          default: {
+            finished = true;
+          }
+        }
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytesReceived += value.byteLength;
+          if (bytesReceived > MUSIC_TOTAL_BYTES) throw new Error('The music is too large');
+          pending = Buffer.concat([pending, value]);
+          let newline = pending.indexOf(10);
+          while (newline !== -1 && !finished) {
+            await handle(pending.subarray(0, newline));
+            pending = pending.subarray(newline + 1);
+            newline = pending.indexOf(10);
+          }
+          if (pending.length > MUSIC_LINE_BYTES * 2) throw new Error('A music line is too long');
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+      if (!finished || seconds === undefined) {
+        throw new Error('The music worker stopped before it finished');
+      }
+    } catch (error) {
+      if (!(error instanceof MusicUnavailableError)) {
+        this.probeCache.delete(selection.endpoint.url);
+      }
+      record('failure');
+      throw error;
+    } finally {
+      await file.close();
+    }
+    record('success');
+    return { seconds };
+  }
+
   /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */
   setCloudProber(prober: CloudMlProber | null) {
     this.cloudProber = prober;
+  }
+
+  private refuseBusyWorker() {
+    deferJobUntilDependency('destination-capacity');
+    throw new ServiceUnavailableException('Machine learning worker is busy; try again shortly');
+  }
+
+  private async checkWorkerCapacity(response: Response) {
+    const body = await this.readDiagnosticJson(response).catch(() => null);
+    if (z.object({ detail: z.literal('ml_worker_busy') }).safeParse(body).success) this.refuseBusyWorker();
   }
 
   private authHeaders(endpoint: MlEndpoint): Record<string, string> {
@@ -797,7 +964,10 @@ export class MachineLearningRepository implements RestorationInference {
    * serves and `/hardware` for its acceleration. A result younger than `maxAgeMs` is
    * reused so a burst of jobs does not turn into a burst of probes.
    */
-  async probe(endpoint: MlEndpoint, { maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<MlEndpointProbe> {
+  async probe(
+    endpoint: MlEndpoint,
+    { maxAgeMs = 0, includeHardware = true }: { maxAgeMs?: number; includeHardware?: boolean } = {},
+  ): Promise<MlEndpointProbe> {
     const authorityIdentity = await this.authorize(endpoint);
     if (endpoint.cloud) {
       if (!this.cloudProber) {
@@ -819,6 +989,7 @@ export class MachineLearningRepository implements RestorationInference {
     const cached = this.probeCache.get(endpoint.url);
     if (
       cached &&
+      (!includeHardware || cached.hardwareChecked) &&
       cached.authToken === endpoint.authToken &&
       cached.authorityIdentity === authorityIdentity &&
       maxAgeMs > 0 &&
@@ -827,13 +998,39 @@ export class MachineLearningRepository implements RestorationInference {
       return cached.probe;
     }
 
+    const key = JSON.stringify([endpoint.url, endpoint.authToken, authorityIdentity, includeHardware]);
+    let operation = this.probesInFlight.get(key);
+    if (!operation) {
+      operation = this.probeLocal(endpoint, authorityIdentity, includeHardware);
+      this.probesInFlight.set(key, operation);
+    }
+    try {
+      const result = await operation;
+      // Sharing a network observation never shares another caller's permission to use it.
+      if ((await this.authorize(endpoint)) !== authorityIdentity) throw recoveryMlRefusal();
+      return result;
+    } finally {
+      if (this.probesInFlight.get(key) === operation) this.probesInFlight.delete(key);
+    }
+  }
+
+  private async probeLocal(
+    endpoint: MlEndpoint,
+    authorityIdentity: string | undefined,
+    includeHardware: boolean,
+  ): Promise<MlEndpointProbe> {
     const timeout = Math.min(5000, Math.max(250, this.timeout()));
     const started = Date.now();
     const probedAt = new Date(started);
     const finish = async (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): Promise<MlEndpointProbe> => {
       if ((await this.authorize(endpoint)) !== authorityIdentity) throw recoveryMlRefusal();
       const result = { ...probe, latencyMs: Date.now() - started, probedAt };
-      this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, authorityIdentity, probe: result });
+      this.probeCache.set(endpoint.url, {
+        authToken: endpoint.authToken,
+        authorityIdentity,
+        hardwareChecked: includeHardware,
+        probe: result,
+      });
       return result;
     };
     const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -881,20 +1078,22 @@ export class MachineLearningRepository implements RestorationInference {
     }
 
     let hardware: MachineLearningHardwareResponse | null = null;
-    try {
-      await this.authorize(endpoint);
-      const response = await fetch(new URL('hardware', endpoint.url), {
-        headers: this.authHeaders(endpoint),
-        signal: AbortSignal.timeout(timeout),
-        redirect: 'error',
-      });
-      if (response.ok) {
-        hardware = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
-      } else {
-        await response.body?.cancel();
+    if (includeHardware) {
+      try {
+        await this.authorize(endpoint);
+        const response = await fetch(new URL('hardware', endpoint.url), {
+          headers: this.authHeaders(endpoint),
+          signal: AbortSignal.timeout(timeout),
+          redirect: 'error',
+        });
+        if (response.ok) {
+          hardware = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
+        } else {
+          await response.body?.cancel();
+        }
+      } catch {
+        // Hardware is informational; a worker without the route is still admissible.
       }
-    } catch {
-      // Hardware is informational; a worker without the route is still admissible.
     }
 
     // FL-42: a worker's own `/capabilities` list is a diagnostic claim, not admission proof. A
@@ -1011,6 +1210,8 @@ export class MachineLearningRepository implements RestorationInference {
           body: formData,
           redirect: 'error',
         },
+        undefined,
+        bound ? 4 * 1024 * 1024 : undefined,
       ));
       await this.authorize(selection.endpoint);
     } catch (error: Error | unknown) {
@@ -1024,6 +1225,15 @@ export class MachineLearningRepository implements RestorationInference {
 
     if (!response.ok) {
       selection.record(usage('failure', body.length));
+      if (response.status === 503) {
+        let detail: unknown;
+        try {
+          detail = JSON.parse(body)?.detail;
+        } catch {
+          // Unknown errors retain the ordinary failure path.
+        }
+        if (detail === 'ml_worker_busy') this.refuseBusyWorker();
+      }
       throw new Error(
         `Machine learning request '${this.redact(config)}' to ${target} failed with status ${response.status}: ${response.statusText}`,
       );
@@ -1108,7 +1318,11 @@ export class MachineLearningRepository implements RestorationInference {
     this.desktopPoolSelector = selector;
   }
 
-  async selectBackgroundPool(selection: MlSelection, jobId?: string | null): Promise<MlSelection> {
+  async selectBackgroundPool(
+    selection: MlSelection,
+    jobId?: string | null,
+    requireReady = false,
+  ): Promise<MlSelection> {
     if (!queueExecution.getStore() || ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload))
       return selection;
     if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
@@ -1117,6 +1331,7 @@ export class MachineLearningRepository implements RestorationInference {
     const modelName = face?.modelName ?? ocr?.modelName ?? this.config.clip.modelName;
     return this.desktopPoolSelector(selection, {
       jobId,
+      ...(requireReady && { requireReady }),
       modelName,
       ...(ocr && { ocr }),
       ...(face && { face }),
@@ -1397,6 +1612,7 @@ export class MachineLearningRepository implements RestorationInference {
         }
         return describedBy(body[ModelTask.IMAGE_DESCRIPTION], candidateModel);
       } catch (error) {
+        if (error instanceof JobDependencyUnavailable || error instanceof ServiceUnavailableException) throw error;
         lastError = error;
         this.logger.warn(
           `Image description request to destination ${selection.destinationId} (model='${candidateModel}') failed: ${error instanceof Error ? error.message : error}`,

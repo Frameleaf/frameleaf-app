@@ -216,9 +216,11 @@ describe('labels (FL-72)', () => {
     expect(
       readinessLabelKey({ readiness: MlWorkerReadiness.ModelReady, source: WorkerInventorySource.RenderWorker }),
     ).toBe('admin.frameleaf_workers_state_checked_in');
+    // OPS-06: a CPU-only worker reads the same before and after its hardware report arrives.
     expect(readinessLabelKey({ readiness: MlWorkerReadiness.Cpu, source: WorkerInventorySource.MlDestination })).toBe(
-      'admin.frameleaf_workers_state_cpu',
+      'admin.frameleaf_workers_state_model_ready',
     );
+    expect(readinessTone(MlWorkerReadiness.Cpu)).toBe(readinessTone(MlWorkerReadiness.ModelReady));
   });
 
   it('never shows an unknown state as ready', () => {

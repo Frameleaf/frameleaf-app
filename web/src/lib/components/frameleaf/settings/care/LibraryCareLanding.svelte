@@ -4,12 +4,18 @@
    * answer to "is my library all right?", then the four pages with their own state, then the tools.
    *
    * An administrator sees the whole household: Library Care's findings across every account, and the
-   * file checks' lists. A member sees their own library and no settings. Where the two scanners report
-   * the same kind of problem (a missing or a damaged file), the larger count is said, so a file is never
-   * counted twice. Time estimates wait for the server (follow-up of FL-366).
+   * file checks' lists. A member sees their own library and no settings. FL-520: an administrator's
+   * counts come from the server's one source of findings (`getIntegrityOverview`), where a photo both
+   * checkers report is counted once; a member's from their own Library care queues.
+   *
+   * FL-416: after an Immich import, an administrator sees "Checking your Immich library" while the
+   * identical-files check reads every imported file (`ImportCheck`). Duplicates says the space identical
+   * files save. Unused files is among the tools only for the server owner (`unusedFilesAccess`).
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import ImportCheck from '$lib/components/frameleaf/settings/care/ImportCheck.svelte';
+  import { showsImportCheck } from '$lib/components/frameleaf/settings/care/import-check';
   import Coverage from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
@@ -21,21 +27,29 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { formatBytes } from '$lib/frameleaf/format-bytes';
+  import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
   import { libraryCareToolsFor, utilitiesUrl, type UtilityId } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import {
+    AnalyticsRange,
     createJob,
+    getAnalyticsReport,
     getAssetStatistics,
+    getIdenticalFilesStatus,
     getIntegrityCheckRuns,
-    getIntegrityReportSummary,
+    getIntegrityOverview,
+    getQueue,
     getServerStatistics,
     getSummary,
-    IntegrityReport,
     ManualJobName,
+    QueueName,
+    updateQueue,
+    type IdenticalFilesStatusDto,
     type IntegrityCheckRunsResponseDto,
-    type IntegrityReportSummaryResponseDto,
+    type IntegrityOverviewResponseDto,
     type MediaHealthSummaryResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -51,6 +65,7 @@
     mdiPlayOutline,
     mdiShieldAlertOutline,
     mdiShieldCheckOutline,
+    mdiTrashCanOutline,
     mdiWrenchOutline,
   } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
@@ -58,12 +73,74 @@
   const isAdmin = $derived(authManager.user.isAdmin);
 
   let summary = $state<MediaHealthSummaryResponseDto>();
-  let integrity = $state<IntegrityReportSummaryResponseDto>();
+  let integrity = $state<IntegrityOverviewResponseDto>();
   let runs = $state<IntegrityCheckRunsResponseDto>();
   let total = $state<number>();
   let loaded = $state(false);
   let said = $state('');
   let starting = $state(false);
+
+  /** FL-416: the identical-files check after an Immich import, and whether its queue is paused. */
+  let identical = $state<IdenticalFilesStatusDto>();
+  let checkPaused = $state(false);
+  let pausing = $state(false);
+  /** The space identical files save (Library analytics), for the Duplicates row. */
+  let savedBytes = $state<number>();
+
+  const readIdentical = async () => {
+    try {
+      const [status, queue] = await Promise.all([
+        getIdenticalFilesStatus(),
+        getQueue({ name: QueueName.StorageTemplateMigration }).catch(() => undefined),
+      ]);
+      identical = status;
+      checkPaused = queue?.isPaused ?? false;
+    } catch {
+      identical = undefined;
+    }
+  };
+
+  $effect(() => {
+    if (!isAdmin) {
+      return;
+    }
+    void unusedFilesAccess.loadForCurrentUser();
+    void readIdentical();
+    void getAnalyticsReport({ scope: 'all', range: AnalyticsRange.Year })
+      .then((report) => (savedBytes = report.summary.savedBytes))
+      .catch(() => (savedBytes = undefined));
+  });
+
+  // While the check runs, read where it stands again every few seconds.
+  $effect(() => {
+    if (!isAdmin || identical?.status !== 'running') {
+      return;
+    }
+    const timer = setInterval(() => void readIdentical(), 5000);
+    return () => clearInterval(timer);
+  });
+
+  const setCheckPaused = async (isPaused: boolean) => {
+    pausing = true;
+    try {
+      const queue = await updateQueue({ name: QueueName.StorageTemplateMigration, queueUpdateDto: { isPaused } });
+      checkPaused = queue.isPaused;
+      said = isPaused ? $t('frameleaf_import_check_paused_said') : $t('frameleaf_import_check_resumed_said');
+    } catch (error) {
+      handleError(error, $t('frameleaf_import_check_pause_failed'));
+    } finally {
+      pausing = false;
+    }
+  };
+
+  /** FL-520: the one source of findings, or nothing when it cannot be read. */
+  const overviewOf = async () => {
+    try {
+      return await getIntegrityOverview();
+    } catch {
+      return undefined;
+    }
+  };
 
   $effect(() => {
     const admin = isAdmin;
@@ -71,7 +148,7 @@
     loaded = false;
     void Promise.all([
       getSummary(admin ? { allAccounts: true } : {}).catch(() => undefined),
-      admin ? getIntegrityReportSummary().catch(() => undefined) : Promise.resolve(undefined),
+      admin ? overviewOf() : Promise.resolve(undefined),
       admin ? getIntegrityCheckRuns().catch(() => undefined) : Promise.resolve(undefined),
       admin
         ? getServerStatistics()
@@ -96,14 +173,12 @@
   });
 
   const queues = $derived(summary?.queues);
-  const missing = $derived(Math.max(queues?.missing ?? 0, integrity?.[IntegrityReport.MissingFile] ?? 0));
+  // FL-520: one count per kind, from one source, for an administrator; a member's own queues otherwise.
+  const missing = $derived(integrity ? integrity.missing : (queues?.missing ?? 0));
   const damaged = $derived(
-    Math.max(
-      (queues?.damagedConfirmed ?? 0) + (queues?.damagedSuspected ?? 0),
-      integrity?.[IntegrityReport.ChecksumMismatch] ?? 0,
-    ),
+    integrity ? integrity.damaged : (queues?.damagedConfirmed ?? 0) + (queues?.damagedSuspected ?? 0),
   );
-  const stray = $derived(integrity?.[IntegrityReport.UntrackedFile] ?? 0);
+  const stray = $derived(integrity?.stray ?? 0);
   const attention = $derived(missing + damaged + stray);
   const lookAlikes = $derived(queues?.duplicates ?? 0);
   const waiting = $derived(queues?.enrichmentPending ?? 0);
@@ -239,15 +314,33 @@
     }
   };
 
-  /** The tools, in the prototype's order. Duplicate review is reached from Duplicates. */
-  const TOOL_ORDER: UtilityId[] = ['live-photos', 'missing-media', 'corrupt-media', 'file-trash'];
-  const tools = $derived(
-    TOOL_ORDER.flatMap((id) => libraryCareToolsFor(isAdmin).filter((tool) => tool.id === id)).map((tool): LinkRow => ({
-      icon: tool.icon,
-      title: $t(tool.titleKey),
-      body: $t(tool.descriptionKey),
-      href: utilitiesUrl(tool.id, { from: 'care' }),
-    })),
+  /**
+   * The tools, in the prototype's order. Duplicate review is reached from Duplicates. FL-416: Unused files
+   * is the server owner's alone, so only they see it here.
+   */
+  const TOOL_ORDER: UtilityId[] = ['live-photos', 'missing-media', 'corrupt-media'];
+  const tools = $derived([
+    ...TOOL_ORDER.flatMap((id) => libraryCareToolsFor(isAdmin).filter((tool) => tool.id === id)).map(
+      (tool): LinkRow => ({
+        icon: tool.icon,
+        title: $t(tool.titleKey),
+        body: $t(tool.descriptionKey),
+        href: utilitiesUrl(tool.id, { from: 'care' }),
+      }),
+    ),
+    ...(isAdmin && unusedFilesAccess.isOwner
+      ? [
+          {
+            icon: mdiTrashCanOutline,
+            title: $t('frameleaf_unused_title'),
+            body: $t('frameleaf_unused_tool_description'),
+            href: commandCenterUrl('care', 'unused-files'),
+          },
+        ]
+      : []),
+  ]);
+  const recoveredAlbumId = $derived(
+    identical?.recovered.find((entry) => entry.ownerId === authManager.user.id)?.albumId ?? undefined,
   );
 
   const open = (key: string) => goto(commandCenterUrl('care', key));
@@ -307,6 +400,17 @@
       />
     {/if}
   </Hero>
+
+  {#if isAdmin && identical && showsImportCheck(identical)}
+    <ImportCheck
+      status={identical}
+      paused={checkPaused}
+      busy={pausing}
+      {recoveredAlbumId}
+      onPause={() => setCheckPaused(true)}
+      onResume={() => setCheckPaused(false)}
+    />
+  {/if}
 
   {#if problems.length > 0}
     <Section
@@ -375,7 +479,9 @@
         name={$t('frameleaf_carehome_row_dupes')}
         detail={$t('frameleaf_carehome_row_dupes_detail')}
         tone="good"
-        status={$t('frameleaf_carehome_row_dupes_status')}
+        status={isAdmin && savedBytes !== undefined
+          ? $t('frameleaf_carehome_row_dupes_status_saved', { values: { size: formatBytes(savedBytes, $locale) } })
+          : $t('frameleaf_carehome_row_dupes_status')}
         note={loaded
           ? lookAlikes > 0
             ? $t('frameleaf_carehome_row_dupes_groups', { values: { count: lookAlikes } })

@@ -45,6 +45,7 @@ describe(PersonService.name, () => {
     ({ sut, mocks } = newTestService(PersonService));
     // FL-57 defaults: no recorded decisions, and recognition's assignment lands
     mocks.person.getReferenceFaces.mockResolvedValue([]);
+    mocks.person.getAssetIdsForPeople.mockResolvedValue([]);
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
@@ -641,6 +642,31 @@ describe(PersonService.name, () => {
   });
 
   describe('update', () => {
+    it('does not notify workflows when the same birthday is read as separate date objects', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ birthDate: new Date('2000-01-15') });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockResolvedValue({ ...person, birthDate: new Date('2000-01-15') });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      await sut.update(auth, person.personGroupId, { birthDate: '2000-01-15' });
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('PersonChanged', expect.anything());
+    });
+    it('notifies matching workflows after an identity change without depending on enrichment', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ name: 'Before' });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockResolvedValue({ ...person, name: 'After' });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      await sut.update(auth, person.personGroupId, { name: 'After' });
+      expect(mocks.event.emit).toHaveBeenCalledWith('PersonChanged', {
+        ownerId: person.ownerId,
+        personGroupId: person.personGroupId,
+      });
+      mocks.event.emit.mockClear();
+      mocks.person.update.mockResolvedValue(person);
+      await sut.update(auth, person.personGroupId, { name: person.name });
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('PersonChanged', expect.anything());
+    });
     it('commits the person value and override before identity jobs', async () => {
       const auth = AuthFactory.create();
       const person = PersonFactory.create({ name: 'Before' });
@@ -1353,6 +1379,14 @@ describe(PersonService.name, () => {
       mocks.person.delete.mockResolvedValue([removed]);
       return { auth, survivor, removed };
     };
+
+    it('reevaluates all photos affected by a merge even without identity captions', async () => {
+      const { auth, survivor, removed } = setupMerge();
+      const assetId = AssetFactory.create().id;
+      mocks.person.getAssetIdsForPeople.mockResolvedValue([assetId]);
+      await sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetChanged', { assetId });
+    });
 
     it('preserves the mapping when identity-refresh admission fails', async () => {
       const { auth, survivor, removed } = setupMerge();

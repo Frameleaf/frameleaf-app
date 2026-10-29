@@ -67,6 +67,20 @@ describe(AlbumService.name, () => {
       expect(result[1]).not.toHaveProperty('origin');
     });
 
+    it('leaves out the smart albums the person hid from their library (FL-522)', async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const hiddenAlbum = AlbumFactory.from().owner(owner).build();
+      mocks.album.getAll.mockResolvedValue([getForAlbum(album), getForAlbum(hiddenAlbum)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getHiddenAlbumIds.mockResolvedValue(new Set([hiddenAlbum.id]));
+
+      const result = await sut.getAll(AuthFactory.create(owner), {});
+
+      expect(result.map(({ id }) => id)).toEqual([album.id]);
+      expect(mocks.smartAlbum.getHiddenAlbumIds).toHaveBeenCalledWith(owner.id);
+    });
+
     it('gets list of albums for auth user', async () => {
       const album = AlbumFactory.from().albumUser().build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
@@ -1005,6 +1019,22 @@ describe(AlbumService.name, () => {
   });
 
   describe('updateUser', () => {
+    it('refuses somebody who is not a member, and tells nobody', async () => {
+      const stranger = UserFactory.create();
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(
+        sut.updateUser(AuthFactory.create(owner), album.id, stranger.id, { role: AlbumUserRole.Viewer }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.albumUser.update).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('PushNotify', expect.anything());
+    });
+
     it('should update user role', async () => {
       const user = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: user.id }).build();
@@ -1400,6 +1430,20 @@ describe(AlbumService.name, () => {
 
       expect(tree.albums.map(({ id, parentId }) => ({ id, parentId }))).toEqual([{ id: shared.id, parentId: null }]);
       expect(JSON.stringify(tree)).not.toContain(privateCollectionId);
+    });
+
+    it('marks the Recovered Media album the identical-files run made, by id (FL-416)', async () => {
+      const recovered = AlbumFactory.from({ albumName: 'Renamed by its owner' }).build();
+      const plain = AlbumFactory.from().build();
+      mocks.album.getAll.mockResolvedValue([getForAlbum(recovered), getForAlbum(plain)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
+      mocks.systemMetadata.get.mockResolvedValue({ recoveredAlbums: { someone: recovered.id } } as never);
+
+      const tree = await sut.getTree(AuthFactory.create());
+
+      expect(tree.albums.find(({ id }) => id === recovered.id)?.recovered).toBe(true);
+      expect(tree.albums.find(({ id }) => id === plain.id)?.recovered).toBeUndefined();
     });
 
     it('masks hidden thumbnails in the tree exactly as in the list', async () => {
@@ -1811,6 +1855,7 @@ describe(AlbumService.name, () => {
         owner.id,
       );
       expect(mocks.album.addAssetIds).toHaveBeenCalledWith(album.id, [asset1.id, asset2.id, asset3.id]);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetChanged', { assetId: asset1.id });
     });
 
     it('should not set the thumbnail if the album has one already', async () => {

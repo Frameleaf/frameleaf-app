@@ -53,6 +53,20 @@ export class ActivitySession {
   #inFlight: Promise<void> | null = null;
   #unlisten: (() => void) | null = null;
   #nudge: ReturnType<typeof setTimeout> | null = null;
+  /** Bumped at sign-out, so an answer for the previous account is dropped (FL-529). */
+  #epoch = 0;
+
+  constructor() {
+    eventManager.on({
+      AuthLogout: () => {
+        this.#epoch++;
+        this.#inFlight = null;
+        this.operations = [];
+        this.loading = true;
+        this.unreachable = false;
+      },
+    });
+  }
 
   /**
    * Ask the server for the current state.
@@ -69,17 +83,23 @@ export class ActivitySession {
   }
 
   async #load(): Promise<void> {
+    const epoch = this.#epoch;
     try {
       const { items } = await searchMediaOperations({ take: PAGE_SIZE });
+      if (epoch !== this.#epoch) {
+        return;
+      }
       this.operations = items;
       this.unreachable = false;
     } catch {
+      if (epoch !== this.#epoch) {
+        return;
+      }
       // Keep the last known list. A lost connection makes the page stale, not empty, and the
       // jobs themselves are unaffected by this browser's ability to reach the server.
       this.unreachable = true;
-    } finally {
-      this.loading = false;
     }
+    this.loading = false;
   }
 
   /**

@@ -14,6 +14,7 @@ import {
 } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -288,7 +289,7 @@ describe(NotificationService.name, () => {
       const failure = new Error('Remote configuration reconciliation failed');
       const reconcile = vi.fn().mockRejectedValue(failure);
       Reflect.set(mocks.websocket, 'awaitConfigUpdate', reconcile);
-      await expect(Promise.try(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
+      await expect(tryPromise(() => sut.onConfigUpdate({ oldConfig: defaults, newConfig: defaults }))).rejects.toBe(
         failure,
       );
     });
@@ -424,6 +425,32 @@ describe(NotificationService.name, () => {
         'on_asset_update',
         asset.ownerId,
         expect.objectContaining({ id: asset.id, landmarks: [{ ...landmark, icon: undefined }] }),
+      );
+    });
+
+    it('sends the saved capture time, zone and people after a date edit (LIB-02)', async () => {
+      const dateTimeOriginal = new Date('2026-06-22T23:30:00.000Z');
+      const asset = AssetFactory.from()
+        .exif({ dateTimeOriginal, timeZone: 'America/Edmonton' })
+        .face({}, (face) => face.person({ name: 'Jamie' }))
+        .build();
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([getForAsset(asset)] as never);
+      mocks.search.getAssetLandmarks.mockResolvedValue([]);
+
+      await sut.onAssetMetadataExtracted({ assetId: asset.id, userId: asset.ownerId, source: 'sidecar-write' });
+
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith([asset.id], asset.ownerId);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        asset.ownerId,
+        expect.objectContaining({
+          id: asset.id,
+          exifInfo: expect.objectContaining({
+            dateTimeOriginal: dateTimeOriginal.toISOString(),
+            timeZone: 'America/Edmonton',
+          }),
+          people: [expect.objectContaining({ name: 'Jamie' })],
+        }),
       );
     });
   });

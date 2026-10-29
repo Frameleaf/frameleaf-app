@@ -289,7 +289,8 @@ export class MediaHealthService {
       name: LIBRARY_CARE_HEALTH_SCAN_CRON,
       expression: libraryCare.healthScanCronExpression,
       onTick: () => handlePromiseError(this.startScheduledScans(), this.logger),
-      start: libraryCare.healthScan,
+      // FL-363: the overnight schedule's "Check files" step starts the health scans
+      start: false,
     });
   }
 
@@ -301,7 +302,8 @@ export class MediaHealthService {
     this.cronRepository.update({
       name: LIBRARY_CARE_HEALTH_SCAN_CRON,
       expression: libraryCare.healthScanCronExpression,
-      start: libraryCare.healthScan,
+      // FL-363: the overnight schedule's "Check files" step starts the health scans
+      start: false,
     });
   }
 
@@ -2325,6 +2327,11 @@ export class MediaHealthService {
           continue;
         }
         const checksumAssets = await this.assetRepository.getByChecksums(userId, [digests.sha1, digests.sha256]);
+        // The owner's own photo whose original went missing (an interrupted storage move, typically):
+        // this file is that original, so it goes back under the photo instead of being skipped.
+        if (await this.restoreLostOriginalFrom(candidatePath, checksumAssets, digests)) {
+          continue;
+        }
         const duplicate =
           checksumAssets.length > 0 ||
           (await this.forkSchemaRepository.hasAssetChecksum(userId, digests.sha1, digests.sha256));
@@ -2401,6 +2408,36 @@ export class MediaHealthService {
         }
       }
     }
+  }
+
+  private async restoreLostOriginalFrom(
+    candidatePath: string,
+    matches: Awaited<ReturnType<AssetRepository['getByChecksums']>>,
+    digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>,
+  ): Promise<boolean> {
+    const present = await Promise.all(
+      matches.map(({ originalPath }) => this.storageRepository.checkFileExists(originalPath)),
+    );
+    if (matches.length === 0 || present.some(Boolean)) {
+      return false;
+    }
+    for (const asset of matches) {
+      if (asset.deletedAt || asset.libraryId || asset.isExternal) {
+        continue;
+      }
+      const restored = await this.physicalFileRepository.restoreLostOriginal({
+        assetId: asset.id,
+        expectedOriginalPath: asset.originalPath,
+        originalPath: candidatePath,
+        ...digests,
+        reason: 'restored_from_untracked_file',
+      });
+      if (restored) {
+        await this.queueRelinkJobs(asset.id);
+        return true;
+      }
+    }
+    return false;
   }
 
   private async validateReadableAssetIntegrity(

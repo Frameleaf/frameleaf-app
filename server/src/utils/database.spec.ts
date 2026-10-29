@@ -66,35 +66,41 @@ describe(boundPoolClose.name, () => {
 
 describe('desktop inference database diagnostics', () => {
   afterEach(() => vi.restoreAllMocks());
-  it.each(['desktop_ml_task', 'desktop_ml_attempt', 'desktop_worker_session', 'desktop_worker_challenge'])(
-    'redacts private inputs, output and error details for %s',
-    async (table) => {
-      const config = getKyselyConfig({
-        connectionType: 'url',
-        url: 'postgres://postgres:postgres@127.0.0.1:1/frameleaf',
+  it.each([
+    ...['desktop_ml_task', 'desktop_ml_attempt', 'desktop_worker_session', 'desktop_worker_challenge'].map(
+      (table) => `insert into "${table}" values ($1)`,
+    ),
+    // queued job payloads (a new user's password, mail html) are bound as parameters
+    'insert into job(id, queue, name, data) values ($1::uuid, $2, $3, $4::text::jsonb)',
+    'update job set data = $1::text::jsonb where id = $2::uuid',
+    'update job set "latestPending" = $1::text::jsonb where id = $2::uuid',
+    'insert into job_run_item("runId", "itemKey", selection) values ($1::uuid, $2, $3::text::jsonb)',
+  ])('redacts private inputs, output and error details for %s', async (statement) => {
+    const config = getKyselyConfig({
+      connectionType: 'url',
+      url: 'postgres://postgres:postgres@127.0.0.1:1/frameleaf',
+    });
+    const database = new Kysely(config);
+    // eslint-disable-next-line import-x/no-named-as-default-member -- postgres exposes this class on its default ESM export.
+    const error = Object.assign(new postgres.PostgresError('private photo contents'), {
+      code: '23514',
+      detail: 'private photo contents',
+    });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      if (typeof config.log !== 'function') throw new Error('Missing database logger');
+      await config.log({
+        level: 'error',
+        error,
+        queryDurationMillis: 1,
+        query: CompiledQuery.raw(statement, [{ caption: 'private photo contents' }]),
       });
-      const database = new Kysely(config);
-      // eslint-disable-next-line import-x/no-named-as-default-member -- postgres exposes this class on its default ESM export.
-      const error = Object.assign(new postgres.PostgresError('private photo contents'), {
-        code: '23514',
-        detail: 'private photo contents',
-      });
-      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-      try {
-        if (typeof config.log !== 'function') throw new Error('Missing database logger');
-        await config.log({
-          level: 'error',
-          error,
-          queryDurationMillis: 1,
-          query: CompiledQuery.raw(`insert into "${table}" values ($1)`, [{ caption: 'private photo contents' }]),
-        });
-        expect(JSON.stringify(log.mock.calls)).not.toContain('private photo contents');
-        expect(log.mock.calls[0][1]).toMatchObject({ params: '[redacted]', error: { code: '23514' } });
-      } finally {
-        await database.destroy();
-      }
-    },
-  );
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private photo contents');
+      expect(log.mock.calls[0][1]).toMatchObject({ params: '[redacted]', error: { code: '23514' } });
+    } finally {
+      await database.destroy();
+    }
+  });
 });
 
 it('keeps ordinary database failures diagnosable', async () => {

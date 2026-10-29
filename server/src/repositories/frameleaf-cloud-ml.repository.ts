@@ -188,6 +188,7 @@ export class FrameleafCloudMlRepository {
       method: 'POST',
       url: `${gateway.url}/v2/estimates`,
       dpop: gateway.token,
+      headers: { 'x-frameleaf-promotion-pricing': '1' },
       body,
     });
   }

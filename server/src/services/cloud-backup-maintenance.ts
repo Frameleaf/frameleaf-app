@@ -381,7 +381,8 @@ export class CloudBackupMaintenance {
       for (const [key, names] of [...dumps].sort(([a], [b]) => compareCodeUnits(a, b))) {
         if (start.dumpCursor && compareCodeUnits(key, start.dumpCursor) <= 0) continue;
         const found = await this.store.head(bucket.connection, key, bucket.bucketKey).catch((error: unknown) => {
-          if (error instanceof CloudBackupStoreError && error.status === 404) {
+          // a damaged dump restores no better than a missing one
+          if (error instanceof CloudBackupStoreError && (error.status === 404 || error.code === 'ChecksumMismatch')) {
             return null;
           }
           throw error;

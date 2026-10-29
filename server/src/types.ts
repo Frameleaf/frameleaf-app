@@ -2,6 +2,7 @@ import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
 import type { HardwareCheck } from 'src/dtos/hardware-check.dto.js';
 import type { HelpIndex } from 'src/dtos/help.dto.js';
+import type { IdenticalFilesState } from 'src/dtos/identical-files.dto.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudMlJobEstimateRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
@@ -15,10 +16,6 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SetMaintenanceModeDto } from 'src/dtos/maintenance.dto.js';
-import {
-  PhysicalDeduplicationCopyState,
-  PhysicalDeduplicationRetainedState,
-} from 'src/dtos/physical-deduplication.dto.js';
 import {
   AacProfile,
   AssetOrder,
@@ -288,6 +285,16 @@ export interface IBaseJob {
   force?: boolean;
 }
 
+/**
+ * FL-413: `resume` carries on the run in progress; without it (the manual job) a fresh run starts.
+ * FL-414: `importRunId` is an Immich import's derived run: its own run starts once, after activation.
+ */
+export interface IIdenticalFilesCheckJob {
+  resume?: boolean;
+  importRunId?: string;
+  id?: string;
+}
+
 /** Retried independently after a duplicate decision commits; no original media is carried. */
 export type IDuplicateResolutionLifecycleJob = {
   id: string;
@@ -301,12 +308,6 @@ export type IDuplicateResolutionLifecycleJob = {
 /** FL-79: `attempt` is 1 for the one automatic retry a failed collection gets. */
 export interface IAnalyticsCollectJob {
   attempt?: number;
-}
-
-/** FL-71: a preview may retain originals in an account chosen on the page and review one account's copies. */
-export interface IPhysicalDeduplicationDryRunJob extends IBaseJob {
-  masterUserId?: string;
-  scopeUserId?: string;
 }
 
 export interface IDelayedJob extends IBaseJob {
@@ -539,6 +540,7 @@ export type JobItem =
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }
   | { name: JobName.BackupSequence; data?: IBaseJob }
+  | { name: JobName.OvernightSequence; data?: { manual?: boolean } }
 
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
@@ -571,8 +573,9 @@ export type JobItem =
   // Storage Template
   | { name: JobName.StorageTemplateMigration; data?: IBaseJob }
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
-  | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IPhysicalDeduplicationDryRunJob }
+  | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IBaseJob }
   | { name: JobName.PhysicalDeduplicationMigrationApply; data?: IBaseJob }
+  | { name: JobName.IdenticalFilesCheck; data?: IIdenticalFilesCheckJob }
 
   // Migration
   | { name: JobName.FileMigrationQueueAll; data?: IBaseJob }
@@ -726,6 +729,11 @@ export type JobItem =
       data: {
         workflowId: string;
         assetId: string;
+        batchId?: string;
+        source?: import('src/utils/workflow-source.js').WorkflowSource;
+        embedding?: string;
+        embeddingKey?: string;
+        causation?: string[];
         /**
          * The run this job belongs to and which attempt it is (FL-82). Set when the run is queued, so a
          * replay of a stalled job logs to the same run; a job queued before that gets a new run id.
@@ -827,6 +835,8 @@ export type StorageAsset = {
   timeZone: string | null;
   fileCreatedAt: Date;
   originalPath: string;
+  /** FL-417: the photo's own path while it shares a file kept elsewhere */
+  libraryPath?: string | null;
   physicalOriginalFileId?: string | null;
   originalFileName: string;
   fileSizeInByte: number | null;
@@ -849,23 +859,6 @@ export type VersionCheckMetadata = {
   rolloutSeed?: string;
 };
 export type SystemFlags = { mountChecks: Record<StorageFolder, boolean> };
-export type PhysicalDeduplicationMigrationState = {
-  mode: 'dry-run' | 'apply';
-  ranAt: string;
-  masterUserId: string;
-  eligibleAssets: number;
-  linkedAssets: number;
-  skippedExternal: number;
-  skippedMissingMaster: number;
-  reclaimableBytes: number;
-  deletedBytes: number;
-  samples: string[];
-  /** FL-71 preview evidence; absent on records written before the preview contract existed. */
-  scopeUserId?: string | null;
-  retained?: PhysicalDeduplicationRetainedState[];
-  copies?: PhysicalDeduplicationCopyState[];
-  copiesTruncated?: boolean;
-};
 export type MaintenanceModeState =
   { isMaintenanceMode: true; secret: string; action?: SetMaintenanceModeDto } | { isMaintenanceMode: false };
 /** FL-360: the pause a Frameleaf Manager library move holds; `queues` are the ones it paused. */
@@ -1482,8 +1475,13 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
-  [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
-  [SystemMetadataKey.ReverseGeocodingState]: { lastUpdate?: string; lastImportFileName?: string };
+  [SystemMetadataKey.IdenticalFiles]: IdenticalFilesState;
+  [SystemMetadataKey.ReverseGeocodingState]: {
+    lastUpdate?: string;
+    lastImportFileName?: string;
+    /** FL-402: set while the place data is being put back (first boot or after a restore), until items are re-matched */
+    restoring?: boolean;
+  };
   [SystemMetadataKey.SystemConfig]: DeepPartial<SystemConfig>;
   [SystemMetadataKey.EffectiveConfigEpoch]: {
     format: 1;
@@ -1524,8 +1522,17 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
+  [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
+  [SystemMetadataKey.OvernightRedo]: { queues: string[] };
+  [SystemMetadataKey.VideoCardState]: VideoCardState;
+  [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
+  [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
+  [SystemMetadataKey.DuplicateRecompare]: { requestedAt: string };
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
   [SystemMetadataKey.BackupSequence]: BackupSequenceState;
+  [SystemMetadataKey.ApiKeyLastUsed]: Record<string, string>;
+  [SystemMetadataKey.OvernightSequence]: import('src/utils/overnight.js').OvernightState;
+  [SystemMetadataKey.OverviewDismissed]: { ids: string[] };
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
   [SystemMetadataKey.FrameleafMailConnection]: FrameleafMailConnection;
   [SystemMetadataKey.FrameleafMailSignIn]: FrameleafMailSignIn;
@@ -1559,6 +1566,21 @@ export type BackupRestoreVerification = {
  */
 export type IntegrityCheckRun = { runId: string; startedAt: string; batches: number | null; done: number };
 export type IntegrityCheckRuns = Partial<Record<IntegrityReport, { lastRunAt?: string; current?: IntegrityCheckRun }>>;
+
+/**
+ * FL-520: one file check in "Recent checks". `completed`: it went through everything it had to look at;
+ * `paused`: the damage check reached its time or share limit and carries on next night; `stopped`: an
+ * administrator pressed Stop. `found` is how many findings its list held when it ended.
+ */
+export type IntegrityCheckHistoryEntry = {
+  type: IntegrityReport;
+  startedAt: string;
+  finishedAt: string;
+  outcome: 'completed' | 'paused' | 'stopped';
+  found: number;
+  /** Files looked at in this run, when the check counts them. */
+  checked: number | null;
+};
 
 export type UserPreferences = {
   /** FL-329: origin-rendered system text; device overrides are scoped to signed-in sessions. */
@@ -1612,6 +1634,10 @@ export type UserPreferences = {
     showSupportBadge: boolean;
     hideBuyButtonUntil: string;
   };
+  /** FL-556: until this time (at most a day ahead), uploading a photo that is in the Trash brings it back; '' is off */
+  trash: {
+    reuploadUntil: string;
+  };
   cast: {
     gCastEnabled: boolean;
   };
@@ -1620,6 +1646,10 @@ export type UserPreferences = {
   };
   recentlyAdded: {
     sidebarWeb: boolean;
+  };
+  /** FL-517: how long Locked photos stay open after the PIN unlocks them (5, 15 or 60 minutes). */
+  lockedPin: {
+    relockMinutes: number;
   };
   /** FL-49: named searches from the search palette; `query` is the client's own search body */
   savedSearches: SavedSearch[];
@@ -1671,4 +1701,23 @@ export type ClassConstructor<T> = T extends new (...args: infer R) => infer L
 
 export type ClassConstructorsToInstances<T extends readonly ClassConstructor<unknown>[]> = {
   [K in keyof T]: InstanceType<T[K]> | Mocked<InstanceType<T[K]>>;
+};
+
+/** FL-537: the video converter's graphics card, as Video playback copies says it. */
+export type VideoCardState = {
+  /** When a copy last had to be made on the processor because the card failed; null once it works again. */
+  failedAt: string | null;
+  /** The kind of card that failed (`ffmpeg.accel`). */
+  accel: string | null;
+  /** About how many times slower the processor is than the card, from the last test that measured both. */
+  slowdown?: number | null;
+  /** The last "Test it": the card's encoder, how fast the card and the processor each were, and why it failed. */
+  lastTest: {
+    at: string;
+    ok: boolean;
+    encoder: string | null;
+    speed: number | null;
+    softwareSpeed: number | null;
+    error: string | null;
+  } | null;
 };

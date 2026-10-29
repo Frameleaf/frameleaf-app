@@ -2,7 +2,10 @@
 
 -- ViewRepository.getUniqueOriginalPaths
 select distinct
-  substring("asset"."originalPath", $1) as "directoryPath"
+  substring(
+    coalesce("asset"."libraryPath", "asset"."originalPath"),
+    $1
+  ) as "directoryPath"
 from
   "asset"
 where
@@ -57,7 +60,11 @@ where
   and "fileCreatedAt" is not null
   and "fileModifiedAt" is not null
   and "localDateTime" is not null
-  and "originalPath" like $2
-  and "originalPath" not like $3
+  and coalesce("asset"."libraryPath", "asset"."originalPath") like $2
+  and coalesce("asset"."libraryPath", "asset"."originalPath") not like $3
 order by
-  regexp_replace("asset"."originalPath", $4, $5) asc
+  regexp_replace(
+    coalesce("asset"."libraryPath", "asset"."originalPath"),
+    $4,
+    $5
+  ) asc

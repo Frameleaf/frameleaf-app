@@ -114,6 +114,14 @@ describe(AssetDevelopService.name, () => {
           Promise.resolve(revisionStub({ id, ...patch })),
         ),
       setCurrent: vi.fn().mockResolvedValue(void 0),
+      recoverBatchImports: vi.fn(),
+      failBatchRender: vi.fn(),
+      reserveBatchMaster: vi.fn(),
+      moveBatchMaster: vi.fn(),
+      cleanupFailedBatchMaster: vi.fn(),
+      queueBatchRevision: vi.fn(),
+      releaseBatchMaster: vi.fn(),
+      publishBatchRendered: vi.fn(),
       requestCancel: vi.fn().mockResolvedValue(void 0),
       isCancelRequested: vi.fn().mockResolvedValue(false),
       releaseRemovedAssetRevisions: vi.fn().mockResolvedValue([]),
@@ -139,6 +147,7 @@ describe(AssetDevelopService.name, () => {
       updatePreset: vi.fn(),
       deletePreset: vi.fn(),
       createExport: vi.fn(),
+      createReservedExport: vi.fn(),
       listExports: vi.fn().mockResolvedValue([]),
       getExport: vi.fn(),
     };
@@ -1334,7 +1343,7 @@ describe(AssetDevelopService.name, () => {
       ownerId: asset.ownerId,
       originalPath: '/motion.mov',
       checksum: Buffer.alloc(20, 4),
-      format: { duration: 2.5 },
+      format: { duration: 2500 },
       videoStream: { index: 0 },
     };
     const prepareKeyframe = () => {

@@ -33,7 +33,9 @@ export async function dedupe(to: ServerClient, ledger: Ledger, controller: Contr
       const checksum = checksums.get(result.id);
       // A response id we didn't ask about can't be mapped back to a source asset; ignore it
       // rather than assert, so a surprising payload can't take the whole run down.
-      if (result.action === AssetUploadAction.Reject && result.assetId && checksum) {
+      // A match that only sits in B's trash is not present: B purges it when the trash empties.
+      // It falls through to transfer, which restores it.
+      if (result.action === AssetUploadAction.Reject && result.assetId && checksum && !result.isTrashed) {
         ledger.setAssetUploaded(result.id, result.assetId, 'present', checksum);
       }
     }

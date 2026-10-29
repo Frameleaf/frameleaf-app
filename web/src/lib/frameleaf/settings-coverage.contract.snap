@@ -908,17 +908,66 @@
   "nightlyTasks.databaseCleanup": {
     "type": "boolean"
   },
+  "nightlyTasks.days": {
+    "type": "array"
+  },
+  "nightlyTasks.emptyTrash": {
+    "type": "boolean"
+  },
   "nightlyTasks.generateMemories": {
     "type": "boolean"
   },
   "nightlyTasks.missingThumbnails": {
     "type": "boolean"
   },
+  "nightlyTasks.quietHours": {
+    "type": "boolean"
+  },
   "nightlyTasks.startTime": {
     "type": "string"
   },
+  "nightlyTasks.steps.cleanup": {
+    "type": "string",
+    "enum": [
+      "nightly",
+      "weekly",
+      "manual"
+    ]
+  },
+  "nightlyTasks.steps.fileChecks": {
+    "type": "string",
+    "enum": [
+      "nightly",
+      "weekly",
+      "manual"
+    ]
+  },
+  "nightlyTasks.steps.folders": {
+    "type": "string",
+    "enum": [
+      "nightly",
+      "weekly",
+      "manual"
+    ]
+  },
+  "nightlyTasks.steps.icloud": {
+    "type": "string",
+    "enum": [
+      "nightly",
+      "weekly",
+      "manual"
+    ]
+  },
+  "nightlyTasks.stopTime": {
+    "type": "unknown"
+  },
   "nightlyTasks.syncQuotaUsage": {
     "type": "boolean"
+  },
+  "nightlyTasks.weeklyDay": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 6
   },
   "notifications.smtp.enabled": {
     "type": "boolean"
@@ -1098,6 +1147,11 @@
   "preferences.folders.sidebarWeb": {
     "type": "boolean"
   },
+  "preferences.lockedPin.relockMinutes": {
+    "type": "integer",
+    "minimum": 5,
+    "maximum": 60
+  },
   "preferences.memories.duration": {
     "type": "integer",
     "minimum": 1,
@@ -1174,6 +1228,9 @@
   },
   "preferences.tags.sidebarWeb": {
     "type": "boolean"
+  },
+  "preferences.trash.reuploadUntil": {
+    "type": "string"
   },
   "reverseGeocoding.enabled": {
     "type": "boolean"
@@ -1333,6 +1390,11 @@
   "storageTemplate.template": {
     "type": "string"
   },
+  "storageWarning.percent": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 99
+  },
   "templates.email.albumInviteTemplate": {
     "type": "string"
   },
@@ -1366,5 +1428,11 @@
     "type": "integer",
     "minimum": 1,
     "maximum": 9007199254740991
+  },
+  "user.newUserStorageQuota": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 1000000,
+    "nullable": true
   }
 }

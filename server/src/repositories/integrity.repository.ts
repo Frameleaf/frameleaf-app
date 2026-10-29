@@ -7,6 +7,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetFileType, AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
+import { countPathReferences } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { IntegrityVerificationResult } from 'src/schema/tables/safety-proof.table.js';
@@ -178,6 +179,79 @@ export class IntegrityRepository {
       number
     >;
   }
+  /**
+   * FL-520: one count per kind of problem across the two checkers that report them: the file checks
+   * (`integrity_report`) and Library care's missing/damaged scanner (`asset_health`). A photo both
+   * report is counted once. `rawToMatch` is how many of the missing photos are RAW originals, which a
+   * search for missing files matches against copies on the drive.
+   */
+  async getFindingsOverview(rawExtensions: readonly string[]) {
+    const raw = rawExtensions.length > 0 ? rawExtensions.map((extension) => `%${extension.toLowerCase()}`) : ['%.\0'];
+    const { rows } = await sql<{ missing: number; damaged: number; stray: number; rawToMatch: number }>`
+      WITH missing AS (
+        SELECT coalesce(r."assetId"::text, 'file:' || r."fileAssetId"::text, 'path:' || r.path) AS key, r."assetId"
+        FROM public.integrity_report r
+        WHERE r.type = ${IntegrityReport.MissingFile}
+        UNION
+        SELECT h."assetId"::text AS key, h."assetId"
+        FROM public.asset_health h JOIN public.asset a ON a.id = h."assetId"
+        WHERE h.category = 'missing' AND h.status IN ('missing', 'candidate', 'found') AND a."deletedAt" IS NULL
+      ),
+      damaged AS (
+        SELECT coalesce(r."assetId"::text, 'path:' || r.path) AS key
+        FROM public.integrity_report r
+        WHERE r.type = ${IntegrityReport.ChecksumFail}
+        UNION
+        SELECT h."assetId"::text AS key
+        FROM public.asset_health h JOIN public.asset a ON a.id = h."assetId"
+        WHERE h.category = 'corrupt' AND h.status IN ('corrupt_confirmed', 'corrupt_suspect', 'trash_queued')
+          AND a."deletedAt" IS NULL
+      )
+      SELECT
+        (SELECT count(*)::int FROM missing) AS missing,
+        (SELECT count(*)::int FROM damaged) AS damaged,
+        (SELECT count(*)::int FROM public.integrity_report WHERE type = ${IntegrityReport.UntrackedFile}) AS stray,
+        (SELECT count(DISTINCT m."assetId")::int FROM missing m JOIN public.asset a ON a.id = m."assetId"
+          WHERE lower(a."originalFileName") LIKE ANY (${raw}::text[])) AS "rawToMatch"`.execute(this.db);
+    return rows[0];
+  }
+
+  /** FL-520: missing-file findings under each folder (a folder path ending in `/`). */
+  async countMissingUnder(folders: readonly string[]): Promise<number[]> {
+    if (folders.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ folder: string; count: number }>`
+      SELECT f.folder, count(r.id)::int AS count
+      FROM unnest(${[...folders]}::text[]) AS f(folder)
+      LEFT JOIN public.integrity_report r
+        ON r.type = ${IntegrityReport.MissingFile} AND starts_with(r.path, f.folder)
+      GROUP BY f.folder`.execute(this.db);
+    const byFolder = new Map(rows.map((row) => [row.folder, row.count]));
+    return folders.map((folder) => byFolder.get(folder) ?? 0);
+  }
+
+  /**
+   * FL-520: the photos behind the missing or damaged findings of both checkers, for "Restore from a
+   * backup". Only photos still in the library; at most `limit`.
+   */
+  async getFindingAssetIds(kind: 'missing' | 'damaged', limit: number): Promise<string[]> {
+    const type = kind === 'missing' ? IntegrityReport.MissingFile : IntegrityReport.ChecksumFail;
+    const statuses =
+      kind === 'missing' ? ['missing', 'candidate', 'found'] : ['corrupt_confirmed', 'corrupt_suspect', 'trash_queued'];
+    const { rows } = await sql<{ assetId: string }>`
+      SELECT DISTINCT ids."assetId" FROM (
+        SELECT r."assetId" FROM public.integrity_report r WHERE r.type = ${type} AND r."assetId" IS NOT NULL
+        UNION
+        SELECT h."assetId" FROM public.asset_health h WHERE h.category = ${kind === 'missing' ? 'missing' : 'corrupt'}
+          AND h.status = ANY (${statuses}::text[])
+      ) ids JOIN public.asset a ON a.id = ids."assetId"
+      WHERE a."deletedAt" IS NULL
+      ORDER BY ids."assetId"
+      LIMIT ${limit}`.execute(this.db);
+    return rows.map((row) => row.assetId);
+  }
+
   @GenerateSql({ params: [{ cursor: DummyValue.NUMBER, limit: 100 }, DummyValue.STRING] })
   async getIntegrityReport(pagination: ReportPaginationOptions, type: IntegrityReport) {
     const items = await this.db
@@ -192,21 +266,6 @@ export class IntegrityRepository {
       items: items.slice(0, pagination.limit),
       nextCursor: items.at(pagination.limit)?.id,
     };
-  }
-  @GenerateSql({ params: [DummyValue.STRING] })
-  getAssetPathsByPaths(paths: string[]) {
-    return this.db
-      .selectFrom('asset')
-      .leftJoin('asset_file', (join) =>
-        join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', AssetFileType.EncodedVideo),
-      )
-      .select(['asset.originalPath', 'asset_file.path as encodedVideoPath'])
-      .where((eb) => eb.or([eb('originalPath', 'in', paths), eb('asset_file.path', 'in', paths)]))
-      .execute();
-  }
-  @GenerateSql({ params: [DummyValue.STRING] })
-  getAssetFilePathsByPaths(paths: string[]) {
-    return this.db.selectFrom('asset_file').select('path').where('path', 'in', paths).execute();
   }
   @GenerateSql({ params: [DummyValue.STRING] })
   async getVideoDuplicateFramePathsByPaths(paths: string[]) {
@@ -237,69 +296,66 @@ export class IntegrityRepository {
     const { rows } = await sql<{
       path: string;
     }>`
-      SELECT "masterPath" AS path FROM public.asset_develop_revision WHERE "masterPath" IN (${sql.join(paths)})
+      SELECT "masterPath" AS path FROM public.asset_develop_revision WHERE "masterPath" = ANY(${paths}::text[])
       UNION
-      SELECT "previewPath" AS path FROM public.asset_develop_revision WHERE "previewPath" IN (${sql.join(paths)})
-      UNION SELECT "hdrMasterPath" AS path FROM public.asset_develop_revision WHERE "hdrMasterPath" IN (${sql.join(paths)})
-      UNION SELECT "hdrPreviewPath" AS path FROM public.asset_develop_revision WHERE "hdrPreviewPath" IN (${sql.join(paths)})
+      SELECT "previewPath" AS path FROM public.asset_develop_revision WHERE "previewPath" = ANY(${paths}::text[])
+      UNION SELECT "hdrMasterPath" AS path FROM public.asset_develop_revision WHERE "hdrMasterPath" = ANY(${paths}::text[])
+      UNION SELECT "hdrPreviewPath" AS path FROM public.asset_develop_revision WHERE "hdrPreviewPath" = ANY(${paths}::text[])
       UNION
-      SELECT "masterPath" AS path FROM public.video_edit_version WHERE "masterPath" IN (${sql.join(paths)})
+      SELECT "masterPath" AS path FROM public.video_edit_version WHERE "masterPath" = ANY(${paths}::text[])
       UNION
-      SELECT "proxyPath" AS path FROM public.video_edit_version WHERE "proxyPath" IN (${sql.join(paths)})
+      SELECT "proxyPath" AS path FROM public.video_edit_version WHERE "proxyPath" = ANY(${paths}::text[])
       UNION
       SELECT file->>'path' AS path FROM public.video_edit_version version, jsonb_array_elements(version.files) file
-      WHERE file->>'path' IN (${sql.join(paths)})
+      WHERE file->>'path' = ANY(${paths}::text[])
       UNION
       SELECT "masterPath" || '.lineage.json' AS path FROM public.video_edit_version
-      WHERE "masterPath" || '.lineage.json' IN (${sql.join(paths)})
+      WHERE "masterPath" || '.lineage.json' = ANY(${paths}::text[])
       UNION
       SELECT path || '.lineage.json' AS path FROM public.asset_file
-      WHERE "isEdited" AND type = 'encoded_video' AND path || '.lineage.json' IN (${sql.join(paths)})
+      WHERE "isEdited" AND type = 'encoded_video' AND path || '.lineage.json' = ANY(${paths}::text[])
       UNION
-      SELECT path FROM public.studio_hdr_intermediate WHERE path IN (${sql.join(paths)})
+      SELECT path FROM public.studio_hdr_intermediate WHERE path = ANY(${paths}::text[])
       UNION
-      SELECT path FROM public.asset_develop_artifact WHERE path IN (${sql.join(paths)})
+      SELECT path FROM public.asset_develop_artifact WHERE path = ANY(${paths}::text[])
       UNION
       SELECT photo->>'previewPath' AS path FROM public.photography_workflow workflow,
         jsonb_array_elements(COALESCE(workflow.value->'published'->'photos','[]'::jsonb) || COALESCE(workflow.value->'publication'->'photos','[]'::jsonb)) photo
-      WHERE photo->>'previewPath' IN (${sql.join(paths)})
+      WHERE photo->>'previewPath' = ANY(${paths}::text[])
       UNION
       SELECT photo->>'thumbnailPath' AS path FROM public.photography_workflow workflow,
         jsonb_array_elements(COALESCE(workflow.value->'published'->'photos','[]'::jsonb) || COALESCE(workflow.value->'publication'->'photos','[]'::jsonb)) photo
-      WHERE photo->>'thumbnailPath' IN (${sql.join(paths)})
+      WHERE photo->>'thumbnailPath' = ANY(${paths}::text[])
       UNION
       SELECT item->>'finalPath' AS path FROM public.photography_workflow workflow,
         jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item
-      WHERE item->>'finalPath' IN (${sql.join(paths)})
+      WHERE item->>'finalPath' = ANY(${paths}::text[])
       UNION
       SELECT output->>'approvalPreviewPath' AS path FROM public.photography_workflow workflow,
       jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item,
       jsonb_array_elements(COALESCE(item->'outputs','[]'::jsonb)) output
-      WHERE output->>'approvalPreviewPath' IN (${sql.join(paths)})
+      WHERE output->>'approvalPreviewPath' = ANY(${paths}::text[])
       UNION
       SELECT output->>'finalPath' AS path FROM public.photography_workflow workflow,
       jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item,
       jsonb_array_elements(COALESCE(item->'outputs','[]'::jsonb)) output
-      WHERE output->>'finalPath' IN (${sql.join(paths)})
+      WHERE output->>'finalPath' = ANY(${paths}::text[])
       UNION
       SELECT workflow.value->'published'->>'logoPath' AS path FROM public.photography_workflow workflow
-      WHERE workflow.value->'published'->>'logoPath' IN (${sql.join(paths)})
+      WHERE workflow.value->'published'->>'logoPath' = ANY(${paths}::text[])
       UNION
       SELECT workflow.value->'publication'->>'logoPath' AS path FROM public.photography_workflow workflow
-      WHERE workflow.value->'publication'->>'logoPath' IN (${sql.join(paths)})
+      WHERE workflow.value->'publication'->>'logoPath' = ANY(${paths}::text[])
     `.execute(this.db);
     return rows;
   }
+  /**
+   * The paths some row keeps on disk. The bulk queries are a fast pre-filter for the common owners;
+   * whatever they leave is checked with `countPathReferences`, the count every file delete already
+   * trusts, so a table that owns generated files is registered there once and never forgotten here.
+   */
   @GenerateSql({ params: [DummyValue.STRING] })
-  getPersonThumbnailPathsByPaths(paths: string[]) {
-    return this.db
-      .selectFrom('person')
-      .select('person.thumbnailPath')
-      .where('person.thumbnailPath', 'in', paths)
-      .execute();
-  }
-  @GenerateSql({ params: [DummyValue.STRING] })
-  async getTrackedPaths(paths: string[]) {
+  async getTrackedPaths(paths: string[]): Promise<{ path: string }[]> {
     const tracked = await this.db
       .selectFrom('asset')
       .select('asset.originalPath as path')
@@ -313,13 +369,54 @@ export class IntegrityRepository {
           .select((eb) => eb.ref('person.thumbnailPath').$castTo<string>().as('path'))
           .where('person.thumbnailPath', 'in', paths),
       )
+      .union((eb) =>
+        eb
+          .selectFrom('video_moment_frame')
+          .select('video_moment_frame.path as path')
+          .where('video_moment_frame.path', 'in', paths),
+      )
       .execute();
-    return [
-      ...tracked,
-      ...(await this.getVideoDuplicateFramePathsByPaths(paths)),
-      ...(await this.getDevelopRevisionPathsByPaths(paths)),
-      ...(await this.getRegisteredFilePathsByPaths(paths)),
-    ];
+    const found = new Set(
+      [
+        ...tracked,
+        ...(await this.getVideoDuplicateFramePathsByPaths(paths)),
+        ...(await this.getDevelopRevisionPathsByPaths(paths)),
+        ...(await this.getRegisteredFilePathsByPaths(paths)),
+        ...(await this.getInFlightPathsByPaths(paths)),
+      ].map(({ path }) => path),
+    );
+    // ponytail: a few queries per leftover path, fine while stray files stay rare
+    const rest = paths.filter((path) => !found.has(path));
+    if (rest.length > 0) {
+      await this.db.transaction().execute(async (trx) => {
+        for (const path of rest) {
+          if ((await countPathReferences(trx, path)) > 0) {
+            found.add(path);
+          }
+        }
+      });
+    }
+    return [...found].map((path) => ({ path }));
+  }
+  /**
+   * Files a job is still working on: a Takeout copy before its photo exists, a copy Library care found
+   * for a missing original and may relink, and both ends (and the staged copy) of an interrupted move.
+   * Their owners release them on their own terms, so they are not in `countPathReferences`, but the
+   * stray-file check must never offer to delete them.
+   */
+  async getInFlightPathsByPaths(paths: string[]): Promise<{ path: string }[]> {
+    if (paths.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ path: string }>`
+      SELECT "createPath" AS path FROM public.takeout_item WHERE "createPath" = ANY(${paths}::text[])
+      UNION SELECT "candidatePath" FROM public.asset_health_candidate WHERE "candidatePath" = ANY(${paths}::text[])
+      UNION SELECT "oldPath" FROM public.move_history WHERE "oldPath" = ANY(${paths}::text[])
+      UNION SELECT "newPath" FROM public.move_history WHERE "newPath" = ANY(${paths}::text[])
+      UNION SELECT staged FROM public.move_history, LATERAL (SELECT "newPath" || '.' || id::text || '.moving' AS staged) s
+      WHERE staged = ANY(${paths}::text[])
+    `.execute(this.db);
+    return rows;
   }
   /**
    * FL-412: paths registered as stored files (`physical_file`). A registered file is tracked even while no

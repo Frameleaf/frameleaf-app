@@ -22,6 +22,13 @@ SELECT
 FROM
   public.frameleaf_account_link
 
+-- FrameleafAccountRepository.listLinks
+SELECT
+  "userId",
+  email
+FROM
+  public.frameleaf_account_link
+
 -- FrameleafAccountRepository.getSession
 SELECT
   *

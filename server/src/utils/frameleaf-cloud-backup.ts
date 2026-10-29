@@ -1,4 +1,5 @@
 import z from 'zod';
+import { CLOUD_GATES } from 'src/utils/frameleaf-cloud-gates.js';
 import { FrameleafCloudError, cloudErrorCode, pausedMessageOf } from 'src/utils/frameleaf-cloud.js';
 
 /**
@@ -202,7 +203,7 @@ export const backupEndpoints = (document: { api: string }) => {
 };
 
 /** FL-234: the refusal recorded when cloud backup is not part of this server's Frameleaf Cloud plan. */
-export const MANAGED_ENTITLEMENT_MISSING_REFUSAL = 'Cloud backup is not part of this server’s Frameleaf Cloud plan.';
+export const MANAGED_ENTITLEMENT_MISSING_REFUSAL = CLOUD_GATES.backupNeedsCloud;
 
 const REVOKED_REASONS: Record<z.infer<typeof grantRevokedDataSchema>['reason'], string> = {
   unlinked: 'This server was unlinked from Frameleaf Cloud, so its managed backup storage was withdrawn.',

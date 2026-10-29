@@ -142,7 +142,6 @@
           <progress max={run.total} value={settledItems(run)} aria-label={$t('frameleaf_job_runs_selected_items')}
           ></progress>
         {/if}
-        {#if !run.enumerationDone}<p>{$t('frameleaf_job_runs_enumerating')}</p>{/if}
         <dl>
           {#each DURABLE_OUTCOMES as outcome (outcome)}
             {#if run[outcome] > 0}<dt>{$t(runOutcomeKey(outcome))}</dt>

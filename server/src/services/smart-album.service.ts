@@ -1,13 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type { SystemConfig } from 'src/config.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import {
+  MySmartAlbumsResponseDto,
+  SmartAlbumOverviewResponseDto,
+  SmartAlbumPreviewDto,
+  SmartAlbumPreviewResponseDto,
+} from 'src/dtos/smart-album.dto.js';
 import { BootstrapEventPriority, FrameleafWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
 import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 
 type BuiltInKind = keyof SystemConfig['smartAlbums']['builtIn'];
@@ -216,6 +224,10 @@ export class SmartAlbumService extends BaseService {
     // food matches.
     for (const kind of currentKinds) {
       if (onlyKind && kind !== onlyKind) {
+        continue;
+      }
+      // a disabled kind keeps its members until it is enabled again
+      if (!smartAlbums.builtIn[kind as BuiltInKind]?.enabled) {
         continue;
       }
       if (!matchedKinds.has(kind)) {
@@ -432,6 +444,96 @@ export class SmartAlbumService extends BaseService {
    * skips the per-kind advisory-lock transaction when nothing is missing —
    * common case after a server restart.
    */
+  /**
+   * FL-522: the person's own smart albums with what each holds as they see it, and whether they hid
+   * it. Only the kinds the administrator offers (switched on) are listed.
+   */
+  async getMine(auth: AuthDto): Promise<MySmartAlbumsResponseDto> {
+    const { smartAlbums } = await this.getConfig({ withCache: true });
+    if (!smartAlbums.enabled) {
+      return { enabled: false, albums: [] };
+    }
+    await this.ensureBuiltInAlbumsForUser(auth.user.id);
+    const offered = Object.entries(smartAlbums.builtIn).filter(([, config]) => config.enabled);
+    const mine = await this.smartAlbumRepository.listForOwner(auth.user.id, getHiddenContentQueryOptions(auth));
+    return {
+      enabled: true,
+      albums: offered.flatMap(([kind, config]) => {
+        const album = mine.find((item) => item.kind === kind);
+        return album ? [{ ...album, name: config.name }] : [];
+      }),
+    };
+  }
+
+  /** FL-522: hide one of your smart albums from your own library, or show it again. Others are not affected. */
+  async setMineHidden(auth: AuthDto, kind: string, hidden: boolean): Promise<MySmartAlbumsResponseDto> {
+    await this.ensureBuiltInAlbumsForUser(auth.user.id);
+    if (!(await this.smartAlbumRepository.setHidden(auth.user.id, kind, hidden))) {
+      throw new BadRequestException('You have no smart album of this kind');
+    }
+    return this.getMine(auth);
+  }
+
+  /**
+   * FL-522: for an administrator, every album across the household as counts (photos, people who have
+   * it, people who hid it) and a few pictures from their own album. No one else's photo is shown.
+   */
+  async getOverview(auth: AuthDto): Promise<SmartAlbumOverviewResponseDto> {
+    await this.ensureBuiltInAlbumsForUser(auth.user.id);
+    const [counts, mine, people] = await Promise.all([
+      this.smartAlbumRepository.getHouseholdCounts(),
+      this.smartAlbumRepository.listForOwner(auth.user.id, getHiddenContentQueryOptions(auth)),
+      this.userRepository.getList(),
+    ]);
+    const { smartAlbums } = await this.getConfig({ withCache: true });
+    return {
+      people: people.length,
+      albums: Object.keys(smartAlbums.builtIn).map((kind) => {
+        const count = counts.find((item) => item.kind === kind);
+        return {
+          kind,
+          count: count?.count ?? 0,
+          people: count?.people ?? 0,
+          hiddenBy: count?.hiddenBy ?? 0,
+          samples: mine.find((item) => item.kind === kind)?.samples ?? [],
+        };
+      }),
+    };
+  }
+
+  /**
+   * FL-522: before saving a rule, what it would add to and take out of the administrator's own album,
+   * with a few pictures of each. Phrases are compared only while Visual search can answer; otherwise
+   * the words alone are used and the answer says so.
+   */
+  async previewRule(auth: AuthDto, dto: SmartAlbumPreviewDto): Promise<SmartAlbumPreviewResponseDto> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    await this.ensureBuiltInAlbumsForUser(auth.user.id);
+    let looksChecked = dto.clipQueries.length === 0;
+    const embeddings: string[] = [];
+    if (dto.clipQueries.length > 0 && isSmartSearchEnabled(machineLearning)) {
+      try {
+        for (const query of dto.clipQueries) {
+          const vector = await this.getClipQueryEmbedding(machineLearning.clip, query);
+          if (vector) {
+            embeddings.push(`[${[...vector].join(',')}]`);
+          }
+        }
+        looksChecked = embeddings.length === dto.clipQueries.length;
+      } catch (error) {
+        this.logger.warn(`Smart album preview could not compare phrases: ${error}`);
+        embeddings.length = 0;
+      }
+    }
+    const preview = await this.smartAlbumRepository.previewRule(
+      auth.user.id,
+      dto.kind,
+      { tags: dto.tagTriggers, embeddings, threshold: dto.threshold },
+      getHiddenContentQueryOptions(auth),
+    );
+    return { ...preview, looksChecked };
+  }
+
   async ensureBuiltInAlbumsForUser(ownerId: string): Promise<void> {
     const { smartAlbums } = await this.getConfig({ withCache: true });
     if (!smartAlbums.enabled) {

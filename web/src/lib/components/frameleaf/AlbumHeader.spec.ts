@@ -2,11 +2,14 @@ import { AlbumUserRole, type AlbumResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AlbumHeader from './AlbumHeader.svelte';
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn(() => Promise.resolve()) }));
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {} },
@@ -75,6 +78,20 @@ describe('AlbumHeader', () => {
     vi.clearAllMocks();
     sdkMock.getAlbumMapMarkers.mockResolvedValue([]);
     sdkMock.searchUsers.mockResolvedValue([]);
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: false } as never);
+  });
+
+  it('opens a workflow draft for this editable album without adding any photos', async () => {
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ sourceFilters: true } as never);
+    renderHeader(albumAs(AlbumUserRole.Owner));
+    const more = await openMore();
+    await fireEvent.click(await more.findByRole('menuitem', { name: 'Automatically add matching photos' }));
+    await waitFor(() => expect(goto).toHaveBeenCalled());
+    const url = new URL(String(vi.mocked(goto).mock.calls[0][0]), 'https://frameleaf.test');
+    expect(url.searchParams.get('workflowAlbum')).toBe('album-1');
+    expect(url.searchParams.get('workflowName')).toBe('Summer');
+    expect(sdkMock.addAssetsToAlbum).not.toHaveBeenCalled();
+    expect(sdkMock.runWorkflow).not.toHaveBeenCalled();
   });
 
   it('offers the owner every control: add, upload, edit, share, links, activity and delete', async () => {
@@ -152,9 +169,59 @@ describe('AlbumHeader', () => {
     expect(screen.getByRole('status')).toHaveTextContent('You can now add photos and edit this album');
   });
 
+  it('closes an open menu or icon popover on Escape before the page sees it, even with focus outside (LIB-04)', async () => {
+    // The album page's "go back" is an Escape shortcut on document.body (CommandPaletteDefaultProvider).
+    const pageEscape = vi.fn();
+    const onBody = (event: KeyboardEvent) => event.key === 'Escape' && !event.defaultPrevented && pageEscape();
+    document.body.addEventListener('keydown', onBody);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(Response.json({}))),
+    );
+    try {
+      renderHeader(albumAs(AlbumUserRole.Owner));
+      const escapeFromBody = async () => {
+        // A click on a blank part of the popover leaves focus on the body, not inside it.
+        (document.activeElement as HTMLElement | null)?.blur();
+        await fireEvent.keyDown(document.body, { key: 'Escape' });
+      };
+
+      await openMore();
+      await escapeFromBody();
+      await waitFor(() => expect(screen.queryByRole('menu', { name: 'More actions' })).not.toBeInTheDocument());
+      expect(pageEscape).not.toHaveBeenCalled();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Change icon' }));
+      expect(await screen.findByRole('dialog', { name: /Icon for/ })).toBeInTheDocument();
+      await escapeFromBody();
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /Icon for/ })).not.toBeInTheDocument());
+      expect(pageEscape).not.toHaveBeenCalled();
+
+      // With nothing open, Escape is the page's again.
+      await fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(pageEscape).toHaveBeenCalledOnce();
+    } finally {
+      document.body.removeEventListener('keydown', onBody);
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps activity reachable when comments are turned off, so likes and history stay visible', () => {
     renderHeader(albumAs(AlbumUserRole.Viewer, { isActivityEnabled: false }));
     expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
+  });
+
+  it('offers Make a movie beside Slideshow, opening the sheet for this album (FL-561)', async () => {
+    sdkMock.getMlCapabilities.mockResolvedValue({ workloads: [], studio: { generationWorker: true } } as never);
+    renderHeader(albumAs(AlbumUserRole.Viewer));
+    await fireEvent.click(screen.getByRole('button', { name: 'Make a movie' }));
+    expect(await screen.findByRole('dialog', { name: 'Make a movie' })).toBeInTheDocument();
+    expect(screen.getByText(/3 items · Frameleaf picks the best moments/)).toBeInTheDocument();
+  });
+
+  it('cannot make a movie of an empty album', () => {
+    renderHeader(albumAs(AlbumUserRole.Owner, { assetCount: 0 }));
+    expect(screen.getByRole('button', { name: 'Make a movie' })).toBeDisabled();
   });
 
   it('shows no separator above Leave when a viewer has nothing else in the menu', async () => {

@@ -37,6 +37,7 @@ import {
   rebaseDraft,
   recoverJournal,
   resetConfigKeys,
+  type ConfigResetKey,
   SERVER_MANAGED_CONFIG_PATHS,
   type ConfigConflict,
 } from '$lib/frameleaf/system-config-draft';
@@ -199,7 +200,7 @@ export class SystemConfigDraftStore {
   }
 
   /** "Reset this page": the page's defaults go into the draft; saving applies them. */
-  resetSection(keys: readonly (keyof AdminConfigDto)[]) {
+  resetSection(keys: readonly ConfigResetKey<AdminConfigDto>[]) {
     this.draft = resetConfigKeys(this.#snapshot(), this.defaults, keys);
     this.error = null;
     this.notice = { code: 'defaults_restored' };

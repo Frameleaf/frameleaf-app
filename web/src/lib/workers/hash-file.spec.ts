@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hashFile, hashFileMatching, SHA1_HEX_LENGTH, SHA256_HEX_LENGTH } from './hash-file';
+import { hashFile, hashFileBoth, hashFileMatching, SHA1_HEX_LENGTH, SHA256_HEX_LENGTH } from './hash-file';
 
 // Known-good vectors for the empty input
 // sha1('')   = da39a3ee5e6b4b0d3255bfef95601890afd80709 (40 chars)
@@ -17,6 +17,12 @@ describe('hashFile', () => {
   afterEach(() => {
     vi.doUnmock('hash-wasm');
     vi.resetModules();
+  });
+
+  // FL-529: the upload pre-check reads the file once for both digests.
+  it('computes SHA-256 and SHA-1 together in one read', async () => {
+    expect(await hashFileBoth(new File(['abc'], 'test.bin'))).toEqual({ sha256: ABC_SHA256, sha1: ABC_SHA1 });
+    expect(await hashFileBoth(new File([], 'empty.bin'))).toEqual({ sha256: EMPTY_SHA256, sha1: EMPTY_SHA1 });
   });
 
   it('computes SHA-256 by default and returns a 64-character hex digest', async () => {

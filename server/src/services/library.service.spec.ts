@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { Stats } from 'node:fs';
+import { Dirent, Stats } from 'node:fs';
 import { vitest } from 'vitest';
 import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
 import type { WatchEvents } from 'src/repositories/storage.repository.js';
@@ -83,7 +83,8 @@ describe(LibraryService.name, () => {
       expect(mocks.cron.update).toHaveBeenCalledWith({
         name: CronJob.LibraryScan,
         expression: '0 1 * * *',
-        start: true,
+        // FL-363: the overnight schedule checks added folders
+        start: false,
       });
     });
 
@@ -159,7 +160,7 @@ describe(LibraryService.name, () => {
       expect(mocks.cron.update).toHaveBeenCalledWith({
         name: CronJob.LibraryScan,
         expression: systemConfigStub.libraryScan.library.scan.cronExpression,
-        start: systemConfigStub.libraryScan.library.scan.enabled,
+        start: false,
       });
     });
 
@@ -180,7 +181,7 @@ describe(LibraryService.name, () => {
       expect(mocks.cron.update).toHaveBeenCalledWith({
         name: CronJob.LibraryScan,
         expression: systemConfigStub.libraryScan.library.scan.cronExpression,
-        start: systemConfigStub.libraryScan.library.scan.enabled,
+        start: false,
       });
     });
   });
@@ -249,6 +250,17 @@ describe(LibraryService.name, () => {
       const library = factory.library();
       mocks.library.get.mockResolvedValue(library);
       mocks.user.get.mockResolvedValue(UserFactory.create({ deletedAt: new Date(), status: UserStatus.Deleted }));
+
+      await expect(sut.handleSyncFiles({ libraryId: library.id, paths: ['/mnt/user1/photo.jpg'] })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+      expect(mocks.asset.createAll).not.toHaveBeenCalled();
+    });
+
+    it('adds nothing while an administrator has paused the owner’s uploads (FL-538)', async () => {
+      const library = factory.library();
+      mocks.library.get.mockResolvedValue(library);
+      mocks.user.get.mockResolvedValue(UserFactory.create({ uploadsPaused: true }));
 
       await expect(sut.handleSyncFiles({ libraryId: library.id, paths: ['/mnt/user1/photo.jpg'] })).resolves.toBe(
         JobStatus.Skipped,
@@ -375,6 +387,75 @@ describe(LibraryService.name, () => {
       });
 
       expect(mocks.library.getStatistics).toHaveBeenCalledWith(library.id);
+    });
+  });
+
+  describe('browseFolders (FL-365)', () => {
+    const dirent = (name: string, directory = true) => ({ name, isDirectory: () => directory }) as unknown as Dirent;
+
+    it('lists the folders under a path, leaving out hidden, system and NAS folders', async () => {
+      mocks.storage.readdirWithTypes.mockResolvedValue([
+        dirent('Photos'),
+        dirent('@eaDir'),
+        dirent('.cache'),
+        dirent('#recycle'),
+        dirent('notes.txt', false),
+        dirent('Archive'),
+      ]);
+      await expect(sut.browseFolders({ path: '/volume1/' })).resolves.toEqual({
+        path: '/volume1',
+        parent: '/',
+        folders: [
+          { name: 'Archive', path: '/volume1/Archive' },
+          { name: 'Photos', path: '/volume1/Photos' },
+        ],
+        truncated: false,
+        readable: true,
+        defaultExclusionPatterns: expect.arrayContaining(['**/@eaDir/**', '**/#recycle/**']),
+      });
+    });
+
+    it('starts at the top, says when a folder cannot be read, and refuses a relative path', async () => {
+      mocks.storage.readdirWithTypes.mockRejectedValue(new Error('EACCES'));
+      await expect(sut.browseFolders({})).resolves.toEqual(
+        expect.objectContaining({ path: '/', parent: null, readable: false, folders: [] }),
+      );
+      await expect(sut.browseFolders({ path: '/photos/../etc' })).rejects.toThrow();
+      await expect(sut.browseFolders({ path: 'photos' })).rejects.toThrow();
+    });
+  });
+
+  describe('estimateFolder (FL-539)', () => {
+    it('counts the photos and videos in a folder and their size, with its skips', async () => {
+      mocks.storage.walkLibrary.mockImplementation(async function* () {
+        // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
+        yield await Promise.resolve(['/photos/a.jpg', '/photos/b.mov']);
+      });
+      mocks.storage.stat.mockResolvedValueOnce({ size: 1000 } as Stats).mockResolvedValueOnce({ size: 2000 } as Stats);
+
+      await expect(sut.estimateFolder({ path: '/photos/', exclusionPatterns: ['**/@eaDir/**'] })).resolves.toEqual({
+        readable: true,
+        count: 2,
+        bytes: 3000,
+        complete: true,
+      });
+      expect(mocks.storage.walkLibrary).toHaveBeenCalledWith(
+        expect.objectContaining({ pathsToCrawl: ['/photos'], exclusionPatterns: ['**/@eaDir/**'] }),
+      );
+    });
+
+    it('says when a folder cannot be read, and refuses a relative path', async () => {
+      mocks.storage.walkLibrary.mockImplementation(async function* () {
+        // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
+        yield await Promise.reject<string[]>(new Error('EACCES'));
+      });
+      await expect(sut.estimateFolder({ path: '/locked', exclusionPatterns: [] })).resolves.toEqual({
+        readable: false,
+        count: 0,
+        bytes: 0,
+        complete: true,
+      });
+      await expect(sut.estimateFolder({ path: 'photos', exclusionPatterns: [] })).rejects.toThrow();
     });
   });
 
@@ -1215,6 +1296,10 @@ describe(LibraryService.name, () => {
       await sut.onShutdown();
 
       expect(mockClose).toHaveBeenCalledTimes(2);
+    });
+
+    it('never calls an inherited method for a library id that names one', async () => {
+      await expect(sut['stopWatcher']('hasOwnProperty')).resolves.toBeUndefined();
     });
   });
 

@@ -47,6 +47,9 @@ export class Workers {
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
   private databaseRestarts = new Set<FrameleafWorker>();
   private workerRestarts = new Map<FrameleafWorker, NodeJS.Timeout>();
+  /** When each restarted worker last started, and how often in a row it failed. */
+  private workerStartedAt = new Map<FrameleafWorker, number>();
+  private workerFailures = new Map<FrameleafWorker, number>();
   private lifecycle = {};
   private maintenanceMode = false;
   private workerStopProofs = new WorkerStopProofRecorder(new ConfigRepository());
@@ -276,6 +279,7 @@ export class Workers {
     });
 
     this.workers[name] = { kill, stop };
+    this.workerStartedAt.set(name, Date.now());
     if (name === FrameleafWorker.Edge) {
       this.edgeStartedAt = Date.now();
       this.edgeStopRequested = false;
@@ -363,6 +367,12 @@ export class Workers {
       delete this.workers[name];
       const lifecycle = this.lifecycle;
       clearTimeout(this.workerRestarts.get(name));
+      // Like the edge worker: 1 s, then 2 s, 4 s … up to a minute while it keeps failing at startup
+      const ranMs = Date.now() - (this.workerStartedAt.get(name) ?? 0);
+      const failures = ranMs > 60_000 ? 1 : (this.workerFailures.get(name) ?? 0) + 1;
+      this.workerFailures.set(name, failures);
+      const delay = Math.min(60_000, 1000 * 2 ** (failures - 1));
+      console.error(`${name} worker exited with code ${exitCode}; starting it again in ${delay / 1000} s`);
       const timer = setTimeout(() => {
         this.workerRestarts.delete(name);
         const permitted = this.maintenanceMode
@@ -377,7 +387,7 @@ export class Workers {
         ) {
           this.startWorker(name);
         }
-      }, 1000);
+      }, delay);
       this.workerRestarts.set(name, timer);
       return;
     }
@@ -413,8 +423,8 @@ async function main() {
   // FL-294: `frameleaf-admin`; `immich-admin` is its deprecated alias
   if (immichApp === 'frameleaf-admin' || immichApp === 'immich-admin') {
     if (process.argv[2] === 'buddy-backup') {
-      const { buddyBackupCommand } = await import('./utils/buddy-backup-offline.js');
-      return buddyBackupCommand(process.argv.slice(3));
+      const { runBuddyBackupCommand } = await import('./utils/buddy-backup-offline.js');
+      return runBuddyBackupCommand(process.argv.slice(3));
     }
     process.title = 'frameleaf_admin_cli';
     process.env.FRAMELEAF_LOG_LEVEL = LogLevel.Warn;

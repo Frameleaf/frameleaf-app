@@ -80,6 +80,8 @@ type EventMap = {
   // asset events
   AssetLocalEffects: [AssetLocalEffectBundle];
   AssetCreate: [{ asset: Pick<Asset, 'id' | 'ownerId'>; file?: UploadFile }];
+  AssetChanged: [{ assetId: string; causation?: string[] }];
+  PersonChanged: [{ ownerId: string; personGroupId: string }];
   AssetTag: [{ assetId: string; userId: string }];
   AssetUntag: [{ assetId: string }];
   AssetHide: [{ assetId: string; userId: string }];

@@ -32,6 +32,7 @@ import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { StudioPreviewView } from './preview';
+import type { TranscriptEngineString } from './transcript-strings';
 
 /* ------------------------------------------------------------------ */
 /* What the host tells the engine                                       */
@@ -355,7 +356,9 @@ export type StudioAdapterString =
    * A drag or add onto a locked track was refused (FL-450). The adapter writes it over the
    * engine's own English for that message, so the editor's refusal speaks the host's language.
    */
-  | 'lockedTrackRefused';
+  | 'lockedTrackRefused'
+  /** The transcript panel's words (FL-562), written over the engine's English the same way. */
+  | TranscriptEngineString;
 
 export type StudioWorkspaceMode = 'basic' | 'advanced';
 

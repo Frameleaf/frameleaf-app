@@ -95,6 +95,11 @@ import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/des
 import { DesktopWorkerChallengeTable } from 'src/schema/tables/desktop-worker-challenge.table.js';
 import { DesktopWorkerQualificationTable } from 'src/schema/tables/desktop-worker-qualification.table.js';
 import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
+import {
+  DevelopBatchItemTable,
+  DevelopBatchReturnTable,
+  DevelopBatchTable,
+} from 'src/schema/tables/develop-batch.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
@@ -104,6 +109,7 @@ import {
   ICloudEditDecisionTable,
   ICloudEditVersionTable,
 } from 'src/schema/tables/icloud-edit-authority.table.js';
+import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
@@ -119,6 +125,7 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
+import { MlProcessingOrderTable } from 'src/schema/tables/ml-processing-order.table.js';
 import { MlWorkloadRouteOriginTable } from 'src/schema/tables/ml-workload-route-origin.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
@@ -176,6 +183,8 @@ import { SmartAlbumExclusionTable } from 'src/schema/tables/smart-album-exclusio
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
 import { SmartSearchDescriptionTable } from 'src/schema/tables/smart-search-description.table.js';
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
+import { SourceOriginalTable, SourceResourceReadTable } from 'src/schema/tables/source-resource-read.table.js';
+import { SourceResourceGrantNonceTable, SourceResourceGrantTable } from 'src/schema/tables/source-resource.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import {
@@ -222,6 +231,12 @@ import {
   VideoStreamSessionTable,
   VideoStreamVariantTable,
 } from 'src/schema/tables/video-stream.table.js';
+import {
+  WorkflowBatchItemTable,
+  WorkflowBatchTable,
+  WorkflowCausationTable,
+  WorkflowScheduleTable,
+} from 'src/schema/tables/workflow-batch.table.js';
 import { WorkflowDefinitionTable } from 'src/schema/tables/workflow-definition.table.js';
 import { WorkflowLogDetailTable } from 'src/schema/tables/workflow-log-detail.table.js';
 import { WorkflowLogTable } from 'src/schema/tables/workflow-log.table.js';
@@ -236,10 +251,15 @@ export class ImmichDatabase {
     DesktopClipIndexTable,
     DesktopClipProducerTable,
     MlWorkloadRouteOriginTable,
+    MlProcessingOrderTable,
     DesktopDeviceTable,
     PhotoSourceTable,
     PhotoSourceRunTable,
     PhotoSourceResourceTable,
+    SourceResourceGrantTable,
+    SourceResourceGrantNonceTable,
+    SourceOriginalTable,
+    SourceResourceReadTable,
     DesktopWorkerSessionTable,
     DesktopWorkerChallengeTable,
     DesktopWorkerQualificationTable,
@@ -341,6 +361,7 @@ export class ImmichDatabase {
     PartnerTable,
     PersonTable,
     PersonAuditTable,
+    IdenticalFileChangeTable,
     PhysicalFileTable,
     PersonGroupTable,
     PersonGroupAuditTable,
@@ -415,6 +436,13 @@ export class ImmichDatabase {
     WorkflowLogTable,
     WorkflowLogDetailTable,
     WorkflowRunStepTable,
+    DevelopBatchTable,
+    DevelopBatchItemTable,
+    DevelopBatchReturnTable,
+    WorkflowBatchTable,
+    WorkflowBatchItemTable,
+    WorkflowScheduleTable,
+    WorkflowCausationTable,
   ];
 
   functions = [
@@ -458,6 +486,10 @@ export interface DB extends QueueDatabase {
   photo_source: PhotoSourceTable;
   photo_source_run: PhotoSourceRunTable;
   photo_source_resource: PhotoSourceResourceTable;
+  source_resource_grant: SourceResourceGrantTable;
+  source_resource_grant_nonce: SourceResourceGrantNonceTable;
+  source_original: SourceOriginalTable;
+  source_resource_read: SourceResourceReadTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
   asset_local_effect_cursor: AssetLocalEffectCursorTable;
@@ -546,6 +578,7 @@ export interface DB extends QueueDatabase {
   ml_destination: MlDestinationTable;
   ml_workload_route: MlWorkloadRouteTable;
   ml_workload_route_origin: MlWorkloadRouteOriginTable;
+  ml_processing_order: MlProcessingOrderTable;
   ml_workload_accounting: MlWorkloadAccountingTable;
   ml_cloud_model_choice: MlCloudModelChoiceTable;
   operational_metric_sample: OperationalMetricSampleTable;
@@ -577,6 +610,7 @@ export interface DB extends QueueDatabase {
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;
 
+  identical_file_change: IdenticalFileChangeTable;
   physical_file: PhysicalFileTable;
 
   preservation_package: PreservationPackageTable;
@@ -631,6 +665,9 @@ export interface DB extends QueueDatabase {
   takeout_source: TakeoutSourceTable;
 
   develop_export: DevelopExportTable;
+  develop_batch: DevelopBatchTable;
+  develop_batch_item: DevelopBatchItemTable;
+  develop_batch_return: DevelopBatchReturnTable;
   develop_preset: DevelopPresetTable;
 
   tag: TagTable;
@@ -669,4 +706,8 @@ export interface DB extends QueueDatabase {
   workflow_definition: WorkflowDefinitionTable;
   workflow_log_detail: WorkflowLogDetailTable;
   workflow_run_step: WorkflowRunStepTable;
+  workflow_batch: WorkflowBatchTable;
+  workflow_batch_item: WorkflowBatchItemTable;
+  workflow_schedule: WorkflowScheduleTable;
+  workflow_causation: WorkflowCausationTable;
 }

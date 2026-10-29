@@ -40,6 +40,7 @@ export type QueueIntent = {
 export type JobDependencyReason =
   | 'workload-disabled'
   | 'destination-unavailable'
+  | 'destination-capacity'
   | 'destination-configuration'
   | 'destination-consent'
   | 'destination-budget'

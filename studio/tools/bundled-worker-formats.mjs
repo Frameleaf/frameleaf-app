@@ -6,12 +6,15 @@
 // take the master's sound. At admission the worker encodes a real sample into each format and
 // advertises only the formats whose file ffprobe reads back as promised (`probeExportMatrix`).
 //
-// HDR stays refused (FL-107): every format here is 8-bit SDR. The 10-bit formats (HEVC Main10,
-// 10-bit AV1, ProRes 422 HQ) need a worker that verified 10-bit precision.
+// Every format here is 8-bit SDR. FL-107: HEVC Main10 is written only as an HDR10 or HLG master
+// from the engine's float route (`bundled-worker-hdr.mjs`), and only for the transfers the same
+// admission check wrote and decoded back. 10-bit AV1 and ProRes 422 HQ stay refused.
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { HDR_MASTER_FORMAT, hdrEvidenceToken, probeHdrMasters } from './bundled-worker-hdr.mjs';
+import { REFRAME_PROFILE } from './bundled-worker-reframe.mjs';
 
 /** Cancellation must join the child before its output directory can be removed. */
 export function execFileClosed(file, args, options) {
@@ -122,7 +125,10 @@ export const BUNDLED_FORMATS = Object.freeze({
   },
 });
 
-/** Formats the server knows that only a 10-bit worker may write; the reason names what to pick instead. */
+/**
+ * Formats the server knows that only a 10-bit worker may write; the reason names what to pick instead.
+ * `mp4-hevc-main10` is the exception when the export is an HDR10 or HLG master (FL-107).
+ */
 export const TEN_BIT_FORMATS = Object.freeze({
   'mp4-hevc-main10': 'MP4 · HEVC (8-bit)',
   'webm-av1': 'WebM · AV1 (8-bit)',
@@ -410,6 +416,7 @@ export async function probeExportMatrix({
   ffmpeg = 'ffmpeg',
   ffprobe = 'ffprobe',
   sidecar = true,
+  hdr = true,
   log = () => {},
   signal,
 }) {
@@ -499,6 +506,9 @@ export async function probeExportMatrix({
   }
   signal?.throwIfAborted();
   if (sidecar) formats.add(SIDECAR_PROFILE);
+  // FL-563: vertical and square exports are a graph this worker derives (`bundled-worker-reframe.mjs`),
+  // rendered and probed like any other export at the sealed size; offered with any SDR video writer.
+  if (Object.keys(writers).some((id) => BUNDLED_FORMATS[id].kind === 'video')) formats.add(REFRAME_PROFILE);
   if (
     [...Object.keys(writers)].some(
       (id) => BUNDLED_FORMATS[id].kind === 'video' && codecs.has(BUNDLED_FORMATS[id].textTrack),
@@ -510,5 +520,17 @@ export async function probeExportMatrix({
   log(
     `Export formats: ${Object.keys(writers).join(', ')}${refusedList.length > 0 ? `; not offered: ${refusedList.join(', ')}` : ''}`,
   );
-  return { codecs: [...codecs], formats: [...formats], writers, refused };
+  // FL-107: HDR10 and HLG masters, proven on this container's own encoder and decoder.
+  let colorPrecision = null;
+  if (hdr) {
+    const filters = listedNames(await run(['-filters']));
+    const masters = await probeHdrMasters({ ffmpeg, ffprobe, encoders, filters, log, signal });
+    for (const token of masters.formats) formats.add(token);
+    for (const codec of masters.codecs) codecs.add(codec);
+    for (const transfer of masters.transfers) writers[hdrEvidenceToken(transfer)] = masters.codecs[0];
+    for (const [transfer, why] of Object.entries(masters.refused)) refused[hdrEvidenceToken(transfer, HDR_MASTER_FORMAT)] = why;
+    colorPrecision = masters.colorPrecision;
+  }
+  signal?.throwIfAborted();
+  return { codecs: [...codecs], formats: [...formats], writers, refused, colorPrecision };
 }

@@ -2706,7 +2706,7 @@
           "0130-native-roll-transient-lock-cancellation.patch",
           "0134-shared-edit-effective-lock-refusal.patch",
           "0135-shared-speed-gap-effective-lock-refusal.patch",
-          "0144-speed-ramps-and-linked-freeze-frames.patch",
+          "0145-speed-ramps-and-linked-freeze-frames.patch",
           "4d29c52c91",
           "cd365017c8",
           "1accc156fc",
@@ -7424,9 +7424,13 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
       "frameleaf": {
-        "evidence": ["0028-approved-model-revisions.patch"],
-        "note": "MusicGen-small is CC-BY-NC-4.0 and barred from Frameleaf Cloud (distribution-gates.json musicgen-hosted-exclusion). The engine path stays in the build and is rights-approved for local and LAN use; it is descoped by owner direction, not removed.",
-        "status": "descoped-v1"
+        "evidence": [
+          "0004-resource-admission.patch",
+          "0028-approved-model-revisions.patch",
+          "0029-bundled-onnx-runtimes.patch"
+        ],
+        "note": "MusicGen-small runs in the editor AI panel with its presets, progress and cancellation, carried over unchanged apart from resource admission, the pinned model revision and bundled runtimes, like Kokoro text to speech. Restored by owner direction (FL-560, 2026-10-26): MusicGen is licensed, and its rights row has no excluded uses since FL-451.",
+        "status": "shipped"
       },
       "id": "readme.local-ai-analysis.6",
       "source": [
@@ -13423,9 +13427,13 @@
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
       "frameleaf": {
-        "evidence": ["0028-approved-model-revisions.patch"],
-        "note": "MusicGen-small is CC-BY-NC-4.0 and barred from Frameleaf Cloud (distribution-gates.json musicgen-hosted-exclusion). Descoped from v1 by owner direction; the local engine path stays in the build.",
-        "status": "descoped-v1"
+        "evidence": [
+          "0004-resource-admission.patch",
+          "0028-approved-model-revisions.patch",
+          "0029-bundled-onnx-runtimes.patch"
+        ],
+        "note": "Carried over unchanged apart from resource admission, the pinned model revision and bundled runtimes. Restored by owner direction (FL-560, 2026-10-26): MusicGen is licensed.",
+        "status": "shipped"
       },
       "id": "extra.musicgen",
       "source": [

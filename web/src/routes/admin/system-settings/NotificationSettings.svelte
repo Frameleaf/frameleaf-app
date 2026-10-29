@@ -58,9 +58,11 @@
   import { MailSignInStore } from '$lib/components/frameleaf/settings/notifications/mail-sign-in.svelte';
   import MailSignInPanel from '$lib/components/frameleaf/settings/notifications/MailSignInPanel.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import { isCredentialConfigured } from '$lib/frameleaf/credentials';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -240,6 +242,12 @@
   const TESTED = ['host', 'port', 'username', 'secure', 'ignoreCert'] as const;
   /** The server can only test what is saved (see above). A signed-in account has nothing to save first. */
   const unsaved = $derived(!oneClick && TESTED.some((key) => smtp.transport[key] !== saved.transport[key]));
+  /** The mail server is signed in to (an account name is set) and no password is stored yet. */
+  const needsPassword = $derived(
+    !oneClick &&
+      !!smtp.transport.username.trim() &&
+      !isCredentialConfigured(systemConfigManager.value, ConfigCredential.SmtpPassword),
+  );
 
   let sending = $state(false);
   let result = $state<{ ok: true; at: Date } | { ok: false; reason: string; account: boolean } | null>(null);
@@ -559,7 +567,11 @@
       {/snippet}
       {#if unsaved || !smtp.enabled}
         <p class="hint">
-          {unsaved ? $t('frameleaf_notify_test_save_first') : $t('frameleaf_notify_test_turn_on_first')}
+          {unsaved
+            ? needsPassword
+              ? $t('frameleaf_notify_test_save_first')
+              : $t('frameleaf_notify_test_save_first_no_password')
+            : $t('frameleaf_notify_test_turn_on_first')}
         </p>
       {/if}
       {#if result}

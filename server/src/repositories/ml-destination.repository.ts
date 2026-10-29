@@ -6,7 +6,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MlEndpoint, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { MlDestinationHealth, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
+import { MlDestinationHealth, MlDestinationKind, MlProcessingSource, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -17,6 +17,17 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
+import { desktopAccountPermitted, desktopAssistancePolicySchema } from 'src/utils/desktop-assistance-policy.js';
+import { ML_BUDGET_WINDOW_DAYS } from 'src/utils/ml-destination.js';
+import {
+  ML_PROCESSING_ORDER_DEFAULT_SCOPE,
+  MlProcessingOrder,
+  MlRouteCandidate,
+  MlRoutePlanInput,
+  firstCandidate,
+  planMlRoute,
+  processingOrderOf,
+} from 'src/utils/ml-processing-order.js';
 import {
   recoveryAuthorityDigest,
   recoveryMlAdmissionIdentity,
@@ -117,6 +128,8 @@ const toJson = (value: unknown) => sql`${JSON.stringify(value)}::text::jsonb`;
  */
 @Injectable()
 export class MlDestinationRepository {
+  private cloudMlSettings?: MlRoutePlanInput['cloudMl'];
+
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
   /** Common consumer fence; disabled state and cached probes cannot grant replacement authority. */
@@ -354,14 +367,170 @@ export class MlDestinationRepository {
       .execute();
   }
 
+  /**
+   * The route rows this server recorded: for each workload, the destination it was routed to on its own
+   * or by an administrator. Since FL-456 they are the anchor the desktop assistance pool hangs off, not
+   * where work goes; `getRoute` and `getRoutes` answer that.
+   */
   @GenerateSql()
-  getRoutes(): Promise<MlWorkloadRouteRow[]> {
+  getStoredRoutes(): Promise<MlWorkloadRouteRow[]> {
     return this.db.selectFrom('ml_workload_route').selectAll().orderBy('workload', 'asc').execute();
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  getRoute(workload: MlWorkload): Promise<MlWorkloadRouteRow | undefined> {
+  getStoredRoute(workload: MlWorkload): Promise<MlWorkloadRouteRow | undefined> {
     return this.db.selectFrom('ml_workload_route').selectAll().where('workload', '=', workload).executeTakeFirst();
+  }
+
+  /**
+   * FL-456: where a job of this workload goes now: the first place in its processing order that is
+   * available, else the first place in it (the job waits there). Undefined when its order names nowhere
+   * it could run. Every reader that asks "where is this workload routed" reads this.
+   */
+  async getRoute(workload: MlWorkload): Promise<MlWorkloadRouteRow | undefined> {
+    const candidate = firstCandidate(await this.resolveRoute(workload));
+    return candidate && { workload, destinationId: candidate.destinationId, modelId: null, updatedAt: new Date() };
+  }
+
+  /** FL-456: `getRoute` for every workload that has somewhere to go. */
+  async getRoutes(): Promise<MlWorkloadRouteRow[]> {
+    const plans = await this.resolveRoutes(Object.values(MlWorkload));
+    return [...plans].flatMap(([workload, candidates]) => {
+      const candidate = firstCandidate(candidates);
+      return candidate
+        ? [{ workload, destinationId: candidate.destinationId, modelId: null, updatedAt: new Date() }]
+        : [];
+    });
+  }
+
+  /** FL-456: every place a job of this workload may run, in the order it is tried. */
+  async resolveRoute(workload: MlWorkload): Promise<MlRouteCandidate[]> {
+    return (await this.resolveRoutes([workload])).get(workload) ?? [];
+  }
+
+  async resolveRoutes(workloads: MlWorkload[]): Promise<Map<MlWorkload, MlRouteCandidate[]>> {
+    const [order, destinations, stored, desktopsReady] = await Promise.all([
+      this.getProcessingOrder(),
+      this.getAll(),
+      this.getRouteStates(),
+      this.hasReadyDesktop(),
+    ]);
+    const since = new Date(Date.now() - ML_BUDGET_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const spentUsd = new Map<string, number>();
+    for (const destination of destinations) {
+      if (destination.budgetLimitUsd !== null) {
+        spentUsd.set(destination.id, await this.getSpend(destination.id, since));
+      }
+    }
+    const plans = new Map<MlWorkload, MlRouteCandidate[]>();
+    for (const workload of workloads) {
+      const storedRoute = stored.find((route) => route.workload === workload);
+      plans.set(
+        workload,
+        planMlRoute({
+          workload,
+          order,
+          destinations,
+          storedRoute: storedRoute && { destinationId: storedRoute.destinationId, origin: storedRoute.origin },
+          cloudMl: this.cloudMlSettings,
+          desktopsReady,
+          spentUsd,
+        }),
+      );
+    }
+    return plans;
+  }
+
+  /**
+   * FL-456: the saved Frameleaf Cloud processing settings, so routing skips Frameleaf Cloud while it is
+   * turned off or kept away from a kind of work. Set from the configuration on every change.
+   */
+  setCloudMlSettings(settings: MlRoutePlanInput['cloudMl']) {
+    this.cloudMlSettings = settings && { enabled: settings.enabled, routing: { ...settings.routing } };
+  }
+
+  /** FL-456: the main processing order and every workload's own list. */
+  async getProcessingOrder(): Promise<MlProcessingOrder> {
+    return processingOrderOf(await this.db.selectFrom('ml_processing_order').select(['scope', 'sources']).execute());
+  }
+
+  /** FL-456: save the main list (scope `default`) or a workload's own list; null removes a workload's list. */
+  async setProcessingOrder(scope: string, sources: MlProcessingSource[] | null): Promise<void> {
+    if (sources === null) {
+      if (scope === ML_PROCESSING_ORDER_DEFAULT_SCOPE) {
+        throw new Error('The main processing order cannot be removed');
+      }
+      await this.db.deleteFrom('ml_processing_order').where('scope', '=', scope).execute();
+      return;
+    }
+    const json = toJson(sources) as unknown as MlProcessingSource[];
+    await this.db
+      .insertInto('ml_processing_order')
+      .values({ scope, sources: json, updatedAt: new Date() })
+      .onConflict((oc) => oc.column('scope').doUpdateSet({ sources: json, updatedAt: new Date() }))
+      .execute();
+  }
+
+  /**
+   * FL-456: an approved Frameleaf Desktop helper of an account with desktop assistance is online (seen in
+   * the last 90 seconds) and holds a current qualification. Whether it can take one particular job is
+   * decided when the job is admitted (`DesktopMlService.selectBackgroundPool`).
+   */
+  async hasReadyDesktop(): Promise<boolean> {
+    return (await this.getDesktopCounts()).ready > 0;
+  }
+
+  /** FL-456: approved Frameleaf Desktop helpers, and how many of them are ready now. */
+  async getDesktopCounts(): Promise<{ approved: number; ready: number }> {
+    const metadata = await new SystemMetadataRepository(this.db).get(SystemMetadataKey.FrameleafDesktopAssistance);
+    const policy = desktopAssistancePolicySchema.safeParse(metadata ?? { version: 1, accounts: {} });
+    if (!policy.success || Object.keys(policy.data.accounts).length === 0) {
+      return { approved: 0, ready: 0 };
+    }
+    const { rows } = await sql<{ userId: string; isAdmin: boolean; ready: boolean }>`
+      SELECT d."userId", u."isAdmin", EXISTS (
+        SELECT 1 FROM desktop_worker_session w
+        JOIN session p ON p.id = w."photoSessionId" AND p."userId" = d."userId"
+        JOIN desktop_worker_qualification q ON q."sessionId" = w.id AND q."deviceId" = d.id
+          AND q."authorizationEpoch" = d."authorizationEpoch" AND q."expiresAt" > clock_timestamp()
+        WHERE w."deviceId" = d.id AND w."authorizationEpoch" = d."authorizationEpoch"
+          AND w."revokedAt" IS NULL AND w."expiresAt" > clock_timestamp()
+          AND w."lastSeenAt" > clock_timestamp() - interval '90 seconds'
+          AND (p."expiresAt" IS NULL OR p."expiresAt" > clock_timestamp())
+      ) AS ready
+      FROM desktop_device d JOIN "user" u ON u.id = d."userId" AND u."deletedAt" IS NULL
+      WHERE d.state = 'preparing' AND d.mode = 'client-worker' AND d."revokedAt" IS NULL`.execute(this.db);
+    const permitted = rows.filter((row) => desktopAccountPermitted(policy.data, row.userId, row.isAdmin));
+    return { approved: permitted.length, ready: permitted.filter((row) => row.ready).length };
+  }
+
+  /**
+   * FL-456: a workload that follows the processing order again gets back the route this server makes on
+   * its own (to its first machine learning that may run it), so the desktop assistance pool can take its
+   * work again. A route an administrator pinned is replaced; one this server made is left alone.
+   */
+  async restoreDefaultRoute(workload: MlWorkload): Promise<void> {
+    await this.db.transaction().execute(async (db) => {
+      await this.lockRoute(db, workload);
+      const inTransaction = new MlDestinationRepository(db);
+      const state = (await inTransaction.getRouteStates()).find((row) => row.workload === workload);
+      if (state?.origin === 'default') {
+        return;
+      }
+      await db.deleteFrom('ml_workload_route').where('workload', '=', workload).execute();
+      await db.deleteFrom('ml_workload_route_origin').where('workload', '=', workload).execute();
+      const local = (await inTransaction.getAll()).find(
+        (row) => row.kind === MlDestinationKind.Local && row.enabled && row.workloads.includes(workload),
+      );
+      if (!local) {
+        return;
+      }
+      await this.writeRouteOrigin(db, workload, local.id, 'default');
+      await db
+        .insertInto('ml_workload_route')
+        .values({ workload, destinationId: local.id, updatedAt: new Date() })
+        .execute();
+    });
   }
 
   private lockRoute(db: Kysely<DB>, workload: MlWorkload) {

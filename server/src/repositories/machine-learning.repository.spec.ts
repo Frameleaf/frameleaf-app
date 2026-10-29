@@ -6,6 +6,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { QueueExecution } from 'src/queue/types.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
@@ -16,6 +17,7 @@ import {
   RestorationWorkerErrorCode,
 } from 'src/dtos/restoration-inference.dto.js';
 import { MachineLearningHardwareAcceleration, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CloudJobsUnavailableError,
@@ -129,6 +131,57 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('predict', () => {
+    it.each([
+      ['ml_worker_busy', 'destination-capacity'],
+      ['model_identity_unavailable', undefined],
+    ])('only defers a structured worker capacity refusal (%s)', async (detail, expected) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail }, 503)));
+      const context = {
+        claim: { data: {}, safeToRetry: true },
+        signal: new AbortController().signal,
+      } as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.encodeText(selection(MlDestinationKind.Local, localUrl), 'fixture', { modelName: 'synthetic' }),
+        ),
+      ).rejects.toThrow();
+      expect(context.dependencyReason).toBe(expected);
+    });
+
+    it('defers audio memory pressure instead of treating it as a missing transcription model', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'ml_worker_busy' }, 503)));
+      const context = {
+        claim: { data: {}, safeToRetry: true },
+        signal: new AbortController().signal,
+      } as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.transcribe(
+            selection(MlDestinationKind.Local, localUrl),
+            imagePath,
+            { language: null },
+            context.signal,
+            vi.fn(),
+          ),
+        ),
+      ).rejects.toMatchObject({ reason: 'destination-capacity' });
+      expect(context.dependencyReason).toBe('destination-capacity');
+    });
+
+    it('does not try a fallback model when the worker is full', async () => {
+      const fetch = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ detail: 'ml_worker_busy' }, 503)));
+      vi.stubGlobal('fetch', fetch);
+      await expect(
+        sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, {
+          modelName: 'primary',
+          fallbackModelName: 'fallback',
+          acceleration: MachineLearningHardwareAcceleration.Auto,
+          device: 'AUTO',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
     it.each([MlWorkload.Clip, MlWorkload.PetRecognition])(
       'binds NAS %s transport and returned vector to the exact producing profile',
       async (workload) => {
@@ -439,6 +492,100 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('probe', () => {
+    it('shares concurrent probes of the same endpoint and authority', async () => {
+      const held = Promise.withResolvers<void>();
+      const fetch = vi.fn().mockImplementation(async (url: URL) => {
+        if (url.pathname === '/capabilities') {
+          await held.promise;
+          return jsonResponse({ workloads: ['face'] });
+        }
+        return url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 });
+      });
+      vi.stubGlobal('fetch', fetch);
+      const calls = Array.from({ length: 8 }, () => sut.probe({ url: localUrl }, { maxAgeMs: 10_000 }));
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+      held.resolve();
+      const results = await Promise.all(calls);
+      expect(results.every((probe) => probe.reachable)).toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not share in-flight observations between access tokens', async () => {
+      const fetch = vi
+        .fn()
+        .mockImplementation((url: URL) =>
+          url.pathname === '/ping'
+            ? new Response('pong')
+            : url.pathname === '/capabilities'
+              ? jsonResponse({ workloads: ['face'] })
+              : new Response('', { status: 404 }),
+        );
+      vi.stubGlobal('fetch', fetch);
+      await Promise.all(['first', 'second'].map((authToken) => sut.probe({ url: localUrl, authToken })));
+      expect(fetch).toHaveBeenCalledTimes(6);
+    });
+
+    it('reauthorizes each caller after a shared probe finishes', async () => {
+      let allowed = true;
+      const held = Promise.withResolvers<void>();
+      const fetch = vi.fn().mockImplementation(async (url: URL) => {
+        if (url.pathname === '/capabilities') {
+          await held.promise;
+          return jsonResponse({ workloads: ['face'] });
+        }
+        return url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 });
+      });
+      vi.stubGlobal('fetch', fetch);
+      const first = sut.probe({ url: localUrl });
+      const second = sut.probe({
+        url: localUrl,
+        assertAuthority: () => (allowed ? Promise.resolve() : Promise.reject(new Error('synthetic authority revoked'))),
+      });
+      await vi.waitFor(() => expect(fetch.mock.calls.some(([url]) => url.pathname === '/capabilities')).toBe(true));
+      allowed = false;
+      held.resolve();
+      const results = await Promise.allSettled([first, second]);
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1]).toMatchObject({ status: 'rejected', reason: { message: 'synthetic authority revoked' } });
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('retries after a failed shared probe instead of retaining the settled promise', async () => {
+      let healthy = false;
+      const fetch = vi.fn().mockImplementation((url: URL) => {
+        if (!healthy) return Promise.reject(new TypeError('synthetic offline'));
+        return url.pathname === '/ping'
+          ? new Response('pong')
+          : url.pathname === '/capabilities'
+            ? jsonResponse({ workloads: ['face'] })
+            : new Response('', { status: 404 });
+      });
+      vi.stubGlobal('fetch', fetch);
+      expect((await sut.probe({ url: localUrl })).reachable).toBe(false);
+      healthy = true;
+      expect((await sut.probe({ url: localUrl })).workloads).toEqual(['face']);
+      expect(fetch).toHaveBeenCalledTimes(4);
+    });
+
+    it('does not fetch hardware during admission and still fetches it for a diagnostic probe', async () => {
+      const fetch = vi
+        .fn()
+        .mockImplementation((url: URL) =>
+          url.pathname === '/ping'
+            ? new Response('pong')
+            : url.pathname === '/capabilities'
+              ? jsonResponse({ workloads: ['face'] })
+              : new Response('', { status: 404 }),
+        );
+      vi.stubGlobal('fetch', fetch);
+      expect((await sut.probe({ url: localUrl }, { maxAgeMs: 10_000, includeHardware: false })).workloads).toEqual([
+        'face',
+      ]);
+      expect(fetch.mock.calls.some(([url]) => url.pathname === '/hardware')).toBe(false);
+      await sut.probe({ url: localUrl }, { maxAgeMs: 10_000 });
+      expect(fetch.mock.calls.some(([url]) => url.pathname === '/hardware')).toBe(true);
+    });
+
     it.each(['policy', 'consent', 'quarantine-clear'])(
       're-probes unchanged URL/token after %s authority changes',
       async (transition) => {

@@ -161,7 +161,7 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           save-cache: true
-          version: '0.13.0'
+          version: '0.13.4'
           python-version: '3.12.15'
       - name: Install locked CPU test dependencies
         run: uv sync --frozen --extra cpu --group test --no-default-groups
@@ -197,12 +197,8 @@ jobs:
           docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import frameleaf_ml.models.image_description'
       - name: Verify the bundled Studio worker runtime (FL-408)
         run: |
-          docker run --rm --entrypoint sh fork-ml-test -c 'set -e
-            test -f "$FRAMELEAF_STUDIO_WORKER_ENTRY"
-            node --version
-            "$FRAMELEAF_STUDIO_CHROMIUM" --version
-            ffprobe -version | head -n 1
-            "$FRAMELEAF_STUDIO_CHROMIUM" --headless=new --no-sandbox --disable-gpu --dump-dom "data:text/html,<p>studio-ok</p>" 2>/dev/null | grep -q studio-ok'
+          docker run --rm --init --mount type=bind,src="$PWD/scripts/check-studio-runtime.py",dst=/tmp/check-studio-runtime.py,readonly \
+            --entrypoint python fork-ml-test /tmp/check-studio-runtime.py
       - name: Verify the CUDA image-description stack without a GPU
         if: matrix.device == 'cuda'
         run: |

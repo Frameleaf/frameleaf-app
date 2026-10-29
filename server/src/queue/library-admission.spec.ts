@@ -182,7 +182,7 @@ describe('library source contracts', () => {
       noDispatchBacklog: false,
     };
     expect(runState(row)).toBe('needs_attention');
-    expect(runReasons(row)).toEqual(['enumerating', 'needs_attention']);
+    expect(runReasons(row)).toEqual(['needs_attention']);
     expect(runState({ ...row, librarySourceAttention: false })).toBe('running');
   });
 });

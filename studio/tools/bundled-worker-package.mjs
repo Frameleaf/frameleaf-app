@@ -22,8 +22,12 @@ export const WORKER_MODULES = [
   'bundled-worker-executor.mjs',
   'bundled-worker-formats.mjs',
   'bundled-worker-fonts.mjs',
+  'bundled-worker-hdr.mjs',
+  'hdr-master.mjs',
+  'preflight-validators.mjs',
   'render-worker-font-inputs.mjs',
   'bundled-worker-recipe.mjs',
+  'bundled-worker-reframe.mjs',
   'bundled-worker-renderer.mjs',
 ];
 export const RUNTIME_MODULES = ['subtitle-sidecar.mjs'];

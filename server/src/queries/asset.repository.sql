@@ -443,7 +443,11 @@ limit
 select
   "id",
   "checksum",
-  "deletedAt"
+  "deletedAt",
+  "status",
+  "originalPath",
+  "libraryId",
+  "isExternal"
 from
   "asset"
 where
@@ -499,6 +503,70 @@ where
   )
 limit
   $3
+
+-- AssetRepository.countLockedRuleMatches
+select
+  count(*) filter (
+    where
+      "type" = $1
+  ) as "photos",
+  count(*) filter (
+    where
+      "type" = $2
+  ) as "videos"
+from
+  "asset"
+where
+  "ownerId" = $3::uuid
+  and "deletedAt" is null
+  and (
+    (
+      "asset"."visibility" = 'timeline'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+    or (
+      "asset"."visibility" = 'archive'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+  )
+  and exists (
+    select
+      1
+    from
+      asset as hidden_content_asset
+    where
+      hidden_content_asset.id = "asset"."id"
+      and (
+        (
+          "hidden_content_asset"."ownerId" = $4::uuid
+          and exists (
+            select
+              1
+            from
+              asset_face
+            where
+              asset_face."assetId" = "hidden_content_asset"."id"
+              and asset_face."personGroupId" = any ($5::uuid[])
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+          )
+        )
+      )
+  )
 
 -- AssetRepository.getCalendarHeatmap
 select
@@ -1560,7 +1628,8 @@ where
 -- AssetRepository.getForMetadataExtractionTags
 select
   "asset_exif"."tags",
-  "asset_exif"."updateId"
+  "asset_exif"."updateId",
+  "asset_exif"."timeZone"
 from
   "asset_exif"
 where

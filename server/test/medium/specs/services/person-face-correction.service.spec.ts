@@ -9,6 +9,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -26,7 +27,7 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  return newMediumService(PersonService, {
+  const service = newMediumService(PersonService, {
     database: db || defaultDatabase,
     real: [
       AccessRepository,
@@ -39,8 +40,17 @@ const setup = (db?: Kysely<DB>) => {
       AssetEditRepository,
       SystemMetadataRepository,
     ],
-    mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
+    mock: [
+      EventRepository,
+      JobRepository,
+      LoggingRepository,
+      StorageRepository,
+      MachineLearningRepository,
+      MlDestinationRepository,
+    ],
   });
+  service.ctx.getMock(EventRepository).emit.mockResolvedValue();
+  return service;
 };
 
 beforeAll(async () => {

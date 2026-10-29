@@ -2,11 +2,11 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  LegacyPluginTemplateResponseDto,
   PluginMethodResponseDto,
   PluginMethodSearchDto,
   PluginResponseDto,
   PluginSearchDto,
-  PluginTemplateResponseDto,
 } from 'src/dtos/plugin.dto.js';
 import { Permission } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
@@ -47,7 +47,7 @@ export class PluginController {
     description: 'Retrieve workflow templates provided by installed plugins',
     history: HistoryBuilder.v3(),
   })
-  searchPluginTemplates(): Promise<PluginTemplateResponseDto[]> {
+  searchPluginTemplates(): Promise<LegacyPluginTemplateResponseDto[]> {
     return this.service.searchTemplates();
   }
 

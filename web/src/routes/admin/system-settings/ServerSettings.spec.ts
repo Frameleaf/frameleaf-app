@@ -19,7 +19,7 @@ vi.mock('$lib/frameleaf/system-config-draft.svelte', async (original) => ({
 }));
 // The cleaning itself is tested with a browser-like DOM in welcome-message.spec.ts; here it stands in.
 vi.mock('$lib/frameleaf/welcome-message', () => ({
-  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script[\s\S]*?<\/script>/gi, ''),
+  cleanWelcomeHtml: (html: string) => html.replaceAll(/<img[^>]*>|<script\b[\s\S]*?<\/script\s*>/gi, ''),
 }));
 const config = (lanDiscovery: boolean, server: Partial<AdminConfigDto['server']> = {}) =>
   ({
@@ -167,4 +167,12 @@ it('keeps the actual controls disabled when configuration is managed by a file',
   await fireEvent.click(toggle);
   expect(store.draft.server.lanDiscovery).toBe(true);
   expect(screen.getByRole('combobox', { name: 'Time zone' })).toBeDisabled();
+});
+
+it('sets the Public server URL on any server (OPS-14)', async () => {
+  const store = open(config(true));
+  await fireEvent.input(screen.getByRole('textbox', { name: 'Public server URL' }), {
+    target: { value: ' https://photos.example.com ' },
+  });
+  expect(store.draft.server.externalDomain).toBe('https://photos.example.com');
 });

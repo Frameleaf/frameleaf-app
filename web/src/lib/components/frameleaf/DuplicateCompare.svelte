@@ -1,18 +1,26 @@
 <script lang="ts">
   /**
-   * Side-by-side comparison of two copies (FL-61), the prototype's `dr-compare-grid`.
+   * Copies of one photo, compared (FL-61, FL-558): the prototype's `dt-compare` table.
    *
-   * Comparison is synchronised: zooming one copy zooms the other at the same point, and moving over
-   * one pans both, so detail is judged at the same place in each. Two videos play, pause and seek
-   * together. Each copy carries the evidence behind the suggestion (format, resolution, size,
-   * metadata) and the file facts that differ between the copies, which is where provenance shows.
+   * Each copy is a column. Clicking a copy (or pressing its number) makes it the one to keep; the
+   * review preselects the suggested copy. Below the photos, one row per fact lines the copies up:
+   * where they came from, when, how large, which camera, where, and which albums hold them. Values
+   * that differ stand out and values that match are muted, which is where provenance shows.
+   *
+   * Comparison is synchronised: "Zoom both" zooms every copy at the same point and moving over one
+   * pans them all, so detail is judged at the same place in each. Videos play, pause and seek together.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { dimensionsOf, qualityReasonKey, type ReviewGroup } from '$lib/frameleaf/duplicate-review';
+  import {
+    comparisonRows,
+    dimensionsOf,
+    folderOf,
+    qualityReasonKey,
+    type ReviewGroup,
+  } from '$lib/frameleaf/duplicate-review';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { computeDifferingMetadataFields, getAllMetadataItems } from '$lib/utils/duplicate-utils';
   import { AssetMediaSize, AssetTypeEnum } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiMagnifyMinusOutline, mdiMagnifyPlusOutline, mdiOpenInNew, mdiPlay } from '@mdi/js';
@@ -24,34 +32,74 @@
     group: ReviewGroup;
     actionable: boolean;
     suggestedId: string | null;
-    onKeep: (asset: Asset) => void;
+    /** The copies chosen to keep; one for a comparison. */
+    keeperIds: string[];
+    /** With the trash off, a copy not kept is deleted, and its mark says so. */
+    trashEnabled: boolean;
+    onChoose: (index: number) => void;
     onOpen: (asset: Asset) => void;
   };
 
-  let { group, actionable, suggestedId, onKeep, onOpen }: Props = $props();
+  let { group, actionable, suggestedId, keeperIds, trashEnabled, onChoose, onOpen }: Props = $props();
 
   const ZOOM = 2.5;
+  const NONE = '—';
   let zoom = $state<{ x: number; y: number } | null>(null);
   let videos = $state<HTMLVideoElement[]>([]);
   let syncing = false;
 
-  const differing = $derived(computeDifferingMetadataFields(group.assets));
-  const reasonsFor = (asset: Asset) => group.qualities.find((quality) => quality.assetId === asset.id)?.reasons ?? [];
-  const differingItems = (asset: Asset) =>
-    getAllMetadataItems(asset, $t, $locale)
-      .filter(({ keys }) => keys.some((key) => differing[key]))
-      .slice(0, 6);
+  const taken = (asset: Asset) => {
+    const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
+    const date = value ? new Date(value) : null;
+    // local capture times are stored as UTC wall-clock time, so they are shown in UTC
+    return date && Number.isFinite(date.getTime())
+      ? date.toLocaleString($locale, { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' })
+      : NONE;
+  };
+  const sizeOf = (asset: Asset) => {
+    const size = dimensionsOf(asset);
+    const bytes = getByteUnitString(asset.exifInfo?.fileSizeInByte ?? 0, $locale);
+    return size ? `${size.width.toLocaleString($locale)} × ${size.height.toLocaleString($locale)} · ${bytes}` : bytes;
+  };
+  const cameraOf = (asset: Asset) => {
+    const body = [asset.exifInfo?.make, asset.exifInfo?.model].filter(Boolean).join(' ');
+    return [body, asset.exifInfo?.lensModel].filter(Boolean).join(' · ') || NONE;
+  };
+  const placeOf = (asset: Asset) =>
+    [asset.exifInfo?.city, asset.exifInfo?.state, asset.exifInfo?.country].filter(Boolean).join(', ') || NONE;
+  const albumsOf = (asset: Asset) =>
+    group.albums?.find((entry) => entry.assetId === asset.id)?.names.join(', ') || NONE;
+  const sourceOf = (asset: Asset) => {
+    const reasons = group.qualities.find((quality) => quality.assetId === asset.id)?.reasons ?? [];
+    const labels = reasons.map((reason) => $t(qualityReasonKey(reason, asset.originalFileName)));
+    if (asset.isEdited) {
+      labels.push($t('frameleaf_duplicates_fact_edited'));
+    }
+    return labels.join(' · ') || NONE;
+  };
 
-  const pointAt = (event: PointerEvent | MouseEvent) => {
+  const rows = $derived(
+    comparisonRows([
+      { key: 'frameleaf_duplicates_fact_file', values: group.assets.map((asset) => asset.originalFileName) },
+      {
+        key: 'frameleaf_duplicates_fact_folder',
+        values: group.assets.map((asset) => folderOf(asset.originalPath) || NONE),
+      },
+      { key: 'frameleaf_duplicates_fact_taken', values: group.assets.map((asset) => taken(asset)) },
+      { key: 'frameleaf_duplicates_fact_size', values: group.assets.map((asset) => sizeOf(asset)) },
+      { key: 'frameleaf_duplicates_fact_camera', values: group.assets.map((asset) => cameraOf(asset)) },
+      { key: 'frameleaf_duplicates_fact_location', values: group.assets.map((asset) => placeOf(asset)) },
+      { key: 'frameleaf_duplicates_fact_albums', values: group.assets.map((asset) => albumsOf(asset)) },
+      { key: 'frameleaf_duplicates_fact_source', values: group.assets.map((asset) => sourceOf(asset)) },
+    ]),
+  );
+
+  const pointAt = (event: PointerEvent) => {
     const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
     return {
       x: Math.min(100, Math.max(0, ((event.clientX - box.left) / box.width) * 100)),
       y: Math.min(100, Math.max(0, ((event.clientY - box.top) / box.height) * 100)),
     };
-  };
-
-  const toggleZoom = (event?: MouseEvent) => {
-    zoom = zoom ? null : event ? pointAt(event) : { x: 50, y: 50 };
   };
 
   const pan = (event: PointerEvent) => {
@@ -96,275 +144,239 @@
   const zoomStyle = $derived(zoom ? `transform: scale(${ZOOM}); transform-origin: ${zoom.x}% ${zoom.y}%;` : '');
 </script>
 
-<div class="fl-dr-compare-tools">
-  {#if hasVideo}
-    <Button onclick={playTogether}>
-      <Icon icon={mdiPlay} size="16" aria-hidden={true} />
-      {$t('frameleaf_duplicates_play_together')}
-    </Button>
-  {:else}
-    <Button pressed={!!zoom} onclick={() => toggleZoom()}>
-      <Icon icon={zoom ? mdiMagnifyMinusOutline : mdiMagnifyPlusOutline} size="16" aria-hidden={true} />
-      {zoom ? $t('frameleaf_duplicates_zoom_reset') : $t('frameleaf_duplicates_zoom_both')}
-    </Button>
-  {/if}
-  <span>{$t('frameleaf_duplicates_compare_hint')}</span>
-</div>
-
-<div class="fl-dr-compare-grid" data-testid="frameleaf-duplicate-compare">
-  {#each group.assets as asset, index (asset.id)}
-    {@const size = dimensionsOf(asset)}
-    {@const reasons = reasonsFor(asset)}
-    {@const differs = differingItems(asset)}
-    <article class:suggested={asset.id === suggestedId} data-asset-id={asset.id}>
-      <div class="fl-dr-image">
-        {#if asset.type === AssetTypeEnum.Video}
-          <!-- svelte-ignore a11y_media_has_caption -->
-          <video
-            bind:this={videos[index]}
-            src={getAssetPlaybackUrl({ id: asset.id, cacheKey: asset.thumbhash })}
-            poster={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash })}
-            controls
-            playsinline
-            preload="metadata"
-            onplay={(event) => mirror(event.currentTarget, 'play')}
-            onpause={(event) => mirror(event.currentTarget, 'pause')}
-            onseeked={(event) => mirror(event.currentTarget, 'seeked')}
-          ></video>
+<div class="fl-dr-compare" data-testid="frameleaf-duplicate-compare">
+  <div class="fl-dr-table" style:--copies={group.assets.length}>
+    <div class="fl-dr-table-grid" role="radiogroup" aria-label={$t('frameleaf_duplicates_choose_copy')}>
+      <!-- The table's empty corner holds the comparison tool. -->
+      <div class="fl-dr-compare-tools">
+        {#if hasVideo}
+          <Button label={$t('frameleaf_duplicates_play_together')} onclick={playTogether}>
+            <Icon icon={mdiPlay} size="18" aria-hidden={true} />
+          </Button>
         {:else}
-          <button
-            type="button"
-            class="fl-dr-zoom"
-            aria-pressed={!!zoom}
-            aria-label={zoom
-              ? $t('frameleaf_duplicates_zoom_reset')
-              : $t('frameleaf_duplicates_zoom_at', { values: { name: asset.originalFileName } })}
-            onclick={(event) => toggleZoom(event)}
-            onpointermove={pan}
+          <Button
+            pressed={!!zoom}
+            label={zoom ? $t('frameleaf_duplicates_zoom_reset') : $t('frameleaf_duplicates_zoom_both')}
+            onclick={() => (zoom = zoom ? null : { x: 50, y: 50 })}
           >
+            <Icon icon={zoom ? mdiMagnifyMinusOutline : mdiMagnifyPlusOutline} size="18" aria-hidden={true} />
+          </Button>
+        {/if}
+        <small>{$t('frameleaf_duplicates_compare_hint')}</small>
+      </div>
+      {#each group.assets as asset, index (asset.id)}
+        {@const keep = keeperIds.includes(asset.id)}
+        <div class="fl-dr-copy" class:keep class:trash={!keep} data-asset-id={asset.id}>
+          {#if asset.type === AssetTypeEnum.Video}
+            <!-- svelte-ignore a11y_media_has_caption -->
+            <video
+              bind:this={videos[index]}
+              src={getAssetPlaybackUrl({ id: asset.id, cacheKey: asset.thumbhash })}
+              poster={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash })}
+              controls
+              playsinline
+              preload="metadata"
+              onplay={(event) => mirror(event.currentTarget, 'play')}
+              onpause={(event) => mirror(event.currentTarget, 'pause')}
+              onseeked={(event) => mirror(event.currentTarget, 'seeked')}
+            ></video>
+          {:else}
             <img
               src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash })}
-              alt={asset.originalFileName}
+              alt=""
               style={zoomStyle}
               draggable="false"
             />
-          </button>
-        {/if}
-        <span class="fl-dr-index" aria-hidden="true">{index + 1}</span>
-        {#if asset.id === suggestedId}
-          <strong class="fl-dr-suggested">{$t('frameleaf_duplicates_suggested_keeper')}</strong>
-        {/if}
-      </div>
-      <div class="fl-dr-copy">
-        <strong>{asset.originalFileName}</strong>
-        {#if reasons.length > 0}
-          <ul class="fl-dr-reasons" aria-label={$t('frameleaf_duplicates_quality_label')}>
-            {#each reasons as reason (reason)}
-              <li>{$t(qualityReasonKey(reason, asset.originalFileName))}</li>
-            {/each}
-          </ul>
-        {/if}
-        <div class="fl-dr-facts">
-          <span>
-            {size
-              ? `${size.width.toLocaleString($locale)} × ${size.height.toLocaleString($locale)}`
-              : $t('frameleaf_duplicates_size_unknown')}
-          </span>
-          <span>{getByteUnitString(asset.exifInfo?.fileSizeInByte ?? 0, $locale)}</span>
-        </div>
-        {#if differs.length > 0}
-          <dl class="fl-dr-differs" aria-label={$t('frameleaf_duplicates_differs_label')}>
-            {#each differs as item (item.title)}
-              <div title={item.tooltip}>
-                <dt>{item.title}</dt>
-                <dd>{item.render}</dd>
-              </div>
-            {/each}
-          </dl>
-        {/if}
-        <div class="fl-dr-copy-actions">
-          <Button
-            variant={asset.id === suggestedId ? 'primary' : 'default'}
+          {/if}
+          <!-- The whole photo chooses the copy; a video keeps its own controls and is chosen by its badge. -->
+          <button
+            type="button"
+            role="radio"
+            class="fl-dr-choose"
+            class:badge-only={asset.type === AssetTypeEnum.Video}
+            aria-checked={keep}
+            aria-label={$t('frameleaf_duplicates_keep_copy_named', { values: { name: asset.originalFileName } })}
             disabled={!actionable}
-            onclick={() => onKeep(asset)}
+            onclick={() => onChoose(index)}
+            onpointermove={pan}
           >
-            {$t('frameleaf_duplicates_keep_this_copy')}
-            {#if index < 9}<kbd>{index + 1}</kbd>{/if}
-          </Button>
-          <Button
-            variant="quiet"
-            label={$t('frameleaf_duplicates_open_photo', { values: { name: asset.originalFileName } })}
-            onclick={() => onOpen(asset)}
-          >
-            <Icon icon={mdiOpenInNew} size="16" aria-hidden={true} />
-          </Button>
+            <span class="fl-dr-mark"
+              >{keep
+                ? $t('frameleaf_duplicates_mark_keep')
+                : trashEnabled
+                  ? $t('frameleaf_duplicates_mark_trash')
+                  : $t('frameleaf_duplicates_mark_delete')}</span
+            >
+          </button>
+          <span class="fl-dr-index" aria-hidden="true">{index + 1}</span>
+          {#if asset.id === suggestedId}
+            <strong class="fl-dr-suggested">{$t('frameleaf_duplicates_best_copy')}</strong>
+          {/if}
+          <span class="fl-dr-open">
+            <Button
+              variant="quiet"
+              label={$t('frameleaf_duplicates_open_photo', { values: { name: asset.originalFileName } })}
+              onclick={() => onOpen(asset)}
+            >
+              <Icon icon={mdiOpenInNew} size="16" aria-hidden={true} />
+            </Button>
+          </span>
         </div>
-      </div>
-    </article>
-  {/each}
+      {/each}
+    </div>
+    <dl class="fl-dr-table-grid fl-dr-facts">
+      {#each rows as row (row.key)}
+        <dt>{$t(row.key as never)}</dt>
+        {#each row.values as value, index (index)}
+          <dd class:differs={row.differs} title={value}>{value}</dd>
+        {/each}
+      {/each}
+    </dl>
+  </div>
 </div>
 
 <style>
+  .fl-dr-compare {
+    height: 100%;
+    min-height: 0;
+  }
   .fl-dr-compare-tools {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
+    flex-direction: column;
+    align-items: start;
+    gap: 8px;
   }
-  .fl-dr-compare-tools span {
+  .fl-dr-compare-tools small {
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
+    line-height: 1.4;
   }
-  .fl-dr-compare-grid {
+  /* Many copies scroll sideways; the photo row takes the room the facts leave. */
+  .fl-dr-table {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
-  article {
-    min-width: 0;
-    overflow: hidden;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    background: var(--fl-panel);
+  .fl-dr-table-grid {
+    display: grid;
+    grid-template-columns: 88px repeat(var(--copies), minmax(200px, 1fr));
+    column-gap: 14px;
+    min-height: 0;
+    margin: 0;
   }
-  article.suggested {
-    border-color: color-mix(in srgb, var(--fl-accent) 55%, var(--fl-border));
+  /* The photo row takes what the facts leave; a photo never sets its own height. */
+  .fl-dr-table-grid[role='radiogroup'] {
+    grid-template-rows: minmax(0, 1fr);
   }
-  .fl-dr-image {
+  .fl-dr-copy {
     position: relative;
+    min-height: 0;
     overflow: hidden;
     background: var(--fl-canvas);
+    border: 2px solid transparent;
+    border-radius: var(--fl-radius-control);
   }
-  .fl-dr-zoom {
+  .fl-dr-copy.keep {
+    border-color: var(--fl-accent);
+  }
+  .fl-dr-copy.trash img,
+  .fl-dr-copy.trash video {
+    opacity: 0.55;
+  }
+  .fl-dr-copy img,
+  .fl-dr-copy video {
+    position: absolute;
+    inset: 0;
     display: block;
     width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transition:
+      transform var(--fl-motion-fast) var(--fl-ease),
+      opacity var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-dr-choose {
+    position: absolute;
+    inset: 0;
     padding: 0;
-    overflow: hidden;
-    cursor: zoom-in;
+    cursor: pointer;
     background: none;
     border: 0;
   }
-  .fl-dr-zoom[aria-pressed='true'] {
-    cursor: zoom-out;
+  .fl-dr-choose.badge-only {
+    inset: auto auto 9px 9px;
   }
-  .fl-dr-image img,
-  .fl-dr-image video {
-    display: block;
-    width: 100%;
-    aspect-ratio: 1.35;
-    object-fit: contain;
-    transition: transform var(--fl-motion-fast) var(--fl-ease);
+  .fl-dr-choose:disabled {
+    cursor: default;
   }
+  .fl-dr-mark,
   .fl-dr-index,
   .fl-dr-suggested {
     position: absolute;
-    top: 9px;
-    padding: 5px var(--fl-space-2);
+    padding: 4px var(--fl-space-2);
     font-size: var(--fl-font-micro);
-    font-weight: 500;
+    font-weight: 600;
     color: var(--fl-viewer-text);
     background: color-mix(in srgb, var(--fl-viewer-canvas) 80%, transparent);
     border-radius: var(--fl-radius);
     pointer-events: none;
   }
+  .fl-dr-mark {
+    bottom: 9px;
+    left: 9px;
+  }
+  .fl-dr-choose.badge-only .fl-dr-mark {
+    position: static;
+    display: block;
+    pointer-events: auto;
+  }
+  .fl-dr-copy.keep .fl-dr-mark,
+  .fl-dr-suggested {
+    color: var(--fl-canvas);
+    background: var(--fl-accent);
+  }
+  .fl-dr-copy.trash .fl-dr-mark {
+    color: #fff;
+    background: var(--fl-danger);
+  }
   .fl-dr-index {
+    top: 9px;
     left: 9px;
   }
   .fl-dr-suggested {
+    top: 9px;
     right: 9px;
-    color: #9ae4b6;
   }
-  .fl-dr-copy {
-    padding: 13px;
+  .fl-dr-open {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
   }
-  .fl-dr-copy > strong {
-    display: block;
-    font-size: var(--fl-font-small);
-    font-weight: 600;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-  }
-  .fl-dr-reasons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--fl-space-2);
-    padding: 0;
-    margin: var(--fl-space-2) 0 0;
-    list-style: none;
-  }
-  .fl-dr-reasons li {
-    padding: 2px var(--fl-space-2);
-    font-size: var(--fl-font-micro);
-    color: var(--fl-muted);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-pill);
-  }
-  .fl-dr-facts {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 12px 0 0;
-    margin-top: 10px;
-    font-size: var(--fl-font-micro);
-    color: var(--fl-muted);
-    border-top: 1px solid var(--fl-border);
-  }
-  .fl-dr-differs {
-    display: grid;
-    gap: 4px;
-    margin: 10px 0 0;
-    font-size: var(--fl-font-micro);
-  }
-  .fl-dr-differs div {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-  }
-  .fl-dr-differs dt {
-    color: var(--fl-muted);
-  }
-  .fl-dr-differs dd {
+  .fl-dr-facts dt,
+  .fl-dr-facts dd {
     margin: 0;
-    text-align: end;
-    overflow-wrap: anywhere;
-  }
-  .fl-dr-copy-actions {
-    display: flex;
-    gap: var(--fl-space-2);
-    margin-top: 12px;
-  }
-  .fl-dr-copy-actions :global(button:first-child) {
-    flex: 1;
-    justify-content: space-between;
-  }
-  kbd {
+    padding: 4px 0;
+    overflow: hidden;
     font-size: var(--fl-font-micro);
-    opacity: 0.65;
+    line-height: 18px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    border-top: 1px solid color-mix(in srgb, var(--fl-border) 60%, transparent);
   }
-  @media (max-width: 700px) {
-    .fl-dr-compare-grid {
-      gap: 8px;
-    }
-    .fl-dr-image img,
-    .fl-dr-image video {
-      aspect-ratio: 1;
-    }
-    .fl-dr-suggested {
-      position: static;
-      display: block;
-      padding: 6px;
-      border-radius: 0;
-    }
-    .fl-dr-copy {
-      padding: var(--fl-space-3);
-    }
-    kbd {
-      display: none;
-    }
+  .fl-dr-facts dt,
+  .fl-dr-facts dd {
+    color: var(--fl-muted);
+  }
+  .fl-dr-facts dd.differs {
+    color: var(--fl-text);
+    font-weight: 600;
   }
   @media (prefers-reduced-motion: reduce) {
-    .fl-dr-image img {
+    .fl-dr-copy img {
       transition: none;
     }
   }

@@ -43,7 +43,11 @@ const gateway = () =>
     restoreAssets: vi.fn().mockResolvedValue(undefined),
     createStack: vi.fn().mockResolvedValue({ id: 'stack-1' }),
     deleteStacks: vi.fn().mockResolvedValue(undefined),
-    bulkTagAssets: vi.fn().mockResolvedValue({ count: 0 }),
+    tagAssets: vi
+      .fn()
+      .mockImplementation(({ bulkIdsDto }: { bulkIdsDto: { ids: string[] } }) =>
+        Promise.resolve(bulkIdsDto.ids.map((id) => ({ id, success: true }))),
+      ),
     untagAssets: vi.fn().mockResolvedValue([]),
     upsertTags: vi.fn().mockResolvedValue([]),
     runAssetJobs: vi.fn().mockResolvedValue(undefined),
@@ -76,10 +80,27 @@ describe('bulk actions bind to existing endpoints', () => {
   });
 
   it('favorites through the bulk update endpoint and offers the reverse as undo', async () => {
-    const result = await runBulkAction('favorite', ['a', 'b'], { gateway: api });
+    const context = { stateById: { a: { isFavorite: false }, b: { isFavorite: false } } };
+    const result = await runBulkAction('favorite', ['a', 'b'], { gateway: api, context });
     expect(api.updateAssets).toHaveBeenCalledWith({ assetBulkUpdateDto: { ids: ['a', 'b'], isFavorite: true } });
     expect(result.succeeded).toEqual(['a', 'b']);
     expect(result.undo).toEqual({ action: 'unfavorite', ids: ['a', 'b'] });
+  });
+
+  // FL-529: undo puts back what each item had, never more.
+  it('undoes a favorite or archive only on the items it changed', async () => {
+    const stateById = {
+      a: { isFavorite: true, isArchived: true },
+      b: { isFavorite: false, isArchived: false },
+    };
+    const favorite = await runBulkAction('favorite', ['a', 'b', 'c'], { gateway: api, context: { stateById } });
+    expect(favorite.undo).toEqual({ action: 'unfavorite', ids: ['b'] });
+    const archive = await runBulkAction('archive', ['a', 'b'], { gateway: api, context: { stateById } });
+    expect(archive.undo).toEqual({ action: 'unarchive', ids: ['b'] });
+    const unfavorite = await runBulkAction('unfavorite', ['a', 'b'], { gateway: api, context: { stateById } });
+    expect(unfavorite.undo).toEqual({ action: 'favorite', ids: ['a'] });
+    const unchanged = await runBulkAction('favorite', ['a'], { gateway: api, context: { stateById } });
+    expect(unchanged.undo).toBeUndefined();
   });
 
   // Send a copy runs through the selection bar's share sheet; a bulk run of it is a wiring mistake.
@@ -188,10 +209,35 @@ describe('bulk actions bind to existing endpoints', () => {
       payload: { tagIds: ['tag-1'], newTagNames: ['Hikes'] },
     });
     expect(api.upsertTags).toHaveBeenCalledWith({ tagUpsertDto: { tags: ['Hikes'] } });
-    expect(api.bulkTagAssets).toHaveBeenCalledWith({
-      tagBulkAssetsDto: { assetIds: ['a'], tagIds: ['tag-1', 'tag-new'] },
+    expect(api.tagAssets).toHaveBeenCalledWith({ id: 'tag-1', bulkIdsDto: { ids: ['a'] } });
+    expect(api.tagAssets).toHaveBeenCalledWith({ id: 'tag-new', bulkIdsDto: { ids: ['a'] } });
+    expect(result.succeeded).toEqual(['a']);
+    expect(result.undo).toEqual({
+      action: 'untag',
+      ids: ['a'],
+      payload: { tagIds: ['tag-1', 'tag-new'], untagIdsByTag: { 'tag-1': ['a'], 'tag-new': ['a'] } },
     });
-    expect(result.undo).toEqual({ action: 'untag', ids: ['a'], payload: { tagIds: ['tag-1', 'tag-new'] } });
+  });
+
+  // FL-529: an item that already had the tag keeps it on Undo.
+  it('undoes a tag only where it was added, and untags only those', async () => {
+    vi.mocked(api.tagAssets).mockResolvedValue([
+      { id: 'a', success: false, error: 'duplicate' },
+      { id: 'b', success: true },
+      { id: 'c', success: false, error: 'no_permission' },
+    ] as never);
+    const result = await runBulkAction('tag', ['a', 'b', 'c'], { gateway: api, payload: { tagIds: ['tag-1'] } });
+    expect(result.succeeded).toEqual(['a', 'b']);
+    expect(result.failed.map((outcome) => outcome.id)).toEqual(['c']);
+    expect(result.undo).toEqual({
+      action: 'untag',
+      ids: ['b'],
+      payload: { tagIds: ['tag-1'], untagIdsByTag: { 'tag-1': ['b'] } },
+    });
+
+    await runBulkAction('untag', result.undo!.ids, { gateway: api, payload: result.undo!.payload });
+    expect(api.untagAssets).toHaveBeenCalledTimes(1);
+    expect(api.untagAssets).toHaveBeenCalledWith({ id: 'tag-1', bulkIdsDto: { ids: ['b'] } });
   });
 
   it('removes the location with null coordinates and never as a durable job (FL-51)', async () => {

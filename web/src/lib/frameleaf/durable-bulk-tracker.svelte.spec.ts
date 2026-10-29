@@ -1,6 +1,7 @@
 import { MediaOperationItemStatus, MediaOperationStatus, type MediaOperationDetailDto } from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DurableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 const detail = (overrides: Partial<MediaOperationDetailDto> = {}): MediaOperationDetailDto =>
   ({
@@ -29,6 +30,17 @@ describe('the durable bulk tracker', () => {
   afterEach(() => {
     tracker.reset();
     vi.useRealTimers();
+  });
+
+  // FL-529: one account's jobs are not polled under the next one's session.
+  it('stops following everything at sign-out', async () => {
+    tracker.track('delete', 'job-1', ['a']);
+    eventManager.emit('AuthLogout');
+
+    expect(tracker.tracking).toBe(0);
+    expect(tracker.stateOf('a')).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('puts a loader on every item the job covers as soon as it is followed', () => {

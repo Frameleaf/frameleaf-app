@@ -1,7 +1,7 @@
 import { createMigrationProvider, schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Injectable } from '@nestjs/common';
 import AsyncLock from 'async-lock';
-import { Kysely, type Transaction, sql } from 'kysely';
+import { Kysely, type RawBuilder, type Transaction, sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
 import { InjectKysely } from 'nestjs-kysely';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -39,6 +39,58 @@ export const getVectorExtension = (_runner?: Kysely<DB>): Promise<VectorExtensio
 
 /** A session advisory lock held on its own reserved connection. */
 export type HeldLock = { backendPid: number; verify: () => Promise<boolean>; release: () => Promise<void> };
+
+/**
+ * Every column that stores an absolute media path, so a media-location move rebases them all. A path left on the old
+ * prefix is not counted as a reference after the move, and its file can be reported as untracked and deleted.
+ * Relative or external paths (library import paths, takeout entry names) are not listed.
+ */
+const MEDIA_PATH_COLUMNS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['asset', ['originalPath', 'libraryPath']],
+  ['asset_file', ['path']],
+  ['person', ['thumbnailPath']],
+  ['user', ['profileImagePath']],
+  ['physical_file', ['path']],
+  ['physical_file_trash', ['path']],
+  ['move_history', ['oldPath', 'newPath']],
+  ['asset_video_duplicate_frame', ['path']],
+  ['video_moment_frame', ['path']],
+  ['video_edit_version', ['masterPath', 'proxyPath', 'sourcePath']],
+  ['asset_develop_revision', ['masterPath', 'previewPath', 'hdrMasterPath', 'hdrPreviewPath']],
+  ['asset_develop_artifact', ['path']],
+  ['asset_restoration', ['previewBeforePath', 'previewAfterPath', 'resultPath', 'resultPreviewPath']],
+  ['asset_health', ['originalPath']],
+  ['asset_health_candidate', ['candidatePath']],
+  ['asset_integrity_verification', ['originalPath']],
+  ['asset_upload_resource', ['finalPath']],
+  ['asset_upload_part', ['path']],
+  ['identical_file_change', ['ownPath']],
+  ['integrity_report', ['path']],
+  ['preservation_package', ['path']],
+  ['memory_export', ['path']],
+  ['buddy_backup_reference', ['path']],
+  ['cloud_backup_manifest_entry', ['path']],
+  ['icloud_resource', ['path', 'stagingPath', 'promotedPath']],
+  ['takeout_source', ['path']],
+  ['takeout_file', ['path']],
+  ['takeout_item', ['createPath']],
+  ['media_operation_checkpoint', ['outputPath', 'subtitlePath']],
+  ['studio_export_version', ['outputPath', 'subtitlePath']],
+  ['studio_preview_frame', ['framePath']],
+  ['studio_project_import', ['path']],
+  ['studio_import_publication', ['stagedPath', 'targetPath']],
+  ['studio_bundle_upload', ['path']],
+  ['studio_generated_resource', ['path']],
+  ['studio_hdr_intermediate', ['path']],
+];
+const MEDIA_PATH_ARRAY_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ['asset_checksum', 'verifiedPaths'],
+  ['cloud_backup_selection', 'folders'],
+];
+const MEDIA_PATH_JSON_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ['video_edit_version', 'files'],
+  ['photography_workflow', 'value'],
+];
 
 @Injectable()
 export class DatabaseRepository {
@@ -391,44 +443,52 @@ export class DatabaseRepository {
       targetFolder = targetFolder.slice(0, -1);
     }
 
-    type PathColumn = 'asset.originalPath' | 'asset_file.path' | 'person.thumbnailPath' | 'user.profileImagePath';
-    const replacement = (column: PathColumn) =>
-      sql<string>`${targetFolder} || substring(${sql.ref(column)} from char_length(${sourceFolder}) + 1)`;
-    const matches = (column: PathColumn) => {
+    const replacement = (value: RawBuilder<unknown>) =>
+      sql<string>`${targetFolder} || substring(${value} from char_length(${sourceFolder}) + 1)`;
+    const separators = ['/', ...(windowsSource ? ['\\'] : [])];
+    const matches = (value: RawBuilder<unknown>) => {
       if (!sourceFolder) {
-        return sql<boolean>`starts_with(${sql.ref(column)}, ${'/'})`;
+        return sql<boolean>`starts_with(${value}, ${'/'})`;
       }
-      const prefixes = [sourceFolder + '/', ...(windowsSource ? [sourceFolder + '\\'] : [])];
-      return sql<boolean>`(${sql.ref(column)} = ${sourceFolder} OR ${sql.join(
-        prefixes.map((prefix) => sql<boolean>`starts_with(${sql.ref(column)}, ${prefix})`),
+      return sql<boolean>`(${value} = ${sourceFolder} OR ${sql.join(
+        separators.map((separator) => sql<boolean>`starts_with(${value}, ${sourceFolder + separator})`),
         sql` OR `,
       )})`;
     };
+    // JSON documents hold paths as string values: rewrite each string that starts with the old folder.
+    // ponytail: a text-level rewrite, so an escaped quote right before such a path inside a longer string is rewritten too.
+    const jsonString = (folder: string, separator: string) => JSON.stringify(folder + separator).slice(0, -1);
 
     await this.db.transaction().execute(async (tx) => {
-      await tx
-        .updateTable('asset')
-        .set({ originalPath: replacement('asset.originalPath') })
-        .where(matches('asset.originalPath'))
-        .execute();
+      for (const [table, columns] of MEDIA_PATH_COLUMNS) {
+        for (const column of columns) {
+          const value = sql.ref(column);
+          await sql`UPDATE ${sql.table(table)} SET ${value} = ${replacement(value)} WHERE ${matches(value)}`.execute(
+            tx,
+          );
+        }
+      }
 
-      await tx
-        .updateTable('asset_file')
-        .set({ path: replacement('asset_file.path') })
-        .where(matches('asset_file.path'))
-        .execute();
+      for (const [table, column] of MEDIA_PATH_ARRAY_COLUMNS) {
+        const value = sql.ref(column);
+        const element = sql.ref('element');
+        await sql`UPDATE ${sql.table(table)}
+          SET ${value} = ARRAY(
+            SELECT CASE WHEN ${matches(element)} THEN ${replacement(element)} ELSE element END
+            FROM unnest(${value}) WITH ORDINALITY AS item(element, position) ORDER BY position
+          )
+          WHERE EXISTS (SELECT 1 FROM unnest(${value}) AS item(element) WHERE ${matches(element)})`.execute(tx);
+      }
 
-      await tx
-        .updateTable('person')
-        .set({ thumbnailPath: replacement('person.thumbnailPath') })
-        .where(matches('person.thumbnailPath'))
-        .execute();
-
-      await tx
-        .updateTable('user')
-        .set({ profileImagePath: replacement('user.profileImagePath') })
-        .where(matches('user.profileImagePath'))
-        .execute();
+      for (const [table, column] of MEDIA_PATH_JSON_COLUMNS) {
+        for (const separator of separators) {
+          const value = sql.ref(column);
+          const prefix = jsonString(sourceFolder, separator);
+          await sql`UPDATE ${sql.table(table)}
+            SET ${value} = replace(${value}::text, ${prefix}, ${jsonString(targetFolder, separator)})::jsonb
+            WHERE strpos(${value}::text, ${prefix}) > 0`.execute(tx);
+        }
+      }
     });
   }
 

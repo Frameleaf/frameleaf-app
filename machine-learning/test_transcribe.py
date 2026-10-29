@@ -280,3 +280,107 @@ class TestEndpoint:
             "http://localhost:3003/transcribe", data={"entries": entries()}, files={"audio": wav(1.0)}
         )
         assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_transcription_is_active_before_stream_start_and_releases_on_send_failure(fake_model, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from fastapi import UploadFile
+
+    from frameleaf_ml import main
+    from frameleaf_ml.transcription_memory import AudioMemoryBudget
+
+    budget = AudioMemoryBudget(16000 * 6)
+    monkeypatch.setattr(main, "audio_memory_budget", budget)
+    monkeypatch.setattr(main.model_cache, "get", AsyncMock(return_value=fake_model))
+    before = main.active_requests
+    response = await main.transcribe(
+        entries=(
+            [{"name": TRANSCRIBE_MODEL_ALIAS, "type": ModelType.AUDIO, "task": ModelTask.TRANSCRIBE, "options": {}}],
+            [],
+        ),
+        audio=UploadFile(file=io.BytesIO(wav())),
+    )
+    try:
+        assert main.active_requests == before + 1
+    finally:
+
+        async def disconnected(message):
+            raise OSError("synthetic disconnect before stream start")
+
+        with pytest.raises(Exception):
+            await response({"type": "http", "asgi": {"spec_version": "2.4"}}, AsyncMock(), disconnected)
+    assert main.active_requests == before
+    # A new full-size reservation is possible after the response fails before its first segment.
+    budget.reserve(16000 * 6).release()
+
+
+@pytest.mark.asyncio
+async def test_transcription_refuses_memory_pressure_before_decoding(fake_model, monkeypatch):
+    from unittest.mock import Mock
+
+    from fastapi import UploadFile
+
+    from frameleaf_ml import main
+    from frameleaf_ml.inference_executor import InferenceBusy
+    from frameleaf_ml.transcription_memory import AudioMemoryBudget
+
+    decode = Mock(side_effect=AssertionError("decoded before memory admission"))
+    monkeypatch.setattr(main, "audio_memory_budget", AudioMemoryBudget(1))
+    monkeypatch.setattr(main, "read_wav", decode)
+    with pytest.raises(InferenceBusy):
+        await main.transcribe(
+            entries=(
+                [
+                    {
+                        "name": TRANSCRIBE_MODEL_ALIAS,
+                        "type": ModelType.AUDIO,
+                        "task": ModelTask.TRANSCRIBE,
+                        "options": {},
+                    }
+                ],
+                [],
+            ),
+            audio=UploadFile(file=io.BytesIO(wav())),
+        )
+    decode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_model_load_failure_does_not_retain_decoded_audio_in_its_traceback(monkeypatch):
+    import weakref
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException, UploadFile
+
+    from frameleaf_ml import main
+    from frameleaf_ml.transcription_memory import AudioMemoryBudget
+
+    references = []
+
+    def decode(_file):
+        result = np.zeros(16000, dtype=np.float32)
+        references.append(weakref.ref(result))
+        return result
+
+    monkeypatch.setattr(main, "audio_memory_budget", AudioMemoryBudget(16000 * 6))
+    monkeypatch.setattr(main, "read_wav", decode)
+    monkeypatch.setattr(main.model_cache, "get", AsyncMock(side_effect=HTTPException(503, "synthetic unavailable")))
+    with pytest.raises(HTTPException) as failure:
+        await main.transcribe(
+            entries=(
+                [
+                    {
+                        "name": TRANSCRIBE_MODEL_ALIAS,
+                        "type": ModelType.AUDIO,
+                        "task": ModelTask.TRANSCRIBE,
+                        "options": {},
+                    }
+                ],
+                [],
+            ),
+            audio=UploadFile(file=io.BytesIO(wav())),
+        )
+    assert failure.value.status_code == 503
+    assert references and references[0]() is None

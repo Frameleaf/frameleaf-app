@@ -212,7 +212,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'frameleafCloud.remoteAccess.allowPasswordOverRelay',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
-    evidence: "change('allowPasswordOverRelay', value)",
+    evidence: "change('allowPasswordOverRelay', value === 'password')",
   },
   {
     pattern: 'frameleafCloud.remoteAccess.customHostname.*',
@@ -236,7 +236,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'frameleafCloud.remoteAccess.mode',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
-    evidence: 'update({ mode: event.currentTarget.value as RemoteAccessMode })',
+    evidence: 'update({ mode: value as RemoteAccessMode })',
   },
   {
     pattern: 'frameleafCloud.remoteAccess.portMapping',
@@ -265,8 +265,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'frameleafCloud.signIn.invitedStorageQuota',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/cloud/FrameleafSignInSection.svelte',
-    evidence: 'setInvitedStorageQuota',
+    file: 'src/routes/(user)/user-settings/sections/UsersSection.svelte',
+    evidence: 'signIn.invitedStorageQuota = value',
   },
   {
     pattern: 'libraryCare.checksumScan',
@@ -318,7 +318,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'libraryCare.healthScanCronExpression',
-    kind: 'control',
+    // FL-363: the overnight schedule starts the checks; this stored start no longer does
+    kind: 'api-only',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'libraryCare.healthScanCronExpression',
   },
@@ -578,7 +579,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'integrityChecks.checksumFiles.cronExpression',
-    kind: 'control',
+    // FL-363: the overnight schedule starts the checks; this stored start no longer does
+    kind: 'api-only',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'checksumFiles.cronExpression',
   },
@@ -602,7 +604,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'integrityChecks.missingFiles.cronExpression',
-    kind: 'control',
+    // FL-363: the overnight schedule starts the checks; this stored start no longer does
+    kind: 'api-only',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'missingFiles.cronExpression',
   },
@@ -614,7 +617,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'integrityChecks.untrackedFiles.cronExpression',
-    kind: 'control',
+    // FL-363: the overnight schedule starts the checks; this stored start no longer does
+    kind: 'api-only',
     file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
     evidence: 'untrackedFiles.cronExpression',
   },
@@ -632,7 +636,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'library.scan.cronExpression',
-    kind: 'control',
+    // FL-365: folder checks run in the overnight schedule; the stored time is kept, not shown
+    kind: 'api-only',
     file: 'src/routes/admin/system-settings/LibrarySettings.svelte',
     evidence: 'scan.cronExpression',
   },
@@ -1044,41 +1049,78 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/routes/admin/system-settings/NewVersionCheckSettings.svelte',
     evidence: 'check.frequency = ',
   },
+  // FL-363: Computers & background work › Overnight schedule.
   {
     pattern: 'nightlyTasks.clusterNewFaces',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.clusterNewFaces',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'clusterNewFaces'",
   },
   {
     pattern: 'nightlyTasks.databaseCleanup',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.databaseCleanup',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.databaseCleanup',
+  },
+  {
+    pattern: 'nightlyTasks.days',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.days',
+  },
+  {
+    pattern: 'nightlyTasks.emptyTrash',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'emptyTrash'",
+  },
+  {
+    pattern: 'nightlyTasks.quietHours',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.quietHours',
   },
   {
     pattern: 'nightlyTasks.generateMemories',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.generateMemories',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'generateMemories'",
   },
   {
     pattern: 'nightlyTasks.missingThumbnails',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.missingThumbnails',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'missingThumbnails'",
   },
   {
     pattern: 'nightlyTasks.startTime',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.startTime',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'startTime'",
+  },
+  {
+    pattern: 'nightlyTasks.steps.*',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: '[id]: event.currentTarget.value as OvernightStepTiming',
+  },
+  {
+    pattern: 'nightlyTasks.stopTime',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.stopTime',
   },
   {
     pattern: 'nightlyTasks.syncQuotaUsage',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/NightlyTasksSettings.svelte',
-    evidence: 'nightlyTasks.syncQuotaUsage',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: "'syncQuotaUsage'",
+  },
+  {
+    pattern: 'nightlyTasks.weeklyDay',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte',
+    evidence: 'nightly.weeklyDay',
   },
   {
     pattern: 'notifications.smtp.enabled',
@@ -1198,8 +1240,8 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'oauth.defaultStorageQuota',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/AuthSettings.svelte',
-    evidence: 'oauth.defaultStorageQuota',
+    file: 'src/routes/(user)/user-settings/sections/UsersSection.svelte',
+    evidence: 'draft.oauth.defaultStorageQuota = value',
   },
   {
     pattern: 'oauth.enabled',
@@ -1298,10 +1340,10 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'reverseGeocoding.enabled',
   },
   {
-    // FL-168: the Public server URL moved from Server identity to Frameleaf Cloud › Remote access.
+    // OPS-14: the Public server URL is on Server & updates for every server (Remote access keeps a copy).
     pattern: 'server.externalDomain',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/cloud/RemoteAccessSection.svelte',
+    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
     evidence: 'settingsDraft.draft.server.externalDomain = value.trim()',
   },
   {
@@ -1390,23 +1432,30 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/lib/components/frameleaf/settings/intelligence/SmartAlbums.svelte',
     evidence: 'rules.visualCategories',
   },
+  // FL-365: Storage & originals › "Warn me when the disk is nearly full".
+  {
+    pattern: 'storageWarning.percent',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/storage/StorageLanding.svelte',
+    evidence: 'draft.storageWarning = { percent: Number(value) }',
+  },
   {
     pattern: 'storageTemplate.enabled',
     kind: 'control',
-    file: 'src/lib/components/admin-settings/StorageTemplateSettings.svelte',
-    evidence: 'storageTemplate.enabled',
+    file: 'src/lib/components/frameleaf/settings/storage/FolderLayout.svelte',
+    evidence: 'draft.storageTemplate.enabled = on',
   },
   {
     pattern: 'storageTemplate.hashVerificationEnabled',
     kind: 'control',
-    file: 'src/lib/components/admin-settings/StorageTemplateSettings.svelte',
-    evidence: 'storageTemplate.hashVerificationEnabled',
+    file: 'src/lib/components/frameleaf/settings/storage/FolderLayout.svelte',
+    evidence: 'draft.storageTemplate.hashVerificationEnabled = on',
   },
   {
     pattern: 'storageTemplate.template',
     kind: 'control',
-    file: 'src/lib/components/admin-settings/StorageTemplateSettings.svelte',
-    evidence: 'storageTemplate.template',
+    file: 'src/lib/components/frameleaf/settings/storage/FolderLayout.svelte',
+    evidence: 'draft.storageTemplate.template =',
   },
   {
     // ADMIN-P3: "The emails themselves", each email's wording in plain words (EmailWordingDialog).
@@ -1456,20 +1505,26 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'trash.days',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/TrashSettings.svelte',
-    evidence: 'trash.days',
+    file: 'src/lib/components/frameleaf/settings/storage/DeletedItems.svelte',
+    evidence: 'draft.trash.days =',
   },
   {
     pattern: 'trash.enabled',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/TrashSettings.svelte',
-    evidence: 'trash.enabled',
+    file: 'src/lib/components/frameleaf/settings/storage/DeletedItems.svelte',
+    evidence: 'draft.trash.enabled = true',
   },
   {
     pattern: 'user.deleteDelay',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/UserSettings.svelte',
-    evidence: 'user.deleteDelay',
+    file: 'src/lib/components/frameleaf/settings/storage/DeletedItems.svelte',
+    evidence: 'draft.user.deleteDelay =',
+  },
+  {
+    pattern: 'user.newUserStorageQuota',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/sections/UsersSection.svelte',
+    evidence: 'draft.user.newUserStorageQuota = value',
   },
 ]);
 
@@ -1645,10 +1700,23 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'showSupportBadge',
   },
   {
+    pattern: 'trash.reuploadUntil',
+    // FL-556: Look & playback › Safety, "Let uploads bring back deleted photos" (24 hours)
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: "'trash.reuploadUntil'",
+  },
+  {
     pattern: 'ratings.enabled',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
     evidence: 'ratings.enabled',
+  },
+  {
+    pattern: 'lockedPin.relockMinutes',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/access/PinSection.svelte',
+    evidence: 'lockedPin: { relockMinutes',
   },
   {
     pattern: 'recentlyAdded.sidebarWeb',

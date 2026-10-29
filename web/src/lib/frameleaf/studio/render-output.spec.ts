@@ -3,6 +3,7 @@ import {
   StudioExportColor,
   StudioExportFormat,
   StudioExportResolution,
+  StudioExportShape,
   type StudioRenderEvidenceDto,
 } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
@@ -244,6 +245,34 @@ describe('Studio render output (FL-42)', () => {
       refusal: 'codec-unavailable',
     });
     expect(verdict(choices.colors, StudioExportColor.Hdr10)).toEqual({ supported: true });
+  });
+
+  it('offers a vertical or square export only from a session that reframes, in SDR video (FL-563)', () => {
+    const settings = {
+      format: StudioExportFormat.Mp4H264,
+      color: StudioExportColor.Preserve,
+      resolution: StudioExportResolution.$1080P,
+      shape: StudioExportShape.Vertical,
+    };
+    const reframing = evidence();
+    reframing.candidates![0].reframe = true;
+    expect(evaluateStudioRender([reframing], MediaOperationDestination.Lan, settings)).toEqual({ supported: true });
+    expect(evaluateStudioRender([evidence()], MediaOperationDestination.Lan, settings)).toEqual({
+      supported: false,
+      refusal: 'codec-unavailable',
+    });
+    expect(
+      evaluateStudioRender([reframing], MediaOperationDestination.Lan, {
+        ...settings,
+        format: StudioExportFormat.Mp4HevcMain10,
+      }),
+    ).toEqual({ supported: false, refusal: 'codec-unavailable' });
+    expect(
+      evaluateStudioRender([evidence()], MediaOperationDestination.Lan, {
+        ...settings,
+        shape: StudioExportShape.Original,
+      }),
+    ).toEqual({ supported: true });
   });
 
   it('names every refusal and reads it from a refused export', () => {

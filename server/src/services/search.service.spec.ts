@@ -862,6 +862,21 @@ describe(SearchService.name, () => {
       );
     });
 
+    it('should resolve several names joined by "and", and read a long list of names quickly', async () => {
+      mocks.person.getByName.mockResolvedValue([]);
+
+      await sut.askSearch(authStub.user1, { query: 'photos of Alice and Bob in Banff' });
+
+      expect(mocks.person.getByName).toHaveBeenCalledWith(authStub.user1.user.id, 'Alice', { withHidden: false });
+      expect(mocks.person.getByName).toHaveBeenCalledWith(authStub.user1.user.id, 'Bob', { withHidden: false });
+
+      mocks.person.getByName.mockClear();
+      const started = performance.now();
+      await sut.askSearch(authStub.user1, { query: `photos with A ${'and A '.repeat(40)}!` });
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(mocks.person.getByName).not.toHaveBeenCalled();
+    });
+
     it('should not resolve people names for API keys without person read permission', async () => {
       const auth = AuthFactory.from(authStub.user1.user)
         .apiKey({ permissions: [Permission.AssetRead] })
@@ -1069,7 +1084,7 @@ describe(SearchService.name, () => {
         includeNsfw: false,
         tagIds: ['tag-locked'],
         personIds: ['person-locked'],
-        petIds: [],
+        petIds: ['pet-locked'],
         scope: 'owned' as const,
       };
       const auth = { ...authStub.user1, hiddenContent };
@@ -1100,6 +1115,7 @@ describe(SearchService.name, () => {
         limit: 10,
         suppressedPersonIds: ['person-locked'],
         suppressedTagIds: ['tag-locked'],
+        suppressedPetIds: ['pet-locked'],
         covers: false,
       });
     });

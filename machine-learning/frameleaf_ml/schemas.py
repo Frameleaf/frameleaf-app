@@ -35,6 +35,7 @@ class ModelTask(StrEnum):
     SEMANTIC_MASK = "semantic-mask"
     INPAINT = "inpaint"
     TRANSCRIBE = "transcribe"
+    MUSIC = "music"
 
 
 class ModelType(StrEnum):
@@ -238,7 +239,8 @@ class ImageDescriptionOptions(_OptionsBase):
 
 class SemanticMaskOptions(_OptionsBase):
     target: Literal["subject", "sky"] = "subject"
-    device: Literal["cpu", "cuda"] = "cpu"
+    # None leaves the choice to MACHINE_LEARNING_SEMANTIC_MASK_DEVICE.
+    device: Literal["cpu", "cuda"] | None = None
 
 
 class InpaintOptions(_OptionsBase):
@@ -256,6 +258,18 @@ class TranscribeOptions(_OptionsBase):
     wordTimestamps: bool = True
 
 
+class MusicOptions(_OptionsBase):
+    """Options for the music task (Make a movie, MusicGen small).
+
+    `prompt` describes the music, `duration` is its length in seconds and `seed` makes a run
+    repeatable: the same prompt, length and seed give the same music.
+    """
+
+    prompt: str = Field(min_length=1, max_length=500)
+    duration: float = Field(gt=0, le=180)
+    seed: int = Field(default=0, ge=0, le=2**31 - 1)
+
+
 # Map of (task, type) -> options pydantic class for per-entry validation.
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
@@ -269,6 +283,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEMANTIC_MASK, ModelType.VISUAL): SemanticMaskOptions,
     (ModelTask.INPAINT, ModelType.VISUAL): InpaintOptions,
     (ModelTask.TRANSCRIBE, ModelType.AUDIO): TranscribeOptions,
+    (ModelTask.MUSIC, ModelType.AUDIO): MusicOptions,
 }
 
 

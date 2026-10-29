@@ -17,6 +17,7 @@ import {
   notAnswering,
   studioWorkUnavailable,
   summariseWork,
+  whereOf,
   workNow,
   workRows,
   workState,
@@ -93,6 +94,21 @@ describe('computersFrom', () => {
     expect(states(MlWorkerReadiness.Unreachable)).toBe('not-answering');
     expect(states(MlWorkerReadiness.Cpu)).toBe('ready');
     expect(states(MlWorkerReadiness.NotServing)).toBe('ready');
+  });
+});
+
+describe('whereOf', () => {
+  it('says a Studio worker bundled with this server runs here, not at home (FL-589)', () => {
+    const [server, bundled, office] = computersFrom(
+      inventory([
+        entry({}),
+        entry({ name: 'Studio worker (machine learning)', kind: 'local', source: WorkerInventorySource.RenderWorker }),
+        entry({ name: 'Office PC', kind: MlDestinationKind.Lan }),
+      ]),
+    );
+    expect([server, bundled, office].map((computer) => whereOf(computer))).toEqual(['server', 'server', 'home']);
+    // It stays its own row, so its own state is still shown.
+    expect(bundled.place).toBe('home');
   });
 });
 

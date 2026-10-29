@@ -106,6 +106,8 @@ export type CloudDescriptionItem = {
   sha256?: string;
   bytes?: number;
   contentType?: string;
+  /** The original's checksum (hex) when the photo was sent: a result for another original is not written. */
+  checksum?: string;
   /** Why the photo was not sent after all: `locked`, `not-found`, `no-preview`, `not-an-image`, `prepare-failed`. */
   refused?: string;
   /** Its share of the settled charge, once settled (USD). */
@@ -191,6 +193,7 @@ export type CloudDescriptionEstimateRecord = {
   createdBy: string | null;
   /** The photos the estimate covers, per owner. Emptied once the backfill started. */
   owners: Record<string, string[]>;
+  promotionalFirstBatch?: { ownerId: string; assetIds: string[]; p90Usd: number; holdUsd: number };
   started: { at: string; batches: number; photos: number; operationIds: string[] } | null;
 };
 

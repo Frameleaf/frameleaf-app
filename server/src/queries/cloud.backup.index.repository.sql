@@ -9,6 +9,17 @@ where
   "bucket" = $1
   and "sha256" in ($2)
 
+-- CloudBackupIndexRepository.getRecorded
+select
+  "sha256",
+  "size",
+  "etag"
+from
+  "cloud_backup_object"
+where
+  "bucket" = $1
+  and "sha256" in ($2)
+
 -- CloudBackupIndexRepository.record
 insert into
   "cloud_backup_object" ("bucket", "sha256", "size", "etag")
@@ -29,9 +40,30 @@ where
   and "sha256" in ($2)
 
 -- CloudBackupIndexRepository.deleteBucket
+begin
 delete from "cloud_backup_object"
 where
+  (
+    "bucket" = $1
+    or starts_with(bucket, $2)
+  )
+delete from "cloud_backup_object_verification"
+where
   "bucket" = $1
+delete from "cloud_backup_manifest_entry"
+where
+  "manifestId" in (
+    select
+      "id"
+    from
+      "cloud_backup_manifest"
+    where
+      "bucket" = $1
+  )
+delete from "cloud_backup_manifest"
+where
+  "bucket" = $1
+commit
 
 -- CloudBackupIndexRepository.currentTime
 select
@@ -191,6 +223,49 @@ where
   "bucket" = $1
   and "key" in ($2)
 
+-- CloudBackupIndexRepository.getOwnerBackupCandidates
+select
+  "m"."key"
+from
+  "cloud_backup_manifest" as "m"
+where
+  "m"."bucket" = $1
+  and "m"."status" in ($2, $3)
+  and (
+    not exists (
+      select
+        "o"."assetId"
+      from
+        "cloud_backup_manifest_original" as "o"
+      where
+        "o"."manifestId" = "m"."id"
+    )
+    or exists (
+      select
+        "o"."assetId"
+      from
+        "cloud_backup_manifest_original" as "o"
+        inner join "asset" on "asset"."id" = "o"."assetId"
+      where
+        "o"."manifestId" = "m"."id"
+        and "asset"."ownerId" = $4
+        and (
+          "asset"."status" = $5
+          or "asset"."deletedAt" is not null
+        )
+    )
+    or exists (
+      select
+        "o"."assetId"
+      from
+        "cloud_backup_manifest_original" as "o"
+        inner join "asset_backup_deletion" as "d" on "d"."assetId" = "o"."assetId"
+      where
+        "o"."manifestId" = "m"."id"
+        and "d"."ownerId" = $6
+    )
+  )
+
 -- CloudBackupIndexRepository.listKeptManifests
 select
   "key",
@@ -221,8 +296,11 @@ where
 -- CloudBackupIndexRepository.forget
 delete from "cloud_backup_object"
 where
-  "bucket" = $1
-  and "sha256" in ($2)
+  (
+    "bucket" = $1
+    or starts_with(bucket, $2)
+  )
+  and "sha256" in ($3)
 
 -- CloudBackupIndexRepository.getLibraryState
 select
@@ -246,6 +324,51 @@ from
 where
   "id" = any ($1::uuid[])
   and "status" in ($2, $3)
+
+-- CloudBackupIndexRepository.getEndedTransfers
+select
+  "id",
+  result -> 'backupTransfer' as "transfer"
+from
+  "media_operation"
+where
+  "kind" in ($1, $2)
+  and "status" in ($3, $4, $5)
+  and jsonb_typeof(result -> 'backupTransfer') = 'object'
+
+-- CloudBackupIndexRepository.clearEndedTransfer
+update "media_operation"
+set
+  "result" = result - 'backupTransfer'
+where
+  "id" = $1
+  and "status" in ($2, $3, $4)
+
+-- CloudBackupIndexRepository.getUnfinishedOperationIds
+select
+  "id"
+from
+  "media_operation"
+where
+  "id" = any ($1::uuid[])
+  and "status" not in ($2, $3, $4)
+
+-- CloudBackupIndexRepository.getTakenPaths
+select
+  "originalPath" as "path"
+from
+  "asset"
+where
+  "originalPath" = any ($1::text[])
+  and "id" != all ($2::uuid[])
+union
+select
+  "path"
+from
+  "asset_file"
+where
+  "path" = any ($3::text[])
+  and "assetId" != all ($4::uuid[])
 
 -- CloudBackupIndexRepository.getOwnerNames
 select

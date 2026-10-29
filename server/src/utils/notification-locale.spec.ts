@@ -58,6 +58,16 @@ describe('origin-only system notification contract (FL-329)', () => {
     expect(request).not.toHaveProperty('body');
   });
 
+  it('renders the longest administrator notice in the recipient language (FL-406)', () => {
+    const template: SystemNotificationTemplate = { version: 1, key: 'cloud-identity-key-damaged', args: {} };
+    const english = NOTIFICATION_CATALOGS.en.messages['cloud-identity-key-damaged']!;
+    expect(renderSystemNotification(template, 'en', { title: '', body: '' })).toEqual(english);
+    expect(renderSystemNotification(template, 'en-XA', english, catalogs)).toEqual({
+      title: `[Fixture ${english.title}]`,
+      body: `[Fixture ${english.body}]`,
+    });
+  });
+
   it('uses session overrides only for push, keeps account authority for web, and persists changes through existing preferences', () => {
     const notifications = { locale: 'en-XA', devices: [{ sessionId, locale: 'en-XB' }] };
     const dto = UserPreferencesUpdateDto.schema.parse({ notifications });

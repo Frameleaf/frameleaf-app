@@ -279,15 +279,15 @@ You can use [Smart Search](/features/searching.md) for this to some extent. For 
 In **Settings → Search & intelligence → Faces & identity**, under **Advanced: face model and numbers**, you can increase **Face clarity needed** to 0.8 to help prevent bad thumbnails. Setting it too high (above 0.9) might filter out too many real faces depending on the library used. If you just want to hide specific faces, you can raise **Photos needed before someone appears**
 to increase the bar for what the algorithm considers a "core face" for that person, reducing the chance of bad thumbnails being chosen.
 
-### The immich_model-cache volume takes up a lot of space, what could be the problem?
+### The frameleaf_model-cache volume takes up a lot of space, what could be the problem?
 
-If you installed several models and chose not to use some of them, it might be worth deleting the old models that are in immich_model-cache. To do this you can mount the model cache and remove the undesired models.
+If you installed several models and chose not to use some of them, it might be worth deleting the old models that are in frameleaf_model-cache (`immich_model-cache` on a stack that kept the `immich` project name). To do this you can mount the model cache and remove the undesired models.
 
 <details>
 <summary>Steps</summary>
 
 ```bash
-docker run -it --rm -v immich_model-cache:/mnt-models alpine sh
+docker run -it --rm -v frameleaf_model-cache:/mnt-models alpine sh
 cd /mnt-models
 ls clip/ facial-recognition/
 # rm -r clip/ABC facial-recognition/DEF # delete unused models

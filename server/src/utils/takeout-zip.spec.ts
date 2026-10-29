@@ -1,4 +1,5 @@
 import { crc32, deflateRawSync } from 'node:zlib';
+import { tryPromise } from 'src/utils/promise.js';
 import {
   TakeoutZipError,
   TakeoutZipSource,
@@ -198,7 +199,7 @@ describe('readTakeoutZipDirectory', () => {
     const source: TakeoutZipSource = {
       size: directoryOffset + directory.length + trailer.length,
       read: (position, length) =>
-        Promise.try(() => {
+        tryPromise(() => {
           const result = Buffer.alloc(length);
           for (const segment of segments) {
             const from = Math.max(position, segment.offset),

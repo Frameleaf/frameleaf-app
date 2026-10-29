@@ -52,6 +52,25 @@ const job = async (
   return id;
 };
 
+it('reports capacity waits using the existing public reason without changing the stored retry classification', async () => {
+  const id = await run();
+  const capacityStage = await stage(id, 'root', 'Capacity', 'pending');
+  const capacity = await job(id, capacityStage, 'Capacity', { dependency: true });
+  await sql`update job set "dependencyReason"='destination-capacity' where id=${capacity}::uuid`.execute(db);
+  const outageStage = await stage(id, 'root', 'Outage', 'pending');
+  await job(id, outageStage, 'Outage', { dependency: true });
+  const [summary] = await listRuns(db, 25, 0);
+  const [item] = (await listRunItems(db, id, 25, 0))!;
+  expect(summary.reasons).toEqual(['dependency_unavailable', 'destination-unavailable']);
+  expect(item.reasons).toEqual(['dependency_unavailable', 'destination-unavailable']);
+  const {
+    rows: [stored],
+  } = await sql<{ reason: string }>`select "dependencyReason" as reason from job where id=${capacity}::uuid`.execute(
+    db,
+  );
+  expect(stored.reason).toBe('destination-capacity');
+});
+
 it('reads an exact retained run outside the global page without changing default pagination or privacy', async () => {
   const retained = await run();
   await stage(retained, 'private-root', 'Thumbnail', 'failed');
@@ -224,4 +243,20 @@ it('does not complete an empty run before enumeration and returns undefined for 
   await run(false);
   expect((await listRuns(db, 25, 0))[0].state).toBe('running');
   expect(await listRunItems(db, randomUUID(), 25, 0)).toBeUndefined();
+});
+
+it('counts jobs outside a run that finished since the oldest waiting one was queued (FL-588)', async () => {
+  const loose = (state: string, createdAgo: number, finishedAgo: number | null) =>
+    sql`insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", state, token, "createdAt", "finishedAt")
+      values (${randomUUID()}::uuid, 'test', 'Thumbnail', '{}', true, false, 1000, ${state},
+        ${state === 'active' ? randomUUID() : null}::uuid, now() - ${createdAgo} * interval '1 minute',
+        case when ${finishedAgo}::int is null then null else now() - ${finishedAgo}::int * interval '1 minute' end)`.execute(
+      db,
+    );
+  await loose('completed', 120, 100);
+  await loose('completed', 10, 9);
+  await loose('completed', 10, 8);
+  await loose('active', 10, null);
+  await loose('pending', 10, null);
+  expect(await observeQueueRun(db, 'test')).toMatchObject({ active: 1, waiting: 1, processed: 2 });
 });

@@ -14,6 +14,10 @@
      * still renders at home; a Frameleaf Cloud Smooth motion is confirmed and billed separately.
      */
     smoothMotion?: { factor: 2 | 4 | 8; destinationId: string };
+    /** FL-563: a vertical or square picture; absent keeps the project's own shape. */
+    shape?: StudioExportShape;
+    /** FL-563: the crop path of each shot as shown, for a vertical or square export. */
+    framing?: StudioExportFramingDto[];
   };
 </script>
 
@@ -41,11 +45,17 @@
     StudioExportFormat,
     StudioExportResolution,
     StudioExportQuality,
+    StudioExportShape,
     StudioExportSubtitleMode,
     getMlCapabilities,
+    getStudioFraming,
     type MlCapabilityDestinationDto,
+    type StudioExportFramingDto,
     type StudioExportMastering,
+    type StudioReframeResponseDto,
   } from '@frameleaf/sdk';
+  import StudioExportReframe from '$lib/components/frameleaf/StudioExportReframe.svelte';
+  import { cropPath, cropShare, isReshaped, shapedSize, sizeLabel } from '$lib/frameleaf/studio/reframe';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
   import { resolvePosition, type DetectedGpu, type RouteMode } from '$lib/frameleaf/gpu-model-catalog';
   import { Icon } from '@frameleaf/ui';
@@ -70,10 +80,16 @@
     renderEvidence = [],
     outputIntent = 'sdr',
     hdrEnabled = false,
+    projectId = null,
     onExport,
   }: {
     open?: boolean;
     sequenceName: string;
+    /**
+     * FL-563: the saved project, which offers Vertical 9:16 and Square 1:1 with automatic framing.
+     * Without one the export keeps the project's own shape.
+     */
+    projectId?: string | null;
     outputIntent?: 'sdr' | 'hdr';
     hdrEnabled?: boolean;
     busy?: boolean;
@@ -178,6 +194,7 @@
   ];
 
   let format = $state(StudioExportFormat.Mp4HevcMain10);
+
   const photo = $derived(STUDIO_STILL_FORMATS.includes(format));
   /** FL-105: the project's sound alone; it has no picture settings and no captions. */
   const audioOnly = $derived(STUDIO_AUDIO_FORMATS.includes(format));
@@ -286,9 +303,75 @@
     destination = MediaOperationDestination.Local;
     smoothFactor = null;
     advancedOpen = false;
+    shape = StudioExportShape.Original;
+    nudges = {};
+    framing = null;
+    framingState = 'idle';
   });
 
-  const choices = $derived(studioRenderChoices(renderEvidence, destination, { format, color, resolution }));
+  /* Shape (FL-563): Original, Vertical 9:16 or Square 1:1, chosen per export; the project is not changed. */
+  const shapes: { value: StudioExportShape; label: Translations }[] = [
+    { value: StudioExportShape.Original, label: 'frameleaf_studio_export_shape_original' },
+    { value: StudioExportShape.Vertical, label: 'frameleaf_studio_export_shape_vertical' },
+    { value: StudioExportShape.Square, label: 'frameleaf_studio_export_shape_square' },
+  ];
+  let shape = $state(StudioExportShape.Original);
+  const reshaped = $derived(isReshaped(shape));
+  /** The person's move of each shot, as a share of the frame width; applied to the whole shot. */
+  let nudges = $state<Record<string, number>>({});
+  let framing = $state<StudioReframeResponseDto | null>(null);
+  let framingState = $state<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  /** A shaped picture is SDR video; the 10-bit masters, stills and sound alone keep the project's shape. */
+  const shapeable = (value: StudioExportFormat) =>
+    !STUDIO_STILL_FORMATS.includes(value) &&
+    !STUDIO_AUDIO_FORMATS.includes(value) &&
+    ![StudioExportFormat.Mp4HevcMain10, StudioExportFormat.WebmAv1, StudioExportFormat.Prores422Hq].includes(value);
+  const chooseShape = (value: StudioExportShape) => {
+    shape = value;
+    if (isReshaped(value)) {
+      // Vertical and square films are for sharing: an SDR video format, the colour kept as it is.
+      if (!shapeable(format)) {
+        format = StudioExportFormat.Mp4H264;
+      }
+      color = StudioExportColor.Preserve;
+      declarePqMastering = false;
+    }
+  };
+  // The framing is worked out once a shape is chosen, and kept for this opening of the dialog.
+  $effect(() => {
+    if (!open || !reshaped || !projectId || framingState !== 'idle') {
+      return;
+    }
+    framingState = 'loading';
+    const id = projectId;
+    void (async () => {
+      try {
+        const result = await getStudioFraming({ id });
+        if (open && projectId === id) {
+          framing = result;
+          framingState = 'ready';
+        }
+      } catch {
+        if (open && projectId === id) {
+          framingState = 'failed';
+        }
+      }
+    })();
+  });
+  const projectFrame = $derived(framing ? { width: framing.width, height: framing.height } : undefined);
+  const shapedOutput = $derived(reshaped ? shapedSize(shape, resolution, projectFrame) : null);
+  const framingPayload = $derived<StudioExportFramingDto[]>(
+    framing && reshaped
+      ? framing.shots.map((item) => ({
+          clipId: item.clipId,
+          path: cropPath(item.path, nudges[item.clipId] ?? 0, cropShare(shape, framing!)),
+        }))
+      : [],
+  );
+
+  const choices = $derived(
+    studioRenderChoices(renderEvidence, destination, { format, color, resolution, ...(reshaped && { shape }) }),
+  );
   const availableChoices = $derived(
     studioRenderChoices(renderEvidence, destination, {
       format,
@@ -303,6 +386,7 @@
       resolution,
       ...(!photo && { quality }),
       ...(!photo && !audioOnly && { subtitleMode }),
+      ...(reshaped && { shape }),
     }),
   );
   const sidecarAvailable = $derived(
@@ -312,6 +396,7 @@
       resolution,
       subtitleMode: StudioExportSubtitleMode.Sidecar,
       quality,
+      ...(reshaped && { shape }),
     }).supported,
   );
   const embeddedAvailable = $derived(
@@ -321,6 +406,7 @@
       resolution,
       subtitleMode: StudioExportSubtitleMode.Embedded,
       quality,
+      ...(reshaped && { shape }),
     }).supported,
   );
   const needsMastering = $derived(
@@ -337,20 +423,22 @@
       ? { primaries: Primaries.Bt2020, maxNits, minNits }
       : null,
   );
-  const selectedRange = $derived(
-    rangeMode === 'frames' &&
-      typeof inPoint === 'number' &&
-      typeof outPoint === 'number' &&
-      Number.isSafeInteger(inPoint) &&
-      Number.isSafeInteger(outPoint) &&
-      inPoint >= 0 &&
-      outPoint > inPoint
-      ? { inPoint, outPoint: photo ? inPoint + 1 : outPoint }
-      : null,
-  );
+  // A still is the one frame at Start; its End field is hidden, so only video reads outPoint.
+  const selectedRange = $derived.by(() => {
+    if (rangeMode !== 'frames' || typeof inPoint !== 'number' || !Number.isSafeInteger(inPoint) || inPoint < 0) {
+      return null;
+    }
+    if (photo) {
+      return { inPoint, outPoint: inPoint + 1 };
+    }
+    return typeof outPoint === 'number' && Number.isSafeInteger(outPoint) && outPoint > inPoint
+      ? { inPoint, outPoint }
+      : null;
+  });
   const canExport = $derived(
     !busy &&
       verdict.supported &&
+      (!reshaped || framingState === 'ready' || framingState === 'failed') &&
       (!needsMastering || mastering !== null) &&
       (rangeMode === 'all' || selectedRange !== null) &&
       (smoothFactor === null || !!smoothDestination),
@@ -401,9 +489,17 @@
         ),
         resolution: audioOnly
           ? $t('frameleaf_studio_export_audio_group')
-          : $t(
-              [...stillResolutions, ...videoResolutions].find((item) => item.value === resolution)?.label ?? 'unknown',
-            ),
+          : reshaped && shapedOutput
+            ? $t('frameleaf_studio_export_shaped_summary', {
+                values: {
+                  shape: $t(shapes.find((item) => item.value === shape)?.label ?? 'unknown'),
+                  ...shapedOutput,
+                },
+              })
+            : $t(
+                [...stillResolutions, ...videoResolutions].find((item) => item.value === resolution)?.label ??
+                  'unknown',
+              ),
         destination: $t(destinations.find((item) => item.value === destination)?.label ?? 'unknown'),
       },
     }),
@@ -422,6 +518,7 @@
         destination,
         ...(smoothFactor !== null &&
           smoothDestination && { smoothMotion: { factor: smoothFactor, destinationId: smoothDestination.id } }),
+        ...(reshaped && { shape, ...(framingPayload.length > 0 && { framing: framingPayload }) }),
       });
     }
   };
@@ -431,8 +528,38 @@
   bind:open
   title={$t('frameleaf_studio_export_title', { values: { name: sequenceName } })}
   closeLabel={$t('close')}
+  wide={reshaped}
 >
   <div class="export" data-testid="studio-export-dialog">
+    {#if projectId}
+      <div class="shape-choice">
+        <span id="{fieldId}-shape">{$t('frameleaf_studio_export_shape')}</span>
+        <div class="shapes" role="radiogroup" use:rovingFocus aria-labelledby="{fieldId}-shape">
+          {#each shapes as item (item.value)}
+            <button
+              type="button"
+              role="radio"
+              class="shape"
+              aria-checked={shape === item.value}
+              onclick={() => chooseShape(item.value)}
+            >
+              <span class="shape-icon {item.value}" aria-hidden="true"></span>
+              <span>{$t(item.label)}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+      {#if reshaped}
+        {#if framingState === 'ready' && framing}
+          <StudioExportReframe {framing} {shape} size={shapedOutput} bind:nudges />
+        {:else if framingState === 'failed'}
+          <p class="note warning reframe-status" role="status">{$t('frameleaf_studio_reframe_failed')}</p>
+        {:else}
+          <p class="note reframe-status" aria-busy="true">{$t('frameleaf_studio_reframe_loading')}</p>
+        {/if}
+      {/if}
+    {/if}
+
     <div class="presets">
       <span id="{fieldId}-preset">{$t('frameleaf_studio_export_preset')}</span>
       <div class="segmented" role="radiogroup" use:rovingFocus aria-labelledby="{fieldId}-preset">
@@ -441,7 +568,7 @@
             type="button"
             role="radio"
             aria-checked={activePreset === preset.id}
-            disabled={!presetSupported(preset)}
+            disabled={!presetSupported(preset) || (reshaped && !shapeable(preset.format))}
             onclick={() => applyPreset(preset)}
           >
             {$t(preset.label)}
@@ -461,6 +588,7 @@
                   value={item.value}
                   title={refusalTitle(availableChoices.formats, item.value)}
                   disabled={unsupported(availableChoices.formats, item.value) ||
+                    (reshaped && !shapeable(item.value)) ||
                     ((!hdrEnabled || outputIntent !== 'hdr') &&
                       [StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(item.value))}
                   >{$t(item.label)}</option
@@ -474,7 +602,11 @@
         <span>{$t('frameleaf_studio_export_resolution')}</span>
         <select id="{fieldId}-resolution" bind:value={resolution} disabled={photo || audioOnly}>
           {#each resolutions as item (item.value)}
-            <option value={item.value} disabled={unsupported(choices.resolutions, item.value)}>{$t(item.label)}</option>
+            <option value={item.value} disabled={unsupported(choices.resolutions, item.value)}
+              >{reshaped && shapedSize(shape, item.value)
+                ? sizeLabel(shapedSize(shape, item.value)!)
+                : $t(item.label)}</option
+            >
           {/each}
         </select>
       </label>
@@ -510,7 +642,7 @@
         <div class="grid">
           <label class="field" for="{fieldId}-color">
             <span>{$t('frameleaf_studio_export_color')}</span>
-            <select id="{fieldId}-color" bind:value={color} disabled={photo || audioOnly}>
+            <select id="{fieldId}-color" bind:value={color} disabled={photo || audioOnly || reshaped}>
               {#each colors as item (item.value)}
                 <option value={item.value} disabled={unsupported(availableChoices.colors, item.value)}
                   >{$t(item.label)}</option
@@ -550,7 +682,7 @@
           <p class="note warning" role="status">{$t('frameleaf_studio_export_range_invalid')}</p>
         {/if}
 
-        {#if !photo && !audioOnly && color === StudioExportColor.Preserve}
+        {#if !photo && !audioOnly && !reshaped && color === StudioExportColor.Preserve}
           <label class="note">
             <input type="checkbox" bind:checked={declarePqMastering} />
             {$t('frameleaf_studio_export_mastering_preserve')}
@@ -720,6 +852,60 @@
   .note.warning {
     color: var(--fl-warning);
   }
+  /* studio-upgrades.css `.flu-export-shape`, `.flu-shapes`, `.flu-shape` */
+  .shape-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .shapes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .shape {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 10px 12px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font: inherit;
+    font-size: 13px;
+    text-align: start;
+    cursor: pointer;
+  }
+  .shape[aria-checked='true'] {
+    border-color: var(--fl-accent);
+    box-shadow: 0 0 0 1px var(--fl-accent);
+  }
+  .shape-icon {
+    flex-shrink: 0;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+    opacity: 0.8;
+  }
+  .shape-icon.original {
+    width: 24px;
+    height: 14px;
+  }
+  .shape-icon.vertical {
+    width: 12px;
+    height: 22px;
+  }
+  .shape-icon.square {
+    width: 18px;
+    height: 18px;
+  }
+  .reframe-status {
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--fl-border);
+  }
   .presets {
     display: grid;
     gap: var(--fl-space-1);
@@ -829,7 +1015,8 @@
     gap: 0.5rem;
   }
   @media (max-width: 520px) {
-    .grid {
+    .grid,
+    .shapes {
       grid-template-columns: minmax(0, 1fr);
     }
   }
