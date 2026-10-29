@@ -25,6 +25,11 @@
     removalOutcome,
   } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
+  import {
+    canIncludeLibraryForCollection,
+    downloadBoardsCollection,
+    LIBRARY_FILE_LIMIT,
+  } from '$lib/frameleaf/boards-download';
   import { publishCollectionPage } from '$lib/frameleaf/collection-page-request';
   import { albumSearchContext } from '$lib/frameleaf/search-context';
   import { writeLibraryView, readLibraryView, createLibrarySession } from '$lib/frameleaf/library-session';
@@ -462,6 +467,16 @@
       itemGeneration++;
     }),
   );
+  /** A Boards collection asks what goes in the .zip (FL-660). */
+  const boardsCollection = $derived(designContext && mixedAlbum && !isSpace);
+  let downloadOpen = $state(false);
+  const downloadCollection = (includeLibrary: boolean) =>
+    void downloadBoardsCollection({
+      album,
+      fileName: albumDownloadFileName,
+      includeLibrary,
+      errorMessage: $t('errors.unable_to_download_files'),
+    });
   const updateMixedQuery = (query: import('$lib/components/discovery/query').DiscoveryQuery) => {
     const url = new URL(Route.viewAlbum({ id: albumId }), page.url.origin);
     const previous = readLibraryView(new URL(page.url.href)) ?? createLibrarySession().state;
@@ -643,6 +658,7 @@
       onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
       onToggleActivity={() => (activityOpen = !activityOpen)}
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
+      onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
     />
   {/key}
 {/snippet}
@@ -757,6 +773,17 @@
     </Theme>
   {/if}
 </UserPageLayout>
+
+{#if downloadOpen}{#await import('$lib/components/frameleaf/BoardsDownloadDialog.svelte') then { default: BoardsDownloadDialog }}
+    <BoardsDownloadDialog
+      bind:open={downloadOpen}
+      count={assetCount + bookmarkCount}
+      name={album.albumName || $t('unnamed_album')}
+      libraryAvailable={canIncludeLibraryForCollection(album, currentUserId) &&
+        assetCount + bookmarkCount <= LIBRARY_FILE_LIMIT}
+      onDownload={downloadCollection}
+    />
+  {/await}{/if}
 
 {#if isCollection}
   <ResultsAssetViewer
