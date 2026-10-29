@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "d660751e99d923243f4b61f7bb186a1c1b18d02b",
+  "sourceCommit": "94bdc4464dd4845f4ed6ab70358c6f27fd475e4d",
   "sourceHashes": {
     "src/enum.ts": "b55367c1df94c38ec6b2084d82199d5f2fbb0dc4dac278f8d80dec8335fca90e",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -18,7 +18,7 @@
     "src/schema/tables/album-closure.table.ts": "63d2d80854745a6343f6472c872b8bf42fd14974d17a1dff4b4c826257744291",
     "src/schema/tables/album-user-audit.table.ts": "976d8cd2665af72b47fc07442e7b222633ea1d40e56045796a061f5cee16782e",
     "src/schema/tables/album-user.table.ts": "ab8f99553f854f0f63ee0c0de597281f7226bb28e772d1e928333369fc8e3513",
-    "src/schema/tables/album.table.ts": "bed123cc47e161754f35ca073c2fed86d07f89f36a8399e1bd12fd62612c09fc",
+    "src/schema/tables/album.table.ts": "417f1ecbd009818fd7b2de515c2ecc6a88210b9b2c09bb79bfaa30153dbea07b",
     "src/schema/tables/api-key.table.ts": "e828609d4c58ca96edaf7eba013c4be8d7699d16ea83125660927bc6d0f2a4ca",
     "src/schema/tables/asset-audit.table.ts": "f2c3a79bf9d93b8d8bebd9f8867ff3c3182f29174f16360ad0f1e7da1da8effd",
     "src/schema/tables/asset-av.table.ts": "8fc3c04c087336d778a4d70eef05057bae92b1a7c391b07a6fd9ab8d770a86bf",
@@ -150,6 +150,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "0895e80f7af0fb78ee1b8c028994dbc4b2d509b7f1070acfb954924242ad8d49",
-  "rawMetadataSha256": "b0ade22a185f97ddf65a9c2e8c88c7346412a8317383f7067a9ad533e3fa5639"
+  "dumpSha256": "f84b87c95d89c9999854acfc01c84414acbf4595b54cbcab347ff6d2b04c646d",
+  "rawMetadataSha256": "6cc4492347ebcdc7b1d98bd4b527c28b10743f0471f4862eac69a7440c738aba"
 }
