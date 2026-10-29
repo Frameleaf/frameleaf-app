@@ -44,6 +44,7 @@ import { DownloadController } from 'src/controllers/download.controller.js';
 import { DuplicateAdminController } from 'src/controllers/duplicate-admin.controller.js';
 import { DuplicateReviewController } from 'src/controllers/duplicate-review.controller.js';
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
+import { EagleImportController } from 'src/controllers/eagle-import.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
 import { FrameleafAuthController } from 'src/controllers/frameleaf-auth.controller.js';
@@ -262,6 +263,7 @@ export const controllers = [
   SystemConfigController,
   SystemMetadataController,
   TagController,
+  EagleImportController,
   TakeoutController,
   TimelineController,
   TrashController,

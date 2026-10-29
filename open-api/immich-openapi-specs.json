@@ -25103,6 +25103,298 @@
         "x-immich-state": "Stable"
       }
     },
+    "/eagle-imports": {
+      "get": {
+        "operationId": "getEagleImports",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EagleImportListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your Eagle imports from the server that have not finished",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.upload"
+      },
+      "post": {
+        "description": "Starts the import on the server, or carries on an earlier import of the same library from where it got to.",
+        "operationId": "createEagleImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EagleImportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EagleImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import an Eagle library from a folder on the server",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/eagle-imports/check": {
+      "post": {
+        "description": "Reads the library’s lists only. Nothing is imported and the library is never changed.",
+        "operationId": "checkEagleLibrary",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EagleLibraryCheckDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EagleLibraryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read an Eagle library on the server for the check before importing",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/eagle-imports/libraries": {
+      "get": {
+        "operationId": "getEagleLibraries",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EagleLibrariesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the Eagle libraries in the permitted import locations",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/eagle-imports/{id}": {
+      "get": {
+        "operationId": "getEagleImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcomes",
+            "required": false,
+            "in": "query",
+            "description": "Include what became of every item, for the finish report",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EagleImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get an Eagle import from the server",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.upload"
+      }
+    },
+    "/eagle-imports/{id}/stop": {
+      "post": {
+        "description": "Stops after the item being brought over now. Everything already brought over stays.",
+        "operationId": "stopEagleImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EagleImportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop an Eagle import from the server",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.upload"
+      }
+    },
     "/enrichment/frames/{id}": {
       "get": {
         "description": "The image of one reusable video frame, under the same access as its video.",
@@ -85499,6 +85791,511 @@
         "required": [
           "assetId",
           "reasons"
+        ],
+        "type": "object"
+      },
+      "EagleFolderDto": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "description": "The folder it is in; null at the top of the library",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "parentId"
+        ],
+        "type": "object"
+      },
+      "EagleImportCreateDto": {
+        "properties": {
+          "existingTop": {
+            "default": [],
+            "items": {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "type": "array"
+          },
+          "fingerprint": {
+            "description": "From the check; the import refuses a library that changed since",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "insideAlbumId": {
+            "description": "The collection to import into; a new one when left out",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "path": {
+            "description": "The `.library` folder, relative to the allowed import folder",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rootId": {
+            "description": "Which allowed import folder, as the list numbers them",
+            "pattern": "^\\d{1,4}$",
+            "type": "string"
+          },
+          "targetMode": {
+            "$ref": "#/components/schemas/EagleImportTargetMode"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "path",
+          "rootId",
+          "targetMode"
+        ],
+        "type": "object"
+      },
+      "EagleImportListResponseDto": {
+        "properties": {
+          "imports": {
+            "items": {
+              "$ref": "#/components/schemas/EagleImportResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "imports"
+        ],
+        "type": "object"
+      },
+      "EagleImportQueryDto": {
+        "properties": {
+          "outcomes": {
+            "description": "Include what became of every item, for the finish report",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "EagleImportResponseDto": {
+        "properties": {
+          "already": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "collections": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "done": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "failed": {
+            "description": "Eagle ids of items that could not be brought over this time",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "insideAlbumId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "libraryName": {
+            "type": "string"
+          },
+          "outcomes": {
+            "additionalProperties": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "duplicate": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "assetId",
+                "duplicate"
+              ],
+              "type": "object"
+            },
+            "description": "What became of every item, by Eagle id, when asked for",
+            "type": "object"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recent": {
+            "items": {
+              "properties": {
+                "collections": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "duplicate": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "duplicate",
+                "collections"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "rootAlbumId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "rootId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EagleImportStatus"
+          },
+          "targetMode": {
+            "$ref": "#/components/schemas/EagleImportTargetMode"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "already",
+          "collections",
+          "createdAt",
+          "done",
+          "error",
+          "failed",
+          "fingerprint",
+          "id",
+          "insideAlbumId",
+          "libraryName",
+          "path",
+          "recent",
+          "rootAlbumId",
+          "rootId",
+          "status",
+          "targetMode",
+          "total",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "EagleImportStatus": {
+        "enum": [
+          "running",
+          "stopping",
+          "stopped",
+          "finished"
+        ],
+        "type": "string"
+      },
+      "EagleImportTargetMode": {
+        "enum": [
+          "top",
+          "inside"
+        ],
+        "type": "string"
+      },
+      "EagleItemDto": {
+        "properties": {
+          "annotation": {
+            "type": "string"
+          },
+          "comments": {
+            "items": {
+              "properties": {
+                "annotation": {
+                  "type": "string"
+                },
+                "height": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "width": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "x": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "y": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "x",
+                "y",
+                "width",
+                "height",
+                "annotation"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ext": {
+            "type": "string"
+          },
+          "folders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDeleted": {
+            "type": "boolean"
+          },
+          "modificationTime": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "present": {
+            "description": "The item’s file is in the library folder",
+            "type": "boolean"
+          },
+          "size": {
+            "format": "double",
+            "type": "number"
+          },
+          "star": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "unreadable": {
+            "description": "The item’s details could not be read",
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "annotation",
+          "comments",
+          "ext",
+          "folders",
+          "height",
+          "id",
+          "isDeleted",
+          "modificationTime",
+          "name",
+          "present",
+          "size",
+          "star",
+          "tags",
+          "unreadable",
+          "url",
+          "width"
+        ],
+        "type": "object"
+      },
+      "EagleLibrariesResponseDto": {
+        "properties": {
+          "libraries": {
+            "items": {
+              "$ref": "#/components/schemas/EagleLibraryLocationDto"
+            },
+            "type": "array"
+          },
+          "roots": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "libraries",
+          "roots"
+        ],
+        "type": "object"
+      },
+      "EagleLibraryCheckDto": {
+        "properties": {
+          "path": {
+            "description": "The `.library` folder, relative to the allowed import folder",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rootId": {
+            "description": "Which allowed import folder, as the list numbers them",
+            "pattern": "^\\d{1,4}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "rootId"
+        ],
+        "type": "object"
+      },
+      "EagleLibraryLocationDto": {
+        "properties": {
+          "name": {
+            "description": "The folder name, such as \"Studio References.library\"",
+            "type": "string"
+          },
+          "path": {
+            "description": "The `.library` folder, relative to the allowed import folder",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rootId": {
+            "description": "Which allowed import folder, as the list numbers them",
+            "pattern": "^\\d{1,4}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "rootId"
+        ],
+        "type": "object"
+      },
+      "EagleLibraryResponseDto": {
+        "properties": {
+          "changed": {
+            "description": "When Eagle last changed the library (ms)",
+            "format": "double",
+            "type": "number"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "folders": {
+            "description": "Every folder, parents before their children",
+            "items": {
+              "$ref": "#/components/schemas/EagleFolderDto"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EagleItemDto"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "smartFolders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "supported": {
+            "description": "File types this import brings over (lower case, no dot)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tagGroups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "folders",
+          "items",
+          "name",
+          "smartFolders",
+          "supported",
+          "tagGroups"
         ],
         "type": "object"
       },

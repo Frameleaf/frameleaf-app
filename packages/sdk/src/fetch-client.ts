@@ -7854,6 +7854,121 @@ export type DuplicateReviewGroupDto = {
     /** Size of the originals shown, in bytes */
     totalBytes: number;
 };
+export type EagleImportResponseDto = {
+    already: number;
+    collections: number;
+    createdAt: string;
+    done: number;
+    error: string | null;
+    /** Eagle ids of items that could not be brought over this time */
+    failed: string[];
+    fingerprint: string;
+    id: string;
+    insideAlbumId: string | null;
+    libraryName: string;
+    /** What became of every item, by Eagle id, when asked for */
+    outcomes?: {
+        [key: string]: {
+            assetId: string;
+            duplicate: boolean;
+        };
+    };
+    path: string;
+    recent: {
+        collections: string[];
+        duplicate: boolean;
+        id: string;
+        name: string;
+    }[];
+    rootAlbumId: string | null;
+    rootId: string;
+    status: EagleImportStatus;
+    targetMode: EagleImportTargetMode;
+    total: number;
+    updatedAt: string;
+};
+export type EagleImportListResponseDto = {
+    imports: EagleImportResponseDto[];
+};
+export type EagleImportCreateDto = {
+    existingTop?: string[];
+    /** From the check; the import refuses a library that changed since */
+    fingerprint: string;
+    /** The collection to import into; a new one when left out */
+    insideAlbumId?: string;
+    /** The `.library` folder, relative to the allowed import folder */
+    path: string;
+    /** Which allowed import folder, as the list numbers them */
+    rootId: string;
+    targetMode: EagleImportTargetMode;
+};
+export type EagleLibraryCheckDto = {
+    /** The `.library` folder, relative to the allowed import folder */
+    path: string;
+    /** Which allowed import folder, as the list numbers them */
+    rootId: string;
+};
+export type EagleFolderDto = {
+    color?: string;
+    description?: string;
+    icon?: string;
+    id: string;
+    name: string;
+    /** The folder it is in; null at the top of the library */
+    parentId: string | null;
+};
+export type EagleItemDto = {
+    annotation: string;
+    comments: {
+        annotation: string;
+        height: number;
+        id: string;
+        width: number;
+        x: number;
+        y: number;
+    }[];
+    ext: string;
+    folders: string[];
+    height: number;
+    id: string;
+    isDeleted: boolean;
+    modificationTime: number;
+    name: string;
+    /** The item’s file is in the library folder */
+    present: boolean;
+    size: number;
+    star: number;
+    tags: string[];
+    /** The item’s details could not be read */
+    unreadable: boolean;
+    url: string;
+    width: number;
+};
+export type EagleLibraryResponseDto = {
+    /** When Eagle last changed the library (ms) */
+    changed?: number;
+    fingerprint: string;
+    /** Every folder, parents before their children */
+    folders: EagleFolderDto[];
+    items: EagleItemDto[];
+    name: string;
+    smartFolders: string[];
+    /** File types this import brings over (lower case, no dot) */
+    supported: string[];
+    tagGroups: string[];
+};
+export type EagleLibraryLocationDto = {
+    /** The folder name, such as "Studio References.library" */
+    name: string;
+    /** The `.library` folder, relative to the allowed import folder */
+    path: string;
+    /** Which allowed import folder, as the list numbers them */
+    rootId: string;
+};
+export type EagleLibrariesResponseDto = {
+    libraries: EagleLibraryLocationDto[];
+    roots: number;
+};
 export type VideoMomentSearchHitDto = {
     assetId: string;
     caption: string | null;
@@ -17853,6 +17968,10 @@ export type DuplicateEstimateQueryDto = {
     /** The distances to estimate groups for, from 0.001 (nearly identical) to 0.1 */
     maxDistances: number[];
 };
+export type EagleImportQueryDto = {
+    /** Include what became of every item, for the finish report */
+    outcomes?: boolean;
+};
 export type FaceSearchDto = {
     /** Face ID */
     id: string;
@@ -25663,6 +25782,88 @@ export function deleteDuplicate({ id }: {
     return oazapfts.ok(oazapfts.fetchText(`/duplicates/${encodeURIComponent(id)}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * List your Eagle imports from the server that have not finished
+ */
+export function getEagleImports(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EagleImportListResponseDto;
+    }>("/eagle-imports", {
+        ...opts
+    }));
+}
+/**
+ * Import an Eagle library from a folder on the server
+ */
+export function createEagleImport({ eagleImportCreateDto }: {
+    eagleImportCreateDto: EagleImportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: EagleImportResponseDto;
+    }>("/eagle-imports", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: eagleImportCreateDto
+    })));
+}
+/**
+ * Read an Eagle library on the server for the check before importing
+ */
+export function checkEagleLibrary({ eagleLibraryCheckDto }: {
+    eagleLibraryCheckDto: EagleLibraryCheckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EagleLibraryResponseDto;
+    }>("/eagle-imports/check", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: eagleLibraryCheckDto
+    })));
+}
+/**
+ * List the Eagle libraries in the permitted import locations
+ */
+export function getEagleLibraries(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EagleLibrariesResponseDto;
+    }>("/eagle-imports/libraries", {
+        ...opts
+    }));
+}
+/**
+ * Get an Eagle import from the server
+ */
+export function getEagleImport({ id, outcomes }: {
+    id: string;
+    outcomes?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EagleImportResponseDto;
+    }>(`/eagle-imports/${encodeURIComponent(id)}${QS.query(QS.explode({
+        outcomes
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Stop an Eagle import from the server
+ */
+export function stopEagleImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EagleImportResponseDto;
+    }>(`/eagle-imports/${encodeURIComponent(id)}/stop`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -36587,6 +36788,16 @@ export enum DuplicateQualityReason {
     MostMetadata = "most-metadata",
     CompressedCopy = "compressed-copy",
     LowerResolution = "lower-resolution"
+}
+export enum EagleImportStatus {
+    Running = "running",
+    Stopping = "stopping",
+    Stopped = "stopped",
+    Finished = "finished"
+}
+export enum EagleImportTargetMode {
+    Top = "top",
+    Inside = "inside"
 }
 export enum VideoMomentMatch {
     Visual = "visual",

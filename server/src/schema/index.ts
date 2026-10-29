@@ -114,6 +114,7 @@ import {
   DevelopBatchTable,
 } from 'src/schema/tables/develop-batch.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
+import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import {
@@ -428,6 +429,8 @@ export class ImmichDatabase {
     StudioExportVersionTable,
     StudioExportVersionSourceTable,
     StudioExportRemoteReferenceTable,
+    EagleImportTable,
+    EagleImportItemTable,
     TakeoutImportTable,
     TakeoutSourceTable,
     TakeoutFileTable,
@@ -702,6 +705,8 @@ export interface DB extends QueueDatabase {
 
   takeout_album: TakeoutAlbumTable;
   takeout_file: TakeoutFileTable;
+  eagle_import: EagleImportTable;
+  eagle_import_item: EagleImportItemTable;
   takeout_import: TakeoutImportTable;
   takeout_item: TakeoutItemTable;
   takeout_pair: TakeoutPairTable;
