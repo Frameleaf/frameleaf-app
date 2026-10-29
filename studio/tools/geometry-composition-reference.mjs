@@ -83,7 +83,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-596 motion tracking writes ordinary keyframes; it changes no producer.
     sourceSha256 === '076073e60d0baee97812afe90c3c2a8eb65681ac91e68093548baec1a989c229' ||
     // FL-596 motion tracking: superseded runs discarded, time-sliced yields
-    sourceSha256 === '1f842a0736b43b605bcb1d4cf73c16ffc8bd54ba9199a1b05d79ca46e03b7385'
+    sourceSha256 === '1f842a0736b43b605bcb1d4cf73c16ffc8bd54ba9199a1b05d79ca46e03b7385' ||
+    // FL-596 motion tracking: early binding, stored direction
+    sourceSha256 === 'c4343c5b5e7a2a86f254d0d24306d57508fbabd47e5dd6a119762fd5809cd270'
   )
     return {
       ...COMPOSITION_SOURCES,

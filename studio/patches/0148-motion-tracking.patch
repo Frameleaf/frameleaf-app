@@ -208,7 +208,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.test.ts
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,148 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -243,12 +243,17 @@ new file mode 100644
 +} as TextItem)
 +
 +/** A result as analysis would produce it for the current items. */
-+function resultFor(values: MotionTrackResult['values'], lostFrames: number[] = []): MotionTrackResult {
++function resultFor(
++  values: MotionTrackResult['values'],
++  lostFrames: number[] = [],
++  direction: MotionTrackResult['direction'] = 'forward',
++  frames = [20, 21, 22, 23],
++): MotionTrackResult {
 +  const { itemById } = useItemsStore.getState()
 +  return {
 +    sourceId: 'v1', targetId: 'title',
-+    binding: motionTrackBinding(itemById['v1']!, itemById['title']!, 20, 'forward'),
-+    frames: [20, 21, 22, 23], samples: [], values, lostFrames,
++    binding: motionTrackBinding(itemById['v1']!, itemById['title']!, 20, direction),
++    direction, frames, samples: [], values, lostFrames,
 +  }
 +}
 +
@@ -347,12 +352,16 @@ new file mode 100644
 +    useKeyframesStore.getState()._addKeyframes([{ itemId: 'title', property: 'x', frame: 70, value: 3 }])
 +    expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'stale' })
 +  })
++
++  it('applies a one-frame backward result instead of calling it stale', () => {
++    expect(applyMotionTrack(resultFor([path[0]!], [], 'backward', [20]), {})).toMatchObject({ ok: true })
++  })
 +})
 diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
-@@ -0,0 +1,284 @@
+@@ -0,0 +1,287 @@
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import type { AnimationKeyframeSource } from '@/types/keyframe'
 +import { useItemsStore } from '../../items-store'
@@ -390,6 +399,7 @@ new file mode 100644
 +  sourceId: string
 +  targetId: string
 +  binding: string
++  direction: 'forward' | 'backward'
 +  /** Timeline frames tracked, in tracking order, starting at the seed frame. */
 +  frames: number[]
 +  samples: TrackSample[]
@@ -498,6 +508,8 @@ new file mode 100644
 +  const fps = useTimelineSettingsStore.getState().fps
 +  const scale = ANALYSIS_WIDTH / clip.sourceWidth
 +  const analysisSeed = { cx: seedBox.cx * scale, cy: seedBox.cy * scale, width: seedBox.width * scale, height: seedBox.height * scale }
++  // Bound now, with the seed box: an edit to the target during decoding makes the result stale.
++  const binding = motionTrackBinding(source, target, seedFrame, direction)
 +
 +  // Decode, track and drop one frame at a time: only the previous box and the template are kept.
 +  const samples: TrackSample[] = []
@@ -556,7 +568,8 @@ new file mode 100644
 +    result: {
 +      sourceId,
 +      targetId,
-+      binding: motionTrackBinding(source, target, seedFrame, direction),
++      binding,
++      direction,
 +      frames,
 +      samples: sourceSamples,
 +      values: followTrack(clip, sourceSamples, frames, targetPlacement),
@@ -580,8 +593,7 @@ new file mode 100644
 +  const items = useItemsStore.getState().items
 +  const source = items.find((item) => item.id === result.sourceId)
 +  const target = items.find((item) => item.id === result.targetId)
-+  const direction = result.frames.length > 1 && result.frames[1]! < result.frames[0]! ? 'backward' : 'forward'
-+  if (!source || !target || motionTrackBinding(source, target, result.frames[0]!, direction) !== result.binding) {
++  if (!source || !target || motionTrackBinding(source, target, result.frames[0]!, result.direction) !== result.binding) {
 +    return { ok: false, reason: 'stale' }
 +  }
 +  if (result.lostFrames.length > 0 && !decisions.keepTrackedPart) return { ok: false, reason: 'unreviewed-lost' }
