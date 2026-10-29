@@ -26,7 +26,9 @@ describe('SaveLinkDialog', () => {
 
     expect(await screen.findByRole('img', { name: 'frameleaf_boards_save_link_picture' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'frameleaf_bookmark_title' })).toHaveValue('Spring moodboard');
-    await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    const save = screen.getByRole('button', { name: 'save' });
+    await waitFor(() => expect(save).toBeEnabled());
+    await fireEvent.click(save);
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     const [{ files, libraryScope }] = vi.mocked(fileUploadHandler).mock.calls[0];
@@ -42,7 +44,9 @@ describe('SaveLinkDialog', () => {
     const onSaved = vi.fn();
     render(SaveLinkDialog, { open: true, url: 'https://example.com/board?x=1', albumId: 'c1', onSaved });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    const save = screen.getByRole('button', { name: 'save' });
+    await waitFor(() => expect(save).toBeEnabled());
+    await fireEvent.click(save);
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(sdkMock.createBookmark).toHaveBeenCalledWith({
@@ -69,9 +73,28 @@ describe('SaveLinkDialog', () => {
     await waitFor(() => expect(field).toHaveValue(''));
   });
 
+  it('waits for the page read before saving, so the link keeps its own title', async () => {
+    let finish!: (value: { title: string | null; image: null }) => void;
+    sdkMock.previewBookmark.mockReturnValue(new Promise((resolve) => (finish = resolve)) as never);
+    const onSaved = vi.fn();
+    render(SaveLinkDialog, { open: true, url: 'https://example.com/slow', onSaved });
+    const form = screen.getByRole('textbox', { name: 'frameleaf_boards_save_link_address' }).closest('form')!;
+
+    await fireEvent.submit(form);
+    expect(sdkMock.createBookmark).not.toHaveBeenCalled();
+    finish({ title: 'Slow page', image: null });
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(sdkMock.createBookmark).toHaveBeenCalledWith({
+      bookmarkCreateDto: expect.objectContaining({ url: 'https://example.com/slow', title: 'Slow page' }),
+    });
+  });
+
   it('refuses an address that is not a web page', async () => {
     render(SaveLinkDialog, { open: true, url: 'javascript:alert(1)', onSaved: vi.fn() });
-    await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    const save = screen.getByRole('button', { name: 'save' });
+    await waitFor(() => expect(save).toBeEnabled());
+    await fireEvent.click(save);
     expect(await screen.findByRole('alert')).toHaveTextContent('frameleaf_boards_save_link_invalid');
     expect(sdkMock.createBookmark).not.toHaveBeenCalled();
   });

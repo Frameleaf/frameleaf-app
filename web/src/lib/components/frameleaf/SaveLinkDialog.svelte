@@ -121,17 +121,13 @@
       : null,
   );
   /** Uploads the page's picture as a Boards-only file, for the link's card. */
-  const uploadPicture = async (): Promise<string | null> => {
-    if (!picture || !preview?.image) {
-      return null;
-    }
-    const bytes = Uint8Array.from(atob(preview.image.data), (character) => character.codePointAt(0)!);
-    const extension = preview.image.contentType.split('/', 2)[1].replace('jpeg', 'jpg');
-    const file = new File([bytes], `${parsed!.hostname}-preview.${extension}`, { type: preview.image.contentType });
+  const uploadPicture = async (image: { contentType: string; data: string }, hostname: string) => {
+    const bytes = Uint8Array.from(atob(image.data), (character) => character.codePointAt(0)!);
+    const extension = image.contentType.split('/', 2)[1].replace('jpeg', 'jpg');
+    const file = new File([bytes], `${hostname}-preview.${extension}`, { type: image.contentType });
     const [assetId] = await fileUploadHandler({ files: [file], libraryScope: LibraryScope.Design });
     return assetId ?? null;
   };
-
   const save = async () => {
     touched = true;
     if (!parsed || busy) {
@@ -139,11 +135,19 @@
     }
     busy = true;
     try {
-      const previewAssetId = await uploadPicture();
+      // Finish reading this address first, then save only what belongs to it.
+      await read();
+      const target = parsed;
+      if (!target) {
+        return;
+      }
+      const image = preview?.for === target.href ? preview.image : null;
+      const savedTitle = title.trim() || target.hostname;
+      const previewAssetId = image ? await uploadPicture(image, target.hostname) : null;
       const bookmark = await createBookmark({
         bookmarkCreateDto: {
-          url: parsed.href,
-          title: title.trim() || parsed.hostname,
+          url: target.href,
+          title: savedTitle,
           note: note.trim() || null,
           libraryScope: LibraryScope.Design,
           ...(previewAssetId && { previewAssetId }),
@@ -225,7 +229,7 @@
   </form>
   {#snippet actions()}
     <button type="button" class="button" disabled={busy} onclick={() => (open = false)}>{$t('cancel')}</button>
-    <button type="button" class="button primary" disabled={busy || !url.trim()} onclick={() => void save()}
+    <button type="button" class="button primary" disabled={busy || reading || !url.trim()} onclick={() => void save()}
       >{$t('save')}</button
     >
   {/snippet}
