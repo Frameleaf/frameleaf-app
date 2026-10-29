@@ -248,16 +248,17 @@ describe('LibraryWorkInspector', () => {
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
       // the Boards-only sections load on demand
       await screen.findByRole('textbox', { name: 'frameleaf_boards_note' });
-      const headings = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent);
-      expect(headings).toEqual([
-        'frameleaf_boards_colours',
-        'rating',
-        'tags',
-        'frameleaf_boards_note',
-        'frameleaf_boards_collections',
-        'frameleaf_boards_source',
-        'frameleaf_boards_file',
-      ]);
+      await waitFor(() =>
+        expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+          'frameleaf_boards_colours',
+          'rating',
+          'tags',
+          'frameleaf_boards_note',
+          'frameleaf_boards_collections',
+          'frameleaf_boards_source',
+          'frameleaf_boards_file',
+        ]),
+      );
       expect(screen.getByText('frameleaf_boards_scope_off')).toBeInTheDocument();
       expect(screen.getByText('image/png')).toBeInTheDocument();
       expect(await screen.findByRole('textbox', { name: 'frameleaf_boards_note' })).toHaveValue('Warm light');
