@@ -16,6 +16,8 @@
 // Anything this cannot derive honestly (a clip that follows another clip, a position driven by an
 // expression) is refused with a reason rather than rendered in the wrong place.
 
+import { applyShapedCaptionLooks } from './bundled-worker-word-captions.mjs';
+
 export const REFRAME_PROFILE = 'reframe-v1';
 export const REFRAME_VERSION = 1;
 export const REFRAME_SHAPES = Object.freeze({ vertical: 9 / 16, square: 1 });
@@ -238,6 +240,8 @@ export const reframeGraph = (graph, reframe) => {
   const items = timeline.items;
   const orders = trackOrder(timeline);
   const safe = SAFE_AREA[reframe.shape];
+  // FL-640: captions take their shaped look (Highlight, Large, Middle by default in 9:16).
+  applyShapedCaptionLooks(items, frame, reframe.shape, safe);
 
   for (const item of items) {
     if (PICTURE_TYPES.has(item.type) && !reframe.shots[item.id]) {

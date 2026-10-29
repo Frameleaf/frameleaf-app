@@ -744,7 +744,12 @@
       "path": "patches/0152-tracking-box-and-provenance.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "7c544885050282ede297b77f888bc034f8bc9c2edf87c49c21f9199ef6499794"
+    },
+    {
+      "path": "patches/0168-word-by-word-captions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c50c6e57ad990c0b2b32b135c989a69fed4d8cebddb8e71890771d76ee28d4cf"
     }
   ],
-  "sourceSha256": "c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f"
+  "sourceSha256": "24bb9fc1d61fe366eeeb63687e300969a9b691cddcb1fa688196609c4b9e6e20"
 }

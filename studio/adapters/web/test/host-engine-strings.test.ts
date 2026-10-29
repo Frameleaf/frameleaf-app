@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 import { changeAppLanguage, i18n } from '@/i18n'
 import { TRANSCRIPT_ENGINE_STRINGS, transcriptEngineStrings } from '@frameleaf/host/transcript-strings'
+import { CAPTION_STYLE_ENGINE_STRINGS } from '@frameleaf/host/caption-style-strings'
 import { applyHostEngineStrings } from '../src/host-engine-strings'
 
 describe('FL-450 host-translated engine messages', () => {
@@ -45,6 +46,17 @@ describe('FL-450 host-translated engine messages', () => {
     applyHostEngineStrings(i18n, { transcriptSelected: strings.transcriptSelected })
     expect(i18n.t('transcript.edit.selected', { count: 3, seconds: '0.8' })).toBe('Gewählt: 3 · 0.8 s')
     i18n.addResource('en', 'translation', 'transcript.edit.selected', 'Selected: {{count}} · {{seconds}} s')
+  })
+
+  it('FL-640: every Caption style card string has engine English, and the host translation wins', async () => {
+    await changeAppLanguage('en')
+    for (const entry of Object.values(CAPTION_STYLE_ENGINE_STRINGS)) {
+      expect(i18n.t(entry.engine), entry.engine).not.toBe(entry.engine)
+    }
+    const english = i18n.t('wordCaptions.title')
+    applyHostEngineStrings(i18n, { captionTitle: 'Untertitelstil' })
+    expect(i18n.t('wordCaptions.title')).toBe('Untertitelstil')
+    i18n.addResource('en', 'translation', 'wordCaptions.title', english)
   })
 
   it('leaves the engine English when the host sends nothing', () => {
