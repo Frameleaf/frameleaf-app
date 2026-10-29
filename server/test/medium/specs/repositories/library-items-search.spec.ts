@@ -269,6 +269,57 @@ describe('mixed library search universe', () => {
     ).toBe(0);
     expect((await repo.searchLibrary({ user }, request, scope(user.id), ALL)).count).toBe(1);
   });
+  it('sorts by name and by rating across both kinds, paging without repeats (FL-622)', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const auth = { user };
+    const repo = new BookmarkRepository(db);
+    const photo = await ctx.newAsset({
+      ownerId: user.id,
+      libraryScope: LibraryScope.Design,
+      originalFileName: 'b-lake.png',
+    });
+    const rejected = await ctx.newAsset({
+      ownerId: user.id,
+      libraryScope: LibraryScope.Design,
+      originalFileName: 'd-trail.png',
+    });
+    await ctx.newExif({ assetId: photo.asset.id, rating: 4 });
+    await ctx.newExif({ assetId: rejected.asset.id, rating: -1 });
+    const link = await repo.create(user.id, {
+      url: 'https://example.org/a',
+      title: 'A cabin',
+      libraryScope: LibraryScope.Design,
+    });
+    const unrated = await repo.create(user.id, {
+      url: 'https://example.org/c',
+      title: 'C fire',
+      libraryScope: LibraryScope.Design,
+    });
+    await db.updateTable('bookmark').set({ rating: 5 }).where('id', '=', link.id).execute();
+    const walk = async (sort: 'name' | 'rating') => {
+      const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' }, limit: 1, sort });
+      const seen: string[] = [];
+      let cursor: Extract<LibraryCursor, { mode: 'text' }> | undefined;
+      for (let index = 0; index < 5; index++) {
+        const [row] = (await repo.searchLibrary(auth, request, scope(user.id), ALL, cursor)).candidates;
+        if (!row) break;
+        seen.push(row.id);
+        cursor = {
+          mode: 'text',
+          queryHash: 'a'.repeat(64),
+          id: row.id,
+          kind: row.kind,
+          after: sort === 'name' ? { sort, value: row.nameKey } : { sort, value: row.rank },
+        };
+      }
+      return seen;
+    };
+    expect({ name: await walk('name'), rating: await walk('rating') }).toEqual({
+      name: [link.id, photo.asset.id, unrated.id, rejected.asset.id],
+      rating: [link.id, photo.asset.id, unrated.id, rejected.asset.id],
+    });
+  });
   it('lists only saved links when media is left out, without scanning past them', async () => {
     const ctx = setup();
     const { user } = await ctx.newUser();

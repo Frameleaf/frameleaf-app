@@ -116,7 +116,11 @@ export class LibraryItemService {
               kind: last.kind,
               id: last.id,
               after:
-                query.sort === 'color' ? { sort: 'color', value: last.rank } : { sort: 'added', value: last.dateKey },
+                query.sort === 'color' || query.sort === 'rating'
+                  ? { sort: query.sort, value: last.rank }
+                  : query.sort === 'name'
+                    ? { sort: 'name', value: last.nameKey }
+                    : { sort: 'added', value: last.dateKey },
             })
           : null,
     };

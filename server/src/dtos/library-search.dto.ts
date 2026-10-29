@@ -15,7 +15,7 @@ export class LibraryItemSearchDto extends createZodDto(
         .min(1)
         .optional()
         .describe('Only these kinds of item; all kinds when omitted. Semantic search returns media only'),
-      sort: z.enum(['added', 'color']).meta({ id: 'LibraryItemSearchSort' }).optional(),
+      sort: z.enum(['added', 'color', 'name', 'rating']).meta({ id: 'LibraryItemSearchSort' }).optional(),
       limit: z.int().min(1).max(200).default(100),
       cursor: z.string().max(1024).optional(),
     })

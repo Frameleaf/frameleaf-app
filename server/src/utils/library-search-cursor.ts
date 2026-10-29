@@ -13,6 +13,9 @@ const cursorSchema = z.discriminatedUnion('mode', [
     after: z.discriminatedUnion('sort', [
       z.strictObject({ sort: z.literal('added'), value: z.iso.datetime() }),
       z.strictObject({ sort: z.literal('color'), value: z.number().min(0).max(3) }),
+      // Best first: -5 (five stars) … 0 (unrated) … 1 (rejected).
+      z.strictObject({ sort: z.literal('rating'), value: z.number().min(-5).max(1) }),
+      z.strictObject({ sort: z.literal('name'), value: z.string().max(512) }),
     ]),
   }),
   z.strictObject({ mode: z.literal('smart'), queryHash, universeHash: queryHash, offset: z.int().min(0).max(1000) }),

@@ -28,7 +28,13 @@ import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { getLockedOwnerId, isLocked } from 'src/utils/locked.js';
 
 export type Bookmark = Selectable<BookmarkTable>;
-export type LibraryCandidate = { id: string; kind: 'asset' | 'bookmark'; dateKey: string; rank: number };
+export type LibraryCandidate = {
+  id: string;
+  kind: 'asset' | 'bookmark';
+  dateKey: string;
+  rank: number;
+  nameKey: string;
+};
 const bookmarkFields = new Set([
   'id',
   'visibility',
@@ -251,8 +257,15 @@ export class BookmarkRepository {
   ): Promise<{ count: number; candidates: LibraryCandidate[] }> {
     const sort = query.sort ?? 'added';
     if (cursor && cursor.after.sort !== sort) throw new BadRequestException('Cursor sort changed');
+    // Rating: best first, unrated after rated, rejected (-1) last.
+    const ratingRank = (column: string) =>
+      sql<number>`(case when ${sql.ref(column)} = -1 then 1 else -coalesce(${sql.ref(column)}, 0) end)::double precision`;
     const assetRank =
-      sort === 'color' ? assetColorDistance(query.filter.color!, auth.user.id) : sql<number>`0::double precision`;
+      sort === 'color'
+        ? assetColorDistance(query.filter.color!, auth.user.id)
+        : sort === 'rating'
+          ? ratingRank('asset_exif.rating')
+          : sql<number>`0::double precision`;
     const bookmarkRank =
       sort === 'color'
         ? this.readablePreview(auth, query.filter)
@@ -268,6 +281,7 @@ export class BookmarkRepository {
         'asset.createdAt',
         sql<string>`to_char(asset."createdAt" at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as('dateKey'),
         assetRank.as('rank'),
+        sql<string>`left(lower(asset."originalFileName"), 512)`.as('nameKey'),
       ]);
     const bookmarks = this.libraryBookmarks(auth, query)
       .where(sql<boolean>`${include.bookmarks}`)
@@ -276,23 +290,38 @@ export class BookmarkRepository {
         sql<string>`'bookmark'::text`.as('kind'),
         'bookmark.createdAt',
         sql<string>`to_char(bookmark."createdAt" at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as('dateKey'),
-        sql<number>`coalesce((${bookmarkRank}), 3)::double precision`.as('rank'),
+        (sort === 'rating'
+          ? ratingRank('bookmark.rating')
+          : sql<number>`coalesce((${bookmarkRank}), 3)::double precision`
+        ).as('rank'),
+        sql<string>`left(lower(coalesce(nullif(bookmark.title, ''), bookmark.url)), 512)`.as('nameKey'),
       ]);
     const after = !cursor
       ? sql`true`
       : cursor.after.sort === 'added'
         ? sql`("createdAt" < ${cursor.after.value}::timestamptz or ("createdAt" = ${cursor.after.value}::timestamptz and (kind,id) > (${cursor.kind}::text,${cursor.id}::uuid)))`
-        : sql`(rank,kind,id) > (${cursor.after.value}::double precision,${cursor.kind}::text,${cursor.id}::uuid)`;
-    const order = sort === 'added' ? sql`"createdAt" desc, kind, id` : sql`rank, kind, id`;
+        : cursor.after.sort === 'name'
+          ? sql`("nameKey",kind,id) > (${cursor.after.value}::text,${cursor.kind}::text,${cursor.id}::uuid)`
+          : sql`(rank,kind,id) > (${cursor.after.value}::double precision,${cursor.kind}::text,${cursor.id}::uuid)`;
+    const order =
+      sort === 'added'
+        ? sql`"createdAt" desc, kind, id`
+        : sort === 'name'
+          ? sql`"nameKey", kind, id`
+          : sql`rank, kind, id`;
     const aggregateOrder =
-      sort === 'added' ? sql`page."createdAt" desc, page.kind, page.id` : sql`page.rank, page.kind, page.id`;
+      sort === 'added'
+        ? sql`page."createdAt" desc, page.kind, page.id`
+        : sort === 'name'
+          ? sql`page."nameKey", page.kind, page.id`
+          : sql`page.rank, page.kind, page.id`;
     const {
       rows: [result],
     } = await sql<{ count: number; candidates: LibraryCandidate[] }>`
       with matched as materialized (${assets} union all ${bookmarks})
       select (select count(*)::int from matched) as count,
         coalesce((select jsonb_agg(to_jsonb(page) order by ${aggregateOrder}) from (
-          select id, kind, "dateKey", rank, "createdAt" from matched where ${after} order by ${order} limit ${query.limit + 1}
+          select id, kind, "dateKey", rank, "nameKey", "createdAt" from matched where ${after} order by ${order} limit ${query.limit + 1}
         ) page), '[]'::jsonb) as candidates`.execute(this.db);
     return result;
   }
