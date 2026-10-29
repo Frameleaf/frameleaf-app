@@ -222,12 +222,13 @@
   function notify(message: string) {
     toast = message;
   }
-  async function api(path: string, body?: unknown) {
+  async function api(path: string, body?: unknown, signal?: AbortSignal) {
     const response = await fetch(`/manager-api/${path}`, {
       method: body === undefined ? 'GET' : 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(signal ? { signal } : {}),
     });
     // A proxy or a restarting Manager can answer with an HTML page or nothing: say so plainly.
     const value = await response.json().catch(() => ({ code: 'manager_unexpected_response' }));
@@ -279,8 +280,8 @@
       if (installation && !backupsLoaded) await loadBackups();
     }
   }
-  async function refresh() {
-    const next = await api('dashboard');
+  async function refresh(signal?: AbortSignal) {
+    const next = await api('dashboard', undefined, signal);
     dashboard = next;
     disconnected = false;
     if (!bootstrapped) {
@@ -299,7 +300,7 @@
     const latest = next.operations?.[0];
     if (previousOperationState && latest?.state === 'complete' && previousOperationState !== `${latest.id}:complete`) {
       backupsLoaded = false;
-      if (screen === 'backups' || screen === 'overview') await loadBackups();
+      if (screen === 'backups' || screen === 'overview') await loadBackups(signal);
     }
     previousOperationState = latest ? `${latest.id}:${latest.state}` : '';
   }
@@ -314,8 +315,8 @@
     releases = await api('releases');
     releasesLoaded = true;
   }
-  async function loadBackups() {
-    const result = await api('backup-status');
+  async function loadBackups(signal?: AbortSignal) {
+    const result = await api('backup-status', undefined, signal);
     backupStatus = result;
     snapshots = result.snapshots;
     backupsLoaded = true;
@@ -559,12 +560,13 @@
         if (!(e instanceof Error && e.message === 'sign_in_required')) throw e;
       }
     }).finally(() => (loading = false));
-    // A slow Docker host can take longer than one interval to answer: never stack dashboard requests.
+    // A slow Docker host can take longer than one interval to answer: never stack dashboard requests,
+    // and give up on one that never answers so polling resumes once the connection is back.
     let polling = false;
     const timer = setInterval(() => {
       if (signedIn && !document.hidden && !busy && !polling) {
         polling = true;
-        void refresh()
+        void refresh(AbortSignal.timeout(30_000))
           .catch(() => {
             disconnected = true;
             if (!signedIn) error = 'Your session expired. Sign in to continue.';
