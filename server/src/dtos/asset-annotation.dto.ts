@@ -78,7 +78,7 @@ export const AssetAnnotationsUpdateSchema = z
       .min(1)
       .max(64)
       .describe(
-        'The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved; read the annotations again.',
+        'The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved, unless this is the revision already stored with the annotations: they are then saved and stay marked as drawn on the older picture. After a 409, read the annotations again.',
       ),
     items: AssetAnnotationItemsSchema,
   })

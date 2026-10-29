@@ -33,7 +33,8 @@ export class BoardsAnnotationsState {
   /** The picture revision the positions were drawn on, sent with each save so a stale list is refused. */
   #sourceRevision = '';
   #timer: ReturnType<typeof setTimeout> | undefined;
-  #pending: AssetAnnotationItem[] | null = null;
+  /** The change waiting to save, with the revision it was built on: it is only ever sent with that one. */
+  #pending: { items: AssetAnnotationItem[]; revision: string } | null = null;
   #closed = false;
   #saving: Promise<void> = Promise.resolve();
 
@@ -48,6 +49,9 @@ export class BoardsAnnotationsState {
         return;
       }
       this.#sourceRevision = document.sourceRevision;
+      // A change still waiting was made on the document this read replaces: never send it.
+      clearTimeout(this.#timer);
+      this.#pending = null;
       this.items = document.items;
       this.canEdit = document.canEdit;
       if (this.selected && document.items.every(({ id }) => id !== this.selected)) {
@@ -72,7 +76,7 @@ export class BoardsAnnotationsState {
     if (!this.canEdit) {
       return;
     }
-    this.#pending = next;
+    this.#pending = { items: next, revision: this.#sourceRevision };
     clearTimeout(this.#timer);
     this.#timer = setTimeout(() => void this.flush(), SAVE_DELAY);
   }
@@ -97,9 +101,12 @@ export class BoardsAnnotationsState {
     try {
       const saved = await replaceAssetAnnotations({
         id: this.assetId,
-        assetAnnotationsUpdateDto: { version: 1, sourceRevision: this.#sourceRevision, items: toStored(next) },
+        assetAnnotationsUpdateDto: { version: 1, sourceRevision: next.revision, items: toStored(next.items) },
       });
-      this.#sourceRevision = saved.sourceRevision;
+      // a newer read may have replaced the document while this save was on its way
+      if (this.#sourceRevision === next.revision) {
+        this.#sourceRevision = saved.sourceRevision;
+      }
       this.saveFailed = false;
     } catch (error) {
       if (isConflict(error)) {
@@ -120,7 +127,7 @@ export class BoardsAnnotationsState {
   }
 
   retry() {
-    this.#pending ??= this.items;
+    this.#pending ??= { items: this.items, revision: this.#sourceRevision };
     void this.flush();
   }
 

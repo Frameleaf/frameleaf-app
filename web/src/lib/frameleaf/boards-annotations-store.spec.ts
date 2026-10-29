@@ -153,4 +153,49 @@ describe('BoardsAnnotationsState saving', () => {
     expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(3);
     expect(third.items.map(({ id }) => id)).toEqual(['a', 'b']);
   });
+
+  it('never sends an edit made while the reload after a 409 is on its way', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      read('rev-1', ['a']);
+      const state = new BoardsAnnotationsState('asset-reload-race');
+      await state.load();
+      sdkMock.replaceAssetAnnotations.mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409 }));
+      let answer!: (value: unknown) => void;
+      sdkMock.getAssetAnnotations.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never);
+      state.change([item('a'), item('b')]);
+      const saving = state.flush();
+      await vi.waitFor(() => expect(sdkMock.getAssetAnnotations).toHaveBeenCalledTimes(2));
+
+      // the person keeps editing the old positions while the reload is in flight
+      state.change([item('a'), item('b'), item('stale')]);
+      answer({
+        version: 1,
+        sourceRevision: 'rev-2',
+        sourceChanged: false,
+        canEdit: true,
+        items: [item('a')],
+        updatedAt: null,
+      });
+      await saving;
+      await vi.advanceTimersByTimeAsync(2000);
+      await state.flush();
+
+      expect(sdkMock.replaceAssetAnnotations).toHaveBeenCalledTimes(1);
+      expect(state.items.map(({ id }) => id)).toEqual(['a']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sends a waiting change with the revision it was built on, not a newer one', async () => {
+    read('rev-1', ['a']);
+    sdkMock.replaceAssetAnnotations.mockRejectedValue(Object.assign(new Error('conflict'), { status: 409 }));
+    const state = new BoardsAnnotationsState('asset-built-on');
+    await state.load();
+    state.change([item('b')]);
+    read('rev-2', ['a']);
+    await state.flush();
+    expect(sdkMock.replaceAssetAnnotations.mock.calls[0][0].assetAnnotationsUpdateDto.sourceRevision).toBe('rev-1');
+  });
 });

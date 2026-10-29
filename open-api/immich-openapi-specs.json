@@ -15035,7 +15035,7 @@
         "x-immich-permission": "asset.read"
       },
       "put": {
-        "description": "Replaces the whole annotation document for a picture the caller owns; an empty list removes them. Send the sourceRevision you read: if the picture changed since then the request is refused with 409 and nothing is saved. The original file is never changed and no edit runs.",
+        "description": "Replaces the whole annotation document for a picture the caller owns; an empty list removes them. Send the sourceRevision you read. If the picture changed since then, the request is refused with 409 and nothing is saved, unless that sourceRevision is the one already stored with the annotations: they are then saved and stay marked as drawn on the older picture (sourceChanged true). The original file is never changed and no edit runs.",
         "operationId": "replaceAssetAnnotations",
         "parameters": [
           {
@@ -68213,7 +68213,7 @@
             "type": "array"
           },
           "sourceRevision": {
-            "description": "The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved; read the annotations again.",
+            "description": "The sourceRevision from the annotations the caller read. If the picture changed since then the request is refused with 409 and nothing is saved, unless this is the revision already stored with the annotations: they are then saved and stay marked as drawn on the older picture. After a 409, read the annotations again.",
             "maxLength": 64,
             "minLength": 1,
             "type": "string"
