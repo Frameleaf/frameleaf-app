@@ -2,11 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { configureExpress } from 'src/app.common.js';
 import { ApiModule } from 'src/app.module.js';
-import { ExitCode } from 'src/enum.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { isRetryableStartupError, isStartUpError } from 'src/utils/misc.js';
-import { HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
+import { API_STARTUP_RETRY_EXIT_CODE, HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
 async function bootstrap() {
   process.title = 'frameleaf-api';
@@ -36,5 +35,5 @@ bootstrap().catch((error) => {
     console.error(error);
   }
   // eslint-disable-next-line unicorn/no-process-exit
-  process.exit(isRetryableStartupError(error) ? ExitCode.StartupRetry : 1);
+  process.exit(isRetryableStartupError(error) ? API_STARTUP_RETRY_EXIT_CODE : 1);
 });

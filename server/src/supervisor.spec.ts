@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { ExitCode, FrameleafWorker } from 'src/enum.js';
+import { API_STARTUP_RETRY_EXIT_CODE } from 'src/utils/shutdown.js';
 
 const fixture = vi.hoisted(() => ({
   maintenance: false,
@@ -435,11 +436,11 @@ describe('supervisor worker-local restart lifecycle', () => {
 
   // FL-646: an API start-up that lost a lock race to another worker comes back instead of stopping the server.
   it('restarts an API worker whose start-up hit a transient lock conflict, backing off while it keeps failing', async () => {
-    latest(FrameleafWorker.Api).emit('exit', ExitCode.StartupRetry);
+    latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);
     expect(process.exit).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
-    latest(FrameleafWorker.Api).emit('exit', ExitCode.StartupRetry);
+    latest(FrameleafWorker.Api).emit('exit', API_STARTUP_RETRY_EXIT_CODE);
     await vi.advanceTimersByTimeAsync(1000);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
     await vi.advanceTimersByTimeAsync(1000);

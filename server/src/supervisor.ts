@@ -13,7 +13,13 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { type DB } from 'src/schema/index.js';
 import { buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-import { SERVER_OWNER_READY_MESSAGE, SupervisorStop, WORKER_STOP_MESSAGE, onStopRequest } from 'src/utils/shutdown.js';
+import {
+  API_STARTUP_RETRY_EXIT_CODE,
+  SERVER_OWNER_READY_MESSAGE,
+  SupervisorStop,
+  WORKER_STOP_MESSAGE,
+  onStopRequest,
+} from 'src/utils/shutdown.js';
 
 /**
  * FL-161: an `FRAMELEAF_EDGE_SECRET` set in the environment, kept for installs that set one on purpose.
@@ -367,7 +373,7 @@ export class Workers {
     if (
       this.databaseRestarts.delete(name) ||
       name === FrameleafWorker.Microservices ||
-      (name === FrameleafWorker.Api && exitCode === ExitCode.StartupRetry)
+      (name === FrameleafWorker.Api && exitCode === API_STARTUP_RETRY_EXIT_CODE)
     ) {
       delete this.workers[name];
       const lifecycle = this.lifecycle;
