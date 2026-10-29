@@ -181,6 +181,26 @@ describe('library media across editor remounts', () => {
     workspace.dispose()
   })
 
+  it('offers a library item again when it is asked for from the Library view after a removal (FL-636)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-lib', onChange: () => {} })
+    try {
+      await media.seed([libraryAsset])
+      expect(await getProjectMediaIds('fl-lib')).toContain(LIBRARY)
+      // The person removes it from the bin; an ordinary host update does not bring it back.
+      await removeMediaFromProject('fl-lib', LIBRARY)
+      await deleteMedia(LIBRARY)
+      media.forget(LIBRARY)
+      await media.seed([libraryAsset])
+      expect(await getMedia(LIBRARY)).toBeUndefined()
+      // Asking for it again from the Library view does.
+      await media.restore([libraryAsset])
+      expect(await getMedia(LIBRARY)).toBeDefined()
+      expect(await getProjectMediaIds('fl-lib')).toContain(LIBRARY)
+    } finally {
+      media.dispose()
+    }
+  })
+
   it('records a library original the server reports as HDR, also after it was seeded (FL-97)', async () => {
     const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-hdr', onChange: () => {} })
     try {

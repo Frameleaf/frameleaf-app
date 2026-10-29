@@ -235,6 +235,18 @@ describe('FL-636 adopting a library result', () => {
     expect(Date.now() - started).toBeLessThan(1000)
   })
 
+  it('adopts an item again once the bin no longer holds it', async () => {
+    const adopt = createAdopter(host as unknown as LibraryFinderHost)
+    await adopt(BEACH)
+    await adopt(BEACH)
+    expect(host.addLibraryAssets).toHaveBeenCalledTimes(1)
+    // The person removed it from the bin.
+    useMediaLibraryStore.setState({ mediaById: {} })
+    await expect(adopt(BEACH)).resolves.toMatchObject({ id: BEACH.id })
+    expect(host.addLibraryAssets).toHaveBeenCalledTimes(2)
+    expect(host.seed).toHaveBeenCalledTimes(2)
+  })
+
   it('fails when the host no longer offers the item, and asks again next time', async () => {
     host.addLibraryAssets.mockResolvedValueOnce([])
     const adopt = createAdopter(host as unknown as LibraryFinderHost)

@@ -266,6 +266,11 @@ export interface LibraryMediaSeeder {
   forget(mediaId: string): void
   /** The media is in the current bin again (imported again, or linked again by Freecut). */
   remember(mediaId: string): void
+  /**
+   * FL-636: the person asked for these again from the bin's Library view. Offer each afresh, even one
+   * they removed from the bin earlier, which `seed` alone would leave out.
+   */
+  restore(assets: readonly StudioAssetRef[]): Promise<void>
   /** What this seeder linked to `projectId`: the bin it put there, before anyone else changed it. */
   linked(projectId: string): ReadonlySet<string>
   /** Stop probing and release every registered URL. */
@@ -461,6 +466,13 @@ export function createLibraryMediaSeeder(options: {
     remember(mediaId) {
       removed.delete(mediaId)
       options.onAvailabilityChange?.(mediaId, true)
+    },
+    restore(assets) {
+      for (const asset of assets) {
+        if (removed.delete(asset.id)) options.onAvailabilityChange?.(asset.id, true)
+        seeded.delete(asset.id)
+      }
+      return this.seed(assets)
     },
     linked(projectId) {
       return linkedTo.get(projectId) ?? new Set()

@@ -994,7 +994,7 @@ async function mount(context: StudioHostContext): Promise<void> {
     searchLibrary: (query) => call('searchLibrary', query),
     libraryFacets: () => call('libraryFacets'),
     addLibraryAssets: (assetIds) => call('addLibraryAssets', assetIds),
-    seed: (assets) => (state.disposed ? Promise.resolve() : state.media.seed(assets)),
+    seed: (assets) => (state.disposed ? Promise.resolve() : state.media.restore(assets)),
   })
   state.libraryFinder = libraryFinder
   libraryFinder.update(context)

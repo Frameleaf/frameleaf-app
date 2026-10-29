@@ -154,9 +154,13 @@ export function waitForBinMedia(mediaId: string, timeoutMs = LIBRARY_ADOPT_TIMEO
  */
 export function createAdopter(host: Pick<LibraryFinderHost, 'addLibraryAssets' | 'seed'>) {
   const pending = new Map<string, Promise<MediaMetadata>>()
+  /** Adoptions that finished; reused only while the bin still holds the media. */
+  const settled = new Set<string>()
   return (asset: StudioAssetRef): Promise<MediaMetadata> => {
     const existing = pending.get(asset.id)
-    if (existing) return existing
+    if (existing && (!settled.has(asset.id) || useMediaLibraryStore.getState().mediaById[asset.id])) return existing
+    // Removed from the bin since: adopt it again.
+    settled.delete(asset.id)
     const adoption = (async () => {
       const [ref] = await host.addLibraryAssets([asset.id])
       if (!ref) throw new Error('LIBRARY_ADOPT_REFUSED')
@@ -167,7 +171,10 @@ export function createAdopter(host: Pick<LibraryFinderHost, 'addLibraryAssets' |
       return Promise.race([waitForBinMedia(ref.id), seeding.then(() => waitForBinMedia(ref.id))])
     })()
     pending.set(asset.id, adoption)
-    adoption.catch(() => pending.delete(asset.id))
+    adoption.then(
+      () => settled.add(asset.id),
+      () => pending.delete(asset.id),
+    )
     return adoption
   }
 }
