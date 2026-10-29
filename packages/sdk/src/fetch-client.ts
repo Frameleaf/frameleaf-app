@@ -3609,6 +3609,10 @@ export type CastResponse = {
     /** Whether Google Cast is enabled (always false while an administrator has turned casting off) */
     gCastEnabled: boolean;
 };
+export type ClientsResponse = {
+    /** Whether Clients is in use and shown in the top bar */
+    enabled: boolean;
+};
 export type DownloadResponse = {
     /** Maximum archive size in bytes */
     archiveSize: number;
@@ -3711,6 +3715,7 @@ export type TrashPreferencesResponse = {
 export type UserPreferencesResponseDto = {
     albums: AlbumsResponse;
     cast: CastResponse;
+    clients?: ClientsResponse;
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
@@ -3750,6 +3755,10 @@ export type CastUpdate = {
     adminDisabled?: boolean;
     /** Whether Google Cast is enabled */
     gCastEnabled?: boolean;
+};
+export type ClientsUpdate = {
+    /** Whether Clients is in use and shown in the top bar */
+    enabled?: boolean;
 };
 export type DownloadUpdate = {
     /** Maximum archive size in bytes */
@@ -3846,6 +3855,7 @@ export type UserPreferencesUpdateDto = {
     albums?: AlbumsUpdate;
     avatar?: AvatarUpdate;
     cast?: CastUpdate;
+    clients?: ClientsUpdate;
     download?: DownloadUpdate;
     emailNotifications?: EmailNotificationsUpdate;
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
@@ -36235,7 +36245,9 @@ export enum LibraryItemSearchMode {
 }
 export enum LibraryItemSearchSort {
     Added = "added",
-    Color = "color"
+    Color = "color",
+    Name = "name",
+    Rating = "rating"
 }
 export enum LicenseLinkCodeKind {
     Server = "server",

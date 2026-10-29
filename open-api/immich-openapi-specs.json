@@ -76079,6 +76079,27 @@
         ],
         "type": "object"
       },
+      "ClientsResponse": {
+        "properties": {
+          "enabled": {
+            "description": "Whether Clients is in use and shown in the top bar",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "ClientsUpdate": {
+        "properties": {
+          "enabled": {
+            "description": "Whether Clients is in use and shown in the top bar",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "CloudBackupAccountExclusionsDto": {
         "properties": {
           "licence": {
@@ -93293,7 +93314,9 @@
       "LibraryItemSearchSort": {
         "enum": [
           "added",
-          "color"
+          "color",
+          "name",
+          "rating"
         ],
         "type": "string"
       },
@@ -144350,6 +144373,9 @@
           "cast": {
             "$ref": "#/components/schemas/CastResponse"
           },
+          "clients": {
+            "$ref": "#/components/schemas/ClientsResponse"
+          },
           "download": {
             "$ref": "#/components/schemas/DownloadResponse"
           },
@@ -144476,6 +144502,9 @@
           },
           "cast": {
             "$ref": "#/components/schemas/CastUpdate"
+          },
+          "clients": {
+            "$ref": "#/components/schemas/ClientsUpdate"
           },
           "download": {
             "$ref": "#/components/schemas/DownloadUpdate"
