@@ -4,6 +4,7 @@ import { PublicFetchError, fetchPublic } from 'src/utils/public-fetch.js';
 export type LinkPreview = { title: string | null; image: { contentType: string; data: Buffer } | null };
 
 const PAGE_BYTES = 1024 * 1024;
+const HEAD_CHARS = 128 * 1024;
 const IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 
@@ -28,16 +29,18 @@ const attribute = (tag: string, name: string) =>
 
 /** Reads `og:` / `twitter:` meta tags and `<title>` from the head; the body is never parsed. */
 export const readPageMeta = (html: string) => {
-  const head = html.slice(0, !/<body[\s>]/i.test(html) ? undefined : html.search(/<body[\s>]/i));
+  // Bounded patterns over a capped head: a hostile page cannot make these scans quadratic.
+  const bodyStart = html.search(/<body[\s>]/i);
+  const head = html.slice(0, Math.min(bodyStart === -1 ? html.length : bodyStart, HEAD_CHARS));
   const meta = new Map<string, string>();
-  for (const [tag] of head.matchAll(/<meta\b[^>]*>/gi)) {
+  for (const [tag] of head.matchAll(/<meta\b[^<>]{0,4096}>/gi)) {
     const key = (attribute(tag, 'property') ?? attribute(tag, 'name'))?.toLowerCase();
     const content = attribute(tag, 'content');
     if (key && content !== undefined && !meta.has(key)) {
       meta.set(key, decode(content));
     }
   }
-  const titleTag = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(head)?.[1];
+  const titleTag = /<title(?:\s[^<>]{0,256})?>([^<]{0,4000})<\/title>/i.exec(head)?.[1];
   const title = meta.get('og:title') || meta.get('twitter:title') || (titleTag ? decode(titleTag) : '') || null;
   const image = meta.get('og:image:secure_url') || meta.get('og:image') || meta.get('twitter:image') || null;
   return { title: title ? title.slice(0, 2000) : null, image };
@@ -61,7 +64,11 @@ export const readLinkPreview = async (address: string): Promise<LinkPreview> => 
       }
     } catch (error) {
       // A page without a readable picture still gives its title.
-      if (!(error instanceof PublicFetchError) && !(error instanceof TypeError)) {
+      if (
+        !(error instanceof PublicFetchError) &&
+        !(error instanceof TypeError) &&
+        (error as Error)?.name !== 'TimeoutError'
+      ) {
         throw error;
       }
     }

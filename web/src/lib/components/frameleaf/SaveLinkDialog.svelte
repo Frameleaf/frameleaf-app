@@ -93,11 +93,15 @@
         return;
       }
       preview = { for: address, ...result };
-      if (!titleEdited && result.title) {
-        title = result.title;
+      if (!titleEdited) {
+        // a title the page filled in for an earlier address must not stay on this one
+        title = result.title ?? '';
       }
     } catch {
       preview = { for: address, title: null, image: null };
+      if (!titleEdited) {
+        title = '';
+      }
     } finally {
       reading = false;
     }

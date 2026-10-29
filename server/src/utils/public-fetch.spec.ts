@@ -28,6 +28,8 @@ describe('isPublicAddress', () => {
     'fe80::1',
     '::ffff:127.0.0.1',
     '::ffff:192.168.0.1',
+    '::ffff:7f00:1',
+    '::ffff:c0a8:1',
   ])('refuses %s', (address) => expect(isPublicAddress(address)).toBe(false));
 
   it.each(['93.184.216.34', '1.1.1.1', '2606:4700:4700::1111', '::ffff:8.8.8.8'])('allows %s', (address) =>
@@ -41,6 +43,7 @@ describe('fetchPublic', () => {
   it.each([
     'http://127.0.0.1/',
     'http://[::1]/',
+    'http://[::ffff:127.0.0.1]/',
     'http://169.254.169.254/latest/meta-data/',
     'http://localhost/',
     'http://printer.local/',
@@ -67,6 +70,13 @@ describe('readPageMeta', () => {
         <meta content='/cover.jpg' property='og:image'>
         </head><body><meta property="og:title" content="not this"></body></html>`),
     ).toEqual({ title: 'Moodboard — Spring', image: '/cover.jpg' });
+  });
+
+  it('reads a huge unclosed head in linear time', () => {
+    const hostile = '<head>' + '<meta '.repeat(150_000) + '<title>'.repeat(30_000);
+    const started = performance.now();
+    expect(readPageMeta(hostile)).toEqual({ title: null, image: null });
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 
   it('falls back to the title and has no picture without one', () => {

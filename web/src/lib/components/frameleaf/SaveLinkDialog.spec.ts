@@ -56,6 +56,19 @@ describe('SaveLinkDialog', () => {
     expect(sdkMock.addBookmarksToAlbum).toHaveBeenCalledWith({ id: 'c1', bookmarkIdsDto: { ids: ['b1'] } });
   });
 
+  it('drops a filled-in title when the next address gives none', async () => {
+    sdkMock.previewBookmark.mockResolvedValueOnce({ title: 'First page', image: null });
+    render(SaveLinkDialog, { open: true, url: 'https://example.com/a', onSaved: vi.fn() });
+    const field = screen.getByRole('textbox', { name: 'frameleaf_bookmark_title' });
+    await waitFor(() => expect(field).toHaveValue('First page'));
+
+    sdkMock.previewBookmark.mockResolvedValueOnce({ title: null, image: null });
+    const address = screen.getByRole('textbox', { name: 'frameleaf_boards_save_link_address' });
+    await fireEvent.input(address, { target: { value: 'https://example.com/b' } });
+    await fireEvent.change(address);
+    await waitFor(() => expect(field).toHaveValue(''));
+  });
+
   it('refuses an address that is not a web page', async () => {
     render(SaveLinkDialog, { open: true, url: 'javascript:alert(1)', onSaved: vi.fn() });
     await fireEvent.click(screen.getByRole('button', { name: 'save' }));

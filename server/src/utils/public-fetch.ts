@@ -52,8 +52,17 @@ export const isPublicAddress = (address: string): boolean => {
     return !blocked.check(address, 'ipv4');
   }
   if (family === 6) {
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-    return mapped ? isPublicAddress(mapped[1]) : !blocked.check(address, 'ipv6');
+    // IPv4-mapped, dotted (::ffff:127.0.0.1) or as URL parsing writes it (::ffff:7f00:1)
+    const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+    if (dotted) {
+      return isPublicAddress(dotted[1]);
+    }
+    const hex = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/i.exec(address);
+    if (hex) {
+      const [high, low] = [Number.parseInt(hex[1], 16), Number.parseInt(hex[2], 16)];
+      return isPublicAddress([high >> 8, high & 255, low >> 8, low & 255].join('.'));
+    }
+    return !blocked.check(address, 'ipv6');
   }
   return false;
 };
