@@ -99,6 +99,13 @@ it('opens designer assets and notes for an ordinary account without a Pro entitl
   );
 });
 
+it('opens the saved link a deep link names, even before the grid reaches it', async () => {
+  sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
+  renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn(), bookmark: 'book' });
+  expect(await screen.findByRole('textbox', { name: 'Notes' })).toHaveValue('Owner note');
+  expect(sdkMock.getBookmark).toHaveBeenCalledWith({ id: 'book' }, expect.anything());
+});
+
 it('keeps the loaded grid in place when a tile receives pointer or keyboard focus', async () => {
   renderWithTooltips(LibraryItemsView, { title: 'Pro', query, onQueryChange: vi.fn() });
   const card = await screen.findByRole('button', { name: 'Open saved link Packaging reference' });

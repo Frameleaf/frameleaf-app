@@ -92,6 +92,7 @@
     onSaveLink,
     kinds,
     onGetExtension,
+    bookmark,
   }: {
     title: string;
     query: DiscoveryQuery;
@@ -110,6 +111,8 @@
     kinds?: import('@frameleaf/sdk').LibraryItemSearchKind[];
     /** Opens "Get the browser extension". Without it, the first-run state does not offer it. */
     onGetExtension?: () => void;
+    /** A saved link to open in the inspector when the view first loads (Boards' `?bookmark=<id>`). */
+    bookmark?: string;
   } = $props();
   /** Boards opens its own save-link and extension dialogs unless the host passes its own. */
   let linkDialog = $state<{ url?: string } | null>(null);
@@ -129,6 +132,8 @@
   let filterSection = $state<DiscoveryFilterSection | null>(null);
   let inspectorOpen = $state(true);
   let activeBookmark = $state<string | null>(null);
+  /** The link a deep link opened. Its inspector loads it by id even before the grid reaches it. */
+  let linkedBookmark = $state<string | null>(null);
   let sort = $state<LibraryItemSort>('added');
   let popover = $state<'color' | 'shape' | null>(null);
   let colorTrigger: HTMLButtonElement | undefined = $state();
@@ -330,7 +335,12 @@
       results.reset(body ? { kind: 'library', terms: body } : null);
       const identity = key;
       if (identity !== requestIdentity) {
-        activeBookmark = null;
+        // The first request opens the link a deep link names; any later change of request closes it.
+        linkedBookmark = requestIdentity === '' ? (bookmark ?? null) : null;
+        activeBookmark = linkedBookmark;
+        if (linkedBookmark) {
+          inspectorOpen = true;
+        }
       }
       requestIdentity = identity;
       failed = !body;
@@ -707,11 +717,11 @@
           onClose={() => (filterSection = null)}
         />
       </div>
-    {:else if inspectorOpen && selectedBookmark && bookmarkRecord?.kind === 'bookmark'}
+    {:else if inspectorOpen && selectedBookmark && (bookmarkRecord?.kind === 'bookmark' || selectedBookmark === linkedBookmark)}
       <div class="fl-items-panel">
         <BookmarkInspector
           id={selectedBookmark}
-          bookmark={bookmarkRecord.bookmark}
+          bookmark={bookmarkRecord?.kind === 'bookmark' ? bookmarkRecord.bookmark : undefined}
           onClose={closeBookmark}
           onChange={reload}
         />
