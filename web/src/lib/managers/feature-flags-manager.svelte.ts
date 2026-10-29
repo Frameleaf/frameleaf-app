@@ -3,6 +3,7 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 
 class FeatureFlagsManager {
   #value?: ServerFeaturesDto = $state();
+  #loads = 0;
 
   constructor() {
     eventManager.on({
@@ -10,7 +11,12 @@ class FeatureFlagsManager {
       // FL-156: the Frameleaf Cloud link and licence decide the cloud flags
       FrameleafCloudUpdate: () => void this.#loadFeatureFlags(),
       // Sign-in reads the flags for the supporter badge; app start uses that answer instead of asking again.
-      ServerFeaturesLoaded: (features) => (this.#value = features),
+      // It only fills in flags not read yet: a refresh asked for since is newer than that answer.
+      ServerFeaturesLoaded: (features) => {
+        if (!this.#value && this.#loads === 0) {
+          this.#value = features;
+        }
+      },
     });
   }
 
@@ -29,7 +35,12 @@ class FeatureFlagsManager {
   }
 
   async #loadFeatureFlags() {
-    this.#value = await getServerFeatures();
+    const load = ++this.#loads;
+    const value = await getServerFeatures();
+    // an older answer that arrives late never replaces a newer one
+    if (load === this.#loads) {
+      this.#value = value;
+    }
   }
 }
 

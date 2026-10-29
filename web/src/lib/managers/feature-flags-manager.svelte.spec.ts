@@ -24,4 +24,14 @@ describe('feature flags manager', () => {
     expect(sdkMock.getServerFeatures).not.toHaveBeenCalled();
     expect(featureFlagsManager.value).toEqual(flags(true));
   });
+
+  it('keeps a refresh newer than the sign-in answer that arrives after it', async () => {
+    sdkMock.getServerFeatures.mockResolvedValue(flags(false));
+    const { featureFlagsManager } = await import('$lib/managers/feature-flags-manager.svelte');
+    const { eventManager: events } = await import('$lib/managers/event-manager.svelte');
+    events.emit('FrameleafCloudUpdate', { topic: 'link' });
+    await vi.waitFor(() => expect(featureFlagsManager.value).toEqual(flags(false)));
+    events.emit('ServerFeaturesLoaded', flags(true));
+    expect(featureFlagsManager.value).toEqual(flags(false));
+  });
 });
