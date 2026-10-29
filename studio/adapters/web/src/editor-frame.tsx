@@ -65,6 +65,7 @@ import {
 } from '@frameleaf/host/studio-timing'
 import { handoffProjectFps, withStoredCadence } from './project-cadence'
 import { call, connectToHost, post } from './host-port'
+import { setCaptionTranslator } from '@/features/editor/services/caption-translation-host'
 import { setPersistenceGate } from './persistence-gate'
 import { VirtualWorkspace } from './virtual-workspace'
 import {
@@ -1233,5 +1234,8 @@ async function onHostMessage(message: StudioHostToFrameMessage) {
       return
   }
 }
+
+// FL-641: caption translation goes to the host, which translates on the processing order.
+setCaptionTranslator((request) => call('translateCaptions', request))
 
 connectToHost('editor', (message) => void onHostMessage(message))

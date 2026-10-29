@@ -1,0 +1,15 @@
+[
+  {
+    "name": "m2m100-418m",
+    "repository": "jncraton/m2m100_418M-ct2-int8",
+    "revision": "7c1b2620a4e58dacecbd8bf89cfd6da7eb9eb7b0",
+    "license": "mit",
+    "basis": "M2M100 418M by Meta AI (MIT), converted to CTranslate2 int8 by Jon Craton (MIT). Owner decision 2026-10-29 (FL-641).",
+    "files": {
+      "textual/model.bin": "d6703dd9f920ff896e45c3d97b490761bed5944937b90bbe6a7245f5652542d4",
+      "textual/config.json": "4244772990e30069563e3ddfb4ad6dc95bdfd2ac3de667ea8858c9b0a8433fa8",
+      "textual/shared_vocabulary.json": "7eb5d0ff184c6095c7c10f9911c0aea492250abd12854f9c3d787c64b1c6397e",
+      "textual/sentencepiece.bpe.model": "d8f7c76ed2a5e0822be39f0a4f95a55eb19c78f4593ce609e2edbc2aea4d380a"
+    }
+  }
+]

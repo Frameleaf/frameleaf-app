@@ -23,7 +23,7 @@ export type ExtensionRequest =
         'preview' | 'retry-capture' | 'cancel-capture' | 'release-screenshot';
       id: string;
     }
-  | { type: 'screenshot'; mode: 'visible' | 'area' }
+  | { type: 'screenshot'; mode: 'visible' | 'area' | 'whole' }
   | { type: 'create-album'; previewId: string; name: string; parentId?: string }
   | { type: 'release-candidates'; id: string; candidateIds: string[] }
   | {

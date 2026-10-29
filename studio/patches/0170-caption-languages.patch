@@ -1,0 +1,1507 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/caption-languages-panel.tsx b/src/features/editor/components/properties-sidebar/clip-panel/caption-languages-panel.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/caption-languages-panel.tsx
+@@ -0,0 +1,353 @@
++/**
++ * Languages (Frameleaf FL-641): the sequence's captions in other languages, each its own caption track.
++ * Approved mock: `CaptionLanguages` in the prototype's StudioUpgrades2.jsx (2026-10-29).
++ */
++import { useEffect, useMemo, useRef, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Home, Languages } from 'lucide-react'
++import { toast } from 'sonner'
++import { Button } from '@/components/ui/button'
++import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { useProjectStore } from '@/features/editor/deps/projects'
++import { DEFAULT_PROJECT_HEIGHT, DEFAULT_PROJECT_WIDTH } from '@/shared/projects/defaults'
++import { PropertySection } from '../components'
++import {
++  CAPTION_LANGUAGES,
++  buildTranslatedCaptionTrack,
++  burnedInLanguage,
++  captionVoiceFor,
++  collectOriginalCaptionLines,
++  isCaptionLanguage,
++  originalCaptionStyle,
++  originalLineFor,
++  translatedCaptionItems,
++  translatedLines,
++  type CaptionLanguage,
++  type TranslatedCaptionItem,
++} from '../../../utils/caption-languages'
++import {
++  addCaptionVoiceOver,
++  addTranslatedCaptions,
++  removeCaptionLanguage,
++  setCaptionLanguageInPicture,
++  updateCaptionTranslation,
++  updateTranslatedCue,
++} from '../../../utils/caption-language-actions'
++import { getCaptionTranslator, translateCaptionLines } from '../../../services/caption-translation-host'
++
++const clock = (seconds: number) => {
++  const whole = Math.max(0, Math.floor(seconds))
++  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
++}
++
++function useLanguageName() {
++  const { i18n } = useTranslation()
++  const locale = i18n.resolvedLanguage ?? i18n.language ?? 'en'
++  return useMemo(() => {
++    let names: Intl.DisplayNames | null = null
++    try {
++      names = new Intl.DisplayNames([locale], { type: 'language' })
++    } catch {
++      names = null
++    }
++    return (code: CaptionLanguage) => {
++      const name = names?.of(code) ?? code
++      return name.charAt(0).toLocaleUpperCase(locale) + name.slice(1)
++    }
++  }, [locale])
++}
++
++export function CaptionLanguagesPanel() {
++  const { t, i18n } = useTranslation()
++  const languageName = useLanguageName()
++  const items = useItemsStore((state) => state.items)
++  const tracks = useItemsStore((state) => state.tracks)
++  const fps = useTimelineStore((state) => state.fps)
++  const project = useProjectStore((state) => state.currentProject)
++
++  const lines = useMemo(() => collectOriginalCaptionLines(items, fps), [items, fps])
++  const translations = useMemo(() => translatedCaptionItems(items), [items])
++  const inPicture = burnedInLanguage(tracks, items)
++
++  const guessedOriginal = (() => {
++    const recorded = translations[0]?.source.translation.from
++    if (recorded) return recorded
++    const ui = (i18n.resolvedLanguage ?? 'en').split('-')[0]
++    return isCaptionLanguage(ui) ? ui : 'en'
++  })()
++  const [original, setOriginal] = useState<CaptionLanguage>(guessedOriginal)
++  const available = CAPTION_LANGUAGES.filter(
++    (code) => code !== original && !translations.some((item) => item.source.translation.language === code),
++  )
++  const [target, setTarget] = useState<CaptionLanguage | ''>(available[0] ?? '')
++  if (target !== '' && !available.includes(target)) setTarget(available[0] ?? '')
++
++  const [open, setOpen] = useState<string | null>(null)
++  const [job, setJob] = useState<{ kind: 'translate' | 'voice'; language: CaptionLanguage; percent: number } | null>(
++    null,
++  )
++  const abortRef = useRef<AbortController | null>(null)
++  useEffect(() => () => abortRef.current?.abort(), [])
++
++  if (lines.length === 0 && translations.length === 0) return null
++
++  const translate = async (language: CaptionLanguage) => {
++    if (!getCaptionTranslator()) {
++      toast.error(t('captionLanguages.unavailable'))
++      return
++    }
++    abortRef.current?.abort()
++    const controller = new AbortController()
++    abortRef.current = controller
++    setJob({ kind: 'translate', language, percent: 0 })
++    try {
++      const translated = await translateCaptionLines(
++        { source: original, target: language, lines: lines.map((line) => line.text) },
++        (done, total) => setJob({ kind: 'translate', language, percent: Math.round((done / total) * 100) }),
++      )
++      if (controller.signal.aborted) return
++      const state = useItemsStore.getState()
++      const previous = translatedCaptionItems(state.items).find((item) => item.source.translation.language === language)
++      const metadata = project?.metadata
++      const built = buildTranslatedCaptionTrack({
++        tracks: state.tracks,
++        lines,
++        translations: translated,
++        language,
++        from: original,
++        fps,
++        canvasWidth: metadata?.width ?? DEFAULT_PROJECT_WIDTH,
++        canvasHeight: metadata?.height ?? DEFAULT_PROJECT_HEIGHT,
++        name: t('captionLanguages.trackName', { language: languageName(language) }),
++        style: originalCaptionStyle(state.items),
++        previous: previous?.source.translation,
++      })
++      if (!built) {
++        toast.error(t('captionLanguages.failed'))
++        return
++      }
++      addTranslatedCaptions(built.track, built.item)
++      setOpen(language)
++      toast.success(t('captionLanguages.ready', { language: languageName(language) }))
++    } catch {
++      if (!controller.signal.aborted) toast.error(t('captionLanguages.failed'))
++    } finally {
++      if (abortRef.current === controller) {
++        abortRef.current = null
++        setJob(null)
++      }
++    }
++  }
++
++  const makeVoiceOver = async (item: TranslatedCaptionItem) => {
++    const language = item.source.translation.language
++    abortRef.current?.abort()
++    const controller = new AbortController()
++    abortRef.current = controller
++    setJob({ kind: 'voice', language, percent: 0 })
++    try {
++      const { makeCaptionVoiceOver } = await import('../../../services/caption-voice-over')
++      const voice = await makeCaptionVoiceOver({
++        language,
++        lines: translatedLines(item, fps),
++        fps,
++        tracks: useItemsStore.getState().tracks,
++        name: t('captionLanguages.voiceTrackName', { language: languageName(language) }),
++        signal: controller.signal,
++        onProgress: (done, total) => setJob({ kind: 'voice', language, percent: Math.round((done / total) * 100) }),
++      })
++      if (controller.signal.aborted) return
++      addCaptionVoiceOver(item.id, voice.track, voice.audio)
++      toast.success(t('captionLanguages.voiceReady', { language: languageName(language) }))
++    } catch {
++      if (!controller.signal.aborted) toast.error(t('captionLanguages.voiceFailed'))
++    } finally {
++      if (abortRef.current === controller) {
++        abortRef.current = null
++        setJob(null)
++      }
++    }
++  }
++
++  const busy = job !== null
++  const originalName = languageName(original)
++
++  return (
++    <PropertySection title={t('captionLanguages.title')} icon={Languages} defaultOpen={true}>
++      <div className="space-y-3 px-1 text-xs" data-frameleaf="caption-languages">
++        <ul className="space-y-2">
++          <li className="rounded border border-border px-2 py-1.5">
++            <div className="flex items-center justify-between gap-2">
++              <label className="flex min-w-0 flex-col">
++                <span className="sr-only">{t('captionLanguages.originalLanguage')}</span>
++                <select
++                  aria-label={t('captionLanguages.originalLanguage')}
++                  className="bg-transparent font-medium"
++                  value={original}
++                  disabled={busy || translations.length > 0}
++                  onChange={(event) => isCaptionLanguage(event.target.value) && setOriginal(event.target.value)}
++                >
++                  {CAPTION_LANGUAGES.map((code) => (
++                    <option key={code} value={code}>
++                      {languageName(code)}
++                    </option>
++                  ))}
++                </select>
++                <span className="text-muted-foreground">{t('captionLanguages.original', { count: lines.length })}</span>
++              </label>
++              <label className="flex items-center gap-1">
++                <input
++                  type="radio"
++                  name="caption-language-in-picture"
++                  checked={inPicture === 'original'}
++                  onChange={() => setCaptionLanguageInPicture('original')}
++                />
++                {t('captionLanguages.inPicture')}
++              </label>
++            </div>
++          </li>
++          {translations.map((item) => {
++            const translation = item.source.translation
++            const language = translation.language
++            const name = languageName(language)
++            const voiced = !!translation.voiceTrackId && tracks.some((track) => track.id === translation.voiceTrackId)
++            const voice = captionVoiceFor(language)
++            const shown = open === language
++            const translated = shown ? translatedLines(item, fps) : []
++            return (
++              <li key={item.id} className="rounded border border-border px-2 py-1.5" data-language={language}>
++                <div className="flex items-center justify-between gap-2">
++                  <span className="flex min-w-0 flex-col">
++                    <b className="font-medium">{name}</b>
++                    <span className="text-muted-foreground">
++                      {voiced
++                        ? t('captionLanguages.translatedVoice', { count: item.cues.length })
++                        : t('captionLanguages.translated', { count: item.cues.length })}
++                    </span>
++                  </span>
++                  <label className="flex items-center gap-1">
++                    <input
++                      type="radio"
++                      name="caption-language-in-picture"
++                      checked={inPicture === language}
++                      onChange={() => setCaptionLanguageInPicture(language)}
++                    />
++                    {t('captionLanguages.inPicture')}
++                  </label>
++                </div>
++                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
++                  <label className="flex items-center gap-1">
++                    <input
++                      type="checkbox"
++                      checked={translation.subtitle}
++                      onChange={(event) => updateCaptionTranslation(item.id, { subtitle: event.target.checked })}
++                    />
++                    {t('captionLanguages.subtitleTrack')}
++                  </label>
++                  <button
++                    type="button"
++                    className="text-primary underline-offset-2 hover:underline"
++                    aria-expanded={shown}
++                    onClick={() => setOpen(shown ? null : language)}
++                  >
++                    {shown ? t('captionLanguages.hideLines') : t('captionLanguages.reviewLines')}
++                  </button>
++                  {voice && !voiced && (
++                    <button
++                      type="button"
++                      className="text-primary underline-offset-2 hover:underline disabled:opacity-50"
++                      disabled={busy}
++                      onClick={() => void makeVoiceOver(item)}
++                    >
++                      {t('captionLanguages.makeVoiceOver', { language: name })}
++                    </button>
++                  )}
++                  <button
++                    type="button"
++                    className="text-primary underline-offset-2 hover:underline disabled:opacity-50"
++                    disabled={busy || lines.length === 0}
++                    onClick={() => void translate(language)}
++                  >
++                    {t('captionLanguages.translateAgain')}
++                  </button>
++                  <button
++                    type="button"
++                    className="text-primary underline-offset-2 hover:underline"
++                    onClick={() => removeCaptionLanguage(item.id)}
++                  >
++                    {t('captionLanguages.remove')}
++                  </button>
++                </div>
++                {!voice && <p className="mt-1 text-muted-foreground">{t('captionLanguages.noVoice', { language: name })}</p>}
++                {shown && (
++                  <ol className="mt-2 space-y-1.5">
++                    {item.cues.map((cue, index) => {
++                      const line = translated[index]!
++                      const source = originalLineFor(lines, line)
++                      return (
++                        <li key={cue.id} className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
++                          <span className="text-muted-foreground tabular-nums">{clock(line.startSeconds)}</span>
++                          <span className="text-muted-foreground">{source?.text ?? ''}</span>
++                          <span />
++                          <input
++                            className="h-7 w-full rounded border border-border bg-transparent px-2"
++                            aria-label={t('captionLanguages.lineLabel', { language: name, time: clock(line.startSeconds) })}
++                            defaultValue={cue.text}
++                            onBlur={(event) => {
++                              if (event.target.value !== cue.text) updateTranslatedCue(item.id, cue.id, event.target.value)
++                            }}
++                          />
++                        </li>
++                      )
++                    })}
++                  </ol>
++                )}
++              </li>
++            )
++          })}
++        </ul>
++
++        {job && (
++          <div role="status" aria-live="polite" className="space-y-1">
++            <span>
++              {t(job.kind === 'translate' ? 'captionLanguages.translating' : 'captionLanguages.makingVoice', {
++                language: languageName(job.language),
++                percent: job.percent,
++              })}
++            </span>
++            <progress className="w-full" max={100} value={job.percent} />
++          </div>
++        )}
++
++        {available.length > 0 && lines.length > 0 && target !== '' && (
++          <div className="flex items-end gap-2">
++            <label className="flex min-w-0 flex-1 flex-col gap-1">
++              <span>{t('captionLanguages.addLanguage')}</span>
++              <select
++                className="h-7 rounded border border-border bg-transparent px-1"
++                value={target}
++                onChange={(event) => isCaptionLanguage(event.target.value) && setTarget(event.target.value)}
++              >
++                {available.map((code) => (
++                  <option key={code} value={code}>
++                    {languageName(code)}
++                  </option>
++                ))}
++              </select>
++            </label>
++            <Button size="sm" disabled={busy} onClick={() => void translate(target)}>
++              <Languages className="h-3.5 w-3.5" />
++              {t('captionLanguages.translate')}
++            </Button>
++          </div>
++        )}
++
++        <p className="text-muted-foreground">{t('captionLanguages.note', { language: originalName })}</p>
++        <p className="flex items-start gap-1 text-muted-foreground">
++          <Home className="mt-0.5 h-3.5 w-3.5 shrink-0" />
++          <span>{t('captionLanguages.whereItRuns')}</span>
++        </p>
++      </div>
++    </PropertySection>
++  )
++}
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+@@ -57,6 +57,9 @@
+ const LazySubtitleSection = lazy(() =>
+   import('./subtitle-section').then((module) => ({ default: module.SubtitleSection })),
+ )
++const LazyCaptionLanguagesPanel = lazy(() =>
++  import('./caption-languages-panel').then((module) => ({ default: module.CaptionLanguagesPanel })),
++)
+ const LazyTextContentSection = lazy(() =>
+   import('./text-section').then((module) => ({ default: module.TextContentSection })),
+ )
+@@ -682,6 +685,7 @@
+               {(hasSubtitleItems || hasVirtualSubtitleItems) && (
+                 <Suspense fallback={null}>
+                   <LazySubtitleSection items={selectedItems} canvas={canvas} />
++                  <LazyCaptionLanguagesPanel />
+                 </Suspense>
+               )}
+               {hasGifItems && <GifSection items={selectedItems} />}
+diff --git a/src/features/editor/services/caption-translation-host.ts b/src/features/editor/services/caption-translation-host.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/services/caption-translation-host.ts
+@@ -0,0 +1,53 @@
++/**
++ * Where caption translation runs (Frameleaf FL-641). The editor never reaches the server itself: the
++ * host adapter registers a translator that asks the Frameleaf host, which translates on the processing
++ * order ("Where work runs"). Without one, Translate says the feature is unavailable.
++ */
++import type { CaptionLanguage } from '../utils/caption-languages'
++
++export interface CaptionTranslationRequest {
++  source: CaptionLanguage
++  target: CaptionLanguage
++  /** The caption lines as text, in order. Timing stays in the editor. */
++  lines: string[]
++}
++
++export interface CaptionTranslationResult {
++  /** One translation per line asked for, in the same order. */
++  lines: string[]
++}
++
++export type CaptionTranslator = (request: CaptionTranslationRequest) => Promise<CaptionTranslationResult>
++
++let translator: CaptionTranslator | null = null
++
++export function setCaptionTranslator(next: CaptionTranslator | null): void {
++  translator = next
++}
++
++export function getCaptionTranslator(): CaptionTranslator | null {
++  return translator
++}
++
++/** The host takes at most this many lines at once; longer projects are sent in parts. */
++export const CAPTION_TRANSLATION_BATCH = 500
++
++/** Translate every line, in parts of at most {@link CAPTION_TRANSLATION_BATCH}, keeping their order. */
++export async function translateCaptionLines(
++  request: CaptionTranslationRequest,
++  onProgress?: (done: number, total: number) => void,
++): Promise<string[]> {
++  const translate = getCaptionTranslator()
++  if (!translate) throw new Error('Caption translation is not available here')
++  const out: string[] = []
++  for (let start = 0; start < request.lines.length; start += CAPTION_TRANSLATION_BATCH) {
++    const part = request.lines.slice(start, start + CAPTION_TRANSLATION_BATCH)
++    const result = await translate({ ...request, lines: part })
++    if (!Array.isArray(result?.lines) || result.lines.length !== part.length) {
++      throw new Error('The translation did not cover every line')
++    }
++    out.push(...result.lines.map((line) => (typeof line === 'string' ? line : '')))
++    onProgress?.(Math.min(request.lines.length, start + part.length), request.lines.length)
++  }
++  return out
++}
+diff --git a/src/features/editor/services/caption-voice-over.ts b/src/features/editor/services/caption-voice-over.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/services/caption-voice-over.ts
+@@ -0,0 +1,152 @@
++/**
++ * A translated voice-over (Frameleaf FL-641): each translated caption line spoken with the text to
++ * speech Studio already has for that language (Kokoro for English, Supertonic for the others it
++ * knows), put together into one sound at the captions' timing, and placed on its own voice track with
++ * everything else ducking under it.
++ */
++import { importMediaLibraryService, useMediaLibraryStore } from '@/features/editor/deps/media-library'
++import type { AudioItem, TimelineTrack } from '@/types/timeline'
++import type { SupertonicTtsLanguageSelection } from './supertonic-tts-service'
++import { captionVoiceFor, placeVoiceLines, type CaptionLanguage, type CaptionLine } from '../utils/caption-languages'
++
++const SAMPLE_RATE = 24_000
++/** How far everything else is turned down while the voice-over speaks. */
++export const VOICE_OVER_DUCK_DB = -12
++
++async function speak(language: CaptionLanguage, text: string): Promise<Blob> {
++  const engine = captionVoiceFor(language)
++  if (engine === 'kokoro') {
++    const { kokoroTtsService } = await import('./kokoro-tts-service')
++    return (await kokoroTtsService.generateSpeechFile({ text, voice: 'af_heart', speed: 1, model: 'fp32' })).blob
++  }
++  if (engine === 'supertonic') {
++    const { supertonicTtsService } = await import('./supertonic-tts-service')
++    // captionVoiceFor only names Supertonic for languages it speaks.
++    const result = await supertonicTtsService.generateSpeechFile({
++      text,
++      voice: 'F1',
++      language: language as SupertonicTtsLanguageSelection,
++      speed: 1,
++    })
++    return result.blob
++  }
++  throw new Error(`Studio has no voice for ${language}`)
++}
++
++async function decode(blob: Blob): Promise<Float32Array> {
++  const context = new OfflineAudioContext(1, 1, SAMPLE_RATE)
++  const buffer = await context.decodeAudioData(await blob.arrayBuffer())
++  if (buffer.numberOfChannels === 1) return buffer.getChannelData(0)
++  const mono = new Float32Array(buffer.length)
++  for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
++    const data = buffer.getChannelData(channel)
++    for (let index = 0; index < data.length; index++) mono[index]! += data[index]! / buffer.numberOfChannels
++  }
++  return mono
++}
++
++/** 16-bit mono PCM WAV of samples in -1..1. */
++export function encodeWav(samples: Float32Array, sampleRate = SAMPLE_RATE): Blob {
++  const view = new DataView(new ArrayBuffer(44 + samples.length * 2))
++  const text = (offset: number, value: string) => {
++    for (let index = 0; index < value.length; index++) view.setUint8(offset + index, value.charCodeAt(index))
++  }
++  text(0, 'RIFF')
++  view.setUint32(4, 36 + samples.length * 2, true)
++  text(8, 'WAVE')
++  text(12, 'fmt ')
++  view.setUint32(16, 16, true)
++  view.setUint16(20, 1, true)
++  view.setUint16(22, 1, true)
++  view.setUint32(24, sampleRate, true)
++  view.setUint32(28, sampleRate * 2, true)
++  view.setUint16(32, 2, true)
++  view.setUint16(34, 16, true)
++  text(36, 'data')
++  view.setUint32(40, samples.length * 2, true)
++  for (let index = 0; index < samples.length; index++) {
++    const sample = Math.max(-1, Math.min(1, samples[index]!))
++    view.setInt16(44 + index * 2, Math.round(sample * 32767), true)
++  }
++  return new Blob([view.buffer], { type: 'audio/wav' })
++}
++
++/** Put each spoken line at its place in one buffer. */
++export function mixVoiceLines(clips: readonly Float32Array[], offsets: readonly number[], lengthSeconds: number): Float32Array {
++  const out = new Float32Array(Math.max(1, Math.ceil(lengthSeconds * SAMPLE_RATE)))
++  clips.forEach((clip, index) => {
++    const at = Math.round((offsets[index] ?? 0) * SAMPLE_RATE)
++    out.set(clip.subarray(0, Math.max(0, out.length - at)), at)
++  })
++  return out
++}
++
++export interface CaptionVoiceOver {
++  track: TimelineTrack
++  audio: AudioItem
++}
++
++/** Speak every line and import the result into the project's media; nothing is placed yet. */
++export async function makeCaptionVoiceOver(options: {
++  language: CaptionLanguage
++  lines: readonly CaptionLine[]
++  fps: number
++  tracks: readonly TimelineTrack[]
++  /** The voice track's name, already in the person's language ("French voice-over"). */
++  name: string
++  signal?: AbortSignal
++  onProgress?: (done: number, total: number) => void
++}): Promise<CaptionVoiceOver> {
++  const { language, lines, fps } = options
++  const projectId = useMediaLibraryStore.getState().currentProjectId
++  if (!projectId) throw new Error('No project is open')
++  const spoken: Float32Array[] = []
++  for (const [index, line] of lines.entries()) {
++    options.signal?.throwIfAborted()
++    spoken.push(await decode(await speak(language, line.text)))
++    options.onProgress?.(index + 1, lines.length)
++  }
++  const placed = placeVoiceLines(lines, spoken.map((clip) => clip.length / SAMPLE_RATE))
++  const blob = encodeWav(mixVoiceLines(spoken, placed.offsets, placed.lengthSeconds))
++  const file = new File([blob], `voice-over-${language}-${Date.now()}.wav`, { type: 'audio/wav', lastModified: Date.now() })
++  options.signal?.throwIfAborted()
++  const { mediaLibraryService } = await importMediaLibraryService()
++  const media = await mediaLibraryService.importGeneratedAudio(file, projectId, { tags: ['voice-over', language] })
++  await useMediaLibraryStore.getState().loadMediaItems()
++
++  const maxOrder = options.tracks.reduce((highest, track) => Math.max(highest, track.order), -1)
++  const track: TimelineTrack = {
++    id: `track-voice-${language}-${Date.now()}`,
++    name: options.name,
++    kind: 'audio',
++    height: 48,
++    locked: false,
++    syncLock: true,
++    visible: true,
++    muted: false,
++    solo: false,
++    volume: 0,
++    order: maxOrder + 1,
++    items: [],
++  }
++  const sourceFps = media.fps || fps
++  const audio: AudioItem = {
++    id: crypto.randomUUID(),
++    type: 'audio',
++    trackId: track.id,
++    from: Math.max(0, Math.round(placed.startSeconds * fps)),
++    durationInFrames: Math.max(1, Math.round(media.duration * fps)),
++    label: options.name,
++    mediaId: media.id,
++    originId: crypto.randomUUID(),
++    src: URL.createObjectURL(blob),
++    sourceStart: 0,
++    sourceEnd: Math.round(media.duration * sourceFps),
++    sourceDuration: Math.round(media.duration * sourceFps),
++    sourceFps,
++    trimStart: 0,
++    trimEnd: 0,
++    audioDucking: { duckOthersDb: VOICE_OVER_DUCK_DB, attackSec: 0.08, releaseSec: 0.25 },
++  }
++  return { track, audio }
++}
+diff --git a/src/features/editor/utils/caption-language-actions.ts b/src/features/editor/utils/caption-language-actions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/utils/caption-language-actions.ts
+@@ -0,0 +1,178 @@
++/**
++ * Timeline edits for captions in other languages (Frameleaf FL-641). Each is one undo step.
++ */
++import {
++  executeTimelineCommand,
++  useItemsStore,
++  useTimelineSettingsStore,
++} from '@/features/editor/deps/timeline-store'
++import type { AudioItem, TimelineItem, TimelineTrack } from '@/types/timeline'
++import {
++  burnInChanges,
++  translatedCaptionItems,
++  translationOf,
++  type CaptionLanguage,
++  type CaptionTranslation,
++  type TranslatedCaptionItem,
++} from './caption-languages'
++
++const markDirty = () => useTimelineSettingsStore.getState().markDirty()
++
++/** Add a language's caption track, or replace the one it had (translate again). */
++export function addTranslatedCaptions(track: TimelineTrack, item: TranslatedCaptionItem): void {
++  executeTimelineCommand(
++    'CAPTION_LANGUAGE_ADD',
++    () => {
++      const store = useItemsStore.getState()
++      const replaced = translatedCaptionItems(store.items).find(
++        (existing) => existing.source.translation.language === item.source.translation.language,
++      )
++      let tracks = [...store.tracks]
++      if (replaced) {
++        const old = tracks.find((candidate) => candidate.id === replaced.trackId)
++        // Translating again keeps the language's place, visibility and voice-over.
++        track = { ...track, id: replaced.trackId, order: old?.order ?? track.order, visible: old?.visible ?? track.visible }
++        item = {
++          ...item,
++          trackId: replaced.trackId,
++          source: {
++            ...item.source,
++            translation: { ...item.source.translation, voiceTrackId: replaced.source.translation.voiceTrackId },
++          },
++        }
++        store._removeItems([replaced.id])
++        tracks = tracks.map((candidate) => (candidate.id === track.id ? { ...candidate, name: track.name } : candidate))
++      } else {
++        tracks.push(track)
++      }
++      store.setTracks(tracks)
++      store._addItems([item])
++      markDirty()
++    },
++    { language: item.source.translation.language },
++  )
++}
++
++/** Put one language in the picture; every other language's captions are hidden. */
++export function setCaptionLanguageInPicture(language: CaptionLanguage | 'original'): void {
++  executeTimelineCommand(
++    'CAPTION_LANGUAGE_IN_PICTURE',
++    () => {
++      const store = useItemsStore.getState()
++      const changes = burnInChanges(store.tracks, store.items, language)
++      if (changes.tracks.length > 0) {
++        const visible = new Map(changes.tracks.map((change) => [change.id, change.visible]))
++        store.setTracks(
++          store.tracks.map((track) => (visible.has(track.id) ? { ...track, visible: visible.get(track.id)! } : track)),
++        )
++      }
++      for (const change of changes.items) {
++        const item = store.items.find((candidate) => candidate.id === change.id)
++        if ((item?.type === 'video' || item?.type === 'audio') && item.transcriptCaptions) {
++          store._updateItem(change.id, {
++            transcriptCaptions: { ...item.transcriptCaptions, enabled: change.enabled },
++          } as Partial<TimelineItem>)
++        }
++      }
++      markDirty()
++    },
++    { language },
++  )
++}
++
++/** Change what a language records about itself (subtitle track in the export, its voice-over). */
++export function updateCaptionTranslation(itemId: string, change: Partial<CaptionTranslation>): void {
++  executeTimelineCommand(
++    'CAPTION_LANGUAGE_UPDATE',
++    () => {
++      const store = useItemsStore.getState()
++      const item = store.items.find((candidate) => candidate.id === itemId)
++      const translation = item && translationOf(item)
++      if (!item || item.type !== 'subtitle' || !translation) return
++      store._updateItem(itemId, {
++        source: { ...item.source, translation: { ...translation, ...change } },
++      } as Partial<TimelineItem>)
++      markDirty()
++    },
++    { itemId },
++  )
++}
++
++/** Correct one translated line. Its timing and the original line stay as they are. */
++export function updateTranslatedCue(itemId: string, cueId: string, text: string): void {
++  executeTimelineCommand(
++    'CAPTION_LANGUAGE_LINE',
++    () => {
++      const store = useItemsStore.getState()
++      const item = store.items.find((candidate) => candidate.id === itemId)
++      if (!item || item.type !== 'subtitle') return
++      store._updateItem(itemId, {
++        cues: item.cues.map((cue) => (cue.id === cueId ? { ...cue, text } : cue)),
++      } as Partial<TimelineItem>)
++      markDirty()
++    },
++    { itemId, cueId },
++  )
++}
++
++/** Remove a language: its caption track and the voice-over made from it. */
++export function removeCaptionLanguage(itemId: string): void {
++  executeTimelineCommand(
++    'CAPTION_LANGUAGE_REMOVE',
++    () => {
++      const store = useItemsStore.getState()
++      const item = store.items.find((candidate) => candidate.id === itemId)
++      const translation = item && translationOf(item)
++      if (!item || !translation) return
++      const wasShown = store.tracks.find((track) => track.id === item.trackId)?.visible !== false
++      const trackIds = new Set([item.trackId, ...(translation.voiceTrackId ? [translation.voiceTrackId] : [])])
++      const removed = store.items.filter((candidate) => trackIds.has(candidate.trackId)).map((candidate) => candidate.id)
++      store._removeItems(removed)
++      store.setTracks(store.tracks.filter((track) => !trackIds.has(track.id)))
++      markDirty()
++      // Removing the language in the picture puts the original back.
++      if (wasShown) {
++        const after = useItemsStore.getState()
++        const changes = burnInChanges(after.tracks, after.items, 'original')
++        const visible = new Map(changes.tracks.map((change) => [change.id, change.visible]))
++        after.setTracks(
++          after.tracks.map((track) => (visible.has(track.id) ? { ...track, visible: visible.get(track.id)! } : track)),
++        )
++        for (const change of changes.items) {
++          const clip = after.items.find((candidate) => candidate.id === change.id)
++          if ((clip?.type === 'video' || clip?.type === 'audio') && clip.transcriptCaptions) {
++            after._updateItem(change.id, {
++              transcriptCaptions: { ...clip.transcriptCaptions, enabled: change.enabled },
++            } as Partial<TimelineItem>)
++          }
++        }
++      }
++    },
++    { itemId },
++  )
++}
++
++/** Place a language's voice-over on its own voice track, ducking everything else under it. */
++export function addCaptionVoiceOver(captionItemId: string, track: TimelineTrack, audio: AudioItem): void {
++  executeTimelineCommand(
++    'CAPTION_LANGUAGE_VOICE',
++    () => {
++      const store = useItemsStore.getState()
++      const item = store.items.find((candidate) => candidate.id === captionItemId)
++      const translation = item && translationOf(item)
++      if (!item || item.type !== 'subtitle' || !translation) return
++      const previous = translation.voiceTrackId
++      if (previous) {
++        store._removeItems(store.items.filter((candidate) => candidate.trackId === previous).map((candidate) => candidate.id))
++      }
++      const tracks = store.tracks.filter((candidate) => candidate.id !== previous)
++      store.setTracks([...tracks, track])
++      store._addItems([audio])
++      store._updateItem(captionItemId, {
++        source: { ...item.source, translation: { ...translation, voiceTrackId: track.id } },
++      } as Partial<TimelineItem>)
++      markDirty()
++    },
++    { captionItemId },
++  )
++}
+diff --git a/src/features/editor/utils/caption-languages.ts b/src/features/editor/utils/caption-languages.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/utils/caption-languages.ts
+@@ -0,0 +1,389 @@
++/**
++ * Captions in other languages (Frameleaf FL-641).
++ *
++ * The original captions are whatever the sequence already shows: transcript captions riding on a clip,
++ * subtitle segments and caption text items. Each translated language is its own caption track: one
++ * subtitle segment on a track of its own, whose `source` carries `translation`. A translated line keeps
++ * the timing its original line had when it was translated; fixing an original line later does not
++ * change the translations (translate again to update them).
++ *
++ * One language is "in the picture": its captions are shown and burned into the export, and every other
++ * language's captions are hidden. The languages ticked "Subtitle track in the export" travel with the
++ * export as subtitle files (the host reads them from the graph, `caption-languages.ts` in the web app).
++ */
++import type {
++  AudioItem,
++  SubtitleSegmentCue,
++  SubtitleSegmentItem,
++  TextItem,
++  TimelineItem,
++  TimelineTrack,
++  VideoItem,
++} from '@/types/timeline'
++
++/** English and the ten app languages, as BCP 47 primary tags (Norwegian is Bokmål). */
++export const CAPTION_LANGUAGES = ['en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'pl', 'sv', 'da', 'nb'] as const
++export type CaptionLanguage = (typeof CAPTION_LANGUAGES)[number]
++
++export const isCaptionLanguage = (value: unknown): value is CaptionLanguage =>
++  typeof value === 'string' && (CAPTION_LANGUAGES as readonly string[]).includes(value)
++
++/** What a translated caption track records about itself, on its segment's `source`. */
++export interface CaptionTranslation {
++  language: CaptionLanguage
++  /** The language of the original lines it was translated from. */
++  from: CaptionLanguage
++  /** Include it as a subtitle track (file) in the export. */
++  subtitle: boolean
++  translatedAt: number
++  /** The voice-over made from it, when there is one. */
++  voiceTrackId?: string
++}
++
++/** A caption line on the sequence, in timeline seconds. */
++export interface CaptionLine {
++  id: string
++  startSeconds: number
++  endSeconds: number
++  text: string
++}
++
++/** The voices Studio has for a language: Kokoro speaks English, Supertonic the others it knows. */
++export type CaptionVoiceEngine = 'kokoro' | 'supertonic'
++const SUPERTONIC_LANGUAGES: readonly CaptionLanguage[] = ['fr', 'es', 'de', 'it', 'pt', 'nl', 'pl', 'sv', 'da']
++export function captionVoiceFor(language: CaptionLanguage): CaptionVoiceEngine | null {
++  if (language === 'en') return 'kokoro'
++  return SUPERTONIC_LANGUAGES.includes(language) ? 'supertonic' : null
++}
++
++export type TranslatedCaptionItem = SubtitleSegmentItem & {
++  source: Extract<SubtitleSegmentItem['source'], { type: 'subtitle-import' }> & { translation: CaptionTranslation }
++}
++
++export function translationOf(item: TimelineItem): CaptionTranslation | null {
++  if (item.type !== 'subtitle' || item.source.type !== 'subtitle-import') return null
++  const translation = (item.source as { translation?: CaptionTranslation }).translation
++  return translation && isCaptionLanguage(translation.language) ? translation : null
++}
++
++export const isTranslatedCaptionItem = (item: TimelineItem): item is TranslatedCaptionItem =>
++  translationOf(item) !== null
++
++type TranscriptClip = (VideoItem | AudioItem) & {
++  transcriptCaptions: NonNullable<(VideoItem | AudioItem)['transcriptCaptions']>
++}
++const isTranscriptClip = (item: TimelineItem): item is TranscriptClip =>
++  (item.type === 'video' || item.type === 'audio') &&
++  item.transcriptCaptions?.type === 'transcript' &&
++  item.transcriptCaptions.cues.length > 0
++
++const isOriginalSegment = (item: TimelineItem): item is SubtitleSegmentItem =>
++  item.type === 'subtitle' && !isTranslatedCaptionItem(item)
++const isCaptionText = (item: TimelineItem): item is TextItem => item.type === 'text' && item.textRole === 'caption'
++
++/** Whether an item shows original captions. */
++export const isOriginalCaptionItem = (item: TimelineItem): boolean =>
++  isTranscriptClip(item) || isOriginalSegment(item) || isCaptionText(item)
++
++const round = (seconds: number) => Math.round(seconds * 1000) / 1000
++
++/**
++ * The original caption lines on the sequence, in timeline seconds, sorted. Lines clipped away by a trim
++ * are left out; blank lines are left out.
++ */
++export function collectOriginalCaptionLines(items: readonly TimelineItem[], fps: number): CaptionLine[] {
++  const lines: CaptionLine[] = []
++  const push = (id: string, start: number, end: number, text: string, windowStart: number, windowEnd: number) => {
++    const startSeconds = Math.max(windowStart, start)
++    const endSeconds = Math.min(windowEnd, end)
++    if (endSeconds <= startSeconds || text.trim().length === 0) return
++    lines.push({ id, startSeconds: round(startSeconds), endSeconds: round(endSeconds), text: text.trim() })
++  }
++  for (const item of items) {
++    const itemStart = item.from / fps
++    const itemEnd = (item.from + item.durationInFrames) / fps
++    if (isTranscriptClip(item)) {
++      if (item.isReversed === true) continue
++      const sourceFps = item.sourceFps ?? fps
++      const sourceStart = (item.sourceStart ?? 0) / sourceFps
++      const speed = item.speed ?? 1
++      for (const cue of item.transcriptCaptions.cues) {
++        push(
++          `${item.id}:${cue.id}`,
++          itemStart + (cue.startSeconds - sourceStart) / speed,
++          itemStart + (cue.endSeconds - sourceStart) / speed,
++          cue.text,
++          itemStart,
++          itemEnd,
++        )
++      }
++    } else if (isOriginalSegment(item)) {
++      for (const cue of item.cues) {
++        push(`${item.id}:${cue.id}`, itemStart + cue.startSeconds, itemStart + cue.endSeconds, cue.text, itemStart, itemEnd)
++      }
++    } else if (isCaptionText(item)) {
++      push(item.id, itemStart, itemEnd, item.text, itemStart, itemEnd)
++    }
++  }
++  return lines.sort((a, b) => a.startSeconds - b.startSeconds || a.endSeconds - b.endSeconds)
++}
++
++/** Every translated caption track, in the order the languages were added. */
++export function translatedCaptionItems(items: readonly TimelineItem[]): TranslatedCaptionItem[] {
++  return items
++    .filter(isTranslatedCaptionItem)
++    .sort((a, b) => a.source.translation.translatedAt - b.source.translation.translatedAt)
++}
++
++/** The language in the picture: the translation whose track is shown, else the original. */
++export function burnedInLanguage(
++  tracks: readonly TimelineTrack[],
++  items: readonly TimelineItem[],
++): CaptionLanguage | 'original' {
++  const shown = translatedCaptionItems(items).find(
++    (item) => tracks.find((track) => track.id === item.trackId)?.visible !== false,
++  )
++  return shown ? shown.source.translation.language : 'original'
++}
++
++/** The look of a caption track: typography, colours and placement, never its identity or cues. */
++export type CaptionStyle = Partial<
++  Pick<
++    SubtitleSegmentItem,
++    | 'fontSize'
++    | 'fontFamily'
++    | 'fontWeight'
++    | 'fontStyle'
++    | 'underline'
++    | 'color'
++    | 'backgroundColor'
++    | 'backgroundRadius'
++    | 'textPadding'
++    | 'textAlign'
++    | 'verticalAlign'
++    | 'lineHeight'
++    | 'letterSpacing'
++    | 'textShadow'
++    | 'stroke'
++    | 'transform'
++  >
++>
++
++/** The original caption style to carry over to a translation, so every language looks the same. */
++export function originalCaptionStyle(items: readonly TimelineItem[]): CaptionStyle | null {
++  const styled = items.find((item) => isOriginalSegment(item) || isCaptionText(item)) as
++    | SubtitleSegmentItem
++    | TextItem
++    | undefined
++  const transcript = items.find(isTranscriptClip)?.transcriptCaptions.style
++  const source = styled ?? transcript
++  if (!source) return null
++  const style: CaptionStyle = {
++    fontSize: source.fontSize,
++    fontFamily: source.fontFamily,
++    fontWeight: source.fontWeight,
++    fontStyle: source.fontStyle,
++    underline: source.underline,
++    backgroundColor: source.backgroundColor,
++    backgroundRadius: source.backgroundRadius,
++    textPadding: source.textPadding,
++    textAlign: source.textAlign,
++    verticalAlign: source.verticalAlign,
++    lineHeight: source.lineHeight,
++    letterSpacing: source.letterSpacing,
++    textShadow: source.textShadow ? { ...source.textShadow } : undefined,
++    stroke: source.stroke ? { ...source.stroke } : undefined,
++    transform: source.transform ? { ...source.transform } : undefined,
++  }
++  if ('color' in source && typeof source.color === 'string') style.color = source.color
++  return Object.fromEntries(Object.entries(style).filter(([, value]) => value !== undefined))
++}
++
++const defaultCaptionStyle = (canvasWidth: number, canvasHeight: number) => ({
++  fontSize: Math.max(36, Math.round(canvasHeight * 0.045)),
++  fontFamily: 'Inter',
++  fontWeight: 'semibold' as const,
++  fontStyle: 'normal' as const,
++  underline: false,
++  color: '#ffffff',
++  backgroundColor: 'rgba(0, 0, 0, 0.55)',
++  textAlign: 'center' as const,
++  verticalAlign: 'middle' as const,
++  lineHeight: 1.15,
++  letterSpacing: 0,
++  textShadow: { offsetX: 0, offsetY: 3, blur: 10, color: 'rgba(0, 0, 0, 0.75)' },
++  transform: {
++    x: 0,
++    y: Math.round(canvasHeight * 0.32),
++    width: canvasWidth * 0.82,
++    height: canvasHeight * 0.16,
++    rotation: 0,
++    opacity: 1,
++  },
++})
++
++export interface BuildTranslatedTrackOptions {
++  tracks: readonly TimelineTrack[]
++  lines: readonly CaptionLine[]
++  /** One translation per line, in the same order. */
++  translations: readonly string[]
++  language: CaptionLanguage
++  from: CaptionLanguage
++  fps: number
++  canvasWidth: number
++  canvasHeight: number
++  /** The track's name, already in the person's language ("French captions"). */
++  name: string
++  style?: CaptionStyle | null
++  now?: number
++  /** Keep these settings from the translation this one replaces. */
++  previous?: Pick<CaptionTranslation, 'subtitle'>
++}
++
++/** A new caption track holding one language: a subtitle segment on the original lines' timing. */
++export function buildTranslatedCaptionTrack(
++  options: BuildTranslatedTrackOptions,
++): { track: TimelineTrack; item: TranslatedCaptionItem } | null {
++  const { lines, translations, fps } = options
++  if (lines.length !== translations.length) throw new Error('Every caption line needs its translation')
++  const kept = lines
++    .map((line, index) => ({ line, text: (translations[index] ?? '').trim() }))
++    .filter(({ text }) => text.length > 0)
++  if (kept.length === 0) return null
++  const fromFrame = Math.max(0, Math.floor(kept[0]!.line.startSeconds * fps))
++  const endFrame = Math.max(fromFrame + 1, Math.ceil(Math.max(...kept.map(({ line }) => line.endSeconds)) * fps))
++  const offset = fromFrame / fps
++  const now = options.now ?? Date.now()
++  const cues: SubtitleSegmentCue[] = kept.map(({ line, text }, index) => ({
++    id: `${options.language}-${index + 1}`,
++    startSeconds: round(line.startSeconds - offset),
++    endSeconds: round(line.endSeconds - offset),
++    text,
++  }))
++  const maxOrder = options.tracks.reduce((highest, track) => Math.max(highest, track.order), -1)
++  const track: TimelineTrack = {
++    id: `track-captions-${options.language}-${now}`,
++    name: options.name,
++    kind: 'video',
++    height: 48,
++    locked: false,
++    syncLock: true,
++    // A new language does not take the picture: the person chooses "In the picture".
++    visible: false,
++    muted: false,
++    solo: false,
++    volume: 0,
++    // Above everything, like other caption tracks: lowest order draws on top.
++    order: Math.min(...options.tracks.map((item) => item.order), maxOrder + 1) - 1,
++    items: [],
++  }
++  const translation: CaptionTranslation = {
++    language: options.language,
++    from: options.from,
++    subtitle: options.previous?.subtitle ?? true,
++    translatedAt: now,
++  }
++  const item: TranslatedCaptionItem = {
++    id: crypto.randomUUID(),
++    type: 'subtitle',
++    trackId: track.id,
++    from: fromFrame,
++    durationInFrames: endFrame - fromFrame,
++    label: options.name,
++    sourceLabel: options.name,
++    source: {
++      type: 'subtitle-import',
++      fileName: `${options.language}.srt`,
++      format: 'srt',
++      importedAt: now,
++      translation,
++    },
++    cues,
++    ...defaultCaptionStyle(options.canvasWidth, options.canvasHeight),
++    ...(options.style ?? {}),
++  }
++  return { track, item }
++}
++
++/**
++ * The visibility changes that put `language` in the picture: its track shown and every other
++ * language's captions hidden. Transcript captions on clips are switched with their own `enabled`, so
++ * the clip itself stays visible; other original captions are hidden with their track only when the
++ * track holds nothing but captions.
++ */
++export function burnInChanges(
++  tracks: readonly TimelineTrack[],
++  items: readonly TimelineItem[],
++  language: CaptionLanguage | 'original',
++): { tracks: Array<{ id: string; visible: boolean }>; items: Array<{ id: string; enabled: boolean }> } {
++  const original = language === 'original'
++  const trackChanges = new Map<string, boolean>()
++  const itemChanges: Array<{ id: string; enabled: boolean }> = []
++  for (const item of translatedCaptionItems(items)) {
++    trackChanges.set(item.trackId, item.source.translation.language === language)
++  }
++  for (const track of tracks) {
++    if (trackChanges.has(track.id)) continue
++    const onTrack = items.filter((item) => item.trackId === track.id)
++    if (onTrack.length > 0 && onTrack.every((item) => isOriginalSegment(item) || isCaptionText(item))) {
++      trackChanges.set(track.id, original)
++    }
++  }
++  for (const item of items) {
++    if (isTranscriptClip(item) && item.transcriptCaptions.enabled !== original) {
++      itemChanges.push({ id: item.id, enabled: original })
++    }
++  }
++  return {
++    tracks: [...trackChanges]
++      .filter(([id, visible]) => tracks.find((track) => track.id === id)?.visible !== visible)
++      .map(([id, visible]) => ({ id, visible })),
++    items: itemChanges,
++  }
++}
++
++/** The lines of one translation in timeline seconds, for review beside the original and for a voice-over. */
++export function translatedLines(item: TranslatedCaptionItem, fps: number): CaptionLine[] {
++  const offset = item.from / fps
++  return item.cues.map((cue) => ({
++    id: cue.id,
++    startSeconds: round(offset + cue.startSeconds),
++    endSeconds: round(offset + cue.endSeconds),
++    text: cue.text,
++  }))
++}
++
++/** For review: the original line each translated line came from, matched by time. */
++export function originalLineFor(lines: readonly CaptionLine[], translated: CaptionLine): CaptionLine | null {
++  let best: CaptionLine | null = null
++  let bestOverlap = 0
++  for (const line of lines) {
++    const overlap = Math.min(line.endSeconds, translated.endSeconds) - Math.max(line.startSeconds, translated.startSeconds)
++    if (overlap > bestOverlap) {
++      best = line
++      bestOverlap = overlap
++    }
++  }
++  return best
++}
++
++/**
++ * Where each spoken line of a voice-over goes, in seconds from the voice-over's start: at its caption's
++ * start, or straight after the line before when that one runs long, so no two lines talk over each other.
++ */
++export function placeVoiceLines(
++  lines: readonly CaptionLine[],
++  durations: readonly number[],
++): { startSeconds: number; offsets: number[]; lengthSeconds: number } {
++  if (lines.length === 0) return { startSeconds: 0, offsets: [], lengthSeconds: 0 }
++  const startSeconds = lines[0]!.startSeconds
++  const offsets: number[] = []
++  let cursor = 0
++  lines.forEach((line, index) => {
++    const at = Math.max(line.startSeconds - startSeconds, cursor)
++    offsets.push(round(at))
++    cursor = at + (durations[index] ?? 0) + 0.05
++  })
++  const lengthSeconds = round(Math.max(...offsets.map((offset, index) => offset + (durations[index] ?? 0))))
++  return { startSeconds, offsets, lengthSeconds }
++}
+diff --git a/src/i18n/locales/partials/de/caption-languages.json b/src/i18n/locales/partials/de/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/de/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/i18n/locales/partials/en/caption-languages.json b/src/i18n/locales/partials/en/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/en/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/i18n/locales/partials/es/caption-languages.json b/src/i18n/locales/partials/es/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/es/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/i18n/locales/partials/fr/caption-languages.json b/src/i18n/locales/partials/fr/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/fr/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/i18n/locales/partials/ja/caption-languages.json b/src/i18n/locales/partials/ja/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ja/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/i18n/locales/partials/ko/caption-languages.json b/src/i18n/locales/partials/ko/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ko/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/i18n/locales/partials/pt-BR/caption-languages.json b/src/i18n/locales/partials/pt-BR/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/pt-BR/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/i18n/locales/partials/tr/caption-languages.json b/src/i18n/locales/partials/tr/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/tr/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/i18n/locales/partials/zh/caption-languages.json b/src/i18n/locales/partials/zh/caption-languages.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/zh/caption-languages.json
+@@ -0,0 +1,31 @@
++{
++  "captionLanguages": {
++    "addLanguage": "Add a language",
++    "failed": "The captions could not be translated. Try again.",
++    "hideLines": "Hide lines",
++    "inPicture": "In the picture",
++    "lineLabel": "{{language}} caption at {{time}}",
++    "makeVoiceOver": "Make a {{language}} voice-over",
++    "makingVoice": "Making the {{language}} voice-over… {{percent}}%",
++    "noVoice": "Captions only: Studio has no {{language}} voice yet.",
++    "note": "Translations keep the original timing. Fixing a line in {{language}} doesn't change the translations; translate again to update them.",
++    "original": "Original · {{count}} lines",
++    "originalLanguage": "Original language",
++    "ready": "{{language}} captions are ready. Review them before you export.",
++    "remove": "Remove",
++    "reviewLines": "Review lines",
++    "subtitleTrack": "Subtitle track in the export",
++    "title": "Languages",
++    "trackName": "{{language}} captions",
++    "translate": "Translate",
++    "translateAgain": "Translate again",
++    "translated": "Translated · {{count}} lines",
++    "translatedVoice": "Translated · {{count}} lines · voice-over",
++    "translating": "Translating into {{language}}… {{percent}}%",
++    "unavailable": "Translation isn't available here.",
++    "voiceFailed": "The voice-over could not be made. Try again.",
++    "voiceReady": "{{language}} voice-over added to the voice track. The music ducks under it.",
++    "voiceTrackName": "{{language}} voice-over",
++    "whereItRuns": "Runs on your Frameleaf server or a computer at home, following Where work runs."
++  }
++}
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -459,6 +459,8 @@
+       fileName: string
+       format: 'srt' | 'vtt'
+       importedAt: number
++      /** Frameleaf FL-641: this track is a translation of the sequence's captions. */
++      translation?: import('@/features/editor/utils/caption-languages').CaptionTranslation
+     }
+ 
+ // Union type for all timeline items

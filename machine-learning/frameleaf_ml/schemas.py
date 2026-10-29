@@ -37,6 +37,7 @@ class ModelTask(StrEnum):
     TRANSCRIBE = "transcribe"
     MUSIC = "music"
     VOICE_CLEANUP = "voice-cleanup"
+    TRANSLATE = "translate"
 
 
 class ModelType(StrEnum):
@@ -285,6 +286,17 @@ class VoiceCleanupOptions(_OptionsBase):
     humHz: Literal[50, 60] | None = None
 
 
+class TranslateOptions(_OptionsBase):
+    """Options for the translate task (Studio captions in other languages, FL-641).
+
+    `source` and `target` are the BCP 47 primary tags of the languages Studio offers (`en`, `fr`, `nb`);
+    the worker refuses any other.
+    """
+
+    source: str = Field(pattern=r"^[a-z]{2,3}$")
+    target: str = Field(pattern=r"^[a-z]{2,3}$")
+
+
 # Map of (task, type) -> options pydantic class for per-entry validation.
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
@@ -300,6 +312,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.TRANSCRIBE, ModelType.AUDIO): TranscribeOptions,
     (ModelTask.MUSIC, ModelType.AUDIO): MusicOptions,
     (ModelTask.VOICE_CLEANUP, ModelType.AUDIO): VoiceCleanupOptions,
+    (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
 }
 
 

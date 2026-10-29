@@ -102,8 +102,13 @@ export function compositionSourcesFor(sourceSha256) {
     }
   // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
   // renderer, which draws it through its correction; every other clip renders as before.
-  // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
-  if (sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' || sourceSha256 === 'bc5f6e0f3c2ec0b16379046fffa6554bfcf2fdfbd230f727919d8e623a9397db')
+  if (
+    sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' ||
+    // FL-641 caption languages (translated caption tracks, voice-over and the Languages card) on Stabilise; changes no composition or raster producer.
+    sourceSha256 === 'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb' ||
+    // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
+    sourceSha256 === 'aa829f667e9a153f334fabe9e52147b9e4265568ae9aefac65a233adb6c3bf9c'
+  )
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':
