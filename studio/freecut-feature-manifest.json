@@ -5055,9 +5055,10 @@
           "0069-persisted-track-pan.patch",
           "0076-master-gain-envelope.patch",
           "0087-preview-track-gain.patch",
-          "0090-track-gain-automation.patch"
+          "0090-track-gain-automation.patch",
+          "0145-dialogue-loudness-match-and-export-report.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export.",
         "status": "shipped"
       },
       "id": "readme.audio.1",

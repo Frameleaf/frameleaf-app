@@ -192,6 +192,23 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0145 (FL-598) adds dialogue loudness matching and an export loudness report. One BS.1770-4
+meter (K-weighting derived for any sample rate, 400 ms blocks with EBU R128 absolute and relative
+gates, true peak by 4x polyphase oversampling; `bs1770-4/r128-gating/tp-4x-v1`) runs in a worker for
+both. The audio panel's Match loudness section measures the selected clips' source ranges (a video's
+linked audio when it has one), shows loudness and true peak as the clip plays now, and suggests a
+change to the clip's static volume toward an editable -16 LUFS target and -1 dBTP ceiling. Gain
+envelopes, fades and ducking stay relative to that volume, so they keep their shape. Boost is capped at
++12 dB and the clip volume range at -60..+12 dB, both flagged; muted, silent, shorter-than-0.4 s and
+undecodable clips get no suggestion. Every result is bound to the clip's audible state, so an edit since
+measuring, or applying the same result twice, is refused as stale; approved changes apply in one undo
+step. The export dialog measures the decoded deliverable and reports LUFS and dBTP against the Studio
+defaults with a warning, never blocking; a failed measurement reads unknown. The calibrated tests cover
+EBU 3341 levels at 44.1, 48 and 96 kHz, gating, silence and inter-sample peaks. There is no master
+limiter: the export path keeps its existing soft clip above 0 dBFS, so a ceiling overshoot is reported,
+not prevented. The target is not saved in the project, and browser decode, worker export and
+codec-overshoot qualification remain open.
+
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.

@@ -1,0 +1,1470 @@
+Subject: Match dialogue loudness and report the exported mix loudness
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
+@@ -17,6 +17,7 @@ import { PropertyRow, PropertySection, SliderInput } from '../components'
+ import { getMixedValue } from '../utils'
+ import { getAudioSectionItems } from './audio-section-utils'
+ import { AudioEqPanelContent } from './audio-eq-panel-content'
++import { LoudnessMatchSection } from './loudness-match-section'
+ import {
+   AUDIO_PITCH_CENTS_MAX,
+   AUDIO_PITCH_CENTS_MIN,
+@@ -432,6 +433,8 @@ export function AudioSection({ items }: AudioSectionProps) {
+         </PropertyRow>
+       </PropertySection>
+ 
++      <LoudnessMatchSection key={itemIds.join(',')} items={items} />
++
+       <PropertySection title={t('editor.audioSection.equalizer')} defaultOpen={true}>
+         <AudioEqPanelContent items={items} targetLabel="" layoutMode="compact" />
+       </PropertySection>
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
+@@ -0,0 +1,144 @@
++import { useEffect, useRef, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Gauge } from 'lucide-react'
++import { toast } from 'sonner'
++import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
++import type { TimelineItem } from '@/types/timeline'
++import {
++  analyzeClipLoudness,
++  applyLoudnessMatch,
++  DEFAULT_CEILING_DBTP,
++  DEFAULT_TARGET_LUFS,
++  resolveAudibleItems,
++  suggestLoudnessMatch,
++  useTimelineStore,
++  type ClipLoudnessResult,
++} from '@/features/editor/deps/timeline-store'
++import { PropertyRow, PropertySection } from '../components'
++
++const format = (value: number | null | undefined, unit: string) =>
++  value == null ? '—' : `${value.toFixed(1)} ${unit}`
++
++/**
++ * Match dialogue loudness (FL-598): measure the selected clips (BS.1770),
++ * review each suggested volume change, and apply them in one undo step.
++ */
++export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
++  const { t } = useTranslation()
++  const timelineItems = useTimelineStore((s) => s.items)
++  const fps = useTimelineStore((s) => s.fps)
++  const [target, setTarget] = useState(DEFAULT_TARGET_LUFS)
++  const [ceiling, setCeiling] = useState(DEFAULT_CEILING_DBTP)
++  const [results, setResults] = useState<ClipLoudnessResult[] | null>(null)
++  const [busy, setBusy] = useState(false)
++  const abortRef = useRef<AbortController | null>(null)
++
++  // The parent keys this section by selection, so a new selection starts fresh; leaving cancels analysis.
++  useEffect(() => () => abortRef.current?.abort(), [])
++
++  const audible = resolveAudibleItems(timelineItems, items.map((item) => item.id))
++  if (audible.length === 0) return null
++
++  const analyze = async () => {
++    abortRef.current?.abort()
++    const controller = new AbortController()
++    abortRef.current = controller
++    setBusy(true)
++    setResults(null)
++    try {
++      setResults(await analyzeClipLoudness(audible, fps, controller.signal))
++    } catch (error) {
++      if (!(error instanceof DOMException && error.name === 'AbortError')) {
++        toast.error(t('editor.audioSection.loudness.failed'))
++      }
++    } finally {
++      if (abortRef.current === controller) setBusy(false)
++    }
++  }
++
++  const apply = () => {
++    if (!results) return
++    const outcome = applyLoudnessMatch(results, target, ceiling)
++    if (outcome.applied.length > 0) toast.success(t('editor.audioSection.loudness.applied', { count: outcome.applied.length }))
++    if (outcome.stale.length > 0) toast.warning(t('editor.audioSection.loudness.stale', { count: outcome.stale.length }))
++    if (outcome.locked.length > 0) toast.warning(t('editor.audioSection.loudness.locked', { count: outcome.locked.length }))
++    setResults(null)
++  }
++
++  const rows = (results ?? []).map((result) => {
++    const item = timelineItems.find((candidate) => candidate.id === result.itemId)
++    const suggestion = item && (item.type === 'audio' || item.type === 'video')
++      ? suggestLoudnessMatch(item, result, target, ceiling)
++      : null
++    return { result, suggestion }
++  })
++  const applicable = rows.some((row) => row.suggestion && row.suggestion.gainDb !== 0)
++
++  return (
++    <PropertySection title={t('editor.audioSection.loudness.title')} icon={Gauge} defaultOpen={false}>
++      <PropertyRow label={t('editor.audioSection.loudness.target')}>
++        <div className="flex items-center gap-1 w-full">
++          <Input type="number" className="h-7 min-w-0 flex-1 px-2 text-xs" step={0.5} min={-36} max={-6}
++            aria-label={t('editor.audioSection.loudness.target')} value={target}
++            onChange={(event) => setTarget(Number(event.target.value))} />
++          <span className="text-xs text-muted-foreground">LUFS</span>
++        </div>
++      </PropertyRow>
++      <PropertyRow label={t('editor.audioSection.loudness.ceiling')}>
++        <div className="flex items-center gap-1 w-full">
++          <Input type="number" className="h-7 min-w-0 flex-1 px-2 text-xs" step={0.1} min={-12} max={0}
++            aria-label={t('editor.audioSection.loudness.ceiling')} value={ceiling}
++            onChange={(event) => setCeiling(Number(event.target.value))} />
++          <span className="text-xs text-muted-foreground">dBTP</span>
++        </div>
++      </PropertyRow>
++
++      <div className="space-y-1 px-1 py-2 text-xs" aria-live="polite">
++        {busy && <p>{t('editor.audioSection.loudness.analyzing')}</p>}
++        {rows.map(({ result, suggestion }) => (
++          <div key={result.itemId} className="rounded border border-border px-2 py-1">
++            <p className="truncate font-medium">{result.label}</p>
++            {result.unavailable ? (
++              <p className="text-muted-foreground">{t(`editor.audioSection.loudness.unavailable.${result.unavailable}`)}</p>
++            ) : suggestion ? (
++              <>
++                <p>
++                  {t('editor.audioSection.loudness.measured', {
++                    lufs: format(suggestion.currentLufs, 'LUFS'),
++                    peak: format(result.measurement?.truePeakDbtp, 'dBTP'),
++                  })}
++                </p>
++                <p>{t('editor.audioSection.loudness.change', { gain: `${suggestion.gainDb >= 0 ? '+' : ''}${suggestion.gainDb.toFixed(1)} dB` })}</p>
++                {suggestion.limitedBy && (
++                  <p className="text-amber-500">{t(`editor.audioSection.loudness.limited.${suggestion.limitedBy}`)}</p>
++                )}
++                {suggestion.overCeiling && (
++                  <p className="text-amber-500">{t('editor.audioSection.loudness.overCeiling', { peak: format(suggestion.predictedTruePeakDbtp, 'dBTP') })}</p>
++                )}
++              </>
++            ) : (
++              <p className="text-muted-foreground">{t('editor.audioSection.loudness.changed')}</p>
++            )}
++          </div>
++        ))}
++        <p className="text-muted-foreground">{t('editor.audioSection.loudness.note')}</p>
++      </div>
++
++      <div className="flex items-center gap-2 px-1 pb-2">
++        {busy ? (
++          <Button variant="ghost" size="sm" className="h-7 flex-1 text-xs" onClick={() => abortRef.current?.abort()}>
++            {t('editor.audioSection.loudness.cancel')}
++          </Button>
++        ) : (
++          <Button variant="ghost" size="sm" className="h-7 flex-1 text-xs" onClick={() => void analyze()}>
++            {t('editor.audioSection.loudness.analyze')}
++          </Button>
++        )}
++        <Button size="sm" className="h-7 flex-1 text-xs" disabled={busy || !applicable} onClick={apply}>
++          {t('editor.audioSection.loudness.apply')}
++        </Button>
++      </div>
++    </PropertySection>
++  )
++}
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -25,6 +25,15 @@ export {
+   type RetimePolicy,
+ } from '@/features/timeline/utils/project-retime'
+ export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
++export { applyLoudnessMatch } from '@/features/timeline/stores/actions/edit/loudness-match-actions'
++export {
++  analyzeClipLoudness,
++  DEFAULT_CEILING_DBTP,
++  DEFAULT_TARGET_LUFS,
++  resolveAudibleItems,
++  suggestLoudnessMatch,
++  type ClipLoudnessResult,
++} from '@/features/timeline/utils/loudness-match'
+ export {
+   addCompositionControl,
+   removeCompositionControl,
+diff --git a/src/features/export/components/export-dialog.tsx b/src/features/export/components/export-dialog.tsx
+--- a/src/features/export/components/export-dialog.tsx
++++ b/src/features/export/components/export-dialog.tsx
+@@ -79,6 +79,7 @@ import {
+   type ClientAudioContainer,
+ } from '../utils/client-renderer'
+ import { ExportPreviewPlayer } from './export-preview-player'
++import { ExportLoudnessReport } from './export-loudness-report'
+ import { useBrokenMediaIds, useMediaMetadataById } from '../deps/media-library'
+ import { assessSmartCopyEligibility } from '../utils/smart-copy'
+ import { resolveVideoBitrate } from '../utils/video-bitrate'
+@@ -1640,6 +1641,8 @@ export function ExportDialog({ open, onClose, onOpenRenderQueue }: ExportDialogP
+               </AlertDescription>
+             </Alert>
+ 
++            <ExportLoudnessReport key={previewUrl ?? 'none'} blob={clientRender.result?.blob} />
++
+             <div className="flex flex-wrap gap-x-6 gap-y-2">
+               {fileSize && (
+                 <div className="flex items-center gap-2 text-sm">
+diff --git a/src/features/export/components/export-loudness-report.tsx b/src/features/export/components/export-loudness-report.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/components/export-loudness-report.tsx
+@@ -0,0 +1,85 @@
++import { useEffect, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Gauge } from 'lucide-react'
++import { measureLoudnessInWorker, type LoudnessMeasurement } from '@/shared/utils/loudness'
++
++/** Studio loudness defaults (FL-598): not a promise to meet any platform's rules. */
++const TARGET_LUFS = -16
++const CEILING_DBTP = -1
++/** Reported tolerance for the integrated level and the true-peak reading. */
++const TARGET_TOLERANCE_LU = 1
++const PEAK_TOLERANCE_DB = 0.2
++
++type Report =
++  | { state: 'measuring' }
++  | { state: 'unknown' }
++  | { state: 'silent' }
++  | { state: 'measured'; measurement: LoudnessMeasurement }
++
++async function decodeDeliverable(blob: Blob): Promise<AudioBuffer> {
++  const context = new OfflineAudioContext(1, 1, 48000)
++  return context.decodeAudioData(await blob.arrayBuffer())
++}
++
++/**
++ * Measures the exported file itself, decoded, so codec overshoot shows up.
++ * A failed measurement reads "unknown", never passing; the report only warns.
++ */
++export function ExportLoudnessReport({ blob }: { blob: Blob | null | undefined }) {
++  const { t } = useTranslation()
++  // The parent keys this report by the exported blob, so each export starts at "measuring".
++  const [measured, setReport] = useState<Report>({ state: 'measuring' })
++  const measurable = !!blob && typeof OfflineAudioContext !== 'undefined'
++  const report: Report = measurable ? measured : { state: 'unknown' }
++
++  useEffect(() => {
++    if (!blob || typeof OfflineAudioContext === 'undefined') return
++    const controller = new AbortController()
++    void (async () => {
++      try {
++        const buffer = await decodeDeliverable(blob)
++        const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c))
++        const measurement = await measureLoudnessInWorker({ sampleRate: buffer.sampleRate, channels }, controller.signal)
++        if (controller.signal.aborted) return
++        setReport(measurement.integratedLufs === null ? { state: 'silent' } : { state: 'measured', measurement })
++      } catch {
++        if (!controller.signal.aborted) setReport({ state: 'unknown' })
++      }
++    })()
++    return () => controller.abort()
++  }, [blob])
++
++  let body: string
++  let tone = 'text-muted-foreground'
++  if (report.state === 'measuring') {
++    body = t('export.loudness.measuring')
++  } else if (report.state === 'unknown') {
++    body = t('export.loudness.unknown')
++  } else if (report.state === 'silent') {
++    body = t('export.loudness.silent')
++  } else {
++    const { integratedLufs, truePeakDbtp } = report.measurement
++    const lufs = integratedLufs!
++    const levelOk = Math.abs(lufs - TARGET_LUFS) <= TARGET_TOLERANCE_LU
++    const peakOk = truePeakDbtp === null || truePeakDbtp <= CEILING_DBTP + PEAK_TOLERANCE_DB
++    tone = levelOk && peakOk ? 'text-green-400' : 'text-amber-400'
++    body = [
++      t('export.loudness.measured', {
++        lufs: lufs.toFixed(1),
++        peak: truePeakDbtp === null ? '—' : truePeakDbtp.toFixed(1),
++        target: TARGET_LUFS,
++        ceiling: CEILING_DBTP,
++      }),
++      levelOk ? null : t(lufs < TARGET_LUFS ? 'export.loudness.tooQuiet' : 'export.loudness.tooLoud'),
++      peakOk ? null : t('export.loudness.overPeak'),
++      levelOk && peakOk ? t('export.loudness.pass') : null,
++    ].filter(Boolean).join(' ')
++  }
++
++  return (
++    <div className="flex items-start gap-2 text-sm" role="status" aria-live="polite">
++      <Gauge className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
++      <span className={tone}>{body}</span>
++    </div>
++  )
++}
+diff --git a/src/features/timeline/stores/actions/edit/loudness-match-actions.test.ts b/src/features/timeline/stores/actions/edit/loudness-match-actions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/loudness-match-actions.test.ts
+@@ -0,0 +1,99 @@
++// @vitest-environment node
++
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import type { AudioItem, TimelineTrack, VideoItem } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTimelineCommandStore } from '../../timeline-command-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import {
++  loudnessBinding,
++  resolveAudibleItems,
++  suggestLoudnessMatch,
++  type ClipLoudnessResult,
++} from '../../../utils/loudness-match'
++import { LOUDNESS_ALGORITHM } from '@/shared/utils/loudness'
++import { applyLoudnessMatch } from './loudness-match-actions'
++
++const track = (id: string, locked = false) => ({
++  id, name: id, order: 0, height: 80, locked, syncLock: true, visible: true, muted: false,
++  solo: false, volume: 0, items: [], kind: 'audio',
++}) as TimelineTrack
++
++const audio = (overrides: Partial<AudioItem> = {}): AudioItem => ({
++  id: 'a1', type: 'audio', trackId: 't1', from: 0, durationInFrames: 300, label: 'Interview',
++  src: 'blob:a', mediaId: 'm1', sourceStart: 0, sourceEnd: 300, sourceFps: 30, volume: 0, ...overrides,
++} as AudioItem)
++
++function measured(item: AudioItem | VideoItem, lufs: number | null, peak: number | null = -6): ClipLoudnessResult {
++  return {
++    itemId: item.id, label: item.label, binding: loudnessBinding(item),
++    measurement: { algorithm: LOUDNESS_ALGORITHM, integratedLufs: lufs, truePeakDbtp: peak, durationSeconds: 10, channelCount: 2 },
++  }
++}
++
++describe('loudness match', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useItemsStore.getState().setTracks([track('t1'), track('t2', true)])
++  })
++
++  it('suggests the gain that reaches the target from the clip as it plays now', () => {
++    const item = audio({ volume: -3 })
++    const suggestion = suggestLoudnessMatch(item, measured(item, -20), -16, -1)!
++    // Plays at -23 LUFS; +7 dB reaches -16.
++    expect(suggestion).toMatchObject({ currentLufs: -23, gainDb: 7, newVolumeDb: 4, predictedTruePeakDbtp: -2, overCeiling: false })
++  })
++
++  it('caps automatic boost at +12 dB and flags it', () => {
++    const item = audio()
++    expect(suggestLoudnessMatch(item, measured(item, -40), -16, -1)).toMatchObject({ gainDb: 12, limitedBy: 'boost-cap' })
++  })
++
++  it('stays within the clip volume range', () => {
++    const item = audio({ volume: 8 })
++    expect(suggestLoudnessMatch(item, measured(item, -30), -16, -1)).toMatchObject({ newVolumeDb: 12, gainDb: 4, limitedBy: 'volume-range' })
++  })
++
++  it('warns when the change would push the true peak over the ceiling', () => {
++    const item = audio()
++    expect(suggestLoudnessMatch(item, measured(item, -26, -4), -16, -1)).toMatchObject({ predictedTruePeakDbtp: 6, overCeiling: true })
++  })
++
++  it('applies in one undo step and never applies the same result twice', () => {
++    const quiet = audio()
++    const loud = audio({ id: 'a2', from: 300 })
++    useItemsStore.getState().setItems([quiet, loud])
++    const results = [measured(quiet, -22), measured(loud, -10)]
++
++    expect(applyLoudnessMatch(results, -16, -1)).toEqual({ applied: ['a1', 'a2'], stale: [], locked: [] })
++    expect(useItemsStore.getState().itemById['a1']!.volume).toBe(6)
++    expect(useItemsStore.getState().itemById['a2']!.volume).toBe(-6)
++
++    // The same results describe the clips before the change, so they are now stale.
++    expect(applyLoudnessMatch(results, -16, -1)).toEqual({ applied: [], stale: ['a1', 'a2'], locked: [] })
++    expect(useItemsStore.getState().itemById['a1']!.volume).toBe(6)
++
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items.map((item) => item.volume)).toEqual([0, 0])
++  })
++
++  it('skips clips changed since analysis, unmeasurable clips and locked tracks', () => {
++    const trimmed = audio()
++    const silent = audio({ id: 'a2' })
++    const locked = audio({ id: 'a3', trackId: 't2' })
++    useItemsStore.getState().setItems([{ ...trimmed, sourceEnd: 200 } as AudioItem, silent, locked])
++    const outcome = applyLoudnessMatch([measured(trimmed, -20), measured(silent, null, null), measured(locked, -20)], -16, -1)
++    expect(outcome).toEqual({ applied: [], stale: ['a1'], locked: ['a3'] })
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++
++  it('measures the linked audio of a selected video, or the video itself when it has none', () => {
++    const video = { ...audio({ id: 'v1', linkedGroupId: 'g' }), type: 'video' } as unknown as VideoItem
++    const linkedAudio = audio({ id: 'a1', linkedGroupId: 'g' })
++    const lone = { ...audio({ id: 'v2' }), type: 'video' } as unknown as VideoItem
++    const silentVideo = { ...audio({ id: 'v3' }), type: 'video', embeddedAudioMuted: true } as unknown as VideoItem
++    const items = [video, linkedAudio, lone, silentVideo]
++    expect(resolveAudibleItems(items, ['v1', 'a1', 'v2', 'v3']).map((item) => item.id)).toEqual(['a1', 'v2'])
++  })
++})
+diff --git a/src/features/timeline/stores/actions/edit/loudness-match-actions.ts b/src/features/timeline/stores/actions/edit/loudness-match-actions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/loudness-match-actions.ts
+@@ -0,0 +1,61 @@
++import type { AudioItem, VideoItem } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { execute } from '../shared'
++import { hasLockedEditParticipants } from '../linked-edit'
++import {
++  suggestLoudnessMatch,
++  type ClipLoudnessResult,
++} from '../../../utils/loudness-match'
++
++export interface LoudnessMatchOutcome {
++  applied: string[]
++  /** Clips that changed since analysis, or were removed; their results are discarded. */
++  stale: string[]
++  locked: string[]
++}
++
++/**
++ * Apply approved loudness matches as one undoable edit. Each result must still
++ * describe the clip as it is now; a stale result (the clip changed, or this
++ * result was already applied) is skipped, so a match is never applied twice.
++ */
++export function applyLoudnessMatch(
++  results: readonly ClipLoudnessResult[],
++  targetLufs: number,
++  ceilingDbtp: number,
++): LoudnessMatchOutcome {
++  const outcome: LoudnessMatchOutcome = { applied: [], stale: [], locked: [] }
++  const items = useItemsStore.getState().items
++  const updates: Array<{ id: string; volume: number }> = []
++  for (const result of results) {
++    const item = items.find((candidate) => candidate.id === result.itemId)
++    if (!item || (item.type !== 'audio' && item.type !== 'video')) {
++      outcome.stale.push(result.itemId)
++      continue
++    }
++    const suggestion = suggestLoudnessMatch(item as AudioItem | VideoItem, result, targetLufs, ceilingDbtp)
++    if (!suggestion) {
++      if (result.measurement?.integratedLufs != null) outcome.stale.push(result.itemId)
++      continue
++    }
++    if (hasLockedEditParticipants([item])) {
++      outcome.locked.push(item.id)
++      continue
++    }
++    if (suggestion.gainDb !== 0) updates.push({ id: item.id, volume: suggestion.newVolumeDb })
++  }
++  if (updates.length === 0) return outcome
++
++  execute(
++    'APPLY_LOUDNESS_MATCH',
++    () => {
++      const store = useItemsStore.getState()
++      for (const update of updates) store._updateItem(update.id, { volume: update.volume })
++      useTimelineSettingsStore.getState().markDirty()
++    },
++    { targetLufs, ceilingDbtp, updates },
++  )
++  outcome.applied = updates.map((update) => update.id)
++  return outcome
++}
+diff --git a/src/features/timeline/utils/loudness-match.ts b/src/features/timeline/utils/loudness-match.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/utils/loudness-match.ts
+@@ -0,0 +1,152 @@
++import type { AudioItem, TimelineItem, VideoItem } from '@/types/timeline'
++import { getOrDecodeAudioSliceForPlayback } from '@/features/timeline/deps/composition-runtime'
++import { resolveMediaUrl } from '@/features/timeline/deps/media-library-resolver'
++import { measureLoudnessInWorker, type LoudnessMeasurement } from '@/shared/utils/loudness'
++import { getItemSourceSpanSeconds } from './media-item-frames'
++import { getLinkedItems } from './linked-items'
++
++/**
++ * Dialogue loudness matching (FL-598). A clip is measured on its source range,
++ * and its suggested match is a change to the clip's static volume: gain
++ * envelopes, fades and ducking stay relative to it. Each result is bound to
++ * the clip's audible state, so a result goes stale once the clip changes and
++ * can never be applied twice.
++ */
++
++export const DEFAULT_TARGET_LUFS = -16
++export const DEFAULT_CEILING_DBTP = -1
++/** Largest automatic boost; larger needs are flagged for manual review. */
++const MAX_MATCH_BOOST_DB = 12
++const MIN_VOLUME_DB = -60
++const MAX_VOLUME_DB = 12
++
++export type ClipLoudnessUnavailable = 'muted' | 'no-source' | 'silent-or-short' | 'decode-failed'
++
++export interface ClipLoudnessResult {
++  itemId: string
++  label: string
++  /** The clip's audible state when measured; any change makes the result stale. */
++  binding: string
++  measurement: LoudnessMeasurement | null
++  unavailable?: ClipLoudnessUnavailable
++}
++
++export interface LoudnessMatchSuggestion {
++  itemId: string
++  /** Measured loudness of the clip as it plays now (source plus current volume). */
++  currentLufs: number
++  gainDb: number
++  newVolumeDb: number
++  /** Why the suggestion stops short of the target. */
++  limitedBy?: 'boost-cap' | 'volume-range'
++  /** Predicted true peak after the change; above the ceiling the mix will be soft-clipped. */
++  predictedTruePeakDbtp: number | null
++  overCeiling: boolean
++}
++
++type AudibleItem = AudioItem | VideoItem
++
++/** The item whose sound a selected clip plays: a video's linked audio when it has one. */
++export function resolveAudibleItems(items: readonly TimelineItem[], selectedIds: readonly string[]): AudibleItem[] {
++  const resolved = new Map<string, AudibleItem>()
++  for (const id of selectedIds) {
++    const item = items.find((candidate) => candidate.id === id)
++    if (!item) continue
++    if (item.type === 'audio') {
++      resolved.set(item.id, item)
++    } else if (item.type === 'video') {
++      const linkedAudio = getLinkedItems(items as TimelineItem[], item.id).find(
++        (linked): linked is AudioItem => linked.type === 'audio',
++      )
++      if (linkedAudio) resolved.set(linkedAudio.id, linkedAudio)
++      else if (item.embeddedAudioMuted !== true) resolved.set(item.id, item)
++    }
++  }
++  return [...resolved.values()]
++}
++
++export function loudnessBinding(item: AudibleItem): string {
++  return JSON.stringify([
++    item.mediaId, item.sourceStart ?? 0, item.sourceEnd ?? null, item.sourceFps ?? null,
++    item.speed ?? 1, item.volume ?? 0, item.muted === true, item.durationInFrames,
++  ])
++}
++
++export function suggestLoudnessMatch(
++  item: AudibleItem,
++  result: ClipLoudnessResult,
++  targetLufs: number,
++  ceilingDbtp: number,
++): LoudnessMatchSuggestion | null {
++  const sourceLufs = result.measurement?.integratedLufs
++  if (sourceLufs == null || result.binding !== loudnessBinding(item)) return null
++  const volume = item.volume ?? 0
++  const currentLufs = sourceLufs + volume
++  let gainDb = targetLufs - currentLufs
++  let limitedBy: LoudnessMatchSuggestion['limitedBy']
++  if (gainDb > MAX_MATCH_BOOST_DB) {
++    gainDb = MAX_MATCH_BOOST_DB
++    limitedBy = 'boost-cap'
++  }
++  const newVolumeDb = Math.min(MAX_VOLUME_DB, Math.max(MIN_VOLUME_DB, volume + gainDb))
++  if (newVolumeDb !== volume + gainDb) {
++    gainDb = newVolumeDb - volume
++    limitedBy = 'volume-range'
++  }
++  const roundedVolume = Math.round(newVolumeDb * 10) / 10
++  const predictedTruePeakDbtp = result.measurement?.truePeakDbtp == null
++    ? null
++    : result.measurement.truePeakDbtp + roundedVolume
++  return {
++    itemId: item.id,
++    currentLufs,
++    gainDb: roundedVolume - volume,
++    newVolumeDb: roundedVolume,
++    limitedBy,
++    predictedTruePeakDbtp,
++    overCeiling: predictedTruePeakDbtp !== null && predictedTruePeakDbtp > ceilingDbtp,
++  }
++}
++
++function abortError(): DOMException {
++  return new DOMException('Loudness analysis cancelled', 'AbortError')
++}
++
++/** Measure each clip's audible source range. Cancelling rejects with an AbortError and applies nothing. */
++export async function analyzeClipLoudness(
++  items: readonly AudibleItem[],
++  timelineFps: number,
++  signal?: AbortSignal,
++): Promise<ClipLoudnessResult[]> {
++  const results: ClipLoudnessResult[] = []
++  for (const item of items) {
++    if (signal?.aborted) throw abortError()
++    const base = { itemId: item.id, label: item.label, binding: loudnessBinding(item), measurement: null }
++    if (item.muted === true) { results.push({ ...base, unavailable: 'muted' }); continue }
++    const span = getItemSourceSpanSeconds(item, timelineFps)
++    const url = item.mediaId ? await resolveMediaUrl(item.mediaId) : null
++    if (!span || !url || !item.mediaId) { results.push({ ...base, unavailable: 'no-source' }); continue }
++    try {
++      const slice = await getOrDecodeAudioSliceForPlayback(item.mediaId, url, {
++        targetTimeSeconds: span.start,
++        minReadySeconds: Math.max(1, span.end - span.start),
++        preRollSeconds: 0,
++        waitTimeoutMs: 0,
++      })
++      if (signal?.aborted) throw abortError()
++      const { buffer, startTime } = slice
++      const start = Math.max(0, Math.round((span.start - startTime) * buffer.sampleRate))
++      const end = Math.min(buffer.length, Math.round((span.end - startTime) * buffer.sampleRate))
++      const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) =>
++        buffer.getChannelData(c).subarray(start, Math.max(start, end)))
++      const measurement = await measureLoudnessInWorker({ sampleRate: buffer.sampleRate, channels }, signal)
++      results.push(measurement.integratedLufs === null
++        ? { ...base, measurement, unavailable: 'silent-or-short' }
++        : { ...base, measurement })
++    } catch (error) {
++      if (error instanceof DOMException && error.name === 'AbortError') throw error
++      results.push({ ...base, unavailable: 'decode-failed' })
++    }
++  }
++  return results
++}
+diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
+--- a/src/i18n/locales/partials/de/editor.json
++++ b/src/i18n/locales/partials/de/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "Tonhöhe (Halbtöne) zurücksetzen",
+       "cents": "Cent",
+       "resetCents": "Tonhöhe (Cent) zurücksetzen",
+-      "equalizer": "Equalizer"
++      "equalizer": "Equalizer",
++      "loudness": {
++        "title": "Lautheit angleichen",
++        "target": "Ziel",
++        "ceiling": "Spitzengrenze",
++        "analyze": "Analysieren",
++        "analyzing": "Wird gemessen…",
++        "cancel": "Abbrechen",
++        "apply": "Anwenden",
++        "measured": "Jetzt {{lufs}}, Spitze {{peak}}",
++        "change": "Lautstärke um {{gain}} ändern",
++        "overCeiling": "Die Spitze würde {{peak}} erreichen; der Export-Mix wird über 0 dBFS weich begrenzt. Senke das Ziel oder diesen Clip.",
++        "changed": "Der Clip wurde seit der Messung geändert. Erneut analysieren.",
++        "note": "Gemessen nach ITU-R BS.1770 im Quellbereich jedes Clips. Das Angleichen ändert nur die Clip-Lautstärke und repariert keine verzerrten Aufnahmen.",
++        "failed": "Die ausgewählten Clips konnten nicht gemessen werden.",
++        "applied_one": "{{count}} Clip angeglichen",
++        "applied_other": "{{count}} Clips angeglichen",
++        "stale_one": "{{count}} Clip wurde nach der Messung geändert und übersprungen",
++        "stale_other": "{{count}} Clips wurden nach der Messung geändert und übersprungen",
++        "locked_one": "{{count}} Clip liegt auf einer gesperrten Spur",
++        "locked_other": "{{count}} Clips liegen auf gesperrten Spuren",
++        "unavailable": {
++          "muted": "Stummgeschalteter Clip: nicht gemessen.",
++          "no-source": "Quelle nicht verfügbar.",
++          "silent-or-short": "Still oder kürzer als 0,4 s: keine Änderung vorgeschlagen.",
++          "decode-failed": "Der Ton dieses Clips konnte nicht dekodiert werden."
++        },
++        "limited": {
++          "boost-cap": "Braucht mehr als +12 dB: bitte manuell prüfen.",
++          "volume-range": "Begrenzt durch den Lautstärkebereich des Clips (−60 bis +12 dB)."
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "Stil-Voreinstellung",
+diff --git a/src/i18n/locales/partials/de/export.json b/src/i18n/locales/partials/de/export.json
+--- a/src/i18n/locales/partials/de/export.json
++++ b/src/i18n/locales/partials/de/export.json
+@@ -184,6 +184,16 @@
+           "detail": "Der Export-Worker kann diese Komposition ohne bekannten Fallback zum Hauptthread rendern."
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "Exportierter Ton wird gemessen…",
++      "unknown": "Lautheit unbekannt: Der exportierte Ton konnte nicht gemessen werden.",
++      "silent": "Kein messbarer Ton in diesem Export.",
++      "measured": "Export-Lautheit {{lufs}} LUFS, True Peak {{peak}} dBTP (Studio-Ziel {{target}} LUFS, Grenze {{ceiling}} dBTP).",
++      "tooQuiet": "Leiser als das Ziel; nutze „Lautheit angleichen“ für die Dialog-Clips.",
++      "tooLoud": "Lauter als das Ziel; senke Master- oder Clip-Lautstärke.",
++      "overPeak": "Der True Peak liegt über der Grenze; manche Player können verzerren.",
++      "pass": "Im Zielbereich."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "Reset semitone pitch",
+       "cents": "Cents",
+       "resetCents": "Reset cent pitch",
+-      "equalizer": "Equalizer"
++      "equalizer": "Equalizer",
++      "loudness": {
++        "title": "Match loudness",
++        "target": "Target",
++        "ceiling": "Peak ceiling",
++        "analyze": "Analyze",
++        "analyzing": "Measuring…",
++        "cancel": "Cancel",
++        "apply": "Apply",
++        "measured": "Now {{lufs}}, peak {{peak}}",
++        "change": "Change volume by {{gain}}",
++        "overCeiling": "Peak would reach {{peak}}; the export mix soft-clips above 0 dBFS. Lower the target or this clip.",
++        "changed": "Clip changed since it was measured. Analyze again.",
++        "note": "Measured with ITU-R BS.1770 on each clip's source range. Matching changes clip volume only; it does not repair distorted recordings.",
++        "failed": "Couldn't measure the selected clips.",
++        "applied_one": "Matched {{count}} clip",
++        "applied_other": "Matched {{count}} clips",
++        "stale_one": "{{count}} clip changed after measuring and was skipped",
++        "stale_other": "{{count}} clips changed after measuring and were skipped",
++        "locked_one": "{{count}} clip is on a locked track",
++        "locked_other": "{{count}} clips are on locked tracks",
++        "unavailable": {
++          "muted": "Muted clip: not measured.",
++          "no-source": "Source unavailable.",
++          "silent-or-short": "Silent or shorter than 0.4 s: no change suggested.",
++          "decode-failed": "Couldn't decode this clip's audio."
++        },
++        "limited": {
++          "boost-cap": "Needs more than +12 dB: review it by hand.",
++          "volume-range": "Limited by the clip's volume range (−60 to +12 dB)."
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "Style preset",
+diff --git a/src/i18n/locales/partials/en/export.json b/src/i18n/locales/partials/en/export.json
+--- a/src/i18n/locales/partials/en/export.json
++++ b/src/i18n/locales/partials/en/export.json
+@@ -212,6 +212,16 @@
+           "detail": "The export worker can render this composition without a known main-thread fallback."
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "Measuring the exported sound…",
++      "unknown": "Loudness unknown: the exported sound couldn't be measured.",
++      "silent": "No measurable sound in this export.",
++      "measured": "Export loudness {{lufs}} LUFS, true peak {{peak}} dBTP (Studio target {{target}} LUFS, ceiling {{ceiling}} dBTP).",
++      "tooQuiet": "Quieter than the target; use Match loudness on the dialogue clips.",
++      "tooLoud": "Louder than the target; lower the master or clip volumes.",
++      "overPeak": "The true peak is above the ceiling, so some players may distort it.",
++      "pass": "Within the target."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
+--- a/src/i18n/locales/partials/es/editor.json
++++ b/src/i18n/locales/partials/es/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "Restablecer tono en semitonos",
+       "cents": "Centésimas",
+       "resetCents": "Restablecer tono en centésimas",
+-      "equalizer": "Ecualizador"
++      "equalizer": "Ecualizador",
++      "loudness": {
++        "title": "Igualar sonoridad",
++        "target": "Objetivo",
++        "ceiling": "Techo de pico",
++        "analyze": "Analizar",
++        "analyzing": "Midiendo…",
++        "cancel": "Cancelar",
++        "apply": "Aplicar",
++        "measured": "Ahora {{lufs}}, pico {{peak}}",
++        "change": "Cambiar el volumen {{gain}}",
++        "overCeiling": "El pico llegaría a {{peak}}; la mezcla exportada se satura suavemente por encima de 0 dBFS. Baja el objetivo o este clip.",
++        "changed": "El clip cambió desde que se midió. Vuelve a analizar.",
++        "note": "Medido con ITU-R BS.1770 en el rango de origen de cada clip. Igualar solo cambia el volumen del clip; no repara grabaciones distorsionadas.",
++        "failed": "No se pudieron medir los clips seleccionados.",
++        "applied_one": "{{count}} clip igualado",
++        "applied_other": "{{count}} clips igualados",
++        "stale_one": "{{count}} clip cambió tras medirse y se omitió",
++        "stale_other": "{{count}} clips cambiaron tras medirse y se omitieron",
++        "locked_one": "{{count}} clip está en una pista bloqueada",
++        "locked_other": "{{count}} clips están en pistas bloqueadas",
++        "unavailable": {
++          "muted": "Clip silenciado: no se midió.",
++          "no-source": "Origen no disponible.",
++          "silent-or-short": "En silencio o de menos de 0,4 s: no se sugiere cambio.",
++          "decode-failed": "No se pudo decodificar el audio de este clip."
++        },
++        "limited": {
++          "boost-cap": "Necesita más de +12 dB: revísalo a mano.",
++          "volume-range": "Limitado por el rango de volumen del clip (−60 a +12 dB)."
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "Preajuste de estilo",
+diff --git a/src/i18n/locales/partials/es/export.json b/src/i18n/locales/partials/es/export.json
+--- a/src/i18n/locales/partials/es/export.json
++++ b/src/i18n/locales/partials/es/export.json
+@@ -184,6 +184,16 @@
+           "detail": "El worker de exportación puede renderizar esta composición sin un modo alternativo conocido al hilo principal."
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "Midiendo el sonido exportado…",
++      "unknown": "Sonoridad desconocida: no se pudo medir el sonido exportado.",
++      "silent": "No hay sonido medible en esta exportación.",
++      "measured": "Sonoridad exportada {{lufs}} LUFS, pico real {{peak}} dBTP (objetivo de Studio {{target}} LUFS, techo {{ceiling}} dBTP).",
++      "tooQuiet": "Más bajo que el objetivo; usa Igualar sonoridad en los clips de diálogo.",
++      "tooLoud": "Más alto que el objetivo; baja el volumen maestro o de los clips.",
++      "overPeak": "El pico real supera el techo; algunos reproductores pueden distorsionarlo.",
++      "pass": "Dentro del objetivo."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
+--- a/src/i18n/locales/partials/fr/editor.json
++++ b/src/i18n/locales/partials/fr/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "Réinitialiser la hauteur (demi-tons)",
+       "cents": "Centièmes",
+       "resetCents": "Réinitialiser la hauteur (centièmes)",
+-      "equalizer": "Égaliseur"
++      "equalizer": "Égaliseur",
++      "loudness": {
++        "title": "Harmoniser le volume",
++        "target": "Cible",
++        "ceiling": "Plafond de crête",
++        "analyze": "Analyser",
++        "analyzing": "Mesure en cours…",
++        "cancel": "Annuler",
++        "apply": "Appliquer",
++        "measured": "Actuellement {{lufs}}, crête {{peak}}",
++        "change": "Modifier le volume de {{gain}}",
++        "overCeiling": "La crête atteindrait {{peak}} ; le mixage exporté est écrêté en douceur au-dessus de 0 dBFS. Baissez la cible ou ce clip.",
++        "changed": "Le clip a changé depuis la mesure. Analysez à nouveau.",
++        "note": "Mesuré selon l’UIT-R BS.1770 sur la plage source de chaque clip. L’harmonisation ne change que le volume du clip ; elle ne répare pas les enregistrements saturés.",
++        "failed": "Impossible de mesurer les clips sélectionnés.",
++        "applied_one": "{{count}} clip harmonisé",
++        "applied_other": "{{count}} clips harmonisés",
++        "stale_one": "{{count}} clip a changé après la mesure et a été ignoré",
++        "stale_other": "{{count}} clips ont changé après la mesure et ont été ignorés",
++        "locked_one": "{{count}} clip est sur une piste verrouillée",
++        "locked_other": "{{count}} clips sont sur des pistes verrouillées",
++        "unavailable": {
++          "muted": "Clip coupé : non mesuré.",
++          "no-source": "Source indisponible.",
++          "silent-or-short": "Silencieux ou de moins de 0,4 s : aucune modification proposée.",
++          "decode-failed": "Impossible de décoder l’audio de ce clip."
++        },
++        "limited": {
++          "boost-cap": "Il faudrait plus de +12 dB : vérifiez manuellement.",
++          "volume-range": "Limité par la plage de volume du clip (−60 à +12 dB)."
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "Préréglage de style",
+diff --git a/src/i18n/locales/partials/fr/export.json b/src/i18n/locales/partials/fr/export.json
+--- a/src/i18n/locales/partials/fr/export.json
++++ b/src/i18n/locales/partials/fr/export.json
+@@ -184,6 +184,16 @@
+           "detail": "Le worker d’exportation peut rendre cette composition sans repli connu sur le thread principal."
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "Mesure du son exporté…",
++      "unknown": "Volume inconnu : le son exporté n’a pas pu être mesuré.",
++      "silent": "Aucun son mesurable dans cet export.",
++      "measured": "Volume exporté {{lufs}} LUFS, crête réelle {{peak}} dBTP (cible Studio {{target}} LUFS, plafond {{ceiling}} dBTP).",
++      "tooQuiet": "Plus faible que la cible ; utilisez Harmoniser le volume sur les clips de dialogue.",
++      "tooLoud": "Plus fort que la cible ; baissez le volume général ou des clips.",
++      "overPeak": "La crête réelle dépasse le plafond ; certains lecteurs peuvent saturer.",
++      "pass": "Dans la cible."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
+--- a/src/i18n/locales/partials/ja/editor.json
++++ b/src/i18n/locales/partials/ja/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "半音ピッチをリセット",
+       "cents": "セント",
+       "resetCents": "セントピッチをリセット",
+-      "equalizer": "イコライザー"
++      "equalizer": "イコライザー",
++      "loudness": {
++        "title": "ラウドネスを揃える",
++        "target": "目標",
++        "ceiling": "ピーク上限",
++        "analyze": "分析",
++        "analyzing": "測定中…",
++        "cancel": "キャンセル",
++        "apply": "適用",
++        "measured": "現在 {{lufs}}、ピーク {{peak}}",
++        "change": "音量を {{gain}} 変更",
++        "overCeiling": "ピークが {{peak}} に達します。書き出しのミックスは 0 dBFS を超えるとソフトクリップされます。目標かこのクリップを下げてください。",
++        "changed": "測定後にクリップが変更されました。もう一度分析してください。",
++        "note": "各クリップのソース範囲を ITU-R BS.1770 で測定します。揃える処理はクリップの音量だけを変更し、歪んだ録音は修復しません。",
++        "failed": "選択したクリップを測定できませんでした。",
++        "applied_one": "{{count}} 件のクリップを揃えました",
++        "applied_other": "{{count}} 件のクリップを揃えました",
++        "stale_one": "{{count}} 件のクリップは測定後に変更されたためスキップしました",
++        "stale_other": "{{count}} 件のクリップは測定後に変更されたためスキップしました",
++        "locked_one": "{{count}} 件のクリップがロックされたトラックにあります",
++        "locked_other": "{{count}} 件のクリップがロックされたトラックにあります",
++        "unavailable": {
++          "muted": "ミュートされたクリップ：測定していません。",
++          "no-source": "ソースを利用できません。",
++          "silent-or-short": "無音または 0.4 秒未満：変更は提案しません。",
++          "decode-failed": "このクリップの音声をデコードできませんでした。"
++        },
++        "limited": {
++          "boost-cap": "+12 dB を超える変更が必要です。手動で確認してください。",
++          "volume-range": "クリップの音量範囲（−60〜+12 dB）で制限されています。"
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "スタイルプリセット",
+diff --git a/src/i18n/locales/partials/ja/export.json b/src/i18n/locales/partials/ja/export.json
+--- a/src/i18n/locales/partials/ja/export.json
++++ b/src/i18n/locales/partials/ja/export.json
+@@ -184,6 +184,16 @@
+           "detail": "書き出しワーカーは、既知のメインスレッドフォールバックなしでこのコンポジションをレンダリングできます。"
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "書き出した音声を測定中…",
++      "unknown": "ラウドネス不明：書き出した音声を測定できませんでした。",
++      "silent": "この書き出しには測定できる音声がありません。",
++      "measured": "書き出しのラウドネス {{lufs}} LUFS、トゥルーピーク {{peak}} dBTP（Studio の目標 {{target}} LUFS、上限 {{ceiling}} dBTP）。",
++      "tooQuiet": "目標より小さいです。会話クリップで「ラウドネスを揃える」を使ってください。",
++      "tooLoud": "目標より大きいです。マスターかクリップの音量を下げてください。",
++      "overPeak": "トゥルーピークが上限を超えています。一部のプレーヤーで歪む可能性があります。",
++      "pass": "目標の範囲内です。"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
+--- a/src/i18n/locales/partials/ko/editor.json
++++ b/src/i18n/locales/partials/ko/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "반음 피치 재설정",
+       "cents": "센트",
+       "resetCents": "센트 피치 재설정",
+-      "equalizer": "이퀄라이저"
++      "equalizer": "이퀄라이저",
++      "loudness": {
++        "title": "음량 맞추기",
++        "target": "목표",
++        "ceiling": "피크 상한",
++        "analyze": "분석",
++        "analyzing": "측정 중…",
++        "cancel": "취소",
++        "apply": "적용",
++        "measured": "현재 {{lufs}}, 피크 {{peak}}",
++        "change": "볼륨을 {{gain}} 변경",
++        "overCeiling": "피크가 {{peak}}에 도달합니다. 내보내기 믹스는 0 dBFS를 넘으면 소프트 클리핑됩니다. 목표나 이 클립을 낮추세요.",
++        "changed": "측정 후 클립이 변경되었습니다. 다시 분석하세요.",
++        "note": "각 클립의 소스 범위를 ITU-R BS.1770으로 측정합니다. 음량 맞추기는 클립 볼륨만 바꾸며 왜곡된 녹음을 복구하지 않습니다.",
++        "failed": "선택한 클립을 측정할 수 없습니다.",
++        "applied_one": "클립 {{count}}개를 맞췄습니다",
++        "applied_other": "클립 {{count}}개를 맞췄습니다",
++        "stale_one": "클립 {{count}}개가 측정 후 변경되어 건너뛰었습니다",
++        "stale_other": "클립 {{count}}개가 측정 후 변경되어 건너뛰었습니다",
++        "locked_one": "클립 {{count}}개가 잠긴 트랙에 있습니다",
++        "locked_other": "클립 {{count}}개가 잠긴 트랙에 있습니다",
++        "unavailable": {
++          "muted": "음소거된 클립: 측정하지 않았습니다.",
++          "no-source": "소스를 사용할 수 없습니다.",
++          "silent-or-short": "무음이거나 0.4초 미만: 변경을 제안하지 않습니다.",
++          "decode-failed": "이 클립의 오디오를 디코딩할 수 없습니다."
++        },
++        "limited": {
++          "boost-cap": "+12 dB 넘게 필요합니다. 직접 검토하세요.",
++          "volume-range": "클립 볼륨 범위(−60~+12 dB)로 제한됩니다."
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "스타일 프리셋",
+diff --git a/src/i18n/locales/partials/ko/export.json b/src/i18n/locales/partials/ko/export.json
+--- a/src/i18n/locales/partials/ko/export.json
++++ b/src/i18n/locales/partials/ko/export.json
+@@ -184,6 +184,16 @@
+           "detail": "내보내기 워커가 알려진 메인 스레드 폴백 없이 이 컴포지션을 렌더링할 수 있습니다."
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "내보낸 소리를 측정하는 중…",
++      "unknown": "음량 알 수 없음: 내보낸 소리를 측정할 수 없습니다.",
++      "silent": "이 내보내기에는 측정할 소리가 없습니다.",
++      "measured": "내보내기 음량 {{lufs}} LUFS, 트루 피크 {{peak}} dBTP (Studio 목표 {{target}} LUFS, 상한 {{ceiling}} dBTP).",
++      "tooQuiet": "목표보다 조용합니다. 대사 클립에 음량 맞추기를 사용하세요.",
++      "tooLoud": "목표보다 큽니다. 마스터나 클립 볼륨을 낮추세요.",
++      "overPeak": "트루 피크가 상한을 넘어 일부 플레이어에서 왜곡될 수 있습니다.",
++      "pass": "목표 범위 안입니다."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
+--- a/src/i18n/locales/partials/pt-BR/editor.json
++++ b/src/i18n/locales/partials/pt-BR/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "Redefinir tom (semitons)",
+       "cents": "Centésimos",
+       "resetCents": "Redefinir tom (centésimos)",
+-      "equalizer": "Equalizador"
++      "equalizer": "Equalizador",
++      "loudness": {
++        "title": "Igualar volume percebido",
++        "target": "Alvo",
++        "ceiling": "Teto de pico",
++        "analyze": "Analisar",
++        "analyzing": "Medindo…",
++        "cancel": "Cancelar",
++        "apply": "Aplicar",
++        "measured": "Agora {{lufs}}, pico {{peak}}",
++        "change": "Alterar o volume em {{gain}}",
++        "overCeiling": "O pico chegaria a {{peak}}; a mixagem exportada satura suavemente acima de 0 dBFS. Reduza o alvo ou este clipe.",
++        "changed": "O clipe mudou desde a medição. Analise novamente.",
++        "note": "Medido com ITU-R BS.1770 no intervalo de origem de cada clipe. Igualar só altera o volume do clipe; não corrige gravações distorcidas.",
++        "failed": "Não foi possível medir os clipes selecionados.",
++        "applied_one": "{{count}} clipe igualado",
++        "applied_other": "{{count}} clipes igualados",
++        "stale_one": "{{count}} clipe mudou após a medição e foi ignorado",
++        "stale_other": "{{count}} clipes mudaram após a medição e foram ignorados",
++        "locked_one": "{{count}} clipe está em uma faixa bloqueada",
++        "locked_other": "{{count}} clipes estão em faixas bloqueadas",
++        "unavailable": {
++          "muted": "Clipe silenciado: não medido.",
++          "no-source": "Origem indisponível.",
++          "silent-or-short": "Silencioso ou com menos de 0,4 s: nenhuma alteração sugerida.",
++          "decode-failed": "Não foi possível decodificar o áudio deste clipe."
++        },
++        "limited": {
++          "boost-cap": "Precisa de mais de +12 dB: revise manualmente.",
++          "volume-range": "Limitado pela faixa de volume do clipe (−60 a +12 dB)."
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "Predefinição de estilo",
+diff --git a/src/i18n/locales/partials/pt-BR/export.json b/src/i18n/locales/partials/pt-BR/export.json
+--- a/src/i18n/locales/partials/pt-BR/export.json
++++ b/src/i18n/locales/partials/pt-BR/export.json
+@@ -184,6 +184,16 @@
+           "detail": "O worker de exportação pode renderizar esta composição sem fallback conhecido para a thread principal."
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "Medindo o som exportado…",
++      "unknown": "Volume desconhecido: não foi possível medir o som exportado.",
++      "silent": "Não há som mensurável nesta exportação.",
++      "measured": "Volume exportado {{lufs}} LUFS, pico real {{peak}} dBTP (alvo do Studio {{target}} LUFS, teto {{ceiling}} dBTP).",
++      "tooQuiet": "Mais baixo que o alvo; use Igualar volume percebido nos clipes de diálogo.",
++      "tooLoud": "Mais alto que o alvo; reduza o volume principal ou dos clipes.",
++      "overPeak": "O pico real passa do teto; alguns players podem distorcer.",
++      "pass": "Dentro do alvo."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
+--- a/src/i18n/locales/partials/tr/editor.json
++++ b/src/i18n/locales/partials/tr/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "Yarım ses perdesini sıfırla",
+       "cents": "Sent",
+       "resetCents": "Sent perdesini sıfırla",
+-      "equalizer": "Ekolayzer"
++      "equalizer": "Ekolayzer",
++      "loudness": {
++        "title": "Ses yüksekliğini eşitle",
++        "target": "Hedef",
++        "ceiling": "Tepe sınırı",
++        "analyze": "Analiz et",
++        "analyzing": "Ölçülüyor…",
++        "cancel": "İptal",
++        "apply": "Uygula",
++        "measured": "Şu an {{lufs}}, tepe {{peak}}",
++        "change": "Sesi {{gain}} değiştir",
++        "overCeiling": "Tepe {{peak}} değerine ulaşır; dışa aktarılan miks 0 dBFS üzerinde yumuşak kırpılır. Hedefi veya bu klibi düşürün.",
++        "changed": "Klip ölçümden sonra değişti. Yeniden analiz edin.",
++        "note": "Her klibin kaynak aralığında ITU-R BS.1770 ile ölçülür. Eşitleme yalnızca klip sesini değiştirir; bozuk kayıtları onarmaz.",
++        "failed": "Seçilen klipler ölçülemedi.",
++        "applied_one": "{{count}} klip eşitlendi",
++        "applied_other": "{{count}} klip eşitlendi",
++        "stale_one": "{{count}} klip ölçümden sonra değiştiği için atlandı",
++        "stale_other": "{{count}} klip ölçümden sonra değiştiği için atlandı",
++        "locked_one": "{{count}} klip kilitli bir izde",
++        "locked_other": "{{count}} klip kilitli izlerde",
++        "unavailable": {
++          "muted": "Sessize alınmış klip: ölçülmedi.",
++          "no-source": "Kaynak kullanılamıyor.",
++          "silent-or-short": "Sessiz veya 0,4 sn'den kısa: değişiklik önerilmedi.",
++          "decode-failed": "Bu klibin sesi çözülemedi."
++        },
++        "limited": {
++          "boost-cap": "+12 dB'den fazlası gerekiyor: elle gözden geçirin.",
++          "volume-range": "Klibin ses aralığıyla (−60 ile +12 dB) sınırlı."
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "Stil ön ayarı",
+diff --git a/src/i18n/locales/partials/tr/export.json b/src/i18n/locales/partials/tr/export.json
+--- a/src/i18n/locales/partials/tr/export.json
++++ b/src/i18n/locales/partials/tr/export.json
+@@ -184,6 +184,16 @@
+           "detail": "Dışa aktarma worker’ı bu kompozisyonu bilinen bir ana iş parçacığı geri dönüşü olmadan render edebilir."
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "Dışa aktarılan ses ölçülüyor…",
++      "unknown": "Ses yüksekliği bilinmiyor: dışa aktarılan ses ölçülemedi.",
++      "silent": "Bu dışa aktarmada ölçülebilir ses yok.",
++      "measured": "Dışa aktarma ses yüksekliği {{lufs}} LUFS, gerçek tepe {{peak}} dBTP (Studio hedefi {{target}} LUFS, sınır {{ceiling}} dBTP).",
++      "tooQuiet": "Hedeften sessiz; konuşma kliplerinde Ses yüksekliğini eşitle'yi kullanın.",
++      "tooLoud": "Hedeften yüksek; ana sesi veya klip seslerini düşürün.",
++      "overPeak": "Gerçek tepe sınırın üzerinde; bazı oynatıcılarda bozulabilir.",
++      "pass": "Hedef içinde."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
+--- a/src/i18n/locales/partials/zh/editor.json
++++ b/src/i18n/locales/partials/zh/editor.json
+@@ -592,7 +592,38 @@
+       "resetSemitones": "重置半音音高",
+       "cents": "音分",
+       "resetCents": "重置音分音高",
+-      "equalizer": "均衡器"
++      "equalizer": "均衡器",
++      "loudness": {
++        "title": "统一响度",
++        "target": "目标",
++        "ceiling": "峰值上限",
++        "analyze": "分析",
++        "analyzing": "正在测量…",
++        "cancel": "取消",
++        "apply": "应用",
++        "measured": "当前 {{lufs}}，峰值 {{peak}}",
++        "change": "将音量调整 {{gain}}",
++        "overCeiling": "峰值将达到 {{peak}}；导出混音超过 0 dBFS 时会软削波。请降低目标或此片段。",
++        "changed": "片段在测量后已更改。请重新分析。",
++        "note": "按 ITU-R BS.1770 测量每个片段的源范围。统一响度只更改片段音量，不会修复失真的录音。",
++        "failed": "无法测量所选片段。",
++        "applied_one": "已统一 {{count}} 个片段",
++        "applied_other": "已统一 {{count}} 个片段",
++        "stale_one": "{{count}} 个片段在测量后已更改，已跳过",
++        "stale_other": "{{count}} 个片段在测量后已更改，已跳过",
++        "locked_one": "{{count}} 个片段位于锁定的轨道",
++        "locked_other": "{{count}} 个片段位于锁定的轨道",
++        "unavailable": {
++          "muted": "已静音的片段：未测量。",
++          "no-source": "源不可用。",
++          "silent-or-short": "无声或短于 0.4 秒：不建议更改。",
++          "decode-failed": "无法解码此片段的音频。"
++        },
++        "limited": {
++          "boost-cap": "需要超过 +12 dB：请手动检查。",
++          "volume-range": "受片段音量范围（−60 至 +12 dB）限制。"
++        }
++      }
+     },
+     "captionStyleControls": {
+       "stylePreset": "样式预设",
+diff --git a/src/i18n/locales/partials/zh/export.json b/src/i18n/locales/partials/zh/export.json
+--- a/src/i18n/locales/partials/zh/export.json
++++ b/src/i18n/locales/partials/zh/export.json
+@@ -184,6 +184,16 @@
+           "detail": "导出 worker 可以渲染此合成，且没有已知的主线程回退。"
+         }
+       }
++    },
++    "loudness": {
++      "measuring": "正在测量导出的声音…",
++      "unknown": "响度未知：无法测量导出的声音。",
++      "silent": "此导出中没有可测量的声音。",
++      "measured": "导出响度 {{lufs}} LUFS，真峰值 {{peak}} dBTP（Studio 目标 {{target}} LUFS，上限 {{ceiling}} dBTP）。",
++      "tooQuiet": "低于目标；请对对白片段使用“统一响度”。",
++      "tooLoud": "高于目标；请降低主音量或片段音量。",
++      "overPeak": "真峰值超过上限，部分播放器可能失真。",
++      "pass": "在目标范围内。"
+     }
+   }
+ }
+diff --git a/src/shared/utils/loudness-worker.ts b/src/shared/utils/loudness-worker.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/loudness-worker.ts
+@@ -0,0 +1,28 @@
++/// <reference lib="webworker" />
++
++import { measureLoudness, type LoudnessMeasurement } from './loudness'
++
++interface LoudnessRequest {
++  id: string
++  sampleRate: number
++  channels: ArrayBuffer[]
++}
++
++interface LoudnessResponse {
++  id: string
++  error?: string
++  measurement?: LoudnessMeasurement
++}
++
++self.addEventListener('message', (event: MessageEvent<LoudnessRequest>) => {
++  const { id, sampleRate, channels } = event.data
++  let response: LoudnessResponse
++  try {
++    response = { id, measurement: measureLoudness({ sampleRate, channels: channels.map((c) => new Float32Array(c)) }) }
++  } catch (error) {
++    response = { id, error: error instanceof Error ? error.message : String(error) }
++  }
++  self.postMessage(response)
++})
++
++export {}
+diff --git a/src/shared/utils/loudness.test.ts b/src/shared/utils/loudness.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/loudness.test.ts
+@@ -0,0 +1,53 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { measureLoudness } from './loudness'
++
++function sine(frequency: number, amplitudeDbfs: number, seconds: number, sampleRate = 48000, phase = 0) {
++  const amplitude = 10 ** (amplitudeDbfs / 20)
++  const samples = new Float32Array(Math.round(seconds * sampleRate))
++  for (let i = 0; i < samples.length; i += 1) {
++    samples[i] = amplitude * Math.sin((2 * Math.PI * frequency * i) / sampleRate + phase)
++  }
++  return samples
++}
++
++describe('measureLoudness', () => {
++  // EBU Tech 3341 case 1: stereo 1 kHz sine at -23 dBFS reads -23.0 LUFS (±0.1 LU).
++  it.each([44100, 48000, 96000])('reads the EBU 3341 reference at %s Hz', (sampleRate) => {
++    const channel = sine(1000, -23, 20, sampleRate)
++    const result = measureLoudness({ sampleRate, channels: [channel, channel] })
++    expect(Math.abs(result.integratedLufs! + 23)).toBeLessThanOrEqual(0.1)
++  })
++
++  it('tracks gain changes dB for dB', () => {
++    const quiet = sine(1000, -33, 10)
++    const loud = sine(1000, -13, 10)
++    const quietLufs = measureLoudness({ sampleRate: 48000, channels: [quiet, quiet] }).integratedLufs!
++    const loudLufs = measureLoudness({ sampleRate: 48000, channels: [loud, loud] }).integratedLufs!
++    expect(loudLufs - quietLufs).toBeCloseTo(20, 2)
++  })
++
++  // EBU Tech 3341 case 3-style gating: silence and very quiet passages do not pull the reading down.
++  it('gates silence out of the integrated value', () => {
++    const tone = sine(1000, -23, 10)
++    const withSilence = new Float32Array(tone.length * 2)
++    withSilence.set(tone)
++    const result = measureLoudness({ sampleRate: 48000, channels: [withSilence, withSilence] })
++    // Blocks straddling the edge count at reduced power; EBU 3341 allows ±0.1 LU.
++    expect(Math.abs(result.integratedLufs! + 23)).toBeLessThanOrEqual(0.1)
++  })
++
++  it('reports silence and too-short input as unmeasurable', () => {
++    expect(measureLoudness({ sampleRate: 48000, channels: [new Float32Array(48000)] }))
++      .toMatchObject({ integratedLufs: null, truePeakDbtp: null })
++    expect(measureLoudness({ sampleRate: 48000, channels: [sine(1000, -20, 0.2)] }).integratedLufs).toBeNull()
++  })
++
++  // A quarter-rate sine sampled 45 degrees off its peaks has sample peaks of -3 dB but a true peak of 0 dBTP.
++  it('finds inter-sample peaks', () => {
++    const channel = sine(12000, 0, 1, 48000, Math.PI / 4)
++    const samplePeak = channel.reduce((peak, sample) => Math.max(peak, Math.abs(sample)), 0)
++    expect(20 * Math.log10(samplePeak)).toBeCloseTo(-3, 1)
++    const result = measureLoudness({ sampleRate: 48000, channels: [channel] })
++    expect(Math.abs(result.truePeakDbtp!)).toBeLessThanOrEqual(0.5)
++  })
++})
+diff --git a/src/shared/utils/loudness.ts b/src/shared/utils/loudness.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/loudness.ts
+@@ -0,0 +1,177 @@
++/**
++ * Loudness measurement (FL-598): ITU-R BS.1770-4 integrated loudness with
++ * EBU R128 gating, and true peak by 4x oversampling. One implementation is
++ * shared by clip analysis and export verification.
++ */
++
++export const LOUDNESS_ALGORITHM = 'bs1770-4/r128-gating/tp-4x-v1'
++
++export interface LoudnessInput {
++  sampleRate: number
++  /** One array per channel. Channels 0-2 weigh 1.0; channels 3+ (surrounds) weigh 1.41. */
++  channels: readonly Float32Array[]
++}
++
++export interface LoudnessMeasurement {
++  algorithm: typeof LOUDNESS_ALGORITHM
++  /** Integrated loudness in LUFS, or null when nothing survives gating. */
++  integratedLufs: number | null
++  /** True peak in dBTP, or null for digital silence. */
++  truePeakDbtp: number | null
++  durationSeconds: number
++  channelCount: number
++}
++
++interface Biquad { b0: number; b1: number; b2: number; a1: number; a2: number }
++
++// K-weighting stages for any sample rate (the BS.1770 Annex 1 filters' analogue prototypes).
++function kWeighting(sampleRate: number): [Biquad, Biquad] {
++  const shelfK = Math.tan((Math.PI * 1681.974450955533) / sampleRate)
++  const shelfQ = 0.7071752369554196
++  const vh = 10 ** (3.999843853973347 / 20)
++  const vb = vh ** 0.4996667741545416
++  const shelfA0 = 1 + shelfK / shelfQ + shelfK * shelfK
++  const passK = Math.tan((Math.PI * 38.13547087602444) / sampleRate)
++  const passQ = 0.5003270373238773
++  const passA0 = 1 + passK / passQ + passK * passK
++  return [
++    {
++      b0: (vh + (vb * shelfK) / shelfQ + shelfK * shelfK) / shelfA0,
++      b1: (2 * (shelfK * shelfK - vh)) / shelfA0,
++      b2: (vh - (vb * shelfK) / shelfQ + shelfK * shelfK) / shelfA0,
++      a1: (2 * (shelfK * shelfK - 1)) / shelfA0,
++      a2: (1 - shelfK / shelfQ + shelfK * shelfK) / shelfA0,
++    },
++    {
++      b0: 1, b1: -2, b2: 1,
++      a1: (2 * (passK * passK - 1)) / passA0,
++      a2: (1 - passK / passQ + passK * passK) / passA0,
++    },
++  ]
++}
++
++function filter(samples: Float32Array, stages: readonly Biquad[]): Float64Array {
++  let current = Float64Array.from(samples)
++  for (const { b0, b1, b2, a1, a2 } of stages) {
++    const out = new Float64Array(current.length)
++    let x1 = 0, x2 = 0, y1 = 0, y2 = 0
++    for (let i = 0; i < current.length; i += 1) {
++      const x = current[i]!
++      const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
++      x2 = x1; x1 = x; y2 = y1; y1 = y
++      out[i] = y
++    }
++    current = out
++  }
++  return current
++}
++
++const toLufs = (power: number) => -0.691 + 10 * Math.log10(power)
++const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length
++
++function integratedLoudness(input: LoudnessInput): number | null {
++  const { sampleRate, channels } = input
++  const blockSize = Math.round(0.4 * sampleRate)
++  const step = Math.round(0.1 * sampleRate)
++  const length = channels[0]?.length ?? 0
++  if (length < blockSize) return null
++
++  const stages = kWeighting(sampleRate)
++  const weights = channels.map((_, index) => (index >= 3 ? 1.41 : 1))
++  // Prefix sums of squares make each 400 ms block O(channels).
++  const prefix = channels.map((channel) => {
++    const weighted = filter(channel, stages)
++    const sums = new Float64Array(weighted.length + 1)
++    for (let i = 0; i < weighted.length; i += 1) sums[i + 1] = sums[i]! + weighted[i]! * weighted[i]!
++    return sums
++  })
++  const blocks: number[] = []
++  for (let start = 0; start + blockSize <= length; start += step) {
++    let power = 0
++    for (let c = 0; c < prefix.length; c += 1) {
++      power += (weights[c]! * (prefix[c]![start + blockSize]! - prefix[c]![start]!)) / blockSize
++    }
++    blocks.push(power)
++  }
++
++  const absolute = blocks.filter((power) => power > 0 && toLufs(power) > -70)
++  if (absolute.length === 0) return null
++  const relativeGate = toLufs(mean(absolute)) - 10
++  const gated = absolute.filter((power) => toLufs(power) > relativeGate)
++  return gated.length === 0 ? null : toLufs(mean(gated))
++}
++
++// 4x polyphase interpolator: 12-tap Blackman-windowed sinc per phase.
++const OVERSAMPLE = 4
++const TAPS = 12
++const CENTER = TAPS / 2 - 1
++const PHASES: Float64Array[] = Array.from({ length: OVERSAMPLE }, (_, phase) => {
++  const taps = new Float64Array(TAPS)
++  for (let t = 0; t < TAPS; t += 1) {
++    const x = t - CENTER - phase / OVERSAMPLE
++    const sinc = x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x)
++    const n = (t + 1 - phase / OVERSAMPLE) / (TAPS + 1)
++    taps[t] = sinc * (0.42 - 0.5 * Math.cos(2 * Math.PI * n) + 0.08 * Math.cos(4 * Math.PI * n))
++  }
++  const sum = taps.reduce((total, tap) => total + tap, 0)
++  return taps.map((tap) => tap / sum)
++})
++
++function truePeak(channels: readonly Float32Array[]): number {
++  let peak = 0
++  for (const channel of channels) {
++    for (let i = 0; i < channel.length; i += 1) {
++      peak = Math.max(peak, Math.abs(channel[i]!))
++      for (let phase = 1; phase < OVERSAMPLE; phase += 1) {
++        const taps = PHASES[phase]!
++        let value = 0
++        for (let t = 0; t < TAPS; t += 1) {
++          const index = i + t - CENTER
++          if (index >= 0 && index < channel.length) value += channel[index]! * taps[t]!
++        }
++        peak = Math.max(peak, Math.abs(value))
++      }
++    }
++  }
++  return peak
++}
++
++export function measureLoudness(input: LoudnessInput): LoudnessMeasurement {
++  const length = input.channels[0]?.length ?? 0
++  const peak = truePeak(input.channels)
++  return {
++    algorithm: LOUDNESS_ALGORITHM,
++    integratedLufs: integratedLoudness(input),
++    truePeakDbtp: peak > 0 ? 20 * Math.log10(peak) : null,
++    durationSeconds: input.sampleRate > 0 ? length / input.sampleRate : 0,
++    channelCount: input.channels.length,
++  }
++}
++
++function abortError(): DOMException {
++  return new DOMException('Loudness measurement cancelled', 'AbortError')
++}
++
++/** Measure off the main thread where workers exist; cancelling rejects with an AbortError. */
++export function measureLoudnessInWorker(input: LoudnessInput, signal?: AbortSignal): Promise<LoudnessMeasurement> {
++  if (signal?.aborted) return Promise.reject(abortError())
++  if (typeof Worker === 'undefined') return Promise.resolve(measureLoudness(input))
++  return new Promise((resolve, reject) => {
++    const worker = new Worker(new URL('./loudness-worker.ts', import.meta.url), { type: 'module' })
++    const id = crypto.randomUUID()
++    const finish = (callback: () => void) => {
++      signal?.removeEventListener('abort', onAbort)
++      worker.terminate()
++      callback()
++    }
++    const onAbort = () => finish(() => reject(abortError()))
++    worker.addEventListener('message', (event: MessageEvent<{ id: string; error?: string; measurement?: LoudnessMeasurement }>) => {
++      if (event.data.id !== id) return
++      finish(() => (event.data.measurement ? resolve(event.data.measurement) : reject(new Error(event.data.error))))
++    })
++    worker.addEventListener('error', (event) => finish(() => reject(new Error(event.message))))
++    signal?.addEventListener('abort', onAbort, { once: true })
++    const buffers = input.channels.map((channel) => channel.slice().buffer)
++    worker.postMessage({ id, sampleRate: input.sampleRate, channels: buffers }, buffers)
++  })
++}
