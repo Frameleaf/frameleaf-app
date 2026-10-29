@@ -1484,6 +1484,16 @@ Payload: `markerId`. **Refusal:** it names no marker: `invalid`. **Effect:** the
 
 `music.add` is an engine command that is **always refused** as `failed` at this revision, before it reads its payload: the bundled music catalogue is rights-blocked (FL-86), so no `musicId` resolves. It changes nothing, and so has no linked, lock, sync-lock, overlap or transition consequence. **Native rule:** do not offer bundled music and never record `music.add` in a save. Fixtures `music.add/rejects-always`, `music.add/rejects-before-reading-payload`.
 
+### 12.9 Multicam records (FL-595)
+
+The web editor's multicam edit is not a command; it writes ordinary clips and tracks plus two fields that tracks and items already allow (`additionalProperties`):
+
+- A **program track** carries `multicam: { groupId, role: "program", algorithm, referenceItemId, masterAudioItemId, angles }`. `algorithm` is `onset-xcorr-1ms-v1` or `manual`; each entry of `angles` is `{ trackId, itemId, mediaId, offsetSeconds }`, where a reference source time s is the angle's source time s + `offsetSeconds`. Each **angle track** carries `multicam: { groupId, role: "angle" }` and is hidden (`visible: false`).
+- Each clip on the program track is a video-only copy of an angle (`muted: true`, `embeddedAudioMuted: true`, no `linkedGroupId`) with `multicam: { groupId, angle }`, the index into `angles`.
+- The angle clips keep their media, source ranges and links; they are moved so that one sequence frame shows the same moment in every angle. Only the master audio clip stays audible; the other angles' audio clips get `muted: true`.
+
+Playback and export read only the ordinary fields. **Native rule:** play and export the graph as usual; preserve both `multicam` fields when editing, and when changing a program clip keep its source range consistent with its angle's alignment or drop the clip's `multicam` field.
+
 ## 13. Part 3: effects, transitions, keyframes and animation
 
 This section gives the mutation rules of the 12 commands of FL-308 (NAPI-019), the clip and track audio commands of FL-103 (13.9 and 13.10), the graph fields they write, and the rule for the fields that no engine command writes at this revision (13.8).

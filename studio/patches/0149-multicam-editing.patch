@@ -1,0 +1,1309 @@
+Subject: Sync 2-4 camera angles by sound and cut between them over one master audio
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+@@ -43,6 +43,7 @@ import { getLinkedAudioCompanion } from '@/shared/utils/linked-media'
+ import { useGizmoStore } from '@/features/editor/deps/preview'
+ 
+ import { LayoutSection } from './layout-section'
++import { MulticamSection } from './multicam-section'
+ import { FillSection } from './fill-section'
+ import { VideoSection } from './video-section'
+ import { GifSection } from './gif-section'
+@@ -656,6 +657,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
+                   onAspectLockToggle={handleAspectLockToggle}
+                 />
+               )}
++              <MulticamSection items={selectedItems} />
+               <CompositionControlsSection items={selectedItems} />
+               {(hasVideoItems || hasCompositionItems) && <VideoSection items={selectedItems} />}
+               {paintableLayoutItems.length > 0 && (
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multicam-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/multicam-section.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/multicam-section.tsx
+@@ -0,0 +1,173 @@
++import { useEffect, useRef, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Clapperboard } from 'lucide-react'
++import { toast } from 'sonner'
++import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
++import type { TimelineItem } from '@/types/timeline'
++import {
++  analyzeMulticamSync,
++  createMulticamEdit,
++  cutToAngle,
++  getMulticamGroup,
++  useTimelineStore,
++  type MulticamSyncProposal,
++} from '@/features/editor/deps/timeline-store'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { PropertyRow, PropertySection } from '../components'
++
++/** Create a multicamera edit from 2–4 selected video clips (FL-595). */
++function CreateMulticam({ items }: { items: TimelineItem[] }) {
++  const { t } = useTranslation()
++  const fps = useTimelineStore((s) => s.fps)
++  const [referenceId, setReferenceId] = useState(items[0]!.id)
++  const [masterId, setMasterId] = useState(items[0]!.id)
++  const [proposals, setProposals] = useState<MulticamSyncProposal[] | null>(null)
++  // Manual offsets in frames, per angle; seeded from analysis and editable.
++  const [offsets, setOffsets] = useState<Record<string, number>>({})
++  const [busy, setBusy] = useState(false)
++  const abortRef = useRef<AbortController | null>(null)
++  useEffect(() => () => abortRef.current?.abort(), [])
++
++  const analyze = async () => {
++    abortRef.current?.abort()
++    const controller = new AbortController()
++    abortRef.current = controller
++    setBusy(true)
++    try {
++      const analysis = await analyzeMulticamSync(items.map((item) => item.id), referenceId, controller.signal)
++      if (!analysis.ok) {
++        toast.warning(t(`editor.multicam.refusal.${analysis.reason}`))
++        return
++      }
++      setProposals(analysis.proposals)
++      // Only reliable matches prefill an offset; failed ones stay manual (0 until edited).
++      setOffsets(Object.fromEntries(analysis.proposals.map((p) => [p.itemId, p.sync.flags.length === 0 ? Math.round(p.sync.offsetSeconds * fps) : 0])))
++    } catch (error) {
++      if (!(error instanceof DOMException && error.name === 'AbortError')) toast.error(t('editor.multicam.refusal.decode-failed'))
++    } finally {
++      if (abortRef.current === controller) setBusy(false)
++    }
++  }
++
++  const create = () => {
++    const outcome = createMulticamEdit({
++      referenceId,
++      masterItemId: masterId,
++      angles: items.map((item) => {
++        const proposal = proposals?.find((p) => p.itemId === item.id)
++        const frames = offsets[item.id] ?? 0
++        return {
++          itemId: item.id,
++          offsetSeconds: frames / fps,
++          manual: !proposal || proposal.sync.flags.length > 0 || frames !== Math.round(proposal.sync.offsetSeconds * fps),
++        }
++      }),
++    })
++    if (outcome.ok) toast.success(t('editor.multicam.created'))
++    else toast.warning(t(`editor.multicam.refusal.${outcome.reason}`))
++  }
++
++  const select = (label: string, value: string, onChange: (id: string) => void) => (
++    <select className="h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs" aria-label={label}
++      value={value} onChange={(event) => { onChange(event.target.value); setProposals(null) }}>
++      {items.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
++    </select>
++  )
++
++  return (
++    <>
++      <PropertyRow label={t('editor.multicam.reference')}>{select(t('editor.multicam.reference'), referenceId, setReferenceId)}</PropertyRow>
++      <PropertyRow label={t('editor.multicam.masterAudio')}>{select(t('editor.multicam.masterAudio'), masterId, setMasterId)}</PropertyRow>
++      {items.filter((item) => item.id !== referenceId).map((item) => {
++        const proposal = proposals?.find((p) => p.itemId === item.id)
++        return (
++          <PropertyRow key={item.id} label={item.label}>
++            <div className="flex w-full flex-col gap-1">
++              <div className="flex items-center gap-1">
++                <Input type="number" step={1} className="h-7 min-w-0 flex-1 px-2 text-xs"
++                  aria-label={t('editor.multicam.offset', { label: item.label })}
++                  value={offsets[item.id] ?? 0}
++                  onChange={(event) => setOffsets((current) => ({ ...current, [item.id]: Math.round(Number(event.target.value)) }))} />
++                <span className="text-xs text-muted-foreground">{t('editor.multicam.frames')}</span>
++              </div>
++              {proposal && (proposal.sync.flags.length === 0
++                ? <span className="text-xs">{t('editor.multicam.matched', { score: Math.round(proposal.sync.score * 100) })}</span>
++                : proposal.sync.flags.map((flag) => <span key={flag} className="text-xs text-amber-500">{t(`editor.multicam.flag.${flag}`)}</span>))}
++            </div>
++          </PropertyRow>
++        )
++      })}
++      <div className="flex items-center gap-2 px-1 py-2" aria-live="polite">
++        {busy ? (
++          <Button variant="ghost" size="sm" className="h-7 flex-1 text-xs" onClick={() => abortRef.current?.abort()}>{t('editor.multicam.cancel')}</Button>
++        ) : (
++          <Button variant="ghost" size="sm" className="h-7 flex-1 text-xs" onClick={() => void analyze()}>{t('editor.multicam.syncByAudio')}</Button>
++        )}
++        <Button size="sm" className="h-7 flex-1 text-xs" disabled={busy} onClick={create}>{t('editor.multicam.create')}</Button>
++      </div>
++      <p className="px-1 pb-2 text-xs text-muted-foreground">{t('editor.multicam.createNote')}</p>
++    </>
++  )
++}
++
++/** Cut the program between angles at the playhead; number keys 1–4 while focused. */
++function CutControls({ groupId }: { groupId: string }) {
++  const { t } = useTranslation()
++  const group = getMulticamGroup(groupId)
++  const angles = group?.record.angles ?? []
++  const labels = useTimelineStore((s) => angles.map((angle) => s.items.find((item) => item.id === angle.itemId)?.label ?? '?').join('\u0000')).split('\u0000')
++
++  const cut = (index: number) => {
++    const outcome = cutToAngle(groupId, index, usePlaybackStore.getState().currentFrame)
++    if (!outcome.ok) {
++      toast.warning(outcome.reason === 'no-coverage' && outcome.missing
++        ? t('editor.multicam.refusal.no-coverage-range', { from: outcome.missing[0], to: outcome.missing[1] })
++        : t(`editor.multicam.refusal.${outcome.reason}`))
++    }
++  }
++
++  return (
++    <div
++      className="grid grid-cols-2 gap-2 px-1 py-2"
++      role="group"
++      aria-label={t('editor.multicam.angles')}
++      onKeyDown={(event) => {
++        const index = Number(event.key) - 1
++        if (Number.isInteger(index) && index >= 0 && index < angles.length) {
++          event.preventDefault()
++          cut(index)
++        }
++      }}
++    >
++      {angles.map((angle, index) => (
++        <Button key={angle.itemId} variant="secondary" size="sm" className="h-auto min-h-7 justify-start text-left text-xs"
++          onClick={() => cut(index)} aria-keyshortcuts={String(index + 1)}
++          aria-label={t('editor.multicam.cutTo', { n: index + 1, label: labels[index] })}>
++          <span className="mr-2 rounded bg-muted px-1 font-mono">{index + 1}</span>
++          <span className="truncate">{labels[index]}</span>
++        </Button>
++      ))}
++      <p className="col-span-2 text-xs text-muted-foreground">{t('editor.multicam.cutNote')}</p>
++    </div>
++  )
++}
++
++export function MulticamSection({ items }: { items: TimelineItem[] }) {
++  const { t } = useTranslation()
++  const tracks = useTimelineStore((s) => s.tracks)
++  const programGroupId = items.length === 1
++    ? (tracks.find((track) => track.id === items[0]!.trackId) as { multicam?: { role: string; groupId: string } } | undefined)?.multicam
++    : undefined
++  const videos = items.filter((item) => item.type === 'video')
++  const canCreate = videos.length >= 2 && videos.length <= 4 && videos.length === items.filter((item) => item.type !== 'audio').length
++  if (!canCreate && programGroupId?.role !== 'program') return null
++
++  return (
++    <PropertySection title={t('editor.multicam.title')} icon={Clapperboard} defaultOpen={true}>
++      {programGroupId?.role === 'program'
++        ? <CutControls groupId={programGroupId.groupId} />
++        : <CreateMulticam key={videos.map((item) => item.id).join(',')} items={videos} />}
++    </PropertySection>
++  )
++}
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -25,6 +25,13 @@ export {
+   type RetimePolicy,
+ } from '@/features/timeline/utils/project-retime'
+ export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
++export {
++  analyzeMulticamSync,
++  createMulticamEdit,
++  cutToAngle,
++  getMulticamGroup,
++  type MulticamSyncProposal,
++} from '@/features/timeline/stores/actions/edit/multicam-actions'
+ export {
+   addCompositionControl,
+   removeCompositionControl,
+diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts b/src/features/timeline/stores/actions/edit/multicam-actions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/multicam-actions.test.ts
+@@ -0,0 +1,122 @@
++// @vitest-environment node
++
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import type { AudioItem, TimelineTrack, VideoItem } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTimelineCommandStore } from '../../timeline-command-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { createMulticamEdit, cutToAngle, getMulticamGroup } from './multicam-actions'
++
++const track = (id: string, order: number, locked = false) => ({
++  id, name: id, order, height: 80, locked, syncLock: true, visible: true, muted: false,
++  solo: false, volume: 0, items: [], kind: id.startsWith('a') ? 'audio' : 'video',
++}) as TimelineTrack
++
++function camera(n: number, from: number, sourceStart: number, duration = 300): [VideoItem, AudioItem] {
++  const shared = { from, durationInFrames: duration, mediaId: `cam${n}`, sourceStart, sourceEnd: sourceStart + duration, sourceFps: 30, linkedGroupId: `g${n}` }
++  return [
++    { id: `v${n}`, type: 'video', trackId: `v${n}`, label: `Camera ${n}`, src: 'blob:v', ...shared } as VideoItem,
++    { id: `a${n}`, type: 'audio', trackId: `a${n}`, label: `Camera ${n}`, src: 'blob:a', ...shared } as AudioItem,
++  ]
++}
++
++const byId = (id: string) => useItemsStore.getState().itemById[id]!
++
++describe('multicam', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useItemsStore.getState().setTracks([
++      track('v1', 0), track('v2', 1), track('v3', 2), track('a1', 3), track('a2', 4), track('a3', 5),
++    ])
++    useItemsStore.getState().setItems([...camera(1, 0, 0), ...camera(2, 0, 0), ...camera(3, 0, 60)])
++  })
++
++  // Camera 2 started 1.5 s after the reference: reference source s is camera-2 source s - 1.5.
++  const angles = [
++    { itemId: 'v1', offsetSeconds: 0 },
++    { itemId: 'v2', offsetSeconds: -1.5 },
++    { itemId: 'v3', offsetSeconds: 0.5, manual: true },
++  ]
++
++  it('lines up the angles, hides them, keeps one master audio and adds a program track, in one undo step', () => {
++    const outcome = createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v2' })
++    expect(outcome.ok).toBe(true)
++    if (!outcome.ok) return
++
++    // Same moment at the same frame: camera 2 (1.5 s late) and camera 3 (source 2 s in, 0.5 s offset) both start at frame 45.
++    expect(byId('v2').from).toBe(45)
++    expect(byId('a2').from).toBe(45)
++    expect(byId('v3').from).toBe(45)
++
++    const { record, track: program } = getMulticamGroup(outcome.groupId)!
++    expect(record).toMatchObject({ role: 'program', algorithm: 'manual', referenceItemId: 'v1', masterAudioItemId: 'a2' })
++    expect(record.angles!.map((angle) => angle.offsetSeconds)).toEqual([0, -1.5, 0.5])
++    const tracks = useItemsStore.getState().tracks
++    expect(tracks.filter((t) => ['v1', 'v2', 'v3'].includes(t.id)).every((t) => t.visible === false)).toBe(true)
++    expect(program.order).toBeLessThan(Math.min(...tracks.filter((t) => t.id !== program.id).map((t) => t.order)))
++
++    // Only the master camera's sound stays on; nothing is doubled.
++    expect([byId('a1').muted, byId('a2').muted, byId('a3').muted]).toEqual([true, undefined, true])
++
++    const clips = useItemsStore.getState().items.filter((item) => item.trackId === program.id)
++    expect(clips).toHaveLength(1)
++    expect(clips[0]).toMatchObject({ from: 0, durationInFrames: 300, mediaId: 'cam1', muted: true, embeddedAudioMuted: true, linkedGroupId: undefined })
++
++    useTimelineCommandStore.getState().undo()
++    expect(useItemsStore.getState().items).toHaveLength(6)
++    expect(byId('v2').from).toBe(0)
++    expect(useItemsStore.getState().tracks.every((t) => t.visible)).toBe(true)
++  })
++
++  it('cuts the picture between angles at the playhead with source ranges from the alignment', () => {
++    const outcome = createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
++    if (!outcome.ok) throw new Error(outcome.reason)
++    const { track: program } = getMulticamGroup(outcome.groupId)!
++
++    expect(cutToAngle(outcome.groupId, 1, 100)).toEqual({ ok: true })
++    expect(cutToAngle(outcome.groupId, 2, 200)).toEqual({ ok: true })
++    const clips = useItemsStore.getState().items.filter((item) => item.trackId === program.id).sort((a, b) => a.from - b.from) as VideoItem[]
++    expect(clips.map((clip) => [clip.from, clip.durationInFrames, clip.mediaId])).toEqual([[0, 100, 'cam1'], [100, 100, 'cam2'], [200, 100, 'cam3']])
++    // Camera 2 sits at frame 45, source 0: frame 100 is its source frame 55.
++    expect(clips[1]).toMatchObject({ sourceStart: 55, sourceEnd: 155 })
++    // No gaps or overlaps between cuts.
++    expect(clips.every((clip, i) => i === 0 || clip.from === clips[i - 1]!.from + clips[i - 1]!.durationInFrames)).toBe(true)
++    // Master audio is untouched by cuts.
++    expect(byId('a1')).toMatchObject({ from: 0, durationInFrames: 300 })
++
++    // Switching an existing cut replaces the whole interval.
++    expect(cutToAngle(outcome.groupId, 0, 100)).toEqual({ ok: true })
++    const switched = useItemsStore.getState().items.filter((item) => item.trackId === program.id).sort((a, b) => a.from - b.from)
++    expect(switched.map((clip) => clip.mediaId)).toEqual(['cam1', 'cam1', 'cam3'])
++  })
++
++  it('refuses a cut where the angle has no picture and leaves the program unchanged', () => {
++    const outcome = createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
++    if (!outcome.ok) throw new Error(outcome.reason)
++    const before = structuredClone(useItemsStore.getState().items)
++    // Camera 2 starts at frame 45.
++    expect(cutToAngle(outcome.groupId, 1, 10)).toMatchObject({ ok: false, reason: 'no-coverage' })
++    expect(useItemsStore.getState().items).toEqual(before)
++  })
++
++  it.each([
++    ['angle-count', () => createMulticamEdit({ referenceId: 'v1', angles: [angles[0]!], masterItemId: 'v1' })],
++    ['shared-track', () => {
++      useItemsStore.getState()._addItem({ ...camera(9, 400, 0)[0], id: 'other', linkedGroupId: undefined, trackId: 'v2' } as VideoItem)
++      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
++    }],
++    ['locked', () => {
++      useItemsStore.getState().setTracks([track('v1', 0), track('v2', 1, true), track('v3', 2), track('a1', 3), track('a2', 4), track('a3', 5)])
++      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
++    }],
++    ['retimed', () => {
++      useItemsStore.getState()._updateItem('v3', { speed: 2 })
++      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
++    }],
++  ])('refuses %s without changing the project', (reason, act) => {
++    const outcome = act()
++    expect(outcome).toEqual({ ok: false, reason })
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++  })
++})
+diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src/features/timeline/stores/actions/edit/multicam-actions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/multicam-actions.ts
+@@ -0,0 +1,285 @@
++import type { AudioItem, TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { execute } from '../shared'
++import { hasLockedEditParticipants } from '../linked-edit'
++import { getOrDecodeAudioSliceForPlayback } from '@/features/timeline/deps/composition-runtime'
++import { resolveMediaUrl } from '@/features/timeline/deps/media-library-resolver'
++import { getLinkedItems } from '../../../utils/linked-items'
++import {
++  MULTICAM_SYNC_ALGORITHM,
++  onsetEnvelope,
++  syncRecordings,
++  type SyncResult,
++} from '@/shared/utils/multicam-sync'
++
++/**
++ * Multicamera editing (FL-595), built from ordinary clips:
++ * - each angle stays a normal video clip (with its linked audio) on its own
++ *   track, moved so that one timeline frame shows the same moment in every
++ *   angle; angle tracks are hidden;
++ * - the master audio is one angle's linked audio, left audible; the other
++ *   angles' audio is muted, so camera sound is never doubled;
++ * - a "program" video track on top holds the cut: video-only copies of the
++ *   angle clips with matching source ranges. Cutting replaces the program
++ *   from the playhead to the next cut with another angle.
++ * Grouping, offsets and the master choice live in the tracks' `multicam`
++ * record so the edit can be revisited; playback and export see plain clips.
++ */
++
++const MAX_ANGLES = 4
++
++export interface MulticamAngleRecord {
++  trackId: string
++  itemId: string
++  mediaId: string | undefined
++  /** Seconds added to a reference source time to reach this angle's source time. */
++  offsetSeconds: number
++}
++
++export interface MulticamGroupRecord {
++  groupId: string
++  role: 'program' | 'angle'
++  algorithm?: typeof MULTICAM_SYNC_ALGORITHM | 'manual'
++  referenceItemId?: string
++  masterAudioItemId?: string
++  angles?: MulticamAngleRecord[]
++}
++
++type TrackWithMulticam = TimelineTrack & { multicam?: MulticamGroupRecord }
++type ItemWithMulticam = TimelineItem & { multicam?: { groupId: string; angle: number } }
++
++export type MulticamRefusal =
++  | 'angle-count'
++  | 'not-found'
++  | 'unsupported-clip'
++  | 'retimed'
++  | 'shared-track'
++  | 'locked'
++  | 'master-needs-audio-clip'
++  | 'decode-failed'
++  | 'no-group'
++  | 'no-program-clip'
++  | 'no-coverage'
++
++export interface MulticamSyncProposal {
++  itemId: string
++  label: string
++  sync: SyncResult
++}
++
++function linkedAudioOf(items: readonly TimelineItem[], item: TimelineItem): AudioItem | undefined {
++  return getLinkedItems(items as TimelineItem[], item.id).find((linked): linked is AudioItem => linked.type === 'audio')
++}
++
++function checkAngles(items: readonly TimelineItem[], ids: readonly string[]): MulticamRefusal | null {
++  if (ids.length < 2 || ids.length > MAX_ANGLES || new Set(ids).size !== ids.length) return 'angle-count'
++  const angles = ids.map((id) => items.find((item) => item.id === id))
++  if (angles.some((item) => !item)) return 'not-found'
++  if (angles.some((item) => item!.type !== 'video')) return 'unsupported-clip'
++  if (angles.some((item) => (item as VideoItem).speed !== undefined && (item as VideoItem).speed !== 1)) return 'retimed'
++  if (angles.some((item) => (item as VideoItem).isReversed === true)) return 'retimed'
++  return null
++}
++
++async function decodeEnvelope(item: TimelineItem, items: readonly TimelineItem[], signal?: AbortSignal): Promise<Float32Array | null> {
++  const owner = linkedAudioOf(items, item) ?? item
++  if (!owner.mediaId) return null
++  const url = await resolveMediaUrl(owner.mediaId)
++  if (!url || signal?.aborted) return null
++  const durationSeconds = (owner as VideoItem).sourceDuration !== undefined
++    ? (owner as VideoItem).sourceDuration! / ((owner as VideoItem).sourceFps ?? 30)
++    : 3600
++  const slice = await getOrDecodeAudioSliceForPlayback(owner.mediaId, url, {
++    targetTimeSeconds: 0, minReadySeconds: durationSeconds, preRollSeconds: 0, waitTimeoutMs: 0,
++  })
++  const { buffer } = slice
++  return onsetEnvelope({
++    sampleRate: buffer.sampleRate,
++    channels: Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)),
++  })
++}
++
++/** Align each angle's whole recording to the reference's by sound. Nothing changes in the project. */
++export async function analyzeMulticamSync(
++  itemIds: readonly string[],
++  referenceId: string,
++  signal?: AbortSignal,
++): Promise<{ ok: true; proposals: MulticamSyncProposal[] } | { ok: false; reason: MulticamRefusal }> {
++  const items = useItemsStore.getState().items
++  const refusal = checkAngles(items, itemIds)
++  if (refusal) return { ok: false, reason: refusal }
++  if (!itemIds.includes(referenceId)) return { ok: false, reason: 'not-found' }
++  const fps = useTimelineSettingsStore.getState().fps
++  try {
++    const reference = await decodeEnvelope(items.find((item) => item.id === referenceId)!, items, signal)
++    if (!reference) return { ok: false, reason: 'decode-failed' }
++    const proposals: MulticamSyncProposal[] = []
++    for (const id of itemIds) {
++      if (signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError')
++      if (id === referenceId) continue
++      const item = items.find((candidate) => candidate.id === id)!
++      const envelope = await decodeEnvelope(item, items, signal)
++      proposals.push({
++        itemId: id,
++        label: item.label,
++        sync: envelope
++          ? syncRecordings(reference, envelope, { frameSeconds: 1 / fps })
++          : { offsetSeconds: 0, score: 0, flags: ['no-match'], driftSeconds: null },
++      })
++    }
++    return { ok: true, proposals }
++  } catch (error) {
++    if (error instanceof DOMException && error.name === 'AbortError') throw error
++    return { ok: false, reason: 'decode-failed' }
++  }
++}
++
++const sourceSeconds = (item: VideoItem | AudioItem, fps: number) => (item.sourceStart ?? 0) / (item.sourceFps ?? fps)
++
++/**
++ * Create the multicamera edit in one undo step. `angles` gives each angle's
++ * approved offset (the reference's is 0; manual offsets are allowed for
++ * angles whose analysis failed). The master audio is the linked audio of
++ * `masterItemId`.
++ */
++export function createMulticamEdit(params: {
++  referenceId: string
++  angles: ReadonlyArray<{ itemId: string; offsetSeconds: number; manual?: boolean }>
++  masterItemId: string
++}): { ok: true; groupId: string } | { ok: false; reason: MulticamRefusal } {
++  const { items, tracks } = useItemsStore.getState()
++  const ids = params.angles.map((angle) => angle.itemId)
++  const refusal = checkAngles(items, ids)
++  if (refusal) return { ok: false, reason: refusal }
++  const angleItems = ids.map((id) => items.find((item) => item.id === id) as VideoItem)
++  const reference = angleItems.find((item) => item.id === params.referenceId)
++  const master = angleItems.find((item) => item.id === params.masterItemId)
++  if (!reference || !master) return { ok: false, reason: 'not-found' }
++  const masterAudio = linkedAudioOf(items, master)
++  if (!masterAudio) return { ok: false, reason: 'master-needs-audio-clip' }
++
++  // Each angle and its audio must own their tracks, so hiding or muting a track affects only that angle.
++  const participants = angleItems.flatMap((item) => [item, ...getLinkedItems(items, item.id).filter((l) => l.id !== item.id)])
++  const participantIds = new Set(participants.map((item) => item.id))
++  const angleTrackIds = angleItems.map((item) => item.trackId)
++  if (new Set(angleTrackIds).size !== angleTrackIds.length
++    || items.some((item) => angleTrackIds.includes(item.trackId) && !participantIds.has(item.id))) {
++    return { ok: false, reason: 'shared-track' }
++  }
++  if (hasLockedEditParticipants(participants)) return { ok: false, reason: 'locked' }
++
++  const fps = useTimelineSettingsStore.getState().fps
++  const groupId = crypto.randomUUID()
++  const moves: Array<{ id: string; from: number }> = []
++  const offsets = new Map(params.angles.map((angle) => [angle.itemId, angle.itemId === params.referenceId ? 0 : angle.offsetSeconds]))
++  for (const item of angleItems) {
++    // Same moment: reference source s at frame t ⇔ angle source s + offset at frame t.
++    const from = reference.from + Math.round((sourceSeconds(item, fps) - sourceSeconds(reference, fps) - offsets.get(item.id)!) * fps)
++    const delta = from - item.from
++    if (delta === 0) continue
++    for (const member of [item, ...getLinkedItems(items, item.id).filter((l) => l.id !== item.id)]) {
++      moves.push({ id: member.id, from: member.from + delta })
++    }
++  }
++  if (moves.some((move) => move.from < 0)) return { ok: false, reason: 'no-coverage' }
++
++  const programTrackId = `multicam-program-${groupId}`
++  const topOrder = Math.min(...tracks.map((track) => track.order))
++  const programTrack: TrackWithMulticam = {
++    id: programTrackId, name: 'Multicam', kind: 'video', order: topOrder - 1, height: 80,
++    locked: false, syncLock: true, visible: true, muted: false, solo: false, volume: 0, items: [],
++    multicam: {
++      groupId, role: 'program',
++      algorithm: params.angles.some((angle) => angle.manual) ? 'manual' : MULTICAM_SYNC_ALGORITHM,
++      referenceItemId: reference.id, masterAudioItemId: masterAudio.id,
++      angles: angleItems.map((item) => ({ trackId: item.trackId, itemId: item.id, mediaId: item.mediaId, offsetSeconds: offsets.get(item.id)! })),
++    },
++  }
++
++  execute('CREATE_MULTICAM_EDIT', () => {
++    const store = useItemsStore.getState()
++    if (moves.length > 0) store._moveItems(moves)
++    const angleTrackSet = new Set(angleTrackIds)
++    store.setTracks([
++      programTrack,
++      ...store.tracks.map((track): TrackWithMulticam => angleTrackSet.has(track.id)
++        ? { ...track, visible: false, multicam: { groupId, role: 'angle' } }
++        : track),
++    ])
++    // Only the master audio stays audible; other cameras' sound is muted, never doubled.
++    for (const item of angleItems) {
++      const audio = linkedAudioOf(store.items, item)
++      if (audio && audio.id !== masterAudio.id) store._updateItem(audio.id, { muted: true })
++    }
++    const placedReference = store.itemById[reference.id] as VideoItem
++    store._addItem(programClip(placedReference, programTrackId, groupId, angleItems.indexOf(reference), placedReference.from, placedReference.durationInFrames, fps))
++    useTimelineSettingsStore.getState().markDirty()
++  }, { groupId, angles: ids.length })
++  return { ok: true, groupId }
++}
++
++/** A video-only copy of an angle covering [from, from + duration) on the program track. */
++function programClip(angle: VideoItem, trackId: string, groupId: string, angleIndex: number, from: number, duration: number, fps: number): ItemWithMulticam {
++  const sourceFps = angle.sourceFps ?? fps
++  const sourceStart = (angle.sourceStart ?? 0) + Math.round(((from - angle.from) * sourceFps) / fps)
++  return {
++    ...angle,
++    id: crypto.randomUUID(),
++    trackId,
++    from,
++    durationInFrames: duration,
++    sourceStart,
++    sourceEnd: sourceStart + Math.round((duration * sourceFps) / fps),
++    linkedGroupId: undefined,
++    originId: undefined,
++    embeddedAudioMuted: true,
++    muted: true,
++    multicam: { groupId, angle: angleIndex },
++  } as ItemWithMulticam
++}
++
++export function getMulticamGroup(groupId: string): { track: TrackWithMulticam; record: MulticamGroupRecord } | null {
++  const track = (useItemsStore.getState().tracks as TrackWithMulticam[]).find(
++    (candidate) => candidate.multicam?.groupId === groupId && candidate.multicam.role === 'program',
++  )
++  return track?.multicam ? { track, record: track.multicam } : null
++}
++
++/**
++ * Cut the program to `angleIndex` at `frame`, up to the next cut, in one undo
++ * step. Refuses when the angle has no picture for that whole interval, so a
++ * cut never leaves black or a gap; master audio is untouched.
++ */
++export function cutToAngle(groupId: string, angleIndex: number, frame: number): { ok: true } | { ok: false; reason: MulticamRefusal; missing?: [number, number] } {
++  const group = getMulticamGroup(groupId)
++  if (!group) return { ok: false, reason: 'no-group' }
++  const { items } = useItemsStore.getState()
++  const program = items.find((item) => item.trackId === group.track.id && item.from <= frame && frame < item.from + item.durationInFrames) as ItemWithMulticam | undefined
++  if (!program) return { ok: false, reason: 'no-program-clip' }
++  const angleRecord = group.record.angles?.[angleIndex]
++  const angle = angleRecord && items.find((item) => item.id === angleRecord.itemId) as VideoItem | undefined
++  if (!angle) return { ok: false, reason: 'not-found' }
++  if (program.multicam?.angle === angleIndex) return { ok: true }
++  const end = program.from + program.durationInFrames
++  if (angle.from > frame || angle.from + angle.durationInFrames < end) {
++    return { ok: false, reason: 'no-coverage', missing: [Math.max(frame, Math.min(end, angle.from + angle.durationInFrames)), Math.min(end, Math.max(frame, angle.from))] }
++  }
++  if (hasLockedEditParticipants([program])) return { ok: false, reason: 'locked' }
++
++  const fps = useTimelineSettingsStore.getState().fps
++  execute('MULTICAM_CUT', () => {
++    const store = useItemsStore.getState()
++    if (frame > program.from) {
++      const left = programClip(store.itemById[(program.multicam ? group.record.angles![program.multicam.angle]!.itemId : angle.id)] as VideoItem,
++        group.track.id, groupId, program.multicam?.angle ?? angleIndex, program.from, frame - program.from, fps)
++      store._removeItems([program.id])
++      store._addItems([{ ...left, id: program.id }, programClip(angle, group.track.id, groupId, angleIndex, frame, end - frame, fps)])
++    } else {
++      store._removeItems([program.id])
++      store._addItem({ ...programClip(angle, group.track.id, groupId, angleIndex, program.from, program.durationInFrames, fps), id: program.id })
++    }
++    useTimelineSettingsStore.getState().markDirty()
++  }, { groupId, angleIndex, frame })
++  return { ok: true }
++}
+diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
+--- a/src/i18n/locales/partials/de/editor.json
++++ b/src/i18n/locales/partials/de/editor.json
+@@ -881,6 +881,41 @@
+     "colorPanel": {
+       "emptyState": "Wähle einen Clip für die Farbkorrektur aus",
+       "adjustmentLayerLabel": "Farbkorrektur"
++    },
++    "multicam": {
++      "title": "Multicam",
++      "reference": "Synchronisieren mit",
++      "masterAudio": "Master-Ton",
++      "offset": "Versatz von {{label}} in Bildern",
++      "frames": "Bilder",
++      "matched": "Per Ton abgeglichen ({{score}} %)",
++      "syncByAudio": "Per Ton synchronisieren",
++      "cancel": "Abbrechen",
++      "create": "Multicam-Schnitt erstellen",
++      "created": "Multicam-Schnitt erstellt",
++      "createNote": "Die Winkel werden so ausgerichtet, dass derselbe Moment gleichzeitig läuft, und dann ausgeblendet; eine Multicam-Spur oben enthält den Schnitt. Nur der Master-Ton bleibt hörbar.",
++      "angles": "Winkel",
++      "cutTo": "Schnitt zu Winkel {{n}}: {{label}}",
++      "cutNote": "Schneidet am Abspielkopf bis zum nächsten Schnitt. Drücke 1–4, wenn eine Winkel-Schaltfläche den Fokus hat. Der Master-Ton bleibt unverändert.",
++      "flag": {
++        "no-match": "Kein gemeinsamer Ton gefunden: Versatz manuell setzen.",
++        "ambiguous": "Mehrere Ausrichtungen passen gleich gut: Versatz manuell prüfen.",
++        "drift": "Die Uhren der Kameras laufen auseinander: Ein Versatz hält nicht für die ganze Aufnahme. Kürzere Clips verwenden oder manuell neu synchronisieren."
++      },
++      "refusal": {
++        "angle-count": "Wähle 2 bis 4 Videoclips aus.",
++        "not-found": "Ein ausgewählter Clip fehlt.",
++        "unsupported-clip": "Nur Videoclips können Winkel sein.",
++        "retimed": "Winkel müssen mit normaler Geschwindigkeit vorwärts laufen.",
++        "shared-track": "Lege jeden Winkel und seinen Ton zuerst auf eigene Spuren.",
++        "locked": "Ein Winkel liegt auf einer gesperrten Spur.",
++        "master-needs-audio-clip": "Die Master-Ton-Kamera braucht einen verknüpften Audioclip.",
++        "decode-failed": "Der Ton der Clips konnte nicht gelesen werden.",
++        "no-group": "Diesem Multicam-Schnitt fehlen die Winkel.",
++        "no-program-clip": "Setze den Abspielkopf über die Clips der Multicam-Spur.",
++        "no-coverage": "Dieser Winkel hat dort kein Bild.",
++        "no-coverage-range": "Dieser Winkel hat von Bild {{from}} bis {{to}} kein Bild; es wurde nicht geschnitten."
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -894,6 +894,41 @@
+       "dockTitle": "Color",
+       "emptyState": "Select a clip to grade",
+       "adjustmentLayerLabel": "Grade"
++    },
++    "multicam": {
++      "title": "Multicam",
++      "reference": "Sync to",
++      "masterAudio": "Master audio",
++      "offset": "Offset of {{label}} in frames",
++      "frames": "frames",
++      "matched": "Matched by sound ({{score}}%)",
++      "syncByAudio": "Sync by audio",
++      "cancel": "Cancel",
++      "create": "Create multicam edit",
++      "created": "Multicam edit created",
++      "createNote": "Angles are lined up so the same moment plays together, then hidden; a Multicam track on top holds the cut. Only the master audio stays audible.",
++      "angles": "Angles",
++      "cutTo": "Cut to angle {{n}}: {{label}}",
++      "cutNote": "Cuts at the playhead until the next cut. Press 1–4 while an angle button has focus. Master audio is not changed.",
++      "flag": {
++        "no-match": "No common sound found: set the offset by hand.",
++        "ambiguous": "Several alignments fit equally well: check the offset by hand.",
++        "drift": "The cameras' clocks drift apart: one offset won't hold for the whole recording. Use shorter clips or resync by hand."
++      },
++      "refusal": {
++        "angle-count": "Select 2 to 4 video clips.",
++        "not-found": "A selected clip is missing.",
++        "unsupported-clip": "Only video clips can be angles.",
++        "retimed": "Angles must play at normal speed and forwards.",
++        "shared-track": "Put each angle and its audio on their own tracks first.",
++        "locked": "An angle is on a locked track.",
++        "master-needs-audio-clip": "The master audio camera needs a linked audio clip.",
++        "decode-failed": "Couldn't read the clips' audio.",
++        "no-group": "This multicam edit is missing its angles.",
++        "no-program-clip": "Move the playhead over the Multicam track's clips.",
++        "no-coverage": "That angle has no picture there.",
++        "no-coverage-range": "That angle has no picture from frame {{from}} to {{to}}; the cut was not made."
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
+--- a/src/i18n/locales/partials/es/editor.json
++++ b/src/i18n/locales/partials/es/editor.json
+@@ -881,6 +881,41 @@
+     "colorPanel": {
+       "emptyState": "Selecciona un clip para etalonar",
+       "adjustmentLayerLabel": "Etalonaje"
++    },
++    "multicam": {
++      "title": "Multicámara",
++      "reference": "Sincronizar con",
++      "masterAudio": "Audio principal",
++      "offset": "Desfase de {{label}} en fotogramas",
++      "frames": "fotogramas",
++      "matched": "Igualado por sonido ({{score}} %)",
++      "syncByAudio": "Sincronizar por audio",
++      "cancel": "Cancelar",
++      "create": "Crear edición multicámara",
++      "created": "Edición multicámara creada",
++      "createNote": "Los ángulos se alinean para que el mismo momento suene a la vez y luego se ocultan; una pista Multicámara arriba contiene el corte. Solo el audio principal sigue sonando.",
++      "angles": "Ángulos",
++      "cutTo": "Cortar al ángulo {{n}}: {{label}}",
++      "cutNote": "Corta en el cabezal hasta el siguiente corte. Pulsa 1–4 con el foco en un botón de ángulo. El audio principal no cambia.",
++      "flag": {
++        "no-match": "No se encontró sonido común: fija el desfase a mano.",
++        "ambiguous": "Varias alineaciones encajan igual: revisa el desfase a mano.",
++        "drift": "Los relojes de las cámaras se separan: un desfase no vale para toda la grabación. Usa clips más cortos o resincroniza a mano."
++      },
++      "refusal": {
++        "angle-count": "Selecciona de 2 a 4 clips de vídeo.",
++        "not-found": "Falta un clip seleccionado.",
++        "unsupported-clip": "Solo los clips de vídeo pueden ser ángulos.",
++        "retimed": "Los ángulos deben reproducirse a velocidad normal y hacia delante.",
++        "shared-track": "Coloca primero cada ángulo y su audio en pistas propias.",
++        "locked": "Un ángulo está en una pista bloqueada.",
++        "master-needs-audio-clip": "La cámara del audio principal necesita un clip de audio vinculado.",
++        "decode-failed": "No se pudo leer el audio de los clips.",
++        "no-group": "A esta edición multicámara le faltan ángulos.",
++        "no-program-clip": "Mueve el cabezal sobre los clips de la pista Multicámara.",
++        "no-coverage": "Ese ángulo no tiene imagen ahí.",
++        "no-coverage-range": "Ese ángulo no tiene imagen del fotograma {{from}} al {{to}}; no se hizo el corte."
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
+--- a/src/i18n/locales/partials/fr/editor.json
++++ b/src/i18n/locales/partials/fr/editor.json
+@@ -881,6 +881,41 @@
+     "colorPanel": {
+       "emptyState": "Sélectionnez un clip à étalonner",
+       "adjustmentLayerLabel": "Étalonnage"
++    },
++    "multicam": {
++      "title": "Multicam",
++      "reference": "Synchroniser sur",
++      "masterAudio": "Son principal",
++      "offset": "Décalage de {{label}} en images",
++      "frames": "images",
++      "matched": "Aligné par le son ({{score}} %)",
++      "syncByAudio": "Synchroniser par le son",
++      "cancel": "Annuler",
++      "create": "Créer un montage multicam",
++      "created": "Montage multicam créé",
++      "createNote": "Les angles sont alignés pour que le même instant soit joué ensemble, puis masqués ; une piste Multicam en haut contient la coupe. Seul le son principal reste audible.",
++      "angles": "Angles",
++      "cutTo": "Couper sur l’angle {{n}} : {{label}}",
++      "cutNote": "Coupe à la tête de lecture jusqu’à la coupe suivante. Appuyez sur 1–4 lorsqu’un bouton d’angle a le focus. Le son principal ne change pas.",
++      "flag": {
++        "no-match": "Aucun son commun trouvé : réglez le décalage à la main.",
++        "ambiguous": "Plusieurs alignements conviennent autant : vérifiez le décalage à la main.",
++        "drift": "Les horloges des caméras dérivent : un seul décalage ne tient pas sur tout l’enregistrement. Utilisez des clips plus courts ou resynchronisez à la main."
++      },
++      "refusal": {
++        "angle-count": "Sélectionnez 2 à 4 clips vidéo.",
++        "not-found": "Un clip sélectionné est introuvable.",
++        "unsupported-clip": "Seuls les clips vidéo peuvent être des angles.",
++        "retimed": "Les angles doivent être lus à vitesse normale et vers l’avant.",
++        "shared-track": "Placez d’abord chaque angle et son son sur leurs propres pistes.",
++        "locked": "Un angle est sur une piste verrouillée.",
++        "master-needs-audio-clip": "La caméra du son principal a besoin d’un clip audio lié.",
++        "decode-failed": "Impossible de lire le son des clips.",
++        "no-group": "Il manque les angles de ce montage multicam.",
++        "no-program-clip": "Placez la tête de lecture sur les clips de la piste Multicam.",
++        "no-coverage": "Cet angle n’a pas d’image à cet endroit.",
++        "no-coverage-range": "Cet angle n’a pas d’image de l’image {{from}} à {{to}} ; la coupe n’a pas été faite."
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
+--- a/src/i18n/locales/partials/ja/editor.json
++++ b/src/i18n/locales/partials/ja/editor.json
+@@ -881,6 +881,41 @@
+     "colorPanel": {
+       "emptyState": "グレーディングするクリップを選択してください",
+       "adjustmentLayerLabel": "グレーディング"
++    },
++    "multicam": {
++      "title": "マルチカム",
++      "reference": "同期の基準",
++      "masterAudio": "メイン音声",
++      "offset": "{{label}} のオフセット（フレーム）",
++      "frames": "フレーム",
++      "matched": "音声で一致（{{score}}%）",
++      "syncByAudio": "音声で同期",
++      "cancel": "キャンセル",
++      "create": "マルチカム編集を作成",
++      "created": "マルチカム編集を作成しました",
++      "createNote": "同じ瞬間が同時に再生されるようアングルを揃えてから非表示にし、上のマルチカムトラックにカットを置きます。メイン音声だけが聞こえます。",
++      "angles": "アングル",
++      "cutTo": "アングル {{n}} にカット：{{label}}",
++      "cutNote": "再生ヘッドから次のカットまでを切り替えます。アングルボタンにフォーカスがあるとき 1〜4 キーを押します。メイン音声は変わりません。",
++      "flag": {
++        "no-match": "共通の音が見つかりません。オフセットを手動で設定してください。",
++        "ambiguous": "複数の位置が同程度に一致します。オフセットを手動で確認してください。",
++        "drift": "カメラの時計がずれていきます。1つのオフセットでは全体を合わせられません。短いクリップを使うか手動で再同期してください。"
++      },
++      "refusal": {
++        "angle-count": "動画クリップを 2〜4 個選択してください。",
++        "not-found": "選択したクリップが見つかりません。",
++        "unsupported-clip": "アングルにできるのは動画クリップだけです。",
++        "retimed": "アングルは通常速度で順再生する必要があります。",
++        "shared-track": "まず各アングルとその音声を専用のトラックに置いてください。",
++        "locked": "アングルがロックされたトラックにあります。",
++        "master-needs-audio-clip": "メイン音声のカメラにはリンクされた音声クリップが必要です。",
++        "decode-failed": "クリップの音声を読み取れませんでした。",
++        "no-group": "このマルチカム編集にはアングルがありません。",
++        "no-program-clip": "再生ヘッドをマルチカムトラックのクリップ上に移動してください。",
++        "no-coverage": "そのアングルはそこに映像がありません。",
++        "no-coverage-range": "そのアングルはフレーム {{from}}〜{{to}} に映像がないため、カットしませんでした。"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
+--- a/src/i18n/locales/partials/ko/editor.json
++++ b/src/i18n/locales/partials/ko/editor.json
+@@ -881,6 +881,41 @@
+     "colorPanel": {
+       "emptyState": "색 보정할 클립을 선택하세요",
+       "adjustmentLayerLabel": "색 보정"
++    },
++    "multicam": {
++      "title": "멀티캠",
++      "reference": "기준 동기화",
++      "masterAudio": "메인 오디오",
++      "offset": "{{label}} 오프셋(프레임)",
++      "frames": "프레임",
++      "matched": "소리로 맞춤({{score}}%)",
++      "syncByAudio": "오디오로 동기화",
++      "cancel": "취소",
++      "create": "멀티캠 편집 만들기",
++      "created": "멀티캠 편집을 만들었습니다",
++      "createNote": "같은 순간이 함께 재생되도록 앵글을 맞춘 뒤 숨기고, 위의 멀티캠 트랙에 컷을 둡니다. 메인 오디오만 들립니다.",
++      "angles": "앵글",
++      "cutTo": "앵글 {{n}}로 컷: {{label}}",
++      "cutNote": "재생 헤드부터 다음 컷까지 바꿉니다. 앵글 버튼에 포커스가 있을 때 1–4를 누르세요. 메인 오디오는 바뀌지 않습니다.",
++      "flag": {
++        "no-match": "공통 소리를 찾지 못했습니다. 오프셋을 직접 설정하세요.",
++        "ambiguous": "여러 정렬이 비슷하게 맞습니다. 오프셋을 직접 확인하세요.",
++        "drift": "카메라 시계가 서로 어긋납니다. 하나의 오프셋으로 전체를 맞출 수 없습니다. 더 짧은 클립을 쓰거나 직접 다시 동기화하세요."
++      },
++      "refusal": {
++        "angle-count": "비디오 클립을 2~4개 선택하세요.",
++        "not-found": "선택한 클립이 없습니다.",
++        "unsupported-clip": "비디오 클립만 앵글이 될 수 있습니다.",
++        "retimed": "앵글은 정상 속도로 정방향 재생되어야 합니다.",
++        "shared-track": "먼저 각 앵글과 오디오를 각자의 트랙에 두세요.",
++        "locked": "앵글이 잠긴 트랙에 있습니다.",
++        "master-needs-audio-clip": "메인 오디오 카메라에 연결된 오디오 클립이 필요합니다.",
++        "decode-failed": "클립의 오디오를 읽을 수 없습니다.",
++        "no-group": "이 멀티캠 편집에 앵글이 없습니다.",
++        "no-program-clip": "재생 헤드를 멀티캠 트랙의 클립 위로 옮기세요.",
++        "no-coverage": "그 앵글에는 그곳에 영상이 없습니다.",
++        "no-coverage-range": "그 앵글은 프레임 {{from}}~{{to}}에 영상이 없어 컷하지 않았습니다."
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
+--- a/src/i18n/locales/partials/pt-BR/editor.json
++++ b/src/i18n/locales/partials/pt-BR/editor.json
+@@ -881,6 +881,41 @@
+     "colorPanel": {
+       "emptyState": "Selecione um clipe para corrigir as cores",
+       "adjustmentLayerLabel": "Correção de cor"
++    },
++    "multicam": {
++      "title": "Multicâmera",
++      "reference": "Sincronizar com",
++      "masterAudio": "Áudio principal",
++      "offset": "Deslocamento de {{label}} em quadros",
++      "frames": "quadros",
++      "matched": "Alinhado pelo som ({{score}}%)",
++      "syncByAudio": "Sincronizar pelo áudio",
++      "cancel": "Cancelar",
++      "create": "Criar edição multicâmera",
++      "created": "Edição multicâmera criada",
++      "createNote": "Os ângulos são alinhados para que o mesmo momento toque junto e depois ocultados; uma faixa Multicâmera no topo guarda o corte. Só o áudio principal fica audível.",
++      "angles": "Ângulos",
++      "cutTo": "Cortar para o ângulo {{n}}: {{label}}",
++      "cutNote": "Corta no cursor até o próximo corte. Pressione 1–4 com o foco em um botão de ângulo. O áudio principal não muda.",
++      "flag": {
++        "no-match": "Nenhum som em comum encontrado: defina o deslocamento manualmente.",
++        "ambiguous": "Vários alinhamentos servem igualmente: confira o deslocamento manualmente.",
++        "drift": "Os relógios das câmeras se afastam: um único deslocamento não vale para toda a gravação. Use clipes mais curtos ou ressincronize manualmente."
++      },
++      "refusal": {
++        "angle-count": "Selecione de 2 a 4 clipes de vídeo.",
++        "not-found": "Um clipe selecionado está faltando.",
++        "unsupported-clip": "Só clipes de vídeo podem ser ângulos.",
++        "retimed": "Os ângulos precisam tocar em velocidade normal e para frente.",
++        "shared-track": "Coloque primeiro cada ângulo e seu áudio em faixas próprias.",
++        "locked": "Um ângulo está em uma faixa bloqueada.",
++        "master-needs-audio-clip": "A câmera do áudio principal precisa de um clipe de áudio vinculado.",
++        "decode-failed": "Não foi possível ler o áudio dos clipes.",
++        "no-group": "Esta edição multicâmera está sem ângulos.",
++        "no-program-clip": "Mova o cursor sobre os clipes da faixa Multicâmera.",
++        "no-coverage": "Esse ângulo não tem imagem ali.",
++        "no-coverage-range": "Esse ângulo não tem imagem do quadro {{from}} ao {{to}}; o corte não foi feito."
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
+--- a/src/i18n/locales/partials/tr/editor.json
++++ b/src/i18n/locales/partials/tr/editor.json
+@@ -881,6 +881,41 @@
+     "colorPanel": {
+       "emptyState": "Renk düzenlemek için bir klip seçin",
+       "adjustmentLayerLabel": "Renk düzenleme"
++    },
++    "multicam": {
++      "title": "Çoklu kamera",
++      "reference": "Eşitlenecek kaynak",
++      "masterAudio": "Ana ses",
++      "offset": "{{label}} kayması (kare)",
++      "frames": "kare",
++      "matched": "Sesle eşleşti (%{{score}})",
++      "syncByAudio": "Sesle eşitle",
++      "cancel": "İptal",
++      "create": "Çoklu kamera kurgusu oluştur",
++      "created": "Çoklu kamera kurgusu oluşturuldu",
++      "createNote": "Açılar aynı an birlikte oynayacak şekilde hizalanır ve gizlenir; üstteki Çoklu kamera izi kesmeyi tutar. Yalnızca ana ses duyulur.",
++      "angles": "Açılar",
++      "cutTo": "{{n}}. açıya kes: {{label}}",
++      "cutNote": "Oynatma kafasından bir sonraki kesmeye kadar keser. Bir açı düğmesine odaklanmışken 1–4'e basın. Ana ses değişmez.",
++      "flag": {
++        "no-match": "Ortak ses bulunamadı: kaymayı elle ayarlayın.",
++        "ambiguous": "Birden çok hizalama eşit derecede uyuyor: kaymayı elle kontrol edin.",
++        "drift": "Kameraların saatleri birbirinden kayıyor: tek bir kayma tüm kayıt için geçerli olmaz. Daha kısa klipler kullanın veya elle yeniden eşitleyin."
++      },
++      "refusal": {
++        "angle-count": "2 ile 4 arasında video klibi seçin.",
++        "not-found": "Seçilen bir klip eksik.",
++        "unsupported-clip": "Yalnızca video klipleri açı olabilir.",
++        "retimed": "Açılar normal hızda ve ileri oynamalı.",
++        "shared-track": "Önce her açıyı ve sesini kendi izlerine koyun.",
++        "locked": "Bir açı kilitli bir izde.",
++        "master-needs-audio-clip": "Ana ses kamerasının bağlı bir ses klibi olmalı.",
++        "decode-failed": "Kliplerin sesi okunamadı.",
++        "no-group": "Bu çoklu kamera kurgusunun açıları eksik.",
++        "no-program-clip": "Oynatma kafasını Çoklu kamera izinin kliplerinin üzerine getirin.",
++        "no-coverage": "O açının orada görüntüsü yok.",
++        "no-coverage-range": "O açının {{from}}–{{to}} kareleri arasında görüntüsü yok; kesme yapılmadı."
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
+--- a/src/i18n/locales/partials/zh/editor.json
++++ b/src/i18n/locales/partials/zh/editor.json
+@@ -881,6 +881,41 @@
+     "colorPanel": {
+       "emptyState": "选择要调色的剪辑",
+       "adjustmentLayerLabel": "调色"
++    },
++    "multicam": {
++      "title": "多机位",
++      "reference": "同步基准",
++      "masterAudio": "主音频",
++      "offset": "{{label}} 的偏移（帧）",
++      "frames": "帧",
++      "matched": "已按声音匹配（{{score}}%）",
++      "syncByAudio": "按音频同步",
++      "cancel": "取消",
++      "create": "创建多机位剪辑",
++      "created": "已创建多机位剪辑",
++      "createNote": "对齐各机位，使同一时刻同时播放，然后隐藏它们；顶部的多机位轨道保存剪切。只有主音频可以听到。",
++      "angles": "机位",
++      "cutTo": "切换到机位 {{n}}：{{label}}",
++      "cutNote": "从播放头切换到下一个剪切点。在机位按钮获得焦点时按 1–4。主音频不变。",
++      "flag": {
++        "no-match": "未找到共同的声音：请手动设置偏移。",
++        "ambiguous": "多个对齐方式同样匹配：请手动检查偏移。",
++        "drift": "各摄像机的时钟逐渐偏离：单一偏移无法覆盖整段录制。请使用更短的片段或手动重新同步。"
++      },
++      "refusal": {
++        "angle-count": "请选择 2 到 4 个视频片段。",
++        "not-found": "缺少一个所选片段。",
++        "unsupported-clip": "只有视频片段可以作为机位。",
++        "retimed": "机位必须以正常速度正向播放。",
++        "shared-track": "请先把每个机位及其音频放到各自的轨道上。",
++        "locked": "某个机位位于锁定的轨道。",
++        "master-needs-audio-clip": "主音频所在的机位需要一个链接的音频片段。",
++        "decode-failed": "无法读取片段的音频。",
++        "no-group": "此多机位剪辑缺少机位。",
++        "no-program-clip": "请把播放头移到多机位轨道的片段上。",
++        "no-coverage": "该机位在那里没有画面。",
++        "no-coverage-range": "该机位在第 {{from}} 到 {{to}} 帧没有画面，未进行剪切。"
++      }
+     }
+   }
+ }
+diff --git a/src/shared/utils/multicam-sync.test.ts b/src/shared/utils/multicam-sync.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/multicam-sync.test.ts
+@@ -0,0 +1,62 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { onsetEnvelope, syncRecordings } from './multicam-sync'
++
++const RATE = 8000
++
++function seeded(seed: number) {
++  let state = seed >>> 0
++  return () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32)
++}
++
++/** An event soundtrack: decaying noise bursts at random times. Same seed = same event. */
++function event(seconds: number, seed: number, drift = 1): Float32Array {
++  const random = seeded(seed)
++  const samples = new Float32Array(Math.round(seconds * RATE))
++  const noise = seeded(seed + 1)
++  for (let burst = 0; burst < seconds * 3; burst += 1) {
++    const at = Math.round(random() * seconds * RATE * drift)
++    const gain = 0.2 + 0.8 * random()
++    for (let i = 0; i < 800 && at + i < samples.length; i += 1) samples[at + i] = samples[at + i]! + gain * (noise() * 2 - 1) * Math.exp(-i / 200)
++  }
++  return samples
++}
++
++/** The same event recorded starting `startSeconds` into it (negative: the camera started earlier). */
++function record(source: Float32Array, startSeconds: number, seconds: number, noiseSeed: number): Float32Array {
++  const out = new Float32Array(Math.round(seconds * RATE))
++  const hiss = seeded(noiseSeed)
++  const start = Math.round(startSeconds * RATE)
++  for (let i = 0; i < out.length; i += 1) {
++    const s = source[start + i]
++    out[i] = (s === undefined ? 0 : s * 0.7) + 0.02 * (hiss() * 2 - 1)
++  }
++  return out
++}
++
++const envelope = (samples: Float32Array) => onsetEnvelope({ sampleRate: RATE, channels: [samples] })
++const FRAME = 1 / 30
++
++describe('syncRecordings', () => {
++  const scene = event(200, 3)
++  const reference = record(scene, 20, 150, 10)
++
++  it.each([[1.234], [-4.5], [17.02]])('places a camera started %s s later within one frame', (later) => {
++    const camera = record(scene, 20 + later, 150, 11)
++    const result = syncRecordings(envelope(reference), envelope(camera))
++    expect(result.flags).toEqual([])
++    // Reference source time s is camera source time s - later.
++    expect(Math.abs(result.offsetSeconds + later)).toBeLessThan(FRAME)
++  })
++
++  it('does not invent a match for silence or an unrelated recording', () => {
++    expect(syncRecordings(envelope(reference), envelope(new Float32Array(150 * RATE))).flags).toContain('no-match')
++    const unrelated = syncRecordings(envelope(reference), envelope(record(event(200, 99), 20, 150, 12)))
++    expect(unrelated.flags.length).toBeGreaterThan(0)
++  })
++
++  it('reports drift that a single offset cannot fix', () => {
++    const drifting = record(event(200, 3, 1.0004), 20, 150, 13)
++    const result = syncRecordings(envelope(reference), envelope(drifting), { frameSeconds: FRAME })
++    expect(result.flags).toContain('drift')
++  })
++})
+diff --git a/src/shared/utils/multicam-sync.ts b/src/shared/utils/multicam-sync.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/multicam-sync.ts
+@@ -0,0 +1,196 @@
++/**
++ * Multicamera audio sync (FL-595). Each recording is reduced to an onset
++ * envelope (rises in 1 ms RMS energy), and the lag between two envelopes is
++ * the peak of their FFT cross-correlation. A match is reliable only when the
++ * peak clearly beats every other lag; separate windows are compared to detect
++ * drift that one offset cannot fix.
++ */
++
++export const MULTICAM_SYNC_ALGORITHM = 'onset-xcorr-1ms-v1'
++const ENVELOPE_RATE = 1000
++
++export interface AudioInput {
++  sampleRate: number
++  channels: readonly Float32Array[]
++}
++
++/** Onset envelope at ENVELOPE_RATE: positive changes in per-millisecond RMS. */
++export function onsetEnvelope(input: AudioInput): Float32Array {
++  const hop = input.sampleRate / ENVELOPE_RATE
++  const length = Math.floor((input.channels[0]?.length ?? 0) / hop)
++  const energy = new Float32Array(length)
++  for (let i = 0; i < length; i += 1) {
++    const start = Math.floor(i * hop)
++    const end = Math.floor((i + 1) * hop)
++    let sum = 0
++    for (const channel of input.channels) {
++      for (let s = start; s < end; s += 1) sum += channel[s]! * channel[s]!
++    }
++    energy[i] = Math.sqrt(sum / Math.max(1, (end - start) * input.channels.length))
++  }
++  const onsets = new Float32Array(length)
++  for (let i = 1; i < length; i += 1) onsets[i] = Math.max(0, energy[i]! - energy[i - 1]!)
++  // Two 15 ms box passes (a 30 ms triangle) let clock drift smear onsets without losing the peak.
++  return smooth(smooth(onsets, SMOOTH_SAMPLES), SMOOTH_SAMPLES)
++}
++
++const SMOOTH_SAMPLES = 15
++
++function smooth(values: Float32Array, width: number): Float32Array {
++  const out = new Float32Array(values.length)
++  const half = Math.floor(width / 2)
++  let sum = 0
++  for (let i = 0; i < Math.min(values.length, half); i += 1) sum += values[i]!
++  for (let i = 0; i < values.length; i += 1) {
++    if (i + half < values.length) sum += values[i + half]!
++    if (i - half - 1 >= 0) sum -= values[i - half - 1]!
++    out[i] = sum / width
++  }
++  return out
++}
++
++/** In-place radix-2 FFT (inverse when `inverse`). Lengths must be powers of two. */
++function fft(re: Float64Array, im: Float64Array, inverse: boolean): void {
++  const n = re.length
++  for (let i = 1, j = 0; i < n; i += 1) {
++    let bit = n >> 1
++    for (; j & bit; bit >>= 1) j ^= bit
++    j ^= bit
++    if (i < j) {
++      ;[re[i], re[j]] = [re[j]!, re[i]!]
++      ;[im[i], im[j]] = [im[j]!, im[i]!]
++    }
++  }
++  for (let size = 2; size <= n; size <<= 1) {
++    const angle = ((inverse ? 2 : -2) * Math.PI) / size
++    const wr = Math.cos(angle)
++    const wi = Math.sin(angle)
++    for (let start = 0; start < n; start += size) {
++      let cr = 1
++      let ci = 0
++      for (let k = 0; k < size / 2; k += 1) {
++        const a = start + k
++        const b = a + size / 2
++        const tr = re[b]! * cr - im[b]! * ci
++        const ti = re[b]! * ci + im[b]! * cr
++        re[b] = re[a]! - tr
++        im[b] = im[a]! - ti
++        re[a] = re[a]! + tr
++        im[a] = im[a]! + ti
++        const next = cr * wr - ci * wi
++        ci = cr * wi + ci * wr
++        cr = next
++      }
++    }
++  }
++  if (inverse) for (let i = 0; i < n; i += 1) { re[i] = re[i]! / n; im[i] = im[i]! / n }
++}
++
++export interface LagEstimate {
++  /** Envelope samples by which `other` lags `reference`: other[t] ≈ reference[t - lag]. */
++  lag: number
++  /** Normalised correlation at the peak, 0..1. */
++  score: number
++  /** Peak over the best lag outside ±50 ms, ≥ 1; near 1 is ambiguous. */
++  distinctness: number
++}
++
++/** Best lag of `other` against `reference` within ±maxLag envelope samples. */
++function estimateLag(reference: Float32Array, other: Float32Array, maxLag: number): LagEstimate | null {
++  const norm = (values: Float32Array) => Math.sqrt(values.reduce((sum, v) => sum + v * v, 0))
++  const referenceNorm = norm(reference)
++  const otherNorm = norm(other)
++  if (referenceNorm === 0 || otherNorm === 0) return null
++  let size = 1
++  while (size < reference.length + other.length) size <<= 1
++  const aRe = new Float64Array(size), aIm = new Float64Array(size)
++  const bRe = new Float64Array(size), bIm = new Float64Array(size)
++  aRe.set(reference)
++  bRe.set(other)
++  fft(aRe, aIm, false)
++  fft(bRe, bIm, false)
++  // corr[k] = Σ other[t + k] · reference[t]  →  B · conj(A)
++  for (let i = 0; i < size; i += 1) {
++    const re = bRe[i]! * aRe[i]! + bIm[i]! * aIm[i]!
++    const im = bIm[i]! * aRe[i]! - bRe[i]! * aIm[i]!
++    bRe[i] = re
++    bIm[i] = im
++  }
++  fft(bRe, bIm, true)
++  const at = (lag: number) => bRe[(lag + size) % size]!
++  // Only lags where the two overlap exist; beyond them the circular result wraps.
++  const minLag = Math.max(-maxLag, -(reference.length - 1))
++  const topLag = Math.min(maxLag, other.length - 1)
++  let best = -Infinity
++  let bestLag = 0
++  for (let lag = minLag; lag <= topLag; lag += 1) {
++    const value = at(lag)
++    if (value > best) { best = value; bestLag = lag }
++  }
++  let runnerUp = 0
++  const guard = Math.round(0.05 * ENVELOPE_RATE)
++  for (let lag = minLag; lag <= topLag; lag += 1) {
++    if (Math.abs(lag - bestLag) > guard) runnerUp = Math.max(runnerUp, at(lag))
++  }
++  return {
++    lag: bestLag,
++    score: Math.max(0, best / (referenceNorm * otherNorm)),
++    distinctness: runnerUp > 0 ? best / runnerUp : Infinity,
++  }
++}
++
++export type SyncFlag = 'no-match' | 'ambiguous' | 'drift'
++
++export interface SyncResult {
++  /** Seconds to add to a reference source time to get the same moment in this recording. */
++  offsetSeconds: number
++  score: number
++  flags: SyncFlag[]
++  /** Offset difference between the early and late windows, seconds (drift check). */
++  driftSeconds: number | null
++}
++
++const MIN_SCORE = 0.2
++const MIN_DISTINCTNESS = 1.5
++
++/**
++ * Align `other` to `reference`. A positive offset means the moment at
++ * reference source time s is at other source time s + offset.
++ */
++export function syncRecordings(
++  reference: Float32Array,
++  other: Float32Array,
++  options: { maxOffsetSeconds?: number; frameSeconds?: number } = {},
++): SyncResult {
++  const maxLag = Math.round((options.maxOffsetSeconds ?? 120) * ENVELOPE_RATE)
++  const strong = (estimate: LagEstimate | null): boolean =>
++    !!estimate && estimate.score >= MIN_SCORE && estimate.distinctness >= MIN_DISTINCTNESS
++
++  // A window of `other` starting at o peaks at lag - o, so widen the search by o and add it back.
++  const windowLag = (start: number, length: number) => {
++    const estimate = estimateLag(reference, other.subarray(start, start + length), maxLag + start)
++    return estimate && { ...estimate, lag: estimate.lag + start }
++  }
++
++  const whole = estimateLag(reference, other, maxLag)
++  if (!whole) return { offsetSeconds: 0, score: 0, flags: ['no-match'], driftSeconds: null }
++
++  // Drift: align the first and last thirds of the recording separately. Clock drift smears the
++  // whole-file peak, so two strong windows that disagree are drift, not "no match".
++  const third = Math.floor(other.length / 3)
++  const early = third > 10 * ENVELOPE_RATE ? windowLag(0, third) : null
++  const late = third > 10 * ENVELOPE_RATE ? windowLag(other.length - third, third) : null
++  const driftSeconds = strong(early) && strong(late) ? (late!.lag - early!.lag) / ENVELOPE_RATE : null
++  const drifting = driftSeconds !== null && Math.abs(driftSeconds) > (options.frameSeconds ?? 1 / 30)
++
++  if (strong(whole) || (drifting && strong(early))) {
++    const anchor = strong(whole) ? whole : early!
++    return { offsetSeconds: anchor.lag / ENVELOPE_RATE, score: anchor.score, flags: drifting ? ['drift'] : [], driftSeconds }
++  }
++  return {
++    offsetSeconds: whole.lag / ENVELOPE_RATE,
++    score: whole.score,
++    flags: [whole.score < MIN_SCORE ? 'no-match' : 'ambiguous'],
++    driftSeconds,
++  }
++}

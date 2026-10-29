@@ -709,7 +709,12 @@
       "path": "patches/0144-transcript-editing.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "73362d1a65af63134f396e20e89e5b9ab5133db7155ec449b8b3e92a53de897f"
+    },
+    {
+      "path": "patches/0149-multicam-editing.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1de6db348c3d5c231e2cf4172def3ffaef5efd9ca53df5a2ea0c79da283a0c96"
     }
   ],
-  "sourceSha256": "d13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b"
+  "sourceSha256": "6ca309c5843fa8e7768cab704e91489a54c46f87ebb38509bcd3f33e93bb35ba"
 }

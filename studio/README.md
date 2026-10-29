@@ -192,6 +192,22 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
+the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
+embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the
+FFT cross-correlation (`onset-xcorr-1ms-v1`), reported only when it clearly beats every other lag. Silent,
+unrelated and ambiguous recordings are flagged, never matched, and stay manually alignable in frames. The
+first and last thirds are aligned separately, so clock drift beyond one frame is reported instead of
+being hidden by one offset. Create moves each angle (with its audio) so one frame shows the same moment
+everywhere, hides the angle tracks, mutes every camera's audio except the master's, and adds a Multicam
+program track on top with a video-only copy of the reference, all in one undo step. Selecting a program
+clip shows angle buttons (number keys 1–4 while focused). A cut replaces the program from the playhead to
+the next cut with that angle's matching source range, and is refused where the angle has no picture, with
+the missing range shown. Cuts are ordinary clips that can be trimmed. The group, offsets, reference and
+master audio are stored in `multicam` records on the tracks and program clips (protocol 12.9). Angles must
+play forward at normal speed and own their tracks. A live 2-up/4-up angle viewer, a separate master audio
+asset, elastic drift correction and decoded export checks at cuts remain open.
+
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.
