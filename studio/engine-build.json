@@ -713,13 +713,13 @@
     {
       "path": "patches/0147-colour-match-between-shots.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "f311b8af729a9938b8bcb2593924c0d61d1180ed0bf8ad55c1bd6e991698a96e"
+      "sha256": "44bc3f7818911ade1f9674125f0ff2441742199c7fa698b76cd2c34c46a3ff79"
     },
     {
       "path": "patches/0151-graded-hdr-colour-match.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "9254ef445cb2fc45bb1d0da644ba55d3ebc7a1292b7fde3f47bd95acc8c706d0"
+      "sha256": "5d065661673ad0e84d97e0039bf15f63a313c53efcf945d6d9edf11c2511b00d"
     }
   ],
-  "sourceSha256": "10feaeeb766a0f3661a8f0c0974df75dc0d36323539c9819437fa03157f6c182"
+  "sourceSha256": "949c01dbb70b5dda1fa231beb9b0c7a60b81af1cf46d4882d30851f554f574e3"
 }

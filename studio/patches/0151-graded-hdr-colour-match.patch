@@ -271,7 +271,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  function projectIsHdr(items: readonly TimelineItem[]): boolean {
    const project = useProjectStore.getState().currentProject
    if (project?.metadata.colorManagement?.workingRange === 'hdr') return true
-@@ -71,41 +70,64 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
+@@ -71,47 +70,69 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
   * (its match effects excluded), the reference's source, timing, direction and
   * full grade, and the project's colour management.
   */
@@ -281,11 +281,18 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
 +    .filter((property) => property.property.startsWith('effect:') && (keepMatch || !property.property.includes('colour-match:')))
 +}
 +
- export function colourMatchBinding(item: TimelineItem, seconds: number, reference?: TimelineItem, referenceSeconds?: number): string {
+ export function colourMatchBinding(
+   item: TimelineItem,
+   seconds: number,
+   reference?: TimelineItem,
+   referenceSeconds?: number,
+-  // Analysis passes the rate it sampled at; apply checks against the current one.
++  // Analysis passes the rate it sampled at, and apply checks against the current one.
+   fps = useTimelineSettingsStore.getState().fps,
+ ): string {
 -  // Timing and cadence too: they choose which source frame a timeline time samples.
-+  // Timing and cadence as well: they choose which source frame a timeline time samples.
-   const fps = useTimelineSettingsStore.getState().fps
 -  const describe = (clip: TimelineItem, effects: readonly ItemEffect[]) => {
++  // Timing and cadence as well: they choose which source frame a timeline time samples.
 +  const describe = (clip: TimelineItem, effects: readonly ItemEffect[], keepMatch: boolean) => {
      const video = clip as VideoItem
      return [clip.id, clip.mediaId, clip.from, clip.durationInFrames, video.sourceStart ?? 0, video.sourceEnd ?? null,
@@ -327,8 +334,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
 + * project's working colour space. The target's own match effects are left
 + * out; the reference keeps all of its effects (its look is the goal).
 + */
-+async function sampleGradedFrame(item: VideoItem, frame: number, keepMatch: boolean): Promise<{ stats: ColourSampleStats; domain: WorkingDomain }> {
-+  const fps = useTimelineSettingsStore.getState().fps
++async function sampleGradedFrame(item: VideoItem, frame: number, keepMatch: boolean, fps: number): Promise<{ stats: ColourSampleStats; domain: WorkingDomain }> {
 +  const project = useProjectStore.getState().currentProject
 +  const sourceWidth = item.sourceWidth ?? project?.metadata.width ?? 1920
 +  const sourceHeight = item.sourceHeight ?? project?.metadata.height ?? 1080
@@ -361,7 +367,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
  }
  
  function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { reason: ColourMatchRefusal; itemId?: string } | null {
-@@ -114,13 +136,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
+@@ -120,13 +141,7 @@ function refusalFor(items: readonly TimelineItem[], ids: readonly string[]): { r
      if (!item) return { reason: 'not-found', itemId: id }
      if (item.type !== 'video') return { reason: 'unsupported-clip', itemId: id }
      if (item.isReversed === true) return { reason: 'reversed', itemId: id }
@@ -375,12 +381,12 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    return null
  }
  
-@@ -149,25 +165,30 @@ export async function analyzeColourMatch(
+@@ -155,25 +170,30 @@ export async function analyzeColourMatch(
    const referenceSeconds = sourceSecondsAt(reference, frameFor(reference), fps)
  
    try {
 -    const referenceStats = await sampleFrame(reference, referenceSeconds)
-+    const reference_ = await sampleGradedFrame(reference, frameFor(reference), true)
++    const reference_ = await sampleGradedFrame(reference, frameFor(reference), true, fps)
      const targets: ColourMatchTargetResult[] = []
      for (const id of targetIds) {
        if (signal?.aborted) throw new DOMException('Colour match cancelled', 'AbortError')
@@ -388,11 +394,11 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
 -      const targetSeconds = sourceSecondsAt(target, frameFor(target), fps)
 +      const targetFrame = frameFor(target)
 +      const targetSeconds = sourceSecondsAt(target, targetFrame, fps)
-+      const sampled = await sampleGradedFrame(target, targetFrame, false)
++      const sampled = await sampleGradedFrame(target, targetFrame, false, fps)
        targets.push({
          itemId: id,
          label: target.label,
-         binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds),
+         binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds, fps),
          provenance: { referenceItemId: referenceId, referenceSeconds, targetSeconds },
 -        proposal: proposeColourMatch(referenceStats, await sampleFrame(target, targetSeconds)),
 +        proposal: proposeColourMatch(reference_.stats, sampled.stats),
@@ -410,7 +416,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
    }
  }
  
-@@ -209,11 +230,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
+@@ -215,11 +235,7 @@ export function applyColourMatches(approvals: readonly ColourMatchApproval[]): C
    const outcome: ColourMatchApplyOutcome = { applied: [], stale: [], refused: [] }
    const items = useItemsStore.getState().items
    const updates: Array<{ itemId: string; effects: ItemEffect[] }> = []

@@ -330,7 +330,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,292 @@
 +import type { ItemEffect } from '@/types/effects'
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
@@ -404,9 +404,15 @@ new file mode 100644
 + * (its match effects excluded), the reference's source, timing, direction and
 + * full grade, and the project's colour management.
 + */
-+export function colourMatchBinding(item: TimelineItem, seconds: number, reference?: TimelineItem, referenceSeconds?: number): string {
++export function colourMatchBinding(
++  item: TimelineItem,
++  seconds: number,
++  reference?: TimelineItem,
++  referenceSeconds?: number,
++  // Analysis passes the rate it sampled at; apply checks against the current one.
++  fps = useTimelineSettingsStore.getState().fps,
++): string {
 +  // Timing and cadence too: they choose which source frame a timeline time samples.
-+  const fps = useTimelineSettingsStore.getState().fps
 +  const describe = (clip: TimelineItem, effects: readonly ItemEffect[]) => {
 +    const video = clip as VideoItem
 +    return [clip.id, clip.mediaId, clip.from, clip.durationInFrames, video.sourceStart ?? 0, video.sourceEnd ?? null,
@@ -491,7 +497,7 @@ new file mode 100644
 +      targets.push({
 +        itemId: id,
 +        label: target.label,
-+        binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds),
++        binding: colourMatchBinding(target, targetSeconds, reference, referenceSeconds, fps),
 +        provenance: { referenceItemId: referenceId, referenceSeconds, targetSeconds },
 +        proposal: proposeColourMatch(referenceStats, await sampleFrame(target, targetSeconds)),
 +      })
