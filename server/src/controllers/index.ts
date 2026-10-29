@@ -116,6 +116,7 @@ import { StudioProjectController } from 'src/controllers/studio-project.controll
 import { StudioReframeController } from 'src/controllers/studio-reframe.controller.js';
 import { StudioSourceResolutionController } from 'src/controllers/studio-source-resolution.controller.js';
 import { StudioSourceController } from 'src/controllers/studio-source.controller.js';
+import { StudioVoiceCleanupController } from 'src/controllers/studio-voice-cleanup.controller.js';
 import { StudioWorkspaceController } from 'src/controllers/studio-workspace.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
@@ -245,6 +246,7 @@ export const controllers = [
   StudioMediaController,
   StudioCaptionTranslationController,
   StudioMovieController,
+  StudioVoiceCleanupController,
   StudioBundleController,
   StudioExportController,
   StudioCutoutController,

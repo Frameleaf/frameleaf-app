@@ -108,6 +108,7 @@ import { useCompositionNavigationStore } from '@/features/timeline/stores/compos
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { associateMediaWithProject } from '@/infrastructure/storage'
 import { timelineEditContent } from './shims/timeline-persistence'
+import { registerVoiceCleanupHost } from './shims/voice-cleanup-service'
 
 installBrowserShims()
 hideFileSystemPickers()
@@ -1053,6 +1054,11 @@ async function mount(context: StudioHostContext): Promise<void> {
   watchDrafts(state)
   watchImports(state)
   watchLocalImportsFor(state)
+  // FL-637: the voice clean-up card talks to this project's server and puts its result in this bin.
+  registerVoiceCleanupHost({
+    projectId: () => (session === state && !state.disposed ? state.context.project.id : null),
+    seedImport: (ref) => state.media.seedImports([ref]),
+  })
   installMediaRelink(state)
   watchDirty(state)
   watchPlayhead(state)
@@ -1152,6 +1158,7 @@ async function dispose(): Promise<void> {
   session = null
   if (!state || state.disposed) return
   state.disposed = true
+  registerVoiceCleanupHost(null)
   state.vectors.dispose()
   state.relinkController?.abort()
   setPersistenceGate({ mayStartSave: () => false, loadFinished: () => undefined })

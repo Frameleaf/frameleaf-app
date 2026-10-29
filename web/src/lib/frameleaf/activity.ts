@@ -452,6 +452,7 @@ export const isWaitingICloudSync = (operation: Pick<MediaOperationDto, 'status' 
  */
 const STUDIO_WORK_KIND_KEY: Readonly<Record<string, Translations>> = {
   stabilise: 'frameleaf_activity_kind_studio_stabilise',
+  'voice-cleanup': 'frameleaf_activity_kind_studio_voice_cleanup',
 };
 
 /** What a job is called in Activity and on its status line: its Studio work, else its kind. */

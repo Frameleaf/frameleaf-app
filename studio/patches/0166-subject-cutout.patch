@@ -13,7 +13,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.test.tsx
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,218 @@
 +import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import type { ReactNode } from 'react'
@@ -131,6 +131,19 @@ new file mode 100644
 +    await waitFor(() => expect(current().subjectCutout?.subject).toEqual({ kind: 'subject' }))
 +  })
 +
++  it('keeps a person cut-out selected when that person is no longer recognised in the clip', async () => {
++    const riley = '0195e2a0-0000-4000-8000-000000000059'
++    const saved: SubjectCutout = { subject: { kind: 'person', personId: riley, name: 'Riley' }, background: 'blur', softness: 40, matte }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: saved }], fps: 30 })
++    registerSubjectCutoutHost(host([]))
++    render(<SubjectCutoutSection item={current()} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    expect(screen.getByRole('radio', { name: /Riley/ })).toHaveAttribute('aria-checked', 'true')
++    expect(screen.getAllByRole('radio', { name: /Riley/ })).toHaveLength(1)
++    expect(screen.queryByRole('button', { name: 'cutout.find:Riley' })).toBeNull()
++    expect(screen.getByRole('button', { name: 'cutout.remove' })).toBeInTheDocument()
++  })
++
 +  it('keeps a Main subject cut-out selected when people are found in the clip', async () => {
 +    const main: SubjectCutout = { subject: { kind: 'subject' }, background: 'remove', softness: 40, matte }
 +    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: main }], fps: 30 })
@@ -223,7 +236,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subjec
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.tsx
-@@ -0,0 +1,318 @@
+@@ -0,0 +1,324 @@
 +import { useEffect, useMemo, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { Brush, Eraser, UserSquare } from 'lucide-react'
@@ -284,11 +297,17 @@ new file mode 100644
 +  const cutout = item.subjectCutout
 +  const [listed, setSubjects] = useState<SubjectCutoutPerson[]>([MAIN_SUBJECT])
 +  // Main subject is always offered beside the people found, so a new cut-out (or one refused for a
-+  // person) can follow the main subject instead.
-+  const subjects = useMemo(
-+    () => (listed.some((entry) => entry.kind === 'subject') ? listed : [...listed, MAIN_SUBJECT]),
-+    [listed],
-+  )
++  // person) can follow the main subject instead; a person the clip is already cut out on stays listed
++  // even when they are no longer recognised there, so its controls stay reachable.
++  const subjects = useMemo(() => {
++    const list = [...listed]
++    const saved = cutout?.subject
++    if (saved?.kind === 'person' && saved.personId && !list.some((entry) => entry.personId === saved.personId)) {
++      list.unshift({ kind: 'person', personId: saved.personId, name: saved.name ?? null })
++    }
++    if (!list.some((entry) => entry.kind === 'subject')) list.push(MAIN_SUBJECT)
++    return list
++  }, [listed, cutout?.subject])
 +  const [chosen, setChosen] = useState<string | null>(cutout?.subject.personId ?? null)
 +  const [progress, setProgress] = useState<number | null>(null)
 +  const [refining, setRefining] = useState(false)
@@ -568,7 +587,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/video-
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -42,6 +42,11 @@
+@@ -50,6 +50,11 @@
    suggestLoudnessMatch,
    type ClipLoudnessResult,
  } from '@/features/timeline/utils/loudness-match'

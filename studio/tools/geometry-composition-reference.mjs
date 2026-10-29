@@ -107,7 +107,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-641 caption languages (translated caption tracks, voice-over and the Languages card) on Stabilise; changes no composition or raster producer.
     sourceSha256 === 'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb' ||
     // FL-636 the bin's Library view changes the media bin only, no composition or raster producer.
-    sourceSha256 === '7e7728db01aed01e9871c27c5439255e9eb25bf82b5d9dbfe220ef06474c30e6'
+    sourceSha256 === '7e7728db01aed01e9871c27c5439255e9eb25bf82b5d9dbfe220ef06474c30e6' ||
+    // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
+    sourceSha256 === '4e403256d5f1722d890776b9d374d9b6e8f28aad82c02deef110b5fe1d45a9ad'
   )
     return {
       ...COMPOSITION_SOURCES,
@@ -117,7 +119,7 @@ export function compositionSourcesFor(sourceSha256) {
         '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
     }
   // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
-  if (sourceSha256 === 'cc27d56ffadc8a6c112aeaf2a2096f983f9448786ccd1eab3fded898d899565c')
+  if (sourceSha256 === 'fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2')
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/canvas-item-renderer/gpu.ts':

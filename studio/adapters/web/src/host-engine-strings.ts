@@ -13,6 +13,10 @@ import {
 } from '@frameleaf/host/transcript-strings'
 import { CUTOUT_ENGINE_STRINGS, type CutoutEngineString } from '@frameleaf/host/cutout-strings'
 import {
+  VOICE_CLEANUP_ENGINE_STRINGS,
+  type VoiceCleanupEngineString,
+} from '@frameleaf/host/voice-cleanup-strings'
+import {
   STABILISE_ENGINE_STRINGS,
   type StabiliseEngineString,
 } from '@frameleaf/host/stabilise-strings'
@@ -50,6 +54,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(CAPTION_STYLE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<CaptionStyleEngineString, string>),
+  // The "Clean up voice" card (FL-637).
+  ...(Object.fromEntries(
+    Object.entries(VOICE_CLEANUP_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<VoiceCleanupEngineString, string>),
   // The captions Languages card (FL-641).
   ...(Object.fromEntries(
     Object.entries(CAPTION_LANGUAGE_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
