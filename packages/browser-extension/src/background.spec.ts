@@ -450,6 +450,78 @@ describe('trusted extension operations', () => {
       { ok: true, queue: { unfinished: 0, items: [] } },
     );
   });
+  it('projects each receipt state so only saved items open the item they saved, inside its collection', async () => {
+    const { handleMessage } = await import('./background');
+    const { receiptLink } = await import('./receipt-link');
+    await handleMessage(
+      { type: 'connect', address: binding.origin, token: 'private-key' },
+      sender,
+    );
+    const albumId = '66666666-6666-4666-8666-666666666666';
+    const asset = '44444444-4444-4444-8444-444444444444';
+    const link = '55555555-5555-4555-8555-555555555555';
+    const task = (
+      n: number,
+      state: string,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      id: `3333333${n}-3333-4333-8333-333333333333`,
+      albumId,
+      state,
+      attempts: 0,
+      offset: 0,
+      file: { filename: `${state}-${n}.png`, size: 3 },
+      ...extra,
+    });
+    const receipt = (kind: 'asset' | 'bookmark', itemId: string) => ({
+      receipt: { status: 'created', kind, itemId },
+    });
+    vi.mocked(listCaptures).mockResolvedValue([
+      task(1, 'saved', receipt('asset', asset)),
+      task(2, 'saved', {
+        file: undefined,
+        bookmark: { title: 'Saved link', url: 'https://example.com/' },
+        ...receipt('bookmark', link),
+      }),
+      task(3, 'duplicate', receipt('asset', asset)),
+      task(4, 'duplicate', {
+        file: undefined,
+        bookmark: { title: 'Known link', url: 'https://example.com/' },
+        ...receipt('bookmark', link),
+      }),
+      task(5, 'queued'),
+      task(6, 'needs-attention', { error: 'Check this item.' }),
+      task(7, 'cancelled'),
+    ] as unknown as import('./queue').CaptureTask[]);
+    const reply = await handleMessage(
+      { type: 'queue' },
+      { ...sender, url: 'chrome-extension://frameleaf/capture.html' },
+    );
+    if (!reply.ok || !('queue' in reply) || !reply.queue)
+      throw new Error('no queue');
+    const links = Object.fromEntries(
+      reply.queue.items.map((item) => [
+        item.label,
+        [item.albumId, receiptLink(binding.origin, item)],
+      ]),
+    );
+    expect(links).toEqual({
+      'saved-1.png': [albumId, `${binding.origin}/pro/photos/${asset}`],
+      'Saved link': [
+        albumId,
+        `${binding.origin}/pro?kinds=bookmark&bookmark=${link}`,
+      ],
+      'duplicate-3.png': [albumId, `${binding.origin}/pro/photos/${asset}`],
+      'Known link': [
+        albumId,
+        `${binding.origin}/pro?kinds=bookmark&bookmark=${link}`,
+      ],
+      'queued-5.png': [albumId, null],
+      'needs-attention-6.png': [albumId, null],
+      'cancelled-7.png': [albumId, null],
+    });
+  });
+
   it('a late delivery authorization failure cannot overwrite a newer connection', async () => {
     const { handleMessage } = await import('./background');
     await handleMessage(
