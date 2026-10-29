@@ -205,8 +205,13 @@ clip shows angle buttons (number keys 1–4 while focused). A cut replaces the p
 the next cut with that angle's matching source range, and is refused where the angle has no picture, with
 the missing range shown. Cuts are ordinary clips that can be trimmed. The group, offsets, reference and
 master audio are stored in `multicam` records on the tracks and program clips (protocol 12.9). Angles must
-play forward at normal speed and own their tracks. A live 2-up/4-up angle viewer, a separate master audio
-asset, elastic drift correction and decoded export checks at cuts remain open.
+play forward at normal speed and own their tracks. 
+Patch 0153 (FL-628) adds the follow-ups. Sync fits each drifting angle's clock (ratio and offset from the
+two windows), and Correct drift plays that angle and its audio at the fitted speed (within ±1%), so it stays
+within a frame across the recording. A selected audio clip that is not a camera's own can be the master
+audio: it is synced like an angle and every camera's sound is muted. The angle buttons show each angle's
+picture at the playhead from the cached filmstrip. Auditioning angles with sound and decoded export
+checks at cuts remain open.
 
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking

@@ -1484,12 +1484,12 @@ Payload: `markerId`. **Refusal:** it names no marker: `invalid`. **Effect:** the
 
 `music.add` is an engine command that is **always refused** as `failed` at this revision, before it reads its payload: the bundled music catalogue is rights-blocked (FL-86), so no `musicId` resolves. It changes nothing, and so has no linked, lock, sync-lock, overlap or transition consequence. **Native rule:** do not offer bundled music and never record `music.add` in a save. Fixtures `music.add/rejects-always`, `music.add/rejects-before-reading-payload`.
 
-### 12.9 Multicam records (FL-595)
+### 12.9 Multicam records (FL-595, FL-628)
 
 The web editor's multicam edit is not a command; it writes ordinary clips and tracks plus two fields that tracks and items already allow (`additionalProperties`):
 
-- A **program track** carries `multicam: { groupId, role: "program", algorithm, referenceItemId, masterAudioItemId, angles }`. `algorithm` is `onset-xcorr-1ms-v1` or `manual`; each entry of `angles` is `{ trackId, itemId, mediaId, offsetSeconds }`, where a reference source time s is the angle's source time s + `offsetSeconds`. Each **angle track** carries `multicam: { groupId, role: "angle" }` and is hidden (`visible: false`).
-- Each clip on the program track is a video-only copy of an angle (`muted: true`, `embeddedAudioMuted: true`, no `linkedGroupId`) with `multicam: { groupId, angle }`, the index into `angles`.
+- A **program track** carries `multicam: { groupId, role: "program", algorithm, referenceItemId, masterAudioItemId, angles }`. `algorithm` is `onset-xcorr-1ms-v1` or `manual`; each entry of `angles` is `{ trackId, itemId, mediaId, offsetSeconds, clockRatio? }`, where the angle's source time is `clockRatio` × the reference source time + `offsetSeconds` (`clockRatio` absent means 1). An angle with a `clockRatio` corrects clock drift: it and its linked audio play at `speed` = `clockRatio` (0.99–1.01) with durations scaled to match. `masterAudioItemId` names an angle's linked audio clip or a standalone audio clip, which is moved into sync the same way; with a standalone master, every camera's sound is muted. Each **angle track** carries `multicam: { groupId, role: "angle" }` and is hidden (`visible: false`).
+- Each clip on the program track is a video-only copy of an angle (`muted: true`, `embeddedAudioMuted: true`, no `linkedGroupId`) with `multicam: { groupId, angle }`, the index into `angles`. It has the angle's `speed`, and its source range starts at the angle's source frame under the playhead.
 - The angle clips keep their media, source ranges and links; they are moved so that one sequence frame shows the same moment in every angle. Only the master audio clip stays audible; the other angles' audio clips get `muted: true`.
 
 Playback and export read only the ordinary fields. **Native rule:** play and export the graph as usual; preserve both `multicam` fields when editing, and when changing a program clip keep its source range consistent with its angle's alignment or drop the clip's `multicam` field.
