@@ -62,7 +62,7 @@ test('LAN discovery gets host networking and only the published port, never data
     assert.equal(lan.privileged, undefined);
     assert.deepEqual(lan.cap_drop, ['ALL']);
     assert.equal(lan.read_only, true);
-    assert.deepEqual(lan.healthcheck.test, ['CMD', 'node', '-e', '']);
+    assert.deepEqual(lan.healthcheck, { test: ['CMD', 'node', '-e', ''], interval: '30s', timeout: '10s', retries: 3 });
     assert.equal(compose.services.database.network_mode, undefined);
     assert.equal(compose.services.database.ports, undefined);
     assert.equal(compose.services['frameleaf-server'].network_mode, undefined);
