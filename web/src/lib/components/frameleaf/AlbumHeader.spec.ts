@@ -364,6 +364,20 @@ it('counts bookmark items without enabling media actions for a bookmark-only alb
   expect(screen.getByRole('button', { name: 'Slideshow' })).toBeDisabled();
 });
 
+it("hands Download to a Boards collection's dialog instead of downloading at once (FL-660)", async () => {
+  const onDownload = vi.fn();
+  render(AlbumHeader, {
+    album: albumAs(AlbumUserRole.Owner),
+    assetCount: 3,
+    onAlbumChange: vi.fn(),
+    onRefresh: vi.fn(),
+    onDownload,
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  expect(onDownload).toHaveBeenCalledOnce();
+  expect(sdkMock.getDownloadInfo).not.toHaveBeenCalled();
+});
+
 /** Boards (README points 2, 8 and 22): icon and colour, the collections inside, and what Delete does. */
 describe('AlbumHeader in Boards', () => {
   beforeAll(async () => {

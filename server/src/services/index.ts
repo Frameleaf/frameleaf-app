@@ -22,6 +22,7 @@ import { BackupDeviceService } from 'src/services/backup-device.service.js';
 import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BookmarkService } from 'src/services/bookmark.service.js';
+import { BrowserExtensionSignInService } from 'src/services/browser-extension-sign-in.service.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
@@ -163,6 +164,7 @@ import { StudioRevocationService } from 'src/services/studio-revocation.service.
 import { StudioSourceResolutionService } from 'src/services/studio-source-resolution.service.js';
 import { StudioStabiliseService } from 'src/services/studio-stabilise.service.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
+import { StudioVoiceCleanupService } from 'src/services/studio-voice-cleanup.service.js';
 import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
@@ -189,6 +191,7 @@ export const services = [
   LibraryItemService,
   AssetPaletteService,
   CaptureService,
+  BrowserExtensionSignInService,
   AlbumItemsService,
   AssetSourceService,
   BookmarkService,
@@ -349,6 +352,7 @@ export const services = [
   StudioMovieService,
   StudioStabiliseService,
   StudioTranscriptionService,
+  StudioVoiceCleanupService,
   StudioResourceService,
   StudioRevocationService,
   StudioCatalogService,

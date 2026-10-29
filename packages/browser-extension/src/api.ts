@@ -34,6 +34,8 @@ const messages = {
   credential: 'Connect again to the same server and account to continue.',
   permission:
     'Site access wasn’t allowed. Allow access to your Frameleaf server to connect.',
+  signOut:
+    'Couldn’t sign out on your server, so this browser is still signed in. Check that the server is turned on and reachable, then try again.',
 };
 export class CaptureFailure extends Error {
   constructor(readonly code: keyof typeof messages) {

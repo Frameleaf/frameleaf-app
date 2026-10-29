@@ -26,7 +26,6 @@ async function bootstrap() {
   stop = () => appRepository.stop(0);
 
   await configureExpress(app, {
-    permitSwaggerWrite: false,
     ssr: MaintenanceWorkerService,
   });
 }

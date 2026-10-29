@@ -41,6 +41,8 @@ describe('/api-keys', () => {
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
         lastUsedAt: null,
+        // FL-655: a key made by hand was not added by signing in from Save to Frameleaf
+        signedInFrom: null,
         secret: expect.any(String),
         // TODO: remove in v4
         apiKey: expect.any(Object),
@@ -81,6 +83,8 @@ describe('/api-keys', () => {
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
         lastUsedAt: null,
+        // FL-655: a key made by hand was not added by signing in from Save to Frameleaf
+        signedInFrom: null,
         secret: expect.any(String),
         // TODO: remove in v4
         apiKey: expect.any(Object),
@@ -131,6 +135,8 @@ describe('/api-keys', () => {
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
         lastUsedAt: null,
+        // FL-655: a key made by hand was not added by signing in from Save to Frameleaf
+        signedInFrom: null,
       });
     });
   });
@@ -154,6 +160,8 @@ describe('/api-keys', () => {
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
         lastUsedAt: null,
+        // FL-655: a key made by hand was not added by signing in from Save to Frameleaf
+        signedInFrom: null,
       });
     });
   });

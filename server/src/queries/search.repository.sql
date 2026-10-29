@@ -250,18 +250,20 @@ where
   and "asset"."isFavorite" = $6
   and "asset"."deletedAt" is null
 order by
-  least(
-    (smart_search.embedding <=> $7),
-    coalesce(
-      $8 * (
-        select
-          embedding <=> $9
-        from
-          smart_search_description
-        where
-          "assetId" = asset.id
+  (
+    (smart_search.embedding <=> $7) - $8 * coalesce(
+      greatest(
+        0,
+        $9 - (
+          select
+            embedding <=> $10
+          from
+            smart_search_description
+          where
+            "assetId" = asset.id
+        )
       ),
-      (smart_search.embedding <=> $10)
+      0
     )
   ),
   "asset"."id" asc
@@ -3874,18 +3876,20 @@ where
   )
   and true
 order by
-  least(
-    (smart_search.embedding <=> $7),
-    coalesce(
-      $8 * (
-        select
-          embedding <=> $9
-        from
-          smart_search_description
-        where
-          "assetId" = asset.id
+  (
+    (smart_search.embedding <=> $7) - $8 * coalesce(
+      greatest(
+        0,
+        $9 - (
+          select
+            embedding <=> $10
+          from
+            smart_search_description
+          where
+            "assetId" = asset.id
+        )
       ),
-      (smart_search.embedding <=> $10)
+      0
     )
   ),
   "asset"."id" asc
@@ -3974,18 +3978,20 @@ where
     and "asset"."fileCreatedAt" >= $8
   )
 order by
-  least(
-    (smart_search.embedding <=> $9),
-    coalesce(
-      $10 * (
-        select
-          embedding <=> $11
-        from
-          smart_search_description
-        where
-          "assetId" = asset.id
+  (
+    (smart_search.embedding <=> $9) - $10 * coalesce(
+      greatest(
+        0,
+        $11 - (
+          select
+            embedding <=> $12
+          from
+            smart_search_description
+          where
+            "assetId" = asset.id
+        )
       ),
-      (smart_search.embedding <=> $12)
+      0
     )
   ),
   "asset"."id" asc
@@ -4071,18 +4077,20 @@ where
   )
   and true
 order by
-  least(
-    (smart_search.embedding <=> $7),
-    coalesce(
-      $8 * (
-        select
-          embedding <=> $9
-        from
-          smart_search_description
-        where
-          "assetId" = asset.id
+  (
+    (smart_search.embedding <=> $7) - $8 * coalesce(
+      greatest(
+        0,
+        $9 - (
+          select
+            embedding <=> $10
+          from
+            smart_search_description
+          where
+            "assetId" = asset.id
+        )
       ),
-      (smart_search.embedding <=> $10)
+      0
     )
   ),
   "asset"."id" asc

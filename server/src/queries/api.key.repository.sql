@@ -57,3 +57,12 @@ where
   "userId" = $1
 order by
   "createdAt" desc
+
+-- ApiKeyRepository.getSignedInClients
+select
+  "apiKeyId",
+  "client"
+from
+  "browser_extension_access"
+where
+  "userId" = $1

@@ -11,7 +11,7 @@
    */
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@frameleaf/ui';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -90,14 +90,18 @@
   } from '$lib/frameleaf/studio/project-session';
   import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
   import { readEditorContinuity, reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
-  import { downloadBlob, getProfileImageUrl } from '$lib/utils';
+  import { downloadBlob, getPeopleThumbnailUrl, getProfileImageUrl } from '$lib/utils';
   import {
     studioCaptionExportSidecars,
     studioCaptionLanguageTracks,
     studioCaptionSidecarName,
   } from '$lib/frameleaf/studio/caption-languages';
   import { handleError } from '$lib/utils/handle-error';
+  import { createStudioLibraryServices } from '$lib/frameleaf/studio/library-search';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import {
+    type AssetResponseDto,
+    type PersonResponseDto,
     AssetRestorationMode,
     createStudioExport,
     getMediaOperation,
@@ -154,7 +158,18 @@
         : 'frameleaf_studio_restored_name',
       { values: { name: version.originalFileName } },
     );
-  const libraryAssets = $derived(toStudioAssets(data.assets));
+  /**
+   * FL-636: library items the person brought in from the bin's Library view, after the handoff
+   * selection. They are offered exactly like handoff items, so the eligibility check still applies
+   * (a Locked one drops out when the session locks) and the server grants each when it is placed.
+   */
+  let libraryAdded = $state<AssetResponseDto[]>([]);
+  const libraryAssets = $derived(
+    toStudioAssets([
+      ...data.assets,
+      ...libraryAdded.filter((added) => data.assets.every((asset) => asset.id !== added.id)),
+    ]),
+  );
   const assets = $derived(
     withHdrSources(
       [...libraryAssets, ...restoredVersions.map((version) => toStudioRestoredAsset(version, restoredName(version)))],
@@ -853,7 +868,19 @@
     resolve: (id, studioSourceResolutionRequestDto, signal) =>
       resolveStudioProjectSource({ id, studioSourceResolutionRequestDto }, { signal }),
   });
+  const libraryServices = createStudioLibraryServices({
+    language: () => $locale ?? 'en',
+    elevated: () => sessionAccess.isElevated,
+    offered: () => assets,
+    adopt: async (records) => {
+      const known = new Set(libraryAdded.map((asset) => asset.id));
+      libraryAdded = [...libraryAdded, ...records.filter((asset) => !known.has(asset.id))];
+      await tick();
+    },
+    personThumbnailUrl: (id) => getPeopleThumbnailUrl({ id } as PersonResponseDto),
+  });
   const services: StudioHostServices = {
+    ...libraryServices,
     resolveStudioProjectSource: resolveSource,
     submitCommands: (envelopes) => bridge.submit(envelopes),
     stageDraft,

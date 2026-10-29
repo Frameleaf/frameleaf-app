@@ -2,13 +2,14 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { Route } from '$lib/route';
   import { Icon } from '@frameleaf/ui';
-  import { mdiGoogleChrome, mdiKeyPlus, mdiMicrosoftEdge, mdiOpenInNew } from '@mdi/js';
+  import { mdiGoogleChrome, mdiMicrosoftEdge, mdiOpenInNew } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
    * "Get the browser extension" from the foot of the Boards rail (prototype `ExtensionDialog`, README
-   * point 11): three steps — add the extension (Chrome and Edge), make a browser key, paste it.
-   * The key is made in API keys settings, where "Browser extension" is one of the key purposes.
+   * point 63, FL-655): three steps — add the extension (Chrome and Edge), sign in with your Frameleaf
+   * account (choose this server, Sign in, then Allow), start saving. A key made by hand is only a
+   * fallback for a browser that can't sign in: "Use a key instead" opens API keys.
    */
   let { open = $bindable(false) }: { open?: boolean } = $props();
 
@@ -39,18 +40,14 @@
       </div>
     </li>
     <li>
-      <strong>{$t('frameleaf_boards_extension_step_key')}</strong>
-      <span>{$t('frameleaf_boards_extension_step_key_hint')}</span>
-      <div class="row">
-        <a class="button" href={apiKeysHref} onclick={() => (open = false)}>
-          <Icon icon={mdiKeyPlus} size="18" aria-hidden={true} />
-          {$t('frameleaf_boards_extension_step_key')}
-        </a>
-      </div>
+      <strong>{$t('frameleaf_boards_extension_step_sign_in')}</strong>
+      <span>{$t('frameleaf_boards_extension_step_sign_in_hint')}</span>
     </li>
     <li>
-      <strong>{$t('frameleaf_boards_extension_step_paste')}</strong>
-      <span>{$t('frameleaf_boards_extension_step_paste_hint')}</span>
+      <strong>{$t('frameleaf_boards_extension_step_start')}</strong>
+      <span>{$t('frameleaf_boards_extension_step_start_hint')}</span>
+      <a class="use-key" href={apiKeysHref} onclick={() => (open = false)}>{$t('frameleaf_boards_extension_use_key')}</a
+      >
     </li>
   </ol>
   {#snippet actions()}
@@ -93,6 +90,16 @@
     align-items: center;
     gap: 0.375rem;
     text-decoration: none;
+  }
+  .use-key {
+    align-self: flex-start;
+    margin-block-start: 0.25rem;
+    color: var(--fl-muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .use-key:hover {
+    color: var(--fl-text);
   }
   .sr-only {
     position: absolute;

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionAccess, setSessionLockPending, trackSessionUnlock } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { discardAuthStatusReads, readAuthStatus } from '$lib/utils/auth-status-read';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 import { watchSessionPrivacy } from '$lib/utils/session-privacy-guard';
 
@@ -32,6 +33,7 @@ describe('watchSessionPrivacy', () => {
   let guard: ReturnType<typeof watchSessionPrivacy> | undefined;
   beforeEach(() => {
     setSessionLockPending(false);
+    discardAuthStatusReads();
     sessionStorage.clear();
     localStorage.clear();
     vi.useFakeTimers();
@@ -200,6 +202,28 @@ describe('watchSessionPrivacy', () => {
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
     await guard.revalidate();
     expect(getAuthStatus).toHaveBeenCalledTimes(2);
+  });
+
+  // FL-647: a page opening asks once, whether the top bar or the guard reads first
+  it('lets a passive recheck share the top bar read in flight, but sends its own on events', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getAuthStatus).toHaveBeenCalledOnce();
+
+    let finish!: (value: Awaited<ReturnType<typeof getAuthStatus>>) => void;
+    vi.mocked(getAuthStatus).mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const topBar = readAuthStatus('passive');
+    const joined = guard.revalidate();
+    finish(status(false));
+    await Promise.all([topBar, joined]);
+    expect(getAuthStatus).toHaveBeenCalledTimes(2);
+
+    vi.mocked(getAuthStatus).mockImplementation(respond(status(false)));
+    const another = readAuthStatus('passive');
+    eventManager.emit('WebsocketConnect');
+    await Promise.all([another, vi.advanceTimersByTimeAsync(0)]);
+    expect(getAuthStatus).toHaveBeenCalledTimes(4);
   });
 
   it('clears at the known expiry even while status revalidation is stalled', async () => {

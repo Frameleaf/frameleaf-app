@@ -9,6 +9,7 @@ import {
 import { browser } from '$app/env';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import { keepExtensionContinue } from '$lib/frameleaf/extension-sign-in';
 import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
 import { clearPrivateBrowserState, getPrivateBrowserStateGeneration } from '$lib/frameleaf/private-browser-state';
 import { retireStudioImportSessions } from '$lib/frameleaf/studio/import-retention';
@@ -145,9 +146,10 @@ class AuthManager {
     this.#preferences = withoutLockedRuleIds(preferences);
   }
 
-  async logout() {
+  /** `continue`: where the sign-in page goes once someone signs in again (FL-655: "Not you?"). */
+  async logout(options: { continue?: string } = {}) {
     retireStudioImportSessions();
-    let redirectUri = Route.login();
+    let redirectUri = Route.login(options.continue ? { continue: options.continue } : undefined);
 
     try {
       const response = await logout();
@@ -170,6 +172,10 @@ class AuthManager {
 
       await goto(redirectUri);
     } else {
+      // FL-655: the provider's sign-out page loses the way back to the Allow page; keep it here
+      if (options.continue) {
+        keepExtensionContinue(options.continue);
+      }
       location.assign(redirectUri);
     }
   }

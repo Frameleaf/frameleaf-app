@@ -20,6 +20,7 @@ import { AuthController } from 'src/controllers/auth.controller.js';
 import { BackupDeviceAdminController, BackupDeviceController } from 'src/controllers/backup-device.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { BookmarkController } from 'src/controllers/bookmark.controller.js';
+import { BrowserExtensionSignInController } from 'src/controllers/browser-extension-sign-in.controller.js';
 import { BuddyBackupPeerController } from 'src/controllers/buddy-backup-peer.controller.js';
 import { BuddyBackupAdminController, BuddyBackupOwnerController } from 'src/controllers/buddy-backup.controller.js';
 import { CaptureController } from 'src/controllers/capture.controller.js';
@@ -115,6 +116,7 @@ import { StudioProjectController } from 'src/controllers/studio-project.controll
 import { StudioReframeController } from 'src/controllers/studio-reframe.controller.js';
 import { StudioSourceResolutionController } from 'src/controllers/studio-source-resolution.controller.js';
 import { StudioSourceController } from 'src/controllers/studio-source.controller.js';
+import { StudioVoiceCleanupController } from 'src/controllers/studio-voice-cleanup.controller.js';
 import { StudioWorkspaceController } from 'src/controllers/studio-workspace.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
@@ -136,6 +138,7 @@ export const controllers = [
   LibraryItemController,
   AssetPaletteController,
   CaptureController,
+  BrowserExtensionSignInController,
   AlbumItemsController,
   AssetSourceController,
   BookmarkController,
@@ -244,6 +247,7 @@ export const controllers = [
   StudioMediaController,
   StudioCaptionTranslationController,
   StudioMovieController,
+  StudioVoiceCleanupController,
   StudioBundleController,
   StudioExportController,
   StudioReframeController,

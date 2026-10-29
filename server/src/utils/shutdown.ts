@@ -39,6 +39,11 @@ export const DATABASE_CLOSE_TIMEOUT_SECONDS = 0.5;
 /** What the supervisor posts to a worker thread (microservices, maintenance) to stop it. */
 export const WORKER_STOP_MESSAGE = 'frameleaf:stop';
 export const SERVER_OWNER_READY_MESSAGE = 'frameleaf:owner-ready:v1';
+/**
+ * FL-646: the API worker failed to start on a transient PostgreSQL conflict (lock timeout or deadlock). The supervisor
+ * starts it again with backoff instead of stopping the server. (`ExitCode.AppRestart` is 7.)
+ */
+export const API_STARTUP_RETRY_EXIT_CODE = 8;
 
 /** socket.io long-polls stay open until the next ping; they are closed with the gateway instead. */
 const isLongPoll = (req: IncomingMessage) => req.url?.startsWith('/api/socket.io') ?? false;

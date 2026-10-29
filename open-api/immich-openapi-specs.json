@@ -13795,6 +13795,57 @@
         "x-immich-state": "Stable"
       }
     },
+    "/assets/info": {
+      "post": {
+        "description": "Retrieve detailed information about up to 200 assets in one request, each exactly as the single-asset read returns it and with the same access check. Assets the caller may not read, or that do not exist, are left out instead of failing the request.",
+        "operationId": "getAssetsInfo",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetInfoBatchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetInfoBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve several assets",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/assets/jobs": {
       "post": {
         "description": "Run a specific job on a set of assets.",
@@ -19869,6 +19920,240 @@
           }
         ],
         "x-immich-permission": "bookmark.update"
+      }
+    },
+    "/browser-extension/sign-in": {
+      "delete": {
+        "description": "Called with the extension’s own access: removes it, so it is no longer listed in API keys. Only an access added by signing in can sign itself out.",
+        "operationId": "signOutBrowserExtension",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Sign Save to Frameleaf out",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "Public. Tells Save to Frameleaf this server can sign in from the browser; a server without it is asked for a key instead.",
+        "operationId": "getBrowserExtensionSignIn",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInInfoDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Check that Save to Frameleaf can sign in here",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/browser-extension/sign-in/authorize": {
+      "post": {
+        "description": "Signed in with a session (never a key). Allow makes a single-use code, valid five minutes, bound to you, this session, the code challenge, the exact return address and this server; only its SHA-256 is kept. Cancel makes nothing. Either way the response is where the sign-in window goes next.",
+        "operationId": "authorizeBrowserExtensionSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserExtensionSignInAuthorizeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInAuthorizeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Allow or cancel a Save to Frameleaf sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/browser-extension/sign-in/exchange": {
+      "post": {
+        "description": "Public: the code is the proof. Exchanges the code with its code verifier and the same return address for a new API key that can only save captures and list collections and tags (capture.create and capture.catalog.read), listed in API keys as “Save to Frameleaf · Chrome” or “· Edge” and added by signing in. It replaces this extension’s previous access to the account. The code is used up by the first attempt.",
+        "operationId": "exchangeBrowserExtensionSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserExtensionSignInExchangeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInExchangeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInErrorDto"
+                }
+              }
+            },
+            "description": "expired: the code is older than five minutes; invalid: anything else (unknown, used, wrong verifier, return address or server)"
+          }
+        },
+        "summary": "Finish a Save to Frameleaf sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/browser-extension/sign-in/start": {
+      "post": {
+        "description": "For the Allow page, signed in with a session (never a key). Checks the extension’s return address (https://<extension id>.chromiumapp.org/ only) and its S256 code challenge, and says whether this extension already has access, so Allow is asked only once per browser.",
+        "operationId": "startBrowserExtensionSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserExtensionSignInStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserExtensionSignInStartResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a Save to Frameleaf sign-in before Allow",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
       }
     },
     "/capture/albums": {
@@ -52439,6 +52724,204 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/voice-analysis": {
+      "post": {
+        "description": "Owner only. A quick look at up to the first minute of one audio clip on the main timeline of the head revision: wind, hum and buzz (with its mains frequency), background noise and room echo. It runs on this server or a computer at home, never on Frameleaf Cloud. Nothing is kept.",
+        "operationId": "analyzeStudioVoice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioVoiceAnalysisCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioVoiceAnalysisDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Find the noise in a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/voice-cleanups": {
+      "post": {
+        "description": "Owner only. Queues a clean-up of one audio clip on the main timeline of the head revision: the chosen noises are removed at the chosen strength, on this server or a computer at home (never Frameleaf Cloud). A clip cleaned before is cleaned again from its original. The cleaned sound is kept with the project as an audio import; the original is never changed and the graph is not edited. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`).",
+        "operationId": "createStudioVoiceCleanup",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioVoiceCleanupCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioVoiceCleanupQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clean up the voice in a Studio clip",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/voice-cleanups/{voiceCleanupId}": {
+      "get": {
+        "description": "Owner only. The job status and progress, and once it has completed the cleaned sound’s project import and where the clip’s window starts in it.",
+        "operationId": "getStudioVoiceCleanup",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "voiceCleanupId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioVoiceCleanupDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio voice clean-up",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/resources": {
       "get": {
         "description": "Every font, LUT, audio track, model, voice and tool the Studio engine can reach that has a reviewed rights decision: its licence, whether it may be redistributed, run on this server or run on Frameleaf Cloud, why a use was withheld, and the worker capability that runs it. A resource not listed is refused.",
@@ -66564,6 +67047,11 @@
             "description": "API key secret (only shown once)",
             "type": "string"
           },
+          "signedInFrom": {
+            "description": "The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace.",
+            "nullable": true,
+            "type": "string"
+          },
           "updatedAt": {
             "description": "Last update date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -66581,6 +67069,7 @@
           "name",
           "permissions",
           "secret",
+          "signedInFrom",
           "updatedAt"
         ],
         "type": "object"
@@ -66624,6 +67113,11 @@
             },
             "type": "array"
           },
+          "signedInFrom": {
+            "description": "The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace.",
+            "nullable": true,
+            "type": "string"
+          },
           "updatedAt": {
             "description": "Last update date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -66639,6 +67133,7 @@
           "lastUsedAt",
           "name",
           "permissions",
+          "signedInFrom",
           "updatedAt"
         ],
         "type": "object"
@@ -70532,6 +71027,40 @@
         ],
         "type": "object"
       },
+      "AssetInfoBatchDto": {
+        "properties": {
+          "ids": {
+            "description": "Asset IDs to read, at most 200",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "AssetInfoBatchResponseDto": {
+        "properties": {
+          "assets": {
+            "description": "Each requested asset the caller may read, as the single-asset read returns it, in request order; ids the caller may not read or that do not exist are left out",
+            "items": {
+              "$ref": "#/components/schemas/AssetResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assets"
+        ],
+        "type": "object"
+      },
       "AssetJobName": {
         "description": "Job name",
         "enum": [
@@ -73870,6 +74399,247 @@
         },
         "required": [
           "eq"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionClient": {
+        "description": "The browser Save to Frameleaf runs in",
+        "enum": [
+          "chrome",
+          "edge"
+        ],
+        "type": "string"
+      },
+      "BrowserExtensionSignInAuthorizeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "description": "true for Allow, false for Cancel",
+            "type": "boolean"
+          },
+          "client": {
+            "$ref": "#/components/schemas/BrowserExtensionClient"
+          },
+          "codeChallenge": {
+            "description": "The base64url SHA-256 of the extension’s code verifier",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "codeChallengeMethod": {
+            "description": "Only S256 is accepted",
+            "enum": [
+              "S256"
+            ],
+            "type": "string"
+          },
+          "installationId": {
+            "description": "A random id this installation of the extension made once; its access replaces only its own",
+            "pattern": "^[\\w-]{16,128}$",
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "state": {
+            "description": "Returned unchanged to the extension",
+            "maxLength": 512,
+            "minLength": 16,
+            "type": "string"
+          }
+        },
+        "required": [
+          "allow",
+          "client",
+          "codeChallenge",
+          "codeChallengeMethod",
+          "installationId",
+          "redirectUri",
+          "state"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInAuthorizeResponseDto": {
+        "properties": {
+          "redirectUrl": {
+            "description": "Where the sign-in window goes next: the return address with the code (or the cancellation) and state",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirectUrl"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInErrorCode": {
+        "description": "expired: the code is too old, sign in again; invalid: anything else",
+        "enum": [
+          "expired",
+          "invalid"
+        ],
+        "type": "string"
+      },
+      "BrowserExtensionSignInErrorDto": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/BrowserExtensionSignInErrorCode"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "statusCode": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "error",
+          "message",
+          "statusCode"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInExchangeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "The single-use code from the return address",
+            "maxLength": 200,
+            "minLength": 16,
+            "type": "string"
+          },
+          "codeVerifier": {
+            "description": "The code verifier the challenge was made from",
+            "maxLength": 128,
+            "minLength": 43,
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "The same return address the sign-in started with",
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "codeVerifier",
+          "redirectUri"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInExchangeResponseDto": {
+        "properties": {
+          "apiKeyId": {
+            "description": "The access, as listed in API keys",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "How the access is listed in API keys",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The new access key, shown once; it can only save captures and list collections and tags",
+            "type": "string"
+          },
+          "serverId": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiKeyId",
+          "name",
+          "secret",
+          "serverId",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInInfoDto": {
+        "properties": {
+          "version": {
+            "description": "The extension sign-in this server supports (1)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInStartDto": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/BrowserExtensionClient"
+          },
+          "codeChallenge": {
+            "description": "The base64url SHA-256 of the extension’s code verifier",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "codeChallengeMethod": {
+            "description": "Only S256 is accepted",
+            "enum": [
+              "S256"
+            ],
+            "type": "string"
+          },
+          "installationId": {
+            "description": "A random id this installation of the extension made once; its access replaces only its own",
+            "pattern": "^[\\w-]{16,128}$",
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "state": {
+            "description": "Returned unchanged to the extension",
+            "maxLength": 512,
+            "minLength": 16,
+            "type": "string"
+          }
+        },
+        "required": [
+          "client",
+          "codeChallenge",
+          "codeChallengeMethod",
+          "installationId",
+          "redirectUri",
+          "state"
+        ],
+        "type": "object"
+      },
+      "BrowserExtensionSignInStartResponseDto": {
+        "properties": {
+          "accessName": {
+            "description": "How the access is listed in API keys, e.g. “Save to Frameleaf · Chrome”",
+            "type": "string"
+          },
+          "alreadyAllowed": {
+            "description": "This browser’s extension already has access to your account, so Allow is not asked again",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accessName",
+          "alreadyAllowed"
         ],
         "type": "object"
       },
@@ -138318,6 +139088,253 @@
           "refusal"
         ],
         "type": "object"
+      },
+      "StudioVoiceAnalysisCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "An audio clip on the main timeline of the head revision",
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clipId"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceAnalysisDto": {
+        "properties": {
+          "clipId": {
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "humHz": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  50
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              }
+            ],
+            "description": "The mains frequency of the hum found, or null",
+            "nullable": true
+          },
+          "noises": {
+            "description": "What the quick analysis found; the person can change it",
+            "items": {
+              "$ref": "#/components/schemas/StudioVoiceNoise"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clipId",
+          "humHz",
+          "noises"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceCleanupCreateDto": {
+        "properties": {
+          "clipId": {
+            "description": "An audio clip on the main timeline of the head revision",
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "humHz": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  50
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              }
+            ],
+            "description": "The mains frequency of the hum found, or null",
+            "nullable": true
+          },
+          "noises": {
+            "description": "What to remove",
+            "items": {
+              "$ref": "#/components/schemas/StudioVoiceNoise"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          },
+          "strength": {
+            "$ref": "#/components/schemas/StudioVoiceStrength"
+          }
+        },
+        "required": [
+          "clipId",
+          "noises",
+          "strength"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceCleanupDto": {
+        "properties": {
+          "clipId": {
+            "pattern": "^[\\w-]{1,128}$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioVoiceCleanupResultDto"
+              }
+            ],
+            "description": "Present once the job has completed",
+            "nullable": true
+          },
+          "revision": {
+            "description": "The revision whose clip was cleaned",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "clipId",
+          "error",
+          "id",
+          "progress",
+          "projectId",
+          "result",
+          "revision",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceCleanupQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; follow it in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceCleanupResultDto": {
+        "properties": {
+          "durationSeconds": {
+            "description": "How long the cleaned sound is",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "humHz": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  50
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              }
+            ],
+            "description": "The mains frequency of the hum found, or null",
+            "nullable": true
+          },
+          "import": {
+            "$ref": "#/components/schemas/StudioProjectImportDto",
+            "description": "The cleaned sound, kept with the project as an audio import"
+          },
+          "noises": {
+            "items": {
+              "$ref": "#/components/schemas/StudioVoiceNoise"
+            },
+            "type": "array"
+          },
+          "sourceStartSeconds": {
+            "description": "Where in the cleaned sound the clip's window starts (the handle before it)",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "strength": {
+            "$ref": "#/components/schemas/StudioVoiceStrength"
+          }
+        },
+        "required": [
+          "durationSeconds",
+          "humHz",
+          "import",
+          "noises",
+          "sourceStartSeconds",
+          "strength"
+        ],
+        "type": "object"
+      },
+      "StudioVoiceNoise": {
+        "description": "Wind, hum and buzz, background noise or room echo",
+        "enum": [
+          "wind",
+          "hum",
+          "background",
+          "echo"
+        ],
+        "type": "string"
+      },
+      "StudioVoiceStrength": {
+        "description": "Light keeps the room's sound, Standard removes most noise, Strong leaves the voice only",
+        "enum": [
+          "light",
+          "standard",
+          "strong"
+        ],
+        "type": "string"
       },
       "StudioWorkerCapability": {
         "description": "A Studio worker capability, as the command catalogue names it",
