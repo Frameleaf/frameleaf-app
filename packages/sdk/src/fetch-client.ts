@@ -2999,6 +2999,8 @@ export type MediaOperationDto = {
     };
     startedAt: string | null;
     status: MediaOperationStatus;
+    /** Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise */
+    studioWork?: string | null;
     totalUnits: string | null;
     updatedAt: string;
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
@@ -4497,6 +4499,8 @@ export type AssetResponseDto = {
     /** Owner user ID */
     ownerId: string;
     people?: PersonResponseDto[];
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Is resized */
     resized?: boolean;
     stack?: (AssetStackResponseDto) | null;
@@ -4534,6 +4538,8 @@ export type SanitizedAssetResponseDto = {
     localDateTime: string;
     /** Original MIME type */
     originalMimeType?: string;
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting. */
     thumbhash: string | null;
     "type": AssetTypeEnum;
@@ -6204,6 +6210,8 @@ export type BestPhotoAssetResponseDto = {
     /** Owner user ID */
     ownerId: string;
     people?: PersonResponseDto[];
+    /** Whether a video has a playback copy; omitted for photos and when file evidence was not loaded */
+    playbackCopy?: boolean;
     /** Is resized */
     resized?: boolean;
     stack?: (AssetStackResponseDto) | null;
@@ -6232,6 +6240,18 @@ export type BookmarkCreateDto = {
     rating?: number | null;
     title: string;
     url: string;
+};
+export type BookmarkPreviewRequestDto = {
+    url: string;
+};
+export type BookmarkPreviewResponseDto = {
+    /** The page's picture, to upload as the link's preview */
+    image: {
+        contentType: string;
+        /** Base64 image bytes */
+        data: string;
+    } | null;
+    title: string | null;
 };
 export type BookmarkUpdateDto = {
     isArchived?: boolean;
@@ -9502,6 +9522,8 @@ export type MediaOperationDetailDto = {
     };
     startedAt: string | null;
     status: MediaOperationStatus;
+    /** Which Studio clip job this is when it shares the `studio_transcription` kind with captions, such as `stabilise` or `voice-cleanup`; null otherwise */
+    studioWork?: string | null;
     totalUnits: string | null;
     updatedAt: string;
     /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
@@ -15027,6 +15049,64 @@ export type SourceGrantDto = {
     sourceId: string;
     sourceToken: string;
 };
+export type SpeechRevisionDto = {
+    /** The generation last read; null only before the first configuration. Stale writes return 409. */
+    expectedGeneration: string | null;
+};
+export type SpeechStatusDto = {
+    albumIds: string[];
+    destinationId: string | null;
+    enabled: boolean;
+    error: (SpeechIndexError) | null;
+    failed: number;
+    generation: string | null;
+    indexed: number;
+    pending: number;
+    scope: SpeechScope;
+    workerAvailable: boolean;
+};
+export type SpeechSettingsUpdateDto = {
+    albumIds: string[];
+    destinationId: string | null;
+    enabled: boolean;
+    /** The generation last read; null only before the first configuration. Stale writes return 409. */
+    expectedGeneration: string | null;
+    scope: SpeechScope;
+};
+export type SpeechCapabilitiesDto = {
+    version: number;
+};
+export type SpeechSearchDto = {
+    /** Restrict to one matching video, including when loading its next occurrence page. */
+    assetId?: string;
+    /** Video keyset cursor bound to this owner, literal query, filters, scope, model and index version. Stale cursors return 409 with code speech_cursor_stale. Newly completed videos may appear on later pages. */
+    cursor?: string;
+    filter?: SearchFilter;
+    /** The item nextHitCursor; requires assetId and the same query and filters. Separate from video pagination; binds the completed transcript identity. Stale cursors return 409 with code speech_cursor_stale. */
+    hitCursor?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
+    /** Literal Unicode letter/number tokens, case insensitive, no stemming. Terms are ANDed; straight or smart double quotes require consecutive tokens. Unspaced Chinese/Japanese/Korean characters are indexed individually and contiguous input remains consecutive. Between 1 and 64 normalized tokens total; each token at most 2046 UTF-8 bytes. */
+    query: string;
+    size?: number;
+};
+export type SpeechHit = {
+    endMs: number;
+    startMs: number;
+    text: string;
+};
+export type SpeechSearchItem = {
+    asset: AssetResponseDto;
+    hits: SpeechHit[];
+    hitsTotal: number;
+    nextHitCursor: string | null;
+    /** Completed index identity. Revalidate the same query restricted to assetId before playback; reject a changed transcriptId. */
+    transcriptId: string;
+};
+export type SpeechSearchResponseDto = {
+    items: SpeechSearchItem[];
+    nextCursor: string | null;
+    total: number;
+};
 export type StackResponseDto = {
     assets: AssetResponseDto[];
     /** Stack ID */
@@ -15612,6 +15692,24 @@ export type StudioBundleExportCreateDto = {
     /** Export only these sequences, with every sequence they nest. `main` names the Main timeline. Leave out for the whole project. */
     sequenceIds?: string[];
 };
+export type StudioCaptionTranslationCreateDto = {
+    /** The caption lines, in order, as plain text. Timing stays with the caller. */
+    lines: string[];
+    /** The language the captions are in */
+    source: StudioCaptionLanguage;
+    /** The language to translate them into */
+    target: StudioCaptionLanguage;
+};
+export type StudioCaptionTranslationDto = {
+    /** The machine-learning destination that translated the lines */
+    destinationId: string;
+    /** One translation per line asked for, in the same order */
+    lines: string[];
+    /** The translation model the worker used */
+    model: string;
+    source: StudioCaptionLanguage;
+    target: StudioCaptionLanguage;
+};
 export type StudioTimeDto = {
     /** Denominator */
     den: number;
@@ -15997,6 +16095,51 @@ export type StudioSourceResolutionDto = {
     projectId: string;
     revision: number;
     selection: StudioSourceSelectionDto;
+};
+export type StudioStabiliseCreateDto = {
+    /** A video clip on the main timeline of the head revision */
+    clipId: string;
+};
+export type StudioStabiliseQueuedDto = {
+    /** The job id; follow it in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioStabiliseMotionDto = {
+    /** Cumulative camera turn in radians, float32 little-endian, base64 */
+    a: string;
+    /** Samples in each path */
+    count: number;
+    /** Share of frames whose movement was found */
+    found: number;
+    /** Height of the analysed picture */
+    height: number;
+    /** How the movement was estimated, such as `block-similarity-v1` */
+    method: string;
+    /** Samples a second */
+    rate: number;
+    /** Source seconds of the first sample */
+    start: number;
+    /** Format version of the path; 1 */
+    version: number;
+    /** Width of the analysed picture */
+    width: number;
+    /** Cumulative horizontal camera path, fractions of the frame width, float32 little-endian, base64 */
+    x: string;
+    /** Cumulative vertical camera path, fractions of the frame height, float32 little-endian, base64 */
+    y: string;
+};
+export type StudioStabiliseDto = {
+    clipId: string;
+    error: string | null;
+    id: string;
+    progress: number;
+    projectId: string;
+    /** Present once the job has completed: the clip's camera path, for its `stabilisation.motion` */
+    result: (StudioStabiliseMotionDto) | null;
+    /** The revision whose clip was analysed */
+    revision: number;
+    status: MediaOperationStatus;
 };
 export type StudioTranscriptionCreateDto = {
     /** A video or audio clip on the main timeline of the head revision */
@@ -23923,6 +24066,21 @@ export function createBookmark({ bookmarkCreateDto }: {
     })));
 }
 /**
+ * Read a public page's title and picture
+ */
+export function previewBookmark({ bookmarkPreviewRequestDto }: {
+    bookmarkPreviewRequestDto: BookmarkPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BookmarkPreviewResponseDto;
+    }>("/bookmarks/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: bookmarkPreviewRequestDto
+    })));
+}
+/**
  * Move an owned bookmark to trash
  */
 export function trashBookmark({ id }: {
@@ -30923,6 +31081,88 @@ export function createSourceResourceGrant({ sourceGrantRequestDto }: {
     })));
 }
 /**
+ * Disable speech indexing and delete your stored transcripts
+ */
+export function deleteSpeechIndex({ speechRevisionDto }: {
+    speechRevisionDto: SpeechRevisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SpeechStatusDto;
+    }>("/speech", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: speechRevisionDto
+    })));
+}
+/**
+ * Get your speech indexing scope and progress
+ */
+export function getSpeechStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SpeechStatusDto;
+    }>("/speech", {
+        ...opts
+    }));
+}
+/**
+ * Set your speech indexing opt-in and scope
+ */
+export function updateSpeechSettings({ speechSettingsUpdateDto }: {
+    speechSettingsUpdateDto: SpeechSettingsUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SpeechStatusDto;
+    }>("/speech", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: speechSettingsUpdateDto
+    })));
+}
+/**
+ * Get spoken words indexing capabilities
+ */
+export function getSpeechCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SpeechCapabilitiesDto;
+    }>("/speech/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * Retry failed speech indexing within your current scope
+ */
+export function retrySpeechIndexing({ speechRevisionDto }: {
+    speechRevisionDto: SpeechRevisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SpeechStatusDto;
+    }>("/speech/retry", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: speechRevisionDto
+    })));
+}
+/**
+ * Search literal spoken words and quoted phrases in your videos
+ */
+export function searchSpokenWords({ speechSearchDto }: {
+    speechSearchDto: SpeechSearchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SpeechSearchResponseDto;
+    }>("/speech/search", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: speechSearchDto
+    })));
+}
+/**
  * Delete stacks
  */
 export function deleteStacks({ bulkIdsDto }: {
@@ -31463,6 +31703,22 @@ export function exportStudioProjectBundle({ id, studioBundleExportCreateDto }: {
     })));
 }
 /**
+ * Translate Studio captions
+ */
+export function translateStudioCaptions({ id, studioCaptionTranslationCreateDto }: {
+    id: string;
+    studioCaptionTranslationCreateDto: StudioCaptionTranslationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCaptionTranslationDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/caption-translations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioCaptionTranslationCreateDto
+    })));
+}
+/**
  * List Studio review comments
  */
 export function getStudioProjectComments({ id, skip, take }: {
@@ -31865,6 +32121,36 @@ export function resolveStudioProjectSource({ id, studioSourceResolutionRequestDt
         method: "POST",
         body: studioSourceResolutionRequestDto
     })));
+}
+/**
+ * Analyse the camera movement of a Studio clip
+ */
+export function createStudioStabilise({ id, studioStabiliseCreateDto }: {
+    id: string;
+    studioStabiliseCreateDto: StudioStabiliseCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioStabiliseQueuedDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/stabilisations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioStabiliseCreateDto
+    })));
+}
+/**
+ * Get a Studio clip camera movement analysis
+ */
+export function getStudioStabilise({ id, stabiliseId }: {
+    id: string;
+    stabiliseId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioStabiliseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/stabilisations/${encodeURIComponent(stabiliseId)}`, {
+        ...opts
+    }));
 }
 /**
  * Transcribe a Studio clip
@@ -37461,6 +37747,14 @@ export enum SharedSpaceEventType {
 export enum SourceResourceScope {
     SourceOriginalRead = "source-original-read"
 }
+export enum SpeechIndexError {
+    Unavailable = "unavailable",
+    Failed = "failed"
+}
+export enum SpeechScope {
+    Library = "library",
+    Albums = "albums"
+}
 export enum StudioMediaColorTransfer {
     Sdr = "sdr",
     Pq = "pq",
@@ -37591,6 +37885,19 @@ export enum StudioProjectSort {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum StudioCaptionLanguage {
+    En = "en",
+    Fr = "fr",
+    Es = "es",
+    De = "de",
+    It = "it",
+    Pt = "pt",
+    Nl = "nl",
+    Pl = "pl",
+    Sv = "sv",
+    Da = "da",
+    Nb = "nb"
 }
 export enum StudioReframeSubject {
     Face = "face",

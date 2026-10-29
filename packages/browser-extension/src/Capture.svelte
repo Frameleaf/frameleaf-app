@@ -1,5 +1,13 @@
 <script lang="ts">
   import { cropCapture, ScreenshotFailure } from "./capture";
+  import { checkWholeCapture } from "./whole-page-capture";
+  import {
+    WHOLE_PAGE_LIMIT,
+    isWholePageInfo,
+    wholePageCaption,
+    wholePageFilename,
+    withCutNote,
+  } from "./whole-page";
   import QueuePanel from "./QueuePanel.svelte";
   import CollectionPicker from "./CollectionPicker.svelte";
   import Header from "./Header.svelte";
@@ -131,12 +139,14 @@
   );
   async function load() {
     const failure = new URL(location.href).searchParams.get("error");
-    if (failure === "page" || failure === "screenshot") {
+    if (failure === "page" || failure === "screenshot" || failure === "whole") {
       loading = false;
       error =
-        failure === "screenshot"
-          ? "The screenshot wasn’t taken. Go back to the same tab, check the connection and try again. Nothing was saved."
-          : "Could not read that page or image. Go back to the page and try again, or save the page link from the toolbar.";
+        failure === "whole"
+          ? "The whole page wasn’t captured. The page was put back as it was, and nothing was saved. Keep the same tab open and focused, then try again, or choose What you can see."
+          : failure === "screenshot"
+            ? "The screenshot wasn’t taken. Go back to the same tab, check the connection and try again. Nothing was saved."
+            : "Could not read that page or image. Go back to the page and try again, or save the page link from the toolbar.";
       return;
     }
     try {
@@ -212,11 +222,13 @@
     try {
       if (!shot.dataUrl.startsWith("data:image/png;base64,"))
         throw new ScreenshotFailure();
-      const blob = await cropCapture(
-        await (await fetch(shot.dataUrl)).blob(),
-        shot.viewport,
-        shot.selection,
-      );
+      const original = await (await fetch(shot.dataUrl)).blob();
+      let blob: Blob;
+      if (shot.mode !== "whole")
+        blob = await cropCapture(original, shot.viewport, shot.selection);
+      else if (isWholePageInfo(shot.whole))
+        blob = await checkWholeCapture(original, shot.whole);
+      else throw new ScreenshotFailure();
       if (preview?.id !== current.id) return;
       screenshotBlob = blob;
       screenshotUrl = URL.createObjectURL(blob);
@@ -251,12 +263,18 @@
       return;
     const id = preview.id;
     const mode = preview.screenshot.mode;
+    const whole = mode === "whole" ? preview.screenshot.whole : undefined;
     saving = true;
     error = "";
     notice = "";
     try {
       const input = captureInput(
-        { binding: connection.binding, albumId, tagIds: [...tagIds], note },
+        {
+          binding: connection.binding,
+          albumId,
+          tagIds: [...tagIds],
+          note: whole ? withCutNote(note, whole) : note,
+        },
         {
           id: "screenshot",
           kind: "image",
@@ -266,14 +284,19 @@
         },
         screenshotBlob,
       );
-      input.file!.filename =
-        mode === "area" ? "screenshot-area.png" : "screenshot-visible.png";
+      input.file!.filename = whole
+        ? wholePageFilename(whole, siteName(sourcePage))
+        : mode === "area"
+          ? "screenshot-area.png"
+          : "screenshot-visible.png";
       await enqueueCapture(input);
       if (preview?.id === id) {
         clearImages();
         screenshotDone = true;
         preview.screenshot.dataUrl = null;
-        notice = "Saving the screenshot.";
+        notice = whole?.cut
+          ? `Saving, cut short at ${px(WHOLE_PAGE_LIMIT)} px. In Boards it’s called “${wholePageFilename(whole, siteName(sourcePage)).replace(/\.png$/, "")}”, and its note says where it stops.`
+          : "Saving the screenshot.";
         queuedAny = true;
       }
       void sendRequest({ type: "wake-queue" }).catch(() => {});
@@ -588,6 +611,25 @@
   const screenshotSize = $derived(
     screenshotDimensions ? ` · ${screenshotDimensions}` : "",
   );
+  const px = (value: number) => Math.round(value).toLocaleString("en-US");
+  function siteName(page: string) {
+    try {
+      return new URL(page).hostname || "web page";
+    } catch {
+      return "web page";
+    }
+  }
+  const wholeInfo = $derived(
+    preview?.screenshot?.mode === "whole" &&
+      isWholePageInfo(preview.screenshot.whole)
+      ? preview.screenshot.whole
+      : null,
+  );
+  let strip = $state<HTMLDivElement | null>(null);
+  function showCut() {
+    // A cut picture opens at the cut, so where it stops is the first thing seen.
+    if (wholeInfo?.cut && strip) strip.scrollTop = strip.scrollHeight;
+  }
   function label(url: string) {
     if (url.startsWith("data:")) return "Embedded image";
     if (url.startsWith("blob:")) return "Page image";
@@ -681,7 +723,59 @@
         <section aria-label="Screenshot preview" class="stack">
           {#if preparingScreenshot}<p role="status">
               Preparing the screenshot…
-            </p>{:else if screenshotUrl}<figure class="shot">
+            </p>{:else if screenshotUrl && wholeInfo}<figure class="shot">
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+              <div
+                class="whole-strip"
+                bind:this={strip}
+                tabindex="0"
+                aria-label={wholeInfo.cut
+                  ? "Preview of the picture, scrolled to where it was cut"
+                  : "Preview of the whole page"}
+              >
+                <img
+                  class="whole-preview"
+                  src={screenshotUrl}
+                  alt={wholeInfo.cut
+                    ? "The page down to where it was cut, to check before saving"
+                    : "The whole page, to check before saving"}
+                  onload={showCut}
+                />
+                {#if wholeInfo.cut}<div class="whole-cut">
+                    <span
+                      >Cut here at {px(WHOLE_PAGE_LIMIT)} px · the page goes on</span
+                    >
+                  </div>{:else}<div class="whole-end">
+                    <Icon name="check" size={14} /> End of the page
+                  </div>{/if}
+              </div>
+              <figcaption class:cut-caption={wholeInfo.cut}>
+                {#if wholeInfo.cut}<Icon
+                    name="alertOutline"
+                    size={14}
+                  />{/if}{wholePageCaption(wholeInfo)}
+              </figcaption>
+            </figure>
+            {#if wholeInfo.cut}<div class="cut-warning" role="note">
+                <Icon name="contentCut" size={18} />
+                <span>
+                  <strong>Too tall for one picture, so it was cut short</strong>
+                  One picture holds up to {px(WHOLE_PAGE_LIMIT)} px. This one stops
+                  {px(wholeInfo.pageHeight - wholeInfo.height)} px before the end
+                  of the page, and is saved as cut short. For the rest, scroll down
+                  and use Select an area.
+                </span>
+              </div>{:else}<p class="hint">
+                Joined from {wholeInfo.screens}
+                {wholeInfo.screens === 1 ? "screen" : "screens"}, top to bottom.{wholeInfo.keptBars
+                  ? " Bars that stay on screen are kept once at the top."
+                  : ""}
+              </p>{/if}
+            {#if wholeInfo.reduced}<p class="hint">
+                Made a little smaller than your screen shows it, so the whole
+                picture fits in one file.
+              </p>{/if}
+          {:else if screenshotUrl}<figure class="shot">
               <img
                 class="screenshot-preview"
                 src={screenshotUrl}
@@ -909,7 +1003,11 @@
           type="button"
           disabled={busy || !screenshotBlob || screenshotDone || !albumId}
           onclick={() => void saveScreenshot()}
-          >{saving ? "Saving…" : "Save screenshot"}</button
+          >{saving
+            ? "Saving…"
+            : wholeInfo?.cut
+              ? "Save cut-short picture"
+              : "Save screenshot"}</button
         >
       {:else if preview.discovery.bookmarkUrl}
         <button

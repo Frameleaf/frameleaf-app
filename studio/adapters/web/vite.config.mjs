@@ -35,6 +35,8 @@ const substitutedModules = {
   '@/features/export/components/export-dialog': 'export-dialog.tsx',
   '@/features/export/components/exports-dialog': 'exports-dialog.tsx',
   '@/features/project-bundle/components/bundle-export-dialog': 'bundle-export-dialog.tsx',
+  // FL-638: Stabilise measures camera movement as a job on the Frameleaf server.
+  '@/features/editor/components/properties-sidebar/clip-panel/stabilise-service': 'stabilise-service.ts',
 }
 
 /** Feature rows this build implements and tests (FL-92's command rows); FL-85 owns the rest. */

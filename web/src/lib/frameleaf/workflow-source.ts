@@ -4,6 +4,9 @@ import { cloneJson, emptyDraft, type WorkflowDraft } from './workflows';
 
 /** Compile once, so saved-search edits and date shortcuts cannot change an existing rule. */
 export function workflowFromSearch(query: DiscoveryQuery, name = ''): WorkflowDraft {
+  if (query.mode === 'speech') {
+    throw new Error('Spoken words cannot be copied into a workflow');
+  }
   const request = discoverySearchRequest(query);
   return {
     ...emptyDraft('AssetChanged'),

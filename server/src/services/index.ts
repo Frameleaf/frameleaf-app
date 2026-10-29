@@ -140,10 +140,12 @@ import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { SourceResourceAuthService } from 'src/services/source-resource-auth.service.js';
+import { SpeechService } from 'src/services/speech.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioCaptionTranslationService } from 'src/services/studio-caption-translation.service.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
@@ -159,6 +161,7 @@ import { StudioReverseConformCommandService } from 'src/services/studio-reverse-
 import { StudioReverseConformService } from 'src/services/studio-reverse-conform.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
 import { StudioSourceResolutionService } from 'src/services/studio-source-resolution.service.js';
+import { StudioStabiliseService } from 'src/services/studio-stabilise.service.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
 import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';
@@ -182,6 +185,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  SpeechService,
   LibraryItemService,
   AssetPaletteService,
   CaptureService,
@@ -341,7 +345,9 @@ export const services = [
   StudioProjectService,
   StudioReverseConformService,
   StudioReverseConformCommandService,
+  StudioCaptionTranslationService,
   StudioMovieService,
+  StudioStabiliseService,
   StudioTranscriptionService,
   StudioResourceService,
   StudioRevocationService,

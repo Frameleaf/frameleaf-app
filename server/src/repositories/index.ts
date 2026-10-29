@@ -111,6 +111,7 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
+import { SpeechRepository } from 'src/repositories/speech.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
@@ -121,6 +122,7 @@ import { StudioPreviewRepository } from 'src/repositories/studio-preview.reposit
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
 import { StudioSourceResolutionRepository } from 'src/repositories/studio-source-resolution.repository.js';
+import { StudioStabiliseRepository } from 'src/repositories/studio-stabilise.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -138,6 +140,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  SpeechRepository,
   AssetPaletteRepository,
   CaptureRepository,
   AssetSourceRepository,
@@ -250,6 +253,7 @@ export const repositories = [
   StudioImportFileRepository,
   StudioReverseConformRepository,
   StudioMovieRepository,
+  StudioStabiliseRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,
   DerivativePrivacyRepository,

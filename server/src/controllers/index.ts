@@ -99,9 +99,11 @@ import { SharedLinkController } from 'src/controllers/shared-link.controller.js'
 import { SharedSpaceController } from 'src/controllers/shared-space.controller.js';
 import { SmartAlbumController } from 'src/controllers/smart-album.controller.js';
 import { SourceResourceController } from 'src/controllers/source-resource.controller.js';
+import { SpeechController } from 'src/controllers/speech.controller.js';
 import { StackController } from 'src/controllers/stack.controller.js';
 import { StorageMigrationAdminController } from 'src/controllers/storage-migration-admin.controller.js';
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
+import { StudioCaptionTranslationController } from 'src/controllers/studio-caption-translation.controller.js';
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
@@ -130,6 +132,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  SpeechController,
   LibraryItemController,
   AssetPaletteController,
   CaptureController,
@@ -239,6 +242,7 @@ export const controllers = [
   StackController,
   StorageMigrationAdminController,
   StudioMediaController,
+  StudioCaptionTranslationController,
   StudioMovieController,
   StudioBundleController,
   StudioExportController,

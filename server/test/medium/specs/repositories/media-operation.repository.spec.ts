@@ -73,6 +73,39 @@ describe(MediaOperationRepository.name, () => {
       ...overrides,
     });
 
+  it('excludes internal speech before public pagination and aggregates without changing internal claims', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const older = await newOperation(sut, user.id);
+    const speech = await newOperation(sut, user.id, { kind: MediaOperationKind.SpeechTranscription });
+    const newer = await newOperation(sut, user.id, { kind: MediaOperationKind.StudioPreview });
+    await newOperation(sut, user.id, { kind: MediaOperationKind.SpeechTranscription });
+    const options = { ownerId: user.id, publicOnly: true, take: 1, skip: 0 };
+    const first = await sut.list(options);
+    const second = await sut.list({ ...options, skip: 1 });
+    expect(first.total).toBe(2);
+    expect(second.total).toBe(2);
+    expect(first.items.map(({ id }) => id)).toEqual([newer.id]);
+    expect(second.items.map(({ id }) => id)).toEqual([older.id]);
+    expect((await sut.list({ ...options, kind: MediaOperationKind.SpeechTranscription })).total).toBe(0);
+    expect((await sut.list({ ...options, publicOnly: false, take: 10 })).total).toBe(4);
+    const publicCounts = await sut.getAggregates({ publicOnly: true });
+    expect(publicCounts.map(({ kind }) => kind).sort()).toEqual(
+      [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview].sort(),
+    );
+    expect(publicCounts.reduce((total, row) => total + row.count, 0)).toBe(2);
+    expect((await sut.getAggregates()).find(({ kind }) => kind === MediaOperationKind.SpeechTranscription)?.count).toBe(
+      2,
+    );
+    const held = await sut.claimNext({
+      kinds: [MediaOperationKind.SpeechTranscription],
+      workerId: 'speech-test',
+      leaseMs: LEASE_MS,
+    });
+    expect(held?.operation.id).toBe(speech.id);
+    expect(held?.operation.kind).toBe(MediaOperationKind.SpeechTranscription);
+  });
+
   it('strict heartbeat refuses cancellation while the live worker retains its token to acknowledge stop', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

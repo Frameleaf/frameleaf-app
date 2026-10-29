@@ -632,6 +632,25 @@
       "source": "OpenAI Whisper repository LICENSE (MIT); Hugging Face cards openai/whisper-large-v3-turbo (mit), openai/whisper-small (apache-2.0), dropbox-dash/faster-whisper-large-v3-turbo (mit), Systran/faster-whisper-small (mit); faster-whisper and CTranslate2 on PyPI (MIT); the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/whisper-large-v3-turbo and frameleaf/whisper-small)"
     },
     {
+      "status": "looked-up",
+      "notice": "Studio captions in other languages (owner decision 2026-10-29, FL-641): Meta AI's M2M100 418M as the int8 CTranslate2 conversion jncraton/m2m100_418M-ct2-int8 revision 7c1b2620a4e58dacecbd8bf89cfd6da7eb9eb7b0 (model.bin SHA-256 d6703dd9f920ff896e45c3d97b490761bed5944937b90bbe6a7245f5652542d4), run by CTranslate2 (MIT, OpenNMT) with SentencePiece (Apache-2.0, Google), served unchanged by the Frameleaf model mirror. Only caption text is sent; it runs on this server's ML worker or a computer at home.",
+      "id": "m2m100-translate",
+      "group": "library-models",
+      "name": "M2M100 418M translation for Studio captions (CTranslate2 conversion)",
+      "author": "Meta AI (fairseq); CTranslate2 conversion by Jon Craton",
+      "licence": "MIT (M2M100 weights and the conversion; CTranslate2), Apache-2.0 (SentencePiece)",
+      "link": "https://github.com/facebookresearch/fairseq/tree/main/examples/m2m_100",
+      "shipped": "downloaded",
+      "noticeFiles": [
+        "licenses/texts/fairseq-m2m100-mit.txt",
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [
+        "ml:translate:*"
+      ],
+      "source": "fairseq repository LICENSE (MIT); model cards facebook/m2m100_418M (mit) and jncraton/m2m100_418M-ct2-int8 (mit); CTranslate2 (MIT) and sentencepiece (Apache-2.0) on PyPI; the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/m2m100-418m)"
+    },
+    {
       "status": "recorded",
       "notice": "The 3B model (the default) is under the Qwen Research License (non-commercial); the 7B model is under Apache-2.0. Both run on this server, a home-network worker and Frameleaf Cloud, for personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).",
       "id": "qwen2.5-vl",

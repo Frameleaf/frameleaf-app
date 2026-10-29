@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
   import { browser } from '$app/env';
   import { replaceState } from '$app/navigation';
@@ -32,6 +33,7 @@
   import { isPanorama } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -335,11 +337,29 @@
   });
 
   let requestedOriginalVideo = $state($alwaysLoadOriginalVideo);
-  const isPlayingOriginalVideo = $derived(requestedOriginalVideo && (!sharedLink || sendCopyPermitted(sharedLink)));
+  const speechOriginal = $derived(videoSeek.pending?.assetId === asset.id && videoSeek.pending.original === true);
+  $effect(() => {
+    if (speechOriginal) {
+      requestedOriginalVideo = true;
+    }
+  });
+  // FL-630: a video without a playback copy plays its original (unless real-time playback makes one as it
+  // plays), so the player asks for the original directly
+  const isPlayingOriginalVideo = $derived(
+    (requestedOriginalVideo ||
+      speechOriginal ||
+      (asset.playbackCopy === false && !featureFlagsManager.value.realtimeTranscoding)) &&
+      (!sharedLink || sendCopyPermitted(sharedLink)),
+  );
   let slideshowStartAssetId = $state<string>();
 
   const setPlayOriginalVideo = (value: boolean) => {
     requestedOriginalVideo = value;
+    // "Play encoded" must win over a spoken-word seek still waiting for the original. Its moment is on the
+    // original's timeline, which a trimmed encoded video doesn't share, so drop the seek rather than land wrong.
+    if (!value && speechOriginal) {
+      videoSeek.pending = null;
+    }
   };
 
   const refreshStack = async () => {
