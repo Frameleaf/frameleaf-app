@@ -14,7 +14,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.
  import { getLinkedAudioCompanion } from '@/shared/utils/linked-media'
  import { useGizmoStore } from '@/features/editor/deps/preview'
  
-@@ -695,6 +696,11 @@ const ClipPanelCore = memo(function ClipPanelCore({
+@@ -699,6 +700,11 @@ const ClipPanelCore = memo(function ClipPanelCore({
          <TabsContent value="motion" className="mt-3 min-h-0 flex-1 data-[state=inactive]:hidden">
            {showMotionTab && activeTab === 'motion' ? (
              <div className="flex h-full min-h-0 flex-col">
@@ -470,9 +470,9 @@ new file mode 100644
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -50,6 +50,11 @@ export {
-   type ColourMatchTargetResult,
- } from '@/features/timeline/stores/actions/edit/colour-match-actions'
+@@ -59,6 +59,11 @@ export {
+   type MotionTrackResult,
+ } from '@/features/timeline/stores/actions/edit/motion-track-actions'
  export { applyColourMatch } from '@/features/timeline/utils/colour-match'
 +export {
 +  applyStabilisation,
@@ -1052,10 +1052,10 @@ new file mode 100644
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -998,6 +998,32 @@
-       "review": "Before and after",
-       "before": "Before",
-       "after": "After"
+@@ -1050,6 +1050,32 @@
+       },
+       "box": "Tracking box",
+       "thisClipBox": "This clip's box"
 +    },
 +    "stabilise": {
 +      "title": "Stabilise",

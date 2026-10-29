@@ -87,7 +87,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
     sourceSha256 === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
     // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
-    sourceSha256 === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232'
+    sourceSha256 === 'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
+    // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
+    sourceSha256 === 'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f'
   )
     return {
       ...COMPOSITION_SOURCES,
@@ -96,7 +98,7 @@ export function compositionSourcesFor(sourceSha256) {
     }
   // FL-638 Stabilise: a stabilised video clip leaves the GPU-direct paths for the canvas item
   // renderer, which draws it through its correction; every other clip renders as before.
-  if (sourceSha256 === '1388b37e8090b121d885180965c6386c10896c420f1d7c28e925e9fc634b3c9a')
+  if (sourceSha256 === '0f9719d7e953530da1c18ae4c110ac029705dfd85801577751eb6c5fec36bf48')
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':
