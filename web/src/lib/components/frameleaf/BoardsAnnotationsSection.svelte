@@ -65,6 +65,13 @@
     {:else}
       <p class="muted">{$t('frameleaf_boards_annotations_none')}</p>
     {/if}
+    {#if annotations.saveFailed}
+      <InlineError
+        compact
+        message={$t('frameleaf_boards_annotations_save_failed')}
+        onRetry={() => annotations.retry()}
+      />
+    {/if}
   </section>
 {/if}
 

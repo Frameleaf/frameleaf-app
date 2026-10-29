@@ -108,7 +108,9 @@ export function createAnnotation(
 ): AssetAnnotationItem {
   const a = { x: clamp(from.x), y: clamp(from.y) };
   if (kind === AssetAnnotationKind.Arrow) {
-    const end = to ?? { x: a.x - 0.12, y: a.y - 0.08 };
+    // a click, or a drag too short to see, still gives an arrow you can see and then turn
+    const dragged = !!to && Math.hypot(to.x - a.x, to.y - a.y) >= 0.02;
+    const end = dragged ? to : { x: a.x - 0.12, y: a.y - 0.08 };
     return {
       id,
       kind,

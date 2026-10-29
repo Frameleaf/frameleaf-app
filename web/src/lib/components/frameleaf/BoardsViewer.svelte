@@ -155,7 +155,9 @@
       tool = pick.id;
       return;
     }
-    if (event.key === 'Enter' && tool !== 'select') {
+    // Enter on a focused control (Done, Undo, a list row…) presses it; it only adds an annotation elsewhere
+    const onControl = !!(event.target as HTMLElement | null)?.closest?.('button, a, summary, [role="button"]');
+    if (event.key === 'Enter' && tool !== 'select' && !onControl) {
       event.preventDefault();
       add(keyboardAnnotation(tool, 'new', defaultText));
     }

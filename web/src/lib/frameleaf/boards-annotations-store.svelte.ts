@@ -20,6 +20,7 @@ export class BoardsAnnotationsState {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #pending: AssetAnnotationItem[] | null = null;
   #closed = false;
+  #saving: Promise<void> = Promise.resolve();
 
   constructor(readonly assetId: string) {}
 
@@ -54,9 +55,18 @@ export class BoardsAnnotationsState {
     this.#timer = setTimeout(() => void this.flush(), SAVE_DELAY);
   }
 
-  /** Saves a waiting change now: when the viewer closes or the panel moves to another item. */
-  async flush() {
+  /**
+   * Saves a waiting change now: when the viewer closes or the panel moves to another item. Saves run
+   * one after another, each taking the latest change when it starts, so an older list can never land
+   * after a newer one or come back through Retry.
+   */
+  flush(): Promise<void> {
     clearTimeout(this.#timer);
+    this.#saving = this.#saving.then(() => this.#send());
+    return this.#saving;
+  }
+
+  async #send() {
     const next = this.#pending;
     this.#pending = null;
     if (!next) {
@@ -70,7 +80,7 @@ export class BoardsAnnotationsState {
       this.saveFailed = false;
     } catch {
       this.saveFailed = true;
-      // keep the change so Retry can send it again
+      // keep the change so Retry can send it again, unless a newer one is already waiting
       this.#pending ??= next;
     }
   }

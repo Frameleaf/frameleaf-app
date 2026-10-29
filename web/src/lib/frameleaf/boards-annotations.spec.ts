@@ -71,6 +71,24 @@ describe('Boards annotation geometry', () => {
       endX: 0.38,
       endY: 0.42,
     });
+    // a click that lands where it started (the pointer always reports an end) still gives a visible arrow
+    for (const end of [
+      { x: 0.5, y: 0.5 },
+      { x: 0.505, y: 0.505 },
+    ]) {
+      expect(createAnnotation(AssetAnnotationKind.Arrow, { x: 0.5, y: 0.5 }, end, 'n6').geometry).toEqual({
+        x: 0.5,
+        y: 0.5,
+        endX: 0.38,
+        endY: 0.42,
+      });
+    }
+    expect(createAnnotation(AssetAnnotationKind.Arrow, { x: 0.5, y: 0.5 }, { x: 0.7, y: 0.2 }, 'n7').geometry).toEqual({
+      x: 0.5,
+      y: 0.5,
+      endX: 0.7,
+      endY: 0.2,
+    });
     expect(keyboardAnnotation(AssetAnnotationKind.Rect, 'n4').geometry).toEqual({
       x: 0.4,
       y: 0.4,

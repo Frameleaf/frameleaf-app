@@ -91,7 +91,11 @@ it('puts Boards annotations in the library file, and leaves Photos-only pictures
   const { asset: design } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
   const { asset: personal } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
   const { asset: plain } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+  const { asset: cropped } = await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
   await service.replace({ user }, design.id, { version: 1, items });
+  // drawn over the cropped picture: the archive holds the original, so these must not pass as matching it
+  await ctx.newEdits(cropped.id, { edits: [{ action: 'rotate', parameters: { angle: 90 } }] } as never);
+  await service.replace({ user }, cropped.id, { version: 1, items });
   await service.replace({ user }, personal.id, { version: 1, items });
   await db.updateTable('asset').set({ libraryScope: LibraryScope.Personal }).where('id', '=', personal.id).execute();
 
@@ -101,13 +105,26 @@ it('puts Boards annotations in the library file, and leaves Photos-only pictures
       { id: design.id, file: 'hero.png' },
       { id: personal.id, file: 'holiday.jpg' },
       { id: plain.id, file: 'logo.png' },
+      { id: cropped.id, file: 'cropped.png' },
     ],
     [],
     false,
   );
   const byId = new Map(manifest.assets.map((row) => [row.id, row]));
-  expect(byId.get(design.id)?.annotations).toEqual(items);
+  expect(byId.get(design.id)).toMatchObject({ annotations: items, annotationsMatchFile: true });
+  expect(byId.get(cropped.id)).toMatchObject({ annotations: items, annotationsMatchFile: false });
   expect(byId.get(personal.id)).not.toHaveProperty('annotations');
   expect(byId.get(plain.id)).not.toHaveProperty('annotations');
+  expect(byId.get(plain.id)).not.toHaveProperty('annotationsMatchFile');
+
+  // annotations saved on the original stop matching once the picture is edited afterwards
+  await ctx.newEdits(design.id, { edits: [{ action: 'rotate', parameters: { angle: 90 } }] } as never);
+  const later = await new DownloadRepository(db).getLibraryManifest(
+    { user },
+    [{ id: design.id, file: 'hero.png' }],
+    [],
+    false,
+  );
+  expect(later.assets[0]).toMatchObject({ annotations: items, annotationsMatchFile: false });
   expect(JSON.stringify(manifest)).not.toContain('sourceRevision');
 });

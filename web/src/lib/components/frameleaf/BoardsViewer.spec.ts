@@ -103,6 +103,18 @@ describe('BoardsViewer', () => {
     expect(sdkMock.editAsset).not.toHaveBeenCalled();
   });
 
+  it('lets Enter press a focused control instead of adding an annotation', async () => {
+    const { annotations } = await setup();
+    await fireEvent.keyDown(document.body, { key: 'r' });
+    const done = screen.getByRole('button', { name: 'done' });
+    done.focus();
+    // not cancelled, so the browser presses the button as usual
+    expect(await fireEvent.keyDown(done, { key: 'Enter' })).toBe(true);
+    expect(annotations.items).toHaveLength(3);
+    await fireEvent.keyDown(document.body, { key: 'Enter' });
+    expect(annotations.items).toHaveLength(4);
+  });
+
   it('moves, resizes and removes the focused annotation with the keyboard', async () => {
     const { annotations } = await setup();
     const first = shapes()[0];

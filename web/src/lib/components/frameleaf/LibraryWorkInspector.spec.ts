@@ -411,6 +411,32 @@ describe('LibraryWorkInspector', () => {
         expect(within(section).getAllByRole('listitem')).toHaveLength(2);
       });
 
+      it('shows a save that failed after the viewer closed, with Retry', async () => {
+        const asset = timelineAssetFactory.build();
+        sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));
+        sdkMock.getAssetAnnotations.mockResolvedValue(document());
+        sdkMock.replaceAssetAnnotations.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({} as never);
+        render(LibraryWorkInspector, { asset, onOpen: vi.fn(), onClose: vi.fn(), boards: true });
+
+        await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_boards_viewer_view_large_name' }));
+        const viewer = await screen.findByTestId('boards-viewer');
+        await fireEvent.click(within(viewer).getByRole('button', { name: /frameleaf_boards_annotate$/ }));
+        await fireEvent.click(screen.getAllByRole('button', { name: 'frameleaf_boards_annotation_delete_number' })[0]);
+        await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_boards_viewer_close' }));
+        await waitFor(() => expect(screen.queryByTestId('boards-viewer')).not.toBeInTheDocument());
+
+        const section = await screen.findByTestId('boards-annotations');
+        expect(await within(section).findByText('frameleaf_boards_annotations_save_failed')).toBeInTheDocument();
+        await fireEvent.click(within(section).getByRole('button', { name: /retry|try/i }));
+        await waitFor(() => expect(sdkMock.replaceAssetAnnotations).toHaveBeenCalledTimes(2));
+        expect(
+          sdkMock.replaceAssetAnnotations.mock.lastCall?.[0].assetAnnotationsUpdateDto.items.map(({ id }) => id),
+        ).toEqual(['a2']);
+        await waitFor(() =>
+          expect(within(section).queryByText('frameleaf_boards_annotations_save_failed')).not.toBeInTheDocument(),
+        );
+      });
+
       it('offers Annotate on an empty picture and opens the Boards viewer from View large', async () => {
         const asset = timelineAssetFactory.build();
         sdkMock.getAssetInfo.mockResolvedValue(picture(asset.id));

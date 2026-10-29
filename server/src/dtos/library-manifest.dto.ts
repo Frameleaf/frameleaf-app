@@ -51,6 +51,11 @@ const asset = z.strictObject({
   sources: z.array(source).max(10_000).optional(),
   /** FL-652: Boards annotations drawn over the picture, in list order; positions are fractions (0..1). */
   annotations: AssetAnnotationItemsSchema.optional(),
+  /**
+   * Whether the annotations line up with the exported original. False when they were drawn over an
+   * edited, cropped or developed version, or the picture changed after they were saved.
+   */
+  annotationsMatchFile: z.boolean().optional(),
 });
 const bookmark = BookmarkCreateDto.schema
   .extend({
