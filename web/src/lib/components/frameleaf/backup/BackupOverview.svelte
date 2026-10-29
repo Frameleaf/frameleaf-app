@@ -91,7 +91,8 @@
       getBuddyBackupStatus(),
       listDatabaseBackups(),
       full ? getServerStatistics() : Promise.resolve(stats),
-      full ? getBackupSchedule() : Promise.resolve(plan),
+      // the schedule names the step a running backup is on, so it is read again with the statuses
+      getBackupSchedule(),
     ]);
     if (disposed) {
       return;

@@ -93,7 +93,7 @@ describe('Backup › Overview (FL-362)', () => {
     render(BackupOverview);
     expect(await screen.findByRole('alert')).toHaveTextContent('Frameleaf couldn’t check Cloud Backup just now');
   });
-  it('reads only the statuses again while a backup runs, not the library totals or schedule', async () => {
+  it('reads the statuses and schedule again while a backup runs, not the library totals', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     try {
       sdkMock.getCloudBackupStatus.mockResolvedValue(
@@ -105,7 +105,7 @@ describe('Backup › Overview (FL-362)', () => {
       await vi.waitFor(() => expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(2));
       expect(sdkMock.listDatabaseBackups).toHaveBeenCalledTimes(2);
       expect(sdkMock.getServerStatistics).toHaveBeenCalledTimes(1);
-      expect(sdkMock.getBackupSchedule).toHaveBeenCalledTimes(1);
+      expect(sdkMock.getBackupSchedule).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
