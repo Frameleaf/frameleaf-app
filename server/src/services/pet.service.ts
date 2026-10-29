@@ -22,11 +22,13 @@ import {
 } from 'src/dtos/pet.dto.js';
 import { JobName, Permission, PetObservationSource, PetObservationState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { requireAccess } from 'src/utils/access.js';
+import { asDateString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { filterReviewedCandidates, normalizePetName, sortCandidatesForReview } from 'src/utils/pets.js';
@@ -39,6 +41,7 @@ export class PetService {
     private logger: LoggingRepository,
     private jobRepository: JobRepository,
     private petRecognition: PetRecognitionService,
+    private eventRepository: EventRepository,
   ) {
     this.logger.setContext(PetService.name);
   }
@@ -82,21 +85,37 @@ export class PetService {
     const featuredAssetId =
       dto.featuredAssetId === undefined ? undefined : await this.resolveFeaturedAsset(auth, dto.featuredAssetId);
 
-    await this.petRepository.update(auth.user.id, pet.id, {
+    const changes = {
       ...(dto.name !== undefined && { name: normalizePetName(dto.name) }),
       ...(dto.species !== undefined && { species: dto.species }),
       ...(dto.birthDate !== undefined && { birthDate: dto.birthDate }),
       ...(featuredAssetId !== undefined && { featuredAssetId }),
       ...(dto.isHidden !== undefined && { isHidden: dto.isHidden }),
       ...(dto.isFavorite !== undefined && { isFavorite: dto.isFavorite }),
-    });
+    };
+    await this.petRepository.update(auth.user.id, pet.id, changes);
+    if (
+      Object.entries(changes).some(([key, value]) =>
+        key === 'birthDate'
+          ? asDateString(pet.birthDate) !== asDateString(changes.birthDate ?? null)
+          : pet[key as keyof typeof pet] !== value,
+      )
+    ) {
+      const observations = await this.petRepository.getObservations(auth.user.id, id, { withLocked: true });
+      for (const assetId of new Set(observations.map((item) => item.assetId))) {
+        await this.eventRepository.emit('AssetChanged', { assetId });
+      }
+    }
 
     return mapPet(await this.findOrFail(auth, id));
   }
 
   async remove(auth: AuthDto, id: string): Promise<void> {
     await this.findOrFail(auth, id);
+    const observations = await this.petRepository.getObservations(auth.user.id, id, { withLocked: true });
     await this.petRepository.delete(auth.user.id, id);
+    for (const assetId of new Set(observations.map((item) => item.assetId)))
+      await this.eventRepository.emit('AssetChanged', { assetId });
   }
 
   /**
@@ -125,6 +144,9 @@ export class PetService {
       throw new BadRequestException('Pet not found');
     }
 
+    const observations = await this.petRepository.getObservations(auth.user.id, [target.id, ...sourceIds], {
+      withLocked: true,
+    });
     for (const source of sources) {
       await this.petRepository.mergeInto(auth.user.id, {
         sourceId: source.id,
@@ -132,6 +154,8 @@ export class PetService {
       });
     }
 
+    for (const assetId of new Set(observations.map((item) => item.assetId)))
+      await this.eventRepository.emit('AssetChanged', { assetId });
     return mapPet(await this.findOrFail(auth, id));
   }
 
@@ -208,6 +232,7 @@ export class PetService {
     await this.requireCurrentSource(auth, observation.assetId, dto.expectedChecksum);
 
     await this.petRepository.deleteObservation(auth.user.id, observationId);
+    await this.eventRepository.emit('AssetChanged', { assetId: observation.assetId });
     await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: observation.assetId } });
   }
 
@@ -357,6 +382,7 @@ export class PetService {
 
   /** A pet was confirmed in a photo: recognition looks again at the owner's photos most like it. */
   private async lookForPetAgain(petId: string, assetId: string) {
+    await this.eventRepository.emit('AssetChanged', { assetId });
     await this.jobRepository.queue({ name: JobName.PetRecognitionNearest, data: { petId, assetId } });
   }
 

@@ -130,6 +130,10 @@ describe('WorkflowsPanel', () => {
     expect(sdkMock.searchWorkflows).toHaveBeenCalledWith({});
     expect(screen.getByRole('button', { name: t.tab_steps })).toBeInTheDocument();
     expect(screen.getByLabelText(t.name)).toHaveValue('Receipts');
+    // FL-647: the tag and album pickers search as you type; opening loads neither list
+    expect(sdkMock.getAllTags).not.toHaveBeenCalled();
+    expect(sdkMock.searchTags).not.toHaveBeenCalled();
+    expect(sdkMock.getAllAlbums).not.toHaveBeenCalled();
   });
 
   it('opens a deep-linked workflow after loading it', async () => {

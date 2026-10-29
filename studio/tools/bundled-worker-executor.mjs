@@ -12,6 +12,7 @@ import path from 'node:path';
 import { prepareClaimFonts } from './bundled-worker-fonts.mjs';
 import { holdLease } from './bundled-worker-client.mjs';
 import { audioPlan, encodeArgs, runFfmpeg } from './bundled-worker-formats.mjs';
+import { writeHdrMaster } from './bundled-worker-hdr.mjs';
 import { BundledRefusal, bundledRecipe, outputMismatch } from './bundled-worker-recipe.mjs';
 
 const MEDIA_INPUT_KINDS = new Set(['library-asset', 'project-import']);
@@ -250,8 +251,26 @@ async function renderClaim(claim, recipe, context) {
     totalUnits: recipe.frames,
   });
   let reported = 0;
+  const report = (fraction) => {
+    const processed = Math.min(recipe.frames, Math.floor(fraction * recipe.frames));
+    if (processed - reported >= Math.max(1, Math.floor(recipe.frames / 20))) {
+      reported = processed;
+      void post('/progress', {
+        status: 'rendering',
+        processedUnits: processed,
+        totalUnits: recipe.frames,
+      }).catch(() => {});
+    }
+  };
   const engineOutput = path.join(folder, recipe.pass === 'engine' ? 'export.mp4' : 'master.mp4');
   const fonts = await prepareClaimFonts(claim, downloaded, lease.signal);
+  if (recipe.pass === 'hdr') {
+    const outputPath = await renderHdrMaster(recipe, { ...context, files, fonts, engineOutput, report });
+    onBytes((await stat(outputPath)).size);
+    const mismatch = outputMismatch(recipe, await probe(outputPath, { signal: lease.signal }));
+    if (mismatch) throw new BundledRefusal('output_mismatch', `The export was not written as promised: ${mismatch}.`);
+    return outputPath;
+  }
   await renderer.render({
     fonts,
     project: recipe.graph,
@@ -260,17 +279,7 @@ async function renderClaim(claim, recipe, context) {
     bounds: recipe.bounds,
     outputPath: engineOutput,
     signal: lease.signal,
-    onProgress: (fraction) => {
-      const processed = Math.min(recipe.frames, Math.floor(fraction * recipe.frames));
-      if (processed - reported >= Math.max(1, Math.floor(recipe.frames / 20))) {
-        reported = processed;
-        void post('/progress', {
-          status: 'rendering',
-          processedUnits: processed,
-          totalUnits: recipe.frames,
-        }).catch(() => {});
-      }
-    },
+    onProgress: report,
   });
   lease.assertLive();
   let outputPath = engineOutput;
@@ -282,6 +291,70 @@ async function renderClaim(claim, recipe, context) {
   const mismatch = outputMismatch(recipe, await probe(outputPath, { signal: lease.signal }));
   if (mismatch) throw new BundledRefusal('output_mismatch', `The export was not written as promised: ${mismatch}.`);
   return outputPath;
+}
+
+/**
+ * FL-107: an HDR10 or HLG master. The engine's float route renders every frame as BT.2020 signal,
+ * ffmpeg encodes HEVC Main10 with the BT.2100 rounding, and the file is decoded back and checked
+ * before it can be uploaded (`writeHdrMaster`). The engine's ordinary render supplies only the sound.
+ */
+async function renderHdrMaster(recipe, context) {
+  const { renderer, probe, folder, lease, files, fonts, engineOutput, report, ffmpeg = 'ffmpeg', ffprobe = 'ffprobe' } = context;
+  let audio;
+  if (recipe.contractAudio) {
+    await renderer.render({
+      fonts,
+      project: recipe.graph,
+      files,
+      settings: recipe.settings,
+      bounds: recipe.bounds,
+      outputPath: engineOutput,
+      signal: lease.signal,
+      onProgress: () => {},
+    });
+    lease.assertLive();
+    const sound = (await probe(engineOutput, { signal: lease.signal })).streams.find(
+      (stream) => stream.codec_type === 'audio',
+    );
+    if (!sound) throw new BundledRefusal('no_audio', 'The engine wrote no sound for this project, so the HDR master would be silent.');
+    const plan = audioPlan(recipe.target, sound, new Set(renderer.encoders ?? ['aac']));
+    audio = { path: engineOutput, stream: 0, codecArgs: plan.args };
+  }
+  const output = path.join(folder, `export${recipe.target.extension}`);
+  try {
+    await writeHdrMaster({
+      ffmpeg,
+      ffprobe,
+      renderFrames: () =>
+        renderer.renderSignalFrames({
+          fonts,
+          project: recipe.graph,
+          files,
+          bounds: recipe.bounds,
+          target: recipe.hdr.transfer,
+          signal: lease.signal,
+        }),
+      frameCount: recipe.frames,
+      width: recipe.dimensions.width,
+      height: recipe.dimensions.height,
+      fps: recipe.hdr.cadence,
+      transfer: recipe.hdr.transfer,
+      mastering: recipe.hdr.mastering,
+      audio,
+      output,
+      signal: lease.signal,
+      onProgress: report,
+    });
+  } catch (error) {
+    if (lease.signal.aborted) throw lease.signal.reason;
+    if (error instanceof BundledRefusal) throw error;
+    const reason = String(error?.message ?? error).trim().split('\n')[0];
+    if (/mastering display/.test(reason)) throw new BundledRefusal('hdr_mastering_exceeded', reason);
+    throw new BundledRefusal('hdr_master_failed', `The HDR master failed its decode-back check (${reason}); nothing was exported.`);
+  } finally {
+    await rm(engineOutput, { force: true });
+  }
+  return output;
 }
 
 /**

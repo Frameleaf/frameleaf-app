@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { libraryUploadScope } from '$lib/frameleaf/search-context';
   import { page } from '$app/state';
   import { currentTab, showsTabBar, type TabBarId } from '$lib/frameleaf/navigation';
   import { SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
@@ -43,7 +45,12 @@
   );
   const TABS = $derived(
     ALL_TABS.filter(
-      (tab) => (tab.id !== 'memories' || memories) && (tab.id !== 'search' || featureFlagsManager.value.search),
+      (tab) =>
+        (tab.id !== 'memories' || memories) &&
+        (tab.id !== 'search' ||
+          featureFlagsManager.value.search ||
+          libraryUploadScope(new URL(page.url.href), (page.data as { album?: AlbumResponseDto } | undefined)?.album) ===
+            LibraryScope.Design),
     ),
   );
   const visible = $derived(showsTabBar(page.url.pathname));

@@ -13,7 +13,6 @@
    * regrouping, which the server does not give.
    */
   import { page } from '$app/state';
-  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
@@ -36,8 +35,18 @@
     workWaiting,
     type FaceGrouping,
   } from '$lib/components/frameleaf/settings/intelligence/presets';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import Reread from '$lib/components/frameleaf/settings/kit/Reread.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import { aboutTime, rereadSeconds, saveAndRedo } from '$lib/frameleaf/library-progress';
+  import { handleError } from '$lib/utils/handle-error';
+  import {
+    getLibraryProgress,
+    LibraryProgressFeature,
+    LibraryRedoQueue,
+    LibraryRedoWhen,
+    type LibraryProgressResponseDto,
+  } from '@frameleaf/sdk';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import { mdiFaceRecognition, mdiShieldCheckOutline } from '@mdi/js';
@@ -62,6 +71,46 @@
   const groupingChanged = $derived(
     faces.maxDistance !== saved.maxDistance || faces.minScore !== saved.minScore || faces.minFaces !== saved.minFaces,
   );
+  // FL-521: how long reading again takes, at the recent rate, and starting it from the save.
+  let progress = $state<LibraryProgressResponseDto>();
+  let said = $state('');
+  onMount(() => {
+    void (async () => {
+      try {
+        progress = await getLibraryProgress();
+      } catch {
+        // without a rate the notice says what happens, without how long
+      }
+    })();
+  });
+  const about = (seconds: number) => {
+    const time = aboutTime(seconds);
+    return $t(time.key, { values: time.values });
+  };
+  const failedSave = () => $t('frameleaf_intel_redo_failed');
+
+  const facesProgress = $derived(progress?.features.find((item) => item.feature === LibraryProgressFeature.Faces));
+  const regroupTime = $derived(rereadSeconds(facesProgress));
+  const regroupTitle = $derived(
+    facesProgress && regroupTime
+      ? $t('frameleaf_intel_faces_regroup_estimate', {
+          values: { count: facesProgress.total, time: about(regroupTime) },
+        })
+      : $t('frameleaf_intel_faces_regroup_title'),
+  );
+  const saveAndGroup = async (when: LibraryRedoWhen) => {
+    try {
+      if (await saveAndRedo(settingsDraft, ['machineLearning'], LibraryRedoQueue.FacialRecognition, when)) {
+        said =
+          when === LibraryRedoWhen.Now
+            ? $t('frameleaf_intel_faces_redo_said_now')
+            : $t('frameleaf_intel_faces_redo_said_tonight');
+      }
+    } catch (error) {
+      handleError(error, failedSave());
+    }
+  };
+
   /** An old address of the face-model page opens this one with Advanced already open. */
   const advancedOpen = page.url.searchParams.get('section') === 'advanced-recognition-models';
 
@@ -113,6 +162,7 @@
 </script>
 
 <KitPage>
+  <Said message={said} onDismiss={() => (said = '')} />
   <Hero
     tone={hero.tone}
     icon={mdiFaceRecognition}
@@ -156,15 +206,16 @@
         />
       </Row>
       {#if groupingChanged}
-        <Notice tone="warn" title={$t('frameleaf_intel_faces_regroup_title')}>
-          {$t('frameleaf_intel_faces_regroup_body')}
-          {#snippet action()}
-            <Button onclick={() => goto(commandCenterUrl('processing', 'queues'))}>
-              {$t('frameleaf_intel_background_work')}
-            </Button>
-            <Button onclick={undoGrouping}>{$t('frameleaf_intel_undo')}</Button>
-          {/snippet}
-        </Notice>
+        <Reread
+          title={regroupTitle}
+          body={$t('frameleaf_intel_faces_regroup_body')}
+          {disabled}
+          choices={[
+            { label: $t('frameleaf_intel_save_tonight'), run: () => saveAndGroup(LibraryRedoWhen.Tonight) },
+            { label: $t('frameleaf_intel_save_now'), run: () => saveAndGroup(LibraryRedoWhen.Now) },
+          ]}
+          onUndo={undoGrouping}
+        />
       {/if}
       <Row label={$t('frameleaf_intel_faces_import')} help={$t('frameleaf_intel_faces_import_help')}>
         <Switch

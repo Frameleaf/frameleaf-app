@@ -39,16 +39,17 @@ where
             and nsfw_asset.is_nsfw = true
         )
       )
+      and "asset"."libraryScope" in ($2, $3)
       and not exists (
         select
-          $2 as "one"
+          $4 as "one"
         from
           "asset_face"
           inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
           and "person"."ownerId" = "asset"."ownerId"
         where
           "asset_face"."assetId" = "asset"."id"
-          and "person"."isHidden" = $3
+          and "person"."isHidden" = $5
       )
       and not exists (
         select
@@ -116,6 +117,7 @@ where
           where
             asset_lock."assetId" = "asset"."id"
         )
+        and "asset"."libraryScope" in ($6, $7)
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -219,16 +221,17 @@ where
             and nsfw_asset.is_nsfw = true
         )
       )
+      and "asset"."libraryScope" in ($4, $5)
       and not exists (
         select
-          $4 as "one"
+          $6 as "one"
         from
           "asset_face"
           inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
           and "person"."ownerId" = "asset"."ownerId"
         where
           "asset_face"."assetId" = "asset"."id"
-          and "person"."isHidden" = $5
+          and "person"."isHidden" = $7
       )
       and not exists (
         select
@@ -296,6 +299,7 @@ where
           where
             asset_lock."assetId" = "asset"."id"
         )
+        and "asset"."libraryScope" in ($8, $9)
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -389,16 +393,17 @@ select
                 and nsfw_asset.is_nsfw = true
             )
           )
+          and "asset"."libraryScope" in ($1, $2)
           and not exists (
             select
-              $1 as "one"
+              $3 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $4
           )
           and not exists (
             select
@@ -449,7 +454,7 @@ from
   "memory"
 where
   "deletedAt" is null
-  and "ownerId" = $3
+  and "ownerId" = $5
   and exists (
     select
       "memory_asset"."memoriesId"
@@ -481,16 +486,17 @@ where
             and nsfw_asset.is_nsfw = true
         )
       )
+      and "asset"."libraryScope" in ($6, $7)
       and not exists (
         select
-          $4 as "one"
+          $8 as "one"
         from
           "asset_face"
           inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
           and "person"."ownerId" = "asset"."ownerId"
         where
           "asset_face"."assetId" = "asset"."id"
-          and "person"."isHidden" = $5
+          and "person"."isHidden" = $9
       )
       and not exists (
         select
@@ -558,6 +564,7 @@ where
           where
             asset_lock."assetId" = "asset"."id"
         )
+        and "asset"."libraryScope" in ($10, $11)
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -654,16 +661,17 @@ select
                 and nsfw_asset.is_nsfw = true
             )
           )
+          and "asset"."libraryScope" in ($1, $2)
           and not exists (
             select
-              $1 as "one"
+              $3 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $4
           )
           and not exists (
             select
@@ -715,14 +723,14 @@ from
 where
   (
     "showAt" is null
-    or "showAt" <= $3
+    or "showAt" <= $5
   )
   and (
     "hideAt" is null
-    or "hideAt" >= $4
+    or "hideAt" >= $6
   )
   and "deletedAt" is null
-  and "ownerId" = $5
+  and "ownerId" = $7
   and exists (
     select
       "memory_asset"."memoriesId"
@@ -754,16 +762,17 @@ where
             and nsfw_asset.is_nsfw = true
         )
       )
+      and "asset"."libraryScope" in ($8, $9)
       and not exists (
         select
-          $6 as "one"
+          $10 as "one"
         from
           "asset_face"
           inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
           and "person"."ownerId" = "asset"."ownerId"
         where
           "asset_face"."assetId" = "asset"."id"
-          and "person"."isHidden" = $7
+          and "person"."isHidden" = $11
       )
       and not exists (
         select
@@ -831,6 +840,7 @@ where
           where
             asset_lock."assetId" = "asset"."id"
         )
+        and "asset"."libraryScope" in ($12, $13)
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -927,16 +937,17 @@ select
                 and nsfw_asset.is_nsfw = true
             )
           )
+          and "asset"."libraryScope" in ($1, $2)
           and not exists (
             select
-              $1 as "one"
+              $3 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $4
           )
           and not exists (
             select
@@ -986,9 +997,9 @@ select
 from
   "memory"
 where
-  "showAt" > $3
+  "showAt" > $5
   and "deletedAt" is null
-  and "ownerId" = $4
+  and "ownerId" = $6
   and exists (
     select
       "memory_asset"."memoriesId"
@@ -1020,16 +1031,17 @@ where
             and nsfw_asset.is_nsfw = true
         )
       )
+      and "asset"."libraryScope" in ($7, $8)
       and not exists (
         select
-          $5 as "one"
+          $9 as "one"
         from
           "asset_face"
           inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
           and "person"."ownerId" = "asset"."ownerId"
         where
           "asset_face"."assetId" = "asset"."id"
-          and "person"."isHidden" = $6
+          and "person"."isHidden" = $10
       )
       and not exists (
         select
@@ -1097,6 +1109,7 @@ where
           where
             asset_lock."assetId" = "asset"."id"
         )
+        and "asset"."libraryScope" in ($11, $12)
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -1193,16 +1206,17 @@ select
                 and nsfw_asset.is_nsfw = true
             )
           )
+          and "asset"."libraryScope" in ($1, $2)
           and not exists (
             select
-              $1 as "one"
+              $3 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $4
           )
           and not exists (
             select
@@ -1254,10 +1268,10 @@ from
 where
   (
     "showAt" is null
-    or "showAt" <= $3
+    or "showAt" <= $5
   )
   and "deletedAt" is null
-  and "ownerId" = $4
+  and "ownerId" = $6
   and exists (
     select
       "memory_asset"."memoriesId"
@@ -1289,16 +1303,17 @@ where
             and nsfw_asset.is_nsfw = true
         )
       )
+      and "asset"."libraryScope" in ($7, $8)
       and not exists (
         select
-          $5 as "one"
+          $9 as "one"
         from
           "asset_face"
           inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
           and "person"."ownerId" = "asset"."ownerId"
         where
           "asset_face"."assetId" = "asset"."id"
-          and "person"."isHidden" = $6
+          and "person"."isHidden" = $10
       )
       and not exists (
         select
@@ -1366,6 +1381,7 @@ where
           where
             asset_lock."assetId" = "asset"."id"
         )
+        and "asset"."libraryScope" in ($11, $12)
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -1463,16 +1479,17 @@ select
                 and nsfw_asset.is_nsfw = true
             )
           )
+          and "asset"."libraryScope" in ($1, $2)
           and not exists (
             select
-              $1 as "one"
+              $3 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $4
           )
           and not exists (
             select
@@ -1521,7 +1538,7 @@ select
 from
   "memory"
 where
-  "id" = $3
+  "id" = $5
   and "deletedAt" is null
   and (
     not exists (
@@ -1548,6 +1565,7 @@ where
           where
             asset_lock."assetId" = "asset"."id"
         )
+        and "asset"."libraryScope" in ($6, $7)
         and (
           "asset"."visibility" = 'timeline'
           and not exists (
@@ -1648,16 +1666,17 @@ select
                 and nsfw_asset.is_nsfw = true
             )
           )
+          and "asset"."libraryScope" in ($1, $2)
           and not exists (
             select
-              $1 as "one"
+              $3 as "one"
             from
               "asset_face"
               inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
               and "person"."ownerId" = "asset"."ownerId"
             where
               "asset_face"."assetId" = "asset"."id"
-              and "person"."isHidden" = $2
+              and "person"."isHidden" = $4
           )
           and not exists (
             select
@@ -1706,7 +1725,7 @@ select
 from
   "memory"
 where
-  "id" = $3
+  "id" = $5
   and "deletedAt" is null
   and (
     not exists (
@@ -1733,6 +1752,7 @@ where
           where
             asset_lock."assetId" = "asset"."id"
         )
+        and "asset"."libraryScope" in ($6, $7)
         and (
           "asset"."visibility" = 'timeline'
           and not exists (

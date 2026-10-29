@@ -254,7 +254,7 @@ describe(AssetMediaController.name, () => {
       // Express's redirect note on a 302, never a 200, so a client must follow it (or read Location).
       it.each([
         ['original', 'original?'],
-        ['preview', 'size=preview'],
+        ['preview', 'thumbnail?size=preview'],
       ] as const)(
         'redirects a fullsize request served by the %s with a 302, not a 200',
         async (targetSize, location) => {
@@ -264,6 +264,8 @@ describe(AssetMediaController.name, () => {
 
           expect(response.status).toBe(302);
           expect(response.headers.location).toContain(location);
+          // relative to this endpoint, so the request's own path can never send the client elsewhere
+          expect(response.headers.location).toMatch(/^(original|thumbnail)\?/);
         },
       );
 

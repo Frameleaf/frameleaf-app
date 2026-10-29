@@ -8,6 +8,7 @@ import { TakeoutConflict, TakeoutRepository } from 'src/repositories/takeout.rep
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { TakeoutService } from 'src/services/takeout.service.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { TAKEOUT_DEFAULT_OPTIONS, takeoutStableId } from 'src/utils/takeout.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -95,7 +96,7 @@ const requestService = (repository: TakeoutRepository) =>
   new TakeoutService(
     { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
     repository,
-    { prepare: () => Promise.resolve('/staging/admission'), freeBytes: () => Promise.try(() => 1024 ** 4) } as never,
+    { prepare: () => Promise.resolve('/staging/admission'), freeBytes: () => tryPromise(() => 1024 ** 4) } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -407,6 +408,24 @@ describe(TakeoutRepository.name, () => {
     await seedItem(sut, row.id, source.id, { name: 'IMG_1.jpg', checksum });
     await seedItem(sut, row.id, source.id, { name: 'IMG_2.jpg', checksum: elsewhere });
     await seedItem(sut, row.id, source.id, { name: 'IMG_3.jpg' });
+
+    await expect(sut.matchSummary(user.id, row.id)).resolves.toEqual({ matchedOriginals: 1, newAssets: 2 });
+  });
+
+  it('counts an album copy of a photo once, as the importer adds it once (FL-658)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    // Google Photos exports a photo in its year folder and again in each album that holds it.
+    const fresh = randomBytes(32);
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_1.jpg', checksum: fresh });
+    await seedItem(sut, row.id, source.id, { folder: 'Beach', name: 'IMG_1.jpg', checksum: fresh });
+    await seedItem(sut, row.id, source.id, { folder: 'Summer', name: 'IMG_1(1).jpg', checksum: fresh });
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_2.jpg' });
+    const owned = randomBytes(32);
+    await ctx.newAsset({ ownerId: user.id, checksum: owned });
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_3.jpg', checksum: owned });
+    await seedItem(sut, row.id, source.id, { folder: 'Beach', name: 'IMG_3.jpg', checksum: owned });
 
     await expect(sut.matchSummary(user.id, row.id)).resolves.toEqual({ matchedOriginals: 1, newAssets: 2 });
   });

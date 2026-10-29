@@ -19,11 +19,14 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  LibraryScope,
   Permission,
   StorageFolder,
 } from 'src/enum.js';
 import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -175,6 +178,75 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('getMany (FL-647)', () => {
+    it('checks access once for the whole list with the single read permission', async () => {
+      const first = AssetFactory.create();
+      const second = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([first.id, second.id]));
+      mocks.asset.getById.mockImplementation((id) =>
+        Promise.resolve(getForAsset(id === first.id ? first : second) as never),
+      );
+
+      const result = await sut.getMany(authStub.admin, { ids: [first.id, second.id, first.id] });
+
+      expect(result.assets.map((asset) => asset.id)).toEqual([first.id, second.id]);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledTimes(1);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set([first.id, second.id]),
+        undefined,
+      );
+    });
+
+    it('leaves out what the caller may not read, without loading it, instead of failing the list', async () => {
+      const mine = AssetFactory.create();
+      const theirs = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(mine));
+
+      const result = await sut.getMany(authStub.admin, { ids: [theirs.id, mine.id] });
+
+      expect(result.assets.map((asset) => asset.id)).toEqual([mine.id]);
+      expect(mocks.asset.getById).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.getById).toHaveBeenCalledWith(mine.id, expect.anything());
+    });
+
+    it('reads an uppercase id like its stored lowercase form, once', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      const result = await sut.getMany(authStub.admin, { ids: [asset.id.toUpperCase(), asset.id] });
+
+      expect(result.assets.map(({ id }) => id)).toEqual([asset.id]);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set([asset.id]),
+        undefined,
+      );
+      expect(mocks.asset.getById).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves out an asset that disappeared after the access check', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(void 0);
+
+      await expect(sut.getMany(authStub.admin, { ids: [asset.id] })).resolves.toEqual({ assets: [] });
+    });
+
+    it('returns each asset exactly as the single read does', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      const single = await sut.get(authStub.admin, asset.id);
+      const { assets } = await sut.getMany(authStub.admin, { ids: [asset.id] });
+
+      expect(assets).toEqual([single]);
+    });
+  });
+
   describe('get', () => {
     it("names the partner library the viewer's own copy came from (FL-326)", async () => {
       const asset = AssetFactory.create();
@@ -317,6 +389,18 @@ describe(AssetService.name, () => {
       );
     });
 
+    it("never shows a shared link's visitor the owner's favorites", async () => {
+      const asset = AssetFactory.create({ ownerId: authStub.adminSharedLink.user.id, isFavorite: true });
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await expect(sut.get(authStub.adminSharedLink, asset.id)).resolves.toEqual(
+        expect.objectContaining({ isFavorite: false }),
+      );
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      await expect(sut.get(authStub.admin, asset.id)).resolves.toEqual(expect.objectContaining({ isFavorite: true }));
+    });
+
     it('should strip metadata for shared link if exif is disabled', async () => {
       const asset = AssetFactory.from().exif({ description: 'foo' }).build();
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
@@ -406,8 +490,8 @@ describe(AssetService.name, () => {
         ...getForAsset(AssetFactory.create({ id, ownerId: authStub.admin.user.id })),
         exifInfo: { description: '', latitude: null, longitude: null } as never,
       };
-      mocks.asset.getById.mockImplementation(() => Promise.try(() => current));
-      mocks.asset.update.mockImplementation(() => Promise.try(() => current));
+      mocks.asset.getById.mockImplementation(() => tryPromise(() => current));
+      mocks.asset.update.mockImplementation(() => tryPromise(() => current));
       mocks.asset.withMetadataUpdate.mockImplementation(async (_id, write) => {
         const result = await write(mocks.asset as never, mocks.access as never, {} as never);
         committed = true;
@@ -416,7 +500,7 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([id]));
       mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
       mocks.job.queueInTransaction.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           expect(committed).toBe(false);
         }),
       );
@@ -998,7 +1082,7 @@ describe(AssetService.name, () => {
       const stillAsset = AssetFactory.from().owner(motionAsset.owner).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([stillAsset.id]));
       mocks.asset.getById.mockImplementation((id) =>
-        Promise.try(() => getForAsset(id === motionAsset.id ? motionAsset : stillAsset)),
+        tryPromise(() => getForAsset(id === motionAsset.id ? motionAsset : stillAsset)),
       );
       mocks.asset.update.mockResolvedValue(getForAsset(stillAsset));
       const auth = AuthFactory.from(motionAsset.owner).build();
@@ -1026,7 +1110,7 @@ describe(AssetService.name, () => {
       const unlinkedAsset = { ...asset, livePhotoVideoId: null };
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockImplementation((id) =>
-        Promise.try(() => getForAsset(id === motionAsset.id ? motionAsset : asset)),
+        tryPromise(() => getForAsset(id === motionAsset.id ? motionAsset : asset)),
       );
       mocks.asset.update.mockResolvedValueOnce(getForAsset(unlinkedAsset));
 
@@ -1088,14 +1172,12 @@ describe(AssetService.name, () => {
       revoked = false;
       exif = undefined;
       effects = [];
-      mocks.access.asset.checkOwnerAccess.mockImplementation(() =>
-        Promise.try(() => new Set(revoked ? [] : ['photo'])),
-      );
-      mocks.asset.getById.mockImplementation((id) => Promise.try(() => rows.get(id)));
-      mocks.asset.getByIds.mockImplementation((ids) => Promise.try(() => ids.flatMap((id) => rows.get(id) ?? [])));
+      mocks.access.asset.checkOwnerAccess.mockImplementation(() => tryPromise(() => new Set(revoked ? [] : ['photo'])));
+      mocks.asset.getById.mockImplementation((id) => tryPromise(() => rows.get(id)));
+      mocks.asset.getByIds.mockImplementation((ids) => tryPromise(() => ids.flatMap((id) => rows.get(id) ?? [])));
       mocks.asset.getLivePhotoCount.mockResolvedValue(0);
       mocks.asset.findLockGroupIds.mockImplementation((ids) =>
-        Promise.try(() => [
+        tryPromise(() => [
           ...new Set(
             ids.flatMap((id) => {
               const motionId = rows.get(id)?.livePhotoVideoId;
@@ -1105,7 +1187,7 @@ describe(AssetService.name, () => {
         ]),
       );
       mocks.asset.update.mockImplementation((update) =>
-        Promise.try(() => {
+        tryPromise(() => {
           const row = rows.get(update.id);
           if (!row) return;
           Object.assign(row, update);
@@ -1114,14 +1196,14 @@ describe(AssetService.name, () => {
         }),
       );
       mocks.asset.upsertExif.mockImplementation(({ exif: update }) =>
-        Promise.try(() => {
+        tryPromise(() => {
           exif = update.description ?? undefined;
           if (failing === 'exif') throw new Error('write failed');
           return undefined as never;
         }),
       );
       mocks.asset.lock.mockImplementation((ids) =>
-        Promise.try(() => {
+        tryPromise(() => {
           for (const id of ids) rows.get(id)!.isLocked = true;
           return ids;
         }),
@@ -1129,12 +1211,12 @@ describe(AssetService.name, () => {
       mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
       mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
       mocks.job.queue.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           effects.push(committed);
         }),
       );
       mocks.event.emit.mockImplementation(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           effects.push(committed);
         }),
       );
@@ -1204,7 +1286,7 @@ describe(AssetService.name, () => {
 
     it('rechecks photo access after acquiring the transaction locks', async () => {
       mocks.access.asset.checkOwnerAccess.mockImplementationOnce(() =>
-        Promise.try(() => {
+        tryPromise(() => {
           revoked = true;
           return new Set(['photo']);
         }),
@@ -1382,6 +1464,37 @@ describe(AssetService.name, () => {
   });
 
   describe('updateAll', () => {
+    it.each([LibraryScope.Design, LibraryScope.Personal, LibraryScope.Both])(
+      'moves media to %s without copying it and refreshes personal clients',
+      async (libraryScope) => {
+        const asset = getForAsset(AssetFactory.create({ ownerId: authStub.admin.user.id, libraryScope }));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getByIds.mockResolvedValue([asset]);
+        mocks.asset.setLibraryScope.mockResolvedValue([asset.id]);
+        mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([{ ...asset, faces: [] }]);
+        await sut.updateAll(authStub.admin, { ids: [asset.id], libraryScope });
+        expect(mocks.asset.setLibraryScope).toHaveBeenCalledWith([asset.id], asset.ownerId, libraryScope);
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+        if (libraryScope === LibraryScope.Design) {
+          expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_delete', asset.ownerId, asset.id);
+          expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith(
+            'on_asset_update',
+            expect.anything(),
+            expect.anything(),
+          );
+        } else {
+          expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+            'on_asset_update',
+            asset.ownerId,
+            expect.objectContaining({ id: asset.id }),
+          );
+          expect(mocks.job.queue).toHaveBeenCalledWith({
+            name: JobName.AssetGenerateThumbnails,
+            data: { id: asset.id, notify: true },
+          });
+        }
+      },
+    );
     beforeEach(() => {
       mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
     });
@@ -1526,6 +1639,18 @@ describe(AssetService.name, () => {
         rating: undefined,
       });
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
+    it('queues no sidecar rewrite for a change the sidecar does not hold', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1', 'asset-2'], isFavorite: true });
+      await sut.updateAll(authStub.admin, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Archive });
+
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], { isFavorite: true });
+      expect(mocks.job.queueAll).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: JobName.SidecarWrite })]),
+      );
     });
 
     it('should update Assets table if visibility field is provided', async () => {
@@ -1716,6 +1841,57 @@ describe(AssetService.name, () => {
         localDateTime: new Date('2020-02-25T05:16:00.000Z'),
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+
+    it("makes the shifted date the owner's on partner copies and passes it to copies that follow (FL-326)", async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.setDateTimeOriginal.mockResolvedValue({
+        assetId: 'asset-1',
+        dateTimeOriginal: new Date('2020-02-25T05:16:00.000Z'),
+      } as never);
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue(['asset-1']);
+
+      await sut.shiftDateTimeOriginalFrom(
+        authStub.admin,
+        [{ id: 'asset-1', from: new Date('2020-02-25T04:41:00.000Z') }],
+        35,
+      );
+
+      expect(mocks.partnerOrigin.withOriginEdit).toHaveBeenCalledWith('asset', ['asset-1'], [], expect.any(Function));
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+        'asset',
+        ['asset-1'],
+        [AssetOriginField.DateTimeOriginal],
+        authStub.admin.user.id,
+      );
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PartnerPropagate,
+          data: { kind: 'asset', sourceId: 'asset-1', fields: [AssetOriginField.DateTimeOriginal] },
+        },
+      ]);
+    });
+  });
+
+  describe('recordVisibilityEdit (FL-326)', () => {
+    it("makes the visibility the owner's on partner copies, passes it on and notifies open sessions", async () => {
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue(['asset-1']);
+      mocks.asset.getStackSiblingIds.mockResolvedValue([]);
+
+      await sut.recordVisibilityEdit(['asset-1'], authStub.admin.user.id);
+
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+        'asset',
+        ['asset-1'],
+        [AssetOriginField.Visibility],
+        authStub.admin.user.id,
+      );
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PartnerPropagate,
+          data: { kind: 'asset', sourceId: 'asset-1', fields: [AssetOriginField.Visibility] },
+        },
+      ]);
     });
   });
 
@@ -2337,11 +2513,22 @@ describe(AssetService.name, () => {
       });
     });
 
-    it('should fail if asset could not be found', async () => {
+    it('should skip an asset that is already gone', async () => {
+      // e.g. a library deletion's job racing the owner's purge, which removed the asset first
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(void 0);
-      await expect(sut.handleAssetDeletion({ id: AssetFactory.create().id, deleteOnDisk: true })).resolves.toBe(
-        JobStatus.Failed,
+      await expect(sut.handleAssetDeletion({ id: AssetFactory.create().id, deleteOnDisk: false })).resolves.toBe(
+        JobStatus.Skipped,
       );
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('should skip an asset removed between its read and its removal', async () => {
+      const asset = AssetFactory.create({ deletedAt: new Date() });
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(asset as any);
+      mocks.asset.remove.mockResolvedValue(void 0);
+      await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: false })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
   });
 

@@ -17,6 +17,7 @@ import {
   AssetVisibility,
   ChecksumAlgorithm,
   FrameleafWorker,
+  LibraryScope,
   MediaOperationKind,
   MediaOperationStatus,
   StorageFolder,
@@ -49,10 +50,12 @@ import {
   executionSignal,
   settleOperationExecution,
 } from 'src/utils/execution-signal.js';
+import { portableCaptureSource } from 'src/utils/library-manifest.js';
 import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import {
   GENERATED_DESCRIPTION_MARK,
   PRESERVATION_ALBUMS_ENTRY,
+  PRESERVATION_BOOKMARKS_ENTRY,
   PRESERVATION_FORMAT,
   PRESERVATION_INDEX_ENTRY,
   PRESERVATION_ITEM_ATTEMPTS,
@@ -60,6 +63,7 @@ import {
   PRESERVATION_MANIFEST_ENTRY,
   PRESERVATION_MAX_COLLECTION_BYTES,
   PRESERVATION_MAX_INDEX_LINE_BYTES,
+  PRESERVATION_MAX_ITEMS,
   PRESERVATION_MAX_MANIFEST_BYTES,
   PRESERVATION_MAX_SIDECAR_BYTES,
   PRESERVATION_PEOPLE_ENTRY,
@@ -69,6 +73,8 @@ import {
   PRESERVATION_TAGS_ENTRY,
   PreservationAlbum,
   PreservationAlbumsSchema,
+  PreservationBookmark,
+  PreservationBookmarksSchema,
   PreservationDocument,
   PreservationEntry,
   PreservationEntrySchema,
@@ -323,7 +329,19 @@ export class PreservationWorkerService {
    * operation gets (`MediaOperationRepository.fail`); everything below is safe to repeat.
    */
   async run(job: RunningJob): Promise<void> {
-    if (job.operation.kind !== MediaOperationKind.PreservationExport) return this.runClaim(job);
+    if (job.operation.kind !== MediaOperationKind.PreservationExport) {
+      // One item (a multi-GB video hashed from a NAS) or reading a large index can outlast the lease, so it
+      // is renewed on a timer too. Cancel, pause and claim loss are still settled at the next checkpoint.
+      const renewal = setInterval(() => {
+        this.operations.heartbeat(job.operation.id, job.claimToken, PRESERVATION_LEASE_MS).catch(() => {});
+      }, PRESERVATION_LEASE_MS / 4);
+      renewal.unref();
+      try {
+        return await this.runClaim(job);
+      } finally {
+        clearInterval(renewal);
+      }
+    }
     return withOperationExecution(
       {
         renew: () =>
@@ -578,7 +596,7 @@ export class PreservationWorkerService {
     asset: NonNullable<Awaited<ReturnType<PreservationRepository['getExportAsset']>>>,
     digests: { sha1: string; sha256: string },
   ): Promise<PreservationSidecar> {
-    const [lock, tags, albums, faces, recipe, documents, moments, stack, enrichment] = await Promise.all([
+    const [lock, tags, albums, faces, recipe, documents, moments, stack, enrichment, sources] = await Promise.all([
       asset.isLocked ? this.repository.getLock(asset.id) : Promise.resolve(undefined),
       this.repository.getTagValues(asset.id, ownerId),
       this.repository.getOwnedAlbumIds(asset.id, ownerId),
@@ -588,6 +606,7 @@ export class PreservationWorkerService {
       this.repository.getMoments(asset.id),
       asset.stackId ? this.repository.getStackPrimary(asset.stackId) : Promise.resolve(undefined),
       this.enrichmentProvenance(asset.id, asset.description ?? null),
+      this.repository.getAssetSources(asset.id, ownerId),
     ]);
 
     const crop = cropBoxOf(recipe as unknown as AssetEditActionItem[]);
@@ -604,6 +623,8 @@ export class PreservationWorkerService {
 
     const sidecar: PreservationSidecar = {
       schemaVersion: PRESERVATION_SCHEMA_VERSION,
+      libraryScope: asset.libraryScope ?? LibraryScope.Personal,
+      sources: sources.map((source) => portableCaptureSource(source)),
       sourceAssetId: asset.id,
       originalFileName: asset.originalFileName,
       type: asset.type as PreservationSidecar['type'],
@@ -733,19 +754,52 @@ export class PreservationWorkerService {
     return { manual, generated, metadata };
   }
 
+  private async packageBookmarks(found: PreservationPackage, ids: string[]): Promise<PreservationBookmark[]> {
+    if (ids.length === 0) return [];
+    const auth = await this.ownerAuth(found.ownerId);
+    if (!auth) throw new PreservationPackageError('owner_unavailable', 'The package owner is unavailable');
+    auth.session = { ...auth.session!, hasElevatedPermission: found.includeLocked };
+    const rows = await this.repository.getPackageBookmarkDetails(auth, ids, found.id);
+    return PreservationBookmarksSchema.parse(
+      rows.map((row) => ({
+        id: row.id,
+        url: row.url,
+        title: row.title,
+        note: row.note,
+        rating: row.rating,
+        libraryScope: row.libraryScope,
+        isArchived: row.isArchived,
+        isLocked: row.isLocked,
+        previewAssetId: row.packagedPreviewAssetId,
+        albumIds: row.albumIds,
+        tags: row.tags,
+        source: row.source ? portableCaptureSource(row.source) : null,
+        createdAt: iso(row.createdAt)!,
+      })),
+    );
+  }
+
   /** Write the index documents and the manifest, and publish the package. */
   private async publishPackage(found: PreservationPackage, commit: ExportCommit) {
     const publish: PreservationFileCommit = (write) => commit(() => write());
     const files: Partial<Record<PreservationDocument, PreservationFileDigest>> = {};
+    const selectedBookmarks = z
+      .array(z.uuid())
+      .max(PRESERVATION_MAX_ITEMS)
+      .parse(asRecord(found.scope).bookmarkIds ?? []);
+    const bookmarks = found.includeMetadata ? await this.packageBookmarks(found, selectedBookmarks) : [];
+    const bookmarkIds = bookmarks.map((bookmark) => bookmark.id);
+    const bookmarkSkipped = selectedBookmarks.length - bookmarks.length;
 
     if (found.includeMetadata) {
-      const albumRows = await this.repository.getPackageAlbums(found.id, found.ownerId);
+      const albumRows = await this.repository.getPackageAlbums(found.id, found.ownerId, bookmarkIds);
       const albumIds = new Set(albumRows.map((row) => row.id));
       const albums: PreservationAlbum[] = albumRows.map((row) => ({
         id: row.id,
         name: row.albumName.slice(0, 1024),
         description: (row.description ?? '').slice(0, 65_536),
         kind: row.kind === 'collection' ? 'collection' : 'album',
+        libraryScope: row.libraryScope,
         parentId: row.parentId && albumIds.has(row.parentId) ? row.parentId : null,
         icon: row.icon?.slice(0, 256) ?? null,
         order: row.order === 'asc' || row.order === 'desc' ? row.order : null,
@@ -760,10 +814,20 @@ export class PreservationWorkerService {
           color: row.color?.slice(0, 32) ?? null,
         }),
       );
-      const tags = (await this.repository.getPackageTags(found.id, found.ownerId)).map((row) => ({
+      const tags = (await this.repository.getPackageTags(found.id, found.ownerId, bookmarkIds)).map((row) => ({
         value: row.value.slice(0, 1024),
         color: row.color?.slice(0, 32) ?? null,
       }));
+      const bookmarkBytes = preservationJson(
+        bookmarks.map((bookmark) => ({ ...bookmark, albumIds: bookmark.albumIds.filter((id) => albumIds.has(id)) })),
+      );
+      if (bookmarkBytes.length > PRESERVATION_MAX_COLLECTION_BYTES)
+        throw new PreservationPackageError('package_too_large', 'Bookmark metadata exceeds the package limit');
+      files[PRESERVATION_BOOKMARKS_ENTRY] = await this.files.writeDocument(
+        join(found.path, PRESERVATION_BOOKMARKS_ENTRY),
+        bookmarkBytes,
+        publish,
+      );
       files[PRESERVATION_ALBUMS_ENTRY] = await this.files.writeDocument(
         join(found.path, PRESERVATION_ALBUMS_ENTRY),
         preservationJson(albums),
@@ -819,7 +883,7 @@ export class PreservationWorkerService {
     // An original that could not be read is missing from the package just as a failed copy is.
     // Only a Locked item the package was asked to leave out is a skip that keeps it complete.
     const unavailable = counts?.unavailable ?? 0;
-    const complete = failed === 0 && unavailable === 0;
+    const complete = failed === 0 && unavailable === 0 && bookmarkSkipped === 0;
     const support = Object.fromEntries(
       PRESERVATION_SUPPORT_CATEGORIES.map((category) => [
         category,
@@ -840,7 +904,16 @@ export class PreservationWorkerService {
         includeLocked: found.includeLocked,
         includeMetadata: found.includeMetadata,
       },
-      counts: { selected: exported + failed + skipped, exported, failed, skipped, locked, bytes },
+      counts: {
+        selected: exported + failed + skipped,
+        exported,
+        failed,
+        skipped,
+        locked,
+        bytes,
+        bookmarks: bookmarks.length,
+        bookmarkSkipped,
+      },
       complete,
       files,
       support,
@@ -864,6 +937,7 @@ export class PreservationWorkerService {
           counts: manifest.counts,
           scope: manifest.scope,
           files: manifest.files,
+          bookmarkIds,
         },
         // Whatever an earlier verification said was about the package before this write.
         verification: null,
@@ -924,7 +998,41 @@ export class PreservationWorkerService {
     if (!checked.ok) {
       throw new PreservationPackageError('package_documents_invalid', `${name} is not valid: ${checked.detail}`);
     }
+    if (name === PRESERVATION_ALBUMS_ENTRY) {
+      const albums = checked.value as PreservationAlbum[];
+      if (albums.some((album) => (album.libraryScope !== undefined) !== (manifest.schemaVersion === 2))) {
+        throw new PreservationPackageError(
+          'package_documents_invalid',
+          'Album workspace metadata does not match the package version',
+        );
+      }
+    }
     return checked.value;
+  }
+
+  private async readBookmarks(
+    source: PreservationPackageSource,
+    manifest: PreservationManifest,
+    albums: PreservationAlbum[],
+    tags: { value: string }[],
+  ): Promise<PreservationBookmark[]> {
+    const bookmarks =
+      (await this.readCollection(source, manifest, PRESERVATION_BOOKMARKS_ENTRY, PreservationBookmarksSchema)) ?? [];
+    if ((manifest.counts.bookmarks ?? 0) !== bookmarks.length)
+      throw new PreservationPackageError('package_bookmarks_invalid', 'The bookmark count does not match the document');
+    if (manifest.files[PRESERVATION_BOOKMARKS_ENTRY] && !manifest.scope.includeMetadata)
+      throw new PreservationPackageError('package_bookmarks_invalid', 'Bookmark metadata was not declared');
+    const albumIds = new Set(albums.map((album) => album.id));
+    const tagValues = new Set(tags.map((tag) => tag.value));
+    for (const bookmark of bookmarks) {
+      if (bookmark.isLocked && !manifest.scope.includeLocked)
+        throw new PreservationPackageError('package_bookmarks_invalid', 'Locked bookmarks were not declared');
+      if (bookmark.albumIds.some((id) => !albumIds.has(id)))
+        throw new PreservationPackageError('package_bookmarks_invalid', 'A bookmark names an unknown album');
+      if (bookmark.tags.some((tag) => !tagValues.has(tag)))
+        throw new PreservationPackageError('package_bookmarks_invalid', 'A bookmark names an unknown tag');
+    }
+    return bookmarks;
   }
 
   /**
@@ -1051,7 +1159,12 @@ export class PreservationWorkerService {
             throw new PreservationPackageError('package_manifest_changed', 'The manifest differs from the one written');
           }
           result.documentsChanged = [];
-          for (const name of [PRESERVATION_ALBUMS_ENTRY, PRESERVATION_PEOPLE_ENTRY, PRESERVATION_TAGS_ENTRY] as const) {
+          for (const name of [
+            PRESERVATION_ALBUMS_ENTRY,
+            PRESERVATION_PEOPLE_ENTRY,
+            PRESERVATION_TAGS_ENTRY,
+            PRESERVATION_BOOKMARKS_ENTRY,
+          ] as const) {
             const expected = manifest.files[name];
             if (!expected) {
               continue;
@@ -1216,11 +1329,12 @@ export class PreservationWorkerService {
           const manifest = await this.readManifest(source);
           const albums =
             (await this.readCollection(source, manifest, PRESERVATION_ALBUMS_ENTRY, PreservationAlbumsSchema)) ?? [];
-          orderPreservationAlbums(albums);
+          orderPreservationAlbums(albums, 32);
           const people =
             (await this.readCollection(source, manifest, PRESERVATION_PEOPLE_ENTRY, PreservationPeopleSchema)) ?? [];
           const tags =
             (await this.readCollection(source, manifest, PRESERVATION_TAGS_ENTRY, PreservationTagsSchema)) ?? [];
+          await this.readBookmarks(source, manifest, albums, tags);
           await this.readIndex(source, manifest, (entries) =>
             this.repository.addRestoreItems(
               restore.id,
@@ -1407,6 +1521,8 @@ export class PreservationWorkerService {
         (await this.readCollection(source, manifest, PRESERVATION_ALBUMS_ENTRY, PreservationAlbumsSchema)) ?? [];
       const people =
         (await this.readCollection(source, manifest, PRESERVATION_PEOPLE_ENTRY, PreservationPeopleSchema)) ?? [];
+      const tags = (await this.readCollection(source, manifest, PRESERVATION_TAGS_ENTRY, PreservationTagsSchema)) ?? [];
+      const bookmarks = await this.readBookmarks(source, manifest, albums, tags);
 
       const context: RestoreContext = {
         auth,
@@ -1456,6 +1572,12 @@ export class PreservationWorkerService {
         return;
       }
       await this.restoreRelationships(context);
+      if (
+        !(await this.restoreBookmarks(context, identity, bookmarks, () =>
+          this.checkpoint(operation.id, claimToken, result, done, total),
+        ))
+      )
+        return;
 
       // Edit recipes of new originals wait for their dimensions, which metadata extraction measures.
       const waiting = await this.applyWaitingEdits(context, result.editWaits >= PRESERVATION_EDIT_WAITS);
@@ -1493,6 +1615,43 @@ export class PreservationWorkerService {
     } finally {
       await source.close();
     }
+  }
+
+  private async restoreBookmarks(
+    context: RestoreContext,
+    identity: string,
+    bookmarks: PreservationBookmark[],
+    checkpoint?: () => Promise<boolean>,
+  ): Promise<boolean> {
+    if (bookmarks.length === 0) return true;
+    const restore = await this.repository.getRestoreById(context.restore.id);
+    if (!restore || restore.ownerId !== context.ownerId)
+      throw new PreservationPackageError('restore_unavailable', 'The restoration is unavailable');
+    const after = asRecord(restore.summary).bookmarkAfter;
+    let processed = 0;
+    for (const bookmark of bookmarks.toSorted((a, b) => a.id.localeCompare(b.id))) {
+      assertExecutionActive();
+      if (typeof after === 'string' && bookmark.id.localeCompare(after) <= 0) continue;
+      const albumIds = bookmark.albumIds.map((id) => context.albums.get(id));
+      if (albumIds.some((id) => !id))
+        throw new PreservationPackageError('bookmark_album_unavailable', 'A bookmark album could not be restored');
+      const tags = await upsertTags(this.tagRepository, { userId: context.ownerId, tags: bookmark.tags });
+      const preview = bookmark.previewAssetId
+        ? await this.repository.getRestoreItemBySource(context.restore.id, bookmark.previewAssetId)
+        : null;
+      await this.repository.restoreBookmark(
+        context.ownerId,
+        context.restore.id,
+        identity,
+        bookmark,
+        { albumIds: albumIds as string[], tagIds: tags.map((tag) => tag.id), previewAssetId: preview?.assetId ?? null },
+        context.conflictDefault === 'replace',
+      );
+      processed++;
+      if (checkpoint && processed % PAGE === 0 && !(await checkpoint())) return false;
+    }
+    if (checkpoint && processed % PAGE !== 0) return checkpoint();
+    return true;
   }
 
   /**
@@ -1545,6 +1704,7 @@ export class PreservationWorkerService {
             fileCreatedAt: new Date(sidecar?.dates.fileCreatedAt ?? Date.now()),
             fileModifiedAt: new Date(sidecar?.dates.fileModifiedAt ?? Date.now()),
             isFavorite: sidecar?.isFavorite ?? false,
+            libraryScope: sidecar?.libraryScope ?? LibraryScope.Personal,
             // Locked from the first moment it exists: never listed unlocked, not even for an instant.
             visibility: locked
               ? AssetVisibility.Locked
@@ -1623,6 +1783,13 @@ export class PreservationWorkerService {
     });
 
     const patch: UpdateAssetDto = {};
+    if (
+      sidecar.libraryScope !== undefined &&
+      sidecar.libraryScope !== (library.libraryScope ?? LibraryScope.Personal)
+    ) {
+      if (created || context.conflictDefault === 'replace') patch.libraryScope = sidecar.libraryScope;
+      else findings.push('library_workspace_kept');
+    }
     if (fields.has('date') && sidecar.dates.dateTimeOriginal) {
       patch.dateTimeOriginal = sidecar.dates.dateTimeOriginal;
     }
@@ -1685,6 +1852,10 @@ export class PreservationWorkerService {
     if (sidecar.tags.length > 0) {
       const tags = await upsertTags(this.tagRepository, { userId: context.ownerId, tags: sidecar.tags });
       await this.tagRepository.upsertAssetIds(tags.map((tag) => ({ tagId: tag.id, assetId })));
+    }
+
+    if (sidecar.sources?.length) {
+      await this.repository.appendRestoredSources(context.ownerId, assetId, sidecar.sources);
     }
 
     if (sidecar.faces.length > 0) {
@@ -1952,8 +2123,9 @@ export class PreservationWorkerService {
   ): Promise<Map<string, string>> {
     const mapped = new Map<string, string>();
     const byId = new Map(albums.map((album) => [album.id, album]));
-    for (const album of orderPreservationAlbums(albums)) {
+    for (const album of orderPreservationAlbums(albums, 32)) {
       const sourceParent = restoredAlbumParent(album, byId);
+      if (sourceParent && !mapped.has(sourceParent)) continue;
       const parentId = sourceParent ? (mapped.get(sourceParent) ?? null) : null;
 
       const same = await this.repository.getOwnedAlbum(ownerId, album.id);
@@ -1981,6 +2153,7 @@ export class PreservationWorkerService {
           albumName: album.name || 'Untitled',
           description: album.description,
           kind: album.kind === 'collection' ? AlbumKind.Collection : AlbumKind.Album,
+          libraryScope: album.libraryScope ?? LibraryScope.Personal,
           parentId,
           icon: album.icon,
           ...(album.order && { order: album.order === 'asc' ? AssetOrder.Asc : AssetOrder.Desc }),

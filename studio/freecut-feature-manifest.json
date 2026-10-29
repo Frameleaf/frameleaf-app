@@ -2262,9 +2262,11 @@
           "e6bca4d7d8",
           "0127-persisted-lottie-discriminator.patch",
           "0128-persisted-subtitle-discriminator.patch",
-          "0131-canonical-dotlottie-owned-source.patch"
+          "0131-canonical-dotlottie-owned-source.patch",
+          "0149-multicam-editing.patch",
+          "0153-multicam-viewer-master-audio-drift.patch"
         ],
-        "note": "All item kinds are reachable in the editor; Lottie and subtitle persistence fixed by patches.",
+        "note": "All item kinds are reachable in the editor; Lottie and subtitle persistence fixed by patches. FL-595 adds multicam editing: angles synced by sound, a program track of cuts and one master audio; FL-628 adds angle previews, a standalone master audio and clock-drift correction.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.1",
@@ -2706,6 +2708,7 @@
           "0130-native-roll-transient-lock-cancellation.patch",
           "0134-shared-edit-effective-lock-refusal.patch",
           "0135-shared-speed-gap-effective-lock-refusal.patch",
+          "0145-speed-ramps-and-linked-freeze-frames.patch",
           "4d29c52c91",
           "cd365017c8",
           "1accc156fc",
@@ -2717,7 +2720,7 @@
           "PR #260",
           "PR #262"
         ],
-        "note": "FL-94 closeout 2026-10-14.",
+        "note": "FL-94 closeout 2026-10-14. FL-597 adds speed ramps, written as linked constant-speed segments, and freeze frames that split linked audio.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.3",
@@ -4028,8 +4031,10 @@
           "0059-mask-path-keyframes.patch",
           "0113-crop-rotation-keyboard-entry.patch",
           "0138-number-input-text-commit-lifecycle.patch",
-          "e6bca4d7d8"
+          "e6bca4d7d8",
+          "0164-stabilise-shaky-clips.patch"
         ],
+        "note": "FL-638 adds Stabilise: a clip's camera path, measured once on the server, is smoothed for the chosen level and drawn as a per-frame shift, turn and crop-in in preview and export.",
         "status": "shipped"
       },
       "id": "readme.preview-playback.1",
@@ -5055,9 +5060,12 @@
           "0069-persisted-track-pan.patch",
           "0076-master-gain-envelope.patch",
           "0087-preview-track-gain.patch",
-          "0090-track-gain-automation.patch"
+          "0090-track-gain-automation.patch",
+          "0145-dialogue-loudness-match-and-export-report.patch",
+          "0150-master-true-peak-limiter.patch",
+          "0162-voice-cleanup.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter. FL-637 adds Clean up voice: one clip at a time, the cleaned sound a project audio import the clip plays in preview and export, with the original kept.",
         "status": "shipped"
       },
       "id": "readme.audio.1",
@@ -6853,8 +6861,11 @@
           "0027-effect-frame-clock-and-animation.patch",
           "0037-renderable-opacity.patch",
           "0059-mask-path-keyframes.patch",
-          "19e9aded35"
+          "19e9aded35",
+          "0148-motion-tracking.patch",
+          "0152-tracking-box-and-provenance.patch"
         ],
+        "note": "FL-596 adds motion tracking that writes x, y, width and height keyframes; FL-627 adds a separate tracking box, timeline lost ranges and saved track records.",
         "status": "shipped"
       },
       "id": "readme.keyframe-animation.6",
@@ -7228,9 +7239,11 @@
           "0106-browser-whisper-tiny-settings-test.patch",
           "0140-whisper-no-adapter-fallback.patch",
           "6a2085d30a",
-          "PR #288"
+          "PR #288",
+          "0168-word-by-word-captions.patch",
+          "0170-caption-languages.patch"
         ],
-        "note": "FL-111 closeout: Whisper model choice with a no-GPU fallback.",
+        "note": "FL-111 closeout: Whisper model choice with a no-GPU fallback. FL-640 adds word-by-word captions: captions made from the transcript keep its word times, and the Caption style card burns Highlight, Word by word or One big word into the picture in preview and export (a subtitle file keeps whole lines); a Vertical 9:16 export defaults to Highlight, Large, Middle (studio/tools/bundled-worker-word-captions.mjs). FL-641 adds a Languages card: captions translated into the ten app languages and English (M2M100 418M on the processing order), each its own caption track on the original timing, one language in the picture.",
         "status": "shipped"
       },
       "id": "readme.local-ai-analysis.1",
@@ -7384,9 +7397,10 @@
         "evidence": [
           "0028-approved-model-revisions.patch",
           "0029-bundled-onnx-runtimes.patch",
-          "0030-pinned-supertonic-space.patch"
+          "0030-pinned-supertonic-space.patch",
+          "0170-caption-languages.patch"
         ],
-        "note": "Kokoro carried over unchanged apart from pinned model revisions and bundled runtimes (FL-111 closeout).",
+        "note": "Kokoro carried over unchanged apart from pinned model revisions and bundled runtimes (FL-111 closeout). FL-641 makes a translated voice-over from a language's captions with the voices Studio has (Kokoro in English, Supertonic for the others it speaks), on its own voice track with everything else ducking under it.",
         "status": "shipped"
       },
       "id": "readme.local-ai-analysis.5",
@@ -7423,9 +7437,13 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
       "frameleaf": {
-        "evidence": ["0028-approved-model-revisions.patch"],
-        "note": "MusicGen-small is CC-BY-NC-4.0 and barred from Frameleaf Cloud (distribution-gates.json musicgen-hosted-exclusion). The engine path stays in the build and is rights-approved for local and LAN use; it is descoped by owner direction, not removed.",
-        "status": "descoped-v1"
+        "evidence": [
+          "0004-resource-admission.patch",
+          "0028-approved-model-revisions.patch",
+          "0029-bundled-onnx-runtimes.patch"
+        ],
+        "note": "MusicGen-small runs in the editor AI panel with its presets, progress and cancellation, carried over unchanged apart from resource admission, the pinned model revision and bundled runtimes, like Kokoro text to speech. Restored by owner direction (FL-560, 2026-10-26): MusicGen is licensed, and its rights row has no excluded uses since FL-451.",
+        "status": "shipped"
       },
       "id": "readme.local-ai-analysis.6",
       "source": [
@@ -7837,9 +7855,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. The FL-107 server HDR10/HLG master (studio/tools/hdr-master.mjs, HEVC Main10) exists but its precision gate does not pass yet (FL-107 reopened), so it does not deliver this row either.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity. Rendering runs on the worker, not in the person’s browser.",
+        "status": "shipped"
       },
       "id": "readme.export.1",
       "source": [
@@ -7912,8 +7930,8 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "Not reachable: an export renders the main timeline (optionally a range of it); the export request has no sequence choice. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "not-started"
       },
       "id": "readme.export.2",
@@ -7987,9 +8005,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. Only MP4 is accepted.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "MP4, MOV, MKV and WebM. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.3",
       "source": [
@@ -8062,9 +8080,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. Only H.264 is accepted. The FL-107 server HDR10/HLG master (studio/tools/hdr-master.mjs, HEVC Main10) exists but its precision gate does not pass yet (FL-107 reopened), so it does not deliver this row either.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "H.264, H.265, VP8, VP9 and AV1 (plus ProRes 422 in MOV), each offered only where the worker’s own encoder passed its admission check. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.4",
       "source": [
@@ -8137,9 +8155,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "Sound-only exports as MP3, AAC and WAV/PCM from the master’s audio. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.5",
       "source": [
@@ -8216,10 +8234,12 @@
           "0023-export-subtitle-admission.patch",
           "0050-caption-import-export-modes.patch",
           "0051-extracted-caption-export-modes.patch",
-          "0105-subtitle-sidecar-shared-producer.patch"
+          "0105-subtitle-sidecar-shared-producer.patch",
+          "fd9eaf9e0c",
+          "0170-caption-languages.patch"
         ],
-        "note": "Subtitle admission and the four modes are implemented and the executor accepts them, but only for its still-image MP4 timelines. The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
-        "status": "not-started"
+        "note": "Off, burn-in (the default), a private SRT sibling, or an embedded text track (mov_text, SubRip or WebVTT by container), admitted per format by server/src/utils/render-admission.ts. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity. FL-641: the language in the picture is burned in; every other language ticked Subtitle track in the export is saved as its own SRT next to the export.",
+        "status": "shipped"
       },
       "id": "readme.export.6",
       "source": [
@@ -8292,9 +8312,9 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. The executor carries the four engine bitrate presets for that narrow case only.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "Low, medium, high and ultra (StudioExportQuality); the runtime capability check is the worker’s admission probe, and the dialog offers only formats an admitted worker advertises. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "readme.export.7",
       "source": [
@@ -12778,9 +12798,11 @@
         "evidence": [
           "0031-managed-color-working-range.patch",
           "0136-project-colour-policy-disclosure.patch",
-          "e6bca4d7d8"
+          "e6bca4d7d8",
+          "0147-colour-match-between-shots.patch",
+          "0151-graded-hdr-colour-match.patch"
         ],
-        "note": "FL-97 closeout: managed floating-point colour.",
+        "note": "FL-97 closeout: managed floating-point colour. FL-599 adds colour matching to a reference shot as an editable exposure and temperature/tint pair; FL-626 matches graded clips and HDR projects from frames rendered in the working space.",
         "status": "shipped"
       },
       "id": "extra.color-workspace",
@@ -13231,8 +13253,8 @@
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "Freecut's segmented render queue is replaced by host export jobs followed in Activity. The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "Replaced by design: Freecut’s segmented render queue is not used; each export is a host export job, leased by the bundled worker and followed in Activity.",
         "status": "not-started"
       },
       "id": "extra.render-queue",
@@ -13422,9 +13444,13 @@
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
       "frameleaf": {
-        "evidence": ["0028-approved-model-revisions.patch"],
-        "note": "MusicGen-small is CC-BY-NC-4.0 and barred from Frameleaf Cloud (distribution-gates.json musicgen-hosted-exclusion). Descoped from v1 by owner direction; the local engine path stays in the build.",
-        "status": "descoped-v1"
+        "evidence": [
+          "0004-resource-admission.patch",
+          "0028-approved-model-revisions.patch",
+          "0029-bundled-onnx-runtimes.patch"
+        ],
+        "note": "Carried over unchanged apart from resource admission, the pinned model revision and bundled runtimes. Restored by owner direction (FL-560, 2026-10-26): MusicGen is licensed.",
+        "status": "shipped"
       },
       "id": "extra.musicgen",
       "source": [
@@ -15337,9 +15363,9 @@
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
       "frameleaf": {
-        "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
-        "status": "not-started"
+        "evidence": ["fd9eaf9e0c", "e6da8fb537"],
+        "note": "The engine’s export renderer is what the bundled worker runs headlessly to make every export; the in-editor export dialog is replaced by the host dialog. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "status": "shipped"
       },
       "id": "module.export",
       "source": [
@@ -17377,8 +17403,10 @@
           "0125-shared-proxy-deletion-alias-guard.patch",
           "0126-project-copy-media-entry-references.patch",
           "0132-anime4k-retained-provenance.patch",
-          "0b7183d4dd"
+          "0b7183d4dd",
+          "0160-library-view-in-media-bin.patch"
         ],
+        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead.",
         "status": "shipped"
       },
       "id": "module.media-library",

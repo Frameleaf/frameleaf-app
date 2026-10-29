@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { Refusal, imageDigest, type Installation, type Mount, type NasManifest, type Source } from './contracts.js';
 import type { VerifiedRelease } from './releases.js';
 import { atomicJson } from './files.js';
-import { command } from './docker.js';
+import { command, environment, type Container } from './docker.js';
 import { UNRAID_ICON } from './dockerman.js';
 
 export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
@@ -28,6 +28,8 @@ export async function detectTranscoding(
 }
 
 /** Refresh saved installations too; starting an older stack must not retain missing or stale GPU mappings. */
+// `up --wait` rejects a disabled healthcheck on some Compose releases (Unraid); report healthy once running.
+const LAN_DISCOVERY_HEALTHCHECK = { test: ['CMD', 'node', '-e', ''], interval: '30s', timeout: '10s', retries: 3 };
 export async function configureUnraidCompose(directory: string, hardware?: Record<string, unknown>): Promise<void> {
   const path = join(directory, 'compose.json');
   const compose = JSON.parse(await readFile(path, 'utf8'));
@@ -37,6 +39,9 @@ export async function configureUnraidCompose(directory: string, hardware?: Recor
     service.labels = { ...service.labels, 'net.unraid.docker.managed': 'dockerman', 'net.unraid.docker.icon': UNRAID_ICON,
       ...(name === 'frameleaf-server' ? { 'net.unraid.docker.webui': 'http://[IP]:[PORT:2283]' } : {}) };
   }
+  // Saved projects from earlier releases still disable it; resumes and restarts reuse compose.json.
+  const lan = compose.services['frameleaf-lan-discovery'];
+  if (lan) lan.healthcheck = LAN_DISCOVERY_HEALTHCHECK;
   const server = compose.services['frameleaf-server'];
   if (server) {
     const detected: any = hardware ?? await detectTranscoding();
@@ -91,12 +96,40 @@ export async function detectAcceleration(
 function mlVariant(images: NasManifest['images'], accel: Acceleration): string | undefined {
   return accel === 'cpu' ? undefined : images.machineLearningVariants?.[accel];
 }
-/** Every image renderCompose references on this host, so the download step pulls exactly what `up --pull never` runs. */
-export async function releaseImages(images: NasManifest['images'], acceleration?: Acceleration): Promise<string[]> {
+/**
+ * Every image renderCompose references on this host, so the download step pulls exactly what `up --pull never`
+ * runs: no ML image when machine learning is off, and only the attested GPU variant (not the CPU image) when one
+ * is chosen.
+ */
+export async function releaseImages(
+  images: NasManifest['images'],
+  installation: Pick<Installation, 'ml'>,
+  acceleration?: Acceleration,
+): Promise<string[]> {
+  if (!installation.ml) return [images.server, images.postgres];
   const variant = mlVariant(images, acceleration ?? (await detectAcceleration()));
-  return [images.server, images.machineLearning, images.postgres, ...(variant ? [variant] : [])];
+  return [images.server, images.postgres, variant ?? images.machineLearning];
 }
 
+/** Names Manager sets itself; an advanced setting may not rewire the stack or move the media. */
+export const RESERVED_ENVIRONMENT = /^(DB_|POSTGRES_|FRAMELEAF_MANAGER_|IMMICH_CONFIG_FILE$|IMMICH_MEDIA_LOCATION$)/;
+/** Container paths Manager mounts itself; an extra folder may not shadow them. */
+const RESERVED_TARGETS = ['/run/frameleaf', '/var/lib/postgresql', '/cache'];
+export const OVERRIDABLE_SERVICES = ['frameleaf-server', 'frameleaf-machine-learning', 'database'] as const;
+const containerPath = z.string().regex(/^\/(?!$)[^\n\0:]+$/).max(4096);
+/** What a home-lab administrator may add to one container on top of Manager's own compose service. */
+export const ServiceOverride = z
+  .object({
+    environment: z
+      .record(z.string().regex(/^[A-Z][A-Z0-9_]*$/).refine((name) => !RESERVED_ENVIRONMENT.test(name)), z.string().max(4096))
+      .default({}),
+    mounts: z.array(z.object({ source: containerPath, target: containerPath, readOnly: z.boolean() }).strict()).max(32).default([]),
+    memory: z.string().regex(/^\d+(\.\d+)?[kmg]b?$/i).optional(),
+    cpus: z.number().positive().max(1024).optional(),
+  })
+  .strict();
+export const ServiceOverrides = z.partialRecord(z.enum(OVERRIDABLE_SERVICES), ServiceOverride);
+export type ServiceOverrides = z.infer<typeof ServiceOverrides>;
 export const ApplicationConfig = z
   .object({
     environment: z
@@ -108,9 +141,53 @@ export const ApplicationConfig = z
       .strict(),
     settings: z.record(z.string(), z.unknown()).nullable(),
     authority: z.enum(['database', 'file']).default('database'),
+    /** Advanced container settings chosen at setup; re-applied whenever the stack is regenerated. */
+    services: ServiceOverrides.default({}),
   })
   .strict();
+/**
+ * Adds the administrator's extra folders, environment and limits to the generated services. Manager's
+ * own mounts win: a folder that shadows one is refused with the service and path named. An override for a
+ * service that is not part of this stack (machine learning off) is kept for when it is.
+ */
+export function applyServiceOverrides(services: Record<string, unknown>, overrides: ServiceOverrides): void {
+  for (const [name, override] of Object.entries(overrides)) {
+    const service = services[name] as Record<string, any> | undefined;
+    if (!service || !override) continue;
+    const targets = new Set<string>((service.volumes ?? []).map((mount: { target: string }) => mount.target));
+    for (const mount of override.mounts) {
+      if (targets.has(mount.target) || RESERVED_TARGETS.some((r) => mount.target === r || mount.target.startsWith(`${r}/`)))
+        throw new Refusal('service_override_conflict', 409, `${name}: ${mount.target} is managed by Frameleaf.`);
+      targets.add(mount.target);
+      service.volumes = [
+        ...(service.volumes ?? []),
+        { type: 'bind', source: mount.source, target: mount.target, read_only: mount.readOnly, bind: { create_host_path: false } },
+      ];
+    }
+    // Reserved names never reach here (schema); the rest of the administrator's values win over source defaults.
+    if (Object.keys(override.environment).length) service.environment = { ...service.environment, ...override.environment };
+    if (override.memory || override.cpus) {
+      service.deploy ??= {};
+      service.deploy.resources ??= {};
+      service.deploy.resources.limits = {
+        ...(override.memory ? { memory: override.memory } : {}),
+        ...(override.cpus ? { cpus: String(override.cpus) } : {}),
+      };
+    }
+  }
+}
 export type ApplicationConfig = z.infer<typeof ApplicationConfig>;
+/** The conflict check renderCompose runs, against the media targets this installation has, before anything is journaled. */
+export function checkServiceOverrides(mediaTargets: string[], overrides: ServiceOverrides): void {
+  applyServiceOverrides(
+    {
+      'frameleaf-server': { volumes: mediaTargets.map((target) => ({ target })) },
+      'frameleaf-machine-learning': { volumes: [] },
+      database: { volumes: [] },
+    },
+    overrides,
+  );
+}
 
 /** Paths are explicitly mounted into Manager at the same absolute host path by the launcher. */
 export async function storagePath(path: string, roots: string[], bytes: number): Promise<string> {
@@ -143,6 +220,51 @@ function composeMount(m: Mount, volumes: Record<string, unknown>, index: number)
   volumes[key] = { external: true, name: m.source };
   return { type: 'volume', source: key, target: m.target, read_only: m.readOnly, volume: { nocopy: true } };
 }
+export const LIBRARY_NAME_LABEL = 'app.frameleaf.library-name';
+export const MANAGER_DATA_LABEL = 'app.frameleaf.manager-data';
+const hostPort = (c: Container | undefined, port: number) => {
+  const value = Number(c?.HostConfig.PortBindings?.[`${port}/tcp`]?.[0]?.HostPort);
+  return value > 0 ? value : null;
+};
+/** Every Frameleaf library on this Docker host, with a link to its own Manager when its stack names one. */
+export function hostInstallations(containers: Container[], currentId: string | undefined, origin: string) {
+  const seen = new Set<string>();
+  return containers
+    .filter((c) => c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server')
+    .sort((a, b) => Number(b.State.Running) - Number(a.State.Running))
+    .flatMap((c) => {
+      const labels = c.Config.Labels,
+        id = labels['app.frameleaf.manager'];
+      if (!/^[a-f0-9]{12}$/.test(id ?? '') || seen.has(id)) return [];
+      seen.add(id);
+      const controller = labels[MANAGER_DATA_LABEL]
+        ? containers.find((m) => m.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
+            environment(m).MANAGER_DATA === labels[MANAGER_DATA_LABEL])
+        : undefined;
+      const managerPort = hostPort(controller, 9443),
+        url = new URL(origin);
+      if (managerPort) url.port = String(managerPort);
+      return [{
+        name: labels[LIBRARY_NAME_LABEL] || 'Frameleaf library',
+        current: id === currentId,
+        running: c.State.Running,
+        appPort: hostPort(c, 2283),
+        managerUrl: managerPort ? url.origin : null,
+      }];
+    });
+}
+/** First port from 2283 that no container on this host publishes and Manager itself does not use. */
+export function suggestedPort(containers: Container[], reserved: number[] = []): number {
+  const used = new Set([
+    ...reserved,
+    ...containers.flatMap((c) =>
+      Object.values(c.HostConfig.PortBindings ?? {}).flatMap((bindings) => (bindings ?? []).map((b) => Number(b.HostPort))),
+    ),
+  ]);
+  let port = 2283;
+  while (used.has(port)) port++;
+  return port;
+}
 export async function renderCompose(
   release: VerifiedRelease,
   installation: Installation,
@@ -164,7 +286,12 @@ export async function renderCompose(
   // FL-408: the server writes the bundled Studio worker's enrolment here; machine learning reads it.
   const volumes: Record<string, unknown> = { 'model-cache': {}, [STUDIO_WORKER_VOLUME]: {} };
   const media = installation.mounts.map((m, i) => composeMount(m, volumes, i));
-  const labels = { 'app.frameleaf.manager': installation.id };
+  const labels: Record<string, string> = {
+    'app.frameleaf.manager': installation.id,
+    // Lets Managers of other libraries on this host list this one and link to its Manager.
+    [MANAGER_DATA_LABEL]: process.env.MANAGER_DATA ?? '',
+    ...(installation.name ? { [LIBRARY_NAME_LABEL]: installation.name } : {}),
+  };
   const application = ApplicationConfig.parse(config ?? { environment: {}, settings: null });
   const environment: Record<string, string> = {
     ...application.environment,
@@ -295,7 +422,7 @@ export async function renderCompose(
       environment: {
         FRAMELEAF_DISCOVERY_URL: `http://${host}:${installation.port}`,
       },
-      healthcheck: { disable: true },
+      healthcheck: LAN_DISCOVERY_HEALTHCHECK,
       depends_on: { 'frameleaf-server': { condition: 'service_started' } },
     };
   }
@@ -315,6 +442,7 @@ export async function renderCompose(
       ],
     };
   }
+  applyServiceOverrides(services, application.services);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const compose = JSON.parse(
     JSON.stringify(

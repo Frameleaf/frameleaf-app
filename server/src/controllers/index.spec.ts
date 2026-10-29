@@ -46,6 +46,10 @@ const ADMIN_ROUTES = new Set([
   'PUT ml-destinations/:id',
   'PUT ml-destinations/:id/consent',
   'PUT ml-destinations/routes/:workload',
+  // FL-456: the processing order is admin configuration like the routes it replaces.
+  'GET ml-destinations/processing-order',
+  'PUT ml-destinations/processing-order',
+  'PUT ml-destinations/processing-order/:workload',
   'GET system-config/image-description/requeue-estimate',
   'GET system-config/machine-learning/hardware',
   'GET system-config/smart-albums/reevaluate-estimate',
@@ -87,6 +91,8 @@ const ADMIN_ROUTES = new Set([
   'POST jobs',
   'POST libraries',
   'POST libraries/:id/scan',
+  // FL-539: Check every file again
+  'POST libraries/:id/scan/every-file',
   'POST libraries/:id/validate',
   'POST preservation/server-packages',
   // FL-71: the Job manager's Retry failed.
@@ -106,12 +112,16 @@ const ADMIN_ROUTES = new Set([
 const SHARED_LINK_ROUTES = new Set([
   'DELETE assets/:id/video/stream/:sessionId',
   'GET albums/:id',
+  // Boards: a shared collection lists its files and saved links together
+  'GET albums/:id/items',
   'GET albums/:id/map-markers',
   'GET assets/:id',
   // Studio timeline filmstrips and waveforms follow the thumbnail's access
   'GET assets/:id/filmstrip',
   'GET assets/:id/filmstrip/sprite',
   'GET assets/:id/original',
+  // the viewer's colours follow the thumbnail's access
+  'GET assets/:id/palette',
   'GET assets/:id/thumbnail',
   'GET assets/:id/video/playback',
   'GET assets/:id/waveform',
@@ -136,6 +146,7 @@ const SHARED_LINK_ROUTES = new Set([
  */
 const ORIGINAL_TRANSFER_ROUTES = new Set([
   'GET assets/:id/original',
+  'GET develop-batches/:id/download',
   'POST download/archive',
   'GET admin/database-backups/:filename',
   'GET preservation/packages/:id/download',
@@ -177,6 +188,9 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   // Changing or removing the PIN takes the password or the current PIN: bounded per address like a sign-in.
   'PUT auth/pin-code': RATE_LIMITS.login,
   'DELETE auth/pin-code': RATE_LIMITS.login,
+  // FL-538: a choose-a-password link is checked and used without signing in, bounded like a sign-in.
+  'POST auth/password-link/check': RATE_LIMITS.login,
+  'POST auth/password-link': RATE_LIMITS.login,
   // FL-292: claiming a new server is tried only a few times per address
   'POST auth/admin-sign-up': RATE_LIMITS.frameleafSetup,
   'POST server/setup/link': RATE_LIMITS.frameleafSetup,
@@ -194,11 +208,17 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/link/confirm': RATE_LIMITS.frameleafSignIn,
   'DELETE oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
+  // FL-655: Save to Frameleaf's sign-in; the exchange is public, the code being the proof
+  'POST browser-extension/sign-in/start': RATE_LIMITS.extensionSignIn,
+  'POST browser-extension/sign-in/authorize': RATE_LIMITS.extensionSignIn,
+  'POST browser-extension/sign-in/exchange': RATE_LIMITS.extensionSignIn,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
   // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
   'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },
   'PUT admin/license/activate': RATE_LIMITS.licenseActivation,
   'PUT admin/license/certificate': RATE_LIMITS.licenseActivation,
+  // FL-544: starting the combined licence+plan checkout is limited like a key
+  'POST admin/license/checkout': RATE_LIMITS.licenseActivation,
   'PUT users/me/license': RATE_LIMITS.licenseActivation,
   // CLD-004: a one-time link code from the account site is limited like a key
   'POST license/link-code': RATE_LIMITS.licenseActivation,

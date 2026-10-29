@@ -40,4 +40,9 @@
   });
 </script>
 
-<span class="fl-tabular"><span aria-hidden="true">{show(shown)}</span><span class="sr-only">{show(value)}</span></span>
+<!-- A whole-number value counts through whole numbers, never 85.91 on its way to 86. -->
+<span class="fl-tabular"
+  ><span aria-hidden="true">{show(Number.isSafeInteger(value) ? Math.round(shown) : shown)}</span><span class="sr-only"
+    >{show(value)}</span
+  ></span
+>

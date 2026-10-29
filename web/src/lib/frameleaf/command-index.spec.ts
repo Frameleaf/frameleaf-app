@@ -6,6 +6,7 @@ import {
   buildPageCommands,
   buildSettingsCommands,
   emptyCommandCatalogue,
+  SETTINGS_SECTION_KEYWORDS,
   USER_SETTINGS_AREAS,
   type CommandIndexContext,
 } from '$lib/frameleaf/command-index';
@@ -59,7 +60,7 @@ describe('buildPageCommands', () => {
     const pages = buildPageCommands($t, context());
     const hrefOf = (id: string) => pages.find((page) => page.id === id)?.href;
 
-    expect(pages.slice(0, 3).map((page) => page.id)).toEqual(['primary:library', 'primary:studio', 'primary:activity']);
+    expect(pages.slice(0, 3).map((page) => page.id)).toEqual(['primary:library', 'primary:pro', 'primary:studio']);
     expect(hrefOf('primary:library')).toBe('/photos');
     expect(hrefOf('primary:studio')).toBe('/studio/projects');
     expect(hrefOf('primary:activity')).toBe('/activity');
@@ -108,35 +109,29 @@ describe('settings areas', () => {
   it('registers every Frameleaf Cloud section and opens each from its deep link (FL-168)', () => {
     const commands = buildSettingsCommands($t, context({ isAdmin: true }));
     const hrefOf = (id: string) => commands.find((command) => command.id === id)?.href;
-    for (const key of [
-      'cloud-account',
-      'cloud-plan',
-      'cloud-license',
-      'cloud-remote',
-      'cloud-processing',
-      'cloud-backup',
-    ]) {
+    for (const key of ['cloud-account', 'cloud-plan', 'cloud-remote', 'cloud-processing', 'cloud-backup']) {
       expect(hrefOf(`admin:${key}`), key).toBe(`/user-settings?area=cloud&section=${key}`);
     }
     // Plan and Licence are separate pages
-    expect(hrefOf('admin:cloud-plan')).not.toBe(hrefOf('admin:cloud-license'));
     expect(hrefOf('user:frameleaf-account')).toBe('/user-settings?isOpen=frameleaf-account');
     for (const area of ADMIN_SETTINGS_AREAS) {
       expect(area.icon, area.key).toBeTruthy();
     }
   });
 
-  it('lands the Public server URL in Remote access, not Server identity (FL-168)', () => {
+  it('finds Deleted items by the Trash retention it holds', () => {
+    expect(SETTINGS_SECTION_KEYWORDS.trash).toEqual(expect.arrayContaining(['trash', 'frameleaf_deleted_keep_photos']));
+  });
+
+  it('lands the Public server URL on Server & updates, which every server has (OPS-14)', () => {
     const commands = buildSettingsCommands($t, context({ isAdmin: true }));
     const publicUrl = commands.find((command) => command.id === 'admin:public-server-url');
     expect(publicUrl?.title).toBe('frameleaf_remote_public_url_title');
-    expect(publicUrl?.href).toBe('/user-settings?area=cloud&section=cloud-remote');
-    expect(commands.find((command) => command.id === 'admin:cloud-remote')?.keywords).toContain(
-      'frameleaf_remote_public_url_title',
-    );
-    expect(commands.find((command) => command.id === 'admin:server')?.keywords).not.toContain(
-      'frameleaf_remote_public_url_title',
-    );
+    expect(publicUrl?.href).toBe(commands.find((command) => command.id === 'admin:server')?.href);
+    // Remote access keeps its copy, so both are found by it
+    for (const id of ['admin:server', 'admin:cloud-remote']) {
+      expect(commands.find((command) => command.id === id)?.keywords).toContain('frameleaf_remote_public_url_title');
+    }
     const index = buildCommandIndex({ settings: commands });
     expect(index.find((item) => item.id === 'settings:admin:public-server-url')).toBeDefined();
   });
@@ -157,7 +152,18 @@ describe('buildCatalogueCommands', () => {
   it('points people and albums at their own pages and a place at its search results', () => {
     const commands = buildCatalogueCommands($t, {
       people: [{ id: 'p1', name: 'Ada' }] as never,
-      albums: [{ id: 'a1', name: 'Iceland', icon: null, kind: 'album', assetCount: 12, shared: false, children: [] }],
+      albums: [
+        {
+          id: 'a1',
+          name: 'Iceland',
+          icon: null,
+          color: null,
+          kind: 'album',
+          assetCount: 12,
+          shared: false,
+          children: [],
+        },
+      ],
       places: [{ field: 'city', value: 'Banff' }],
     });
     expect(commands.people[0].href).toBe('/people/p1');
@@ -169,7 +175,9 @@ describe('buildCatalogueCommands', () => {
   it('opens a shared space on its own page', () => {
     const commands = buildCatalogueCommands($t, {
       ...emptyCommandCatalogue(),
-      albums: [{ id: 's1', name: 'Family', icon: null, kind: 'space', assetCount: 3, shared: true, children: [] }],
+      albums: [
+        { id: 's1', name: 'Family', icon: null, color: null, kind: 'space', assetCount: 3, shared: true, children: [] },
+      ],
     });
     expect(commands.collections[0].href).toBe('/sharing/s1');
   });

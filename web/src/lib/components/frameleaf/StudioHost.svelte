@@ -130,6 +130,12 @@
     type StudioProjectStatus,
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
+  import { stabiliseEngineStrings } from '$lib/frameleaf/studio/stabilise-strings';
+  import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
+  import { captionStyleEngineStrings } from '$lib/frameleaf/studio/caption-style-strings';
+  import { voiceCleanupEngineStrings } from '$lib/frameleaf/studio/voice-cleanup-strings';
+  import { captionLanguageEngineStrings } from '$lib/frameleaf/studio/caption-language-strings';
+  import { libraryPanelStrings } from '$lib/frameleaf/studio/library-strings';
   import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
   import { StudioRestoredVersionUnavailable, type StudioUnsupportedSourceDto } from '@frameleaf/sdk';
   import type { Translations } from 'svelte-i18n';
@@ -550,6 +556,12 @@
       relinkReload: $t('frameleaf_studio_relink_reload'),
       relinkSaved: $t('frameleaf_studio_relink_saved'),
       lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
+      ...transcriptEngineStrings($t),
+      ...stabiliseEngineStrings($t),
+      ...captionStyleEngineStrings($t),
+      ...voiceCleanupEngineStrings($t),
+      ...captionLanguageEngineStrings($t),
+      ...libraryPanelStrings($t),
     },
   });
 
@@ -962,7 +974,7 @@
             <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} />
           {/snippet}
           {#if projectAvailable && onImportRetention}
-            <MenuItem onSelect={onImportRetention}>Import receipts</MenuItem>
+            <MenuItem onSelect={onImportRetention}>{$t('frameleaf_studio_receipts_title')}</MenuItem>
           {/if}
           {#if editorUp && onExportBundle}
             <MenuItem onSelect={onExportBundle}>

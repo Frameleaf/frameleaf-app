@@ -37,8 +37,12 @@ describe('/api-keys', () => {
         id: expect.any(String),
         name: 'API Key',
         permissions: [Permission.ApiKeyRead],
+        designPermissions: [],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        lastUsedAt: null,
+        // FL-655: a key made by hand was not added by signing in from Save to Frameleaf
+        signedInFrom: null,
         secret: expect.any(String),
         // TODO: remove in v4
         apiKey: expect.any(Object),
@@ -75,8 +79,12 @@ describe('/api-keys', () => {
         id: expect.any(String),
         name: 'API Key',
         permissions: [Permission.All],
+        designPermissions: [],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        lastUsedAt: null,
+        // FL-655: a key made by hand was not added by signing in from Save to Frameleaf
+        signedInFrom: null,
         secret: expect.any(String),
         // TODO: remove in v4
         apiKey: expect.any(Object),
@@ -123,8 +131,12 @@ describe('/api-keys', () => {
         id: expect.any(String),
         name: 'api key',
         permissions: [Permission.All],
+        designPermissions: [],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        lastUsedAt: null,
+        // FL-655: a key made by hand was not added by signing in from Save to Frameleaf
+        signedInFrom: null,
       });
     });
   });
@@ -144,8 +156,12 @@ describe('/api-keys', () => {
         id: expect.any(String),
         name: 'new name',
         permissions: [Permission.ActivityCreate, Permission.ActivityRead, Permission.ActivityUpdate],
+        designPermissions: [],
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        lastUsedAt: null,
+        // FL-655: a key made by hand was not added by signing in from Save to Frameleaf
+        signedInFrom: null,
       });
     });
   });

@@ -1,11 +1,16 @@
 import { Kysely, type Transaction, sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AlbumKind,
   AlbumUserRole,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
+  StorageFolder,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationCreate, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -810,6 +815,112 @@ describe(StudioProjectRepository.name, () => {
         expect(revoke).toHaveBeenNthCalledWith(1, [project.id]);
         expect(revoke).toHaveBeenNthCalledWith(2, [project.id]);
         expect(revoke).toHaveBeenNthCalledWith(3, [project.id]);
+      }
+    });
+
+    it('gives a duplicate its own copy of the original generated media and imports', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const original = await leasedProject(sut, user.id);
+      await sut.appendRevision(append(original.id, user.id));
+      const operations = ctx.get(MediaOperationRepository);
+      const sourceId = randomUUID();
+      const operation = await operations.create({
+        ownerId: user.id,
+        kind: MediaOperationKind.StudioReverseConform,
+        destination: MediaOperationDestination.Local,
+        destinationDetail: null,
+        label: 'Source reversal',
+        assetId: null,
+        resultAssetId: null,
+        retryOfId: null,
+        projectId: original.id,
+        revisionId: null,
+        snapshot: {},
+        settings: {},
+        estimate: null,
+        totalUnits: 3,
+        maxAttempts: 2,
+      });
+      const claim = await operations.claimNext({
+        kinds: [MediaOperationKind.StudioReverseConform],
+        workerId: 'local-reverse',
+        leaseMs: LEASE_MS,
+      });
+      await operations.beginValidation(operation.id, claim!.claimToken);
+      const generated = {
+        projectId: original.id,
+        ownerId: user.id,
+        sourceRevision: 1,
+        id: `reverse-${operation.id}`,
+        producer: 'reverse-conform',
+        checksum: 'ab'.repeat(32),
+        path: '/private/studio/reversed.mkv',
+        derivedFrom: [`library-asset:${sourceId}`],
+      };
+      await operations.publishValidated(operation.id, claim!.claimToken, async (tx) => {
+        await sut.registerGeneratedResource(generated, tx);
+        await tx
+          .updateTable('media_operation')
+          .set({
+            // The lineage a real job records at admission; set here so no library asset is needed.
+            snapshot: { revision: 1, sourceEpochs: [{ assetId: sourceId, ownerId: user.id, epoch: '0' }] },
+            result: { generatedId: generated.id, checksum: generated.checksum },
+          })
+          .where('id', '=', operation.id)
+          .execute();
+        return true;
+      });
+
+      const media = await mkdtemp(join(tmpdir(), 'studio-duplicate-'));
+      StorageCore.setMediaLocation(media);
+      try {
+        const folder = join(StorageCore.getFolderLocation(StorageFolder.Exports, user.id), 'studio-imports');
+        const bytes = Buffer.from('a voiceover take');
+        const importId = randomUUID();
+        const originalPath = join(folder, original.id, `${importId}.wav`);
+        await mkdir(join(folder, original.id), { recursive: true });
+        await writeFile(originalPath, bytes);
+        const checksum = createHash('sha256').update(bytes).digest('hex');
+        await sut.registerImport({
+          ownerId: user.id,
+          projectId: original.id,
+          id: importId,
+          checksum,
+          contentType: 'audio/wav',
+          sizeBytes: bytes.length,
+          path: originalPath,
+          fileName: 'take.wav',
+          externalReferences: null,
+        });
+
+        const { project: copy } = await sut.createWithRevision({
+          ownerId: user.id,
+          name: 'Copy',
+          duplicatedFromId: original.id,
+          revision: {
+            authorId: user.id,
+            envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'r', graph: { tracks: [] } },
+            digest: 'digest-1',
+            graphBytes: 12,
+            summary: { counts: {}, total: 0 },
+            requestKey: null,
+          },
+        });
+
+        const declared = await sut.listGeneratedResources(original.id);
+        expect(declared).toHaveLength(1);
+        expect(declared[0].sourceEpochs).toEqual([{ assetId: sourceId, ownerId: user.id, epoch: '0' }]);
+        expect(await sut.listGeneratedResources(copy.id)).toEqual(declared);
+        // The copy's import is its own file, so deleting either project never takes the other's.
+        const copyPath = join(folder, copy.id, `${importId}.wav`);
+        expect(await sut.listImportDeclarations(copy.id)).toEqual([
+          { id: importId, contentType: 'audio/wav', checksum, sizeBytes: bytes.length, path: copyPath },
+        ]);
+        expect(await readFile(copyPath)).toEqual(bytes);
+        expect(await sut.getImportBytes(user.id)).toBe(bytes.length * 2);
+      } finally {
+        await rm(media, { recursive: true, force: true });
       }
     });
 

@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, type QueryExecutorProvider, sql } from 'kysely';
 
 export const ATTEMPT_EVIDENCE_PREFIX = 'frameleaf-attempt-evidence:';
 
@@ -43,7 +43,7 @@ export async function preserveAttemptEvidence(db: Kysely<any>, ids: string[]): P
 }
 
 /** Complete traversals only, in small pages. Concurrently created evidence waits for the next pass. */
-export async function pruneAttemptEvidence(db: Kysely<any>, pass: { id: string; startedAt: number }) {
+export async function pruneAttemptEvidence(db: QueryExecutorProvider, pass: { id: string; startedAt: number }) {
   const { rows } = await sql`DELETE FROM system_metadata WHERE key IN (
     SELECT m.key FROM system_metadata m WHERE starts_with(m.key, ${ATTEMPT_EVIDENCE_PREFIX})
       AND (m.value->>'recordedAt')::numeric < ${pass.startedAt}

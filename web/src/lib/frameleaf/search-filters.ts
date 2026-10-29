@@ -105,7 +105,7 @@ export const ratingControlValue = (condition: Condition): string => {
   if (
     isOnly(condition, 'gte') &&
     Number.isSafeInteger(value.gte) &&
-    (value.gte as number) >= 0 &&
+    (value.gte as number) >= 1 &&
     (value.gte as number) <= 5
   ) {
     return `min${value.gte}`;
@@ -124,7 +124,7 @@ export const ratingConditionForValue = (value: string): Condition | undefined =>
   if (/^(?:-1|[0-5])$/.test(value)) {
     return { eq: Number(value) };
   }
-  if (/^min[0-5]$/.test(value)) {
+  if (/^min[1-5]$/.test(value)) {
     return { gte: Number(value.slice(3)) };
   }
   return undefined;

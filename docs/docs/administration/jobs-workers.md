@@ -118,3 +118,7 @@ Image enrichment has separate backfill queues for `NSFW Detection` and `Image de
 When both image descriptions and NSFW detection are enabled, newly uploaded images queue a description job after thumbnail generation. That job runs NSFW detection first when no stored NSFW result exists, then passes the result to the description model. If only NSFW detection is enabled, uploads queue the NSFW job directly.
 
 Backfill jobs process image assets with generated previews and skip deleted, hidden, and locked assets. A normal backfill skips assets that already have a successful private result for that task. A forced backfill recalculates results, but generated descriptions and tags are still applied idempotently to avoid duplicate `AI description:` blocks or repeated tags.
+
+Temporary ML worker saturation is stored internally as `destination-capacity` and retried after 30 seconds without spending a failure retry. Public run summaries retain the existing `destination-unavailable` reason for client compatibility. Unavailable destinations retain their increasing outage backoff. The server caps ordinary inference responses at 32 MiB and bound inference responses at 4 MiB before parsing.
+
+Transcription reserves space for PCM input and one float sample buffer before decoding. `MACHINE_LEARNING_TRANSCRIPTION_MAX_MEMORY_MB` sets this per-worker input budget (default 1536 MiB); it does not include Whisper model weights or runtime working memory. Saturated workers refuse new audio work temporarily. The existing four-hour WAV limit remains the format ceiling.

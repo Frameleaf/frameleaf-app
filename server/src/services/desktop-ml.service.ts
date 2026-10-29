@@ -112,6 +112,7 @@ export class DesktopMlService {
         deferJobUntilDependency('destination-configuration');
         throw error;
       }
+      if (!(await this.ready(options, ownerId, profile.modelKey))) return selection;
       return this.selectImagePool(selection, {
         ownerId,
         profile,
@@ -141,6 +142,7 @@ export class DesktopMlService {
         deferJobUntilDependency('destination-configuration');
         throw error;
       }
+      if (!(await this.ready(options, ownerId, profile.modelKey))) return selection;
       return this.selectOcrPool(selection, {
         ownerId,
         profile,
@@ -166,6 +168,7 @@ export class DesktopMlService {
       deferJobUntilDependency('destination-configuration');
       throw new Error('desktop_pool_index_required');
     }
+    if (!(await this.ready(options, ownerId, selected.binding.space.visualModelKey))) return selection;
     return this.selectClipPool(selection, {
       ownerId,
       authorityKey: `${account.revisionId}:${revisionId}`,
@@ -185,6 +188,14 @@ export class DesktopMlService {
       },
       assertAuthority,
     });
+  }
+
+  /**
+   * FL-456: when the processing order sends a job to the person's computers, a helper must be ready for
+   * its model now; otherwise the job is handed back for the next place in the order.
+   */
+  private async ready(options: DesktopPoolOptions, ownerId: string, modelKey: string): Promise<boolean> {
+    return !options.requireReady || this.repository.hasReadyWorker(ownerId, modelKey);
   }
 
   selectClipPool(

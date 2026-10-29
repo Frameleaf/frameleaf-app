@@ -76,8 +76,20 @@
           onClose?.();
         }
       };
+      // Escape closes the popover wherever focus is, before the page's own Escape (LIB-04).
+      const escape = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose?.();
+        }
+      };
       document.addEventListener('pointerdown', outside);
-      return () => document.removeEventListener('pointerdown', outside);
+      document.addEventListener('keydown', escape, { capture: true });
+      return () => {
+        document.removeEventListener('pointerdown', outside);
+        document.removeEventListener('keydown', escape, true);
+      };
     }
   });
 
@@ -103,15 +115,6 @@
     if (event.key === 'Enter' && event.target === search) {
       // Never submit an enclosing form from the icon search.
       event.preventDefault();
-      return;
-    }
-    if (event.key === 'Escape') {
-      if (inline) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      onClose?.();
       return;
     }
     const options = [...(root?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];

@@ -66,10 +66,18 @@ export const restoreVerificationDue = (
   return { dueAt: dueAt.toISOString(), overdue: dueAt.getTime() <= now.getTime() };
 };
 
+/** FL-511: the first-boot place import's staging table (MapRepository.importGeodata). */
+const GEODATA_STAGING_TABLE = 'geodata_places_tmp';
+
+/** FL-511: pg_dump failed because a table it had listed was renamed or dropped before it could lock it. */
+const isVanishedRelationError = (error: unknown) =>
+  error instanceof Error && /pg_dump[\s\S]*relation "[^"]+" does not exist/.test(error.message);
+
 /** The final marker written by pg_dump only after the database dump finishes. */
 const DUMP_COMPLETE = /-- PostgreSQL database dump complete/;
 /** Newer `pg_dump` versions write an `unrestrict` meta-command line after it; this much of the end is checked. */
 const DUMP_TAIL_BYTES = 4096;
+const FAILED_BACKUP_IDLE_MS = 60 * 60 * 1000;
 
 export class DatabaseBackupVerificationError extends Error {
   constructor(reason: string) {
@@ -97,8 +105,8 @@ export class DatabaseBackupService {
   }
 
   // FL-362: the library data copy has no timer of its own any more. The one backup schedule
-  // (`BackupSequenceService`) makes it first, then Buddy Backup, then Cloud Backup. This job is still
-  // what "Take a snapshot now" queues.
+  // (`BackupSequenceService`) queues this job first and waits for it, then Buddy Backup, then Cloud
+  // Backup. It is also what "Take a snapshot now" queues, so every snapshot is made here (FL-657).
   @OnJob({ name: JobName.DatabaseBackup, queue: QueueName.BackupDatabase })
   async handleBackupDatabase(): Promise<JobStatus> {
     try {
@@ -203,6 +211,9 @@ export class DatabaseBackupService {
           // backup carries the tables without their rows. An item's own matches (asset_landmark) stay in.
           '--exclude-table-data=public.landmark',
           '--exclude-table-data=public.landmark_area',
+          // FL-511: the first-boot place import stages rows here, then swaps or drops it. It is never
+          // library data, and a dump that lists it can fail when the swap lands before the table locks.
+          `--exclude-table=public.${GEODATA_STAGING_TABLE}`,
         );
         break;
       }
@@ -541,8 +552,12 @@ export class DatabaseBackupService {
     const validFiles = files
       // FL-160: a cloud backup run's own temporary dump is never offered for a restore
       .filter((fn) => isValidDatabaseBackupName(fn) && !isCloudBackupDumpName(fn))
-      .toSorted((a, b) => (a.startsWith('uploaded-') === b.startsWith('uploaded-') ? a.localeCompare(b) : 1))
-      .toReversed();
+      // Newest first by name, with uploaded files after the backups this server made. The comparator
+      // must be consistent both ways round, or the order depends on the directory listing.
+      .toSorted((a, b) => {
+        const uploaded = Number(a.startsWith('uploaded-')) - Number(b.startsWith('uploaded-'));
+        return uploaded === 0 ? b.localeCompare(a) : uploaded;
+      });
 
     const backups = await Promise.all(
       validFiles.map(async (filename) => {
@@ -589,8 +604,14 @@ export class DatabaseBackupService {
       if (isValidDatabaseRoutineBackupName(filename)) {
         backups.push(filename);
       }
+      // Routine dumps can run at the same time (the backup schedule and "Take a snapshot now"), so a
+      // temporary file still being written belongs to another dump. Only an idle one has failed.
+      // ponytail: idle time, not a lock; a dump that writes nothing for an hour is treated as failed.
       if (isFailedDatabaseBackupName(filename)) {
-        failedBackups.push(filename);
+        const stats = await this.storageRepository.stat(path.join(backupsFolder, filename)).catch(() => null);
+        if (stats && Date.now() - stats.mtimeMs > FAILED_BACKUP_IDLE_MS) {
+          failedBackups.push(filename);
+        }
       }
     }
     backups.sort().reverse();
@@ -601,6 +622,34 @@ export class DatabaseBackupService {
     }
 
     this.logger.debug(`Database Backup Cleanup Finished, deleted ${toDelete.length} backups`);
+  }
+
+  /**
+   * FL-511: the restore's safety copy of the current database. On a freshly installed server the
+   * first-boot place import can rename or drop a table between pg_dump listing the tables and locking
+   * them, which fails the dump with "relation … does not exist". That is a race, not a broken database,
+   * so the dump is taken once more before the restore gives up.
+   */
+  private async createRestorePoint(): Promise<string> {
+    try {
+      return await this.createDatabaseBackup('restore-point-');
+    } catch (error) {
+      if (!isVanishedRelationError(error)) {
+        throw error;
+      }
+      this.logger.warn('A table changed while the safety copy of the database was being made; trying once more');
+      try {
+        return await this.createDatabaseBackup('restore-point-');
+      } catch (retryError) {
+        if (!isVanishedRelationError(retryError)) {
+          throw retryError;
+        }
+        throw new Error(
+          'The safety copy of the current database could not be made because the server is still setting itself up. Wait a few minutes, then run the restore again.',
+          { cause: retryError },
+        );
+      }
+    }
   }
 
   async restoreDatabaseBackup(
@@ -641,7 +690,7 @@ export class DatabaseBackupService {
 
       progressCb?.('backup', 0.05);
 
-      const restorePointFilePath = await this.createDatabaseBackup('restore-point-');
+      const restorePointFilePath = await this.createRestorePoint();
 
       this.logger.log(`Database Restore Starting. Database Version: ${databaseMajorVersion}`);
 

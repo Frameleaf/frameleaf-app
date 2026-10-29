@@ -16,6 +16,9 @@ import {
   AlbumUserRoleSchema,
   AssetOrder,
   AssetOrderSchema,
+  LibraryScope,
+  LibraryScopeSchema,
+  LibraryViewScopeSchema,
 } from 'src/enum.js';
 import { MaybeDehydrated } from 'src/types.js';
 import { asDateTimeString } from 'src/utils/date.js';
@@ -30,6 +33,12 @@ export const AlbumIconSchema = z
   .string()
   .max(80)
   .refine((value) => isValidAlbumIcon(value), { message: 'Invalid album icon: expected a Material Design Icons name' });
+
+// Album colours: the eight named colours shared with tags. Validated on write; the wire type stays `string`.
+export const ALBUM_COLORS = ['grey', 'green', 'teal', 'blue', 'purple', 'pink', 'amber', 'red'] as const;
+export const AlbumColorSchema = z.string().refine((value) => (ALBUM_COLORS as readonly string[]).includes(value), {
+  message: `Invalid album color: expected one of ${ALBUM_COLORS.join(', ')}`,
+});
 
 const AlbumUserAddSchema = z
   .object({
@@ -53,6 +62,7 @@ const AlbumUserCreateSchema = z
 
 const CreateAlbumSchema = z
   .object({
+    libraryScope: LibraryScopeSchema.optional(),
     albumName: z.string().describe('Album name'),
     // TODO: drop the empty-string-to-null transform in v4 (clients should send null)
     description: z
@@ -75,10 +85,9 @@ const CreateAlbumSchema = z
     parentId: z
       .uuidv4()
       .optional()
-      .describe(
-        'Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.',
-      ),
+      .describe('Parent album or collection (omit for top-level). Shared spaces cannot nest.'),
     icon: AlbumIconSchema.optional().describe('Optional icon: any Material Design Icons name (see GET /albums/icons)'),
+    color: AlbumColorSchema.optional().describe('Optional colour: grey, green, teal, blue, purple, pink, amber or red'),
     kind: AlbumKindSchema.default(AlbumKind.Album)
       .optional()
       .describe('What to create: an album (default), a collection of albums or a shared space'),
@@ -101,6 +110,7 @@ const AlbumsAddAssetsResponseSchema = z
 
 const UpdateAlbumSchema = z
   .object({
+    libraryScope: LibraryScopeSchema.optional(),
     albumName: z.string().optional().describe('Album name'),
     // TODO: drop the empty-string-to-null transform in v4 (clients should send null)
     description: z
@@ -134,10 +144,13 @@ const UpdateAlbumSchema = z
       .uuidv4()
       .nullable()
       .optional()
-      .describe('Collection to move the album into (null = move to top-level, omit = no change)'),
+      .describe('Parent album or collection (null = move to top-level, omit = no change)'),
     icon: AlbumIconSchema.nullable()
       .optional()
       .describe('Icon: any Material Design Icons name (null = clear / use default icon)'),
+    color: AlbumColorSchema.nullable()
+      .optional()
+      .describe('Colour: grey, green, teal, blue, purple, pink, amber or red (null = no colour)'),
     sortOrder: z
       .number()
       .meta({ format: 'double' })
@@ -146,10 +159,20 @@ const UpdateAlbumSchema = z
   })
   .meta({ id: 'UpdateAlbumDto' });
 
+const AlbumViewSchema = z.object({ libraryScope: LibraryViewScopeSchema.optional() }).meta({ id: 'AlbumViewDto' });
+
 const GetAlbumsSchema = z
   .object({
+    libraryScope: LibraryViewScopeSchema.optional(),
     id: z.uuidv4().optional().describe('Album ID'),
     name: z.string().optional().describe('Album name (exact match)'),
+    search: z
+      .string()
+      .trim()
+      .max(100)
+      .optional()
+      .describe('Only albums whose name contains this text, ignoring case (a search-as-you-type picker)'),
+    take: z.coerce.number().int().min(1).max(100).optional().describe('At most this many albums'),
     isOwned: stringToBool
       .optional()
       .describe('Filter by ownership: true = only owned, false = only shared-with-me, undefined = no filter'),
@@ -204,6 +227,7 @@ const ContributorCountResponseSchema = z
 
 export const AlbumResponseSchema = z
   .object({
+    libraryScope: LibraryScopeSchema.optional(),
     id: z.uuidv4().describe('Album ID'),
     albumName: z.string().describe('Album name'),
     description: z
@@ -245,11 +269,12 @@ export const AlbumResponseSchema = z
     isActivityEnabled: z.boolean().describe('Activity feed enabled'),
     order: AssetOrderSchema.optional(),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
-    parentId: z.string().nullable().describe('Collection this album belongs to (null = top-level)'),
+    parentId: z.string().nullable().describe('Parent album or collection (null = top-level)'),
     // Deliberately tolerant on read: a value stored before validation existed
     // (or written directly to the DB) must not break album reads. Writes are
     // constrained via AlbumIconSchema on create/update.
     icon: z.string().nullable().describe('Icon: a Material Design Icons name or legacy key (null = default icon)'),
+    color: z.string().nullable().describe('Colour name (grey, green, teal, blue, purple, pink, amber, red) or null'),
     kind: AlbumKindSchema,
     isSmart: z
       .boolean()
@@ -279,6 +304,13 @@ export const AlbumResponseSchema = z
       .meta({ format: 'double' })
       .nullable()
       .describe('Sibling display position. Lower values appear first.'),
+    // FL-416
+    recovered: z
+      .boolean()
+      .optional()
+      .describe(
+        'True for a Recovered Media album: files the imported library had lost track of, brought back after the import. Populated by GET /albums/tree and GET /albums/{id}.',
+      ),
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own album when partner sharing copied it from another library',
@@ -288,22 +320,24 @@ export const AlbumResponseSchema = z
 
 const MoveAlbumSchema = z
   .object({
-    collectionId: z
-      .uuidv4()
-      .nullable()
-      .describe('Collection to move the album into, or null to take it out so it stands on its own'),
+    collectionId: z.uuidv4().nullable().describe('Parent album or collection, or null for top level'),
     expectedParentId: z
       .uuidv4()
       .nullable()
       .optional()
       .describe(
-        'Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.',
+        'Where the client last saw the album (its parent, or null for top level). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.',
       ),
   })
   .meta({ id: 'MoveAlbumDto' });
 
 const AlbumOrderSchema = z
   .object({
+    libraryScope: LibraryViewScopeSchema.optional(),
+    hierarchy: z
+      .boolean()
+      .optional()
+      .describe('Order actual siblings in the recursive hierarchy; omitted for the legacy flattened directory'),
     parentId: z
       .uuidv4()
       .nullable()
@@ -336,6 +370,21 @@ const AlbumTreeResponseSchema = z
     spaces: z.array(AlbumResponseSchema).describe('Shared spaces, always top level'),
   })
   .meta({ id: 'AlbumTreeResponseDto' });
+
+export interface AlbumHierarchyNode {
+  album: AlbumResponseDto;
+  children: AlbumHierarchyNode[];
+}
+
+const AlbumHierarchyNodeSchema: z.ZodType<AlbumHierarchyNode> = z
+  .lazy(() => z.object({ album: AlbumResponseSchema, children: z.array(AlbumHierarchyNodeSchema) }))
+  .meta({ id: 'AlbumHierarchyNode' });
+
+const AlbumHierarchyResponseSchema = z
+  .object({ roots: z.array(AlbumHierarchyNodeSchema) })
+  .meta({ id: 'AlbumHierarchyResponseDto' });
+
+export class AlbumHierarchyResponseDto extends createZodDto(AlbumHierarchyResponseSchema) {}
 
 const AlbumIconSuggestionResponseSchema = z
   .object({
@@ -384,6 +433,7 @@ export class CreateAlbumDto extends createZodDto(CreateAlbumSchema) {}
 export class AlbumsAddAssetsDto extends createZodDto(AlbumsAddAssetsSchema) {}
 export class AlbumsAddAssetsResponseDto extends createZodDto(AlbumsAddAssetsResponseSchema) {}
 export class UpdateAlbumDto extends createZodDto(UpdateAlbumSchema) {}
+export class AlbumViewDto extends createZodDto(AlbumViewSchema) {}
 export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class GetAlbumInfoDto extends createZodDto(GetAlbumInfoSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
@@ -398,6 +448,7 @@ export class AlbumIconCatalogueResponseDto extends createZodDto(AlbumIconCatalog
 class AlbumUserResponseDto extends createZodDto(AlbumUserResponseSchema) {}
 
 export type MapAlbumDto = {
+  libraryScope?: LibraryScope;
   albumUsers?: AlbumUser[];
   assets?: ShallowDehydrateObject<MapAsset>[];
   sharedLinks?: ShallowDehydrateObject<AuthSharedLink>[];
@@ -411,6 +462,7 @@ export type MapAlbumDto = {
   order: AssetOrder;
   parentId: string | null;
   icon: string | null;
+  color?: string | null;
   sortOrder: number | null;
   kind: AlbumKind | string;
 };
@@ -447,6 +499,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
 
   return {
     albumName: entity.albumName,
+    libraryScope: entity.libraryScope,
     // TODO: return null instead of '' in v4
     description: entity.description ?? '',
     albumThumbnailAssetId: entity.albumThumbnailAssetId,
@@ -463,6 +516,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     order: entity.order,
     parentId: entity.parentId,
     icon: entity.icon,
+    color: entity.color ?? null,
     sortOrder: entity.sortOrder,
     kind: asAlbumKind(entity.kind),
   };

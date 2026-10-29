@@ -1,4 +1,5 @@
 import { ActivityController } from 'src/controllers/activity.controller.js';
+import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { AnalyticsController } from 'src/controllers/analytics.controller.js';
@@ -8,7 +9,9 @@ import { ArchiveOperationController } from 'src/controllers/archive-operation.co
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
+import { AssetPaletteController } from 'src/controllers/asset-palette.controller.js';
 import { AssetRestorationController } from 'src/controllers/asset-restoration.controller.js';
+import { AssetSourceController } from 'src/controllers/asset-source.controller.js';
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
 import { AssetController } from 'src/controllers/asset.controller.js';
 import { AttentionController } from 'src/controllers/attention.controller.js';
@@ -16,8 +19,11 @@ import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
 import { BackupDeviceAdminController, BackupDeviceController } from 'src/controllers/backup-device.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
+import { BookmarkController } from 'src/controllers/bookmark.controller.js';
+import { BrowserExtensionSignInController } from 'src/controllers/browser-extension-sign-in.controller.js';
 import { BuddyBackupPeerController } from 'src/controllers/buddy-backup-peer.controller.js';
 import { BuddyBackupAdminController, BuddyBackupOwnerController } from 'src/controllers/buddy-backup.controller.js';
+import { CaptureController } from 'src/controllers/capture.controller.js';
 import { CastController } from 'src/controllers/cast.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
@@ -32,8 +38,10 @@ import { ConfigUserController } from 'src/controllers/config-user.controller.js'
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
+import { DevelopBatchController } from 'src/controllers/develop-batch.controller.js';
 import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
+import { DuplicateAdminController } from 'src/controllers/duplicate-admin.controller.js';
 import { DuplicateReviewController } from 'src/controllers/duplicate-review.controller.js';
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
@@ -49,10 +57,13 @@ import { HardwareCheckController } from 'src/controllers/hardware-check.controll
 import { HelpController } from 'src/controllers/help.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
+import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
-import { LibraryController } from 'src/controllers/library.controller.js';
+import { LibraryItemController } from 'src/controllers/library-item.controller.js';
+import { LibraryProgressController } from 'src/controllers/library-progress.controller.js';
+import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
 import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
@@ -65,6 +76,7 @@ import { MlDestinationController } from 'src/controllers/ml-destination.controll
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
+import { OvernightController } from 'src/controllers/overnight.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
@@ -86,18 +98,25 @@ import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
 import { SharedLinkController } from 'src/controllers/shared-link.controller.js';
 import { SharedSpaceController } from 'src/controllers/shared-space.controller.js';
+import { SmartAlbumController } from 'src/controllers/smart-album.controller.js';
+import { SourceResourceController } from 'src/controllers/source-resource.controller.js';
+import { SpeechController } from 'src/controllers/speech.controller.js';
 import { StackController } from 'src/controllers/stack.controller.js';
 import { StorageMigrationAdminController } from 'src/controllers/storage-migration-admin.controller.js';
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
+import { StudioCaptionTranslationController } from 'src/controllers/studio-caption-translation.controller.js';
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
+import { StudioMovieController } from 'src/controllers/studio-movie.controller.js';
 import { StudioPreviewStreamController } from 'src/controllers/studio-preview-stream.controller.js';
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
 import { StudioProjectImportController } from 'src/controllers/studio-project-import.controller.js';
 import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
+import { StudioReframeController } from 'src/controllers/studio-reframe.controller.js';
 import { StudioSourceResolutionController } from 'src/controllers/studio-source-resolution.controller.js';
 import { StudioSourceController } from 'src/controllers/studio-source.controller.js';
+import { StudioVoiceCleanupController } from 'src/controllers/studio-voice-cleanup.controller.js';
 import { StudioWorkspaceController } from 'src/controllers/studio-workspace.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
@@ -105,17 +124,28 @@ import { SystemMetadataController } from 'src/controllers/system-metadata.contro
 import { TagController } from 'src/controllers/tag.controller.js';
 import { TakeoutController } from 'src/controllers/takeout.controller.js';
 import { TimelineController } from 'src/controllers/timeline.controller.js';
-import { TrashController } from 'src/controllers/trash.controller.js';
+import { TrashAdminController, TrashController } from 'src/controllers/trash.controller.js';
 import { UserAdminController } from 'src/controllers/user-admin.controller.js';
 import { UserController } from 'src/controllers/user.controller.js';
+import { UtilitiesController } from 'src/controllers/utilities.controller.js';
 import { VideoStreamController } from 'src/controllers/video-stream.controller.js';
 import { ViewController } from 'src/controllers/view.controller.js';
 import { WorkerInventoryController } from 'src/controllers/worker-inventory.controller.js';
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  SpeechController,
+  LibraryItemController,
+  AssetPaletteController,
+  CaptureController,
+  BrowserExtensionSignInController,
+  AlbumItemsController,
+  AssetSourceController,
+  BookmarkController,
+  DevelopBatchController,
   DesktopDeviceController,
   PhotoSourceController,
+  SourceResourceController,
   DesktopWorkerController,
   FrameleafLibraryMoveAdminController,
   FrameleafLibraryMoveController,
@@ -155,6 +185,8 @@ export const controllers = [
   AssetMediaController,
   AssetRestorationController,
   AttentionController,
+  LibraryProgressController,
+  OvernightController,
   AuthController,
   AuthAdminController,
   AnalyticsController,
@@ -168,13 +200,16 @@ export const controllers = [
   DocumentController,
   DownloadController,
   DuplicateController,
+  DuplicateAdminController,
   DuplicateReviewController,
   EnrichmentController,
   FaceController,
   IntegrityAdminController,
   JobController,
   LibraryController,
+  LibraryAdminController,
   LivePhotoController,
+  UtilitiesController,
   MaintenanceController,
   MapController,
   MediaHealthController,
@@ -193,6 +228,7 @@ export const controllers = [
   PartnerController,
   PersonController,
   PetController,
+  IdenticalFilesController,
   PhysicalDeduplicationController,
   PhysicalFileTrashController,
   PluginController,
@@ -202,14 +238,19 @@ export const controllers = [
   ServerController,
   SessionController,
   SharedLinkController,
+  SmartAlbumController,
   ItemShareController,
   AlbumSourceController,
   SharedSpaceController,
   StackController,
   StorageMigrationAdminController,
   StudioMediaController,
+  StudioCaptionTranslationController,
+  StudioMovieController,
+  StudioVoiceCleanupController,
   StudioBundleController,
   StudioExportController,
+  StudioReframeController,
   StudioPreviewController,
   StudioPreviewStreamController,
   StudioProjectImportController,
@@ -224,6 +265,7 @@ export const controllers = [
   TakeoutController,
   TimelineController,
   TrashController,
+  TrashAdminController,
   UserAdminController,
   UserController,
   VideoStreamController,

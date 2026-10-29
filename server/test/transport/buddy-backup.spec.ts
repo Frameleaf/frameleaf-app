@@ -482,12 +482,8 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       },
       201,
     );
-    // Only the inviter confirms (Frameleaf Cloud refuses the invitee); the invitee checks again.
-    expect((await status(b)).canConfirm).toBe(false);
-    await json(b, `${adminRoute}/relationship`, 'POST', b.admin.token, { action: 'confirm' }, 400);
-    await json(a, `${adminRoute}/refresh`, 'POST', a.admin.token, undefined, 201);
-    expect((await status(a)).canConfirm).toBe(true);
-    await json(a, `${adminRoute}/relationship`, 'POST', a.admin.token, { action: 'confirm' }, 201);
+    // Accepting activates the pairing (FL-513): neither side confirms.
+    expect((await status(b)).pairing?.state).toBe('active');
     for (const app of apps) {
       await json(app, `${adminRoute}/refresh`, 'POST', app.admin.token, undefined, 201);
     }
@@ -1056,10 +1052,29 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         'Same pending verification recovered automatically',
         async () => {
           const state = await status(app);
-          const [operation] = await app.db<{ status: string; claimToken: string | null; task: string }[]>`
-          select status, "claimToken", snapshot->>'task' as task
+          const [operation] = await app.db<
+            {
+              status: string;
+              claimActive: boolean;
+              retryAt: string | null;
+              claimExpiresAt: string | null;
+              heartbeatAt: string | null;
+              attempt: number;
+              autoRetries: number;
+              task: string;
+            }[]
+          >`
+          select status, "claimToken" is not null as "claimActive", "retryAt", "claimExpiresAt",
+            "heartbeatAt", attempt, "autoRetries", snapshot->>'task' as task
           from public.media_operation where id=${prior.id}
         `;
+          report[`unpaused-recovery-${app.side}`] = {
+            ...operation,
+            sameOperation: state.run?.id === prior.id,
+            runState: state.run?.state,
+            lastVerifiedAt: state.lastVerifiedAt,
+            peerAvailableAt: new Date(peerAvailableAt).toISOString(),
+          };
           expect(operation.task).toBe('verify');
           expect(state.settings?.pausedSending).toBe(false);
           expect(state.lastCompleteAt).toBe(prior.completedAt);
@@ -1068,7 +1083,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
           }
           return (
             operation.status === 'completed' &&
-            operation.claimToken === null &&
+            !operation.claimActive &&
             state.run?.id === prior.id &&
             state.run.state === 'complete' &&
             state.lastVerifiedAt !== null &&

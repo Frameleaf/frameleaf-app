@@ -36,10 +36,12 @@ import {
 import { StudioExportService, settleStudioExportPublication } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import * as ownerPaths from 'src/utils/cloud-backup-owner-path.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
 import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
+import { expectLocalisedSystemNotices } from 'test/utils.js';
 
 vi.mock('src/utils/config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/config.js')>()),
@@ -293,6 +295,9 @@ describe(StudioExportService.name, () => {
   };
   let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
   let events: { emit: ReturnType<typeof vi.fn> };
+
+  // FL-406: every Studio notice carries a system template whose English matches the supplied text
+  afterEach(() => expectLocalisedSystemNotices(events.emit));
   let mlDestinations: { getById: ReturnType<typeof vi.fn> };
   let staged: string;
 
@@ -321,6 +326,7 @@ describe(StudioExportService.name, () => {
       getForOwner: vi.fn(),
       getByRenderOperation: vi.fn(),
       getSources: vi.fn().mockResolvedValue([sourceRow()]),
+      getAvailableSourceIds: vi.fn((ids: string[]) => Promise.resolve(new Set(ids))),
       getSourceMediaFacts: vi.fn().mockResolvedValue([]),
       getSourcesFor: vi.fn((ids: string[]) =>
         Promise.resolve(new Map(ids.map((id) => [id, [sourceRow({ versionId: id })]]))),
@@ -811,8 +817,12 @@ describe(StudioExportService.name, () => {
 
     describe('FL-105 export matrix', () => {
       /** What the bundled worker advertises after its admission encodes (studio/tools/bundled-worker-formats.mjs). */
-      const matrixSession = () =>
+      const matrixSession = (
+        hdrFormats: string[] = [],
+        colorPrecision: { maxBitDepth: number; hdr10: boolean; dolbyVision: boolean } | null = null,
+      ) =>
         liveSession({
+          colorPrecision,
           codecs: [
             'webcodecs-avc',
             'aac',
@@ -843,6 +853,7 @@ describe(StudioExportService.name, () => {
             'audio-wav',
             'srt-sidecar-v2',
             'embedded-text-v2',
+            ...hdrFormats,
           ],
         });
       const captionGraph = () => ({
@@ -903,6 +914,48 @@ describe(StudioExportService.name, () => {
         ]);
         expect(await refusalOf({ format: 'mkv-vp9' })).toMatchObject({ reason: 'incompatible-color' });
         expect(repository.createWithRender).not.toHaveBeenCalled();
+      });
+
+      it('queues HDR10 and HLG masters only on a session that wrote and decoded them back (FL-107)', async () => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        const hlgSources = [
+          { ...facts(CLIP), video: { timeBase: 30_000, pixelFormat: 'yuv420p10le', colorTransfer: 18 } },
+        ];
+        const hlg = { format: 'mp4-hevc-main10', color: 'preserve' };
+        const mastering = { primaries: 'bt2020', maxNits: 1000, minNits: 0.005 };
+        const hdr10 = { format: 'mp4-hevc-main10', color: 'hdr10', mastering };
+        const hdr10Precision = { maxBitDepth: 10, hdr10: true, dolbyVision: false };
+        const withEvidence = (formats: string[], colorPrecision = hdr10Precision) => {
+          const session = matrixSession(['mp4-hevc-main10', ...formats], colorPrecision);
+          renderWorkers.listLiveSessions.mockResolvedValue([session]);
+          renderWorkers.getSessionCapabilities.mockResolvedValue(session.capabilities);
+        };
+
+        // Ten-bit HDR10 evidence alone does not prove an HLG master.
+        withEvidence(['mp4-hevc-main10+pq']);
+        repository.getSourceMediaFacts.mockResolvedValue(hlgSources);
+        expect(await refusalOf(hlg)).toMatchObject({ code: 'studio_export_unsupported', reason: 'incompatible-color' });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+
+        withEvidence(['mp4-hevc-main10+pq', 'mp4-hevc-main10+hlg']);
+        await sut.create(auth(), PROJECT, { ...dto, ...hlg } as never);
+        expect(repository.createWithRender.mock.calls.at(-1)![0].snapshot.contract.video).toEqual({
+          minBitDepth: 10,
+          transfer: 'arib-std-b67',
+        });
+
+        repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+        await sut.create(auth(), PROJECT, { ...dto, ...hdr10 } as never);
+        expect(repository.createWithRender.mock.calls.at(-1)![0].snapshot.contract.video).toEqual({
+          minBitDepth: 10,
+          transfer: 'smpte2084',
+          mastering,
+        });
+        // Without verified HDR10 the same master is refused before any job exists.
+        withEvidence(['mp4-hevc-main10+hlg'], { maxBitDepth: 10, hdr10: false, dolbyVision: false });
+        const queued = repository.createWithRender.mock.calls.length;
+        expect(await refusalOf(hdr10)).toMatchObject({ reason: 'incompatible-color' });
+        expect(repository.createWithRender).toHaveBeenCalledTimes(queued);
       });
 
       it('explains a sound-only export the project cannot fill before queueing it', async () => {
@@ -1091,6 +1144,114 @@ describe(StudioExportService.name, () => {
       );
       expect(job.snapshot.studio).not.toHaveProperty('graph');
       expect(version).toEqual(expect.objectContaining({ ownerId: OWNER, projectId: PROJECT, revision: 3 }));
+    });
+
+    describe('vertical and square exports (FL-563)', () => {
+      const shapedGraph = () => {
+        const graph = clipGraph();
+        return {
+          ...graph,
+          metadata: { ...graph.metadata, width: 1920, height: 1080 },
+          timeline: {
+            ...graph.timeline,
+            items: graph.timeline.items.map((item) =>
+              item.type === 'video' ? { ...item, sourceWidth: 1920, sourceHeight: 1080 } : item,
+            ),
+          },
+        };
+      };
+      const shapedDto = {
+        ...dto,
+        shape: 'vertical',
+        framing: [
+          {
+            clipId: 'clip-v',
+            path: [
+              { t: 0, x: 0.05 },
+              { t: 1, x: 0.6 },
+            ],
+          },
+        ],
+      } as StudioExportCreateDto;
+
+      beforeEach(() => {
+        studio.authorizeRevision.mockResolvedValue(authorized({ envelope: { graph: shapedGraph() } }));
+        repository.createWithRender.mockResolvedValue({
+          operation: operation({ status: MediaOperationStatus.Queued }),
+          version: versionRow({ state: StudioExportVersionState.Rendering }),
+        });
+      });
+
+      it('seals the shape and each shot’s framing as export settings, never an edit of the project', async () => {
+        mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1'] })]);
+        await sut.create(auth(), PROJECT, shapedDto);
+        const [job, version] = repository.createWithRender.mock.calls[0];
+        const reframe = {
+          version: 1,
+          shape: 'vertical',
+          output: { width: 720, height: 1280 },
+          // the crop never leaves the frame: 0.05 is pulled in to half a crop from the edge
+          shots: {
+            'clip-v': [
+              { t: 0, x: 0.1582 },
+              { t: 1, x: 0.6 },
+            ],
+          },
+        };
+        expect(job.settings).toMatchObject({ shape: 'vertical', reframe });
+        expect(version.settings).toMatchObject({ shape: 'vertical', reframe });
+        expect(job.snapshot.studio).not.toHaveProperty('graph');
+      });
+
+      it('shows the shape on the version but keeps the crop paths with the render', async () => {
+        mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1'] })]);
+        await sut.create(auth(), PROJECT, shapedDto);
+        const settings = repository.createWithRender.mock.calls[0][1].settings;
+        repository.createWithRender.mockResolvedValue({
+          operation: operation({ status: MediaOperationStatus.Queued }),
+          version: versionRow({ state: StudioExportVersionState.Rendering, settings }),
+        });
+        const { version } = await sut.create(auth(), PROJECT, shapedDto);
+        expect(version.settings).toMatchObject({ shape: 'vertical' });
+        expect(version.settings).not.toHaveProperty('reframe');
+      });
+
+      it('is offered only to a render worker that reframes', async () => {
+        mockRenderSessions([liveSession({ formats: ['mp4'] })]);
+        await expect(sut.create(auth(), PROJECT, shapedDto)).rejects.toMatchObject({
+          response: { code: 'studio_export_unsupported', reason: 'codec-unavailable' },
+        });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a 10-bit format', { format: 'mp4-hevc-main10' }],
+        ['a still', { format: 'sdr-jpeg', resolution: 'original' }],
+        ['sound alone', { format: 'audio-mp3' }],
+        ['HDR10 colour', { color: 'hdr10' }],
+        ['the original resolution', { resolution: 'original' }],
+        [
+          'a path out of order',
+          {
+            framing: [
+              {
+                clipId: 'clip-v',
+                path: [
+                  { t: 0.6, x: 0.5 },
+                  { t: 0.2, x: 0.5 },
+                ],
+              },
+            ],
+          },
+        ],
+        ['a framing without a shape', { shape: 'original' }],
+      ])('refuses %s before creating any work', async (_name, patch) => {
+        mockRenderSessions([liveSession({ formats: ['mp4', 'reframe-v1'] })]);
+        await expect(sut.create(auth(), PROJECT, { ...shapedDto, ...patch } as never)).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+      });
     });
 
     it('keeps Smooth motion out of the render: it rides along as its own job for after publication (FL-162)', async () => {
@@ -1892,7 +2053,7 @@ describe(StudioExportService.name, () => {
     it('admits the render-finished notification inside the publication transaction', async () => {
       const tx = { isTransaction: true };
       repository.publish.mockImplementation((_input, _metadata, notification) =>
-        Promise.try(() => notification!(tx as never, published().version, 'Lake trip')).then(() => published()),
+        tryPromise(() => notification!(tx as never, published().version, 'Lake trip')).then(() => published()),
       );
       await sut.run(job());
       expect(jobs.queueInTransaction).toHaveBeenCalledWith(tx, {
@@ -1988,7 +2149,7 @@ describe(StudioExportService.name, () => {
 
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
       repository.publish.mockImplementation((_input, metadata) =>
-        Promise.try(() => metadata!({ isTransaction: true } as never, 'asset-new')).then(() => published()),
+        tryPromise(() => metadata!({ isTransaction: true } as never, 'asset-new')).then(() => published()),
       );
 
       await sut.run(job());
@@ -2781,6 +2942,14 @@ describe(StudioExportService.name, () => {
       );
 
       access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+      await expect(sut.download(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("stops serving the file once one of the owner's own sources is trashed or offline", async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      access.asset.checkAlbumAccess.mockResolvedValue(new Set([SHARED_CLIP]));
+      repository.getAvailableSourceIds.mockResolvedValue(new Set([SHARED_CLIP]));
+
       await expect(sut.download(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
     });
 

@@ -421,15 +421,30 @@
       return;
     }
     let frame = 0;
+    // A paused clip shows the same picture every frame: copy it again only when the element, its
+    // size or its position changed, not 60 times a second at full resolution.
+    let drawn: { from: HTMLVideoElement; target: HTMLCanvasElement; at: number } | null = null;
     const draw = () => {
       const from = videoEl;
       const target = mirrorEl;
       if (from && target && from.readyState >= 2) {
-        if (target.width !== from.videoWidth) {
+        const resized = target.width !== from.videoWidth || target.height !== from.videoHeight;
+        if (resized) {
           target.width = from.videoWidth;
           target.height = from.videoHeight;
         }
-        target.getContext('2d')?.drawImage(from, 0, 0);
+        // while seeking, currentTime is already the new time but the frame may not be decoded yet
+        const unchanged =
+          !resized &&
+          !from.seeking &&
+          from.paused &&
+          drawn?.from === from &&
+          drawn.target === target &&
+          drawn.at === from.currentTime;
+        if (!unchanged) {
+          target.getContext('2d')?.drawImage(from, 0, 0);
+          drawn = from.seeking ? null : { from, target, at: from.currentTime };
+        }
       }
       frame = requestAnimationFrame(draw);
     };
@@ -967,7 +982,11 @@
         }
         const base = asset.originalFileName.replace(/\.[^.]+$/, '');
         const file = new File([blob], `${base} ${preciseTime(at).replace(':', '.')}.jpg`, { type: 'image/jpeg' });
-        void fileUploadHandler({ files: [file], isLockedAssets: asset.visibility === AssetVisibility.Locked })
+        void fileUploadHandler({
+          files: [file],
+          libraryScope: asset.libraryScope,
+          isLockedAssets: asset.visibility === AssetVisibility.Locked,
+        })
           .then(() =>
             toastManager.primary($t('frameleaf_video_editor_frame_saved', { values: { time: preciseTime(at) } })),
           )
@@ -2069,18 +2088,19 @@
               <h2>{$t('frameleaf_video_editor_tool_enhance')}</h2>
             </div>
             {#each enhanceItems as item (item.key)}
+              {@const enabled = edit[item.key]}
               <div class="ed-toggle">
                 <strong><Icon icon={item.icon} size="16" /> {$t(item.label)}</strong>
                 <button
                   type="button"
                   role="switch"
                   class="ed-switch"
-                  aria-checked={edit[item.key]}
+                  aria-checked={enabled}
                   aria-label={$t(item.label)}
-                  onclick={() => change({ [item.key]: !edit[item.key] })}
+                  onclick={() => change({ [item.key]: !enabled })}
                 ></button>
                 <p>{$t(item.help)}</p>
-                {#if edit[item.key]}
+                {#if enabled}
                   <span class="ed-status" role="status">{$t('frameleaf_video_editor_enhance_on_save')}</span>
                 {/if}
               </div>

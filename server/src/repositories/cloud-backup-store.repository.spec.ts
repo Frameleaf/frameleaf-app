@@ -18,6 +18,8 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CLOUD_BACKUP_MARKER, CLOUD_BACKUP_PART_BYTES, CLOUD_BACKUP_PROBE_PREFIX } from 'src/utils/cloud-backup.js';
 import { withOperationExecution } from 'src/utils/operation-execution.js';
 
+vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
+
 const SSE_HEADERS = [
   'x-amz-server-side-encryption-customer-algorithm',
   'x-amz-server-side-encryption-customer-key',

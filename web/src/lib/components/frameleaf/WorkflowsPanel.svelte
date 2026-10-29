@@ -5,9 +5,10 @@
    * workflows. Everything shown is the server's; a workflow the server can no longer run is marked
    * Blocked with the reason, and an import arrives paused.
    */
+  import { emptyDiscoveryQuery, parseDiscoveryQueryText } from '$lib/components/discovery/query';
+  import { workflowFromSearch } from '$lib/frameleaf/workflow-source';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import WorkflowDesigner from '$lib/components/frameleaf/WorkflowDesigner.svelte';
-  import type { ReferenceOption } from '$lib/components/frameleaf/WorkflowParameter.svelte';
   import {
     draftFromWorkflow,
     emptyDraft,
@@ -21,14 +22,7 @@
   import { pluginManager } from '$lib/managers/plugin-manager.svelte';
   import { downloadJson } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import {
-    getAllAlbums,
-    getAllTags,
-    getWorkflowForShare,
-    searchWorkflows,
-    updateWorkflow,
-    type WorkflowResponseDto,
-  } from '@frameleaf/sdk';
+  import { getWorkflowForShare, searchWorkflows, updateWorkflow, type WorkflowResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiDownload, mdiFileImportOutline, mdiPlus, mdiTuneVariant } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
@@ -37,12 +31,18 @@
   let {
     initial,
     openId,
+    workflowQuery,
+    workflowName,
+    workflowAlbum,
     onOpenClosed,
   }: {
     /** Workflows a page already loaded; without them the section loads its own. */
     initial?: WorkflowResponseDto[];
     /** A workflow to open once, for a deep link. */
     openId?: string;
+    workflowQuery?: string;
+    workflowName?: string;
+    workflowAlbum?: string;
     /** Called when the deep-linked workflow is closed, so the host can drop it from its address. */
     onOpenClosed?: () => void;
   } = $props();
@@ -69,8 +69,6 @@
   let designerOpen = $state(false);
   let notice = $state('');
   let error = $state('');
-  let references = $state<Record<string, ReferenceOption[]>>({});
-  let referencesLoaded = false;
 
   const triggerLabel = (trigger: string) => {
     const key = `frameleaf_workflows.trigger_${trigger}`;
@@ -78,37 +76,43 @@
     return label === key ? trigger : label;
   };
 
-  const loadReferences = async () => {
-    if (referencesLoaded) {
-      return;
-    }
-    referencesLoaded = true;
-    try {
-      const [tags, albums] = await Promise.all([getAllTags(), getAllAlbums({})]);
-      references = {
-        TagId: tags.map((tag) => ({ id: tag.id, label: tag.value })),
-        AlbumId: albums.map((album) => ({ id: album.id, label: album.albumName })),
-      };
-    } catch {
-      // identifiers can still be entered directly
-      referencesLoaded = false;
-    }
-  };
-
   const openDesigner = (workflow?: WorkflowResponseDto, draft?: WorkflowDraft) => {
     error = '';
     editing = { workflow, draft: draft ?? (workflow ? draftFromWorkflow(workflow) : emptyDraft()) };
     designerOpen = true;
-    void loadReferences();
   };
 
   // a workflow's own address opens it once, when the page loads
   let opened = false;
   $effect(() => {
-    if (!openId || opened || !loaded) {
+    if ((!openId && !workflowQuery && !workflowAlbum) || opened || !loaded) {
       return;
     }
 
+    if (workflowQuery || workflowAlbum) {
+      opened = true;
+      const parsed = workflowQuery
+        ? parseDiscoveryQueryText(workflowQuery)
+        : { ok: true as const, query: emptyDiscoveryQuery() };
+      if (parsed.ok) {
+        untrack(() => {
+          const draft = workflowFromSearch(parsed.query, workflowName);
+          if (workflowAlbum) {
+            draft.steps.push({
+              method: 'immich-plugin-core#assetAddToAlbums',
+              config: { albumIds: [workflowAlbum] },
+              enabled: true,
+              extra: {},
+              storedSecrets: [],
+            });
+          }
+          openDesigner(undefined, draft);
+        });
+      } else {
+        error = $t('errors.something_went_wrong');
+      }
+      return;
+    }
     const workflow = untrack(() => workflows.find((item) => item.id === openId));
     if (workflow) {
       opened = true;
@@ -123,7 +127,7 @@
     }
 
     editing = null;
-    if (openId) {
+    if (openId || workflowQuery || workflowAlbum) {
       onOpenClosed?.();
     }
   });
@@ -249,7 +253,6 @@
       methods={pluginManager.methods}
       triggers={pluginManager.triggers}
       templates={pluginManager.templates}
-      {references}
       {onSaved}
       {onDeleted}
     />

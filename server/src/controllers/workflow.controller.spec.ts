@@ -1,8 +1,15 @@
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
+import { Controller, Get, Param } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import request from 'supertest';
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
+import { LegacyPluginTemplateResponseDto } from 'src/dtos/plugin.dto.js';
+import { LegacyWorkflowTriggerResponseDto } from 'src/dtos/workflow.dto.js';
+import { Permission } from 'src/enum.js';
+import { Authenticated, getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
+import { UUIDParamDto } from 'src/validation.js';
 import { errorDto } from 'test/medium/responses.js';
 import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
 
@@ -21,6 +28,16 @@ describe(WorkflowController.name, () => {
   beforeEach(() => {
     service.resetAllMocks();
     ctx.reset();
+  });
+
+  it.each([
+    ['/workflows/automation/discovery', 'discovery'],
+    ['/workflows/automation/capabilities', 'capabilities'],
+  ] as const)('serves %s outside the legacy workflow-ID route', async (path, operation) => {
+    service[operation].mockResolvedValue({} as never);
+    const { status } = await request(ctx.getHttpServer()).get(path).set('Authorization', 'Bearer token');
+    expect(status).toBe(200);
+    expect(service[operation]).toHaveBeenCalledOnce();
   });
 
   describe('POST /workflows', () => {
@@ -126,4 +143,47 @@ describe(WorkflowController.name, () => {
       expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
     });
   });
+});
+
+@Controller('workflows')
+class LegacyWorkflowController {
+  @Get(':id')
+  @Authenticated({ permission: false })
+  getWorkflow(@Param() params: UUIDParamDto) {
+    return params.id;
+  }
+}
+
+it('lets older servers return not-found for new discovery instead of invalid workflow-ID errors', async () => {
+  const ctx = await controllerSetup(LegacyWorkflowController, [
+    { provide: LoggingRepository, useValue: automock(LoggingRepository, { strict: false }) },
+  ]);
+  try {
+    expect((await request(ctx.getHttpServer()).get('/workflows/discovery')).status).toBe(400);
+    for (const path of ['/workflows/automation/discovery', '/workflows/automation/capabilities']) {
+      expect((await request(ctx.getHttpServer()).get(path)).status).toBe(404);
+    }
+  } finally {
+    await ctx.close();
+  }
+});
+
+it('requires plugin-read permission for discovery containing plugin templates', () => {
+  expect(getAuthenticatedOptions(new Reflector(), WorkflowController.prototype.getWorkflowDiscovery)).toMatchObject({
+    permission: Permission.PluginRead,
+  });
+});
+
+it.each(['AssetChanged', 'Schedule'])('retains closed legacy response schemas for %s', (trigger) => {
+  expect(LegacyWorkflowTriggerResponseDto.schema.safeParse({ trigger, types: ['AssetV1'] }).success).toBe(false);
+  expect(
+    LegacyPluginTemplateResponseDto.schema.safeParse({
+      key: 'sample#rule',
+      title: 'Rule',
+      description: '',
+      trigger,
+      steps: [],
+      uiHints: [],
+    }).success,
+  ).toBe(false);
 });

@@ -15,7 +15,7 @@ import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LANDMARK_MAX_RADIUS_M, citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { AssetVisibility, LibraryScope, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -24,6 +24,7 @@ import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isTimelineVisible, visibilityIs } from 'src/utils/locked.js';
 
 export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
@@ -184,6 +185,8 @@ export class MapRepository {
       }
 
       const index: Record<string, LandmarkIcon> = {};
+      // Node 22's pipeline can reject with its own AbortError while tearing down; report the line that failed instead.
+      let malformed: Error | undefined;
       const unpack = async (line: string) => {
         if (!line) {
           return;
@@ -191,7 +194,7 @@ export class MapRepository {
         const { id, background, tile, png } = JSON.parse(line);
         // The id becomes a file name, so it is checked even though the whole file already was.
         if (!LANDMARK_ID.test(id) || !HEX_COLOUR.test(background) || typeof tile !== 'boolean') {
-          throw new Error('The icon pack has a malformed line');
+          throw (malformed = new Error('The icon pack has a malformed line'));
         }
         await writeFile(join(staging, `${id}.png`), Buffer.from(png, 'base64'));
         index[id] = { background, tile };
@@ -207,6 +210,8 @@ export class MapRepository {
           }
         }
         await unpack(rest);
+      }).catch((error) => {
+        throw malformed ?? error;
       });
 
       await rm(download);
@@ -245,18 +250,37 @@ export class MapRepository {
       // A database backup leaves the place pack out (it ships with the server), so a restored database has
       // the geodata of this date and no places: put them back.
       const place = await this.db.selectFrom('landmark').select('id').limit(1).executeTakeFirst();
-      return place ? false : this.importLandmarks();
+      if (place) {
+        return false;
+      }
+      // FL-402: the web app tells people place names are coming back; the flag clears once items are re-matched
+      await this.setPlacesRestoring(true);
+      return this.importLandmarks();
     }
 
+    await this.setPlacesRestoring(true);
     await Promise.all([this.importGeodata(), this.importNaturalEarthCountries(), this.importLandmarks()]);
 
     await this.metadataRepository.set(SystemMetadataKey.ReverseGeocodingState, {
       lastUpdate: geodataDate,
       lastImportFileName: citiesFile,
+      restoring: true,
     });
 
     this.logger.log('Geodata import completed');
     return true;
+  }
+
+  /**
+   * FL-402: marks whether place data is being put back, so the app can say why place names are missing for
+   * a few minutes after a first start or a restore. Keeps the rest of the reverse geocoding state.
+   */
+  async setPlacesRestoring(restoring: boolean): Promise<void> {
+    const state = await this.metadataRepository.get(SystemMetadataKey.ReverseGeocodingState);
+    if ((state?.restoring ?? false) === restoring) {
+      return;
+    }
+    await this.metadataRepository.set(SystemMetadataKey.ReverseGeocodingState, { ...state, restoring });
   }
 
   /**
@@ -375,6 +399,7 @@ export class MapRepository {
     // FL-195: the viewer's own marks and detections, when their session is unlocked
     const reveal = options.revealLockedOwnerId;
     return this.mapMarkersQuery()
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .$if(isArchived === true, (qb) =>
         qb.where((eb) =>
@@ -427,6 +452,7 @@ export class MapRepository {
     const base = () =>
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
         .where('asset.deletedAt', 'is', null)
         .$call((qb) => withHiddenContentFilter(qb, options))

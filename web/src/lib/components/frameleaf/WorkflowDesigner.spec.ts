@@ -93,6 +93,27 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('WorkflowDesigner', () => {
+  it('previews eligible matches without starting a run', async () => {
+    sdkMock.getWorkflowCapabilities.mockResolvedValue({ timezone: 'UTC', sourceFilters: true } as never);
+    sdkMock.previewWorkflow.mockResolvedValue({
+      count: 25_001,
+      exampleAssetIds: [assetId],
+      issues: [],
+      actions: [],
+      evaluatedAt: '2026-10-28T00:00:00Z',
+    });
+    setup([], workflow({ enabled: false, source: { filter: { rating: { gte: 4 } } }, steps: [] }));
+    await screen.findByText('Server timezone: UTC');
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
+    await fireEvent.click(screen.getByRole('button', { name: t.validate }));
+    expect(await screen.findByText(/25,001 eligible matches/)).toBeInTheDocument();
+    expect(sdkMock.previewWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowPreviewDto: expect.objectContaining({ workflowId: id, source: { filter: { rating: { gte: 4 } } } }),
+      }),
+    );
+    expect(sdkMock.runWorkflow).not.toHaveBeenCalled();
+  });
   it('edits parameters from the installed method schema and follows a schema change', async () => {
     const { rerender } = setup([webhook({ url: { type: 'string', title: 'URL' } }, ['url'])]);
 

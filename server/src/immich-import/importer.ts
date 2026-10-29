@@ -1,3 +1,4 @@
+import { v5 } from 'uuid';
 import { AssetLockReason } from 'src/enum.js';
 import {
   CONTENT_TABLES,
@@ -10,7 +11,16 @@ import {
 } from 'src/immich-import/adapters.js';
 import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { EmbeddingAdmission, inspectEmbeddingAdmission } from 'src/immich-import/embeddings.js';
-import { mapMediaPath, pathChecksum, verifyMediaFile, verifyMediaRoots } from 'src/immich-import/media.js';
+import {
+  LostOriginalReason,
+  isUnmappedPath,
+  lostOriginalPath,
+  lostOriginalReason,
+  mapMediaPath,
+  pathChecksum,
+  verifyMediaFile,
+  verifyMediaRoots,
+} from 'src/immich-import/media.js';
 import { ImmichSource } from 'src/immich-import/source.js';
 import { getImmichImportState } from 'src/immich-import/state.js';
 import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from 'src/immich-import/types.js';
@@ -28,6 +38,12 @@ const BOOTSTRAP_TABLES = new Set([
   'naturalearth_countries',
 ]);
 const localColumns = new Set(['updateId', 'createId']);
+const LOST_REPORT_ITEMS = 1000;
+const LOST_REASON_TEXT: Record<LostOriginalReason, string> = {
+  missing: 'already missing in the source library',
+  changed: 'changed since the source library recorded them',
+  unmapped: 'outside the imported media folders',
+};
 const lockedFace = `EXISTS (SELECT 1 FROM public.asset_face f JOIN public.asset_lock l ON l."assetId"=f."assetId" WHERE f.id=s."faceAssetId")`;
 /** Columns `convertLocks` rewrites. Verification accepts a changed value only where a lock explains it. */
 const LOCK_REWRITES: Record<string, Record<string, string>> = {
@@ -42,6 +58,8 @@ const LOCK_REWRITES: Record<string, Record<string, string>> = {
 export class ImmichImportService {
   readonly source: ImmichSource;
   private embeddingAdmission?: EmbeddingAdmission;
+  /** Originals kept without a verified file, collected by the verification pass for the owners' report. */
+  private lostOriginals = new Map<string, { reason: LostOriginalReason; immichPath: string }>();
   constructor(
     readonly destination: ImportDatabase,
     source: ImportDatabase,
@@ -140,6 +158,7 @@ export class ImmichImportService {
       if (incomplete.length > 0) {
         throw new ImportRefused('INCOMPLETE_CHECKPOINTS');
       }
+      this.lostOriginals.clear();
       for (const table of CONTENT_TABLES) {
         if (!this.source.fixture.tables[table]) {
           continue;
@@ -181,6 +200,7 @@ export class ImmichImportService {
       // Recheck after verification/dispatch: an intact ledger does not authorize schema drift.
       await assertCanonicalDestination(this.destination);
       await verifyMediaRoots(this.config.mediaRoots, this.config.media);
+      await this.reportLostOriginals(report.fingerprint);
       await this.destination.query(
         "UPDATE public.frameleaf_immich_import SET status='activated',verified_at=now() WHERE status='verifying'",
       );
@@ -255,6 +275,14 @@ export class ImmichImportService {
           seed.scope === 'unadmitted' &&
           (table === 'desktop_clip_index' ? seed.space === null : seed.key === 'legacy');
         if (!pristine) throw new ImportRefused('DESTINATION_NOT_FRESH');
+        continue;
+      }
+      if (table === 'ml_processing_order') {
+        // The FL-456 migration seeds only the default order on a fresh install.
+        const seeds = await this.destination.query(`SELECT scope FROM public.ml_processing_order LIMIT 2`);
+        if (seeds.length > 1 || (seeds.length === 1 && seeds[0].scope !== 'default')) {
+          throw new ImportRefused('DESTINATION_NOT_FRESH');
+        }
         continue;
       }
       if (!BOOTSTRAP_TABLES.has(table)) {
@@ -432,7 +460,15 @@ export class ImmichImportService {
           );
         } catch (error) {
           // Missing regenerable output is allowed; originals and profile images are never silently dropped.
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT' && (table === 'asset_file' || table === 'person')) {
+          const lost =
+            table === 'asset' ? await lostOriginalReason(error, path, this.config.mediaRoots, this.config.media) : null;
+          if (lost) {
+            row[column] = lostOriginalPath(path, lost, this.config.mediaRoots, this.config.media);
+            this.lostOriginals.set(String(row.id), { reason: lost, immichPath: path });
+          } else if (
+            (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+            (table === 'asset_file' || table === 'person')
+          ) {
             if (table === 'asset_file') {
               return null;
             }
@@ -451,9 +487,15 @@ export class ImmichImportService {
       row.checksum = String.raw`\x${pathChecksum(row.originalPath)}`;
     }
     if (table === 'library') {
-      row.importPaths = (row.importPaths as string[]).map(
-        (path) => mapMediaPath(path, this.config.mediaRoots, this.config.media).target,
-      );
+      // An unmapped import path is kept as it was: the library's own scan marks its items offline.
+      row.importPaths = (row.importPaths as string[]).map((path) => {
+        try {
+          return mapMediaPath(path, this.config.mediaRoots, this.config.media).target;
+        } catch (error) {
+          if (!isUnmappedPath(error)) throw error;
+          return path;
+        }
+      });
     }
     return row;
   }
@@ -532,6 +574,85 @@ export class ImmichImportService {
           WHERE ${child.map((column, i) => `p.${quote(parent[i])}=c.${quote(column)}`).join(' AND ')}) LIMIT 1`);
       if (invalid.length > 0) {
         throw new ImportRefused('DESTINATION_RELATIONSHIP_MISMATCH');
+      }
+    }
+  }
+
+  /**
+   * Tell each owner which originals came across without a usable file, with what the database knows
+   * about each one, and give administrators the whole list. The photos stay in the library: a
+   * re-upload restores one, and Library care searches for the rest. Derived ids make a repeated
+   * verification idempotent.
+   */
+  private async reportLostOriginals(fingerprint: string): Promise<void> {
+    if (this.lostOriginals.size === 0) {
+      return;
+    }
+    const rows = await this.destination.query(
+      `SELECT a.id, a."ownerId", u.name AS "ownerName", u.email AS "ownerEmail", a."originalFileName",
+        a."originalPath", a.type, a."fileCreatedAt", a."createdAt", a."deletedAt", a.visibility,
+        a."libraryId", a."isExternal", a.width, a.height, encode(a.checksum, 'hex') AS checksum,
+        a."checksumAlgorithm", e."fileSizeInByte", e."dateTimeOriginal", e.make, e.model
+      FROM public.asset a JOIN public."user" u ON u.id = a."ownerId"
+      LEFT JOIN public.asset_exif e ON e."assetId" = a.id
+      WHERE a.id IN (SELECT jsonb_array_elements_text($1::text::jsonb)::uuid)
+      ORDER BY u.name, a."fileCreatedAt", a.id`,
+      [JSON.stringify(this.lostOriginals.keys().toArray())],
+    );
+    const items = rows.map((row) => ({
+      ...row,
+      ...this.lostOriginals.get(String(row.id)),
+    })) as Array<Record<string, unknown> & { ownerId: string; ownerName: string; reason: LostOriginalReason }>;
+    const byOwner = Map.groupBy(items, (item) => item.ownerId);
+    const admins = await this.destination.query(`SELECT id FROM public."user" WHERE "isAdmin" AND "deletedAt" IS NULL`);
+    const send = async (userId: string, scope: string, list: typeof items, title: string, accounts?: string) => {
+      const reasons = Object.entries(Object.groupBy(list, (item) => item.reason))
+        .map(([reason, entries]) => `${entries!.length} ${LOST_REASON_TEXT[reason as LostOriginalReason]}`)
+        .join(', ');
+      const names = list.slice(0, 10).map((item) => item.originalFileName);
+      const more = list.length > names.length ? ` and ${list.length - names.length} more` : '';
+      const description =
+        `${reasons}. ${accounts ?? ''}Files: ${names.join(', ')}${more}. ` +
+        'They are still in the library. Upload a file again to restore it, or open Library care to search for it.';
+      await this.destination.query(
+        `INSERT INTO public.notification (id, "userId", level, type, title, description, data)
+        VALUES ($1::uuid, $2::uuid, 'warning', 'SystemMessage', $3, $4, $5::text::jsonb) ON CONFLICT (id) DO NOTHING`,
+        [
+          v5(JSON.stringify(['immich-import-lost-originals', fingerprint, scope, userId]), v5.URL),
+          userId,
+          title,
+          description,
+          // ponytail: the first LOST_REPORT_ITEMS rows ride along; Library care holds the complete list.
+          JSON.stringify({
+            kind: 'immich-import-lost-originals',
+            total: list.length,
+            items: list.slice(0, LOST_REPORT_ITEMS),
+          }),
+        ],
+      );
+    };
+    for (const [ownerId, list] of byOwner) {
+      await send(
+        ownerId,
+        'owner',
+        list,
+        `${list.length} imported ${list.length === 1 ? 'original needs' : 'originals need'} attention`,
+      );
+    }
+    if (byOwner.size > 1 || admins.some(({ id }) => !byOwner.has(String(id)))) {
+      const accounts = byOwner
+        .values()
+        .map((list) => `${list[0].ownerName}: ${list.length}`)
+        .toArray()
+        .join(', ');
+      for (const { id } of admins) {
+        await send(
+          String(id),
+          'admin',
+          items,
+          `Library import: ${items.length} originals need attention`,
+          `By account: ${accounts}. `,
+        );
       }
     }
   }

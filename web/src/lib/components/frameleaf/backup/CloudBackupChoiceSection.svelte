@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { DateTime } from 'luxon';
   /**
    * Each person's own Backup page, Cloud Backup (FL-362), after the approved prototype's `WhatsBackedUp`
    * (`BackupV2.jsx`): Everything (the default), or only what the person chooses from their own library:
@@ -249,12 +250,9 @@
   };
 
   // The prototype offers one period; a choice saved with more than one keeps them all and shows the first.
-  const today = () => new Date().toISOString().slice(0, 10);
-  const yearAgo = () => {
-    const date = new Date();
-    date.setFullYear(date.getFullYear() - 1);
-    return date.toISOString().slice(0, 10);
-  };
+  // Local dates: the server compares them with each item's local capture date (FL-529).
+  const today = () => DateTime.local().toISODate()!;
+  const yearAgo = () => DateTime.local().minus({ years: 1 }).toISODate()!;
   const period = $derived.by((): Period => {
     const first = selection?.dateRanges?.[0];
     if (!first) {

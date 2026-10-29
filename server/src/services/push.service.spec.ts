@@ -23,6 +23,7 @@ import { PushService } from 'src/services/push.service.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { PushNotice, PushSendRequest, PushSendResult, PushTargetKind, collapseIdOf } from 'src/utils/frameleaf-push.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
+import { tryPromise } from 'src/utils/promise.js';
 import { openPushEnvelope } from 'src/utils/push-crypto.js';
 import { FakeCloud, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
 import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
@@ -479,7 +480,7 @@ describe(PushService.name, () => {
       });
       devices.getDeliveryTargets.mockResolvedValue([target]);
       gateway.send.mockImplementationOnce((_target, request) =>
-        Promise.try(() => {
+        tryPromise(() => {
           expect(request.token).toBe(token);
           target.pushToken = replacement;
           target.pushToStartToken = replacement;

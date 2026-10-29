@@ -112,7 +112,22 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     values: ($t, value) => (value === '' ? $t('frameleaf_notify_wording_standard') : undefined),
   },
   'templates.email.showBranding': { label: 'frameleaf_notify_branding' },
+  // Storage & originals and its Deleted items
+  'storageWarning.percent': {
+    label: 'frameleaf_storage_warn',
+    values: ($t, value) =>
+      typeof value === 'number' ? $t('frameleaf_storage_warn_at', { values: { percent: value } }) : undefined,
+  },
+  'trash.days': { label: 'frameleaf_deleted_keep_photos', values: count('frameleaf_deleted_days') },
+  'trash.enabled': { label: 'trash' },
+  'user.deleteDelay': { label: 'frameleaf_deleted_keep_account', values: count('frameleaf_deleted_days') },
+  // Access & security › Sign in with Frameleaf
+  'frameleafCloud.signIn.showOnLocalLogin': { label: 'frameleaf_signin_offer_home' },
+  'frameleafCloud.signIn.buttonText': { label: 'frameleaf_signin_words' },
   // FL-422: Editing & playback › Edited masters and AI restoration
+  'user.newUserStorageQuota': { label: 'frameleaf_userpage_space_for_new' },
+  'oauth.defaultStorageQuota': { label: 'frameleaf_userpage_space_for_new' },
+  'frameleafCloud.signIn.invitedStorageQuota': { label: 'frameleaf_userpage_space_for_new' },
   'editing.trimMode': {
     label: 'frameleaf_editing_masters_trim',
     values: { precise: 'frameleaf_editing_masters_trim_precise', fast: 'frameleaf_editing_masters_trim_fast' },
@@ -143,6 +158,11 @@ const toolWords = Object.fromEntries(
 export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   ...toolWords,
   'cast.gCastEnabled': { label: 'frameleaf_prefs_tools_cast' },
+  'clients.enabled': { label: 'frameleaf_prefs_tools_clients' },
+  'lockedPin.relockMinutes': {
+    label: 'frameleaf_access_relock_label',
+    values: count('frameleaf_access_relock_minutes'),
+  },
   'memories.duration': {
     label: 'frameleaf_prefs_tools_memories_duration',
     values: count('frameleaf_prefs_tools_seconds'),
@@ -166,6 +186,8 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // ACCOUNT-P2, P3, P5: the account preferences added to Downloads, Look & playback and People & sharing.
   'download.includeSidecar': { label: 'frameleaf_prefs_downloads_details' },
   'search.includeArchived': { label: 'frameleaf_prefs_look_archived' },
+  // FL-556: Look & playback › Safety.
+  'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'emailNotifications.enabled': { label: 'frameleaf_notify_yours_send' },
   'emailNotifications.albumInvite': { label: 'frameleaf_notify_yours_shares' },

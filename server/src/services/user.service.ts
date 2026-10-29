@@ -13,6 +13,8 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import {
+  LockedRulesCountResponseDto,
+  LockedRulesDraftDto,
   type PreferencesAudience,
   UserPreferenceHistoryResponseDto,
   UserPreferencesResponseDto,
@@ -162,6 +164,20 @@ export class UserService extends BaseService {
   }
 
   /**
+   * FL-541: how many of your photos and videos a draft of your Locked rules keeps Locked, before it is
+   * saved. Like editing the rules, it needs an unlocked session.
+   */
+  async countLockedRules(auth: AuthDto, dto: LockedRulesDraftDto): Promise<LockedRulesCountResponseDto> {
+    if (!auth.session?.hasElevatedPermission) {
+      throw new ForbiddenException(LOCKED_RULES_REQUIRE_UNLOCK_MESSAGE);
+    }
+    if (dto.tagIds.length + dto.personIds.length + dto.petIds.length === 0) {
+      return { photos: 0, videos: 0 };
+    }
+    return this.assetRepository.countLockedRuleMatches({ userId: auth.user.id, ...dto });
+  }
+
+  /**
    * FL-67: Locked rules change only from an unlocked session, and the whole read, revision check
    * and write happen under the account's preferences lock, so a save made against a revision that
    * another tab or device has since replaced is refused (409) rather than written over it.
@@ -192,6 +208,7 @@ export class UserService extends BaseService {
       await this.sessionRepository.requestSyncResetForUser(auth.user.id);
     }
     await this.recordPreferenceHistory(auth, previous, updated);
+    this.websocketRepository.clientSend('on_speech_index_change', auth.user.id);
 
     return mapPreferences(updated, preferencesAudience(auth));
   }
@@ -508,6 +525,18 @@ export class UserService extends BaseService {
       await this.jobRepository.queueAll(originalJobs);
     }
 
+    await this.albumRepository.deleteAll(user.id);
+    await this.albumUserRepository.forgetRecipient(user.id);
+    // FL-71 (CC-10), FL-47: the account's own preference history and utility activity go with it. While the fork schema is
+    // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
+    if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
+      this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);
+    }
+    await this.userRepository.delete(user, true);
+
+    // The sweep runs once the account's own rows are gone: its Studio exports, media operation
+    // attempts and other rows still name its files until the account row cascades, and would keep
+    // them. ponytail: a sweep that fails from here leaves strays for Library Care's integrity check.
     // FL-44 (FN-304): media folders can hold files other accounts still reference — a deduplicated
     // original or derivative, a fork mapping's upstream path, a retained render. Each file goes
     // through the same reference-guarded delete as FileDelete, and only emptied folders are removed.
@@ -529,15 +558,6 @@ export class UserService extends BaseService {
       this.logger.warn(`Removing user from filesystem: ${folder}`);
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
     }
-
-    await this.albumRepository.deleteAll(user.id);
-    await this.albumUserRepository.forgetRecipient(user.id);
-    // FL-71 (CC-10), FL-47: the account's own preference history and utility activity go with it. While the fork schema is
-    // not writable it stays behind and the next user cleanup sweeps it (handleUserDeleteCheck).
-    if (!(await this.userRepository.deletePreferenceHistory(user.id))) {
-      this.logger.warn(`Preference history of user ${user.id} kept until the fork schema is writable again`);
-    }
-    await this.userRepository.delete(user, true);
 
     await this.eventRepository.emit('UserDelete', user);
   }

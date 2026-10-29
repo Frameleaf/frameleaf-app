@@ -14,7 +14,7 @@ import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 import { PreservationEntrySchema } from 'src/utils/preservation.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getActiveForkKyselyDB } from 'test/utils.js';
 
 /**
  * Preservation packages against PostgreSQL (FL-74): exports select only the owner's own media,
@@ -38,7 +38,10 @@ const setup = () => {
 };
 
 beforeAll(async () => {
-  defaultDatabase = await getKyselyDB();
+  defaultDatabase = await getActiveForkKyselyDB();
+});
+afterAll(async () => {
+  await defaultDatabase?.destroy();
 });
 
 const lock = (assetId: string) =>

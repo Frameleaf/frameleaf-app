@@ -47,7 +47,6 @@ import {
   mdiUpdate,
   mdiVideoOutline,
   mdiWrench,
-  mdiCertificateOutline,
   mdiCloudOutline,
   mdiCloudSyncOutline,
   mdiCloudUploadOutline,
@@ -292,17 +291,19 @@ export const USER_SETTINGS_AREAS: readonly {
 
 /**
  * FL-168: settings a section holds that the Command Center search and the palette also find it by.
- * The Public server URL sits in Frameleaf Cloud › Remote access (the prototype's
- * `moveField("externalUrl", "cloud", "cloud-remote")`), so searching for it lands there.
+ * The Public server URL sits on Server & updates for every server (OPS-14), so searching for it lands
+ * there; Frameleaf Cloud › Remote access keeps a copy and is found by it too.
  */
 export const SETTINGS_SECTION_KEYWORDS: Readonly<Record<string, readonly Translations[]>> = Object.freeze({
   // FL-196: the linked-server tour is reopened from Account & link.
   'cloud-account': ['frameleaf_cloud_tour_search_keywords'],
   'cloud-remote': ['frameleaf_remote_public_url_title', 'frameleaf_remote_domain_title', 'frameleaf_remote_hostname'],
   // FL-426: the server's time zone is chosen on Server name & welcome.
-  server: ['frameleaf_server_identity_zone'],
+  server: ['frameleaf_server_identity_zone', 'frameleaf_remote_public_url_title'],
   // FL-421: the prototype finds "What needs your attention" by its alerts.
   signals: ['frameleaf_attention_search_keywords'],
+  // Deleted items holds the Trash's retention, so searching "trash" finds it beside the Trash pages.
+  trash: ['trash', 'frameleaf_deleted_keep_photos', 'frameleaf_deleted_keep_account'],
 });
 
 /** Server settings section keys declared by `user-settings/SystemSettings.svelte`. */
@@ -324,12 +325,6 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_cloud_plan',
     descriptionKey: 'frameleaf_cc_section_cloud_plan_description',
     icon: mdiCreditCardOutline,
-  },
-  {
-    key: 'cloud-license',
-    titleKey: 'frameleaf_cc_section_cloud_license',
-    descriptionKey: 'frameleaf_cc_section_cloud_license_description',
-    icon: mdiCertificateOutline,
   },
   // FL-161: Frameleaf Cloud → Remote access.
   {
@@ -482,12 +477,6 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     icon: mdiTrashCanOutline,
   },
   {
-    key: 'user-settings',
-    titleKey: 'admin.user_settings',
-    descriptionKey: 'admin.user_settings_description',
-    icon: mdiAccountOutline,
-  },
-  {
     key: 'version-check',
     titleKey: 'frameleaf_cc_section_versions',
     descriptionKey: 'frameleaf_cc_section_versions_description',
@@ -552,14 +541,14 @@ export const buildSettingsCommands = ($t: MessageFormatter, context: CommandInde
       ],
       href: serverSettingsHref(area.key),
     })),
-    // FL-168: the Public server URL, a setting of Remote access, opens there.
+    // OPS-14: the Public server URL opens on Server & updates, which every server has.
     {
       id: 'admin:public-server-url',
       title: $t('frameleaf_remote_public_url_title'),
       subtitle: $t('frameleaf_search_subtitle_admin_settings'),
       icon: mdiLinkVariant,
       keywords: [$t('frameleaf_remote_public_url_description'), $t('frameleaf_cc_section_cloud_remote')],
-      href: serverSettingsHref('cloud-remote'),
+      href: serverSettingsHref('server'),
     },
   ];
 };
@@ -615,7 +604,7 @@ export const loadCommandCatalogue = async (term: string, signal?: AbortSignal): 
           ),
       [],
     ),
-    settle<AlbumTreeResponseDto>(getAlbumTree({ signal }), { albums: [], collections: [], spaces: [] }),
+    settle<AlbumTreeResponseDto>(getAlbumTree({}, { signal }), { albums: [], collections: [], spaces: [] }),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.City }, { signal }), []),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.State }, { signal }), []),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.Country }, { signal }), []),

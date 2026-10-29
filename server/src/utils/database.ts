@@ -44,6 +44,7 @@ import {
   AssetVisibility,
   ExifOrientation,
   ImageEnrichmentFilter,
+  LibraryScope,
   PetObservationState,
   SearchOrderField,
   StudioExportVersionState,
@@ -56,7 +57,11 @@ import {
 } from 'src/repositories/search.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { assetColorPredicate, assetTransparencyPredicate } from 'src/utils/asset-palette-query.js';
+import { assetSourcePredicate } from 'src/utils/asset-source-query.js';
 import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
+import { displayPathSql } from 'src/utils/library-path.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import {
   isDefaultVisible,
   isLocked,
@@ -113,16 +118,17 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
       if (isAssetChecksumConstraint(event.error)) {
         return;
       }
-      const privateInference = /\bdesktop_(?:ml_(?:task|attempt)|worker_(?:session|challenge))\b/u.test(
-        event.query.sql,
-      );
+      // Desktop inference rows and queued job payloads (JOBS_WITH_SENSITIVE_DATA) must never be logged.
+      const privateData =
+        /\bdesktop_(?:ml_(?:task|attempt)|worker_(?:session|challenge))\b/u.test(event.query.sql) ||
+        /\b(?:insert\s+into|update)\s+(?:public\.)?"?job(?:_run_item)?"?(?![\w"])/iu.test(event.query.sql);
       // eslint-disable-next-line import-x/no-named-as-default-member -- postgres exposes this class on its default ESM export.
       const sqlState = event.error instanceof postgres.PostgresError ? event.error.code : undefined;
       console.error('Query failed :', {
         durationMs: event.queryDurationMillis,
-        error: privateInference ? { code: sqlState } : event.error,
+        error: privateData ? { code: sqlState } : event.error,
         sql: event.query.sql,
-        params: privateInference ? '[redacted]' : event.query.parameters,
+        params: privateData ? '[redacted]' : event.query.parameters,
       });
     },
   };
@@ -593,6 +599,9 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     kysely
       .withPlugin(joinDeduplicationPlugin)
       .selectFrom('asset')
+      .$if(!!options.libraryScope || !options.albumIds?.length, (qb) =>
+        qb.where(libraryScopePredicate(options.libraryScope ?? LibraryScope.Personal)),
+      )
       .$if(!!options.visibility, (qb) =>
         options.visibility === 'not-locked'
           ? qb.where(isNotLocked('asset'))
@@ -687,11 +696,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           .where('asset_file.path', '=', options.encodedVideoPath!),
       )
       .$if(!!options.originalPath, (qb) =>
-        qb.where(
-          sql`f_unaccent(asset."originalPath")`,
-          'ilike',
-          sql`'%' || f_unaccent(${options.originalPath}) || '%'`,
-        ),
+        qb.where(sql`f_unaccent(${displayPathSql()})`, 'ilike', sql`'%' || f_unaccent(${options.originalPath}) || '%'`),
       )
       .$if(!!options.originalFileName, (qb) =>
         qb.where(
@@ -756,8 +761,8 @@ const tagAssets = (eb: AssetExpressionBuilder) =>
   eb.selectFrom('tag_asset').whereRef('tag_asset.assetId', '=', 'asset.id');
 // shared any/all/none mechanics; `matchesAll` only receives deduplicated multi-id lists,
 // so its `count(distinct id) = ids.length` check stays satisfiable
-function idsPredicates(
-  eb: AssetExpressionBuilder,
+export function idsPredicates<TB extends keyof DB>(
+  eb: ExpressionBuilder<DB, TB>,
   { any, all, none }: IdsFilter = {},
   ops: {
     matchesAny: (ids: string[]) => Expression<SqlBool>;
@@ -791,6 +796,37 @@ function albumIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
           .groupBy('album_asset.assetId')
           .having((eb) => eb.fn.count('album_asset.albumId').distinct(), '=', ids.length),
       ),
+  });
+}
+function albumSubtreeIdsPredicates(
+  eb: AssetExpressionBuilder,
+  filter: IdsFilter | undefined,
+  viewerId?: string | null,
+) {
+  if (!filter) return [];
+  const matching = (ids: string[]) =>
+    albumAssets(eb)
+      .innerJoin('album_closure', 'album_closure.id_descendant', 'album_asset.albumId')
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .innerJoin('album_user', 'album_user.albumId', 'album.id')
+      .innerJoin('album as subtree_root', 'subtree_root.id', 'album_closure.id_ancestor')
+      .innerJoin('album_user as subtree_root_member', 'subtree_root_member.albumId', 'subtree_root.id')
+      .where('subtree_root.deletedAt', 'is', null)
+      .where('subtree_root_member.userId', '=', viewerId ?? '')
+      .where('album.deletedAt', 'is', null)
+      .where('album_user.userId', '=', viewerId ?? '')
+      .where('album_closure.id_ancestor', '=', anyUuid(ids));
+  return idsPredicates(eb, filter, {
+    matchesAny: (ids) => (viewerId ? eb.exists(matching(ids)) : eb.lit(false)),
+    matchesAll: (ids) =>
+      viewerId
+        ? eb.exists(
+            matching(ids)
+              .select('album_asset.assetId')
+              .groupBy('album_asset.assetId')
+              .having((eb) => eb.fn.count('album_closure.id_ancestor').distinct(), '=', ids.length),
+          )
+        : eb.lit(false),
   });
 }
 function personIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
@@ -886,7 +922,7 @@ type ComparisonFilter<T> = {
 };
 // one operator dispatch for every filter shape; the DTO schemas constrain which
 // operators (and null literals) each filter can actually carry
-function comparisonPredicates<TB extends keyof DB, RE extends ReferenceExpression<DB, TB>>(
+export function comparisonPredicates<TB extends keyof DB, RE extends ReferenceExpression<DB, TB>>(
   eb: ExpressionBuilder<DB, TB>,
   column: RE,
   filter?: ComparisonFilter<OperandValueExpression<DB, TB, RE>>,
@@ -935,8 +971,9 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
   if (filter === undefined) {
     return [];
   }
-  const ref = sql.ref(column);
-  const predicates = comparisonPredicates(eb, column, filter);
+  // FL-417: path search follows the photo's own path, never the folder a shared file is kept in
+  const ref = column === 'asset.originalPath' ? displayPathSql() : sql.ref(column);
+  const predicates = comparisonPredicates(eb, ref, filter);
   if (filter.like !== undefined) {
     predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.like}) || '%')`);
   }
@@ -1056,9 +1093,25 @@ function branchPredicates(
   branch: SearchFilterBranch,
   viewerId: string | undefined,
   revealOwnerId?: string,
-) {
+  privateViewerId: string | null | undefined = viewerId,
+  paletteViewerId: string | null | undefined = privateViewerId,
+): Expression<SqlBool>[] {
   const { encodedVideoPath } = branch;
   return [
+    ...(branch.text
+      ? [
+          eb.or(
+            [
+              { originalFileName: { like: branch.text.contains } },
+              { description: { like: branch.text.contains } },
+              { originalPath: { like: branch.text.contains } },
+              { ocr: { matches: branch.text.contains } },
+            ].flatMap((condition) =>
+              branchPredicates(eb, condition, viewerId, revealOwnerId, privateViewerId, paletteViewerId),
+            ),
+          ),
+        ]
+      : []),
     ...comparisonPredicates(eb, 'asset.id', branch.id),
     ...comparisonPredicates(eb, 'asset.libraryId', branch.libraryId),
     ...comparisonPredicates(eb, 'asset.type', branch.type),
@@ -1095,12 +1148,24 @@ function branchPredicates(
       : []),
     ...comparisonPredicates(eb, 'asset_exif.rating', branch.rating),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
+    ...comparisonPredicates(eb, 'asset_exif.exifImageWidth', branch.width),
+    ...comparisonPredicates(eb, 'asset_exif.exifImageHeight', branch.height),
+    ...comparisonPredicates(
+      eb,
+      sql<number | null>`asset_exif."exifImageWidth"::double precision / nullif(asset_exif."exifImageHeight", 0)`,
+      branch.aspectRatio,
+    ),
+    ...comparisonPredicates(eb, 'asset.duration', branch.durationMs),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
     ...comparisonPredicates(eb, 'asset.localDateTime', branch.localDateTime),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),
     ...albumIdsPredicates(eb, branch.albumIds),
+    ...albumSubtreeIdsPredicates(eb, branch.albumSubtreeIds, privateViewerId),
+    ...(branch.source ? [assetSourcePredicate(branch.source.contains, privateViewerId)] : []),
+    ...(branch.color ? [assetColorPredicate(branch.color, paletteViewerId)] : []),
+    ...(branch.hasTransparency ? [assetTransparencyPredicate(branch.hasTransparency.eq, paletteViewerId)] : []),
     ...personIdsPredicates(eb, branch.personIds),
     ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
@@ -1128,14 +1193,20 @@ export function searchFilterPredicate(
   viewerId: string | undefined,
   revealOwnerId?: string,
   branchScope?: (branch: SearchFilterBranch) => Expression<SqlBool>[],
+  privacy: { privateViewerId?: string | null; paletteViewerId?: string | null } = {},
 ): Expression<SqlBool> {
-  const predicates = branchPredicates(eb, filter, viewerId, revealOwnerId);
+  const privateViewerId = privacy.privateViewerId === undefined ? viewerId : privacy.privateViewerId;
+  const paletteViewerId = privacy.paletteViewerId === undefined ? privateViewerId : privacy.paletteViewerId;
+  const predicates = branchPredicates(eb, filter, viewerId, revealOwnerId, privateViewerId, paletteViewerId);
   const branches = filter.or ?? [];
   if (branches.length > 0) {
     predicates.push(
       eb.or(
         branches.map((branch) =>
-          eb.and([...branchPredicates(eb, branch, viewerId, revealOwnerId), ...(branchScope?.(branch) ?? [])]),
+          eb.and([
+            ...branchPredicates(eb, branch, viewerId, revealOwnerId, privateViewerId, paletteViewerId),
+            ...(branchScope?.(branch) ?? []),
+          ]),
         ),
       ),
     );
@@ -1161,6 +1232,7 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
   // search universe: own+partner assets unless album-confined, which searches the albums instead;
   // ownership lands nowhere (top level confined), per unconfined branch, or hoisted globally
   const topConfined = isAlbumConfined(filter);
+  const libraryScope = options.libraryScope ?? filter.libraryScope;
   const anyBranchConfined = branches.some((branch) => isAlbumConfined(branch));
   const scopePerBranch = !topConfined && anyBranchConfined;
   const scopeGlobally = !topConfined && !anyBranchConfined;
@@ -1168,6 +1240,9 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
     kysely
       .withPlugin(joinDeduplicationPlugin)
       .selectFrom('asset')
+      .$if(!!libraryScope || scopeGlobally, (qb) =>
+        qb.where(libraryScopePredicate(libraryScope ?? LibraryScope.Personal)),
+      )
       // postgres eliminates the left join when no exif column is referenced, so unused joins are free
       .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1188,8 +1263,16 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) =>
-        searchFilterPredicate(eb, filter, viewerId, options.revealLockedOwnerId, (branch) =>
-          scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : [],
+        searchFilterPredicate(
+          eb,
+          filter,
+          viewerId,
+          options.revealLockedOwnerId,
+          (branch) =>
+            scopePerBranch && !isAlbumConfined(branch)
+              ? [ownershipPredicate(eb), ...(!libraryScope ? [libraryScopePredicate(LibraryScope.Personal)] : [])]
+              : [],
+          { privateViewerId: scope.sharedLink ? null : viewerId },
         ),
       )
   );
@@ -1567,6 +1650,20 @@ const hiddenAssetIdExistsWhere = (assetId: Expression<unknown>, predicate: RawBu
   )`;
 export const hiddenContentAssetIdExists = (assetId: Expression<unknown>, filter: HiddenContentFilter) =>
   hiddenAssetIdExistsWhere(assetId, hiddenContentAssetExists(filter, 'hidden_content_asset'));
+export const hiddenContentBookmarkIdExists = (bookmarkId: Expression<unknown>, filter: HiddenContentFilter) =>
+  filter.tagIds.length === 0
+    ? sql<boolean>`false`
+    : sql<boolean>`exists (
+        select 1 from bookmark as hidden_content_bookmark
+        where hidden_content_bookmark.id = ${bookmarkId}
+          and ${scopedToOwner(filter, 'hidden_content_bookmark')}
+          and exists (
+            select 1 from bookmark_tag
+            inner join tag_closure on tag_closure.id_descendant = bookmark_tag."tagId"
+            where bookmark_tag."bookmarkId" = hidden_content_bookmark.id
+              and tag_closure.id_ancestor = ${anyUuid(filter.tagIds)}
+          )
+      )`;
 /** The ids one of the owner's Locked rules (`privacy.suppression.<key>`) names, read from `owner_rules`. */
 const ownerRuleIds = (key: 'tagIds' | 'personIds' | 'petIds') =>
   sql`(select (jsonb_path_query(owner_rules.value, ${sql.lit(`$.privacy.suppression.${key}[*]`)}) #>> '{}')::uuid)`;
@@ -1772,6 +1869,23 @@ const nonHiddenTaggedAssetExists = (
         ${filter ? sql`and not ${hiddenContentAssetIdExists(sql.ref('tag_asset.assetId'), filter)}` : sql``}
         ${hideLocked ? sql`and not ${lockedAssetIdExists(sql.ref('tag_asset.assetId'))}` : sql``}
     )`;
+const taggedBookmarkExists = (tagId: Expression<unknown>) => sql<boolean>`exists (
+      select 1 from tag_closure
+      inner join bookmark_tag on bookmark_tag."tagId" = tag_closure.id_descendant
+      where tag_closure.id_ancestor = ${tagId}
+    )`;
+const nonHiddenTaggedBookmarkExists = (
+  tagId: Expression<unknown>,
+  filter: HiddenContentFilter | undefined,
+  hideLocked: boolean,
+) => sql<boolean>`exists (
+      select 1 from tag_closure
+      inner join bookmark_tag on bookmark_tag."tagId" = tag_closure.id_descendant
+      inner join bookmark on bookmark.id = bookmark_tag."bookmarkId"
+      where tag_closure.id_ancestor = ${tagId}
+        ${filter ? sql`and not ${hiddenContentBookmarkIdExists(sql.ref('bookmark.id'), filter)}` : sql``}
+        ${hideLocked ? sql`and bookmark."isLocked" = false` : sql``}
+    )`;
 /**
  * FL-46 / FL-34 (owner decision, September 27, 2026): a tag the session may see. A tag without items
  * always shows; otherwise it, or a tag under it, must carry an item the session sees: not hidden by
@@ -1789,7 +1903,11 @@ export const tagHasVisibleAssetOrNoAssets = (
   } = {},
 ) =>
   filter || hideLocked
-    ? sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter, hideLocked)})`
+    ? sql<boolean>`(
+        not (${taggedAssetExists(tagId)} or ${taggedBookmarkExists(tagId)})
+        or ${nonHiddenTaggedAssetExists(tagId, filter, hideLocked)}
+        or ${nonHiddenTaggedBookmarkExists(tagId, filter, hideLocked)}
+      )`
     : sql<boolean>`true`;
 /**
  * FL-46: the tag is one of the suppressed tags or nested under one. Suppressing a tag hides the

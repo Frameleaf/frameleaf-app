@@ -37,6 +37,7 @@ import {
   rebaseDraft,
   recoverJournal,
   resetConfigKeys,
+  type ConfigResetKey,
   SERVER_MANAGED_CONFIG_PATHS,
   type ConfigConflict,
 } from '$lib/frameleaf/system-config-draft';
@@ -199,7 +200,7 @@ export class SystemConfigDraftStore {
   }
 
   /** "Reset this page": the page's defaults go into the draft; saving applies them. */
-  resetSection(keys: readonly (keyof AdminConfigDto)[]) {
+  resetSection(keys: readonly ConfigResetKey<AdminConfigDto>[]) {
     this.draft = resetConfigKeys(this.#snapshot(), this.defaults, keys);
     this.error = null;
     this.notice = { code: 'defaults_restored' };
@@ -380,7 +381,8 @@ export class SystemConfigDraftStore {
   }
 
   /**
-   * Saves only the given groups of the draft (the email delivery test saves the email settings).
+   * Saves only the given groups of the draft (the email delivery test saves the email settings,
+   * Video playback copies saves `ffmpeg`).
    * Every other pending change stays in the draft, carried onto the saved result.
    */
   async saveKeys(keys: readonly (keyof AdminConfigDto)[]): Promise<boolean> {
@@ -406,7 +408,8 @@ export class SystemConfigDraftStore {
       this.revision = response.revision;
       this.latest = null;
       this.conflicts = [];
-      this.notice = { code: 'partial_saved' };
+      // The page that saved says what was saved; this line only points at what is still pending.
+      this.notice = this.dirty ? { code: 'partial_saved' } : null;
       this.#updated();
       return true;
     } catch (error) {

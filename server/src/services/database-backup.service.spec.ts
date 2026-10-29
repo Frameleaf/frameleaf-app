@@ -54,8 +54,24 @@ describe(DatabaseBackupService.name, () => {
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
+    it('keeps a temporary file that another backup is still writing', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      mocks.storage.readdir.mockResolvedValue([
+        'frameleaf-db-backup-1-v1.sql.gz.tmp',
+        'frameleaf-db-backup-2-v1.sql.gz.tmp',
+      ]);
+      mocks.storage.stat.mockImplementation((path) =>
+        path.endsWith('1-v1.sql.gz.tmp')
+          ? Promise.resolve({ mtimeMs: Date.now() } as Stats)
+          : Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' })),
+      );
+      await sut.cleanupDatabaseBackups();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
     it('should remove failed backup files', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      mocks.storage.stat.mockResolvedValue({ mtimeMs: 0 } as Stats);
       //`frameleaf-db-backup-${DateTime.now().toFormat("yyyyLLdd'T'HHmmss")}-v${serverVersion.toString()}-pg${databaseVersion.split(' ')[0]}.sql.gz.tmp`,
       mocks.storage.readdir.mockResolvedValue([
         'frameleaf-db-backup-123.sql.gz.tmp',
@@ -88,6 +104,7 @@ describe(DatabaseBackupService.name, () => {
 
     it('should remove old backup files over keepLastAmount and failed backups', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      mocks.storage.stat.mockResolvedValue({ mtimeMs: 0 } as Stats);
       mocks.storage.readdir.mockResolvedValue([
         `frameleaf-db-backup-${DateTime.fromISO('2025-07-25T11:02:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg19.1.sql.gz.tmp`,
         `frameleaf-db-backup-${DateTime.fromISO('2025-07-27T11:01:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg19.1.sql.gz`,
@@ -315,6 +332,7 @@ describe(DatabaseBackupService.name, () => {
           "--if-exists",
           "--exclude-table-data=public.landmark",
           "--exclude-table-data=public.landmark_area",
+          "--exclude-table=public.geodata_places_tmp",
         ]
       `);
     });
@@ -450,6 +468,7 @@ describe(DatabaseBackupService.name, () => {
               "--if-exists",
               "--exclude-table-data=public.landmark",
               "--exclude-table-data=public.landmark_area",
+              "--exclude-table=public.geodata_places_tmp",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -561,6 +580,7 @@ describe(DatabaseBackupService.name, () => {
               "--if-exists",
               "--exclude-table-data=public.landmark",
               "--exclude-table-data=public.landmark_area",
+              "--exclude-table=public.geodata_places_tmp",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -631,6 +651,7 @@ describe(DatabaseBackupService.name, () => {
               "--if-exists",
               "--exclude-table-data=public.landmark",
               "--exclude-table-data=public.landmark_area",
+              "--exclude-table=public.geodata_places_tmp",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -737,6 +758,7 @@ describe(DatabaseBackupService.name, () => {
               "--if-exists",
               "--exclude-table-data=public.landmark",
               "--exclude-table-data=public.landmark_area",
+              "--exclude-table=public.geodata_places_tmp",
             ],
             "bin": "/usr/lib/postgresql/19/bin/pg_dump",
             "databaseMajorVersion": 19,
@@ -913,6 +935,27 @@ describe(DatabaseBackupService.name, () => {
       });
     });
 
+    it("should list uploaded backups after this server's own, newest first, whatever the directory order", async () => {
+      const files = [
+        'uploaded-frameleaf-db-backup-20250101T000000-v1.234.5-pg19.1.sql.gz',
+        'frameleaf-db-backup-20250727T110116-v1.234.5-pg19.1.sql.gz',
+        'uploaded-frameleaf-db-backup-20250601T000000-v1.234.5-pg19.1.sql.gz',
+        'frameleaf-db-backup-20250729T110116-v1.234.5-pg19.1.sql.gz',
+      ];
+      const expected = [
+        'frameleaf-db-backup-20250729T110116-v1.234.5-pg19.1.sql.gz',
+        'frameleaf-db-backup-20250727T110116-v1.234.5-pg19.1.sql.gz',
+        'uploaded-frameleaf-db-backup-20250601T000000-v1.234.5-pg19.1.sql.gz',
+        'uploaded-frameleaf-db-backup-20250101T000000-v1.234.5-pg19.1.sql.gz',
+      ];
+      mocks.storage.stat.mockResolvedValue({ size: 1024 } as any);
+      for (const listing of [files, files.toReversed()]) {
+        mocks.storage.readdir.mockResolvedValue(listing);
+        const { backups } = await sut.listBackups();
+        expect(backups.map(({ filename }) => filename)).toEqual(expected);
+      }
+    });
+
     // FL-81: a server that never made a backup has no backups folder yet; that is an empty list,
     // not an error that hides the Maintenance area or the emergency restore flow.
     it('should list no backups when the backups folder does not exist yet', async () => {
@@ -1035,6 +1078,68 @@ describe(DatabaseBackupService.name, () => {
         ).rejects.toThrow('Server health check failed, no admin exists.');
 
         expect(mocks.storage.unlink).not.toHaveBeenCalledWith(restorePoint);
+      });
+    });
+
+    describe('safety copy racing the first-boot place import (FL-511)', () => {
+      const vanished =
+        'pg_dump: error: query failed: ERROR:  relation "public.geodata_places_tmp" does not exist\npg_dump: detail: Query was: LOCK TABLE public.frameleaf_migrations';
+      const pgDumpCalls = () =>
+        mocks.process.spawnDuplexStream.mock.calls.filter(([command]) => command.endsWith('/pg_dump'));
+      const failPgDump = (times: number, stderr: string) => {
+        let failures = 0;
+        // each attempt writes its own file: a stream destroyed by the failed dump stays failed
+        mocks.storage.createWriteStream.mockImplementation(() => new PassThrough());
+        mocks.process.spawnDuplexStream.mockImplementation((command) =>
+          command.endsWith('/pg_dump') && failures++ < times
+            ? mockDuplex()(command, 1, '', stderr)
+            : mockDuplex()(command, 0, 'data', ''),
+        );
+      };
+
+      it('leaves the import staging table out of the safety copy', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+
+        await sut.restoreDatabaseBackup('development-filename.sql');
+
+        expect(pgDumpCalls()[0][1]).toContain('--exclude-table=public.geodata_places_tmp');
+      });
+
+      it('takes the safety copy once more when a listed table vanished, then restores', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+        failPgDump(1, vanished);
+
+        await sut.restoreDatabaseBackup('development-filename.sql');
+
+        expect(pgDumpCalls()).toHaveLength(2);
+        expect(mocks.process.spawnDuplexStream).toHaveBeenCalledWith(
+          expect.stringContaining('psql'),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it('stops with a plain retry message when the table vanishes twice', async () => {
+        failPgDump(2, vanished);
+
+        await expect(sut.restoreDatabaseBackup('development-filename.sql')).rejects.toThrow(
+          'Wait a few minutes, then run the restore again.',
+        );
+
+        expect(pgDumpCalls()).toHaveLength(2);
+        expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalledWith(
+          expect.stringContaining('psql'),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it('does not retry other dump failures', async () => {
+        failPgDump(1, 'pg_dump: error: connection refused');
+
+        await expect(sut.restoreDatabaseBackup('development-filename.sql')).rejects.toThrow('connection refused');
+
+        expect(pgDumpCalls()).toHaveLength(1);
       });
     });
 

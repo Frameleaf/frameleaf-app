@@ -126,7 +126,7 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
     );
     const downloaded: string[] = [];
     t.mock.method(globalThis, 'fetch', async (url: string) => {
-      if (url.includes('api.github.com'))
+      if (new URL(url).hostname === 'api.github.com')
         return new Response(JSON.stringify({ assets, draft: false, prerelease: false }));
       const name = url.split('/').at(-1)!;
       downloaded.push(name);

@@ -5,11 +5,12 @@ import {
   MediaOperationDestination,
   MediaOperationItemStatus,
   MediaOperationKind,
+  MediaOperationKindSchema,
   MediaOperationStatus,
   Permission,
 } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { MediaOperationService, mapOperation, studioWorkOf } from 'src/services/media-operation.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -117,6 +118,61 @@ describe(MediaOperationService.name, () => {
       archiveOperations as never,
       develop as never,
     );
+  });
+
+  describe('internal speech compatibility boundary', () => {
+    it('keeps speech outside the legacy public enum and fails closed at the shared mapper', () => {
+      expect(MediaOperationKindSchema.safeParse(MediaOperationKind.SpeechTranscription).success).toBe(false);
+      expect(() => mapOperation(operationStub({ kind: MediaOperationKind.SpeechTranscription }))).toThrow(
+        NotFoundException,
+      );
+    });
+
+    it.each(Object.values(MediaOperationKind).filter((kind) => kind !== MediaOperationKind.SpeechTranscription))(
+      'preserves public kind %s through the shared mapper',
+      (kind) => {
+        expect(mapOperation(operationStub({ kind })).kind).toBe(kind);
+      },
+    );
+
+    it.each(['get', 'cancel', 'pause', 'resume', 'retry', 'dismiss'] as const)(
+      'rejects internal speech before generic %s reads or mutates it',
+      async (action) => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({ kind: MediaOperationKind.SpeechTranscription }),
+        );
+        await expect(sut[action](authStub.user1, operationStub().id)).rejects.toBeInstanceOf(NotFoundException);
+        for (const method of [
+          'getCheckpoints',
+          'requestCancel',
+          'requestPause',
+          'resume',
+          'createRetry',
+          'dismiss',
+        ] as const) {
+          expect(repository[method]).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('requests SQL public-kind filtering for lists, running jobs and aggregate counts', async () => {
+      vi.mocked(repository.list).mockResolvedValue({ items: [operationStub()], total: 1 });
+      await sut.search(authStub.user1, { take: 1, skip: 2 });
+      await sut.listUnfinished(authStub.user1, 1);
+      expect(repository.list).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ publicOnly: true, take: 1, skip: 2 }),
+      );
+      expect(repository.list).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ publicOnly: true, take: 1, skip: 0 }),
+      );
+      await sut.getStatistics();
+      expect(repository.getAggregates).toHaveBeenCalledWith({ publicOnly: true });
+      const kinds = vi.mocked(repository.getUnreleasedRemoteOperations).mock.calls[0][1];
+      expect(kinds).toContain(MediaOperationKind.StudioExport);
+      expect(kinds).not.toContain(MediaOperationKind.SpeechTranscription);
+    });
   });
 
   describe('private weekly operation surfaces', () => {
@@ -1556,12 +1612,12 @@ describe(MediaOperationService.name, () => {
       expect(JSON.stringify(result.snapshot)).not.toContain('private.jpg');
     });
 
-    it('never copies a physical deduplication plan; a new reviewed plan is applied instead (FL-73)', async () => {
+    it('never copies a retired physical deduplication plan; identical files merge automatically (FL-413)', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(
         operationStub({ kind: MediaOperationKind.PhysicalDeduplication, status: MediaOperationStatus.Failed }),
       );
 
-      await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toThrow('Physical deduplication page');
+      await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toThrow('Check again in Library care');
       expect(repository.create).not.toHaveBeenCalled();
     });
 
@@ -1782,5 +1838,18 @@ describe(MediaOperationService.name, () => {
         expect(bucket).not.toHaveProperty('assetId');
       }
     });
+  });
+});
+
+describe('studioWorkOf (FL-637)', () => {
+  const job = (kind: string, snapshot: unknown) => ({ kind, snapshot }) as unknown as MediaOperation;
+
+  it('names a Studio clip job that shares the transcription kind by its snapshot', () => {
+    expect(studioWorkOf(job('studio_transcription', { kind: 'studio-voice-cleanup' }))).toBe('voice-cleanup');
+    expect(studioWorkOf(job('studio_transcription', { kind: 'studio-stabilise' }))).toBe('stabilise');
+    expect(studioWorkOf(job('studio_transcription', { kind: 'studio-transcription' }))).toBeNull();
+    expect(studioWorkOf(job('studio_transcription', null))).toBeNull();
+    expect(studioWorkOf(job('studio_export', { kind: 'studio-voice-cleanup' }))).toBeNull();
+    expect(studioWorkOf(job('studio_transcription', { kind: 'toString' }))).toBeNull();
   });
 });

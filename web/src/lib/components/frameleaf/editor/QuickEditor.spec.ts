@@ -382,6 +382,25 @@ describe('QuickEditor', () => {
     expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_version_queued');
   });
 
+  it('drops the current version opaque recipe when Original is chosen from Versions', async () => {
+    const source = revision({ assetId: photo.id, recipe: { version: 2, future: { fill: ['opaque'] } } });
+    vi.mocked(getAssetDevelop).mockResolvedValue({
+      assetId: photo.id,
+      currentRevisionId: source.id,
+      revisions: [source],
+    });
+    vi.mocked(saveAssetDevelop).mockResolvedValueOnce(revision({ status: AssetDevelopRevisionStatus.Queued }));
+    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    await ready();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_tool_versions' }));
+    await fireEvent.click(await screen.findByRole('menuitemradio', { name: /frameleaf_editor_version_original/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+    await waitFor(() => expect(saveAssetDevelop).toHaveBeenCalledTimes(1));
+    const sent = vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto;
+    expect(sent.recipe).toMatchObject({ version: 1 });
+    expect(sent.recipe).not.toHaveProperty('future');
+  });
+
   it('does not retry a Save transport failure', async () => {
     vi.mocked(saveAssetDevelop).mockRejectedValueOnce(new TypeError('Failed to fetch'));
     render(QuickEditor, { asset: photo, onClose: vi.fn() });

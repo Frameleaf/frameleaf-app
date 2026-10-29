@@ -56,6 +56,7 @@ export interface Events {
   on_notification: (notification: NotificationDto) => void;
   /** FL-43: one of this account's jobs changed. Only the id arrives; Activity asks for the list again. */
   on_media_operation_update: (id: string) => void;
+  on_speech_index_change: () => void;
   /** FL-155: the Frameleaf Cloud link, licence or a Frameleaf account changed; only the topic arrives. */
   on_frameleaf_cloud: (event: { topic: 'link' | 'license' | 'account' }) => void;
   /** FL-146 (FL-77): an administrator changed this account's preferences; read them again. */
@@ -95,7 +96,10 @@ websocket
     eventManager.emit('WebsocketConnect');
     websocketStore.connected.set(true);
   })
-  .on('disconnect', () => websocketStore.connected.set(false))
+  .on('disconnect', () => {
+    websocketStore.connected.set(false);
+    eventManager.emit('WebsocketDisconnect');
+  })
   .on('on_server_version', (serverVersion) => websocketStore.serverVersion.set(serverVersion))
   .on('AppRestartV1', (mode, acknowledge) => {
     websocketStore.serverRestarting.set(mode);
@@ -121,6 +125,7 @@ websocket
   .on('on_album_update', (id) => eventManager.emit('AlbumRemoteUpdate', { id }))
   .on('on_notification', () => notificationManager.refresh())
   .on('on_media_operation_update', (id) => eventManager.emit('MediaOperationUpdate', { id }))
+  .on('on_speech_index_change', () => eventManager.emit('SpeechIndexChange'))
   .on('on_frameleaf_cloud', (event) => eventManager.emit('FrameleafCloudUpdate', event))
   .on('on_user_preferences_update', () => void authManager.refreshPreferences())
   // FL-53: a role change made elsewhere reaches this page as the same event a local change raises.

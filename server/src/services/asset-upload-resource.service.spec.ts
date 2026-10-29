@@ -11,6 +11,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetUploadResourceController } from 'src/controllers/asset-upload-resource.controller.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { writeAssetUploadPart } from 'src/utils/asset-upload-resource.js';
@@ -84,9 +85,23 @@ describe('resumable asset byte commit boundaries', () => {
         row = { ...row, state: 'published', ingested: true };
         return Promise.resolve(row);
       }),
+      publishRestored: vi.fn((_tx: unknown, _resource: unknown, assetId: string, visible: boolean) => {
+        row = {
+          ...row,
+          state: 'published',
+          ingested: true,
+          resultAssetId: assetId,
+          resultStatus: visible ? AssetMediaStatus.CREATED : AssetMediaStatus.DUPLICATE,
+        };
+        return Promise.resolve(row);
+      }),
     };
     const media = {
+      canUploadFile: vi.fn(),
       prepareUploadAsset: vi.fn(() => Promise.resolve({})),
+      restoreLostOriginal: vi.fn((): Promise<{ id: string; visible: boolean } | undefined> =>
+        Promise.resolve(undefined),
+      ),
       getUploadAssetIdByChecksum: vi.fn(() => Promise.resolve({ id: 'asset' })),
     };
     const storage = {
@@ -124,6 +139,10 @@ describe('resumable asset byte commit boundaries', () => {
       }),
     };
     const sources = { assertUpload: vi.fn().mockResolvedValue(undefined) };
+    const captures = {
+      assertActor: vi.fn().mockResolvedValue('key:capture-key'),
+      assertNotCancelled: vi.fn().mockResolvedValue(undefined),
+    };
     const service = new AssetUploadResourceService(
       uploads as never,
       media as never,
@@ -135,12 +154,14 @@ describe('resumable asset byte commit boundaries', () => {
       rateLimits as never,
       { claims: vi.fn().mockResolvedValue([]), recordDevice: vi.fn() } as never,
       sources as never,
+      captures as never,
     );
     vi.spyOn(service as unknown as { owner: (auth: AuthDto) => Promise<string> }, 'owner').mockResolvedValue('owner');
     vi.spyOn(service as unknown as { folder: (id: string) => string }, 'folder').mockReturnValue(folder);
     return {
       service,
       sources,
+      captures,
       media,
       uploads,
       inserts,
@@ -155,6 +176,173 @@ describe('resumable asset byte commit boundaries', () => {
     };
   };
   const auth = { user: { id: 'owner' } } as AuthDto;
+
+  it('uses the persisted capture UUID for a recoverable creation URI and refuses that mode on normal uploads', async () => {
+    const harness = setup();
+    const id = randomUUID();
+    const captureAuth = { ...auth, apiKey: { id: 'capture-key', permissions: [] } };
+    const create = vi.fn((resourceId: string, _owner: string, input: { metadata: AssetUploadResource['metadata'] }) => {
+      harness.mutate({ id: resourceId, metadata: input.metadata });
+      return Promise.resolve(harness.row());
+    });
+    Object.assign(harness.uploads, { create });
+    harness.service['receive'] = () => Promise.resolve({ resource: harness.row() });
+    const headers = {
+      'upload-draft-interop-version': '9',
+      'upload-complete': '?0',
+      'upload-length': '4',
+      'content-type': 'image/jpeg',
+      'repr-digest': `sha-256=:${harness.row().expectedChecksum.toString('base64')}:`,
+      'asset-metadata': Buffer.from(
+        JSON.stringify({
+          filename: 'capture.jpg',
+          fileCreatedAt: new Date().toISOString(),
+          fileModifiedAt: new Date().toISOString(),
+          publication: 'capture',
+          captureId: id,
+          libraryScope: 'design',
+        }),
+      ).toString('base64url'),
+    };
+    const resume = vi.fn();
+    await harness.service.create(captureAuth, headers, Readable.from([]), resume, 'capture');
+    expect(resume).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id,
+        metadata: expect.objectContaining({ captureActor: 'key:capture-key', captureId: id }),
+      }),
+    );
+    await expect(harness.service.create(captureAuth, headers, Readable.from([]), resume)).rejects.toThrow(
+      'Upload publication mode does not match',
+    );
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds verified capture bytes without publishing or restoring a personal original', async () => {
+    const harness = setup();
+    const captureAuth = { ...auth, apiKey: { id: 'capture-key', permissions: [] } };
+    harness.mutate({
+      state: 'verified',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: createHash('sha256').update('abcd').digest(),
+      legacyChecksum: createHash('sha1').update('abcd').digest(),
+      metadata: {
+        ...harness.row().metadata,
+        publication: 'capture',
+        captureId: harness.row().id,
+        captureActor: 'key:capture-key',
+        libraryScope: 'design',
+      } as never,
+    });
+    const outcome = await harness.service.result(captureAuth, harness.row().id);
+    expect(outcome.resource.state).toBe('verified');
+    expect(outcome.result).toBeUndefined();
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+    expect(harness.media.restoreLostOriginal).not.toHaveBeenCalled();
+  });
+
+  it('refuses a capture resource to another key even for the same account', async () => {
+    const harness = setup();
+    harness.mutate({
+      metadata: {
+        ...harness.row().metadata,
+        publication: 'capture',
+        captureId: harness.row().id,
+        captureActor: 'key:first-key',
+        libraryScope: 'design',
+      } as never,
+    });
+    await expect(
+      harness.service.head({ ...auth, apiKey: { id: 'other-key', permissions: [] } }, harness.row().id),
+    ).rejects.toThrow('Capture unavailable');
+  });
+
+  it('does not let background recovery publish an unfinished capture without its receipt transaction', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'verified',
+      metadata: {
+        ...harness.row().metadata,
+        publication: 'capture',
+        captureId: harness.row().id,
+        captureActor: 'key:first-key',
+        libraryScope: 'design',
+      } as never,
+    });
+    Object.assign(harness.uploads, {
+      recoverable: vi.fn().mockResolvedValue([harness.row()]),
+      owner: vi.fn().mockResolvedValue(auth.user),
+      cleanupCandidates: vi.fn().mockResolvedValue([]),
+    });
+    await harness.service['recover']();
+    expect(harness.rateLimits.claimUploadStream).not.toHaveBeenCalled();
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+  });
+
+  it('stops a cancelled capture before media preparation or publication', async () => {
+    const harness = setup();
+    const captureAuth = { ...auth, apiKey: { id: 'capture-key', permissions: [] } };
+    harness.mutate({
+      state: 'verified',
+      metadata: {
+        ...harness.row().metadata,
+        publication: 'capture',
+        captureId: harness.row().id,
+        captureActor: 'key:capture-key',
+        libraryScope: 'design',
+      } as never,
+    });
+    harness.captures.assertNotCancelled.mockRejectedValue(new ConflictException('Capture was cancelled'));
+    const publish = vi.fn();
+    await expect(
+      harness.service.commitCapture(
+        captureAuth,
+        harness.row().id,
+        harness.row().expectedChecksum.toString('hex'),
+        publish,
+      ),
+    ).rejects.toThrow('cancelled');
+    expect(publish).not.toHaveBeenCalled();
+    expect(harness.media.prepareUploadAsset).not.toHaveBeenCalled();
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+  });
+  it('publishes capture bytes only inside the metadata and receipt callback transaction', async () => {
+    const harness = setup();
+    const captureAuth = { ...auth, apiKey: { id: 'capture-key', permissions: [] } };
+    harness.mutate({
+      state: 'verified',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: createHash('sha256').update('abcd').digest(),
+      legacyChecksum: createHash('sha1').update('abcd').digest(),
+      metadata: {
+        ...harness.row().metadata,
+        publication: 'capture',
+        captureId: harness.row().id,
+        captureActor: 'key:capture-key',
+        libraryScope: 'design',
+      } as never,
+    });
+    harness.uploads.publish.mockImplementation(() => {
+      expect(harness.isLocked()).toBe(true);
+      harness.mutate({ state: 'published', ingested: true, resultAssetId: 'asset', resultStatus: 'created' });
+      return Promise.resolve(harness.row());
+    });
+    const commit = vi.fn(async (_tx, publish) => {
+      expect(harness.isLocked()).toBe(true);
+      expect(await publish()).toEqual({ id: 'asset', status: 'created' });
+      return 'saved-receipt';
+    });
+    expect(
+      await harness.service.commitCapture(
+        captureAuth,
+        harness.row().id,
+        harness.row().expectedChecksum.toString('hex'),
+        commit,
+      ),
+    ).toBe('saved-receipt');
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(harness.media.restoreLostOriginal).not.toHaveBeenCalled();
+  });
 
   const folderAuth = { user: { id: 'owner' }, session: { id: 'photo-session' } } as AuthDto;
   const folderIdentity = { kind: 'folder' as const, sourceId: randomUUID(), runId: randomUUID(), itemId: randomUUID() };
@@ -182,6 +370,30 @@ describe('resumable asset byte commit boundaries', () => {
     expect(read).toBe(false);
     expect(harness.inserts).toHaveLength(0);
   });
+  it('restores a lost original from a verified upload instead of publishing a new asset', async () => {
+    const harness = setup();
+    const finalPath = join(folder, 'verified.jpg');
+    harness.mutate({
+      state: 'verified',
+      offset: 4,
+      finalPath,
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+    });
+    harness.media.restoreLostOriginal.mockResolvedValue({ id: 'lost-asset', visible: true });
+    harness.media.getUploadAssetIdByChecksum.mockResolvedValue({ id: 'lost-asset' });
+    await expect(harness.service.result(auth, harness.row().id)).resolves.toMatchObject({
+      result: { id: 'lost-asset', status: AssetMediaStatus.CREATED },
+    });
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+    expect(harness.uploads.claimIngestion).not.toHaveBeenCalled();
+    expect(harness.media.restoreLostOriginal).toHaveBeenCalledWith(
+      auth,
+      expect.anything(),
+      expect.objectContaining({ originalPath: finalPath }),
+    );
+  });
+
   it('rechecks source authority inside publication after media preparation', async () => {
     const harness = setup();
     bindFolder(harness);
@@ -312,6 +524,7 @@ describe('resumable asset byte commit boundaries', () => {
       harness.physical as never,
       { warn: vi.fn() } as never,
       harness.rateLimits as never,
+      {} as never,
       {} as never,
       {} as never,
     );
@@ -710,6 +923,7 @@ describe('Live Photo required postcommit ingestion', () => {
     };
     const media = {
       prepareUploadAsset: vi.fn(() => Promise.resolve({})),
+      restoreLostOriginal: vi.fn(() => Promise.resolve(undefined)),
       finishUploadAsset: vi
         .fn()
         .mockResolvedValueOnce(undefined)
@@ -734,6 +948,7 @@ describe('Live Photo required postcommit ingestion', () => {
       { warn: vi.fn() } as never,
       rateLimits as never,
       { claims: vi.fn().mockResolvedValue([]), recordDevice: vi.fn() } as never,
+      {} as never,
       {} as never,
     );
     vi.spyOn(service as unknown as { owner: () => Promise<string> }, 'owner').mockResolvedValue(ownerId);
@@ -772,6 +987,7 @@ describe('iCloud source identity on resumable uploads (FL-296)', () => {
       logger as never,
       {} as never,
       identities as never,
+      {} as never,
       {} as never,
     );
     const internals = service as unknown as {

@@ -13,9 +13,18 @@ import { asBearerAuth, utils } from 'src/utils.js';
 /** FL-71: accounts are managed in the Command Center's Users area; `/admin/users` redirects there. */
 const usersManager = '/user-settings?area=users&section=accounts';
 
-/** FL-76: open an account's detail tab (Overview, Security, ...) from the detail's section nav. */
-const openDetailTab = async (page: Page, name: string) => {
-  await page.getByRole('navigation', { name: 'Detail sections' }).getByRole('button', { name, exact: true }).click();
+/** FL-516: one person is one page (About, Sign-in & security, What they've turned on); no tabs. */
+const roleOf = (page: Page) => page.getByRole('group', { name: 'Role' });
+
+/** FL-516: Add a person makes up a temporary password and shows it once. */
+const addPerson = async (page: Page, name: string, email: string) => {
+  await page.getByRole('button', { name: 'Add a person', exact: true }).click();
+  await page.getByLabel('Name', { exact: true }).fill(name);
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByRole('button', { name: 'Add person', exact: true }).click();
+  await expect(page.getByRole('heading', { name: `${name} is added` })).toBeVisible();
+  const shown = await page.locator('p.password code').innerText();
+  return shown.trim();
 };
 
 /** FL-76: whether the server says the account has a PIN (never the PIN itself). */
@@ -43,8 +52,8 @@ test.describe('User Administration', () => {
     await expect(page).toHaveTitle(/Settings/);
     await expect(page.locator('.resource-heading').getByText('Your server')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
-    await expect(page.getByText('Manage profiles, features, preferences, storage and sign-in.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Create account', exact: true })).toBeVisible();
+    await expect(page.getByText('Everyone with an account, and how much space each has.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add a person', exact: true })).toBeVisible();
   });
 
   test('create user', async ({ context, page }) => {
@@ -53,16 +62,13 @@ test.describe('User Administration', () => {
 
     // Create a new user from the Users manager's heading action
     await page.goto(usersManager);
-    await page.getByRole('button', { name: 'Create account', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Create account' });
-    await dialog.getByLabel('Email').fill('user@example.com');
-    await dialog.getByLabel('Initial password', { exact: true }).fill('password');
-    await dialog.getByLabel('Confirm password').fill('password');
-    await dialog.getByLabel('Name', { exact: true }).fill('Immich User');
-    await dialog.getByRole('button', { name: 'Create account', exact: true }).click();
-    await expect(dialog).toHaveCount(0);
+    const password = await addPerson(page, 'Immich User', 'user@example.com');
+    expect(password.length).toBeGreaterThan(7);
 
-    // Verify the user exists in the user list
+    // the temporary password signs them in, and they must choose their own
+    const session = await login({ loginCredentialDto: { email: 'user@example.com', password } });
+    expect(session.shouldChangePassword).toBe(true);
+    await page.getByRole('button', { name: 'Back to Users' }).click();
     await expect(page.getByRole('row', { name: /user@example\.com/ })).toBeVisible();
   });
 
@@ -80,12 +86,10 @@ test.describe('User Administration', () => {
 
     await page.goto(`${usersManager}&user=${user.userId}`);
 
-    // FL-76: the Frameleaf account form carries the role as a select, not a switch.
-    await page.getByRole('button', { name: 'Edit account', exact: true }).click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByLabel('Role')).toHaveValue('user');
-    await dialog.getByLabel('Role').selectOption('admin');
-    await dialog.getByRole('button', { name: 'Save account' }).click();
+    // FL-516: the role is a Member / Administrator choice in About, saved with the rest of About.
+    await expect(roleOf(page).getByRole('button', { name: 'Member' })).toHaveAttribute('aria-pressed', 'true');
+    await roleOf(page).getByRole('button', { name: 'Administrator' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
 
     await expect
       .poll(async () => {
@@ -110,11 +114,9 @@ test.describe('User Administration', () => {
 
     await page.goto(`${usersManager}&user=${user.userId}`);
 
-    await page.getByRole('button', { name: 'Edit account', exact: true }).click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByLabel('Role')).toHaveValue('admin');
-    await dialog.getByLabel('Role').selectOption('user');
-    await dialog.getByRole('button', { name: 'Save account' }).click();
+    await expect(roleOf(page).getByRole('button', { name: 'Administrator' })).toHaveAttribute('aria-pressed', 'true');
+    await roleOf(page).getByRole('button', { name: 'Member' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
 
     await expect
       .poll(async () => {
@@ -124,36 +126,60 @@ test.describe('User Administration', () => {
       .toBe(false);
   });
 
+  // FL-538: what they have stays; nothing new can be added until the switch is turned off.
+  test('pause new uploads for one person', async ({ context, page }) => {
+    const admin = await utils.adminSetup();
+    await utils.setAuthCookies(context, admin.accessToken);
+    const user = await utils.userSetup(admin.accessToken, {
+      name: 'Paused Person',
+      email: 'paused@example.com',
+      password: 'password',
+    });
+
+    await page.goto(`${usersManager}&user=${user.userId}`);
+    await page.getByRole('switch', { name: 'Pause new uploads' }).click();
+    await expect
+      .poll(async () => {
+        const userAdmin = await getUserAdmin({ id: user.userId }, { headers: asBearerAuth(admin.accessToken) });
+        return userAdmin.uploadsPaused;
+      })
+      .toBe(true);
+    await expect(utils.createAsset(user.accessToken)).rejects.toThrow('HTTP 403');
+
+    await page.getByRole('switch', { name: 'Pause new uploads' }).click();
+    await expect
+      .poll(async () => {
+        const userAdmin = await getUserAdmin({ id: user.userId }, { headers: asBearerAuth(admin.accessToken) });
+        return userAdmin.uploadsPaused;
+      })
+      .toBe(false);
+    await expect(utils.createAsset(user.accessToken)).resolves.toHaveProperty('id');
+  });
+
   test.describe('FL-76 account lifecycle', () => {
-    // FL-76: the create dialog takes an optional initial six-digit PIN, and the account can unlock with it.
-    test('create an account with an initial PIN', async ({ context, page }) => {
+    // FL-516: Add a person no longer asks for a PIN (the prototype's page); an administrator can set
+    // one right after, from Sign-in & security, and it unlocks the new account's Locked folder.
+    test('add a person, then set their PIN', async ({ context, page }) => {
       const admin = await utils.adminSetup();
       await utils.setAuthCookies(context, admin.accessToken);
 
       await page.goto(usersManager);
-      await page.getByRole('button', { name: 'Create account', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Create account' });
-      await dialog.getByLabel('Name', { exact: true }).fill('PIN User');
-      await dialog.getByLabel('Email').fill('pin-user@example.com');
-      await dialog.getByLabel('Initial password', { exact: true }).fill('password');
-      await dialog.getByLabel('Confirm password').fill('password');
-      await dialog.getByLabel('Initial six-digit PIN', { exact: true }).fill('123456');
-      await dialog.getByRole('button', { name: 'Create account', exact: true }).click();
-      await expect(dialog).toHaveCount(0);
-
-      // the new account's detail opens; its Security tab reports the PIN
+      const password = await addPerson(page, 'PIN User', 'pin-user@example.com');
+      await page.getByRole('button', { name: 'Open their page' }).click();
       await expect(page.getByRole('heading', { name: 'PIN User', level: 2 })).toBeVisible();
-      await openDetailTab(page, 'Security');
+
+      await page.getByRole('button', { name: 'Set PIN', exact: true }).click();
+      const setDialog = page.getByRole('dialog', { name: 'Set PIN' });
+      await setDialog.getByLabel('New six-digit PIN', { exact: true }).fill('123456');
+      await setDialog.getByLabel('Confirm six-digit PIN', { exact: true }).fill('123456');
+      await setDialog.getByRole('button', { name: 'Set PIN', exact: true }).click();
       await expect(page.getByText('PIN is set', { exact: true })).toBeVisible();
 
-      const { accessToken } = await login({
-        loginCredentialDto: { email: 'pin-user@example.com', password: 'password' },
-      });
-      // throws unless the server accepts it: the PIN given at creation unlocks the session
+      const { accessToken } = await login({ loginCredentialDto: { email: 'pin-user@example.com', password } });
       await unlockAuthSession({ sessionUnlockDto: { pinCode: '123456' } }, { headers: asBearerAuth(accessToken) });
     });
 
-    // FL-76: an administrator edits an account's quota and storage label from the edit dialog.
+    // FL-516: space and the folder name on disk are edited in place on the person's page.
     test('edit the storage quota and storage label', async ({ context, page }) => {
       const admin = await utils.adminSetup();
       await utils.setAuthCookies(context, admin.accessToken);
@@ -164,17 +190,10 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await page.getByRole('button', { name: 'Edit account', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Edit account' });
-      await dialog.getByLabel('Storage limit (GB)').fill('10');
-      await dialog.getByLabel('Storage label', { exact: true }).fill('quota-user');
-      await expect(
-        dialog.getByText(
-          'Changing the label doesn’t move files that are already stored. To move them, run “Storage template migration” in Jobs when you’re ready.',
-        ),
-      ).toBeVisible();
-      await dialog.getByRole('button', { name: 'Save account' }).click();
-      await expect(dialog).toHaveCount(0);
+      await page.getByLabel('Space for Quota User').selectOption('50');
+      await page.getByText('Advanced', { exact: true }).click();
+      await page.getByLabel('Folder name on disk', { exact: true }).fill('quota-user');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
 
       await expect
         .poll(async () => {
@@ -185,7 +204,7 @@ test.describe('User Administration', () => {
           return { quotaSizeInBytes, storageLabel };
         })
         // D5: the quota field is decimal GB
-        .toEqual({ quotaSizeInBytes: 10 * 1000 ** 3, storageLabel: 'quota-user' });
+        .toEqual({ quotaSizeInBytes: 50 * 1000 ** 3, storageLabel: 'quota-user' });
     });
 
     // FL-76: delete keeps the account for the recovery delay (typed email to confirm); it is then
@@ -203,12 +222,10 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await page.getByRole('button', { name: 'Delete account', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Delete account' });
-      await expect(
-        dialog.getByText(/Leaving User will lose access\. Their account can be restored for \d+ days?/),
-      ).toBeVisible();
-      const confirm = dialog.getByRole('button', { name: 'Delete account', exact: true });
+      await page.getByRole('button', { name: 'Remove this person', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Remove this person' });
+      await expect(dialog.getByText(/Leaving User is signed out everywhere and can’t sign in again\./)).toBeVisible();
+      const confirm = dialog.getByRole('button', { name: 'Remove this person', exact: true });
       await expect(confirm).toBeDisabled();
       await dialog.getByLabel('Type the account email to confirm').fill('leaving-user@example.com');
       await confirm.click();
@@ -258,7 +275,6 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await openDetailTab(page, 'Security');
       await page.getByRole('button', { name: 'Reset password', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Reset password' });
       await dialog.getByRole('button', { name: 'Generate temporary password' }).click();
@@ -288,7 +304,6 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await openDetailTab(page, 'Security');
       await expect(page.getByText('No PIN set', { exact: true })).toBeVisible();
 
       await page.getByRole('button', { name: 'Set PIN', exact: true }).click();
@@ -325,7 +340,6 @@ test.describe('User Administration', () => {
       );
 
       await page.goto(`${usersManager}&user=${created.id}`);
-      await openDetailTab(page, 'Security');
       await expect(page.getByText('PIN is set', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Reset PIN', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Reset PIN' });
@@ -334,9 +348,9 @@ test.describe('User Administration', () => {
       await expect.poll(() => pinState(admin.accessToken, created.id)).toBe(false);
     });
 
-    // FL-76: an edit made against an account that changed meanwhile (here its role) is refused, so the
-    // whole-form save never silently puts back the role another administrator just changed.
-    test('refuse an edit when the account role changed since the form opened', async ({ context, page }) => {
+    // FL-516: About saves only what changed, so a role another administrator changed while the page
+    // was open is never put back by an unrelated edit.
+    test('keep a role changed elsewhere when saving another field', async ({ context, page }) => {
       const admin = await utils.adminSetup();
       await utils.setAuthCookies(context, admin.accessToken);
       const user = await utils.userSetup(admin.accessToken, {
@@ -346,27 +360,23 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await page.getByRole('button', { name: 'Edit account', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Edit account' });
-      await expect(dialog.getByLabel('Role')).toHaveValue('user');
+      await expect(roleOf(page).getByRole('button', { name: 'Member' })).toHaveAttribute('aria-pressed', 'true');
 
-      // another administrator promotes the account while this form is open
+      // another administrator promotes the account while this page is open
       await updateUserAdmin(
         { id: user.userId, userAdminUpdateDto: { isAdmin: true } },
         { headers: asBearerAuth(admin.accessToken) },
       );
 
-      await dialog.getByLabel('Name', { exact: true }).fill('Renamed User');
-      await dialog.getByRole('button', { name: 'Save account' }).click();
-      await expect(
-        dialog.getByText(
-          'This account changed since you opened it. Close the form and open it again to see the latest details.',
-        ),
-      ).toBeVisible();
-      await expect(dialog.getByRole('button', { name: 'Save account' })).toBeDisabled();
+      await page.getByLabel('Name', { exact: true }).fill('Renamed User');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
 
-      const after = await getUserAdmin({ id: user.userId }, { headers: asBearerAuth(admin.accessToken) });
-      expect({ name: after.name, isAdmin: after.isAdmin }).toEqual({ name: 'Stale User', isAdmin: true });
+      await expect
+        .poll(async () => {
+          const after = await getUserAdmin({ id: user.userId }, { headers: asBearerAuth(admin.accessToken) });
+          return { name: after.name, isAdmin: after.isAdmin };
+        })
+        .toEqual({ name: 'Renamed User', isAdmin: true });
     });
 
     // FL-76: an administrator signs one of another account's devices out from its Security tab.
@@ -380,7 +390,6 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await openDetailTab(page, 'Security');
       await page.locator('.account-security').getByRole('button', { name: 'Sign out', exact: true }).click();
       const confirm = page.getByRole('dialog', { name: 'Sign out device' });
       await confirm.getByRole('button', { name: 'Sign out', exact: true }).click();
@@ -403,8 +412,8 @@ test.describe('User Administration', () => {
       });
 
       await page.goto(`${usersManager}&user=${user.userId}`);
-      await page.getByRole('button', { name: 'Delete account', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Delete account' });
+      await page.getByRole('button', { name: 'Remove this person', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Remove this person' });
       await dialog.getByLabel('Skip recovery and permanently remove this account').check();
       await expect(
         dialog.getByText(

@@ -24,6 +24,7 @@ import {
   FrameleafWorker,
   JobName,
   JobStatus,
+  LibraryScope,
   QueueName,
   SourceType,
   StorageFolder,
@@ -173,6 +174,9 @@ export class MetadataService extends BaseService {
       await this.jobRepository.resume(QueueName.MetadataExtraction);
       if (imported) {
         await this.jobRepository.queue({ name: JobName.LandmarkMatchAll });
+      } else {
+        // FL-402: nothing to re-match, so the place data is complete (also clears a flag a crash left behind)
+        await this.mapRepository.setPlacesRestoring(false);
       }
       // Not awaited: a download of tens of megabytes must not hold up the worker's start.
       void this.syncLandmarkIcons();
@@ -207,7 +211,12 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.LandmarkMatchAll, queue: QueueName.BackgroundTask })
   async handleLandmarkMatchAll(): Promise<JobStatus> {
-    await this.mapRepository.matchAllLandmarks();
+    try {
+      await this.mapRepository.matchAllLandmarks();
+    } finally {
+      // FL-402: places are back once items are matched to them again; a failure must not leave the notice up
+      await this.mapRepository.setPlacesRestoring(false);
+    }
     return JobStatus.Success;
   }
 
@@ -285,12 +294,15 @@ export class MetadataService extends BaseService {
     const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
-    const dates = this.getDates(asset, exifTags, stats);
-
-    const { width, height } = this.getImageDimensions(exifTags);
     // FL-51: coordinates the owner set or removed are locked; the place names then stay as stored
     // instead of being read from the file's own coordinates
     const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
+    // LIB-02: a time zone set in Frameleaf stays locked (the sidecar holds only an offset), and the file's
+    // date is read in it rather than in the zone its GPS position suggests
+    const lockedTimeZone = lockedProperties.includes('timeZone') ? previous?.timeZone : undefined;
+    const dates = this.getDates(asset, exifTags, stats, lockedTimeZone);
+
+    const { width, height } = this.getImageDimensions(exifTags);
     const locationLocked = lockedProperties.includes('latitude');
     // Persisted locks can include camera fields beyond the public editable-property union.
     const cameraLocked = lockedProperties.some((property: string) => property === 'make' || property === 'model');
@@ -479,7 +491,11 @@ export class MetadataService extends BaseService {
         },
       ];
 
-      if (isFaceImportEnabled(metadata) && this.hasTaggedFaces(exifTags)) {
+      if (
+        current.libraryScope !== LibraryScope.Design &&
+        isFaceImportEnabled(metadata) &&
+        this.hasTaggedFaces(exifTags)
+      ) {
         tasks.push(() => this.applyTaggedFaces(asset, exifTags));
       }
 
@@ -660,9 +676,12 @@ export class MetadataService extends BaseService {
     // Tags set in Frameleaf stay locked too. The sidecar is written by a job that can run behind the tag
     // edits, so the next metadata read may find an older list in it; unlocked, that read took the
     // older list as the file's and dropped the tags added since.
+    // LIB-02: so does a time zone set in Frameleaf: the sidecar holds only an offset, and the next read would
+    // take the zone of the GPS position instead.
     const keptLocked = new Set<string>([
       ...placeProperties,
       'tags',
+      'timeZone',
       ...(locationRemoved ? ['latitude', 'longitude'] : []),
     ]);
     await this.assetRepository.unlockProperties(
@@ -927,9 +946,9 @@ export class MetadataService extends BaseService {
 
     this.logger.debug(`Starting motion photo video extraction for asset ${asset.id}: ${asset.originalPath}`);
 
+    let video: Buffer;
     try {
       const position = stats.size - length - padding;
-      let video: Buffer;
       // Samsung MotionPhoto video extraction
       //     HEIC-encoded
       if (hasMotionPhotoVideo) {
@@ -947,6 +966,13 @@ export class MetadataService extends BaseService {
           length,
         });
       }
+    } catch (error) {
+      // A damaged embedded video must not cost the still its metadata, as upstream.
+      this.logger.error(`Failed to extract motion video for ${asset.id}: ${asset.originalPath}: ${error}`);
+      return;
+    }
+
+    try {
       const checksum = this.cryptoRepository.hashSha1(video);
       const existing = await this.assetRepository.getByChecksum({
         ownerId: asset.ownerId,
@@ -955,9 +981,23 @@ export class MetadataService extends BaseService {
       });
       if (existing) {
         if (!(await this.storageRepository.checkFileExists(existing.originalPath))) {
-          throw new Error('Existing motion video original is missing; repair is required before extracting metadata');
-        }
-        if (existing.id === asset.livePhotoVideoId) {
+          // Only our own extracted copy is rewritten; a missing upload is left to media health.
+          if (!StorageCore.isAndroidMotionPath(existing.originalPath)) {
+            this.logger.warn(`Motion video ${existing.id} for asset ${asset.id} is missing: ${existing.originalPath}`);
+            return;
+          }
+          // write the extracted video back, especially if the encoded-video folder has been deleted
+          this.storageCore.ensureFolders(existing.originalPath);
+          await this.storageRepository.createFile(existing.originalPath, video);
+          this.logger.log(`Wrote motion photo video to ${existing.originalPath}`);
+          if (existing.id === asset.livePhotoVideoId) {
+            await this.jobRepository.queue({
+              name: JobName.AssetExtractMetadata,
+              data: { id: existing.id, source: 'motion-photo' },
+            });
+            return;
+          }
+        } else if (existing.id === asset.livePhotoVideoId) {
           return;
         }
       }
@@ -1194,6 +1234,7 @@ export class MetadataService extends BaseService {
     asset: { id: string; originalPath: string; fileCreatedAt: Date },
     exifTags: ImmichTags,
     stats: Stats,
+    lockedTimeZone?: string | null,
   ) {
     const result = firstDateTime(exifTags);
     const tag = result?.tag;
@@ -1207,7 +1248,7 @@ export class MetadataService extends BaseService {
     }
 
     // timezone
-    let timeZone = exifTags.zone ?? null;
+    let timeZone = lockedTimeZone ?? exifTags.zone ?? null;
     if (timeZone === null && (dateTime?.rawValue?.endsWith('Z') || dateTime?.rawValue?.endsWith('+00:00'))) {
       // exiftool-vendored returns "no timezone" information even though "+00:00" might be set explicitly
       // https://github.com/photostructure/exiftool-vendored.js/issues/203

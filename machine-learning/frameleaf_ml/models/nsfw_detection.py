@@ -37,8 +37,6 @@ class NsfwDetectionModel(InferenceModel):
         )
 
     def configure(self, **kwargs: Any) -> None:
-        if "threshold" in kwargs:
-            self.threshold = float(kwargs["threshold"])
         if "device" in kwargs:
             device = str(kwargs["device"] or "AUTO")
             if device != self.device:
@@ -67,7 +65,7 @@ class NsfwDetectionModel(InferenceModel):
         nsfw_score = self._nsfw_score(labels)
 
         return {
-            "isNsfw": nsfw_score >= self.threshold,
+            "isNsfw": nsfw_score >= float(model_kwargs.get("threshold", self.threshold)),
             "score": nsfw_score,
             "labels": labels,
         }

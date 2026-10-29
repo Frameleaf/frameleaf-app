@@ -6,6 +6,7 @@ import {
   clientBackupObjectKey,
   clientBackupPlainSize,
   clientBackupStoredSize,
+  clientBackupWritesEnabled,
   decryptClientBackup,
   encryptClientBackup,
 } from 'src/utils/cloud-backup-crypto.js';
@@ -25,6 +26,23 @@ const fixture = async (plain: Buffer, version = 1) => {
 };
 
 describe('client backup format', () => {
+  describe('write selection', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it.each([
+      [undefined, 'managed', true, true],
+      [undefined, 'managed', false, false],
+      [undefined, 'byo-s3', true, false],
+      ['0', 'managed', true, false],
+      ['0', 'byo-s3', true, false],
+      ['1', 'managed', false, true],
+      ['1', 'byo-s3', true, true],
+    ] as const)('selects %s / %s with roots=%s as encrypted=%s', (flag, target, hasRoots, expected) => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', flag);
+      expect(clientBackupWritesEnabled(target, hasRoots)).toBe(expected);
+    });
+  });
+
   it.each([0, 1, BUDDY_BLOCK_BYTES, BUDDY_BLOCK_BYTES + 1])(
     'authenticates %i bytes across arbitrary transport chunks',
     async (size) => {

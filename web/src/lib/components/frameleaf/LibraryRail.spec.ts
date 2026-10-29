@@ -1,3 +1,4 @@
+import { LibraryViewScope, AlbumKind } from '@frameleaf/sdk';
 import { mdiCameraBurst, mdiFolderOutline, mdiHeartOutline } from '@mdi/js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -42,9 +43,10 @@ beforeEach(() => {
   resetIconCatalogueCache();
   app.page.url = new URL('http://localhost/photos');
   authManager.setUser(userAdminFactory.build());
-  sdkMock.getAlbumTree.mockResolvedValue({ collections: [], albums: [], spaces: [] });
+  sdkMock.getAlbumHierarchy.mockResolvedValue({ roots: [] });
   sdkMock.getPartners.mockResolvedValue([]);
   sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r0' } as never);
+  sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
 });
 
 afterEach(() => {
@@ -53,19 +55,39 @@ afterEach(() => {
 });
 
 const treeWithIcon = (icon: string | null) => ({
-  collections: [
+  roots: [
     {
-      collection: albumFactory.build({ id: 'collection', albumName: 'Collection', icon }),
-      albums: [albumFactory.build({ id: 'child', albumName: 'Child', parentId: 'collection', icon })],
-      albumCount: 1,
-      assetCount: 0,
+      album: albumFactory.build({ id: 'collection', albumName: 'Collection', kind: AlbumKind.Collection, icon }),
+      children: [
+        {
+          album: albumFactory.build({
+            id: 'child',
+            albumName: 'Child',
+            kind: AlbumKind.Album,
+            parentId: 'collection',
+            icon,
+          }),
+          children: [],
+        },
+      ],
     },
+    { album: albumFactory.build({ id: 'album', albumName: 'Album', kind: AlbumKind.Album, icon }), children: [] },
+    { album: albumFactory.build({ id: 'space', albumName: 'Space', kind: AlbumKind.Space, icon }), children: [] },
   ],
-  albums: [albumFactory.build({ id: 'album', albumName: 'Album', icon })],
-  spaces: [albumFactory.build({ id: 'space', albumName: 'Space', icon })],
 });
 
 describe('LibraryRail', () => {
+  it('uses the shared Design hierarchy and keeps Pro context on album/create links', async () => {
+    app.page.url = new URL('http://localhost/pro');
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(null));
+    render(LibraryRail);
+    const album = await screen.findByRole('link', { name: /^Album/ });
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledWith({ libraryScope: LibraryViewScope.Design });
+    const url = new URL(album.getAttribute('href')!, 'http://localhost');
+    expect(url.pathname).toBe('/albums/album');
+    expect(url.searchParams.has('fl')).toBe(true);
+  });
+
   it.each([
     ['mdiCameraBurst', mdiCameraBurst],
     ['heart', mdiHeartOutline],
@@ -74,7 +96,7 @@ describe('LibraryRail', () => {
     ['mdiUnknown', mdiFolderOutline],
   ])('renders stored %s geometry for every tree node while preserving its link', async (icon, expected) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst })));
-    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon(icon));
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(icon));
     albumTreeDropdown.set(true);
     app.page.url = new URL(Route.viewAlbum({ id: 'child' }), 'http://localhost');
     render(LibraryRail);
@@ -94,21 +116,60 @@ describe('LibraryRail', () => {
     expect(fetch).toHaveBeenCalledTimes(icon?.startsWith('mdi') ? 1 : 0);
   });
 
+  it('expands each nested branch without hiding its own page link', async () => {
+    sdkMock.getAlbumHierarchy.mockResolvedValue({
+      roots: [
+        {
+          album: albumFactory.build({ id: 'root', albumName: 'Root', kind: AlbumKind.Album }),
+          children: [
+            {
+              album: albumFactory.build({
+                id: 'nested',
+                albumName: 'Nested',
+                kind: AlbumKind.Collection,
+                parentId: 'root',
+              }),
+              children: [
+                {
+                  album: albumFactory.build({
+                    id: 'leaf',
+                    albumName: 'Leaf',
+                    kind: AlbumKind.Album,
+                    parentId: 'nested',
+                  }),
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    render(LibraryRail);
+    expect(await screen.findByRole('link', { name: 'Root' })).toHaveAttribute('href', Route.viewAlbum({ id: 'root' }));
+    expect(screen.queryByRole('link', { name: 'Leaf' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /Expand Root/ }));
+    await fireEvent.click(await screen.findByRole('button', { name: /Expand Nested/ }));
+    expect(await screen.findByRole('link', { name: 'Leaf' })).toHaveAttribute('href', Route.viewAlbum({ id: 'leaf' }));
+    await fireEvent.click(screen.getByRole('button', { name: /Collapse Root/ }));
+    expect(screen.queryByRole('link', { name: 'Leaf' })).toBeNull();
+  });
+
   it('updates stored icon geometry after an album event and releases the subscription on unmount', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst, mdiHeartOutline })));
-    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon('mdiCameraBurst'));
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon('mdiCameraBurst'));
     const { unmount } = render(LibraryRail);
     const link = await screen.findByRole('link', { name: 'Album' });
     await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiCameraBurst));
 
-    sdkMock.getAlbumTree.mockResolvedValue(treeWithIcon('mdiHeartOutline'));
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon('mdiHeartOutline'));
     eventManager.emit('AlbumUpdate', albumFactory.build({ icon: 'mdiHeartOutline' }));
     await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiHeartOutline));
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(sdkMock.getAlbumTree).toHaveBeenCalledTimes(2);
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
     unmount();
     eventManager.emit('AlbumUpdate', albumFactory.build());
-    expect(sdkMock.getAlbumTree).toHaveBeenCalledTimes(2);
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
   });
 
   it('lists the sections in the September 24 order: Explore, Albums, Shared spaces, Tools', () => {
@@ -126,10 +187,8 @@ describe('LibraryRail', () => {
 
   it('lists saved searches in Albums, after the album tree and before Shared links', async () => {
     authManager.setPreferences(preferencesFactory.build({ sharedLinks: { enabled: true, sidebarWeb: true } } as never));
-    sdkMock.getAlbumTree.mockResolvedValue({
-      collections: [],
-      albums: [{ id: 'album-1', albumName: 'Porto' }],
-      spaces: [],
+    sdkMock.getAlbumHierarchy.mockResolvedValue({
+      roots: [{ album: { id: 'album-1', albumName: 'Porto', kind: AlbumKind.Album }, children: [] }],
     } as never);
     sdkMock.getMyPreferences.mockResolvedValue({
       savedSearches: [{ name: 'Lisbon', query: { ...emptyDiscoveryQuery(), filter: { city: { eq: 'Lisbon' } } } }],
@@ -281,5 +340,160 @@ describe('LibraryRail', () => {
     expect(partner).toHaveAttribute('href', Route.viewPartner({ id: 'jamie' }));
     expect(sdkMock.getPartners).toHaveBeenCalledWith({ direction: 'shared-with' });
     expect(screen.queryByRole('link', { name: 'All shared spaces' })).toBeNull();
+  });
+});
+
+/** Boards (FL-622, README points 1, 11, 13 and 22): the rail of the Design workspace. */
+describe('LibraryRail in Boards', () => {
+  const boardsTree = {
+    roots: [
+      {
+        album: albumFactory.build({
+          id: 'brand',
+          albumName: 'Brand refresh',
+          kind: AlbumKind.Album,
+          assetCount: 7,
+          color: 'teal',
+          icon: null,
+        }),
+        children: [
+          {
+            album: albumFactory.build({
+              id: 'mood',
+              albumName: 'Moodboard',
+              kind: AlbumKind.Album,
+              parentId: 'brand',
+              assetCount: 4,
+              color: null,
+              icon: null,
+            }),
+            children: [],
+          },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    app.page.url = new URL('http://localhost/pro');
+    sdkMock.getAlbumHierarchy.mockResolvedValue(boardsTree as never);
+  });
+
+  afterEach(async () => {
+    sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r9' } as never);
+    await savedSearchesStore.load(true);
+  });
+
+  it('is titled Boards with a Free badge and lists All items, Images, Videos, Links and Unfiled with counts', async () => {
+    sdkMock.searchLibraryItems.mockImplementation((({
+      libraryItemSearchDto,
+    }: {
+      libraryItemSearchDto: { kinds?: string[] };
+    }) =>
+      Promise.resolve({
+        count: libraryItemSearchDto.kinds?.includes('bookmark') ? 2 : 9,
+        countCapped: false,
+        items: [],
+        nextCursor: null,
+      })) as never);
+    render(LibraryRail);
+
+    expect(document.querySelector('.fl-boards-title')).toHaveTextContent(/^Boards\s*Free$/);
+    expect(screen.queryByRole('button', { name: 'Albums' })).toBeNull();
+    const items = within(screen.getByRole('navigation', { name: 'Boards items' }));
+    const links = items.getAllByRole('link');
+    expect(links.map((link) => link.querySelector('.fl-label')?.textContent)).toEqual([
+      'All items',
+      'Images',
+      'Videos',
+      'Links',
+      'Unfiled',
+    ]);
+    expect(links[0]).toHaveAttribute('aria-current', 'page');
+    expect(new URL(links[3].getAttribute('href')!, 'http://localhost').searchParams.get('kinds')).toBe('bookmark');
+    await waitFor(() => expect(links[3]).toHaveTextContent('2'));
+    expect(links[1]).toHaveTextContent('9');
+    expect(sdkMock.searchLibraryItems).toHaveBeenCalledWith({
+      libraryItemSearchDto: { filter: { libraryScope: LibraryViewScope.Design }, limit: 1, kinds: ['bookmark'] },
+    });
+  });
+
+  it('marks Links current from the kinds parameter', () => {
+    app.page.url = new URL('http://localhost/pro?kinds=bookmark');
+    render(LibraryRail);
+    const items = within(screen.getByRole('navigation', { name: 'Boards items' }));
+    expect(items.getByRole('link', { name: /^Links/ })).toHaveAttribute('aria-current', 'page');
+    expect(items.getByRole('link', { name: /^All items/ })).not.toHaveAttribute('aria-current');
+  });
+
+  it('shows collections as a nested tree with their own colour, counts and a "+" for a new one', async () => {
+    albumTreeDropdown.set(true);
+    render(LibraryRail);
+    const brand = await screen.findByRole('link', { name: /^Brand refresh/ });
+    expect(brand).toHaveTextContent('7');
+    expect(brand.querySelector('[data-color="teal"]')).not.toBeNull();
+    expect(await screen.findByRole('link', { name: /^Moodboard/ })).toHaveTextContent('4');
+    const toggle = screen.getByRole('button', { name: /Brand refresh/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(screen.queryByRole('link', { name: /^Moodboard/ })).toBeNull());
+    const create = screen.getByRole('link', { name: 'New collection' });
+    expect(new URL(create.getAttribute('href')!, 'http://localhost').searchParams.has('fl')).toBe(true);
+  });
+
+  it('lists smart collections saved in Boards, and leaves out searches saved in the Library', async () => {
+    sdkMock.getMyPreferences.mockResolvedValue({
+      savedSearches: [
+        {
+          name: 'Teal and blue',
+          query: {
+            ...emptyDiscoveryQuery(),
+            filter: { libraryScope: LibraryViewScope.Design, color: { hex: '#3d7f8f' } },
+          },
+        },
+        { name: 'Lisbon', query: { ...emptyDiscoveryQuery(), filter: { city: { eq: 'Lisbon' } } } },
+      ],
+      revision: 'r3',
+    } as never);
+    await savedSearchesStore.load(true);
+    render(LibraryRail);
+    const smart = within(await screen.findByRole('navigation', { name: 'Smart collections' }));
+    const link = smart.getByRole('link', { name: 'Teal and blue' });
+    expect(new URL(link.getAttribute('href')!, 'http://localhost').pathname).toBe('/pro');
+    expect(smart.queryByRole('link', { name: 'Lisbon' })).toBeNull();
+  });
+
+  it('opens "Get the browser extension" with its three steps', async () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    render(LibraryRail);
+    await fireEvent.click(screen.getByRole('button', { name: 'Get the browser extension' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Save to Frameleaf from your browser' }));
+    expect(dialog.getByText('Add the extension')).toBeInTheDocument();
+    expect(dialog.getByText('For Chrome and Edge. Free.')).toBeInTheDocument();
+    // FL-655: sign in with your Frameleaf account; a key is only the fallback
+    expect(dialog.getByText('Sign in with your Frameleaf account')).toBeInTheDocument();
+    expect(
+      dialog.getByText(
+        'In the extension, choose this server and press Sign in, then Allow. It can only save things and list your collections and tags. It can’t see your photos.',
+      ),
+    ).toBeInTheDocument();
+    expect(dialog.getByText('Start saving')).toBeInTheDocument();
+    const key = dialog.getByRole('link', { name: 'Browser can’t sign in? Use a key instead' });
+    expect(key.getAttribute('href')).toContain('section=api-keys');
+    expect(dialog.queryByText('Paste it into the extension')).toBeNull();
+    expect(dialog.queryByRole('link', { name: 'Make a browser key' })).toBeNull();
+  });
+
+  it('turns the drawer into the "Collections and filters" sheet only in Boards', () => {
+    const { unmount } = render(LibraryRail);
+    expect(document.documentElement).toHaveAttribute('data-fl-boards-rail');
+    expect(screen.getByRole('heading', { name: 'Collections and filters' })).toBeInTheDocument();
+    unmount();
+    expect(document.documentElement).not.toHaveAttribute('data-fl-boards-rail');
+    app.page.url = new URL('http://localhost/photos');
+    render(LibraryRail);
+    expect(document.documentElement).not.toHaveAttribute('data-fl-boards-rail');
   });
 });

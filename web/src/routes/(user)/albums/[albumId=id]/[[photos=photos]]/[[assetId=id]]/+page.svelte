@@ -1,10 +1,12 @@
 <script lang="ts">
   import { browser } from '$app/env';
   import { afterNavigate, beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
-  import { navigating } from '$app/state';
+  import { navigating, page } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import AlbumHeader from '$lib/components/frameleaf/AlbumHeader.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import LibraryItemsView from '$lib/components/frameleaf/LibraryItemsView.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
@@ -14,9 +16,26 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
-  import { canEdit, isOwner, removalOutcome } from '$lib/frameleaf/album-directory';
+  import {
+    albumAncestors,
+    directoryAlbums,
+    moveTargets,
+    canEdit,
+    isOwner,
+    removalOutcome,
+  } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
+  import {
+    canIncludeLibrary,
+    collectionItems,
+    downloadBoardsCollection,
+    type CollectionItems,
+  } from '$lib/frameleaf/boards-download';
   import { publishCollectionPage } from '$lib/frameleaf/collection-page-request';
+  import { albumSearchContext } from '$lib/frameleaf/search-context';
+  import { writeLibraryView, readLibraryView, createLibrarySession } from '$lib/frameleaf/library-session';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { HERO_PAGE_ATTRIBUTE, HERO_SHARED_ATTRIBUTE } from '$lib/frameleaf/motion';
   import { findTileImage } from '$lib/frameleaf/viewer-zoom';
@@ -37,6 +56,9 @@
     AlbumUserRole,
     getAllTags,
     getAlbumInfo,
+    getAlbumItems,
+    LibraryScope,
+    LibraryViewScope,
     searchAssets,
     type AlbumResponseDto,
     type AssetResponseDto,
@@ -136,78 +158,76 @@
   /* ------------------------------------------------------------------ */
   /* Tree-derived context: breadcrumb, album strip, collection choices   */
   /* ------------------------------------------------------------------ */
-  const node = $derived(tree.collections.find(({ collection }) => collection.id === album.id));
-  const childAlbums = $derived(node?.albums ?? []);
-  const parent = $derived(
-    album.parentId
-      ? tree.collections.find(({ collection }) => collection.id === album.parentId)?.collection
-      : undefined,
+  const allAlbums = $derived(directoryAlbums(tree));
+  const childAlbums = $derived(allAlbums.filter(({ parentId }) => parentId === album.id));
+  const ancestors = $derived(albumAncestors(tree, album));
+  const parent = $derived(ancestors.at(-1));
+  const editableCollections = $derived(moveTargets(tree, album, currentUserId).map(({ collection }) => collection));
+  const collectionAlbums = $derived(
+    allAlbums.filter(
+      (candidate) => candidate.id === album.id || albumAncestors(tree, candidate).some(({ id }) => id === album.id),
+    ),
   );
-  const editableCollections = $derived(
-    tree.collections.map(({ collection }) => collection).filter((collection) => canEdit(collection, currentUserId)),
-  );
+  const node = $derived({ assetCount: collectionAlbums.reduce((total, child) => total + child.assetCount, 0) });
 
   /* ------------------------------------------------------------------ */
   /* Collection photos: the union of its albums                          */
   /* ------------------------------------------------------------------ */
   const COLLECTION_PAGE = 250;
   let collectionAssets = $state<AssetResponseDto[]>([]);
-  let collectionPage = $state(1);
+  let collectionCursor: string | null = null;
   let collectionLoading = $state(false);
   let collectionExhausted = $state(false);
   let collectionRequest = 0;
 
+  // The collection and every album inside it, at any depth. Flat `albumIds` would mean "in all of these".
   const loadCollectionAssets = async (
-    page: number,
+    cursor: string | null,
     request: number,
     collectionId: string,
-    ids: string[],
     order: typeof album.order,
   ) => {
     collectionLoading = true;
     await publishCollectionPage(
-      () => searchAssets({ metadataSearchDto: { albumIds: ids, page, size: COLLECTION_PAGE, order } }),
+      () =>
+        searchAssets({
+          metadataSearchDto: {
+            filter: { albumSubtreeIds: { any: [collectionId] } },
+            orderBy: { direction: order },
+            size: COLLECTION_PAGE,
+            ...(cursor && { cursor }),
+          },
+        }),
       () => request === collectionRequest && collectionId === albumId,
       (results) => {
-        collectionAssets = page === 1 ? results.assets.items : [...collectionAssets, ...results.assets.items];
-        collectionExhausted = results.assets.nextPage === null;
+        collectionAssets = cursor ? [...collectionAssets, ...results.assets.items] : results.assets.items;
+        collectionCursor = results.assets.nextCursor;
+        collectionExhausted = results.assets.nextCursor === null;
       },
       () => (collectionLoading = false),
     );
   };
 
   $effect(() => {
-    const ids = childAlbums.map(({ id }) => id);
+    // Re-runs when the collection's albums change, which is what its photos are made of.
+    void collectionAlbums.length;
     const order = album.order;
     const collectionId = albumId;
     const request = ++collectionRequest;
     collectionAssets = [];
     collectionLoading = false;
-    collectionExhausted = ids.length === 0;
-    if (!isCollection) {
-      return;
-    }
-    // Re-runs when the collection's albums change, which is what its photos are made of.
-    collectionPage = 1;
-    if (ids.length > 0) {
-      handlePromiseError(loadCollectionAssets(1, request, collectionId, ids, order));
+    collectionCursor = null;
+    collectionExhausted = !isCollection;
+    if (isCollection) {
+      handlePromiseError(loadCollectionAssets(null, request, collectionId, order));
     }
   });
 
   const loadMoreCollectionAssets = () => {
-    if (collectionLoading || collectionExhausted) {
+    if (collectionLoading || collectionExhausted || !collectionCursor) {
       return;
     }
-    collectionPage += 1;
-    handlePromiseError(
-      loadCollectionAssets(
-        collectionPage,
-        collectionRequest,
-        albumId,
-        childAlbums.map(({ id }) => id),
-        album.order,
-      ),
-    );
+    handlePromiseError(loadCollectionAssets(collectionCursor, collectionRequest, albumId, album.order));
   };
 
   const assetCount = $derived(isCollection ? (node?.assetCount ?? collectionAssets.length) : album.assetCount);
@@ -404,8 +424,102 @@
     }
   };
 
+  let bookmarkCount = $state(0);
+  let itemsUnavailable = $state(false);
+  let itemGeneration = $state(0);
+  const mixedQuery = $derived(albumSearchContext(new URL(page.url.href), album));
+  const designContext = $derived(mixedQuery.filter.libraryScope === LibraryViewScope.Design);
+  const mixedAlbum = $derived(
+    !isCollection &&
+      (bookmarkCount > 0 || album.libraryScope === LibraryScope.Design || album.libraryScope === LibraryScope.Both),
+  );
+  $effect(() => {
+    const id = albumId;
+    const selected = album;
+    const version = itemGeneration;
+    const current = authManager.captureSession();
+    const controller = new AbortController();
+    bookmarkCount = 0;
+    itemsUnavailable = false;
+    if (!isCollection) {
+      void getAlbumItems({ id, limit: 1 }, { signal: controller.signal })
+        .then((result) => {
+          if (
+            !controller.signal.aborted &&
+            current() &&
+            albumId === id &&
+            itemGeneration === version &&
+            album === selected
+          ) {
+            bookmarkCount = result.bookmarkCount;
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted && current() && albumId === id && itemGeneration === version) {
+            itemsUnavailable = true;
+          }
+        });
+    }
+    return () => controller.abort();
+  });
+  onDestroy(
+    onLibraryAccessChange(() => {
+      bookmarkCount = 0;
+      itemGeneration++;
+    }),
+  );
+  /** A Boards collection asks what goes in the .zip (FL-660). */
+  const boardsCollection = $derived(designContext && mixedAlbum && !isSpace);
+  let downloadOpen = $state(false);
+  /** The collection's items, read when the dialog opens: the library file needs them all to be yours. */
+  let downloadItems = $state<CollectionItems | null>(null);
+  $effect(() => {
+    if (!downloadOpen) {
+      return;
+    }
+    const id = albumId;
+    const current = authManager.captureSession();
+    const controller = new AbortController();
+    downloadItems = null;
+    collectionItems(id, currentUserId, controller.signal)
+      .then((items) => {
+        if (!controller.signal.aborted && current() && albumId === id) {
+          downloadItems = items;
+        }
+      })
+      // Unread items keep the library file off, with its reason; the originals still download.
+      .catch(() => {});
+    return () => controller.abort();
+  });
+  const downloadCollection = (includeLibrary: boolean) =>
+    void downloadBoardsCollection({
+      album,
+      fileName: albumDownloadFileName,
+      items: downloadItems,
+      includeLibrary,
+    });
+  const updateMixedQuery = (query: import('$lib/components/discovery/query').DiscoveryQuery) => {
+    const url = new URL(Route.viewAlbum({ id: albumId }), page.url.origin);
+    const previous = readLibraryView(new URL(page.url.href)) ?? createLibrarySession().state;
+    const next = writeLibraryView(url, { ...previous, scope: { kind: 'album', id: albumId }, query });
+    void goto(next, { replace: true, reset: false });
+  };
+
+  /**
+   * An album made with "Create album" and left without a name or anything in it is removed when
+   * you leave for anywhere but another album, so abandoned drafts never pile up in Albums. Only your
+   * own plain album qualifies: never a collection or space, nor one holding albums or saved links.
+   */
   onNavigate(async ({ to }) => {
-    if (!isAlbumsRoute(to?.route.id) && album.assetCount === 0 && !album.albumName) {
+    if (
+      !isAlbumsRoute(to?.route.id) &&
+      album.kind === AlbumKind.Album &&
+      album.assetCount === 0 &&
+      !album.albumName &&
+      bookmarkCount === 0 &&
+      childAlbums.length === 0 &&
+      isOwner(album, currentUserId)
+    ) {
       await handleDeleteAlbum(album, { notify: false });
     }
   });
@@ -514,7 +628,7 @@
   };
 
   const { Cast } = $derived(getGlobalActions($t));
-  const { Upload } = $derived(getAlbumAssetsActions($t, album));
+  const { Upload } = $derived(getAlbumAssetsActions($t, album, designContext ? LibraryScope.Design : undefined));
 
   const Close = $derived({
     title: $t('go_back'),
@@ -546,21 +660,26 @@
     {@const view = albumView}
     <AlbumHeader
       {album}
+      uploadScope={designContext ? LibraryScope.Design : undefined}
       {childAlbums}
       {parent}
+      {ancestors}
       collections={editableCollections}
+      albums={allAlbums}
       likeCount={activityManager.likeCount}
       commentCount={activityManager.commentCount}
       {activityOpen}
       canShowOwnerBadges={containsEditors}
       ownerBadges={showAlbumUsers}
       {assetCount}
+      itemCount={assetCount + bookmarkCount}
       onAlbumChange={(next) => (album = next)}
       onRefresh={() => refreshEverything(view)}
       onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
       onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
       onToggleActivity={() => (activityOpen = !activityOpen)}
       onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
+      onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
     />
   {/key}
 {/snippet}
@@ -572,7 +691,17 @@
   Photos, a person and a tag, so it carries the page gutter inside its scroller and the frosted
   toolbar band spans the page (LIB-P4). The comments sheet is fixed over the right edge (SHARING-P2).
 -->
-<UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.albums() }]]}>
+<UserPageLayout
+  scrollbar={false}
+  onUploadClick={() =>
+    void openFileUploadDialog({ albumId, libraryScope: designContext ? LibraryScope.Design : undefined })}
+  use={[[scrollMemoryClearer, { routeStartsWith: Route.albums() }]]}
+>
+  {#if itemsUnavailable}<InlineError
+      compact
+      message={$t('frameleaf_album_links_unavailable')}
+      onRetry={() => itemGeneration++}
+    />{/if}
   {#if isCollection}
     <div class="relative h-full overflow-hidden md:px-4">
       <Theme theme={appTheme}>
@@ -592,6 +721,19 @@
         </div>
       </Theme>
     </div>
+  {:else if mixedAlbum}
+    {#key albumId}
+      <LibraryItemsView
+        title={album.albumName || $t('unnamed_album')}
+        query={mixedQuery}
+        {album}
+        context={Route.viewAlbum({ id: albumId })}
+        workspace={designContext ? 'design' : 'personal'}
+        onQueryChange={updateMixedQuery}
+        {header}
+        {bulkContext}
+      />
+    {/key}
   {:else}
     <LibraryView
       enableRouting
@@ -652,6 +794,16 @@
     </Theme>
   {/if}
 </UserPageLayout>
+
+{#if downloadOpen}{#await import('$lib/components/frameleaf/BoardsDownloadDialog.svelte') then { default: BoardsDownloadDialog }}
+    <BoardsDownloadDialog
+      bind:open={downloadOpen}
+      count={assetCount + bookmarkCount}
+      name={album.albumName || $t('unnamed_album')}
+      libraryAvailable={canIncludeLibrary(downloadItems)}
+      onDownload={downloadCollection}
+    />
+  {/await}{/if}
 
 {#if isCollection}
   <ResultsAssetViewer

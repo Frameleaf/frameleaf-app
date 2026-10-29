@@ -123,6 +123,23 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
     }
     await fs.writeFile(envFile, originalEnv);
     await refreshSums();
+    // The bundle names its own exact tag beside the latest setting.
+    assert.ok(
+      originalEnv.includes(
+        `# This release: FRAMELEAF_VERSION=${tag}\nFRAMELEAF_VERSION=latest\n`,
+      ),
+    );
+    await fs.writeFile(
+      envFile,
+      originalEnv.replace(tag, "frameleaf-v3.1.0-13"),
+    );
+    await refreshSums();
+    await assert.rejects(
+      verifyBundle(bundle, tag),
+      /Environment release tag differs/,
+    );
+    await fs.writeFile(envFile, originalEnv);
+    await refreshSums();
 
     for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"])
       for (const image of ["frameleaf-server", "frameleaf-machine-learning"]) {

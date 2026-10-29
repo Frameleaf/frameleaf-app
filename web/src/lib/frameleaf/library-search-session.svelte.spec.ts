@@ -1,5 +1,9 @@
 import {
   askSearch,
+  searchLibraryItems,
+  LibraryBookmarkItemKind,
+  LibraryViewScope,
+  type LibraryItemSearchResponseDto,
   AssetOrder,
   searchAssets,
   searchSmart,
@@ -15,6 +19,7 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   askSearch: vi.fn(),
   searchAssets: vi.fn(),
+  searchLibraryItems: vi.fn(),
   searchSmart: vi.fn(),
 }));
 
@@ -197,4 +202,43 @@ it('does not append an asset twice when offset pages overlap', async () => {
   await session.loadNextPage(options);
   await session.loadNextPage(options);
   expect(session.assets.map(({ id }) => id)).toEqual(['first']);
+});
+
+const mixedResult = (id: string, nextCursor: string | null = null): LibraryItemSearchResponseDto =>
+  ({
+    items: [{ kind: LibraryBookmarkItemKind.Bookmark, bookmark: { id } }],
+    count: 2,
+    countCapped: false,
+    nextCursor,
+  }) as LibraryItemSearchResponseDto;
+
+it('pages mixed records through the same request boundary and preserves their kind', async () => {
+  const session = createSession();
+  vi.mocked(searchLibraryItems)
+    .mockResolvedValueOnce(mixedResult('one', 'next'))
+    .mockResolvedValueOnce(mixedResult('two'));
+  session.reset({ kind: 'library', terms: { filter: { libraryScope: LibraryViewScope.Design } } });
+  await session.loadNextPage(options);
+  await session.loadNextPage(options);
+  expect(session.items.map((item) => item.kind === LibraryBookmarkItemKind.Bookmark && item.bookmark.id)).toEqual([
+    'one',
+    'two',
+  ]);
+  expect(session.assets).toEqual([]);
+  expect(session.count).toBe(2);
+  expect(vi.mocked(searchLibraryItems).mock.calls[1][0].libraryItemSearchDto.cursor).toBe('next');
+});
+
+it('discards a completed mixed response after an access reset', async () => {
+  const session = createSession();
+  const pending = deferred<LibraryItemSearchResponseDto>();
+  vi.mocked(searchLibraryItems).mockReturnValueOnce(pending.promise);
+  session.reset({ kind: 'library', terms: { filter: { libraryScope: LibraryViewScope.Design } } });
+  const load = session.loadNextPage(options);
+  session.reset();
+  pending.resolve(mixedResult('private'));
+  await load;
+  expect(session.items).toEqual([]);
+  expect(session.count).toBeNull();
+  expect(session.nextCursor).toBeNull();
 });

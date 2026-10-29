@@ -454,7 +454,7 @@ test.describe('Album', () => {
 
     // App.jsx onOpenMap: the album's Map action opens the Map screen with the album's scope.
     await page.goto(`/albums/${mapAlbum.id}`);
-    const mapButton = page.getByRole('button', { name: 'Map' });
+    const mapButton = page.getByRole('button', { name: 'Map', exact: true });
     await expect(mapButton).toBeEnabled();
     await mapButton.click();
     await page.waitForURL(`/map?albumId=${mapAlbum.id}`);
@@ -589,7 +589,7 @@ test.describe('Album', () => {
     const dialog = page.getByRole('dialog', { name: 'Move “Keyboard mover”' });
     await dialog.getByRole('radio', { name: /Keyboard target/ }).focus();
     await page.keyboard.press('Space');
-    await dialog.getByRole('button', { name: 'Move', exact: true }).focus();
+    await dialog.getByRole('button', { name: 'Move here', exact: true }).focus();
     await page.keyboard.press('Enter');
 
     await expect(page.getByText('Moved “Keyboard mover” into “Keyboard target”')).toBeVisible();
@@ -620,10 +620,10 @@ test.describe('Album', () => {
     await page.getByRole('menuitem', { name: 'Move to…' }).click();
     const dialog = page.getByRole('dialog', { name: 'Move “Stale mover”' });
     await dialog.getByRole('radio', { name: /Stale trips/ }).check();
-    await dialog.getByRole('button', { name: 'Move', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Move here', exact: true }).click();
 
     await expect(page.getByRole('status')).toContainText('Your albums changed since this page loaded');
-    const tree = await getAlbumTree({ headers: asBearerAuth(admin.accessToken) });
+    const tree = await getAlbumTree({}, { headers: asBearerAuth(admin.accessToken) });
     const node = tree.collections.find(({ collection }) => collection.id === family.id);
     expect(node?.albums.map(({ id }) => id)).toContain(album.id);
   });

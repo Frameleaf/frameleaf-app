@@ -94,6 +94,14 @@ export class FrameleafAccountRepository {
     `.execute(this.db);
     return Number(result.rows[0]?.count ?? 0);
   }
+  /** FL-541: which local accounts have linked, and the Frameleaf email each linked with. */
+  @GenerateSql()
+  async listLinks(): Promise<Array<{ userId: string; email: string | null }>> {
+    const result = await sql<{ userId: string; email: string | null }>`
+      SELECT "userId", email FROM public.frameleaf_account_link
+    `.execute(this.db);
+    return result.rows;
+  }
   /** Link a Frameleaf account to a local account (replacing its previous link). */
   async upsertLink(
     row: Pick<FrameleafAccountLinkRow, 'userId' | 'sub' | 'email' | 'emailVerified' | 'role' | 'autoRegistered'> & {

@@ -58,9 +58,11 @@
   import { MailSignInStore } from '$lib/components/frameleaf/settings/notifications/mail-sign-in.svelte';
   import MailSignInPanel from '$lib/components/frameleaf/settings/notifications/MailSignInPanel.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import { isCredentialConfigured } from '$lib/frameleaf/credentials';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -240,9 +242,17 @@
   const TESTED = ['host', 'port', 'username', 'secure', 'ignoreCert'] as const;
   /** The server can only test what is saved (see above). A signed-in account has nothing to save first. */
   const unsaved = $derived(!oneClick && TESTED.some((key) => smtp.transport[key] !== saved.transport[key]));
+  /** The mail server is signed in to (an account name is set) and no password is stored yet. */
+  const needsPassword = $derived(
+    !oneClick &&
+      !!smtp.transport.username.trim() &&
+      !isCredentialConfigured(systemConfigManager.value, ConfigCredential.SmtpPassword),
+  );
 
   let sending = $state(false);
-  let result = $state<{ ok: true; at: Date } | { ok: false; reason: string; account: boolean } | null>(null);
+  let result = $state<{ ok: true; at: Date; saved: boolean } | { ok: false; reason: string; account: boolean } | null>(
+    null,
+  );
   const sendTest = async () => {
     if (sending) {
       return;
@@ -270,13 +280,16 @@
           replyTo: smtp.replyTo,
         },
       });
-      result = { ok: true, at: new Date() };
+      const at = new Date();
+      result = { ok: true, at, saved: false };
       // FL-66: a successful delivery test saves the email settings only, against the draft's
       // revision; every other pending change stays in the draft for review. A signed-in account
       // was saved by the server when it was connected.
       // Edits made while the test ran still need their own review and save.
       if (!disabled && !account && testedSettings === JSON.stringify(smtp)) {
-        await settingsDraft.saveKeys(['notifications']);
+        // FL-630: the draft notice no longer names the area, so the result says it was saved
+        const saved = await settingsDraft.saveKeys(['notifications']);
+        result = { ok: true, at, saved };
       }
     } catch (error) {
       result = {
@@ -559,7 +572,11 @@
       {/snippet}
       {#if unsaved || !smtp.enabled}
         <p class="hint">
-          {unsaved ? $t('frameleaf_notify_test_save_first') : $t('frameleaf_notify_test_turn_on_first')}
+          {unsaved
+            ? needsPassword
+              ? $t('frameleaf_notify_test_save_first')
+              : $t('frameleaf_notify_test_save_first_no_password')
+            : $t('frameleaf_notify_test_turn_on_first')}
         </p>
       {/if}
       {#if result}
@@ -574,6 +591,9 @@
               })}
             >
               {$t('frameleaf_notify_test_sent_body')}
+              {#if result.saved}
+                {$t('frameleaf_notify_test_saved')}
+              {/if}
             </Notice>
           {:else}
             <Notice tone="warn" title={$t('frameleaf_notify_test_failed')}>

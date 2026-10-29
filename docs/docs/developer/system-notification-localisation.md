@@ -59,7 +59,7 @@ future option from FC-111.
 | Critical translations                                            | **Pending FC-109 locale/tone decisions and FC-110 named native-speaker/source-version signoff.** Production catalogs currently contain English only; test pseudo-locales are fixtures and are never shipped as enabled languages.                                                                                           |
 | Independent privacy/contract review and hosted exact-head checks | Required on the exact integrated head; a local fixture pass is not this acceptance.                                                                                                                                                                                                                                         |
 
-The catalog currently registers 44 template forms: job failure; item share singular/plural; cluster
+The catalog currently registers 89 template forms (44 from FL-329, 45 from FL-406). FL-329 registered: job failure; item share singular/plural; cluster
 request; space mention/reply; in-app album invitation/update; channel-specific push album
 invitation/update/reply; album access removal with/without a known album name; reconciliation and
 memories singular/plural; partner library added/removed; album editor/owner/viewer role changes; Studio export
@@ -70,12 +70,20 @@ access blocked. The anonymous form
 does not invent a sender or render `undefined` as a person's name. English fixtures cover the
 registered forms' existing text alongside synthetic locale fixtures.
 
-Other current notices remain explicit legacy English: Cloud link/relink/revoke, hostname, clone,
-key recovery and backup-plan notices; Buddy execution errors; the Cloud-ML migration notice,
-administrator grants and edge notices. Custom notices,
-SMTP templates/subjects, captions and messages retain their existing delivery behavior. Completing
-translated coverage for these system producers requires explicit reviewed template registrations
-and approved locale catalogs; this bounded producer/contract packet does not claim that coverage.
+FL-406 registers 45 further forms for the remaining system producers: the Cloud-ML migration notice
+(rendered sentence by sentence: removed destinations none/one/many, stopped jobs and signed-out render
+workers one/many); administrator grants through Frameleaf Cloud; the daily description budget; Buddy
+execution errors (the error text stays verbatim); the relay-disconnected and certificate-renewal edge
+notices; the Cloud region-mismatch and clone notices; email sign-in needed; Cloud link, unlink, revoke,
+relink (key or command), hostname, key recovery and Cloud messages (the cloud's text stays verbatim); the
+backup-plan tier and plan-full notices; cloud backup failure, waiting key, check problems and failed
+check/clean-up/restore; and Studio render cancelled/progress. Producers that write notifications
+directly (Cloud-ML migration, administrator grants, edge notices) render through
+`localNotificationText` in `src/utils/preferences.ts` with the same account-locale authority as
+`notifyAdmins`. Service specs check that each producer's English matches the catalog exactly
+(`expectLocalisedSystemNotices` in `test/utils.ts`). User notices of the `custom` type (iCloud Photos
+Sync, Smooth motion), custom administrator notices, SMTP templates/subjects, captions and messages
+retain their existing delivery behavior. Production catalogs still contain English only.
 
 No deployment, translation
 publication, native distribution or language qualification follows from this packet.

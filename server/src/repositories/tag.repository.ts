@@ -31,7 +31,12 @@ import {
  * `hideLocked`: the session is not unlocked, so a tag carried only by locked items is left out
  * (owner decision, September 27, 2026; see `tagHasVisibleAssetOrNoAssets`).
  */
-export type TagSearchOptions = HiddenContentQueryOptions & { hideLocked?: boolean };
+export type TagSearchOptions = HiddenContentQueryOptions & {
+  hideLocked?: boolean;
+  /** FL-647: only tags whose value contains this text, ignoring case */
+  search?: string;
+  take?: number;
+};
 
 /** A tag's new leaf name, colour and parent (`null`: top level); omitted fields stay as they are. */
 export type TagUpdate = { name?: string; color?: string | null; parentId?: string | null };
@@ -107,7 +112,9 @@ export class TagRepository {
           hideLocked: options.hideLocked,
         }),
       )
+      .$if(!!options.search, (qb) => qb.where(sql<boolean>`strpos(lower("tag"."value"), lower(${options.search})) > 0`))
       .orderBy('value')
+      .$if(!!options.take, (qb) => qb.limit(options.take!))
       .execute();
   }
 
@@ -292,6 +299,17 @@ export class TagRepository {
       const merged: TagMergeResult['merged'] = [];
       const tagged = new Set<string>();
       const mergeInto = async (sourceId: string, intoId: string) => {
+        await tx
+          .insertInto('bookmark_tag')
+          .columns(['tagId', 'bookmarkId'])
+          .expression((eb) =>
+            eb
+              .selectFrom('bookmark_tag as carried')
+              .select([sql<string>`${intoId}::uuid`.as('tagId'), 'carried.bookmarkId'])
+              .where('carried.tagId', '=', sourceId),
+          )
+          .onConflict((oc) => oc.doNothing())
+          .execute();
         const gained = await tx
           .insertInto('tag_asset')
           .columns(['tagId', 'assetId'])

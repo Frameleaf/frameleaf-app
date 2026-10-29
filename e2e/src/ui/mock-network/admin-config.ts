@@ -263,7 +263,7 @@ export const adminConfigDefaults = {
   oauth: {
     autoLaunch: false,
     autoRegister: true,
-    buttonText: 'Login with OAuth',
+    buttonText: 'Sign in with your provider',
     clientId: '',
     clientSecret: '',
     defaultStorageQuota: null,
@@ -344,6 +344,20 @@ export const adminConfigDefaults = {
     syncQuotaUsage: true,
     missingThumbnails: true,
     clusterNewFaces: true,
+    stopTime: '06:00',
+    days: [0, 1, 2, 3, 4, 5, 6],
+    emptyTrash: true,
+    quietHours: true,
+    weeklyDay: 0,
+    steps: {
+      cleanup: 'nightly',
+      folders: 'nightly',
+      icloud: 'nightly',
+      fileChecks: 'nightly',
+    },
+  },
+  storageWarning: {
+    percent: 90,
   },
   trash: {
     enabled: true,

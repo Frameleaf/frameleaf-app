@@ -27,7 +27,10 @@ export type ClientBackupContext = {
   id: string;
 };
 
-export const clientBackupWritesEnabled = () => process.env.FRAMELEAF_BACKUP_CLIENT_ENCRYPTION === '1';
+export const clientBackupWritesEnabled = (target: 'managed' | 'byo-s3', hasClientKeys: boolean) =>
+  process.env.FRAMELEAF_BACKUP_CLIENT_ENCRYPTION === undefined
+    ? target === 'managed' && hasClientKeys
+    : process.env.FRAMELEAF_BACKUP_CLIENT_ENCRYPTION === '1';
 
 /** Unknown client namespaces are rejected, never retried as plaintext or SSE-C. */
 export const clientBackupContext = (

@@ -357,10 +357,12 @@ select
   "asset"."isExternal",
   "asset"."visibility",
   "asset"."libraryId",
+  "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
   "asset"."originalFileName",
   "asset"."originalPath",
+  "asset"."libraryPath",
   "asset"."physicalOriginalFileId",
   "asset"."ownerId",
   "asset"."type",
@@ -663,7 +665,8 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."id" = $2
+  "asset"."libraryScope" in ($2, $3)
+  and "asset"."id" = $4
 
 -- AssetJobRepository.getForOcr
 select
@@ -714,7 +717,8 @@ select
 from
   "asset"
 where
-  "asset"."type" in ('IMAGE', 'VIDEO')
+  "asset"."libraryScope" in ($1, $2)
+  and "asset"."type" in ('IMAGE', 'VIDEO')
   and "asset"."status" = 'active'
   and "asset"."deletedAt" is null
   and "asset"."visibility" in ('archive', 'timeline')
@@ -740,7 +744,7 @@ where
         "asset_best_photo_score"
       where
         "asset_best_photo_score"."assetId" = "asset"."id"
-        and "asset_best_photo_score"."scoreVersion" < $1
+        and "asset_best_photo_score"."scoreVersion" < $3
     )
   )
 
@@ -778,7 +782,8 @@ select
 from
   "asset"
 where
-  "asset"."id" = $1
+  "asset"."libraryScope" in ($1, $2)
+  and "asset"."id" = $3
 
 -- AssetJobRepository.getForSyncAssets
 select
@@ -1008,6 +1013,7 @@ select
   "asset"."type",
   "asset"."checksum",
   "asset"."originalPath",
+  "asset"."libraryPath",
   "asset"."physicalOriginalFileId",
   "asset"."isExternal",
   "asset"."visibility",
@@ -1053,6 +1059,7 @@ select
   "asset"."type",
   "asset"."checksum",
   "asset"."originalPath",
+  "asset"."libraryPath",
   "asset"."physicalOriginalFileId",
   "asset"."isExternal",
   "asset"."visibility",
@@ -1133,6 +1140,7 @@ where
       "assetId" = "asset"."id"
       and "asset_file"."type" = $2
   )
+  and "asset"."libraryScope" in ($3, $4)
 order by
   "asset"."fileCreatedAt" desc
 

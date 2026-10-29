@@ -29,10 +29,11 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen, cloudPlaceState } from '$lib/frameleaf/backup-overview';
   import { RETENTION_FIELDS, endpointHost, readBackupKeyFile } from '$lib/frameleaf/cloud-backup';
-  import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -53,14 +54,12 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
-    mdiCertificateOutline,
     mdiCheckCircleOutline,
     mdiClose,
     mdiCloudOutline,
     mdiCloudUploadOutline,
     mdiContentDuplicate,
     mdiKeyOutline,
-    mdiLinkVariant,
     mdiLockOutline,
     mdiPlayOutline,
     mdiRestore,
@@ -106,7 +105,11 @@
     if (!status?.activeRun && !status?.activeRestore) {
       return;
     }
-    const timer = setInterval(() => void load(), ACTIVE_POLL_MS);
+    const timer = setInterval(() => {
+      if (!document.hidden) {
+        void load();
+      }
+    }, ACTIVE_POLL_MS);
     return () => clearInterval(timer);
   });
 
@@ -325,20 +328,13 @@
 </script>
 
 {#snippet gate()}
-  {#if !linked}
-    <CloudBanner icon={mdiLinkVariant} title={$t('frameleaf_cloud_backup_gate_link_title')}>
-      {$t('frameleaf_cloud_backup_gate_link_body')}
+  {#if !linked || !entitled}
+    <CloudBanner icon={mdiCloudOutline} title={$t('frameleaf_gate_backup')}>
+      {$t('frameleaf_why_backup')}
       {#snippet action()}
-        <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-account')}
-          >{$t('frameleaf_cloud_backup_gate_link')}</a
+        <Button variant="primary" onclick={() => getCloudManager.open('backup', { onDone: () => (setupOpen = true) })}
+          >{$t('frameleaf_get_cloud')}</Button
         >
-      {/snippet}
-    </CloudBanner>
-  {:else if !entitled}
-    <CloudBanner icon={mdiCertificateOutline} title={$t('frameleaf_cloud_backup_gate_plan_title')}>
-      {$t('frameleaf_cloud_backup_gate_plan_body')}
-      {#snippet action()}
-        <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-plan')}>{$t('frameleaf_cloud_backup_gate_plan')}</a>
       {/snippet}
     </CloudBanner>
   {/if}

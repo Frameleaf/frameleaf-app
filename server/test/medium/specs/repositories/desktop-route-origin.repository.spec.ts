@@ -43,17 +43,17 @@ it('records fresh defaults and preserves a later explicit pin despite the same d
     revision,
   );
   expect(await routes.setDefaultRoute(MlWorkload.Clip, first.id)).toBe(false);
-  expect((await routes.getRoute(MlWorkload.Clip))?.destinationId).toBe(second.id);
+  expect((await routes.getStoredRoute(MlWorkload.Clip))?.destinationId).toBe(second.id);
 });
 
 it('an explicit unrouted choice survives bootstrap and can later be pinned again', async () => {
   const first = await destination();
   await routes.clearRoute(MlWorkload.Face);
-  expect(await routes.getRoute(MlWorkload.Face)).toBeUndefined();
+  expect(await routes.getStoredRoute(MlWorkload.Face)).toBeUndefined();
   expect(await origin(MlWorkload.Face)).toBe('pinned');
   expect(await routes.setDefaultRoute(MlWorkload.Face, first.id)).toBe(false);
   await routes.setRoute(MlWorkload.Face, first.id);
-  expect((await routes.getRoute(MlWorkload.Face))?.destinationId).toBe(first.id);
+  expect((await routes.getStoredRoute(MlWorkload.Face))?.destinationId).toBe(first.id);
   expect(await origin(MlWorkload.Face)).toBe('pinned');
 });
 
@@ -66,7 +66,7 @@ it('preserves legacy routes without guessing intent from their local kind or URL
     .execute();
   expect(await origin(MlWorkload.Ocr)).toBe('legacy');
   expect(await routes.setDefaultRoute(MlWorkload.Ocr, second.id)).toBe(false);
-  expect((await routes.getRoute(MlWorkload.Ocr))?.destinationId).toBe(first.id);
+  expect((await routes.getStoredRoute(MlWorkload.Ocr))?.destinationId).toBe(first.id);
 });
 
 it('two API instances cannot overwrite a concurrent explicit pin or unrouted choice with defaults', async () => {
@@ -77,10 +77,10 @@ it('two API instances cannot overwrite a concurrent explicit pin or unrouted cho
     routes.setDefaultRoute(MlWorkload.Enrichment, first.id),
     other.setRoute(MlWorkload.Enrichment, second.id),
   ]);
-  expect((await routes.getRoute(MlWorkload.Enrichment))?.destinationId).toBe(second.id);
+  expect((await routes.getStoredRoute(MlWorkload.Enrichment))?.destinationId).toBe(second.id);
   expect(await origin(MlWorkload.Enrichment)).toBe('pinned');
   await Promise.all([routes.clearRoute(MlWorkload.Enrichment), other.setDefaultRoute(MlWorkload.Enrichment, first.id)]);
-  expect(await routes.getRoute(MlWorkload.Enrichment)).toBeUndefined();
+  expect(await routes.getStoredRoute(MlWorkload.Enrichment)).toBeUndefined();
   expect(await origin(MlWorkload.Enrichment)).toBe('pinned');
 });
 

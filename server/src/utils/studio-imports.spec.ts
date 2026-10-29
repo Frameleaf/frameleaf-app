@@ -54,9 +54,22 @@ describe('sniffStudioImport (FL-103 / FL-105)', () => {
       'image/svg+xml',
       'vector',
     ],
+    [
+      'SVG with comments and a doctype',
+      text('<!-- a --> <!---->\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN">\n<svg>'),
+      undefined,
+      'image/svg+xml',
+      'vector',
+    ],
     ['Lottie', text('{"v":"5.7.4","layers":[]}'), undefined, 'application/json', 'vector'],
   ])('reads %s from its bytes', (_name, head, declared, contentType, kind) => {
     expect(sniffStudioImport(head, declared)).toMatchObject({ contentType, kind });
+  });
+
+  it('reads a head of repeated comments quickly', () => {
+    const started = performance.now();
+    expect(() => sniffStudioImport(text(`<!--${'--><!--'.repeat(150)}`), undefined)).toThrow(StudioImportRefusal);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 
   it('ignores the name and the declared type when the bytes say otherwise', () => {

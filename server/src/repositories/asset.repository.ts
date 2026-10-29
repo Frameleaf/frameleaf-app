@@ -36,6 +36,8 @@ import {
   AssetVisibility,
   CalendarHeatmapType,
   ImageEnrichmentFilter,
+  LibraryScope,
+  LibraryViewScope,
   TimeBucketDateType,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
@@ -87,6 +89,7 @@ import {
 } from 'src/utils/database.js';
 import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
 import { normalizeImportPath } from 'src/utils/library-paths.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
@@ -97,6 +100,7 @@ import {
   isTimelineVisible,
   lockReasonOf,
   lockedForReason,
+  visibilityIn,
   visibilityIs,
 } from 'src/utils/locked.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
@@ -222,6 +226,7 @@ export interface BoundingBox {
   north: number;
 }
 interface AssetStatsOptions extends HiddenContentQueryOptions {
+  libraryScope?: LibraryViewScope;
   isFavorite?: boolean;
   isTrashed?: boolean;
   visibility?: AssetVisibility;
@@ -239,6 +244,7 @@ interface LivePhotoSearchOptions {
   type: AssetType;
 }
 interface AssetBuilderOptions extends HiddenContentQueryOptions {
+  libraryScope?: LibraryViewScope;
   isFavorite?: boolean;
   isTrashed?: boolean;
   isDuplicate?: boolean;
@@ -906,6 +912,7 @@ export class AssetRepository {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
         .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
         .select([
@@ -976,6 +983,7 @@ export class AssetRepository {
       .with('candidate', (qb) =>
         qb
           .selectFrom('asset')
+          .where(libraryScopePredicate(LibraryScope.Personal))
           .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
           .select([
             'asset.id as id',
@@ -1040,6 +1048,7 @@ export class AssetRepository {
             (qb) =>
               qb
                 .selectFrom('asset')
+                .where(libraryScopePredicate(LibraryScope.Personal))
                 .select(['asset.id', 'asset.localDateTime'])
                 .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
                 .where(sql`(asset."localDateTime" at time zone 'UTC')::date`, '=', sql`today.date`)
@@ -1635,7 +1644,7 @@ export class AssetRepository {
     }
     const updateAndSelect = (db: Kysely<DB>) =>
       db
-        .with('asset', (qb) => qb.updateTable('asset').set(asset).where('id', '=', asUuid(asset.id)).returningAll())
+        .with('asset', (qb) => qb.updateTable('asset').set(value).where('id', '=', asUuid(asset.id)).returningAll())
         .selectFrom('asset')
         .selectAll('asset')
         .$call(withExif)
@@ -1666,6 +1675,15 @@ export class AssetRepository {
         if (group.some((asset) => asset.ownerId !== motion.ownerId)) throw new BadRequestException('Asset not found');
       }
       const created = await assets.create({ ...asset, id });
+      // The paired video follows its stills' workspace, as setLibraryScope keeps it.
+      const stills = await assets.db
+        .selectFrom('asset')
+        .select('libraryScope')
+        .where('livePhotoVideoId', '=', motionId)
+        .execute();
+      const scopes = new Set(stills.map((row) => row.libraryScope));
+      const scope = scopes.size > 1 || scopes.has(LibraryScope.Both) ? LibraryScope.Both : created.libraryScope;
+      if (scope !== motion.libraryScope) await assets.update({ id: motionId, libraryScope: scope });
       const hiddenId = motion.visibility === AssetVisibility.Timeline ? motion.id : undefined;
       if (hiddenId) await assets.update({ id: hiddenId, visibility: AssetVisibility.Hidden });
       const lockedIds = lock ? await assets.lock([id], lock.reason, lock.lockedBy) : [];
@@ -1703,6 +1721,35 @@ export class AssetRepository {
       }
       throw error;
     }
+  }
+
+  async setLibraryScope(ids: string[], ownerId: string, libraryScope: LibraryScope): Promise<string[]> {
+    const requested = [...new Set(ids)];
+    if (requested.length === 0) return [];
+    const initial = await this.getByIds(requested);
+    const motions = initial.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id);
+    return this.withLivePhotoGroup([...requested, ...motions], async (assets) => {
+      const rows = await assets.getByIds(requested);
+      if (rows.length !== requested.length || rows.some((row) => row.ownerId !== ownerId))
+        throw new BadRequestException('Asset not found');
+      await assets.updateAll(requested, { libraryScope });
+      const motionIds = [
+        ...new Set(rows.map(({ livePhotoVideoId }) => livePhotoVideoId).filter((id): id is string => !!id)),
+      ];
+      for (const id of motionIds) {
+        const motion = await assets.getById(id);
+        if (!motion || motion.ownerId !== ownerId) throw new BadRequestException('Live Photo video not found');
+        const stills = await assets.db
+          .selectFrom('asset')
+          .select('libraryScope')
+          .where('livePhotoVideoId', '=', id)
+          .execute();
+        const scopes = new Set(stills.map((row) => row.libraryScope));
+        const scope = scopes.size > 1 || scopes.has(LibraryScope.Both) ? LibraryScope.Both : stills[0].libraryScope;
+        await assets.update({ id, libraryScope: scope });
+      }
+      return [...new Set([...requested, ...motionIds])];
+    });
   }
 
   async withLivePhotoUpdate<T>(
@@ -2115,14 +2162,23 @@ export class AssetRepository {
   }
   private async deleteDevelopRevisions(id: string, db: Kysely<DB>): Promise<string[]> {
     const { rows } = await sql<{
+      ownerId: string;
+      batchChargedBytes: number;
       masterPath: string | null;
       previewPath: string | null;
       hdrMasterPath: string | null;
       hdrPreviewPath: string | null;
     }>`
       DELETE FROM public.asset_develop_revision WHERE "assetId" = ${id}::uuid
-      RETURNING "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath"
+      RETURNING "masterPath", "previewPath", "hdrMasterPath", "hdrPreviewPath","ownerId","batchChargedBytes"
     `.execute(db);
+    for (const row of rows)
+      if (Number(row.batchChargedBytes) > 0)
+        await db
+          .updateTable('user')
+          .set({ quotaUsageInBytes: sql`GREATEST("quotaUsageInBytes"-${row.batchChargedBytes},0)` })
+          .where('id', '=', row.ownerId)
+          .execute();
     return rows
       .flatMap((row) => [row.masterPath, row.previewPath, row.hdrMasterPath, row.hdrPreviewPath])
       .filter((path): path is string => !!path);
@@ -2179,7 +2235,7 @@ export class AssetRepository {
   getByChecksums(userId: string, checksums: Buffer[], options: AssetChecksumOptions = {}) {
     return this.db
       .selectFrom('asset')
-      .select(['id', 'checksum', 'deletedAt'])
+      .select(['id', 'checksum', 'deletedAt', 'status', 'originalPath', 'libraryId', 'isExternal'])
       .where('ownerId', '=', asUuid(userId))
       .where('checksum', 'in', checksums)
       .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
@@ -2204,6 +2260,16 @@ export class AssetRepository {
       .executeTakeFirst();
     return asset?.id;
   }
+  /** FL-365: the uploaded originals a re-file into the folder layout checks (not in an added folder, not deleted). */
+  async countUploadedOriginals(): Promise<number> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('libraryId', 'is', null)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
   findLivePhotoMatch(options: LivePhotoSearchOptions) {
     const { ownerId, otherAssetId, livePhotoCID, type } = options;
     return this.db
@@ -2217,11 +2283,33 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
   }
+  /**
+   * FL-541: how many of the owner's own photos and videos (timeline or archive, not in Trash) a draft
+   * of their Locked rules matches, as the Locked view matches them (`lockedRuleMatches`).
+   * ponytail: the owner's own media only; a "visible" scope also hides shared items, not counted here.
+   */
+  @GenerateSql({ params: [{ userId: DummyValue.UUID, tagIds: [], personIds: [DummyValue.UUID], petIds: [] }] })
+  async countLockedRuleMatches(
+    filter: Pick<HiddenContentFilter, 'userId' | 'tagIds' | 'personIds' | 'petIds'>,
+  ): Promise<{ photos: number; videos: number }> {
+    const rules: HiddenContentFilter = { ...filter, includeNsfw: false, scope: 'owned' };
+    const row = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<string>().filterWhere('type', '=', AssetType.Image).as('photos'))
+      .select((eb) => eb.fn.countAll<string>().filterWhere('type', '=', AssetType.Video).as('videos'))
+      .where('ownerId', '=', asUuid(filter.userId))
+      .where('deletedAt', 'is', null)
+      .where(visibilityIn([AssetVisibility.Timeline, AssetVisibility.Archive]))
+      .where(hiddenContentAssetIdExists(sql.ref('asset.id'), rules))
+      .executeTakeFirstOrThrow();
+    return { photos: Number(row.photos), videos: Number(row.videos) };
+  }
   getStatistics(ownerId: string, options: AssetStatsOptions): Promise<AssetStats> {
     const { visibility, isFavorite, isTrashed } = options;
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(options.libraryScope ?? LibraryScope.Personal))
         .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Audio).as(AssetType.Audio))
         .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Image).as(AssetType.Image))
         .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Video).as(AssetType.Video))
@@ -2264,6 +2352,7 @@ export class AssetRepository {
     return (
       this.db
         .selectFrom('asset')
+        .where(libraryScopePredicate(LibraryScope.Personal))
         .select(date.as('date'))
         .select((eb) => eb.fn.countAll<number>().as('count'))
         .where('ownerId', '=', asUuid(ownerId))
@@ -2286,6 +2375,11 @@ export class AssetRepository {
     return (
       this.db
         .selectFrom('asset')
+        .$if(!!options.libraryScope || !!options.filter?.libraryScope || !options.albumId, (qb) =>
+          qb.where(
+            libraryScopePredicate(options.libraryScope ?? options.filter?.libraryScope ?? LibraryScope.Personal),
+          ),
+        )
         .select(timeBucketDate.as('timeBucket'))
         .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
         .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
@@ -2541,6 +2635,11 @@ export class AssetRepository {
       .with('selection', (qb) =>
         qb
           .selectFrom('asset')
+          .$if(!!options.libraryScope || !!options.filter?.libraryScope || !options.albumId, (qb) =>
+            qb.where(
+              libraryScopePredicate(options.libraryScope ?? options.filter?.libraryScope ?? LibraryScope.Personal),
+            ),
+          )
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
           // LIB-P3: the viewer's own score only (one row per asset), so the order never ranks by another's
           .$if(page?.sort === 'quality', (qb) =>
@@ -2554,7 +2653,10 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             effectiveVisibility('asset').as('visibility'),
-            sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
+            // the viewer's own mark; a shared link's visitor never sees its owner's favorites
+            (auth.sharedLink ? sql`false` : sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`).as(
+              'isFavorite',
+            ),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
@@ -2792,6 +2894,7 @@ export class AssetRepository {
       .where('asset_exif.city', 'is not', null)
       .where('ownerId', '=', asUuid(ownerId))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -2810,6 +2913,7 @@ export class AssetRepository {
       .select(['id as data', 'createdAt as value'])
       .where('ownerId', '=', asUuid(ownerId))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+      .where(libraryScopePredicate(LibraryScope.Personal))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -3260,7 +3364,7 @@ export class AssetRepository {
   async getForMetadataExtractionTags(id: string) {
     return this.db
       .selectFrom('asset_exif')
-      .select(['asset_exif.tags', 'asset_exif.updateId'])
+      .select(['asset_exif.tags', 'asset_exif.updateId', 'asset_exif.timeZone'])
       .where('asset_exif.assetId', '=', id)
       .executeTakeFirst();
   }
@@ -3289,6 +3393,51 @@ export class AssetRepository {
       )
       .where('asset.id', '=', id)
       .executeTakeFirstOrThrow();
+  }
+  /**
+   * Writes each asset's current tag values to its EXIF row and locks them, as `getForUpdateTags` and an
+   * `upsertExif` with `lockedPropertiesBehavior: 'append'` do for one asset, in one statement per chunk
+   * instead of two round trips per asset. An asset that no longer exists is skipped.
+   */
+  @Chunked()
+  async updateTagsForAssets(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    const locked: LockableProperty[] = ['tags'];
+    // Two tag edits on the same items at once: the second waits here, then reads the first one's
+    // committed tags, so neither writes a tag list that misses the other's change. Ordered by id, so
+    // overlapping edits never deadlock; NO KEY UPDATE leaves other tables' references to the items alone.
+    await sql`SELECT id FROM asset WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR NO KEY UPDATE`.execute(this.db);
+    await this.db
+      .insertInto('asset_exif')
+      .columns(['assetId', 'tags', 'lockedProperties'])
+      .expression((eb) =>
+        eb
+          .selectFrom('asset')
+          .select((eb) => [
+            'asset.id',
+            eb.fn
+              .coalesce(
+                eb
+                  .selectFrom('tag_asset')
+                  .innerJoin('tag', 'tag.id', 'tag_asset.tagId')
+                  .select((eb) => eb.fn.agg<string[]>('array_agg', ['tag.value']).as('tags'))
+                  .whereRef('tag_asset.assetId', '=', 'asset.id'),
+                sql<string[]>`'{}'::character varying[]`,
+              )
+              .as('tags'),
+            sql<LockableProperty[]>`${locked}::character varying[]`.as('lockedProperties'),
+          ])
+          .where('asset.id', '=', anyUuid(ids)),
+      )
+      .onConflict((oc) =>
+        oc.column('assetId').doUpdateSet((eb) => ({
+          tags: eb.ref('excluded.tags'),
+          lockedProperties: distinctLocked(eb, locked),
+        })),
+      )
+      .execute();
   }
   @GenerateSql({ params: [] })
   async getDescriptionStats(): Promise<DescriptionStats> {

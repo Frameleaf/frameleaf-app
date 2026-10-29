@@ -110,6 +110,12 @@ export const RATE_LIMITS = Object.freeze({
     principal: 'credential',
     principalLimit: 60,
   },
+  /** FL-655: Save to Frameleaf's sign-in, `browser-extension/sign-in/*` (start, authorize, exchange). */
+  extensionSignIn: {
+    bucket: 'extension-sign-in',
+    limit: 30,
+    windowSeconds: 10 * MINUTE,
+  },
   /** `POST shared-links/login`. */
   sharedLinkLogin: {
     bucket: 'shared-link-login',

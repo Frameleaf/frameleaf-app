@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-  "node": "26.11.1",
+  "node": "22.23.4",
   "npm": "12.2.0",
-  "lockfileSha256": "68562af46bc9b127c50012bc165cdf2380aeefc7200b0b30c5bbfd1a513c8ac1",
+  "lockfileSha256": "e9dfcda92f7df43421ec8a1e2c4f65b8b2d8d0be413adef2ad328d3702759ea1",
   "patches": [
     {
       "path": "patches/0001-isolated-package.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "eb23cb96777b44a5b37cf099babec9bcdff31fb002010713f07fe8d739fa73b9"
+      "sha256": "3c5a0cb372549e387ae57b98ac5f92f4210481cd7fd96eb9a60e39fba655db86"
     },
     {
       "path": "patches/0002-stable-worker-sourcemaps.patch",
@@ -672,7 +672,7 @@
     },
     {
       "path": "patches/0139-latest-studio-dependencies.patch",
-      "sha256": "61a0d02f54b7510cda14860e5f59ab8124c80f28722ba2f0ce0895ce78c131dd",
+      "sha256": "2764b26660683aef8f0330d82b681aeb1fe11bc527e7f902e5b3789130616e8a",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     },
     {
@@ -704,7 +704,82 @@
       "path": "patches/0143-headless-trackless-audio-validation.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "6dfc1b91a3f955b705d2aa441b20b199daf9e0fd6c8a971acfae0d0b865abd3a"
+    },
+    {
+      "path": "patches/0144-transcript-editing.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "73362d1a65af63134f396e20e89e5b9ab5133db7155ec449b8b3e92a53de897f"
+    },
+    {
+      "path": "patches/0145-speed-ramps-and-linked-freeze-frames.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e9cc60f8e795da201025e9ba35de8895853d48d796edc68f6f00e0967df86c5e"
+    },
+    {
+      "path": "patches/0145-dialogue-loudness-match-and-export-report.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8b347a4145cfffadecf7ed4fe08d0a00ba0ac216b83d374f3c97537197cf4e1c"
+    },
+    {
+      "path": "patches/0150-master-true-peak-limiter.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7489e68d8e55ac725045010f596540edf2823bc329958ef78f08cb2d16c4da89"
+    },
+    {
+      "path": "patches/0147-colour-match-between-shots.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ae96b82653b8ee73bcd37f70f6391b1de186d46d91b279a0e9f9ba608b2d8b60"
+    },
+    {
+      "path": "patches/0151-graded-hdr-colour-match.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "afb0f36913fe0e4ee64d7e26fabb8a46efeacad62e6365568133f36b31fb0ada"
+    },
+    {
+      "path": "patches/0148-motion-tracking.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "82a3a26004fc6755984a280cdd07258f5046d3e18d747a68cbd576cd07114bfd"
+    },
+    {
+      "path": "patches/0152-tracking-box-and-provenance.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "df3a49b76f1c245b2c35472e9f425e1e9d1fabce9436841f1f157d76e4aa2f21"
+    },
+    {
+      "path": "patches/0149-multicam-editing.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0602afffef54cda4296f15ca192db2a5ae308ff5c426becf3abc6963651f1247"
+    },
+    {
+      "path": "patches/0153-multicam-viewer-master-audio-drift.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e95e06fb8f85485b43b08cdf5fdd953b4a70f310fdeebfdab418954af5ca3eae"
+    },
+    {
+      "path": "patches/0168-word-by-word-captions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c1728386c5702a182af284678aa74ff3330583dc2779959540ae2b299ec99722"
+    },
+    {
+      "path": "patches/0164-stabilise-shaky-clips.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "75a01bae7be8e0dcf4bb849b107dba50781d9812f6531bc465568a320bdb65d2"
+    },
+    {
+      "path": "patches/0170-caption-languages.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ddf70ec8b8038d204aeb9da5f5c77a0fa71f9866df924b3df1f6fc107eee629c"
+    },
+    {
+      "path": "patches/0160-library-view-in-media-bin.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "120d336ee47621b17a8266c380e1de04a6419377cf597e107c0bed06b023e5b7"
+    },
+    {
+      "path": "patches/0162-voice-cleanup.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b3ddc71c841bbf1601db70d2f220e16131f321c51e68568cec97ce7278a2f29e"
     }
   ],
-  "sourceSha256": "dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a"
+  "sourceSha256": "4e403256d5f1722d890776b9d374d9b6e8f28aad82c02deef110b5fe1d45a9ad"
 }

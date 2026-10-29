@@ -44,6 +44,56 @@ describe('LibrarySessionStore', () => {
     store = new LibrarySessionStore({ userId: 'user-1', pageSize: 10, storage, transientStorage: storage });
   });
 
+  it('starts a fresh designer workspace uncropped without replacing the photography start layout', () => {
+    libraryStartLayout.set('browse');
+    const design = new LibrarySessionStore({
+      userId: 'user-1',
+      workspace: 'design',
+      storage,
+      transientStorage: storage,
+    });
+    design.restore(undefined, 'user-1', '/pro');
+    expect(design.layout).toBe('timeline');
+    store.restore(undefined, 'user-1', '/photos');
+    expect(store.layout).toBe('browse');
+    design.setLayout('work');
+    design.persist();
+    design.restore(undefined, 'user-1', '/pro');
+    expect(design.layout).toBe('work');
+    libraryStartLayout.set(null);
+  });
+
+  it('keeps Pro query, layout and tab selection out of the personal workspace', () => {
+    store.restore(undefined, 'user-1', '/library');
+    store.setLayout('timeline');
+    store.select('personal');
+    store.persist();
+    const design = new LibrarySessionStore({
+      userId: 'user-1',
+      workspace: 'design',
+      storage,
+      transientStorage: storage,
+    });
+    design.restore(undefined, 'user-1', '/pro');
+    design.setLayout('work');
+    design.select('bookmark:reference');
+    design.persist();
+    const personal = new LibrarySessionStore({ userId: 'user-1', storage, transientStorage: storage });
+    personal.restore(undefined, 'user-1', '/library');
+    expect(personal.layout).toBe('timeline');
+    expect(personal.selection).toEqual(['personal']);
+    const reopened = new LibrarySessionStore({
+      userId: 'user-1',
+      workspace: 'design',
+      storage,
+      transientStorage: storage,
+    });
+    reopened.restore(undefined, 'user-1', '/pro');
+    expect(reopened.layout).toBe('work');
+    expect(reopened.selection).toEqual(['bookmark:reference']);
+    reopened.restore(undefined, 'other-user', '/pro');
+    expect(reopened.selection).toEqual([]);
+  });
   it('starts on Browse with nothing selected', () => {
     expect(store.layout).toBe('browse');
     expect(store.selection).toEqual([]);
@@ -569,6 +619,22 @@ describe('LibrarySessionStore', () => {
 
     store.restore(new URL('https://example.test/photos'), 'user-1');
     expect(store.refusedView).toBeNull();
+  });
+
+  it("keeps a refused link through the page's own scope normalization (FL-48)", () => {
+    // the device's last view was an album's, so the page moves the restored scope to the library
+    store.setScope({ kind: 'album', id: 'album-1' });
+    expect(store.persist('user-1')).toBe(true);
+    const back = new LibrarySessionStore({ userId: 'user-1', storage, transientStorage: storage });
+    const newer = new URL('https://example.test/photos');
+    newer.searchParams.set('fl', JSON.stringify({ ...viewState(), version: 2, somethingNew: true }));
+    back.restore(newer, 'user-1');
+    expect(back.state.scope).toEqual({ kind: 'album', id: 'album-1' });
+    back.normalizeScope({ kind: 'library' });
+    expect(back.state.scope).toEqual({ kind: 'library' });
+    expect(back.viewUrl(newer).href).toBe(newer.href);
+    back.patchView({ sort: 'filename' });
+    expect(back.viewUrl(newer).searchParams.get('fl')).toContain('filename');
   });
 
   it('keeps every part of the query through the URL, including its search context (FL-48)', () => {

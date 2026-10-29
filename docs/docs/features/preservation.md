@@ -1,8 +1,12 @@
 # Preservation packages
 
-A **preservation package** is an independent copy of your original files together with what your library knows about them: dates, places, your descriptions, ratings, favourites, archive, Locked records, albums and collections, tags, named people, edit recipes, Live Photo and stack links, document corrections and moment notes. Every file in it is checked when it is written and can be checked again at any time. A package can be restored into your library, on this server or another one.
+A **preservation package** is an independent copy of your original files together with what your library knows about them: dates, places, your descriptions, ratings, favourites, archive, Locked records, workspace membership, capture attribution, albums and collections, tags, named people, edit recipes, Live Photo and stack links, document corrections and moment notes. Every file in it is checked when it is written and can be checked again at any time. A package can be restored into your library, on this server or another one. New exports use format version 2; version 1 packages remain readable. Version 1 has no workspace or capture-attribution records, so newly restored originals from those packages enter Personal.
 
 Find it under **Settings → Import & protection → Originals & preservation**.
+
+Metadata in a media export also carries matching owned saved links: their notes, ratings, workspaces, album and tag memberships, and preview references to included originals. Selecting individual originals exports those originals. A repeated restore reuses the links it restored before; resuming a stopped restore preserves edits to links already completed.
+
+Packages can contain saved links without any originals. The package list counts originals and saved links separately. Link counts are withheld when the package includes Locked links or its selected links have since become private to the current session.
 
 A package is not a backup of the server. It does not contain accounts, sharing, shared spaces, server settings, pets, memories or Studio projects (Studio projects travel as project bundles). Keep your database backups and a separate copy of your originals as well.
 
@@ -43,7 +47,7 @@ The rules a restore keeps:
 - **Nothing is removed.** A favourite or a Locked record in the package is added; a restore never clears a favourite or unlocks anything. Items that were Locked are restored Locked, with the reason they were locked.
 - **Your choices are kept.** They apply to items not yet restored. A restore that stops — paused, cancelled, interrupted — carries on from the items it had not finished, and never touches an item it already restored, so anything you changed on it since stays as you left it.
 - **Nothing is created twice.** Albums, collections and people the package names are found again on a repeated restore of the same package: the original album when it is still yours, one an earlier restore created, or your only album with the same name in the same place. New ones are created only when none of those exists.
-- Collections stay at the top level and albums nest in a collection one level deep.
+- Albums and collections retain their nested parents, up to 32 levels deep. An invalid or overdeep package hierarchy is refused before albums are created. If a parent cannot be restored, its children are reported as missing rather than silently moved to the top level.
 
 **Download reconciliation report** saves every item of a restoration and what happened to it.
 
@@ -56,9 +60,17 @@ The rules a restore keeps:
 | Generated descriptions, generated moment captions, model and enrichment details, camera details                                                                                               | Kept as provenance only                         |
 | Sharing and shared spaces, pets, memories, Studio projects                                                                                                                                    | Not included                                    |
 
+Workspace membership is set before a new original is published. For an original already in your library, its existing workspace stays unless you choose to replace library values. Capture attribution is added without overwriting an existing source record; browser credentials, query strings and URL fragments are omitted when a package is written.
+
 **Generated metadata is never restored as yours.** A description a model generated is recorded with the restored item as provenance, not written as your description; the same goes for generated moment captions. Camera details come back from the original file itself when it is read.
 
 Edited versions are rendered again from their recipes after the originals have been read. Unnamed faces are detected again; named people come back on their faces.
+
+## Ordinary ZIP downloads
+
+An ordinary original-file ZIP can optionally include a `frameleaf-library.json` inventory of owned album and tag memberships, bookmarks and library scopes. Capture attribution is included only when explicitly selected; its URLs omit browser credentials, query strings and fragments. Shared-link downloads cannot include this private inventory. Original file bytes are unchanged.
+
+The inventory is not a preservation package or a server backup, and cannot be submitted to preservation restore. Keep a preservation package and your database/files backups for restoration. An inventory that exceeds its format limits is refused rather than silently truncated.
 
 ## The package format
 
@@ -67,6 +79,7 @@ Edited versions are rendered again from their recipes after the originals have b
 | `manifest.json`                           | Format and version, package id and name, what was selected, counts, completeness, restoration support, and a SHA-256 for every index document |
 | `assets.jsonl`                            | One line per original: its paths, byte count, SHA-1 and SHA-256, and the digest of its sidecar                                                |
 | `albums.json`, `people.json`, `tags.json` | The albums and collections, named people and tags the originals belong to                                                                     |
+| `bookmarks.json` (version 2)              | Saved links, their private metadata, logical memberships and included-original preview references                                             |
 | `originals/<id>.<ext>`                    | The original bytes                                                                                                                            |
 | `metadata/<id>.json`                      | One sidecar per original                                                                                                                      |
 

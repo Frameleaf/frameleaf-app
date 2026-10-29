@@ -20,6 +20,7 @@ import {
   MediaOperationBulkAction,
   MediaOperationDestination,
   MediaOperationKind,
+  MediaOperationKindSchema,
   MediaOperationStatus,
   Permission,
   RenderWorkerRefusalReason,
@@ -72,12 +73,14 @@ import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   ACTIVE_MEDIA_OPERATION_STATUSES,
   PAUSABLE_MEDIA_OPERATION_KINDS,
+  PUBLIC_MEDIA_OPERATION_KINDS,
   canDismissMediaOperation,
   canPauseMediaOperation,
   canResumeMediaOperation,
   canRetryMediaOperation,
   isActiveMediaOperation,
   isPausableMediaOperationKind,
+  isPublicMediaOperationKind,
 } from 'src/utils/media-operation.js';
 import { PreservationPackageError, isPreservationKind, parsePreservationSnapshot } from 'src/utils/preservation.js';
 
@@ -262,12 +265,35 @@ const admissionRefusalOf = (
   };
 };
 
+/**
+ * FL-637/FL-638: Studio clip jobs that share the `studio_transcription` kind, by snapshot kind, so
+ * Activity names them (a new kind would change a response enum the native apps decode strictly).
+ */
+const STUDIO_WORK_BY_SNAPSHOT_KIND: Readonly<Record<string, string>> = {
+  'studio-stabilise': 'stabilise',
+  'studio-voice-cleanup': 'voice-cleanup',
+};
+
+export const studioWorkOf = (operation: MediaOperation): string | null => {
+  if (operation.kind !== MediaOperationKind.StudioTranscription) {
+    return null;
+  }
+  const kind = (operation.snapshot as { kind?: unknown } | null)?.kind;
+  return typeof kind === 'string' && Object.hasOwn(STUDIO_WORK_BY_SNAPSHOT_KIND, kind)
+    ? STUDIO_WORK_BY_SNAPSHOT_KIND[kind]
+    : null;
+};
+
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): MediaOperationDto => {
+  // A shared presenter must never turn an internal job into an unsupported legacy enum value.
+  if (!isPublicMediaOperationKind(operation.kind)) {
+    throw new NotFoundException('Media operation not found');
+  }
   const privateWeekly = isPrivateICloudOperation(operation);
   return {
     id: operation.id,
-    kind: operation.kind as MediaOperationKind,
+    kind: operation.kind,
     status: operation.status as MediaOperationStatus,
     destination: operation.destination as MediaOperationDestination,
     destinationDetail: privateWeekly ? null : operation.destinationDetail,
@@ -282,6 +308,7 @@ export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<stri
     estimate: privateWeekly ? null : mapEstimate(operation.estimate),
     bulk: privateWeekly ? null : mapBulkSummary(operation),
     cloudJob: privateWeekly ? null : cloudMlJobActivity(operation),
+    studioWork: studioWorkOf(operation),
     progress: privateWeekly ? 0 : operation.progress,
     processedUnits: privateWeekly ? '0' : String(operation.processedUnits ?? 0),
     totalUnits:
@@ -348,6 +375,7 @@ export class MediaOperationService {
   async search(auth: AuthDto, dto: MediaOperationSearchDto): Promise<MediaOperationListResponseDto> {
     const { items, total } = await this.repository.list({
       ownerId: auth.user.id,
+      publicOnly: true,
       kind: dto.kind,
       statuses: dto.status ? [dto.status] : undefined,
       includeDismissed: dto.includeDismissed ?? false,
@@ -369,6 +397,7 @@ export class MediaOperationService {
   async listUnfinished(auth: AuthDto, take: number): Promise<MediaOperationDto[]> {
     const { items } = await this.repository.list({
       ownerId: auth.user.id,
+      publicOnly: true,
       statuses: ACTIVE_MEDIA_OPERATION_STATUSES,
       includeDismissed: false,
       take,
@@ -638,10 +667,10 @@ export class MediaOperationService {
       throw new BadRequestException('Start the scan or search again from Library Care');
     }
 
-    // FL-73: a deduplication plan is applied only after a fresh review, the typed confirmation and
-    // the one-plan-at-a-time check; copying the old row would skip all of them.
+    // FL-413: reviewed per-account deduplication plans are retired; identical files are merged
+    // automatically by the identical-files run ("Check again" in Library care).
     if (operation.kind === MediaOperationKind.PhysicalDeduplication) {
-      throw new BadRequestException('Apply a new reviewed plan from the Physical deduplication page');
+      throw new BadRequestException('Identical files are merged automatically; use Check again in Library care');
     }
 
     // FL-78: a library scan reads the library's folders afresh and admits one scan per library; it is
@@ -781,12 +810,12 @@ export class MediaOperationService {
    */
   async getStatistics(): Promise<MediaOperationStatisticsDto> {
     const [rows, unreleased] = await Promise.all([
-      this.repository.getAggregates(),
-      this.repository.getUnreleasedRemoteOperations(1000),
+      this.repository.getAggregates({ publicOnly: true }),
+      this.repository.getUnreleasedRemoteOperations(1000, PUBLIC_MEDIA_OPERATION_KINDS),
     ]);
 
-    const buckets = rows.map((row) => ({
-      kind: row.kind,
+    const buckets = rows.map((row): MediaOperationStatisticsDto['buckets'][number] => ({
+      kind: MediaOperationKindSchema.parse(row.kind),
       status: row.status,
       destination: row.destination as MediaOperationDestination,
       count: row.count,
@@ -1237,7 +1266,7 @@ export class MediaOperationService {
 
   private async findOwned(auth: AuthDto, id: string): Promise<MediaOperation> {
     const operation = await this.repository.getForOwner(id, auth.user.id);
-    if (!operation) {
+    if (!operation || !isPublicMediaOperationKind(operation.kind)) {
       // Somebody else's job and a job that never existed give the same answer on purpose.
       throw new NotFoundException('Media operation not found');
     }

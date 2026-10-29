@@ -12,8 +12,8 @@ import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { WorkflowRepository, WorkflowRunLog } from 'src/repositories/workflow.repository.js';
-import type { JobOf } from 'src/types.js';
-import { DummyValue, OnEvent, OnJob } from 'src/decorators.js';
+import type { JobItem, JobOf } from 'src/types.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import { AlbumsAddAssetsDto, CreateAlbumDto, GetAlbumsDto } from 'src/dtos/album.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { PluginManifestDto } from 'src/dtos/plugin-manifest.dto.js';
@@ -34,7 +34,10 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { TagService } from 'src/services/tag.service.js';
+import { WorkflowService } from 'src/services/workflow.service.js';
+import { inheritWorkflowCausation, workflowCausation, workflowOwnership } from 'src/utils/workflow-context.js';
 import { definitionFromSteps, redactRunError, workflowIssues } from 'src/utils/workflow-definition.js';
+import { nextWorkflowOccurrence, resolveWorkflowSource, workflowDefinitionHash } from 'src/utils/workflow-source.js';
 
 const dummy = () => {
   throw new Error(
@@ -73,6 +76,7 @@ const definitionSha256 = (definition: ReturnType<typeof definitionFromSteps>) =>
 
 type HostContext = {
   allowedHosts: string[];
+  causation?: string[];
 };
 
 /** FL-179: how long a queued run's completed steps are kept for a replay of its job. */
@@ -90,6 +94,155 @@ export const getAutomaticRetryExecutionId = (executionId: string): string => {
 
 export class WorkflowExecutionService extends BaseService {
   private jwtSecret!: string;
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
+  onWorkflowScheduleBootstrap() {
+    this.cronRepository.create({
+      name: 'workflowSchedules',
+      expression: '* * * * *',
+      onTick: () => {
+        void this.runWorkflowPass().catch((error) => this.logger.error('Workflow scheduler failed', error));
+      },
+    });
+  }
+
+  async runWorkflowPass() {
+    await this.workflowRepository.withRuntimeLock(async (assertOwned) => {
+      const service = BaseService.create(WorkflowService, this);
+      const { timezone } = await service.capabilities();
+      const at = new Date();
+      const workflows = await this.workflowRepository.search({ enabled: true });
+      for (const workflow of workflows) {
+        const definition = workflow.definition;
+        if (!definition?.schedule) continue;
+        try {
+          await assertOwned();
+          const hash = workflowDefinitionHash(definition.schedule);
+          await this.workflowRepository.syncSchedule(
+            workflow.id,
+            `${hash}:${timezone}`,
+            nextWorkflowOccurrence(definition.schedule, workflow.updatedAt, timezone),
+          );
+          const occurrence = await this.workflowRepository.getSchedule(workflow.id);
+          if (!occurrence || occurrence.nextAt > at) continue;
+          await service.runBatch({ user: { id: workflow.ownerId } } as AuthDto, workflow.id, 'schedule');
+          // Coalesce missed ticks into this occurrence; never queue overlapping batches.
+          await this.workflowRepository.advanceSchedule(
+            workflow.id,
+            occurrence.nextAt,
+            nextWorkflowOccurrence(definition.schedule, at, timezone),
+          );
+        } catch (error) {
+          this.logger.warn(`Workflow ${workflow.id} schedule deferred: ${error}`);
+        }
+      }
+      for (let batch of await this.workflowRepository.pendingBatches()) {
+        let item: Awaited<ReturnType<WorkflowRepository['nextBatchItem']>>;
+        while ((item = await this.workflowRepository.nextBatchItem(batch.id))) {
+          await assertOwned();
+          batch = (await this.workflowRepository.getBatches(batch.workflowId, batch.id))[0]!;
+          let status: 'completed' | 'skipped' | 'failed' = 'completed';
+          try {
+            const current = await this.workflowRepository.getForWorkflowRun(batch.workflowId);
+            if (!current || workflowDefinitionHash(definitionOf(current)) !== batch.definitionSha256) {
+              await this.workflowRepository.cancelBatches(batch.workflowId, batch.id);
+              break;
+            }
+            const source = resolveWorkflowSource(batch.source, batch.snapshotAt);
+            if (!(await this.workflowRepository.matchesSource(batch.ownerId, item.assetId, source, batch.embedding)))
+              status = 'skipped';
+            else {
+              const currentItem = item;
+              const result = await workflowOwnership.run(assertOwned, () =>
+                this.handleAssetTrigger({
+                  workflowId: batch.workflowId,
+                  assetId: currentItem.assetId,
+                  runId: currentItem.id,
+                  executionId: currentItem.attempt ? getAutomaticRetryExecutionId(currentItem.id) : currentItem.id,
+                  attempt: currentItem.attempt,
+                  fromStepId: currentItem.fromStepId ?? undefined,
+                  batchId: batch.id,
+                  definitionSha256: batch.definitionSha256,
+                  source,
+                  embedding: batch.embedding ?? undefined,
+                  embeddingKey: batch.embeddingKey ?? undefined,
+                }),
+              );
+              if (result === JobStatus.Failed) {
+                const next = await this.workflowRepository.nextBatchItem(batch.id);
+                if (next?.id === item.id && next.attempt > item.attempt) continue;
+                status = 'failed';
+              }
+              if (result === JobStatus.Skipped) status = 'skipped';
+            }
+          } catch (error) {
+            status = 'failed';
+            this.logger.warn(`Workflow batch ${batch.id} item failed: ${error}`);
+          }
+          await assertOwned();
+          await this.workflowRepository.finishBatchItem(batch.id, item.id, status);
+        }
+        await this.workflowRepository.finishBatch(batch.id);
+      }
+    });
+  }
+
+  @OnEvent({ name: 'AssetChanged' })
+  async onAssetChanged({ assetId, causation }: { assetId: string; causation?: string[] }) {
+    const userId = await this.workflowRepository.getAssetOwner(assetId);
+    if (!userId) return;
+    await workflowCausation.run(causation ?? inheritWorkflowCausation({}).causation ?? [], () =>
+      this.onAssetTrigger({ assetId, userId, trigger: WorkflowTrigger.AssetChanged }),
+    );
+  }
+
+  @OnEvent({ name: 'AssetUntag' })
+  onAssetUntagged({ assetId }: ArgOf<'AssetUntag'>) {
+    return this.onAssetChanged({ assetId });
+  }
+
+  @OnEvent({ name: 'PersonChanged' })
+  async onPersonChanged({ ownerId, personGroupId }: ArgOf<'PersonChanged'>) {
+    // The person's photos all belong to `ownerId`: their workflows are read once, and nothing is paged
+    // through when none of them runs on a change. Each page is queued together.
+    const workflows = await this.workflowRepository.search({
+      userId: ownerId,
+      trigger: WorkflowTrigger.AssetChanged,
+      enabled: true,
+    });
+    if (workflows.length === 0) return;
+    let after: string | undefined;
+    while (true) {
+      const ids = await this.personRepository.getAssetIdsForPeople(ownerId, [personGroupId], { after, limit: 500 });
+      await this.jobRepository.queueAll(ids.flatMap((assetId) => this.assetTriggerJobs(workflows, assetId)));
+      if (ids.length < 500) return;
+      after = ids.at(-1);
+    }
+  }
+
+  @OnEvent({ name: 'JobSuccess' })
+  async onWorkflowEnrichment({ job, response }: ArgOf<'JobSuccess'>) {
+    if (response === JobStatus.Skipped || response === JobStatus.Failed) return;
+    if (job.name === JobName.FacialRecognition) {
+      const assetId = await this.workflowRepository.getAssetIdForFace(job.data.id);
+      if (assetId) await this.onAssetChanged({ assetId, causation: (job.data as { causation?: string[] }).causation });
+      return;
+    }
+
+    if (
+      ![
+        JobName.SmartSearch,
+        JobName.SmartSearchPostprocess,
+        JobName.ImageEnrichmentPostprocess,
+        JobName.AssetDetectFaces,
+        JobName.PetRecognition,
+        JobName.Ocr,
+      ].includes(job.name as any)
+    )
+      return;
+    const data = job.data as { id?: string; causation?: string[] } | undefined;
+    if (data?.id) await this.onAssetChanged({ assetId: data.id, causation: data.causation });
+  }
+
   // FL-179: the missing step table is reported once per process
 
   @OnEvent({
@@ -261,7 +414,7 @@ export class WorkflowExecutionService extends BaseService {
 
         const context = plugin.hostContext<HostContext>();
         const authDto = this.validate(authToken);
-        const response = await fn(authDto, context, args);
+        const response = await workflowCausation.run(context.causation ?? [], () => fn(authDto, context, args));
 
         return plugin.store(JSON.stringify({ success: true, response }));
       } catch (error: any) {
@@ -416,23 +569,40 @@ export class WorkflowExecutionService extends BaseService {
 
     await this.onAssetTrigger({ userId, assetId, trigger: WorkflowTrigger.AssetCreate });
     await this.onAssetTrigger({ userId, assetId, trigger: WorkflowTrigger.AssetMetadataExtraction });
+    await this.onAssetChanged({ assetId });
   }
 
   @OnEvent({ name: 'AssetTag' })
-  onAssetTagged({ assetId, userId }: ArgOf<'AssetTag'>) {
-    return this.onAssetTrigger({ userId, assetId, trigger: WorkflowTrigger.AssetTagged });
+  async onAssetTagged({ assetId, userId }: ArgOf<'AssetTag'>) {
+    await this.onAssetTrigger({ userId, assetId, trigger: WorkflowTrigger.AssetTagged });
+    await this.onAssetTrigger({ userId, assetId, trigger: WorkflowTrigger.AssetChanged });
   }
 
   private async onAssetTrigger({ userId, assetId, trigger }: AssetTrigger) {
     // paused workflows get no job at all; one paused after this still skips at run time
     const items = await this.workflowRepository.search({ userId, trigger, enabled: true });
-    await this.jobRepository.queueAll(
-      items.map((workflow) => ({
+    await this.jobRepository.queueAll(this.assetTriggerJobs(items, assetId));
+  }
+
+  private assetTriggerJobs(workflows: Awaited<ReturnType<WorkflowRepository['search']>>, assetId: string): JobItem[] {
+    const inherited = inheritWorkflowCausation({}).causation;
+    const chain = inherited?.length ? inherited : [`chain:${crypto.randomUUID()}`];
+    return workflows
+      .filter((workflow) => !(inherited ?? []).includes(`${workflow.id}:${assetId}`))
+      .map((workflow) => ({
         name: JobName.WorkflowAssetTrigger,
         // FL-179: fixed when queued, so a replay of this job continues the same run and its completed steps
-        data: { workflowId: workflow.id, assetId, runId: crypto.randomUUID(), executionId: crypto.randomUUID() },
-      })),
-    );
+        data: {
+          workflowId: workflow.id,
+          assetId,
+          runId: crypto.randomUUID(),
+          executionId: crypto.randomUUID(),
+          causation: [...chain, `${workflow.id}:${assetId}`],
+          definitionSha256: workflowDefinitionHash(
+            workflow.definition ?? definitionFromSteps(workflow.trigger, workflow.steps ?? []),
+          ),
+        },
+      }));
   }
 
   /**
@@ -455,47 +625,51 @@ export class WorkflowExecutionService extends BaseService {
   @OnJob({ name: JobName.WorkflowAssetTrigger, queue: QueueName.Workflow })
   handleAssetTrigger(job: JobOf<JobName.WorkflowAssetTrigger>) {
     const { assetId } = job;
-    return this.execute(job, [assetId], (type) => {
-      const assetService = BaseService.create(AssetService, this);
+    return workflowCausation.run(
+      job.causation ?? [`chain:${job.runId ?? job.executionId ?? crypto.randomUUID()}`, `${job.workflowId}:${assetId}`],
+      () =>
+        this.execute(job, [assetId], (type) => {
+          const assetService = BaseService.create(AssetService, this);
 
-      switch (type) {
-        case WorkflowType.AssetV1: {
-          return {
-            read: async () => {
-              const asset = await this.workflowRepository.getForAssetV1(assetId);
-              // Kysely returns timestamp columns from `jsonObjectFrom` as ISO strings,
-              // but the SDK declares them as Date. The runtime contract is fine for
-              // plugin authors (Date constructors accept ISO strings); this cast just
-              // bridges the type mismatch in upstream's `AssetV1` declaration.
+          switch (type) {
+            case WorkflowType.AssetV1: {
               return {
-                data: { asset } as unknown as WorkflowEventData<typeof type>,
-                authUserId: asset.ownerId,
-                entityId: asset.id,
-              };
-            },
-            write: async (auth, changes) => {
-              const asset = changes.asset;
-              if (!asset) {
-                return;
-              }
+                read: async () => {
+                  const asset = await this.workflowRepository.getForAssetV1(assetId);
+                  // Kysely returns timestamp columns from `jsonObjectFrom` as ISO strings,
+                  // but the SDK declares them as Date. The runtime contract is fine for
+                  // plugin authors (Date constructors accept ISO strings); this cast just
+                  // bridges the type mismatch in upstream's `AssetV1` declaration.
+                  return {
+                    data: { asset } as unknown as WorkflowEventData<typeof type>,
+                    authUserId: asset.ownerId,
+                    entityId: asset.id,
+                  };
+                },
+                write: async (auth, changes) => {
+                  const asset = changes.asset;
+                  if (!asset) {
+                    return;
+                  }
 
-              await assetService.update(auth, assetId, {
-                isFavorite: asset.isFavorite,
-                visibility: asset.visibility,
-                dateTimeOriginal: asset.exifInfo?.dateTimeOriginal ?? undefined,
-                // TODO allow setting to null
-                longitude: asset.exifInfo?.longitude ?? undefined,
-                // TODO allow setting to null
-                latitude: asset.exifInfo?.latitude ?? undefined,
-                // TODO allow setting to null
-                description: asset.exifInfo?.description ?? undefined,
-                rating: asset.exifInfo?.rating,
-              });
-            },
-          } satisfies ExecuteOptions<typeof type>;
-        }
-      }
-    });
+                  await assetService.update(auth, assetId, {
+                    isFavorite: asset.isFavorite,
+                    visibility: asset.visibility,
+                    dateTimeOriginal: asset.exifInfo?.dateTimeOriginal ?? undefined,
+                    // TODO allow setting to null
+                    longitude: asset.exifInfo?.longitude ?? undefined,
+                    // TODO allow setting to null
+                    latitude: asset.exifInfo?.latitude ?? undefined,
+                    // TODO allow setting to null
+                    description: asset.exifInfo?.description ?? undefined,
+                    rating: asset.exifInfo?.rating,
+                  });
+                },
+              } satisfies ExecuteOptions<typeof type>;
+            }
+          }
+        }),
+    );
   }
 
   /**
@@ -601,6 +775,34 @@ export class WorkflowExecutionService extends BaseService {
       return;
     }
     known.logging = workflow.logging;
+    const chainId = job.causation?.find((entry) => entry.startsWith('chain:'))?.slice(6);
+    if (chainId && !(await this.workflowRepository.claimCausation(chainId, workflowId, assetId, job.runId)))
+      return JobStatus.Skipped;
+    if (
+      job.definitionSha256 &&
+      !job.fromStepId &&
+      job.definitionSha256 !== workflowDefinitionHash(definitionOf(workflow))
+    )
+      return JobStatus.Skipped;
+    if (job.batchId && !(await this.workflowRepository.isBatchActive(job.batchId))) return JobStatus.Skipped;
+    const condition = job.source ?? definitionOf(workflow).source;
+    let preparedSource:
+      | { source: import('src/utils/workflow-source.js').WorkflowSource; embedding?: string; embeddingKey?: string }
+      | undefined;
+    if (condition) {
+      const prepared = job.source
+        ? {
+            source: resolveWorkflowSource(job.source, new Date()),
+            embedding: job.embedding,
+            embeddingKey: job.embeddingKey,
+          }
+        : await BaseService.create(WorkflowService, this).prepareSource(condition, new Date(), workflow.ownerId);
+      preparedSource = prepared;
+      if (
+        !(await this.workflowRepository.matchesSource(workflow.ownerId, assetId, prepared.source, prepared.embedding))
+      )
+        return JobStatus.Skipped;
+    }
 
     const { machineLearning } = await this.getConfig({ withCache: true });
     // Match `onAssetMetadataExtracted` — either NSFW OR description can flag NSFW.
@@ -695,12 +897,40 @@ export class WorkflowExecutionService extends BaseService {
 
     const { read, write } = handler;
     const readResult = await read(type);
+    if (workflow.ownerId && readResult.authUserId !== workflow.ownerId) return JobStatus.Skipped;
     let data = readResult.data;
 
     let haltedStepId: string | undefined;
     // set when this is a replay that skipped a step an earlier run of the job completed
     let replayed = false;
+    const canContinue = async () => {
+      await workflowOwnership.getStore()?.();
+      const live = await this.workflowRepository.getForWorkflowRun(workflowId);
+      if (
+        !live ||
+        workflowDefinitionHash(definitionOf(live)) !== workflowDefinitionHash(expectedDefinition) ||
+        (job.batchId && !(await this.workflowRepository.isBatchActive(job.batchId)))
+      )
+        return false;
+      if (!(await this.workflowRepository.isWorkflowEligible(assetId, { requireEnrichment }))) return false;
+      if (preparedSource)
+        await BaseService.create(WorkflowService, this).validateSource(
+          preparedSource.source,
+          workflow.ownerId,
+          preparedSource.embeddingKey,
+        );
+      return !(
+        preparedSource &&
+        !(await this.workflowRepository.matchesSource(
+          workflow.ownerId,
+          assetId,
+          preparedSource.source,
+          preparedSource.embedding,
+        ))
+      );
+    };
     for (const [index, step] of steps.entries()) {
+      if (!(await canContinue())) return JobStatus.Skipped;
       const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
       const completed = completedSteps.get(step.id);
       if (completed) {
@@ -729,6 +959,7 @@ export class WorkflowExecutionService extends BaseService {
         };
         const context: HostContext = {
           allowedHosts: step.allowedHosts,
+          causation: workflowCausation.getStore(),
         };
 
         if (step.methodName.startsWith('noop')) {
@@ -745,15 +976,13 @@ export class WorkflowExecutionService extends BaseService {
         );
         halts = !(result?.workflow?.continue ?? true);
         if (result?.changes) {
+          if (!(await canContinue())) return JobStatus.Skipped;
           await write(
             {
               user: {
                 id: readResult.authUserId,
               },
-              session: {
-                id: DummyValue.UUID,
-                hasElevatedPermission: true,
-              },
+              hideNsfwAssets: true,
             } as AuthDto,
             result.changes,
           );
@@ -770,7 +999,12 @@ export class WorkflowExecutionService extends BaseService {
         }
 
         if (result?.config) {
-          await this.workflowRepository.updateStepConfig(workflowId, step.id, result.config);
+          if (job.batchId)
+            await this.workflowRepository.updateStepConfig(workflowId, step.id, result.config, {
+              batchId: job.batchId,
+              expectedHash: workflowDefinitionHash(expectedDefinition),
+            });
+          else await this.workflowRepository.updateStepConfig(workflowId, step.id, result.config);
           if (definitionStep) {
             definitionStep.config = structuredClone(result.config);
           }
@@ -808,19 +1042,23 @@ export class WorkflowExecutionService extends BaseService {
         }
         if (attempt === 0 && !job.manual && retryFromStepId) {
           try {
-            await this.jobRepository.queue({
-              name: JobName.WorkflowAssetTrigger,
-              data: {
-                workflowId,
-                assetId,
-                runId,
-                attempt: 1,
-                fromStepId: retryFromStepId,
-                definitionSha256: definitionSha256(expectedDefinition),
-                // FL-179: a replay of this run queues the same retry, not a second one
-                executionId: executionId ? getAutomaticRetryExecutionId(executionId) : crypto.randomUUID(),
-              },
-            });
+            if (job.batchId) await this.workflowRepository.retryBatchItem(job.batchId, runId, retryFromStepId);
+            else
+              await this.jobRepository.queue({
+                name: JobName.WorkflowAssetTrigger,
+                data: {
+                  workflowId,
+                  assetId,
+                  runId,
+                  causation: job.causation ?? workflowCausation.getStore(),
+                  ...preparedSource,
+                  attempt: 1,
+                  fromStepId: retryFromStepId,
+                  definitionSha256: definitionSha256(expectedDefinition),
+                  // FL-179: a replay of this run queues the same retry, not a second one
+                  executionId: executionId ? getAutomaticRetryExecutionId(executionId) : crypto.randomUUID(),
+                },
+              });
           } catch (queueError: any) {
             // Without its automatic retry the run stays failed; the owner can retry it from run history.
             this.logger.error(

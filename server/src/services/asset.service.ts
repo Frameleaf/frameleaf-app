@@ -13,6 +13,8 @@ import {
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
+  AssetInfoBatchDto,
+  AssetInfoBatchResponseDto,
   AssetJobName,
   AssetJobsDto,
   AssetMetadataBulkDeleteDto,
@@ -44,6 +46,7 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  LibraryScope,
   Permission,
   QueueName,
   StorageFolder,
@@ -67,6 +70,9 @@ import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
+
+/** FL-647: assets a bulk read loads at once, so one request cannot hold every database connection. */
+const ASSET_INFO_READ_CONCURRENCY = 8;
 
 const imageEditActions = new Set<AssetEditAction>([
   AssetEditAction.Crop,
@@ -150,6 +156,42 @@ export class AssetService extends BaseService {
   async get(auth: AuthDto, id: string): Promise<AssetResponseDto | SanitizedAssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
 
+    const data = await this.readAsset(auth, id);
+    if (!data) {
+      throw new BadRequestException('Asset not found');
+    }
+    return data;
+  }
+
+  /**
+   * FL-647: several assets in one request (Studio opening a large project). The same access check
+   * as `get`, once for the whole list, and each readable asset mapped exactly as `get` maps it.
+   * Unreadable or missing ids are left out rather than failing the list.
+   */
+  async getMany(auth: AuthDto, dto: AssetInfoBatchDto): Promise<AssetInfoBatchResponseDto> {
+    // ids compare as stored (lowercase): an uppercase spelling of a readable asset is still read, once
+    const ids = [...new Set(dto.ids.map((id) => id.toLowerCase()))];
+    const allowed = await this.checkAccess({ auth, permission: Permission.AssetRead, ids });
+    const readable = ids.filter((id) => allowed.has(id));
+    const assets: AssetResponseDto[] = [];
+    for (let at = 0; at < readable.length; at += ASSET_INFO_READ_CONCURRENCY) {
+      const batch = await Promise.all(
+        readable.slice(at, at + ASSET_INFO_READ_CONCURRENCY).map((id) => this.readAsset(auth, id)),
+      );
+      for (const asset of batch) {
+        if (asset) {
+          assets.push(asset as AssetResponseDto);
+        }
+      }
+    }
+    return { assets };
+  }
+
+  /** What `get` returns for an asset the caller may read, or undefined when it does not exist. */
+  private async readAsset(
+    auth: AuthDto,
+    id: string,
+  ): Promise<AssetResponseDto | SanitizedAssetResponseDto | undefined> {
     const asset = await this.assetRepository.getById(id, {
       exifInfo: true,
       owner: true,
@@ -158,10 +200,12 @@ export class AssetService extends BaseService {
       stack: { assets: true, ...getLockedVisibilityOptions(auth) },
       edits: true,
       tags: true,
+      // FL-630: the viewer offers "Play optimized" only when the video has a playback copy
+      files: true,
     });
 
     if (!asset) {
-      throw new BadRequestException('Asset not found');
+      return undefined;
     }
 
     if (auth.hideNsfwAssets && asset.livePhotoVideoId) {
@@ -205,8 +249,9 @@ export class AssetService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
+    const { libraryScope, ...editDto } = dto;
     const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
-      dto;
+      editDto;
     const locking = visibility === AssetVisibility.Locked;
     const originIds = locking
       ? await this.assetRepository.findLockGroupIds([id, ...(rest.livePhotoVideoId ? [rest.livePhotoVideoId] : [])])
@@ -215,7 +260,7 @@ export class AssetService extends BaseService {
     const result = await this.partnerOriginRepository.withOriginEdit('asset', originIds, [], async () => {
       let result: Awaited<ReturnType<AssetService['updateLivePhoto']>>;
       if (rest.livePhotoVideoId !== undefined) {
-        result = await this.updateLivePhoto(auth, id, { ...dto, livePhotoVideoId: rest.livePhotoVideoId });
+        result = await this.updateLivePhoto(auth, id, { ...editDto, livePhotoVideoId: rest.livePhotoVideoId });
       } else {
         const sidecarIds = await this.updateExif({
           id,
@@ -252,7 +297,10 @@ export class AssetService extends BaseService {
           [AssetOriginField.Visibility],
           auth.user.id,
         );
-      return { ...result, visibilityIds };
+      const scopeIds =
+        libraryScope === undefined ? [] : await this.assetRepository.setLibraryScope([id], auth.user.id, libraryScope);
+      if (libraryScope !== undefined) result.asset.libraryScope = libraryScope;
+      return { ...result, visibilityIds, scopeIds };
     });
     const { asset } = result;
     for (const id of result.sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
@@ -290,6 +338,9 @@ export class AssetService extends BaseService {
       const siblingIds = asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];
       await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
     }
+
+    if (libraryScope !== undefined) await this.afterLibraryScopeChange(result.scopeIds, auth.user.id);
+    await this.eventRepository.emit('AssetChanged', { assetId: id });
 
     // Locking needs no PIN, but a session without it can no longer read what it just locked (FL-34):
     // answer from the updated row instead of refusing a change that was made.
@@ -432,6 +483,7 @@ export class AssetService extends BaseService {
     const {
       ids,
       isFavorite,
+      libraryScope,
       visibility,
       dateTimeOriginal,
       latitude,
@@ -446,7 +498,7 @@ export class AssetService extends BaseService {
 
     const originIds = visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : ids;
     const admitted = new Set(originIds);
-    const { locationVideoIds, locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+    const { locationVideoIds, locked, visibilityIds, scopeIds } = await this.partnerOriginRepository.withOriginEdit(
       'asset',
       originIds,
       [],
@@ -522,7 +574,9 @@ export class AssetService extends BaseService {
             [AssetOriginField.Visibility],
             auth.user.id,
           );
-        return { locationVideoIds, locked, visibilityIds };
+        const scopeIds =
+          libraryScope === undefined ? [] : await this.assetRepository.setLibraryScope(ids, auth.user.id, libraryScope);
+        return { locationVideoIds, locked, visibilityIds, scopeIds };
       },
     );
     if (locked.length > 0) {
@@ -560,13 +614,29 @@ export class AssetService extends BaseService {
       await this.notifyAssetsUpdated([...ids, ...siblingIds], auth.user.id);
     }
 
+    if (libraryScope !== undefined) await this.afterLibraryScopeChange(scopeIds, auth.user.id);
+
     // Locking keeps album membership (owner decision, September 22, 2026): the asset stays in its albums
     // and every album read hides it from everyone but its owner's elevated session, so it is back in
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
-    await this.jobRepository.queueAll(
-      [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
-    );
+    for (const assetId of ids) await this.eventRepository.emit('AssetChanged', { assetId });
+    // A sidecar holds the description, capture date and time zone, location and rating only: a favorite,
+    // archive, lock or duplicate change leaves it as it is, so it queues no rewrite of every item's file.
+    const sidecarFields = [dateTimeOriginal, latitude, longitude, rating, description, dateTimeRelative, timeZone];
+    if (sidecarFields.some((value) => value !== undefined)) {
+      await this.jobRepository.queueAll(
+        [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
+      );
+    }
+  }
+
+  private async afterLibraryScopeChange(ids: string[], ownerId: string): Promise<void> {
+    await this.notifyAssetsUpdated(ids, ownerId);
+    for (const { id, libraryScope } of await this.assetRepository.getByIds(ids)) {
+      if (libraryScope === LibraryScope.Design) this.websocketRepository.clientSend('on_asset_delete', ownerId, id);
+      else await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnails, data: { id, notify: true } });
+    }
   }
 
   /** FL-51: the paired videos of these Live Photos that are not already among them. */
@@ -601,6 +671,18 @@ export class AssetService extends BaseService {
    * Push assets whose visibility a transactional archive changed outside `updateAll` (FL-32), with
    * their stack siblings, to the owner's open sessions, the same real-time update `updateAll` sends.
    */
+  /**
+   * A visibility change written outside `updateAll` (the transactional archive and its undo, FL-32):
+   * the same FL-326 bookkeeping — the visibility is the owner's on partner copies, copies that follow
+   * these items receive it — then the real-time update.
+   */
+  async recordVisibilityEdit(ids: string[], ownerId: string): Promise<void> {
+    await recordAssetEdit({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, ownerId, ids, [
+      AssetOriginField.Visibility,
+    ]);
+    await this.notifyVisibilityChanged(ids, ownerId);
+  }
+
   async notifyVisibilityChanged(ids: string[], ownerId: string): Promise<void> {
     const siblingIds = (await this.assetRepository.getStackSiblingIds(ids)) ?? [];
     await this.notifyAssetsUpdated([...new Set([...ids, ...siblingIds])], ownerId);
@@ -740,13 +822,27 @@ export class AssetService extends BaseService {
 
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
-    for (const { id, from } of items) {
-      const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
-      if (updated) {
-        await this.assetRepository.update({ id, ...getAssetDateTimeUpdates(updated.dateTimeOriginal?.toISOString()) });
+    const fields = [AssetOriginField.DateTimeOriginal];
+    await this.partnerOriginRepository.withOriginEdit('asset', ids, [], async () => {
+      for (const { id, from } of items) {
+        const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
+        if (updated) {
+          await this.assetRepository.update({
+            id,
+            ...getAssetDateTimeUpdates(updated.dateTimeOriginal?.toISOString()),
+          });
+        }
       }
-    }
+      await this.partnerOriginRepository.markOverridden('asset', ids, fields, auth.user.id);
+    });
 
+    // FL-326: as `updateAll` does, the shifted date is the owner's on partner copies, and copies follow it
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      ids,
+      fields,
+    );
     await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
   }
 
@@ -914,8 +1010,11 @@ export class AssetService extends BaseService {
 
     const asset = await this.assetJobRepository.getForAssetDeletion(id);
 
+    // Already removed, e.g. by its account's purge racing a library deletion: whoever removed it
+    // released its files, so there is nothing left to do or to retry.
     if (!asset) {
-      return JobStatus.Failed;
+      this.logger.debug(`Skipped deleting asset ${id}: it is already gone`);
+      return JobStatus.Skipped;
     }
 
     // FL-71: a failed deletion can be retried long after it was queued. Only an asset that is still in
@@ -1009,7 +1108,8 @@ export class AssetService extends BaseService {
         }),
     });
     if (!removedAsset) {
-      return JobStatus.Failed;
+      this.logger.debug(`Skipped deleting asset ${id}: it was removed meanwhile`);
+      return JobStatus.Skipped;
     }
 
     // FL-169: the row is gone from here on, so a retry could not repeat or repair any of the steps

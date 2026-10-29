@@ -1,6 +1,7 @@
 <script lang="ts">
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { flattenAlbumTargets, loadAlbumTargets } from '$lib/frameleaf/album-targets';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { uploadManager } from '$lib/managers/upload-manager.svelte';
@@ -8,7 +9,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { Icon } from '@frameleaf/ui';
   import { mdiFolderOutline, mdiImageMultipleOutline, mdiTrayArrowUp } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { LibraryScope, LibraryViewScope } from '@frameleaf/sdk';
+  import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -22,9 +24,11 @@
   let {
     defaultAlbumId,
     isLockedAssets = false,
+    libraryScope,
   }: {
     defaultAlbumId?: string;
     isLockedAssets?: boolean;
+    libraryScope?: LibraryScope;
   } = $props();
 
   type Target = { id: string; name: string };
@@ -34,32 +38,61 @@
   let target = $derived(defaultAlbumId ?? '');
   let open = $state(false);
 
-  onMount(async () => {
-    try {
-      // A collection groups albums and is not itself a place to add photos; only albums and shared
-      // spaces the person may add to are valid upload targets (the same list "Add to album" offers).
-      const directory = await loadAlbumTargets(authManager.user.id, $t('unnamed_album'));
-      targets = flattenAlbumTargets(directory)
-        .map(({ id, name }) => ({ id, name }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-    } catch (error) {
-      handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
-    }
+  let generation = 0;
+  let accessRevision = $state(0);
+  onDestroy(
+    onLibraryAccessChange(() => {
+      generation++;
+      targets = [];
+      target = '';
+      if (authManager.authenticated) {
+        accessRevision++;
+      }
+    }, authManager.user.id),
+  );
+  onDestroy(() => generation++);
+  $effect(() => {
+    const scope = libraryScope;
+    void accessRevision;
+    untrack(() => {
+      const version = ++generation;
+      const current = authManager.captureSession();
+      targets = [];
+      void loadAlbumTargets(
+        authManager.user.id,
+        $t('unnamed_album'),
+        scope === LibraryScope.Design ? LibraryViewScope.Design : undefined,
+      )
+        .then((directory) => {
+          if (current() && generation === version) {
+            targets = flattenAlbumTargets(directory)
+              .map(({ id, name }) => ({ id, name }))
+              .sort((a, b) => a.name.localeCompare(b.name));
+          }
+        })
+        .catch((error) => {
+          if (current() && generation === version) {
+            handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
+          }
+        });
+    });
   });
 
   const targetLabel = $derived(targets.find((entry) => entry.id === target)?.name);
 
   const pick = async (directory: boolean) => {
+    const current = authManager.captureSession();
+    const destination = { albumId: target || undefined, isLockedAssets, libraryScope };
     const extensions = uploadManager.getExtensions();
     const files = await openFilePicker({
       multiple: true,
       extensions: directory ? undefined : extensions,
       directory,
     });
-    if (files.length === 0) {
+    if (!current() || files.length === 0) {
       return;
     }
-    await fileUploadHandler({ files, albumId: target || undefined, isLockedAssets });
+    await fileUploadHandler({ files, ...destination });
   };
 </script>
 

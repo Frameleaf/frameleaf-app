@@ -4,7 +4,7 @@ import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js
 import type { JobItem } from 'src/types.js';
 import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetType, FrameleafWorker, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
+import { AssetType, FrameleafWorker, JobName, JobStatus, LibraryScope, ManualJobName, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobService } from 'src/services/job.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -27,20 +27,30 @@ describe(JobService.name, () => {
   });
 
   describe('create', () => {
-    it('never applies physical deduplication from a queue button; that needs a reviewed plan (FL-73)', async () => {
-      await expect(sut.create({ name: ManualJobName.PhysicalDeduplicationApply })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      expect(mocks.job.queue).not.toHaveBeenCalled();
-    });
+    it.each([ManualJobName.PhysicalDeduplicationDryRun, ManualJobName.PhysicalDeduplicationApply])(
+      'refuses the retired %s (FL-413)',
+      async (name) => {
+        await expect(sut.create({ name })).rejects.toBeInstanceOf(BadRequestException);
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
 
-    it('still queues a physical deduplication preview', async () => {
-      await sut.create({ name: ManualJobName.PhysicalDeduplicationDryRun });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PhysicalDeduplicationMigrationDryRun });
+    it('queues an identical-files check (FL-413)', async () => {
+      await sut.create({ name: ManualJobName.IdenticalFilesCheck });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.IdenticalFilesCheck });
     });
   });
 
   describe('onJobRun', () => {
+    it('does not follow designer semantic or face jobs with personal enrichment', async () => {
+      const asset = AssetFactory.create({ libraryScope: LibraryScope.Design });
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+      await sut.onJobRun(QueueName.SmartSearch, { name: JobName.SmartSearch, data: { id: asset.id } });
+      await sut.onJobRun(QueueName.FaceDetection, { name: JobName.AssetDetectFaces, data: { id: asset.id } });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.PetRecognition }));
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.BestPhotosScore }));
+    });
     it('should process a successful job', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Success);
 
@@ -188,13 +198,25 @@ describe(JobService.name, () => {
         stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video })],
       },
       {
+        item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
+        jobs: [JobName.SmartSearch, JobName.Ocr, JobName.ImageDescription],
+        stub: [AssetFactory.create({ id: 'asset-1', libraryScope: LibraryScope.Design })],
+      },
+      {
+        item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
+        jobs: [JobName.SmartSearch, JobName.Ocr, JobName.AssetEncodeVideo],
+        stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video, libraryScope: LibraryScope.Design })],
+      },
+      {
         // FL-58: a fresh CLIP embedding is read by pet recognition
         item: { name: JobName.SmartSearch, data: { id: 'asset-1' } },
         jobs: [JobName.PetRecognition],
+        stub: [AssetFactory.create({ id: 'asset-1' })],
       },
       {
         item: { name: JobName.AssetDetectFaces, data: { id: 'asset-1' } },
         jobs: [JobName.BestPhotosScore],
+        stub: [AssetFactory.create({ id: 'asset-1' })],
       },
       {
         item: { name: JobName.FacialRecognition, data: { id: 'asset-1' } },
@@ -477,6 +499,7 @@ describe(JobService.name, () => {
     });
 
     it('should requeue Best Photos scoring after face detection succeeds', async () => {
+      mocks.asset.getById.mockResolvedValue(getForAsset(AssetFactory.create({ id: 'asset-1' })));
       mocks.systemMetadata.get.mockResolvedValue({
         machineLearning: {
           enabled: true,

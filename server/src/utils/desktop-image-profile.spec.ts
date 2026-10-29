@@ -20,6 +20,8 @@ it.each(['ocr', 'face'] as const)('selects the released %s identity and revalida
   expect(currentVariants.map((profile) => profile.spec.provider)).toEqual([
     'CPUExecutionProvider',
     'CoreMLExecutionProvider',
+    'CUDAExecutionProvider',
+    'OpenVINOExecutionProvider',
   ]);
   expect(select().modelKey).toBe(current.modelKey);
   if (workload === 'ocr') {

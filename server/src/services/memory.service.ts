@@ -50,6 +50,7 @@ import {
   isSuppressedWhileLocked,
 } from 'src/utils/hidden-content.js';
 import {
+  EVENT_GAP_HOURS,
   MAX_LANDMARK_DAYS_PER_YEAR,
   birthdayAge,
   birthdayOn,
@@ -65,8 +66,11 @@ import { findOrFail } from 'src/utils/misc.js';
 
 const DAYS = 3;
 
-/** how far back a generation pass looks for events it has not grouped yet */
-const EVENT_STORY_LOOKBACK_DAYS = 45;
+/**
+ * how far back a generation pass looks for events it has not grouped yet; kept within the 30-day
+ * cleanup of unsaved memories, so a cleaned-up story's event has left the window and is not made again
+ */
+const EVENT_STORY_LOOKBACK_DAYS = 30;
 
 /** an event is only turned into a story once its last day is this far behind us */
 const EVENT_STORY_SETTLE_DAYS = 2;
@@ -285,7 +289,13 @@ export class MemoryService extends BaseService {
           ),
         )
       : undefined;
-    const stories = groupEventStories(candidates, frequentLandmarkIds);
+    // A run within one event gap of either window edge may carry on past it: one cut at `from` was
+    // made whole on an earlier night, and one still going at `until` waits until it settles.
+    const earliest = from.plus({ hours: EVENT_GAP_HOURS }).toMillis();
+    const latest = until.minus({ hours: EVENT_GAP_HOURS }).toMillis();
+    const stories = groupEventStories(candidates, frequentLandmarkIds).filter(
+      ({ startAt, endAt }) => startAt.getTime() > earliest && endAt.getTime() < latest,
+    );
     if (stories.length === 0) {
       return;
     }

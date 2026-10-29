@@ -26,6 +26,15 @@ describe('attention: the drive the library is on', () => {
     });
   });
 
+  it('warns at the chosen level, or not at all while the warning is off (FL-365)', () => {
+    const disk = { available: 120 * GB, free: 120 * GB, total: 1000 * GB };
+    expect(storageSignal(disk, 85).state).toBe('attention');
+    expect(storageSignal(disk, 95).state).toBe('ok');
+    expect(storageSignal(disk, 0).state).toBe('ok');
+    // under 10 GB free needs the person whatever the warning says
+    expect(storageSignal({ available: 8 * GB, free: 8 * GB, total: 1000 * GB }, 0).items[0].level).toBe('now');
+  });
+
   it('says a drive that is 90% full is nearly full, when the person can', () => {
     const { state, items } = storageSignal({ available: 74 * GB, free: 74 * GB, total: 932 * GB });
     expect(state).toBe('attention');

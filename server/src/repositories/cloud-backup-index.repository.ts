@@ -196,6 +196,20 @@ export class CloudBackupIndexRepository {
       .execute();
     return new Set(rows.map(({ sha256 }) => sha256));
   }
+  /** The size and ETag recorded for each of these hashes that the index knows. */
+  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
+  async getRecorded(bucket: string, hashes: string[]): Promise<Map<string, { size: number; etag: string | null }>> {
+    if (hashes.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('cloud_backup_object')
+      .select(['sha256', 'size', 'etag'])
+      .where('bucket', '=', bucket)
+      .where('sha256', 'in', [...new Set(hashes)])
+      .execute();
+    return new Map(rows.map(({ sha256, size, etag }) => [sha256, { size: Number(size), etag }]));
+  }
   /** Record objects that are in the bucket (uploaded, or found by the listing). Recording twice is harmless. */
   @GenerateSql({
     params: [DummyValue.STRING, [{ sha256: DummyValue.STRING, size: DummyValue.NUMBER, etag: DummyValue.STRING }]],
@@ -230,10 +244,28 @@ export class CloudBackupIndexRepository {
       .where('sha256', 'in', [...new Set(hashes)])
       .execute();
   }
-  /** Forget everything recorded for a bucket: a new claim starts from the bucket as it is now. */
+  /**
+   * Forget everything recorded for a bucket: a new claim starts from the bucket as it is now. Its
+   * manifests go too (their original memberships cascade), or prune, the restore lists and the safety
+   * proofs would keep trusting backups the emptied bucket no longer holds.
+   */
   @GenerateSql({ params: [DummyValue.STRING] })
   async deleteBucket(bucket: string): Promise<void> {
-    await this.db.deleteFrom('cloud_backup_object').where('bucket', '=', bucket).execute();
+    await this.db.transaction().execute(async (trx) => {
+      // the bucket's own rows and its client upload receipts (`<bucket>#client-v<n>`)
+      await trx
+        .deleteFrom('cloud_backup_object')
+        .where((eb) => eb.or([eb('bucket', '=', bucket), sql<boolean>`starts_with(bucket, ${`${bucket}#`})`]))
+        .execute();
+      await trx.deleteFrom('cloud_backup_object_verification').where('bucket', '=', bucket).execute();
+      await trx
+        .deleteFrom('cloud_backup_manifest_entry')
+        .where('manifestId', 'in', (eb) =>
+          eb.selectFrom('cloud_backup_manifest').select('id').where('bucket', '=', bucket),
+        )
+        .execute();
+      await trx.deleteFrom('cloud_backup_manifest').where('bucket', '=', bucket).execute();
+    });
   }
   /**
    * The database's clock, which stamps `lastSeenAt`, as ISO 8601 text with its microseconds. A `Date`
@@ -517,6 +549,52 @@ export class CloudBackupIndexRepository {
       .execute();
     return fresh.length;
   }
+  /**
+   * The kept manifests that may hold an owner's restorable item: one of their originals is trashed, deleted
+   * or gone with the owner's deletion record. A manifest with no recorded originals (adopted from the bucket
+   * listing) may hold anything. A superset: the owner history rule still decides on each.
+   */
+  @GenerateSql({ params: [DummyValue.STRING, DummyValue.UUID] })
+  async getOwnerBackupCandidates(bucket: string, ownerId: string): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom('cloud_backup_manifest as m')
+      .select('m.key')
+      .where('m.bucket', '=', bucket)
+      .where('m.status', 'in', [...KEPT_MANIFEST_STATUSES])
+      .where((eb) =>
+        eb.or([
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('cloud_backup_manifest_original as o')
+                .select('o.assetId')
+                .whereRef('o.manifestId', '=', 'm.id'),
+            ),
+          ),
+          eb.exists(
+            eb
+              .selectFrom('cloud_backup_manifest_original as o')
+              .innerJoin('asset', 'asset.id', 'o.assetId')
+              .select('o.assetId')
+              .whereRef('o.manifestId', '=', 'm.id')
+              .where('asset.ownerId', '=', ownerId)
+              .where((inner) =>
+                inner.or([inner('asset.status', '=', AssetStatus.Trashed), inner('asset.deletedAt', 'is not', null)]),
+              ),
+          ),
+          eb.exists(
+            eb
+              .selectFrom('cloud_backup_manifest_original as o')
+              .innerJoin('asset_backup_deletion as d', 'd.assetId', 'o.assetId')
+              .select('o.assetId')
+              .whereRef('o.manifestId', '=', 'm.id')
+              .where('d.ownerId', '=', ownerId),
+          ),
+        ]),
+      )
+      .execute();
+    return new Set(rows.map(({ key }) => key));
+  }
   /** FL-164: this bucket's kept manifests, newest first: what a restore can be made from. */
   @GenerateSql({ params: [DummyValue.STRING] })
   async listKeptManifests(bucket: string): Promise<CloudBackupKeptManifest[]> {
@@ -567,9 +645,10 @@ export class CloudBackupIndexRepository {
     if (hashes.length === 0) {
       return;
     }
+    // a client upload receipt (`<bucket>#client-v<n>`) for a bad object goes too, or the next run skips it
     await this.db
       .deleteFrom('cloud_backup_object')
-      .where('bucket', '=', bucket)
+      .where((eb) => eb.or([eb('bucket', '=', bucket), sql<boolean>`starts_with(bucket, ${`${bucket}#`})`]))
       .where('sha256', 'in', [...new Set(hashes)])
       .execute();
   }
@@ -602,6 +681,63 @@ export class CloudBackupIndexRepository {
         },
       ]),
     );
+  }
+  /** Cloud backup and restore operations that ended still holding a transfer receipt (FL-525). */
+  @GenerateSql()
+  async getEndedTransfers(): Promise<Array<{ id: string; transfer: unknown }>> {
+    return this.db
+      .selectFrom('media_operation')
+      .select(['id', sql<unknown>`result -> 'backupTransfer'`.as('transfer')])
+      .where('kind', 'in', [MediaOperationKind.CloudBackup, MediaOperationKind.CloudRestore])
+      .where('status', 'in', FINISHED_OPERATIONS)
+      .where(sql<boolean>`jsonb_typeof(result -> 'backupTransfer') = 'object'`)
+      .execute();
+  }
+  /** Drop an ended operation's transfer receipt once its partial file is gone. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async clearEndedTransfer(id: string): Promise<void> {
+    await this.db
+      .updateTable('media_operation')
+      .set({ result: sql`result - 'backupTransfer'` })
+      .where('id', '=', id)
+      .where('status', 'in', FINISHED_OPERATIONS)
+      .execute();
+  }
+  /** Which of these operations have not ended: their transfer folders are still in use. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getUnfinishedOperationIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('id', '=', sql<string>`any(${ids}::uuid[])`)
+      .where('status', 'not in', FINISHED_OPERATIONS)
+      .execute();
+    return new Set(rows.map(({ id }) => id));
+  }
+  /** Which of `paths` an asset other than `except` holds now, as its original or one of its files. */
+  @GenerateSql({ params: [[DummyValue.STRING], [DummyValue.UUID]] })
+  async getTakenPaths(paths: string[], except: string[]): Promise<Set<string>> {
+    if (paths.length === 0) {
+      return new Set();
+    }
+    const wanted = [...new Set(paths)];
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('originalPath as path')
+      .where('originalPath', '=', sql<string>`any(${wanted}::text[])`)
+      .where('id', '!=', sql<string>`all(${except}::uuid[])`)
+      .union(
+        this.db
+          .selectFrom('asset_file')
+          .select('path')
+          .where('path', '=', sql<string>`any(${wanted}::text[])`)
+          .where('assetId', '!=', sql<string>`all(${except}::uuid[])`),
+      )
+      .execute();
+    return new Set(rows.map(({ path }) => path));
   }
   /** Presence and caller privacy from one snapshot, including non-active rows that cannot be treated as absent. */
   async getOwnerHistoryState(auth: AuthDto, assetIds: string[]): Promise<Map<string, OwnerBackupState>> {

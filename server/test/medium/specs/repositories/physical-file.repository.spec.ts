@@ -299,34 +299,6 @@ describe(PhysicalFileRepository.name, () => {
     });
   });
 
-  describe('getMasterOriginalCandidate', () => {
-    it('returns the matching active master copy deterministically', async () => {
-      const { ctx, sut } = setup();
-      const { user } = await ctx.newUser();
-      const checksum = randomBytes(20);
-      const master = await newAssetWithSize(ctx, user.id, { checksum });
-
-      const first = await sut.getMasterOriginalCandidate(user.id, checksum, 1000);
-      const second = await sut.getMasterOriginalCandidate(user.id, checksum, 1000);
-
-      expect(first?.id).toBe(master.id);
-      expect(second?.id).toBe(master.id);
-    });
-
-    it('ignores trashed and size-mismatched copies', async () => {
-      const { ctx, sut } = setup();
-      const { user } = await ctx.newUser();
-
-      const trashedChecksum = randomBytes(20);
-      await newAssetWithSize(ctx, user.id, { checksum: trashedChecksum, deletedAt: new Date() });
-      await expect(sut.getMasterOriginalCandidate(user.id, trashedChecksum, 1000)).resolves.toBeUndefined();
-
-      const liveChecksum = randomBytes(20);
-      await newAssetWithSize(ctx, user.id, { checksum: liveChecksum });
-      await expect(sut.getMasterOriginalCandidate(user.id, liveChecksum, 999)).resolves.toBeUndefined();
-    });
-  });
-
   describe('linkUploadedOriginal (universal storage)', () => {
     // FL-412: a stored file is stood in for by its path: proven to hold the content, with a fixed identity
     const onDisk = (path: string) => Promise.resolve(`identity:${path}`);
@@ -541,8 +513,8 @@ describe(PhysicalFileRepository.name, () => {
       const verify = async (path: string) => {
         proven.push(path);
         if (!earliest) {
-          // the lowest id is every upload's candidate: it arrives while the first candidate is proven
-          earliest = await newUpload(ctx, checksum, { id: '00000000-0000-4000-8000-000000000000' });
+          // the oldest photo is every upload's candidate (FL-413): it arrives while the first candidate is proven
+          earliest = await newUpload(ctx, checksum, { createdAt: new Date('2000-01-01') });
         }
         return `identity:${path}`;
       };

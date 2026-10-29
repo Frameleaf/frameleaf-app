@@ -154,8 +154,9 @@ with
           "asset"
           inner join "asset_job_status" on "asset"."id" = "asset_job_status"."assetId"
         where
-          (asset."localDateTime" at time zone 'UTC')::date = today.date
-          and "asset"."ownerId" = any ($4::uuid[])
+          "asset"."libraryScope" in ($4, $5)
+          and (asset."localDateTime" at time zone 'UTC')::date = today.date
+          and "asset"."ownerId" = any ($6::uuid[])
           and "asset"."visibility" = 'timeline'
           and exists (
             select
@@ -163,16 +164,16 @@ with
               "asset_file"
             where
               "assetId" = "asset"."id"
-              and "asset_file"."type" = $5
+              and "asset_file"."type" = $7
           )
           and "asset"."deletedAt" is null
         order by
           (asset."localDateTime" at time zone 'UTC')::date desc
         limit
-          $6
+          $8
       ) as "a" on true
     where
-      date_part('month', today.date) = $7
+      date_part('month', today.date) = $9
   )
 select
   date_part(
@@ -443,7 +444,11 @@ limit
 select
   "id",
   "checksum",
-  "deletedAt"
+  "deletedAt",
+  "status",
+  "originalPath",
+  "libraryId",
+  "isExternal"
 from
   "asset"
 where
@@ -500,6 +505,70 @@ where
 limit
   $3
 
+-- AssetRepository.countLockedRuleMatches
+select
+  count(*) filter (
+    where
+      "type" = $1
+  ) as "photos",
+  count(*) filter (
+    where
+      "type" = $2
+  ) as "videos"
+from
+  "asset"
+where
+  "ownerId" = $3::uuid
+  and "deletedAt" is null
+  and (
+    (
+      "asset"."visibility" = 'timeline'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+    or (
+      "asset"."visibility" = 'archive'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+  )
+  and exists (
+    select
+      1
+    from
+      asset as hidden_content_asset
+    where
+      hidden_content_asset.id = "asset"."id"
+      and (
+        (
+          "hidden_content_asset"."ownerId" = $4::uuid
+          and exists (
+            select
+              1
+            from
+              asset_face
+            where
+              asset_face."assetId" = "hidden_content_asset"."id"
+              and asset_face."personGroupId" = any ($5::uuid[])
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+          )
+        )
+      )
+  )
+
 -- AssetRepository.getCalendarHeatmap
 select
   date_trunc('DAY', "asset"."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' as "date",
@@ -507,9 +576,10 @@ select
 from
   "asset"
 where
-  "ownerId" = $1::uuid
-  and "createdAt" >= $2
-  and "createdAt" < $3
+  "asset"."libraryScope" in ($1, $2)
+  and "ownerId" = $3::uuid
+  and "createdAt" >= $4
+  and "createdAt" < $5
   and "deletedAt" is null
   and not exists (
     select
@@ -532,7 +602,8 @@ with
     from
       "asset"
     where
-      "asset"."deletedAt" is null
+      "asset"."libraryScope" in ($1, $2)
+      and "asset"."deletedAt" is null
       and (
         "asset"."visibility" in ('archive', 'timeline')
         and not exists (
@@ -564,10 +635,11 @@ with
       "asset"
       inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
     where
-      "asset"."deletedAt" is null
+      "asset"."libraryScope" in ($1, $2)
+      and "asset"."deletedAt" is null
       and (
-        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($1) || '%')
-        and "asset"."fileCreatedAt" >= $2
+        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($3) || '%')
+        and "asset"."fileCreatedAt" >= $4
         and exists (
           select
             "asset_face"."assetId"
@@ -576,19 +648,19 @@ with
           where
             "asset_face"."assetId" = "asset"."id"
             and "asset_face"."deletedAt" is null
-            and "asset_face"."isVisible" = $3
-            and "asset_face"."personGroupId" = any ($4::uuid[])
+            and "asset_face"."isVisible" = $5
+            and "asset_face"."personGroupId" = any ($6::uuid[])
           group by
             "asset_face"."assetId"
           having
-            count(distinct "asset_face"."personGroupId") = $5
+            count(distinct "asset_face"."personGroupId") = $7
         )
         and (
-          "asset_exif"."city" = $6
-          or "asset_exif"."rating" >= $7
+          "asset_exif"."city" = $8
+          or "asset_exif"."rating" >= $9
         )
       )
-      and "asset"."type" = $8
+      and "asset"."type" = $10
       and not exists (
         select
           1
@@ -596,7 +668,7 @@ with
           asset_metadata
         where
           asset_metadata."assetId" = "asset"."id"
-          and asset_metadata.key = $9
+          and asset_metadata.key = $11
           and asset_metadata.value #>> '{description,status}' = 'success'
       )
       and (
@@ -630,10 +702,11 @@ with
       "asset"
       inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
     where
-      "asset"."deletedAt" is null
+      "asset"."libraryScope" in ($1, $2)
+      and "asset"."deletedAt" is null
       and (
-        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($1) || '%')
-        and "asset"."fileCreatedAt" >= $2
+        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($3) || '%')
+        and "asset"."fileCreatedAt" >= $4
         and exists (
           select
             "asset_face"."assetId"
@@ -642,44 +715,44 @@ with
           where
             "asset_face"."assetId" = "asset"."id"
             and "asset_face"."deletedAt" is null
-            and "asset_face"."isVisible" = $3
-            and "asset_face"."personGroupId" = any ($4::uuid[])
+            and "asset_face"."isVisible" = $5
+            and "asset_face"."personGroupId" = any ($6::uuid[])
           group by
             "asset_face"."assetId"
           having
-            count(distinct "asset_face"."personGroupId") = $5
+            count(distinct "asset_face"."personGroupId") = $7
         )
         and (
-          "asset_exif"."city" = $6
-          or "asset_exif"."rating" >= $7
+          "asset_exif"."city" = $8
+          or "asset_exif"."rating" >= $9
         )
       )
       and earth_box (
-        ll_to_earth_public ($8, $9),
+        ll_to_earth_public ($10, $11),
         greatest(
           earth_distance (
-            ll_to_earth_public ($10, $11),
-            ll_to_earth_public ($12, $13)
+            ll_to_earth_public ($12, $13),
+            ll_to_earth_public ($14, $15)
           ),
           earth_distance (
-            ll_to_earth_public ($14, $15),
-            ll_to_earth_public ($16, $17)
+            ll_to_earth_public ($16, $17),
+            ll_to_earth_public ($18, $19)
           ),
           earth_distance (
-            ll_to_earth_public ($18, $19),
-            ll_to_earth_public ($20, $21)
+            ll_to_earth_public ($20, $21),
+            ll_to_earth_public ($22, $23)
           ),
           earth_distance (
-            ll_to_earth_public ($22, $23),
-            ll_to_earth_public ($24, $25)
+            ll_to_earth_public ($24, $25),
+            ll_to_earth_public ($26, $27)
           )
         )
       ) @> ll_to_earth_public (asset_exif.latitude, asset_exif.longitude)
-      and "asset_exif"."latitude" >= $26
-      and "asset_exif"."latitude" <= $27
-      and "asset_exif"."longitude" >= $28
-      and "asset_exif"."longitude" <= $29
-      and "asset"."type" = $30
+      and "asset_exif"."latitude" >= $28
+      and "asset_exif"."latitude" <= $29
+      and "asset_exif"."longitude" >= $30
+      and "asset_exif"."longitude" <= $31
+      and "asset"."type" = $32
       and not exists (
         select
           1
@@ -687,7 +760,7 @@ with
           asset_metadata
         where
           asset_metadata."assetId" = "asset"."id"
-          and asset_metadata.key = $31
+          and asset_metadata.key = $33
           and asset_metadata.value #>> '{description,status}' = 'success'
       )
       and (
@@ -724,7 +797,8 @@ with
       from
         "asset"
       where
-        "asset"."deletedAt" is null
+        "asset"."libraryScope" in ($1, $2)
+        and "asset"."deletedAt" is null
         and (
           "asset"."visibility" in ('archive', 'timeline')
           and not exists (
@@ -811,7 +885,7 @@ select
   ) filter (
     where
       r.rank > 1
-      and r.rank <= $1
+      and r.rank <= $3
   ) as "highlightAssetIds",
   (
     select
@@ -824,7 +898,7 @@ select
       places p
     where
       p."timeBucket" = r."timeBucket"
-      and p.rank <= $2
+      and p.rank <= $4
   ) as places
 from
   ranked r
@@ -922,7 +996,8 @@ with
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
-      "asset"."deletedAt" is null
+      "asset"."libraryScope" in ($3, $4)
+      and "asset"."deletedAt" is null
       and (
         "asset"."visibility" in ('archive', 'timeline')
         and not exists (
@@ -934,7 +1009,7 @@ with
             asset_lock."assetId" = "asset"."id"
         )
       )
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $3
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $5
       and not exists (
         select
         from
@@ -1077,7 +1152,8 @@ with
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
-      "asset"."deletedAt" is null
+      "asset"."libraryScope" in ($3, $4)
+      and "asset"."deletedAt" is null
       and (
         "asset"."visibility" in ('archive', 'timeline')
         and not exists (
@@ -1090,8 +1166,8 @@ with
         )
       )
       and (
-        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($3) || '%')
-        and "asset"."fileCreatedAt" >= $4
+        f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($5) || '%')
+        and "asset"."fileCreatedAt" >= $6
         and exists (
           select
             "asset_face"."assetId"
@@ -1100,19 +1176,19 @@ with
           where
             "asset_face"."assetId" = "asset"."id"
             and "asset_face"."deletedAt" is null
-            and "asset_face"."isVisible" = $5
-            and "asset_face"."personGroupId" = any ($6::uuid[])
+            and "asset_face"."isVisible" = $7
+            and "asset_face"."personGroupId" = any ($8::uuid[])
           group by
             "asset_face"."assetId"
           having
-            count(distinct "asset_face"."personGroupId") = $7
+            count(distinct "asset_face"."personGroupId") = $9
         )
         and (
-          "asset_exif"."city" = $8
-          or "asset_exif"."rating" >= $9
+          "asset_exif"."city" = $10
+          or "asset_exif"."rating" >= $11
         )
       )
-      and "asset"."type" = $10
+      and "asset"."type" = $12
       and not exists (
         select
           1
@@ -1120,10 +1196,10 @@ with
           asset_metadata
         where
           asset_metadata."assetId" = "asset"."id"
-          and asset_metadata.key = $11
+          and asset_metadata.key = $13
           and asset_metadata.value #>> '{description,status}' = 'success'
       )
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $12
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $14
       and not exists (
         select
         from
@@ -1273,7 +1349,8 @@ with
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
-      "asset"."deletedAt" is null
+      "asset"."libraryScope" in ($3, $4)
+      and "asset"."deletedAt" is null
       and (
         "asset"."visibility" in ('archive', 'timeline')
         and not exists (
@@ -1298,9 +1375,9 @@ with
       "asset"."fileCreatedAt" desc,
       "asset"."id" asc
     limit
-      $3
+      $5
     offset
-      $4
+      $6
   ),
   "cte" as (
     select
@@ -1365,16 +1442,17 @@ where
         asset_lock."assetId" = "asset"."id"
     )
   )
-  and "type" = $2
+  and "asset"."libraryScope" in ($2, $3)
+  and "type" = $4
   and "deletedAt" is null
 group by
   "asset_exif"."city"
 having
-  count("asset"."id") >= $3
+  count("asset"."id") >= $5
 order by
   "asset_exif"."city"
 limit
-  $4
+  $6
 
 -- AssetRepository.getRecentlyCreatedAssetIds
 select
@@ -1395,12 +1473,13 @@ where
         asset_lock."assetId" = "asset"."id"
     )
   )
-  and "type" = $2
+  and "asset"."libraryScope" in ($2, $3)
+  and "type" = $4
   and "deletedAt" is null
 order by
   "value" desc
 limit
-  $3
+  $5
 
 -- AssetRepository.getNsfwAssetIds
 select
@@ -1560,7 +1639,8 @@ where
 -- AssetRepository.getForMetadataExtractionTags
 select
   "asset_exif"."tags",
-  "asset_exif"."updateId"
+  "asset_exif"."updateId",
+  "asset_exif"."timeZone"
 from
   "asset_exif"
 where
