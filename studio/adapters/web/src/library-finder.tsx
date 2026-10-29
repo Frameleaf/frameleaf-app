@@ -318,6 +318,11 @@ export function LibraryFinderPanel({ host, className }: { host: LibraryFinderHos
     async (page: number) => {
       const id = ++request.current
       setStatus('loading')
+      // A new first page replaces the old results: none of them may stay behind a search they don't match.
+      if (page === 1) {
+        setResults([])
+        setNextPage(null)
+      }
       try {
         const found = await host.searchLibrary({ text: query || null, ...filters, page })
         if (id !== request.current) return
@@ -568,9 +573,11 @@ export function LibraryFinderPanel({ host, className }: { host: LibraryFinderHos
 export function createLibraryFinder(host: LibraryFinderHost) {
   let withdraw: (() => void) | null = null
   let label = ''
+  let disposed = false
   const Panel = ({ className }: { className?: string }) => <LibraryFinderPanel host={host} className={className} />
   return {
     update(context: Pick<StudioHostContext, 'strings' | 'auth' | 'online'>) {
+      if (disposed) return
       view = { strings: { ...context.strings }, locale: context.auth.locale, online: context.online }
       for (const listener of viewListeners) listener()
       const next = libraryText(view.strings, 'libraryTab')
@@ -581,6 +588,7 @@ export function createLibraryFinder(host: LibraryFinderHost) {
       }
     },
     dispose() {
+      disposed = true
       withdraw?.()
       withdraw = null
     },

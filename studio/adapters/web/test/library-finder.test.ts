@@ -98,6 +98,19 @@ describe('FL-636 the bin Library view', () => {
     expect(getLibraryPanel()?.label).toBe('[Library]')
     finder.dispose()
     expect(getLibraryPanel()).toBeNull()
+    // An update that resumes after dispose must not offer the view again.
+    finder.update(context)
+    expect(getLibraryPanel()).toBeNull()
+  })
+
+  it('drops old results when a new search starts, so a failed search shows none of them', async () => {
+    await show()
+    expect(element.querySelectorAll('[data-library-result]')).toHaveLength(2)
+    host.searchLibrary.mockRejectedValue(new Error('offline'))
+    await act(async () => button('Videos').click())
+    await settle()
+    expect(element.querySelectorAll('[data-library-result]')).toHaveLength(0)
+    expect(element.textContent).toContain('can’t be searched right now')
   })
 
   it('searches the whole library through the host and shows the results, count and privacy note', async () => {

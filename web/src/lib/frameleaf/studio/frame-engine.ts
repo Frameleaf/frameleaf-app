@@ -278,22 +278,29 @@ const serviceCalls: ServiceHandlers = {
   },
   reloadProject: (services) => services.reloadProject(),
   // FL-636: the bin's Library view. Shapes are checked here, the search scope by the server.
-  searchLibrary: (services, [query]) => {
+  // The whole tuple is checked, so a call with extra arguments is refused rather than trimmed.
+  searchLibrary: (services, args) => {
     if (!services.searchLibrary) {
       return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
     }
-    return isStudioLibraryQuery(query)
-      ? services.searchLibrary(query)
+    return STUDIO_FRAME_SERVICE_SCHEMA_V8.searchLibrary(args) && isStudioLibraryQuery(args[0])
+      ? services.searchLibrary(args[0])
       : Promise.reject(new Error('Invalid library search'));
   },
-  libraryFacets: (services) =>
-    services.libraryFacets ? services.libraryFacets() : Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE')),
-  addLibraryAssets: (services, [assetIds]) => {
+  libraryFacets: (services, args) => {
+    if (!services.libraryFacets) {
+      return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
+    }
+    return STUDIO_FRAME_SERVICE_SCHEMA_V8.libraryFacets(args)
+      ? services.libraryFacets()
+      : Promise.reject(new Error('Invalid library facets'));
+  },
+  addLibraryAssets: (services, args) => {
     if (!services.addLibraryAssets) {
       return Promise.reject(new Error('LIBRARY_SEARCH_UNAVAILABLE'));
     }
-    return isStudioLibraryAssetIds(assetIds)
-      ? services.addLibraryAssets(assetIds)
+    return STUDIO_FRAME_SERVICE_SCHEMA_V8.addLibraryAssets(args) && isStudioLibraryAssetIds(args[0])
+      ? services.addLibraryAssets(args[0])
       : Promise.reject(new Error('Invalid library assets'));
   },
   saveWorkspace: (services, [layout]) =>

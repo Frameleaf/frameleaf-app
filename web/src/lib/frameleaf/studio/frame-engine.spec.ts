@@ -412,6 +412,8 @@ describe('studio editor frame (FL-88)', () => {
     port.postMessage({ type: 'service', callId: 33, name: 'addLibraryAssets', args: [[assetId]] });
     port.postMessage({ type: 'service', callId: 34, name: 'addLibraryAssets', args: [['../admin']] });
     port.postMessage({ type: 'service', callId: 35, name: 'libraryFacets', args: [] });
+    port.postMessage({ type: 'service', callId: 36, name: 'searchLibrary', args: [{ text: 'lake' }, 'extra'] });
+    port.postMessage({ type: 'service', callId: 37, name: 'addLibraryAssets', args: [[assetId], 'extra'] });
     await tick();
     await tick();
 
@@ -421,6 +423,8 @@ describe('studio editor frame (FL-88)', () => {
     expect(results).toContainEqual({ type: 'service-result', callId: 33, ok: true, value: [] });
     expect(results).toContainEqual(expect.objectContaining({ callId: 32, ok: false, error: 'Invalid library search' }));
     expect(results).toContainEqual(expect.objectContaining({ callId: 34, ok: false, error: 'Invalid library assets' }));
+    expect(results).toContainEqual(expect.objectContaining({ callId: 36, ok: false, error: 'Invalid library search' }));
+    expect(results).toContainEqual(expect.objectContaining({ callId: 37, ok: false, error: 'Invalid library assets' }));
     expect(results).toContainEqual(
       expect.objectContaining({ callId: 35, ok: false, error: 'LIBRARY_SEARCH_UNAVAILABLE' }),
     );
