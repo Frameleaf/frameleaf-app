@@ -12,6 +12,7 @@
     readDiscoveryQuery,
   } from '$lib/components/discovery/query';
   import { fromSavedSearch } from '$lib/frameleaf/search-palette';
+  import { eagleImportUi, eaglePercent } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
@@ -64,6 +65,7 @@
     mdiClose,
     mdiFilterVariant,
     mdiImageOutline,
+    mdiImport,
     mdiInboxOutline,
     mdiLinkVariant,
     mdiPaletteOutline,
@@ -445,6 +447,12 @@
   });
 
   let extensionOpen = $state(false);
+  /** An Eagle import carrying on with its dialog hidden (prototype `EagleStatus`). */
+  const eagleRunning = $derived(
+    eagleImportUi.run && (eagleImportUi.run.state === 'running' || eagleImportUi.run.state === 'stopping')
+      ? eagleImportUi.run
+      : undefined,
+  );
 
   /**
    * Narrower screens: the drawer is a bottom sheet in Boards. The sheet is the production sidebar
@@ -683,6 +691,44 @@
     data-theme={appTheme}
   >
     {#if boards}
+      {#if eagleRunning}
+        {@const percent = eaglePercent(eagleRunning)}
+        <button
+          type="button"
+          class="fl-link fl-eagle-status"
+          title={iconOnly ? $t('frameleaf_eagle_status_running') : undefined}
+          aria-label={iconOnly ? $t('frameleaf_eagle_status_running') : undefined}
+          aria-haspopup="dialog"
+          onclick={() => eagleImportUi.show()}
+        >
+          <Icon icon={mdiImport} size="1.25em" aria-hidden={true} class="fl-icon" />
+          {#if !iconOnly}
+            <span class="fl-label fl-eagle-label">
+              {$t('frameleaf_eagle_status_running')}
+              <span
+                class="fl-eagle-bar"
+                role="progressbar"
+                aria-label={$t('frameleaf_eagle_status_label')}
+                aria-valuenow={percent}
+                aria-valuemin={0}
+                aria-valuemax={100}><span style:width="{percent}%"></span></span
+              >
+            </span>
+            <small class="fl-count">{percent}%</small>
+          {/if}
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="fl-link"
+        title={iconOnly ? $t('frameleaf_eagle_import_open') : undefined}
+        aria-label={iconOnly ? $t('frameleaf_eagle_import_open') : undefined}
+        aria-haspopup="dialog"
+        onclick={() => eagleImportUi.show()}
+      >
+        <Icon icon={mdiImport} size="1.25em" aria-hidden={true} class="fl-icon" />
+        {#if !iconOnly}<span class="fl-label">{$t('frameleaf_eagle_import_open')}</span>{/if}
+      </button>
       <button
         type="button"
         class="fl-link"
@@ -799,6 +845,10 @@
 
 {#if extensionOpen}{#await import('$lib/components/frameleaf/BoardsExtensionDialog.svelte') then { default: BoardsExtensionDialog }}
     <BoardsExtensionDialog bind:open={extensionOpen} />
+  {/await}{/if}
+<!-- Import from Eagle (FL-653), opened from the rail or Boards' Add menu; loaded only when used. -->
+{#if eagleImportUi.open}{#await import('$lib/components/frameleaf/eagle/BoardsEagleImportDialog.svelte') then { default: BoardsEagleImportDialog }}
+    <BoardsEagleImportDialog />
   {/await}{/if}
 
 <style>
@@ -1102,6 +1152,23 @@
     color: var(--fl-muted);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
+  }
+  .fl-eagle-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .fl-eagle-bar {
+    display: block;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--fl-raised);
+  }
+  .fl-eagle-bar > span {
+    display: block;
+    height: 100%;
+    background: var(--fl-accent);
   }
   .fl-boards-title {
     display: inline-flex;
