@@ -166,6 +166,13 @@ const GetAlbumsSchema = z
     libraryScope: LibraryViewScopeSchema.optional(),
     id: z.uuidv4().optional().describe('Album ID'),
     name: z.string().optional().describe('Album name (exact match)'),
+    search: z
+      .string()
+      .trim()
+      .max(100)
+      .optional()
+      .describe('Only albums whose name contains this text, ignoring case (a search-as-you-type picker)'),
+    take: z.coerce.number().int().min(1).max(100).optional().describe('At most this many albums'),
     isOwned: stringToBool
       .optional()
       .describe('Filter by ownership: true = only owned, false = only shared-with-me, undefined = no filter'),

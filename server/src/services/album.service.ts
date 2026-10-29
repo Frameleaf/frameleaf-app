@@ -94,11 +94,16 @@ export class AlbumService extends BaseService {
 
     const ownerId = auth.user.id;
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
+    // FL-522: a smart album the person hid stays out of their own album list (it keeps filling).
+    // FL-647: left out in the query too, so a `take` limit counts only albums this list shows.
+    const hidden: Set<string> | undefined = await this.smartAlbumRepository.getHiddenAlbumIds(ownerId);
     let albums: MapAlbumDto[] = assetId
       ? await this.albumRepository.getByAssetId(ownerId, assetId, privacyOptions)
-      : await this.albumRepository.getAll(ownerId, { libraryScope: LibraryScope.Personal, ...rest });
-    // FL-522: a smart album the person hid stays out of their own album list (it keeps filling)
-    const hidden: Set<string> | undefined = await this.smartAlbumRepository.getHiddenAlbumIds(ownerId);
+      : await this.albumRepository.getAll(ownerId, {
+          libraryScope: LibraryScope.Personal,
+          ...rest,
+          ...(hidden && hidden.size > 0 ? { excludeIds: [...hidden] } : {}),
+        });
     if (hidden && hidden.size > 0) {
       albums = albums.filter((album) => !hidden.has(album.id));
     }
