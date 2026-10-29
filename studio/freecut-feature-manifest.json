@@ -2706,6 +2706,7 @@
           "0130-native-roll-transient-lock-cancellation.patch",
           "0134-shared-edit-effective-lock-refusal.patch",
           "0135-shared-speed-gap-effective-lock-refusal.patch",
+          "0144-speed-ramps-and-linked-freeze-frames.patch",
           "4d29c52c91",
           "cd365017c8",
           "1accc156fc",
@@ -2717,7 +2718,7 @@
           "PR #260",
           "PR #262"
         ],
-        "note": "FL-94 closeout 2026-10-14.",
+        "note": "FL-94 closeout 2026-10-14. FL-597 adds speed ramps, written as linked constant-speed segments, and freeze frames that split linked audio.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.3",

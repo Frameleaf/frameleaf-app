@@ -192,6 +192,22 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0144 (FL-597) adds speed ramps and fixes freeze-frame sync. The clip panel's Speed ramp section
+takes points (a position in the clip's source and a speed from 0.25x to 4x) with linear or eased
+boundaries, shows the resulting duration and caption count, and applies in one undo step. The curve
+is integrated over source time and written as constant-speed segments every six output frames, with
+boundaries rounded independently from the exact integral, so there is no cumulative drift, and the last
+segment ends on the clip's own source end. Linked video and audio share every cut, attached source
+captions move with the source they describe, and timeline-authored text stays put. Neighbours keep
+their positions: a longer result that needs their room, a locked participant, a transition, keyframes,
+reverse playback or partly linked companions refuse without changing the project. Dialogue keeps its
+pitch through SoundTouch, with an option to mute it; frames are repeated or skipped and none are
+generated. Freeze frames now split the synchronised linked audio too, leaving silence for the hold
+instead of letting the audio run ahead, take their length in project frames, move later clips only on
+the tracks they touch, and refuse HDR sources (the held frame is an 8-bit PNG) and locked tracks.
+Engine unit tests cover integrated positions, fractional rates, linked cuts, captions, refusals and
+the freeze audio gap. Browser, worker export and preview/export parity remain unqualified.
+
 
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.

@@ -704,7 +704,12 @@
       "path": "patches/0143-headless-trackless-audio-validation.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "6dfc1b91a3f955b705d2aa441b20b199daf9e0fd6c8a971acfae0d0b865abd3a"
+    },
+    {
+      "path": "patches/0144-speed-ramps-and-linked-freeze-frames.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "422073d3fd071cbb63410a5046c0af85ed4b9c14cf9d1e95ca0e450f46e8fb8f"
     }
   ],
-  "sourceSha256": "dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a"
+  "sourceSha256": "7e8c2cddda0a1887b897b98d59032458c7512cf6b94ca3da47254b39234f621b"
 }
