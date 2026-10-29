@@ -2595,7 +2595,10 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             effectiveVisibility('asset').as('visibility'),
-            sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
+            // the viewer's own mark; a shared link's visitor never sees its owner's favorites
+            (auth.sharedLink ? sql`false` : sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`).as(
+              'isFavorite',
+            ),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
