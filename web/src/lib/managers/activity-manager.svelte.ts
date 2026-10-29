@@ -35,6 +35,7 @@ class ActivityManager {
 
   isLoading = $state(false);
   #viewVersion = 0;
+  #viewFailed = false;
   #refreshVersion = 0;
   #cacheIsCurrent: (() => boolean) | undefined;
 
@@ -91,18 +92,21 @@ class ActivityManager {
     // The same view (an album's own activity, or one of its items) is already loaded or loading. The
     // album page asks again whenever its effect re-runs, which used to fetch the album's activity
     // twice on every visit and drop the first answer.
-    if (albumId === this.#albumId && assetId === this.#assetId) {
+    // A view whose load failed is asked for again.
+    if (albumId === this.#albumId && assetId === this.#assetId && !this.#viewFailed) {
       return;
     }
 
     this.#viewVersion++;
     this.#albumId = albumId;
     this.#assetId = assetId;
+    this.#viewFailed = false;
     const isCurrent = this.#captureView();
     try {
       await this.refreshActivities(albumId, assetId);
     } catch (error) {
       if (isCurrent()) {
+        this.#viewFailed = true;
         handleError(error, get(t)('errors.unable_to_get_comments_number'));
       }
     }
@@ -249,6 +253,7 @@ class ActivityManager {
 
   reset() {
     this.#viewVersion++;
+    this.#viewFailed = false;
     this.#refreshVersion++;
     this.isLoading = false;
     this.#isLiked = null;

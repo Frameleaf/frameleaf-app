@@ -54,6 +54,15 @@ describe('activity view ownership', () => {
     expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(2);
   });
 
+  it('asks again for an album whose activity failed to load', async () => {
+    sdkMock.getActivityStatistics.mockRejectedValueOnce(new Error('offline'));
+    await activityManager.init('open-album');
+    expect(activityManager.activities).toEqual([]);
+    await activityManager.init('open-album');
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(2);
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['open-album']);
+  });
+
   it('discards a response after reset', async () => {
     const old = deferred<ActivityResponseDto[]>();
     sdkMock.getActivities.mockImplementation((args) => (args.userId ? Promise.resolve([]) : old.promise));
