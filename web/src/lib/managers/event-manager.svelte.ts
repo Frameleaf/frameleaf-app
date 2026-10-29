@@ -11,6 +11,7 @@ import type {
   ReleaseEventV1,
   SharedLinkResponseDto,
   AdminConfigDto,
+  ServerFeaturesDto,
   TagResponseDto,
   UserAdminResponseDto,
 } from '@frameleaf/sdk';
@@ -102,6 +103,8 @@ export type Events = {
   SessionDelete: [];
 
   SystemConfigUpdate: [AdminConfigDto];
+  /** The server's feature flags, read by someone other than the feature flags manager. */
+  ServerFeaturesLoaded: [ServerFeaturesDto];
 
   IntegrityReportDeleteStatus: [{ type?: IntegrityReport; id?: string; isDeleting: boolean }];
   IntegrityReportDeleted: [{ type?: IntegrityReport; id?: string }];

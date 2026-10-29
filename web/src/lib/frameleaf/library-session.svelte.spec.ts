@@ -621,6 +621,22 @@ describe('LibrarySessionStore', () => {
     expect(store.refusedView).toBeNull();
   });
 
+  it("keeps a refused link through the page's own scope normalization (FL-48)", () => {
+    // the device's last view was an album's, so the page moves the restored scope to the library
+    store.setScope({ kind: 'album', id: 'album-1' });
+    expect(store.persist('user-1')).toBe(true);
+    const back = new LibrarySessionStore({ userId: 'user-1', storage, transientStorage: storage });
+    const newer = new URL('https://example.test/photos');
+    newer.searchParams.set('fl', JSON.stringify({ ...viewState(), version: 2, somethingNew: true }));
+    back.restore(newer, 'user-1');
+    expect(back.state.scope).toEqual({ kind: 'album', id: 'album-1' });
+    back.normalizeScope({ kind: 'library' });
+    expect(back.state.scope).toEqual({ kind: 'library' });
+    expect(back.viewUrl(newer).href).toBe(newer.href);
+    back.patchView({ sort: 'filename' });
+    expect(back.viewUrl(newer).searchParams.get('fl')).toContain('filename');
+  });
+
   it('keeps every part of the query through the URL, including its search context (FL-48)', () => {
     store.patchView(
       viewPatch({

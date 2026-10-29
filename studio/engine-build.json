@@ -736,10 +736,20 @@
       "sha256": "c4ffa7ec664778c178a45ff30f5a2f837415d7a23f9a07a81d434c4657c6940f"
     },
     {
+      "path": "patches/0148-motion-tracking.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "82a3a26004fc6755984a280cdd07258f5046d3e18d747a68cbd576cd07114bfd"
+    },
+    {
+      "path": "patches/0152-tracking-box-and-provenance.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7c544885050282ede297b77f888bc034f8bc9c2edf87c49c21f9199ef6499794"
+    },
+    {
       "path": "patches/0170-caption-languages.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "ddf70ec8b8038d204aeb9da5f5c77a0fa71f9866df924b3df1f6fc107eee629c"
     }
   ],
-  "sourceSha256": "ae283c1083dd8402a20c88a775145b9a60cb5ba25791a828e407d74212215ebb"
+  "sourceSha256": "36a0c462335f14720a87b419cac07ee0ce2dbf625942f1bc37bd9111e3cc093a"
 }

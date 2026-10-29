@@ -281,4 +281,36 @@ describe('batch external editor review', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Prepare originals' }));
     await waitFor(() => expect(prepareDevelopBatchItem).toHaveBeenCalledWith({ id: 'batch-1', itemId: 'item-1' }));
   });
+  it('polls only while returns are rendering and the page is visible', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      // a completed return and one still waiting for its file: neither changes on the server's side
+      const settled = batch();
+      settled.items[0].returns[0].status = DevelopBatchReturnStatus.Completed;
+      settled.items[1].returns[0].status = DevelopBatchReturnStatus.Confirmed;
+      vi.mocked(getDevelopBatch).mockResolvedValue(settled);
+      mount();
+      await screen.findByLabelText('Choose returned files');
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).not.toBeDisabled());
+      const calls = vi.mocked(getDevelopBatch).mock.calls.length;
+      vi.advanceTimersByTime(10_000);
+      expect(getDevelopBatch).toHaveBeenCalledTimes(calls);
+
+      const imported = batch();
+      imported.items[0].returns[0].status = DevelopBatchReturnStatus.Imported;
+      vi.mocked(getDevelopBatch).mockResolvedValue(imported);
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      await waitFor(() => expect(getDevelopBatch).toHaveBeenCalledTimes(calls + 1));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).not.toBeDisabled());
+      vi.advanceTimersByTime(2500);
+      await waitFor(() => expect(getDevelopBatch).toHaveBeenCalledTimes(calls + 2));
+
+      const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+      vi.advanceTimersByTime(10_000);
+      hidden.mockRestore();
+      expect(getDevelopBatch).toHaveBeenCalledTimes(calls + 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

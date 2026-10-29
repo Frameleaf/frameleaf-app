@@ -1,4 +1,5 @@
 import { getAdminConfigWithRevision, getApiKeys, getConfigDefaults, getSessions } from '@frameleaf/sdk';
+import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
 import { load } from './+page';
 
 const auth = vi.hoisted(() => ({ user: { isAdmin: false } }));
@@ -11,7 +12,9 @@ vi.mock('@frameleaf/sdk', () => ({
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
 vi.mock('$lib/utils/i18n', () => ({ getFormatter: vi.fn().mockResolvedValue((key: string) => key) }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
-vi.mock('$lib/managers/system-config-manager.svelte', () => ({ systemConfigManager: { init: vi.fn() } }));
+vi.mock('$lib/managers/system-config-manager.svelte', () => ({
+  systemConfigManager: { init: vi.fn(), seed: vi.fn() },
+}));
 
 const open = (query: string) => load({ url: new URL(`https://example.test/user-settings${query}`) } as never);
 
@@ -38,6 +41,10 @@ describe('the Command Center page (FL-71)', () => {
       system: { current: { config: {}, revision: 1 }, defaultConfig: {} },
     });
     expect(getAdminConfigWithRevision).toHaveBeenCalledTimes(1);
+    // The settings manager starts from the same answer instead of reading the settings again.
+    expect(getConfigDefaults).toHaveBeenCalledTimes(1);
+    expect(systemConfigManager.init).not.toHaveBeenCalled();
+    expect(systemConfigManager.seed).toHaveBeenCalledWith({}, {});
   });
 
   it('sends the old Library Care screen to the Library care area', async () => {

@@ -40,6 +40,54 @@ describe('activity view ownership', () => {
     expect(activityManager.isLoading).toBe(false);
   });
 
+  it('loads an album’s own activity once while the album stays open', async () => {
+    await Promise.all([activityManager.init('open-album'), activityManager.init('open-album')]);
+    await activityManager.init('open-album');
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(1);
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['open-album']);
+
+    // one of its items is a view of its own; coming back shows the album's activity again
+    await activityManager.init('open-album', 'item');
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['item']);
+    await activityManager.init('open-album');
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['open-album']);
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again for an album whose cached activity a late reaction dropped', async () => {
+    const created = deferred<ActivityResponseDto>();
+    sdkMock.createActivity.mockReturnValue(created.promise as never);
+    await activityManager.init('react-album', 'item');
+    const reacting = activityManager.addActivity({ albumId: 'react-album', assetId: 'item', type: ReactionType.Like });
+    await activityManager.init('react-album');
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(2);
+
+    created.resolve({ id: 'like', type: ReactionType.Like } as ActivityResponseDto);
+    await reacting;
+    await activityManager.init('react-album');
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(3);
+  });
+
+  it('lets a repeated init wait for the load already running', async () => {
+    const pending = deferred<ActivityResponseDto[]>();
+    sdkMock.getActivities.mockImplementation((args) => (args.userId ? Promise.resolve([]) : pending.promise));
+    const first = activityManager.init('open-album');
+    const second = activityManager.init('open-album');
+    pending.resolve([comment('open-album')]);
+    await second;
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['open-album']);
+    await first;
+  });
+
+  it('asks again for an album whose activity failed to load', async () => {
+    sdkMock.getActivityStatistics.mockRejectedValueOnce(new Error('offline'));
+    await activityManager.init('open-album');
+    expect(activityManager.activities).toEqual([]);
+    await activityManager.init('open-album');
+    expect(sdkMock.getActivityStatistics).toHaveBeenCalledTimes(2);
+    expect(activityManager.activities.map(({ id }) => id)).toEqual(['open-album']);
+  });
+
   it('discards a response after reset', async () => {
     const old = deferred<ActivityResponseDto[]>();
     sdkMock.getActivities.mockImplementation((args) => (args.userId ? Promise.resolve([]) : old.promise));
