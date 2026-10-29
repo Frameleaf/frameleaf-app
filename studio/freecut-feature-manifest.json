@@ -17403,8 +17403,10 @@
           "0125-shared-proxy-deletion-alias-guard.patch",
           "0126-project-copy-media-entry-references.patch",
           "0132-anime4k-retained-provenance.patch",
-          "0b7183d4dd"
+          "0b7183d4dd",
+          "0160-library-view-in-media-bin.patch"
         ],
+        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead.",
         "status": "shipped"
       },
       "id": "module.media-library",

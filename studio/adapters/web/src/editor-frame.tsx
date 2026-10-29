@@ -66,6 +66,7 @@ import {
 import { handoffProjectFps, withStoredCadence } from './project-cadence'
 import { call, connectToHost, post } from './host-port'
 import { setCaptionTranslator } from '@/features/editor/services/caption-translation-host'
+import { createLibraryFinder } from './library-finder'
 import { setPersistenceGate } from './persistence-gate'
 import { VirtualWorkspace } from './virtual-workspace'
 import {
@@ -189,6 +190,8 @@ interface Session extends DraftSendState {
   workspace: VirtualWorkspace
   media: LibraryMediaSeeder
   vectors: ReturnType<typeof createClosedVectorSources>
+  /** FL-636: the bin's Library view. */
+  libraryFinder?: ReturnType<typeof createLibraryFinder>
   root: Root
   /** The Freecut project id the host's graph carries; every draft is sent under it. */
   engineProjectId: string
@@ -987,6 +990,16 @@ async function mount(context: StudioHostContext): Promise<void> {
   }
   session = state
   reconcileVectors(state)
+  // FL-636: search the whole library from the bin; results are adopted through the host.
+  const libraryFinder = createLibraryFinder({
+    searchLibrary: (query) => call('searchLibrary', query),
+    libraryFacets: () => call('libraryFacets'),
+    addLibraryAssets: (assetIds) => call('addLibraryAssets', assetIds),
+    seed: (assets) => (state.disposed ? Promise.resolve() : state.media.restore(assets)),
+  })
+  state.libraryFinder = libraryFinder
+  libraryFinder.update(context)
+  state.unsubscribe.push(() => libraryFinder.dispose())
   usePreviewBridgeStore.setState({ scopeOwner: null })
   const first = state.mount
   // Every Freecut save is judged when it starts (see `shims/timeline-persistence.ts`).
@@ -1090,6 +1103,9 @@ async function update(context: StudioHostContext): Promise<void> {
   if (context.auth.locale !== previous.auth.locale)
     await changeAppLanguage(context.auth.locale).catch(() => undefined)
   applyHostEngineStrings(i18n, context.strings)
+  // An update can resume after dispose, when the finder must not register the view again, or after a
+  // newer update ran during the awaits above, so the finder follows the latest context, not this one.
+  if (!state.disposed) state.libraryFinder?.update(state.context)
   await state.media.seed([...context.assets, ...(context.generatedMedia ?? [])])
   await state.media.seedImports(context.projectImports ?? [])
   // A project saved for the first time (or a host that can keep files again) takes what was
