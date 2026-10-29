@@ -86,6 +86,8 @@ export class EagleImportRun implements EagleRunStatus {
   #stopRequested = false;
   /** Writing the record failed; the import carries on, and duplicates are still found on a later run. */
   #persist = true;
+  /** The account that started the import is no longer signed in. Once set, nothing more is written. */
+  #switched = false;
   #finished: Promise<void> | undefined;
   #collectionNames = new Map<string, string>();
 
@@ -144,7 +146,7 @@ export class EagleImportRun implements EagleRunStatus {
    * private windows) still imports, it just can't resume without reading the files again.
    */
   async #save() {
-    if (!this.#persist) {
+    if (!this.#persist || this.#accountChanged()) {
       return;
     }
     this.#record.updatedAt = (this.#options.now?.() ?? new Date()).toISOString();
@@ -156,7 +158,7 @@ export class EagleImportRun implements EagleRunStatus {
   }
 
   async #saveOutcome(itemId: string, outcome: EagleItemOutcome) {
-    if (!this.#persist) {
+    if (!this.#persist || this.#accountChanged()) {
       return;
     }
     try {
@@ -172,7 +174,7 @@ export class EagleImportRun implements EagleRunStatus {
    * than mixing new rows with old ones.
    */
   async #startFresh() {
-    if (this.#options.saved) {
+    if (this.#options.saved || this.#accountChanged()) {
       return;
     }
     try {
@@ -182,22 +184,28 @@ export class EagleImportRun implements EagleRunStatus {
     }
   }
 
-  /**
-   * Before each write that belongs to one item: if the signed-in account changed, the import stops
-   * and this item is left unrecorded. A stop the user asked for lets the item being sent finish.
-   */
-  #assertCurrent() {
-    if (this.#options.isCurrent && !this.#options.isCurrent()) {
+  /** Whether the account that started the import has gone. The import then stops for good. */
+  #accountChanged() {
+    if (!this.#switched && this.#options.isCurrent && !this.#options.isCurrent()) {
+      this.#switched = true;
       this.#stopRequested = true;
-      throw new AccountChangedError();
     }
+    return this.#switched;
   }
 
+  /**
+   * Every server write goes through here: the account is checked synchronously, after the last
+   * await, just before the write starts. Once it has changed nothing more is written, and the item
+   * being imported is left unrecorded rather than failed. (Writes to the saved record check the
+   * same way in `#save`, `#saveOutcome` and `#startFresh`.)
+   */
+  #write<T>(write: () => Promise<T>): Promise<T> {
+    return this.#accountChanged() ? Promise.reject(new AccountChangedError()) : write();
+  }
+
+  /** Whether to start more work: not when the user stopped the import or the account changed. */
   #stillCurrent() {
-    if (this.#options.isCurrent && !this.#options.isCurrent()) {
-      this.#stopRequested = true;
-    }
-    return !this.#stopRequested;
+    return !this.#accountChanged() && !this.#stopRequested;
   }
 
   async #run() {
@@ -212,7 +220,9 @@ export class EagleImportRun implements EagleRunStatus {
       await this.#makeTags(remaining);
       await this.#sendAll(remaining);
     } catch (error) {
-      this.error = error;
+      if (!(error instanceof AccountChangedError)) {
+        this.error = error;
+      }
       this.#stopRequested = true;
     }
     const stopped = this.#stopRequested;
@@ -227,7 +237,7 @@ export class EagleImportRun implements EagleRunStatus {
     const { target } = record;
     if (target.mode === 'inside') {
       if (target.inside === 'new') {
-        record.rootAlbumId ??= await api.createCollection({ name: EAGLE_DEFAULT_COLLECTION });
+        record.rootAlbumId ??= await this.#write(() => api.createCollection({ name: EAGLE_DEFAULT_COLLECTION }));
       } else {
         record.rootAlbumId = target.inside;
       }
@@ -242,12 +252,14 @@ export class EagleImportRun implements EagleRunStatus {
       }
       if (!Object.hasOwn(record.albums, folder.id)) {
         const parentId = folder.parent ? record.albums[folder.parent] : record.rootAlbumId;
-        record.albums[folder.id] = await api.createCollection({
-          name,
-          ...(parentId && { parentId }),
-          ...(eagleColour(folder.color) && { color: eagleColour(folder.color) }),
-          ...(folder.description && { description: folder.description }),
-        });
+        record.albums[folder.id] = await this.#write(() =>
+          api.createCollection({
+            name,
+            ...(parentId && { parentId }),
+            ...(eagleColour(folder.color) && { color: eagleColour(folder.color) }),
+            ...(folder.description && { description: folder.description }),
+          }),
+        );
         await this.#save();
       }
       this.collections = Object.keys(record.albums).length;
@@ -265,7 +277,8 @@ export class EagleImportRun implements EagleRunStatus {
       if (!this.#stillCurrent()) {
         return;
       }
-      Object.assign(this.#record.tagIds, await this.#options.api.upsertTags(missing.slice(index, index + TAG_BATCH)));
+      const batch = missing.slice(index, index + TAG_BATCH);
+      Object.assign(this.#record.tagIds, await this.#write(() => this.#options.api.upsertTags(batch)));
       await this.#save();
     }
   }
@@ -285,33 +298,33 @@ export class EagleImportRun implements EagleRunStatus {
     const record = this.#record;
     const { target } = record;
     try {
-      const sent = await api.upload(item.file!, checksums?.get(item.id));
+      const sent = await this.#write(() => api.upload(item.file!, checksums?.get(item.id)));
       if (!sent) {
-        this.failed.add(item.id);
+        // An upload cancelled because the account changed is left unrecorded, not failed.
+        if (!this.#accountChanged()) {
+          this.failed.add(item.id);
+        }
         return;
       }
       const { assetId, duplicate } = sent;
-      this.#assertCurrent();
       const filed = item.folders.filter((id) => record.albums[id]);
       const albumIds = filed.map((id) => record.albums[id]);
       if (albumIds.length === 0 && target.mode === 'inside' && record.rootAlbumId) {
         albumIds.push(record.rootAlbumId);
       }
       if (albumIds.length > 0) {
-        await api.addToCollections(albumIds, assetId);
+        await this.#write(() => api.addToCollections(albumIds, assetId));
       }
       const tagIds = item.tags.map((name) => record.tagIds[name]).filter(Boolean);
       if (tagIds.length > 0) {
-        this.#assertCurrent();
-        await api.tag(assetId, tagIds);
+        await this.#write(() => api.tag(assetId, tagIds));
       }
-      this.#assertCurrent();
       await this.#describe(item, assetId, duplicate);
       if ((this.#options.annotations ?? EAGLE_ANNOTATIONS_AVAILABLE) && api.annotate) {
         const annotations = eagleAnnotations(item);
         if (annotations.length > 0) {
-          this.#assertCurrent();
-          await api.annotate(assetId, annotations);
+          const annotate = api.annotate;
+          await this.#write(() => annotate(assetId, annotations));
         }
       }
       const outcome = { assetId, duplicate };
@@ -349,8 +362,7 @@ export class EagleImportRun implements EagleRunStatus {
       ...(note && !current.description.trim() && { description: note }),
     };
     if (Object.keys(changes).length > 0) {
-      this.#assertCurrent();
-      await this.#options.api.update(assetId, changes);
+      await this.#write(() => this.#options.api.update(assetId, changes));
     }
   }
 }

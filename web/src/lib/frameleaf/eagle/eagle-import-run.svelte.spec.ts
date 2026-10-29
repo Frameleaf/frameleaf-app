@@ -286,6 +286,95 @@ describe('EagleImportRun', () => {
     expect(server.uploads).toHaveLength(0);
   });
 
+  it('leaves an upload cancelled by an account change unrecorded, not failed', async () => {
+    const server = fakeApi();
+    let signedIn = true;
+    server.api.upload = vi.fn(() => {
+      signedIn = false;
+      return Promise.resolve(undefined);
+    });
+    const importing = run(server.api, { isCurrent: () => signedIn });
+    await importing.start();
+    expect(importing.state).toBe('stopped');
+    expect(importing.failed.size).toBe(0);
+    expect(importing.done).toBe(0);
+    expect(server.api.upload).toHaveBeenCalledTimes(1);
+  });
+
+  describe('an account change at any point', () => {
+    const READS = new Set(['api.describe']);
+    /** Every call the import makes to the server and the record store, in order, during one full run. */
+    const instrumented = (flipAt: number) => {
+      const server = fakeApi({ existing: new Set(['already.png']) });
+      const calls: { name: string; afterSwitch: boolean }[] = [];
+      let signedIn = true;
+      const wrap = <T extends object>(target: T, prefix: string) => {
+        for (const [name, value] of Object.entries(target)) {
+          if (typeof value === 'function') {
+            const original = value as (...args: unknown[]) => Promise<unknown>;
+            Object.assign(target, {
+              [name]: async (...args: unknown[]) => {
+                calls.push({ name: `${prefix}.${name}`, afterSwitch: !signedIn });
+                const result = await original(...args);
+                if (calls.length === flipAt) {
+                  signedIn = false;
+                }
+                return result;
+              },
+            });
+          }
+        }
+      };
+      const annotate = vi.fn(() => Promise.resolve());
+      const api = { ...server.api, annotate };
+      wrap(api, 'api');
+      const records = memoryEagleImportStore();
+      wrap(records, 'store');
+      const importing = run(api, { store: records, annotations: true, isCurrent: () => signedIn });
+      return { importing, calls };
+    };
+
+    it('covers every await point', async () => {
+      const { importing, calls } = instrumented(0);
+      await importing.start();
+      expect(importing.state).toBe('finished');
+      // Collections, tags, uploads, filing, tagging, rating and note, annotations and the record.
+      expect(new Set(calls.map(({ name }) => name))).toEqual(
+        new Set([
+          'store.remove',
+          'store.save',
+          'api.createCollection',
+          'api.upsertTags',
+          'api.upload',
+          'api.addToCollections',
+          'api.tag',
+          'api.update',
+          'api.describe',
+          'api.annotate',
+          'store.saveOutcome',
+        ]),
+      );
+    });
+
+    it('writes nothing after the account changes during any of them', async () => {
+      const { importing: full, calls: all } = instrumented(0);
+      await full.start();
+      expect(all.length).toBeGreaterThan(20);
+      for (let flipAt = 1; flipAt <= all.length; flipAt++) {
+        store = memoryEagleImportStore();
+        const { importing, calls } = instrumented(flipAt);
+        await importing.start();
+        const writesAfter = calls.filter(({ name, afterSwitch }) => afterSwitch && !READS.has(name));
+        expect({ flipAt, writesAfter }).toEqual({ flipAt, writesAfter: [] });
+        // A change during the very last write (the finished record) leaves nothing to stop.
+        const expected = flipAt < all.length ? 'stopped' : 'finished';
+        expect({ flipAt, state: importing.state }).toEqual({ flipAt, state: expected });
+        expect(importing.error).toBeUndefined();
+        expect(importing.failed.size).toBe(0);
+      }
+    });
+  });
+
   it('keeps importing when the record cannot be written', async () => {
     const server = fakeApi();
     const failing: EagleImportStore = {
