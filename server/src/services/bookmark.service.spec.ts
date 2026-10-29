@@ -28,6 +28,12 @@ describe(BookmarkService.name, () => {
   const bookmarks = automock(BookmarkRepository, { args: [{}] });
   const mocks = getMocks();
   const service = new BookmarkService(bookmarks, mocks.access as unknown as AccessRepository);
+
+  it('refuses to read a private address for a link preview', async () => {
+    await expect(service.preview(authStub.user1, { url: 'http://192.168.1.1/' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
   it('keeps bookmark ratings private when returning shared album items', async () => {
     bookmarks.getForAlbum.mockResolvedValue([row]);
     expect((await service.getForAlbum(authStub.user1, 'album'))[0].rating).toBe(4);

@@ -45255,6 +45255,502 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "speech_settings",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "speech_settings",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "enabled",
+          "tableName": "speech_settings",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "scope",
+          "tableName": "speech_settings",
+          "nullable": false,
+          "isArray": false,
+          "default": "'library'::text",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumIds",
+          "tableName": "speech_settings",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::uuid[]",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "destinationId",
+          "tableName": "speech_settings",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "generation",
+          "tableName": "speech_settings",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "modelFingerprint",
+          "tableName": "speech_settings",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "cursor",
+          "tableName": "speech_settings",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "nextScanAt",
+          "tableName": "speech_settings",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "speech_settings_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\")",
+          "tableName": "speech_settings",
+          "columnNames": [
+            "ownerId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "speech_settings_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "speech_settings",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "speech_transcript",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "speech_transcript",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "speech_transcript",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "operationId",
+          "tableName": "speech_transcript",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "generation",
+          "tableName": "speech_transcript",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "checksum",
+          "tableName": "speech_transcript",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "indexVersion",
+          "tableName": "speech_transcript",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "modelFingerprint",
+          "tableName": "speech_transcript",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "model",
+          "tableName": "speech_transcript",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "language",
+          "tableName": "speech_transcript",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "completedAt",
+          "tableName": "speech_transcript",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "IDX_speech_transcript_ownerId",
+          "definition": "CREATE INDEX \"IDX_speech_transcript_ownerId\" ON public.speech_transcript USING btree (\"ownerId\")",
+          "tableName": "speech_transcript",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "speech_transcript_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "speech_transcript",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "speech_transcript_operationId_key",
+          "definition": "UNIQUE (\"operationId\")",
+          "tableName": "speech_transcript",
+          "columnNames": [
+            "operationId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "speech_transcript_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
+          "tableName": "speech_transcript",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "speech_transcript_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "speech_transcript",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "speech_window",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "operationId",
+          "tableName": "speech_window",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "sequence",
+          "tableName": "speech_window",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "speech_window",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "tsvector",
+          "primary": false,
+          "name": "vector",
+          "tableName": "speech_window",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "tokens",
+          "tableName": "speech_window",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "words",
+          "tableName": "speech_window",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "IDX_speech_window_vector",
+          "definition": "CREATE INDEX \"IDX_speech_window_vector\" ON public.speech_window USING gin (vector)",
+          "tableName": "speech_window",
+          "columnNames": [
+            "vector"
+          ],
+          "using": "gin",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "IDX_speech_window_assetId_operationId",
+          "definition": "CREATE INDEX \"IDX_speech_window_assetId_operationId\" ON public.speech_window USING btree (\"assetId\", \"operationId\")",
+          "tableName": "speech_window",
+          "columnNames": [
+            "assetId",
+            "operationId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "speech_window_pkey",
+          "definition": "PRIMARY KEY (\"operationId\", sequence)",
+          "tableName": "speech_window",
+          "columnNames": [
+            "operationId",
+            "sequence"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "speech_window_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
+          "tableName": "speech_window",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "speech_checkpoint",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "operationId",
+          "tableName": "speech_checkpoint",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "speech_checkpoint",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "nextChunk",
+          "tableName": "speech_checkpoint",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "tail",
+          "tableName": "speech_checkpoint",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "model",
+          "tableName": "speech_checkpoint",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "language",
+          "tableName": "speech_checkpoint",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "speech_checkpoint_pkey",
+          "definition": "PRIMARY KEY (\"operationId\")",
+          "tableName": "speech_checkpoint",
+          "columnNames": [
+            "operationId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "speech_checkpoint_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
+          "tableName": "speech_checkpoint",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [

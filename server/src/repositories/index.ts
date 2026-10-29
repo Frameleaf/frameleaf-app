@@ -111,6 +111,7 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { SourceResourceRepository } from 'src/repositories/source-resource.repository.js';
+import { SpeechRepository } from 'src/repositories/speech.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
@@ -139,6 +140,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  SpeechRepository,
   AssetPaletteRepository,
   CaptureRepository,
   AssetSourceRepository,

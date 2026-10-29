@@ -103,6 +103,10 @@
   const nothingMatches = $derived(count === 0);
 
   const guard = async (work: () => Promise<void>) => {
+    if (query.mode === 'speech') {
+      error = $t('frameleaf_speech_integrations');
+      return;
+    }
     if (!name.trim() || busy) {
       return;
     }
@@ -310,7 +314,9 @@
       <input data-initial-focus maxlength="100" bind:value={name} disabled={busy || step.kind !== 'choose'} />
     </label>
 
-    {#if step.kind === 'choose'}
+    {#if query.mode === 'speech'}
+      <p role="status">{$t('frameleaf_speech_integrations')}</p>
+    {:else if step.kind === 'choose'}
       <div class="choices">
         {#each choices as choice (choice.id)}
           <button

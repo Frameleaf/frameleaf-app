@@ -43,6 +43,8 @@ export const serverEvents = [
 export type ServerEvents = (typeof serverEvents)[number];
 
 export interface ClientEventMap {
+  /** Content-free owner invalidation; discard speech quotes and re-read live authority. */
+  on_speech_index_change: [];
   /** Complete local sequence; never translated into broad Trash/Delete handlers. */
   AssetLocalEffectsV1: [
     { streamEpoch: string; sequence: string; effectId: string; assetIds: string[]; revokedOperationIds: string[] },

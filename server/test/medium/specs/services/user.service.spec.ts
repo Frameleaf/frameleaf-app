@@ -12,6 +12,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { UserService } from 'src/services/user.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
@@ -38,7 +39,7 @@ const setup = (db?: Kysely<DB>) => {
       UserRepository,
       SessionRepository,
     ],
-    mock: [LoggingRepository, JobRepository, EventRepository],
+    mock: [LoggingRepository, JobRepository, EventRepository, WebsocketRepository],
   });
 };
 
