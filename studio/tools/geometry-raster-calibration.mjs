@@ -214,9 +214,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-596 motion tracking: trim-aware binding, clamped decode time
           binding.sourceSha256 ===
             '0570f1bad5f49930c62c06b5731236632671b5e32c3639f6aec8424cafb32ebb' ||
+          // FL-596 motion tracking: removable pins only where values hold
+          binding.sourceSha256 ===
+            'b58035f0157f2216c3004669fce6345fbe1d429d1dcdb21bb400a5cb71e380a6' ||
           // FL-627 tracking box and provenance
           binding.sourceSha256 ===
-            '08d42d9a3e7b39ccb16f92f943a3da30e1d16edd88c96e8d1561e85a4b58241c')),
+            'bd9c1a7e73e0a360bf5ba0a5487ba722db6ce36d38489f204e9cdc00e1b87d9b')),
     'SOURCE_BROWSER',
   )
   check(

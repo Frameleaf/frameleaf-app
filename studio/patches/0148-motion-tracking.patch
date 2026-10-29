@@ -208,7 +208,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.test.ts
-@@ -0,0 +1,158 @@
+@@ -0,0 +1,159 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -316,7 +316,8 @@ new file mode 100644
 +    expect(applicationId).toBe(outcome.ok ? outcome.applicationId : '')
 +
 +    expect(removeMotionTrack('title', applicationId!)).toBe(true)
-+    expect(keysOf('x')).toEqual([[9, 100], [13, 100]])
++    // The pins belong to the track, so removing it restores the untouched target.
++    expect(keysOf('x')).toEqual([])
 +    useTimelineCommandStore.getState().undo()
 +    expect(keysOf('x')).toHaveLength(5)
 +  })
@@ -336,8 +337,8 @@ new file mode 100644
 +    const result = resultFor(path)
 +    expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'conflict' })
 +    expect(applyMotionTrack(result, { replaceExisting: true }).ok).toBe(true)
-+    // The pins hold the pre-apply curve: -999 before the old key, and its interpolation at frame 13.
-+    expect(keysOf('x')).toEqual([[9, -999], [10, 100], [11, 110], [12, 120], [13, -947.41], [50, 7]])
++    // Before the range x held -999, so it is pinned at 9; after it, the key at 50 keeps its own curve.
++    expect(keysOf('x')).toEqual([[9, -999], [10, 100], [11, 110], [12, 120], [50, 7]])
 +    expect(keysOf('opacity')).toEqual([[11, 0.5]])
 +    useTimelineCommandStore.getState().undo()
 +    expect(keysOf('x')).toEqual([[11, -999], [50, 7]])
@@ -371,7 +372,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/motion-track-actions.ts
-@@ -0,0 +1,311 @@
+@@ -0,0 +1,313 @@
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import type { AnimationKeyframeSource } from '@/types/keyframe'
 +import { useItemsStore } from '../../items-store'
@@ -639,19 +640,21 @@ new file mode 100644
 +    itemId: target.id, property, frame: value.frame - target.from, value: Math.round(value[property] * 100) / 100,
 +    easing: 'linear' as const, source: source_,
 +  })))
-+  // A partial track must not change the target outside it: pin the pre-apply value on the frame just
-+  // before and after the tracked range (unless a key is already there). These keys are the target's
-+  // own, so removing the track leaves them, and they hold what was shown anyway.
-+  const keyed = (property: string, frame: number) => (record?.properties ?? [])
-+    .some((entry) => entry.property === property && entry.keyframes.some((keyframe) => keyframe.frame === frame))
-+  const boundaries = [low - 1, high + 1].filter((frame) => frame >= 0 && frame < target.durationInFrames)
-+  for (const frame of boundaries) {
++  // A partial track must not change the target outside it. Where a property holds one value past
++  // the tracked range (no key beyond it on that side), pin that value on the neighbouring frame;
++  // where keys follow, they keep their own interpolation. Pins belong to the application, so
++  // removing the track removes them too.
++  const keysOf = (property: string) => (record?.properties ?? []).find((entry) => entry.property === property)?.keyframes ?? []
++  for (const [frame, side] of [[low - 1, -1], [high + 1, 1]] as const) {
++    if (frame < 0 || frame >= target.durationInFrames) continue
 +    const shown = resolveItemTransformAtFrame(target, { canvas: canvasSize(), frame: target.from + frame, keyframes: record })
 +    for (const property of TRACKED_PROPERTIES) {
-+      if (keyed(property, frame)) continue
-+      payloads.push({ itemId: target.id, property, frame, value: Math.round(shown[property] * 100) / 100, easing: 'linear' })
++      const beyond = keysOf(property).some((keyframe) => (side < 0 ? keyframe.frame <= frame : keyframe.frame >= frame))
++      if (beyond) continue
++      payloads.push({ itemId: target.id, property, frame, value: Math.round(shown[property] * 100) / 100, easing: 'linear', source: source_ })
 +    }
 +  }
++
 +  execute('APPLY_MOTION_TRACK', () => {
 +    const keyframes = useKeyframesStore.getState()
 +    for (const { property, id } of conflicting) keyframes._removeKeyframe(target.id, property, id)

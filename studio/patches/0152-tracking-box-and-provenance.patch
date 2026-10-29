@@ -189,15 +189,15 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 -    const [applicationId] = listMotionTracks('title')
 -    expect(applicationId).toBe(outcome.ok ? outcome.applicationId : '')
 +    const [track] = listMotionTracks('title')
-+    expect(track).toMatchObject({ applicationId: outcome.ok ? outcome.applicationId : '', sourceId: 'v1', keyFrames: [10, 11, 12], lostFrames: 0 })
++    expect(track).toMatchObject({ applicationId: outcome.ok ? outcome.applicationId : '', sourceId: 'v1', keyFrames: [9, 10, 11, 12, 13], lostFrames: 0 })
  
 -    expect(removeMotionTrack('title', applicationId!)).toBe(true)
 +    expect(removeMotionTrack('title', track!.applicationId)).toBe(true)
 +    expect(listMotionTracks('title')).toEqual([])
-     expect(keysOf('x')).toEqual([[9, 100], [13, 100]])
+     // The pins belong to the track, so removing it restores the untouched target.
+     expect(keysOf('x')).toEqual([])
      useTimelineCommandStore.getState().undo()
-     expect(keysOf('x')).toHaveLength(5)
-@@ -144,6 +147,79 @@ describe('motion track actions', () => {
+@@ -145,6 +148,79 @@ describe('motion track actions', () => {
      useKeyframesStore.getState()._addKeyframes([{ itemId: 'title', property: 'x', frame: 70, value: 3 }])
      expect(applyMotionTrack(result)).toEqual({ ok: false, reason: 'stale' })
    })
@@ -214,8 +214,8 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 +    }))
 +    useKeyframesStore.getState().setKeyframes(stripped)
 +    expect(removeMotionTrack('title', outcome.applicationId)).toBe(true)
-+    // The boundary pins at 9 and 13 are the target's own keys and stay.
-+    expect(keysOf('x')).toEqual([[9, 100], [13, 100], [50, 7]])
++    // The pins at 9 and 13 belong to the track and go with it; the later manual key stays.
++    expect(keysOf('x')).toEqual([[50, 7]])
 +  })
 +
 +  it('tracks a separate box clip and refuses parented targets', async () => {
@@ -238,10 +238,10 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
 +    const shifted = path.map((value) => ({ ...value, frame: value.frame + 1, x: value.x + 1000 }))
 +    const second = applyMotionTrack(resultFor(shifted), { replaceExisting: true })
 +    if (!second.ok) throw new Error(second.reason)
-+    expect(listMotionTracks('title').map((track) => track.keyFrames)).toEqual([[10], [11, 12, 13]])
++    // Records include each track's pins: A keeps its pin at 9 and frame 10; B adds a pin at 14.
++    expect(listMotionTracks('title').map((track) => track.keyFrames)).toEqual([[9, 10], [11, 12, 13, 14]])
 +    expect(removeMotionTrack('title', first.applicationId)).toBe(true)
-+    // The first track's pin at 9 and the second's at 14 stay with the second track's keys.
-+    expect(keysOf('x').map(([frame]) => frame)).toEqual([9, 11, 12, 13, 14])
++    expect(keysOf('x').map(([frame]) => frame)).toEqual([11, 12, 13, 14])
 +  })
 +
 +  it('keeps track records on the left half of a split, where the keyframes stay', () => {
@@ -277,7 +277,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.test
  
    it('applies a one-frame backward result instead of calling it stale', () => {
      expect(applyMotionTrack(resultFor([path[0]!], [], 'backward', [20]), {})).toMatchObject({ ok: true })
-@@ -153,6 +229,6 @@ describe('motion track actions', () => {
+@@ -154,6 +230,6 @@ describe('motion track actions', () => {
      const outcome = applyMotionTrack(resultFor(path))
      if (!outcome.ok) throw new Error(outcome.reason)
      useItemsStore.getState().setTracks([track('t1', true)])
@@ -348,7 +348,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    ])
  }
  
-@@ -124,16 +142,29 @@ export async function analyzeMotionTrack(
+@@ -124,16 +142,30 @@ export async function analyzeMotionTrack(
    targetId: string,
    seedFrame: number,
    direction: 'forward' | 'backward',
@@ -372,15 +372,16 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
    if (target.type === 'audio') return { ok: false, reason: 'unsupported-target' }
 +  // Keyframes hold canvas offsets; a parented target's offsets are relative to its parent.
 +  if (target.transformParent) return { ok: false, reason: 'parented-target' }
-+  // The seed is an axis-aligned box, so a rotated box (static or animated) would track the wrong region.
++  // The seed is an axis-aligned box, so a rotated separate box (static or animated) would track the wrong
++  // region; the default box (the target itself) keeps its earlier behaviour.
 +  if (boxItem.type === 'audio' || boxItem.id === sourceId || boxItem.transformParent
-+    || (boxItem.transform?.rotation ?? 0) !== 0 || hasKeyframes(boxItem.id, ['rotation'])) {
++    || (boxItem.id !== targetId && ((boxItem.transform?.rotation ?? 0) !== 0 || hasKeyframes(boxItem.id, ['rotation'])))) {
 +    return { ok: false, reason: 'unsupported-box' }
 +  }
    if (hasKeyframes(targetId, ['position', 'scale'])) return { ok: false, reason: 'vector-keys' }
    const clip = placedClip(source)
    if (typeof clip === 'string') return { ok: false, reason: clip }
-@@ -150,12 +181,20 @@ export async function analyzeMotionTrack(
+@@ -150,12 +182,20 @@ export async function analyzeMotionTrack(
    const targetPlacement = resolveItemTransformAtFrame(target, {
      canvas: canvasSize(), frame: seedFrame, keyframes: useKeyframesStore.getState().keyframesByItemId[target.id],
    })
@@ -403,7 +404,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
  
    // Decode, track and drop one frame at a time: only the previous box and the template are kept.
    const samples: TrackSample[] = []
-@@ -216,6 +255,7 @@ export async function analyzeMotionTrack(
+@@ -216,6 +256,7 @@ export async function analyzeMotionTrack(
        targetId,
        binding,
        direction,
@@ -411,7 +412,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
        frames,
        samples: sourceSamples,
        values: followTrack(clip, sourceSamples, frames, targetPlacement),
-@@ -239,7 +279,9 @@ export function applyMotionTrack(
+@@ -239,7 +280,9 @@ export function applyMotionTrack(
    const items = useItemsStore.getState().items
    const source = items.find((item) => item.id === result.sourceId)
    const target = items.find((item) => item.id === result.targetId)
@@ -422,7 +423,7 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
      return { ok: false, reason: 'stale' }
    }
    if (result.lostFrames.length > 0 && !decisions.keepTrackedPart) return { ok: false, reason: 'unreviewed-lost' }
-@@ -256,6 +298,10 @@ export function applyMotionTrack(
+@@ -256,6 +299,10 @@ export function applyMotionTrack(
        .filter((keyframe) => keyframe.frame >= low && keyframe.frame <= high)
        .map((keyframe) => ({ property: property.property, id: keyframe.id })))
    if (conflicting.length > 0 && !decisions.replaceExisting) return { ok: false, reason: 'conflict' }
@@ -433,15 +434,16 @@ diff --git a/src/features/timeline/stores/actions/edit/motion-track-actions.ts b
  
    const applicationId = crypto.randomUUID()
    const source_: AnimationKeyframeSource = {
-@@ -278,34 +324,98 @@ export function applyMotionTrack(
-       payloads.push({ itemId: target.id, property, frame, value: Math.round(shown[property] * 100) / 100, easing: 'linear' })
+@@ -280,34 +327,99 @@ export function applyMotionTrack(
      }
    }
+ 
 +  const trackRecord: MotionTrackRecord = {
 +    applicationId,
 +    algorithm: MOTION_TRACKER_ALGORITHM,
 +    sourceId: result.sourceId,
-+    keyFrames: result.values.map((value) => value.frame - target.from),
++    // Tracked frames and the pins beside them, so removal takes both.
++    keyFrames: [...new Set(payloads.map((payload) => payload.frame))].sort((a, b) => a - b),
 +    lostFrames: result.lostFrames.length,
 +  }
    execute('APPLY_MOTION_TRACK', () => {
