@@ -195,7 +195,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
           // FL-562 transcript editing changes the transcript panel and timeline edits only.
           binding.sourceSha256 ===
-            'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b')),
+            'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
+          // FL-599 colour matching adds effects through existing effect definitions; it changes no producer.
+          binding.sourceSha256 ===
+            '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185')),
     'SOURCE_BROWSER',
   )
   check(

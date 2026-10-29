@@ -1065,6 +1065,12 @@
       "code": "tmp.getContext('2d')?.putImageData(loupe.data, 0, 0)",
       "class": "canvas2d-context",
       "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/timeline/stores/actions/edit/colour-match-actions.ts",
+      "code": "const context = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null",
+      "class": "canvas2d-context",
+      "reason": "Direct Canvas2D context reading a decoded SDR frame for analysis (Studio next features); not a render route."
     }
   ]
 }
