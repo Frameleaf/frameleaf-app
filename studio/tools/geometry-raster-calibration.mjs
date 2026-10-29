@@ -213,7 +213,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
           // FL-595/FL-628 multicam editing and angle viewer on motion tracking, colour match, loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '2a51d0d6ba8e72625d5ec75f6a8304b677fa60e2ac7ed8669dfa5d34aaabe414')),
+            'ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47')),
     'SOURCE_BROWSER',
   )
   check(

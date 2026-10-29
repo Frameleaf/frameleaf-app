@@ -753,8 +753,8 @@
     {
       "path": "patches/0153-multicam-viewer-master-audio-drift.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "160bd02425843794e1e88bacc24ede4d12e6bb1bb2c737cd474ca6a21acad0f4"
+      "sha256": "e95e06fb8f85485b43b08cdf5fdd953b4a70f310fdeebfdab418954af5ca3eae"
     }
   ],
-  "sourceSha256": "2a51d0d6ba8e72625d5ec75f6a8304b677fa60e2ac7ed8669dfa5d34aaabe414"
+  "sourceSha256": "ce172d5b6b4a910f0d7e2bd59afbddb2b4d4407f1b3975715189ecdaa73e9a47"
 }

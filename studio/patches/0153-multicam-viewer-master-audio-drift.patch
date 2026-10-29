@@ -286,7 +286,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
      ['generated-media', () => {
        // A generated clip has no media file.
        useItemsStore.getState()._updateItem('v3', { mediaId: undefined })
-@@ -159,4 +193,34 @@ describe('multicam', () => {
+@@ -159,4 +193,41 @@ describe('multicam', () => {
      expect(outcome.ok).toBe(true)
      expect([byId('a1').muted, byId('a2').muted, byId('a3').muted]).toEqual([true, false, true])
    })
@@ -308,6 +308,13 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
 +      referenceId: 'v1', masterItemId: 'v1',
 +      angles: [{ itemId: 'v1', offsetSeconds: 0 }, { itemId: 'v2', offsetSeconds: 0, clockRatio: 1.2 }],
 +    })).toEqual({ ok: false, reason: 'retimed' })
++  })
++
++  it('accepts drift correction at the 1% limit', () => {
++    expect(createMulticamEdit({
++      referenceId: 'v1', masterItemId: 'v1',
++      angles: [{ itemId: 'v1', offsetSeconds: 0 }, { itemId: 'v2', offsetSeconds: 0, clockRatio: 1.01 }],
++    }).ok).toBe(true)
 +  })
 +
 +  it('uses a standalone audio clip as the master and mutes every camera (FL-628)', () => {
@@ -463,7 +470,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
 -    for (const member of [item, ...getLinkedItems(items, item.id).filter((l) => l.id !== item.id)]) {
 -      moves.push({ id: member.id, from: member.from + delta })
 +  const ratios = new Map(params.angles.map((angle) => [angle.itemId, angle.itemId === params.referenceId ? 1 : (angle.clockRatio ?? 1)]))
-+  if (params.angles.some((angle) => !(ratios.get(angle.itemId)! > 0.99 && ratios.get(angle.itemId)! < 1.01))) {
++  if (params.angles.some((angle) => !(ratios.get(angle.itemId)! >= 0.99 && ratios.get(angle.itemId)! <= 1.01))) {
 +    return { ok: false, reason: 'retimed' }
 +  }
 +  const place = (item: VideoItem | AudioItem, offset: number, ratio: number) => {
