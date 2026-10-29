@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { connectWithKey } from './connect-with-key';
 
 test('packaged connection UI pins requests, restricts key storage and clears revoked destinations across pages', async ({}, testInfo) => {
   let revoked = false;
@@ -41,7 +42,12 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       else res.writeHead(200, { 'Content-Type': 'image/svg+xml' }).end(svg);
       return;
     }
-    if (req.url === '/redirect/api/capture/capabilities') {
+    if (req.url === '/frameleaf/api/server/ping') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ res: 'pong' }));
+      return;
+    }
+    if (req.url?.startsWith('/redirect/api/')) {
       res.writeHead(302, { Location: '/must-not-follow' }).end();
       return;
     }
@@ -124,19 +130,14 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     );
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/options.html`);
-    await options.getByLabel('Server address').fill(origin + '/frameleaf');
-    await options.getByLabel('Browser key', { exact: true }).fill(fixtureKey);
-    await options
-      .getByRole('switch', { name: /Allow a local server without HTTPS/ })
-      .check();
-    await options.getByRole('button', { name: 'Connect', exact: true }).click();
+    await connectWithKey(options, origin + '/frameleaf', fixtureKey);
     await expect(
       options.getByRole('heading', { name: 'Settings', exact: true }),
     ).toBeVisible();
     await expect(options.getByText('1 you can save into')).toBeVisible();
     await expect(
-      options.getByLabel('Browser key', { exact: true }),
-    ).toHaveValue('');
+      options.getByLabel('Key from Frameleaf', { exact: true }),
+    ).toHaveCount(0);
     expect(requests).toContain('/frameleaf/api/capture/catalog');
     await options.screenshot({
       path: testInfo.outputPath('connection.png'),
@@ -356,35 +357,41 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
       ),
     ).toBe(false);
     revoked = false;
-    await options.getByLabel('Browser key', { exact: true }).fill(fixtureKey);
-    await options
-      .getByRole('button', { name: 'Connect again', exact: true })
-      .click();
+    await connectWithKey(options, origin + '/frameleaf', fixtureKey);
     await expect(
       popup.getByRole('button', { name: 'Find images on this page' }),
     ).toBeVisible();
     await expect(popup.getByRole('alert')).not.toBeVisible();
-    await options.getByText('Use a different server or key').click();
-    await options.getByLabel('Server address').fill(origin + '/redirect');
-    await options.getByLabel('Browser key', { exact: true }).fill(fixtureKey);
-    await options.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(options.getByRole('alert')).toContainText(
-      'Redirects are not followed',
-    );
-    expect(redirectTargetHits).toBe(initialRedirectHits);
+    // FL-655: Switch server checks the new server first; a redirect is never followed
     await options
-      .getByRole('button', { name: 'Disconnect', exact: true })
+      .getByRole('button', { name: 'Switch server', exact: true })
+      .click();
+    await options.getByLabel('Server address').fill(origin + '/redirect');
+    await options.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(options.getByText('Your server didn’t answer')).toBeVisible();
+    expect(redirectTargetHits).toBe(initialRedirectHits);
+    await options.getByRole('button', { name: 'Back', exact: true }).click();
+    await options
+      .getByRole('button', { name: 'Sign out', exact: true })
       .click();
     await expect(
       options.getByText(
-        'Connect to your Frameleaf server to save images, links and screenshots into Boards.',
+        'Sign in with your Frameleaf account to save images, links and screenshots into Boards.',
       ),
     ).toBeVisible();
+    // only the recently used servers stay: no key, no account details beyond the name
     expect(
       await options.evaluate(async () =>
         Object.keys(await chrome.storage.local.get(null)),
       ),
-    ).toEqual([]);
+    ).toEqual(['frameleafRecentServersV1']);
+    expect(
+      await options.evaluate(
+        async (key) =>
+          JSON.stringify(await chrome.storage.local.get(null)).includes(key),
+        fixtureKey,
+      ),
+    ).toBe(false);
   } finally {
     try {
       await context?.close();

@@ -81,6 +81,10 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
 import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
 import { BookmarkTable } from 'src/schema/tables/bookmark.table.js';
+import {
+  BrowserExtensionAccessTable,
+  BrowserExtensionSignInCodeTable,
+} from 'src/schema/tables/browser-extension-sign-in.table.js';
 import { CaptureReceiptTable } from 'src/schema/tables/capture-receipt.table.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
@@ -298,6 +302,8 @@ export class ImmichDatabase {
     AssetPaletteTable,
     AssetPaletteSwatchTable,
     CaptureReceiptTable,
+    BrowserExtensionSignInCodeTable,
+    BrowserExtensionAccessTable,
     BookmarkTable,
     AlbumBookmarkTable,
     BookmarkTagTable,
@@ -562,6 +568,8 @@ export interface DB extends QueueDatabase {
   asset_palette: AssetPaletteTable;
   asset_palette_swatch: AssetPaletteSwatchTable;
   capture_receipt: CaptureReceiptTable;
+  browser_extension_sign_in_code: BrowserExtensionSignInCodeTable;
+  browser_extension_access: BrowserExtensionAccessTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;
   bookmark_tag: BookmarkTagTable;
