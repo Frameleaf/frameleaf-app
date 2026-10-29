@@ -225,7 +225,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb' ||
           // FL-637 clean up voice changes a clip's audio source only; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '1db23512857652dfd3a5ef86ade97b11afdb7508cb250ee43ea80dafa216443b')),
+            'f0ebfb9968193b891b37c0cc6f6e97b0285e964ab96a15b1a26b03e224920590')),
     'SOURCE_BROWSER',
   )
   check(
