@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 import {
   AssetType,
   AssetVisibilitySchema,
@@ -325,3 +326,29 @@ export class AssetMetadataResponseDto extends createZodDto(AssetMetadataResponse
 export class AssetMetadataBulkResponseDto extends createZodDto(AssetMetadataBulkResponseSchema) {}
 export class AssetCopyDto extends createZodDto(AssetCopySchema) {}
 export class AssetDownloadOriginalDto extends createZodDto(AssetDownloadOriginalSchema) {}
+
+/** FL-647: the most assets one bulk read returns; a client reads a longer list in pages. */
+export const ASSET_INFO_BATCH_MAX = 200;
+
+const AssetInfoBatchSchema = z
+  .object({
+    ids: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(ASSET_INFO_BATCH_MAX)
+      .describe(`Asset IDs to read, at most ${ASSET_INFO_BATCH_MAX}`),
+  })
+  .meta({ id: 'AssetInfoBatchDto' });
+
+const AssetInfoBatchResponseSchema = z
+  .object({
+    assets: z
+      .array(AssetResponseSchema)
+      .describe(
+        'Each requested asset the caller may read, as the single-asset read returns it, in request order; ids the caller may not read or that do not exist are left out',
+      ),
+  })
+  .meta({ id: 'AssetInfoBatchResponseDto' });
+
+export class AssetInfoBatchDto extends createZodDto(AssetInfoBatchSchema) {}
+export class AssetInfoBatchResponseDto extends createZodDto(AssetInfoBatchResponseSchema) {}

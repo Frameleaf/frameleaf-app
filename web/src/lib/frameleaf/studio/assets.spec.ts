@@ -254,37 +254,34 @@ describe('stored project library hydration', () => {
     expect(libraryAssetIdsIn({ items: ids.map((mediaId) => ({ mediaId })) })).toHaveLength(205);
   });
 
-  it('settles refusals and excludes Locked/trashed/wrong-identity metadata before publication', async () => {
-    const ids = [first, second, '11b52632-3eac-46cb-83bf-a23f48f85209', '12b52632-3eac-46cb-83bf-a23f48f85209'];
-    const lookup = vi.fn(async (id: string) => {
-      if (id === second) {
-        throw new Error('404 refused');
-      }
-      if (id === ids[2]) {
-        return asset({ id, visibility: AssetVisibility.Locked, originalFileName: 'private-locked' });
-      }
-      if (id === ids[3]) {
-        return asset({ id: second, originalFileName: 'wrong-identity' });
-      }
-      return asset({ id });
-    });
-    expect(await resolveStudioAssets([...ids, first], lookup)).toEqual([asset({ id: first })]);
-    expect(lookup).toHaveBeenCalledTimes(4);
-    expect(await resolveStudioAssets([first], async () => asset({ id: first, isTrashed: true }))).toEqual([]);
+  it('excludes refused, Locked, trashed and unrequested assets before publication', async () => {
+    const locked = '11b52632-3eac-46cb-83bf-a23f48f85209';
+    const stranger = '12b52632-3eac-46cb-83bf-a23f48f85209';
+    // the server leaves out what the session may not read (second); anything it should not have sent is dropped too
+    const lookup = vi.fn(async (_: string[]) => [
+      asset({ id: locked, visibility: AssetVisibility.Locked, originalFileName: 'private-locked' }),
+      asset({ id: stranger, originalFileName: 'not-requested' }),
+      asset({ id: first }),
+    ]);
+    expect(await resolveStudioAssets([first, second, locked, first.toUpperCase()], lookup)).toEqual([
+      asset({ id: first }),
+    ]);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith([first, second, locked]);
+    expect(await resolveStudioAssets([first], async () => [asset({ id: first, isTrashed: true })])).toEqual([]);
   });
 
-  it('bounds in-flight lookups while resolving every source', async () => {
-    let active = 0;
-    let maximum = 0;
-    const ids = Array.from({ length: 25 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
-    const found = await resolveStudioAssets(ids, async (id: string) => {
-      active++;
-      maximum = Math.max(maximum, active);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      active--;
-      return asset({ id });
+  it('reads in pages of the server cap, keeps the requested order, and drops a failed page only (FL-647)', async () => {
+    const ids = Array.from({ length: 450 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    const lookup = vi.fn(async (page: string[]) => {
+      if (page.includes(ids[200])) {
+        throw new Error('offline');
+      }
+      return [...page].reverse().map((id) => asset({ id }));
     });
-    expect(maximum).toBeLessThanOrEqual(8);
-    expect(found.map((a) => a.id)).toEqual(ids);
+    const found = await resolveStudioAssets(ids, lookup);
+    expect(lookup.mock.calls.map(([page]) => page.length)).toEqual([200, 200, 50]);
+    expect(found.map((a) => a.id)).toEqual([...ids.slice(0, 200), ...ids.slice(400)]);
+    expect(await resolveStudioAssets([], lookup)).toEqual([]);
+    expect(lookup).toHaveBeenCalledTimes(3);
   });
 });

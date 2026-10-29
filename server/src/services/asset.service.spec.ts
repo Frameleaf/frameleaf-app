@@ -178,6 +178,59 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('getMany (FL-647)', () => {
+    it('checks access once for the whole list with the single read permission', async () => {
+      const first = AssetFactory.create();
+      const second = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([first.id, second.id]));
+      mocks.asset.getById.mockImplementation((id) =>
+        Promise.resolve(getForAsset(id === first.id ? first : second) as never),
+      );
+
+      const result = await sut.getMany(authStub.admin, { ids: [first.id, second.id, first.id] });
+
+      expect(result.assets.map((asset) => asset.id)).toEqual([first.id, second.id]);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledTimes(1);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set([first.id, second.id]),
+        undefined,
+      );
+    });
+
+    it('leaves out what the caller may not read, without loading it, instead of failing the list', async () => {
+      const mine = AssetFactory.create();
+      const theirs = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(mine));
+
+      const result = await sut.getMany(authStub.admin, { ids: [theirs.id, mine.id] });
+
+      expect(result.assets.map((asset) => asset.id)).toEqual([mine.id]);
+      expect(mocks.asset.getById).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.getById).toHaveBeenCalledWith(mine.id, expect.anything());
+    });
+
+    it('leaves out an asset that disappeared after the access check', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(void 0);
+
+      await expect(sut.getMany(authStub.admin, { ids: [asset.id] })).resolves.toEqual({ assets: [] });
+    });
+
+    it('returns each asset exactly as the single read does', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      const single = await sut.get(authStub.admin, asset.id);
+      const { assets } = await sut.getMany(authStub.admin, { ids: [asset.id] });
+
+      expect(assets).toEqual([single]);
+    });
+  });
+
   describe('get', () => {
     it("names the partner library the viewer's own copy came from (FL-326)", async () => {
       const asset = AssetFactory.create();

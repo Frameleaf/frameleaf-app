@@ -198,25 +198,34 @@ export const libraryAssetIdsIn = (graph: unknown): string[] => {
   return [...ids];
 };
 
-/** Normal caller reads, with bounded concurrency and the existing Studio privacy projection. */
+/** The most ids one bulk asset read takes (the server's `POST /assets/info` cap). */
+export const STUDIO_ASSET_READ_BATCH = 200;
+
+/**
+ * Normal caller reads, a page of ids per request (FL-647: one bulk read instead of one request per
+ * asset), with the existing Studio privacy projection. The server leaves out what this session may
+ * not read; anything else it returns that was not asked for, or that Studio may not use, is dropped
+ * here too. A page that fails is dropped like unreadable ids, so the editor still opens.
+ */
 export const resolveStudioAssets = async (
   ids: readonly string[],
-  lookup: (id: string) => Promise<AssetResponseDto>,
+  lookup: (ids: string[]) => Promise<AssetResponseDto[]>,
 ): Promise<AssetResponseDto[]> => {
   const wanted = [...new Set(ids.map((id) => id.toLowerCase()))];
-  const found: AssetResponseDto[] = [];
-  for (let at = 0; at < wanted.length; at += 8) {
-    const batch = wanted.slice(at, at + 8);
-    const results = await Promise.allSettled(batch.map((id) => lookup(id)));
-    for (const [index, result] of results.entries()) {
-      if (
-        result.status === 'fulfilled' &&
-        result.value.id.toLowerCase() === batch[index] &&
-        isStudioEligibleAsset(result.value)
-      ) {
-        found.push(result.value);
+  const pages: string[][] = [];
+  for (let at = 0; at < wanted.length; at += STUDIO_ASSET_READ_BATCH) {
+    pages.push(wanted.slice(at, at + STUDIO_ASSET_READ_BATCH));
+  }
+  const results = await Promise.allSettled(pages.map((page) => lookup(page)));
+  const byId = new Map<string, AssetResponseDto>();
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      for (const asset of result.value) {
+        byId.set(asset.id.toLowerCase(), asset);
       }
     }
   }
-  return found;
+  return wanted
+    .map((id) => byId.get(id))
+    .filter((asset): asset is AssetResponseDto => !!asset && isStudioEligibleAsset(asset));
 };
