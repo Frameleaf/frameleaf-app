@@ -297,6 +297,28 @@ describe('VideoNativeViewer component', () => {
       videoSeek.pending = null;
     });
 
+    it('holds a spoken timestamp until original-source metadata replaces a trimmed preview', async () => {
+      const props = videoProps();
+      const viewer = renderViewer(props);
+      let video = viewer.container.querySelector('video')!;
+      loaded(video, { duration: 10 });
+      await fireEvent.loadedMetadata(video);
+      videoSeek.request(props.assetId, 65_000, true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(videoSeek.pending?.seconds).toBe(65);
+      await viewer.rerender({ componentProps: { ...props, playOriginalVideo: true } });
+      video = viewer.container.querySelector('video')!;
+      expect(video).toHaveAttribute(
+        'src',
+        getAssetMediaUrl({ id: props.assetId, size: AssetMediaSize.Original, cacheKey: null }),
+      );
+      expect(videoSeek.pending?.seconds).toBe(65);
+      loaded(video, { duration: 120 });
+      await fireEvent.loadedMetadata(video);
+      await waitFor(() => expect(video.currentTime).toBe(65));
+      expect(videoSeek.pending).toBeNull();
+    });
+
     it('resumes the session’s open video where it was left', async () => {
       const props = videoProps();
       librarySession.open(props.assetId, 42);

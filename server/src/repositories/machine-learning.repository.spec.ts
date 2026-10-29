@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
@@ -166,6 +167,19 @@ describe(MachineLearningRepository.name, () => {
         ),
       ).rejects.toMatchObject({ reason: 'destination-capacity' });
       expect(context.dependencyReason).toBe('destination-capacity');
+    });
+
+    it('keeps structured transcription capacity distinct for durable operations outside SQL queue context', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'ml_worker_busy' }, 503)));
+      await expect(
+        sut.transcribe(
+          selection(MlDestinationKind.Local, localUrl),
+          imagePath,
+          { language: null },
+          new AbortController().signal,
+          vi.fn(),
+        ),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
 
     it('does not try a fallback model when the worker is full', async () => {

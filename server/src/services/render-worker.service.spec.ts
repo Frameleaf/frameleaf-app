@@ -344,6 +344,14 @@ describe(RenderWorkerService.name, () => {
     installSessions({ worker: workerA, session: sessionA }, { worker: workerB, session: sessionB });
   });
 
+  it('omits a stale internal speech kind from worker list and detail responses', async () => {
+    const stored = workerStub({ kinds: [MediaOperationKind.StudioExport, MediaOperationKind.SpeechTranscription] });
+    vi.mocked(workers.listWorkers).mockResolvedValue([stored]);
+    vi.mocked(workers.getWorker).mockResolvedValue(stored);
+    expect((await sut.list())[0].kinds).toEqual([MediaOperationKind.StudioExport]);
+    expect((await sut.get(stored.id)).kinds).toEqual([MediaOperationKind.StudioExport]);
+  });
+
   describe('create', () => {
     it('stores only the digest of the enrolment secret and returns the secret once', async () => {
       vi.mocked(workers.createWorker).mockImplementation((dto) =>
@@ -379,6 +387,7 @@ describe(RenderWorkerService.name, () => {
       MediaOperationKind.ICloudSync,
       MediaOperationKind.TakeoutImport,
       MediaOperationKind.PhysicalDeduplication,
+      MediaOperationKind.SpeechTranscription,
     ])('refuses to enrol a worker for %s, whatever its destination (FL-73)', async (kind) => {
       await expect(
         sut.create(authStub.admin, {
@@ -487,6 +496,14 @@ describe(RenderWorkerService.name, () => {
         reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
         detail: { gpuWorkingBudgetReason: 'expired' },
       });
+    });
+
+    it('omits internal speech from stale committed admission scopes', async () => {
+      const session = sessionStub(workerA, SESSION_A, {
+        scopes: [MediaOperationKind.StudioExport, MediaOperationKind.SpeechTranscription],
+      });
+      vi.mocked(workers.admitSession).mockResolvedValue({ admitted: true, session });
+      expect((await sut.admit(admission as never)).scopes).toEqual([MediaOperationKind.StudioExport]);
     });
 
     it('delegates the complete report and hashed credentials to atomic admission, returning only its committed scopes and Q', async () => {
@@ -1323,6 +1340,7 @@ describe(RenderWorkerService.name, () => {
             MediaOperationKind.StudioExport,
             MediaOperationKind.Bulk,
             MediaOperationKind.PhysicalDeduplication,
+            MediaOperationKind.SpeechTranscription,
           ] as never,
         }),
       });
@@ -1334,6 +1352,9 @@ describe(RenderWorkerService.name, () => {
       );
       await expect(
         sut.claim(SESSION_A, { kinds: [MediaOperationKind.PhysicalDeduplication] } as never),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        sut.claim(SESSION_A, { kinds: [MediaOperationKind.SpeechTranscription] } as never),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 

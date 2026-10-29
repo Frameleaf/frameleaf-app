@@ -22,6 +22,7 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Tell, { type TellRow } from '$lib/components/frameleaf/settings/kit/Tell.svelte';
   import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
+  import SpokenWordsSettings from '$lib/components/frameleaf/settings/intelligence/SpokenWordsSettings.svelte';
   import MySmartAlbums from '$lib/components/frameleaf/settings/intelligence/MySmartAlbums.svelte';
   import type { AccountPreferenceKey } from '$lib/frameleaf/account-preferences';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
@@ -241,6 +242,7 @@
     </div>
     <!-- FL-522: each person can hide a smart album from their own library. -->
     <MySmartAlbums />
+    <SpokenWordsSettings />
   </KitPage>
 </OwnPreferencesForm>
 

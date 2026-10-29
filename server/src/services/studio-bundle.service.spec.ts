@@ -2280,6 +2280,12 @@ describe(StudioBundleService.name, () => {
   });
 
   describe('getOperation', () => {
+    it('refuses internal speech instead of exposing it through the legacy bundle contract', async () => {
+      const operation = operationOf({ kind: MediaOperationKind.SpeechTranscription });
+      operations.getForOwner.mockResolvedValue(operation);
+      await expect(sut.getOperation(owner, operation.id)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
     it('reports a job waiting for its automatic retry the way Activity does', async () => {
       const retryAt = new Date(Date.now() + 30_000);
       const waiting = operationOf({
@@ -2296,6 +2302,7 @@ describe(StudioBundleService.name, () => {
 
       await expect(sut.getOperation(owner, waiting.id)).resolves.toMatchObject({
         operationId: waiting.id,
+        kind: MediaOperationKind.StudioBundleExport,
         status: MediaOperationStatus.Queued,
         autoRetries: 1,
         retryAt: retryAt.toISOString(),
@@ -2307,7 +2314,11 @@ describe(StudioBundleService.name, () => {
       const fresh = operationOf({ kind: MediaOperationKind.StudioBundleImport, status: MediaOperationStatus.Queued });
       operations.getForOwner.mockResolvedValue(fresh);
 
-      await expect(sut.getOperation(owner, fresh.id)).resolves.toMatchObject({ autoRetries: 0, retryAt: null });
+      await expect(sut.getOperation(owner, fresh.id)).resolves.toMatchObject({
+        kind: MediaOperationKind.StudioBundleImport,
+        autoRetries: 0,
+        retryAt: null,
+      });
     });
   });
 

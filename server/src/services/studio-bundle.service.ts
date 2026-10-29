@@ -419,7 +419,7 @@ export class StudioBundleService {
 
     return {
       operationId: operation.id,
-      kind: operation.kind as MediaOperationKind,
+      kind: isExport ? MediaOperationKind.StudioBundleExport : MediaOperationKind.StudioBundleImport,
       status: operation.status as MediaOperationStatus,
       progress: operation.progress,
       attempt: operation.attempt,
