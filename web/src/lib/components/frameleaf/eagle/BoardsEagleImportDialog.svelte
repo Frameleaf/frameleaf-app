@@ -1,6 +1,7 @@
 <script module lang="ts">
   import type { EaglePlan, EagleLibrary } from '$lib/frameleaf/eagle/eagle-import';
   import type { EagleImportRun } from '$lib/frameleaf/eagle/eagle-import-run.svelte';
+  import type { EagleServerLocation, ServerEagleImportRun } from '$lib/frameleaf/eagle/eagle-server-import.svelte';
 
   /**
    * The import in this tab. It lives outside the component, so Hide closes the dialog and the
@@ -12,7 +13,10 @@
     library: EagleLibrary;
     plan: EaglePlan;
     supported: ReadonlySet<string>;
-    run: EagleImportRun;
+    /** In this browser, or run by the server from a folder it can open (FL-653). */
+    source: 'computer' | 'server';
+    location?: EagleServerLocation;
+    run: EagleImportRun | ServerEagleImportRun;
     /** When this run started and how many items were already done then, for the time left. */
     startedAt: number;
     startDone: number;
@@ -45,6 +49,14 @@
   import { EagleImportRun as Run, isSameLibrary } from '$lib/frameleaf/eagle/eagle-import-run.svelte';
   import { eagleImportUi, eaglePercent } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import {
+    ServerEagleImportRun as ServerRun,
+    findServerImport,
+    listServerLibraries,
+    readServerLibrary,
+    runningServerImport,
+    serverOutcomes,
+  } from '$lib/frameleaf/eagle/eagle-server-import.svelte';
+  import {
     EagleLibraryError,
     directoryPicker,
     entriesFromDirectory,
@@ -63,6 +75,8 @@
     checkBulkUpload,
     getAllAlbums,
     type AlbumResponseDto,
+    type EagleImportResponseDto,
+    type EagleLibraryLocationDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import {
@@ -99,8 +113,9 @@
    * is read in this browser and its files are sent through the ordinary upload path, so files
    * already in the library are recognised and not stored twice. The Eagle library is only read.
    *
-   * A library in a folder the server can open is not offered yet: the server has no way to read an
-   * Eagle library, so that choice is shown and disabled.
+   * A library in a folder the server can open (an administrator's choice, in the import folders the
+   * server allows) is read and imported by the server, so it keeps going with the tab closed; this
+   * dialog follows it through the same steps, and the report is worked out the same way.
    */
   type Step = 'pick' | 'summary' | 'target' | 'progress' | 'stop' | 'report' | 'stopped';
 
@@ -124,7 +139,16 @@
   let step = $state<Step>(initialStep());
   let library = $state<EagleLibrary | undefined>(session?.library);
   let plan = $state<EaglePlan | undefined>(session?.plan);
-  let run = $state<EagleImportRun | undefined>(session?.run);
+  let run = $state<EagleImportRun | ServerEagleImportRun | undefined>(session?.run);
+  const isAdmin = authManager.authenticated && authManager.user.isAdmin;
+  let source = $state<'computer' | 'server'>(session?.source ?? 'computer');
+  let serverLocation = $state<EagleServerLocation | undefined>(session?.location);
+  let serverLibraries = $state<EagleLibraryLocationDto[] | undefined>();
+  let serverRoots = $state(0);
+  let serverListFailed = $state(false);
+  /** The server's earlier import of the chosen library, to carry on. */
+  let serverSaved = $state<EagleImportResponseDto | undefined>();
+  let startFailed = $state(false);
   let saved = $state<EagleImportSaved | undefined>();
   let paused = $state<EagleImportSaved | undefined>();
   let reading = $state(false);
@@ -139,7 +163,7 @@
   let controller: AbortController | undefined;
   let now = $state(Date.now());
 
-  const supported = supportedExtensions(uploadManager.getExtensions());
+  let supported = $state<ReadonlySet<string>>(session?.supported ?? supportedExtensions(uploadManager.getExtensions()));
 
   // An import the tab left part-way, so the first step can say to choose that library again.
   if (!run && ownerId) {
@@ -208,6 +232,51 @@
     event.currentTarget.value = '';
   };
 
+  const chooseSource = (next: 'computer' | 'server') => {
+    if (next === source) {
+      return;
+    }
+    source = next;
+    library = undefined;
+    plan = undefined;
+    serverLocation = undefined;
+    readError = undefined;
+    if (next === 'server' && !serverLibraries) {
+      void loadServerLibraries();
+    } else if (next === 'computer') {
+      supported = supportedExtensions(uploadManager.getExtensions());
+    }
+  };
+
+  const loadServerLibraries = async () => {
+    serverListFailed = false;
+    try {
+      const found = await listServerLibraries();
+      serverRoots = found.roots;
+      serverLibraries = found.libraries;
+    } catch {
+      serverListFailed = true;
+    }
+  };
+
+  const pickServer = async (entry: EagleLibraryLocationDto) => {
+    reading = true;
+    readError = undefined;
+    try {
+      const read = await readServerLibrary({ rootId: entry.rootId, path: entry.path });
+      library = read.library;
+      supported = read.supported;
+      serverLocation = { rootId: entry.rootId, path: entry.path };
+    } catch {
+      readError = 'unreadable';
+    } finally {
+      reading = false;
+    }
+  };
+
+  /** The folder a server library is in, for the list: "Design › Eagle". */
+  const folderOf = (path: string) => path.split(/[/\\]/).slice(0, -1).join(' › ');
+
   const changed = $derived(
     library?.changed
       ? new Date(library.changed).toLocaleDateString($locale ?? undefined, {
@@ -230,6 +299,11 @@
     }
     step = 'summary';
     checkFailed = false;
+    startFailed = false;
+    if (source === 'server') {
+      await checkOnServer(library);
+      return;
+    }
     controller?.abort();
     controller = new AbortController();
     const { signal } = controller;
@@ -291,6 +365,24 @@
     }
   };
 
+  /**
+   * A library on the server: its lists were read there, and files already in the library are found
+   * as the server reads them, so the check only looks for an earlier import to carry on.
+   */
+  const checkOnServer = async (current: EagleLibrary) => {
+    saved = undefined;
+    serverSaved = undefined;
+    try {
+      const earlier = serverLocation ? await findServerImport(serverLocation, current.fingerprint) : undefined;
+      const outcomes = earlier ? await serverOutcomes(earlier.id) : undefined;
+      serverSaved = earlier;
+      plan = planEagleImport(current, { supported, outcomes, annotations: EAGLE_ANNOTATIONS_AVAILABLE });
+    } catch {
+      checkFailed = true;
+    }
+  };
+  const resumable = $derived(source === 'server' ? serverSaved : saved);
+
   /* Where ------------------------------------------------------------- */
 
   const loadAlbums = async () => {
@@ -314,8 +406,76 @@
 
   /* Import ------------------------------------------------------------ */
 
+  /** Follows a run to its end: the dialog moves on to the report or the stopped report. */
+  const follow = (next: EagleImportRun | ServerEagleImportRun, current: EagleLibrary, currentPlan: EaglePlan) => {
+    session = {
+      ownerId,
+      library: current,
+      plan: currentPlan,
+      supported,
+      source,
+      location: serverLocation,
+      run: next,
+      startedAt: Date.now(),
+      startDone: next.done,
+    };
+    run = next;
+    eagleImportUi.run = next;
+    eagleImportUi.revision++;
+    step = 'progress';
+    void next.start().then(() => {
+      eagleImportUi.revision++;
+      if (step === 'progress' || step === 'stop') {
+        step = next.state === 'stopped' ? 'stopped' : 'report';
+      }
+    });
+  };
+
+  // An import the server is running (the tab was closed): show where it has got to.
+  const attachServer = async () => {
+    try {
+      const live = eagleImportUi.run instanceof ServerRun ? eagleImportUi.run : await runningServerImport();
+      if (!live || run) {
+        return;
+      }
+      const read = await readServerLibrary(live.location);
+      source = 'server';
+      serverLocation = live.location;
+      library = read.library;
+      supported = read.supported;
+      plan = planEagleImport(read.library, { supported: read.supported, annotations: EAGLE_ANNOTATIONS_AVAILABLE });
+      follow(live, read.library, plan);
+    } catch {
+      // The progress stays in the rail; the dialog opens at the first step.
+    }
+  };
+  if (!run && isAdmin) {
+    void attachServer();
+  }
+
+  const beginOnServer = async (carryOn: boolean) => {
+    if (!library || !plan || !serverLocation) {
+      return;
+    }
+    startFailed = false;
+    // Carrying on keeps where the earlier import was going.
+    const earlier = carryOn ? (run instanceof ServerRun ? run.target : serverTarget(serverSaved)) : undefined;
+    try {
+      const next = await ServerRun.begin(serverLocation, library, earlier ?? chosenTarget, existingTop);
+      follow(next, library, plan);
+    } catch {
+      startFailed = true;
+    }
+  };
+  const serverTarget = (dto?: EagleImportResponseDto): EagleTarget | undefined =>
+    dto && (dto.targetMode === 'top' ? { mode: 'top' } : { mode: 'inside', inside: dto.insideAlbumId ?? 'new' });
+
   const begin = (from?: EagleImportSaved) => {
     if (!library || !plan) {
+      return;
+    }
+    if (source === 'server') {
+      void beginOnServer(!!from || !!serverSaved);
       return;
     }
     const next = new Run({
@@ -332,21 +492,16 @@
       annotations: EAGLE_ANNOTATIONS_AVAILABLE,
       isCurrent: authManager.captureSession(),
     });
-    session = { ownerId, library, plan, supported, run: next, startedAt: Date.now(), startDone: next.done };
-    run = next;
-    eagleImportUi.run = next;
-    eagleImportUi.revision++;
-    step = 'progress';
-    void next.start().then(() => {
-      eagleImportUi.revision++;
-      if (step === 'progress' || step === 'stop') {
-        step = next.state === 'stopped' ? 'stopped' : 'report';
-      }
-    });
+    follow(next, library, plan);
   };
 
   const carryOnAfterStop = async () => {
     if (!run) {
+      return;
+    }
+    if (run instanceof ServerRun) {
+      toastManager.info($t('frameleaf_eagle_carrying_on'));
+      await beginOnServer(true);
       return;
     }
     // Without the record (storage unavailable) the files already sent are still recognised by the upload.
@@ -363,11 +518,26 @@
     const perItem = (now - session.startedAt) / (run.done - session.startDone);
     return Math.max(0, Math.round(((run.total - run.done) * perItem) / 60_000));
   });
-  const doneAlready = $derived(run ? Object.values(run.outcomes).filter(({ duplicate }) => duplicate).length : 0);
+  const doneAlready = $derived(
+    run instanceof ServerRun
+      ? run.already
+      : run
+        ? Object.values(run.outcomes).filter(({ duplicate }) => duplicate).length
+        : 0,
+  );
+  /**
+   * A server import finds files already in the library as it reads them, so its report compares
+   * against the check worked out again with what became of every item.
+   */
+  const reportPlan = $derived(
+    run instanceof ServerRun && library && (run.state === 'finished' || run.state === 'stopped')
+      ? planEagleImport(library, { supported, outcomes: run.outcomes, annotations: EAGLE_ANNOTATIONS_AVAILABLE })
+      : plan,
+  );
 
   const result = $derived(
-    run && plan && library
-      ? importResult(plan, library, {
+    run && reportPlan && library
+      ? importResult(reportPlan, library, {
           outcomes: run.outcomes,
           failed: run.failed,
           collections: run.collections,
@@ -377,7 +547,7 @@
         })
       : undefined,
   );
-  const accounted = $derived(!!plan && !!result && reconciles(plan, result));
+  const accounted = $derived(!!reportPlan && !!result && reconciles(reportPlan, result));
 
   const showInBoards = () => {
     const rootAlbumId = run?.rootAlbumId;
@@ -591,24 +761,37 @@
       <p>{$t('frameleaf_eagle_pick_intro')}</p>
       <fieldset class="choices">
         <legend class="sr-only">{$t('frameleaf_eagle_source_label')}</legend>
-        <label class="choice on">
-          <input type="radio" name="eagle-source" checked />
+        <label class="choice" class:on={source === 'computer'}>
+          <input
+            type="radio"
+            name="eagle-source"
+            checked={source === 'computer'}
+            onchange={() => chooseSource('computer')}
+          />
           <Icon icon={mdiLaptop} size="20" aria-hidden />
           <span>
             <strong>{$t('frameleaf_eagle_source_computer')}</strong>
             <small>{$t('frameleaf_eagle_source_computer_hint')}</small>
           </span>
         </label>
-        <label class="choice is-disabled">
-          <input type="radio" name="eagle-source" disabled />
+        <label class="choice" class:on={source === 'server'} class:is-disabled={!isAdmin}>
+          <input
+            type="radio"
+            name="eagle-source"
+            checked={source === 'server'}
+            disabled={!isAdmin}
+            onchange={() => chooseSource('server')}
+          />
           <Icon icon={mdiServerNetwork} size="20" aria-hidden />
           <span>
             <strong>{$t('frameleaf_eagle_source_server')}</strong>
-            <small>{$t('frameleaf_eagle_source_server_unavailable')}</small>
+            <small
+              >{isAdmin ? $t('frameleaf_eagle_source_server_hint') : $t('frameleaf_eagle_source_server_admin')}</small
+            >
           </span>
         </label>
       </fieldset>
-      {#if paused && !library}
+      {#if paused && !library && source === 'computer'}
         <p class="note-line" role="status">
           {$t('frameleaf_eagle_carry_on_choose', { values: { name: paused.record.libraryName } })}
         </p>
@@ -625,8 +808,44 @@
               ].join(' · ')}
             </small>
           </span>
-          <Button onclick={() => void choose()}>{$t('frameleaf_eagle_choose_another')}</Button>
+          <Button
+            onclick={() => {
+              if (source === 'server') {
+                library = undefined;
+              } else {
+                void choose();
+              }
+            }}>{$t('frameleaf_eagle_choose_another')}</Button
+          >
         </div>
+      {:else if source === 'server'}
+        {#if serverListFailed}
+          <InlineError
+            compact
+            message={$t('frameleaf_eagle_server_list_failed')}
+            onRetry={() => void loadServerLibraries()}
+          />
+        {:else if !serverLibraries}
+          <p role="status">{$t('frameleaf_eagle_server_loading')}</p>
+        {:else if serverRoots === 0}
+          <p class="note-line" role="status">{$t('frameleaf_eagle_server_no_roots')}</p>
+        {:else if serverLibraries.length === 0}
+          <p class="note-line" role="status">{$t('frameleaf_eagle_server_none')}</p>
+        {:else}
+          <ul class="server-libraries" aria-label={$t('frameleaf_eagle_server_pick')} aria-busy={reading}>
+            {#each serverLibraries as entry (`${entry.rootId}/${entry.path}`)}
+              <li>
+                <button type="button" class="new-row" disabled={reading} onclick={() => void pickServer(entry)}>
+                  <Icon icon={mdiFolderZipOutline} size="18" aria-hidden />
+                  <span>
+                    <strong>{entry.name}</strong>
+                    {#if folderOf(entry.path)}<small>{folderOf(entry.path)}</small>{/if}
+                  </span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       {:else}
         <div class="library-empty">
           <Button disabled={reading} onclick={() => void choose()} initialFocus>
@@ -657,7 +876,8 @@
         <InlineError message={$t('frameleaf_eagle_check_failed')} onRetry={() => void check()} />
       {:else}
         <p>{$t('frameleaf_eagle_read_just_now', { values: { name: plan.library } })}</p>
-        {#if saved && plan.done > 0}
+        {#if startFailed}<InlineError compact message={$t('frameleaf_eagle_start_failed')} />{/if}
+        {#if resumable && plan.done > 0}
           <p class="note-line" role="status">
             {$t('frameleaf_eagle_resume_note', { values: { done: plan.done, total: plan.coming } })}
           </p>
@@ -670,7 +890,9 @@
                 mdiImageMultipleOutline,
                 plan.coming,
                 $t('frameleaf_eagle_label_items', { values: { count: plan.coming } }),
-                $t('frameleaf_eagle_items_detail', { values: { new: plan.newFiles, already: plan.already } }),
+                source === 'server'
+                  ? $t('frameleaf_eagle_items_detail_server')
+                  : $t('frameleaf_eagle_items_detail', { values: { new: plan.newFiles, already: plan.already } }),
               )}
               {@render count(
                 mdiFolderMultipleOutline,
@@ -743,6 +965,7 @@
         </details>
       {/if}
     {:else if step === 'target' && plan}
+      {#if startFailed}<InlineError compact message={$t('frameleaf_eagle_start_failed')} />{/if}
       <fieldset class="choices">
         <legend class="sr-only">{$t('frameleaf_eagle_target_label')}</legend>
         <label class="choice" class:on={target.mode === 'inside'}>
@@ -857,16 +1080,22 @@
           aria-valuemin={0}
           aria-valuemax={100}><span style:width="{percent}%"></span></span
         >
-        {#if run.error}<InlineError compact message={$t('frameleaf_eagle_failed_start')} />{/if}
+        {#if run.error}<InlineError
+            compact
+            message={run instanceof ServerRun && run.error instanceof Error
+              ? run.error.message
+              : $t('frameleaf_eagle_failed_start')}
+          />{/if}
         {#if run.state === 'stopping'}<p class="muted small" role="status">{$t('frameleaf_eagle_stopping')}</p>{/if}
         <ul class="phases">
           <li class:now={run.collections < (plan?.collections ?? 0)}>
             <Icon icon={mdiFolderMultipleOutline} size="16" aria-hidden />{$t('frameleaf_eagle_phase_making')}
           </li>
           <li class="now">
-            <Icon icon={mdiTrayArrowUp} size="16" aria-hidden />{$t('frameleaf_eagle_phase_sending', {
-              values: { done: run.done, total: run.total },
-            })}
+            <Icon icon={mdiTrayArrowUp} size="16" aria-hidden />{$t(
+              run instanceof ServerRun ? 'frameleaf_eagle_phase_reading' : 'frameleaf_eagle_phase_sending',
+              { values: { done: run.done, total: run.total } },
+            )}
           </li>
           <li class="now">
             <Icon icon={mdiFolderMultipleOutline} size="16" aria-hidden />{$t('frameleaf_eagle_phase_filing')}
@@ -893,12 +1122,21 @@
         </p>
         <div class="note-box">
           <Icon icon={mdiTabRemove} size="18" aria-hidden />
-          <span>{$t('frameleaf_eagle_progress_note')}</span>
+          <span
+            >{run instanceof ServerRun
+              ? $t('frameleaf_eagle_progress_note_server')
+              : $t('frameleaf_eagle_progress_note')}</span
+          >
         </div>
       {/if}
     {:else if (step === 'report' || step === 'stopped') && plan && result}
       <p>{result.stopped ? $t('frameleaf_eagle_report_stopped') : $t('frameleaf_eagle_report_done')}</p>
-      {#if run?.error}<InlineError compact message={$t('frameleaf_eagle_failed_start')} />{/if}
+      {#if run?.error}<InlineError
+          compact
+          message={run instanceof ServerRun && run.error instanceof Error
+            ? run.error.message
+            : $t('frameleaf_eagle_failed_start')}
+        />{/if}
       <div class="columns">
         <section aria-labelledby="eagle-ledger">
           <h3 id="eagle-ledger">{$t('frameleaf_eagle_ledger_items')}</h3>
@@ -1011,7 +1249,7 @@
       <Button onclick={() => (step = 'pick')}>{$t('back')}</Button>
       <span class="spacer"></span>
       <Button onclick={close}>{$t('cancel')}</Button>
-      {#if saved && plan}
+      {#if resumable && plan}
         <Button variant="primary" disabled={!!checking} onclick={() => begin(saved)}
           >{$t('frameleaf_eagle_carry_on')}</Button
         >
@@ -1066,6 +1304,17 @@
 </Dialog>
 
 <style>
+  .server-libraries {
+    display: grid;
+    gap: var(--fl-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .server-libraries small {
+    display: block;
+    color: var(--fl-muted);
+  }
   .hidden-input,
   .sr-only {
     position: absolute;

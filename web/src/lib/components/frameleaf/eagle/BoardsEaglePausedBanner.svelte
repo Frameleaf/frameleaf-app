@@ -10,7 +10,8 @@
   /**
    * Shown in Boards after the tab closed part-way through an Eagle import from this computer
    * (prototype `EaglePausedBanner`, README point 39): "paused at 412 of 1,207", with Carry on, which
-   * asks for the library again, and Stop and keep. It reads only this browser's record.
+   * asks for the library again, and Stop and keep. It reads only this browser's record. An import
+   * the server runs needs no banner: it is picked up again and shown in the rail.
    */
   let paused = $state<EagleImportSaved | undefined>();
   const done = $derived(paused ? Object.keys(paused.outcomes).length : 0);
@@ -35,6 +36,25 @@
     return () => {
       current = false;
     };
+  });
+
+  // FL-653: an import the server runs keeps going with the tab closed. Coming back to Boards shows
+  // it in the rail again; the server module loads only for an administrator, who can start one.
+  let lookedForServer = false;
+  $effect(() => {
+    if (lookedForServer || !authManager.authenticated || !authManager.user.isAdmin || eagleImportUi.run) {
+      return;
+    }
+    lookedForServer = true;
+    void import('$lib/frameleaf/eagle/eagle-server-import.svelte')
+      .then(({ runningServerImport }) => runningServerImport())
+      .then((live) => {
+        if (live && !eagleImportUi.run) {
+          eagleImportUi.run = live;
+          void live.start().then(() => eagleImportUi.revision++);
+        }
+      })
+      .catch(() => undefined);
   });
 
   const stop = async () => {
