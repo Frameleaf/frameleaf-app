@@ -769,7 +769,12 @@
       "path": "patches/0170-caption-languages.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "ddf70ec8b8038d204aeb9da5f5c77a0fa71f9866df924b3df1f6fc107eee629c"
+    },
+    {
+      "path": "patches/0160-library-view-in-media-bin.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "120d336ee47621b17a8266c380e1de04a6419377cf597e107c0bed06b023e5b7"
     }
   ],
-  "sourceSha256": "a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb"
+  "sourceSha256": "7e7728db01aed01e9871c27c5439255e9eb25bf82b5d9dbfe220ef06474c30e6"
 }

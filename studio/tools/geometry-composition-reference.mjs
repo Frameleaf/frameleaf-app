@@ -105,7 +105,9 @@ export function compositionSourcesFor(sourceSha256) {
   if (
     sourceSha256 === '192c9248fee7451250cfd7c74281b249eaf215b25d7d05c304f8833efeaf548a' ||
     // FL-641 caption languages (translated caption tracks, voice-over and the Languages card) on Stabilise; changes no composition or raster producer.
-    sourceSha256 === 'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb'
+    sourceSha256 === 'a62196a09d8de5fe7a10403038e23de1cec6a53a46bdc3245008d59c582545fb' ||
+    // FL-636 the bin's Library view changes the media bin only, no composition or raster producer.
+    sourceSha256 === '7e7728db01aed01e9871c27c5439255e9eb25bf82b5d9dbfe220ef06474c30e6'
   )
     return {
       ...COMPOSITION_SOURCES,
