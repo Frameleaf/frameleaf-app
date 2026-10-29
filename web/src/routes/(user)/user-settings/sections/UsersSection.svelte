@@ -55,16 +55,30 @@
   let failed = $state(false);
 
   // What the old `/admin/users` layout loaded: the server's storage info and every account.
+  let load = 0;
   const loadUsers = () => {
     failed = false;
+    const current = ++load;
     // Both reads are independent: the account list does not wait for the disk check, and is shown as
     // soon as it arrives, so a list read again meanwhile (after an edit) is never replaced by this one.
+    // A load that failed, or that a retry replaced, shows nothing it receives afterwards.
     const accounts = searchUsersAdmin({ withDeleted: true }).then((result) => {
-      users = result;
+      if (current === load) {
+        users = result;
+      }
     });
     void Promise.all([requestServerInfo(), accounts])
-      .then(() => (loaded = true))
-      .catch(() => (failed = true));
+      .then(() => {
+        if (current === load) {
+          loaded = true;
+        }
+      })
+      .catch(() => {
+        if (current === load) {
+          failed = true;
+          load++;
+        }
+      });
   };
   onMount(() => {
     loadUsers();
