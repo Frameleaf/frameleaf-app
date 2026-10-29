@@ -204,7 +204,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
           // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce')),
+            '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce' ||
+          // FL-599/FL-626 colour match through grades and HDR on loudness and speed ramps; changes no composition or raster producer.
+          binding.sourceSha256 ===
+            'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232')),
     'SOURCE_BROWSER',
   )
   check(

@@ -1718,6 +1718,10 @@ Removes one effect. Payload: `clipId`, `effectId`.
 
 **Implementation-defined.** Keyframes on the removed effect's parameters (`effect:…:<effect id>:…`) are left in the graph (`effect.remove/keeps-parameter-keyframes`). **Native rule:** reproduce it. A native client that wants them gone removes them with `keyframe.remove` first.
 
+#### 13.3.3 Colour match effects (FL-599)
+
+The web editor's colour match is not a command and adds no field. It writes a `gpu-exposure` effect followed by a `gpu-temperature` effect after the clip's other effects, with ids beginning `colour-match:` and two parameters the catalogue does not declare: `matchStrength` (0 to 1) and `matchSource` (a JSON string naming the algorithm, the reference clip and the sampled source times). Undeclared parameters pass through rendering unchanged (render spec [C9]), so these are ordinary effects. A new match replaces the clip's `colour-match:` effects in place; strength 0 removes them. The match is measured on the clip as rendered (its other effects included) in the project's working space, linear in HDR projects (FL-626). **Native rule:** render, keep and edit them like any effect, and keep the two undeclared parameters when editing others.
+
 ### 13.4 Transitions
 
 #### 13.4.1 `clip.setTransition`
@@ -2092,7 +2096,7 @@ The graph has no grade node, and `clip.setGrade` is refused. A grade is a set of
 3. `gpu-curves`: the master and channel curves.
 4. `gpu-lut`: a look, with `intensity` as its strength. A look the deployment does not bundle is refused when the project is resolved (`studio/resource-inventory.json`, kind `lut`).
 
-The engine applies a stack in array order (13.2.2) and does not require this order; it is the order a client writes so that the same panel gives the same picture on every client. A client reads a grade back by finding these effects in the stack. Effects of other kinds, and a second effect of one of these kinds, are not part of the grade and are left as they are. A grade for several clips at once is the same effects on an `adjustment` item on a track above them (`studio/spec/layers.md`, L8).
+The engine applies a stack in array order (13.2.2) and does not require this order; it is the order a client writes so that the same panel gives the same picture on every client. A client reads a grade back by finding these effects in the stack, skipping effects whose ids begin `colour-match:` (13.3.3): those are a colour match, not the grade, and a grade edit leaves them as they are. Effects of other kinds, and a second effect of one of these kinds, are not part of the grade and are left as they are. A grade for several clips at once is the same effects on an `adjustment` item on a track above them (`studio/spec/layers.md`, L8).
 
 ### 13.9 `clip.setAudio`
 

@@ -724,7 +724,17 @@
       "path": "patches/0150-master-true-peak-limiter.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c33c56620d7e745abf6d02679a0c0fa9be5f19dea5484b4c90cb0c5614324515"
+    },
+    {
+      "path": "patches/0147-colour-match-between-shots.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ae96b82653b8ee73bcd37f70f6391b1de186d46d91b279a0e9f9ba608b2d8b60"
+    },
+    {
+      "path": "patches/0151-graded-hdr-colour-match.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c4ffa7ec664778c178a45ff30f5a2f837415d7a23f9a07a81d434c4657c6940f"
     }
   ],
-  "sourceSha256": "83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce"
+  "sourceSha256": "e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232"
 }

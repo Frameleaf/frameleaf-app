@@ -1065,6 +1065,12 @@
       "code": "tmp.getContext('2d')?.putImageData(loupe.data, 0, 0)",
       "class": "canvas2d-context",
       "reason": "Direct Canvas2D context; declaration does not establish HDR caller exclusion."
+    },
+    {
+      "file": "features/export/utils/canvas-render-orchestrator.ts",
+      "code": "const context = canvas.getContext('2d')",
+      "class": "canvas2d-context",
+      "reason": "Colour-match working-frame readback (FL-626): SDR projects read the rendered 8-bit canvas; HDR projects read the float route signal instead."
     }
   ]
 }
