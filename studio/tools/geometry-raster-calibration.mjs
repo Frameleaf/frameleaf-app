@@ -207,7 +207,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             'c47b6b1facd2f0faa7343899fd42cc28e62d65e8b6b1efc5817a637f7095c8ea' ||
           // FL-595 multicam: generated-media refusal, program-claimed angles
           binding.sourceSha256 ===
-            '32b53edcdbcd90b4bbbe41df1adde2494f34a0fed63ff2dd51025ba03334d5c2')),
+            '32b53edcdbcd90b4bbbe41df1adde2494f34a0fed63ff2dd51025ba03334d5c2' ||
+          // FL-595 multicam: muted master audio unmuted
+          binding.sourceSha256 ===
+            '10d3e56e0a7b99ba3e0c9fa2f9fce989838d48b1969c935795f2f9f042f804e3')),
     'SOURCE_BROWSER',
   )
   check(
