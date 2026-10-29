@@ -19,7 +19,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
  import { PropertyRow, PropertySection } from '../components'
  
  const format = (value: number | null | undefined, unit: string) =>
-@@ -29,11 +31,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+@@ -29,11 +31,28 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
    const { t } = useTranslation()
    const timelineItems = useTimelineStore((s) => s.items)
    const fps = useTimelineStore((s) => s.fps)
@@ -34,6 +34,14 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
 +  const loudness = saved ?? { targetLufs: DEFAULT_TARGET_LUFS, ceilingDbtp: DEFAULT_CEILING_DBTP, limiter: false }
 +  const [targetText, setTargetText] = useState(String(loudness.targetLufs))
 +  const [ceilingText, setCeilingText] = useState(String(loudness.ceilingDbtp))
++  // Undo, redo or another panel can change the saved settings: the drafts follow them.
++  const savedKey = `${loudness.targetLufs}|${loudness.ceilingDbtp}`
++  const [shownKey, setShownKey] = useState(savedKey)
++  if (shownKey !== savedKey) {
++    setShownKey(savedKey)
++    setTargetText(String(loudness.targetLufs))
++    setCeilingText(String(loudness.ceilingDbtp))
++  }
 +  const target = parseClamped(targetText, -36, -6, loudness.targetLufs)
 +  const ceiling = parseClamped(ceilingText, -12, 0, loudness.ceilingDbtp)
 +  const save = (change: Partial<typeof loudness>) => {
@@ -45,7 +53,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
    const [results, setResults] = useState<ClipLoudnessResult[] | null>(null)
    const [busy, setBusy] = useState(false)
    const abortRef = useRef<AbortController | null>(null)
-@@ -86,7 +97,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+@@ -86,7 +105,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
            <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
              aria-label={t('editor.audioSection.loudness.target')} value={targetText}
              onChange={(event) => setTargetText(event.target.value)}
@@ -54,7 +62,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
            <span className="text-xs text-muted-foreground">LUFS</span>
          </div>
        </PropertyRow>
-@@ -95,11 +106,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+@@ -95,11 +114,20 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
            <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
              aria-label={t('editor.audioSection.loudness.ceiling')} value={ceilingText}
              onChange={(event) => setCeilingText(event.target.value)}
@@ -771,7 +779,7 @@ diff --git a/src/shared/state/playback/types.ts b/src/shared/state/playback/type
 diff --git a/src/shared/utils/loudness.ts b/src/shared/utils/loudness.ts
 --- a/src/shared/utils/loudness.ts
 +++ b/src/shared/utils/loudness.ts
-@@ -117,23 +117,33 @@ const PHASES: Float64Array[] = Array.from({ length: OVERSAMPLE }, (_, phase) =>
+@@ -130,23 +130,33 @@ const PHASES: Float64Array[] = Array.from({ length: OVERSAMPLE }, (_, phase) =>
    return taps.map((tap) => tap / sum)
  })
  
@@ -852,7 +860,7 @@ diff --git a/src/shared/utils/true-peak-limiter.test.ts b/src/shared/utils/true-
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/true-peak-limiter.test.ts
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,60 @@
 +import { describe, expect, it } from 'vite-plus/test'
 +import { measureLoudness } from './loudness'
 +import { limitTruePeak } from './true-peak-limiter'
@@ -900,12 +908,24 @@ new file mode 100644
 +    const peak = window.reduce((m, v) => Math.max(m, Math.abs(v)), 0)
 +    expect(peak).toBeGreaterThan(0.26)
 +  })
++
++  it('gives the same result in bounded chunks as in one pass over the whole mix', () => {
++    const whole = burstySignal(2)
++    const chunked = whole.map((channel) => Float32Array.from(channel))
++    limitTruePeak(whole, RATE, -1, Infinity)
++    limitTruePeak(chunked, RATE, -1, 4096)
++    let worst = 0
++    for (let c = 0; c < whole.length; c += 1) {
++      for (let i = 0; i < whole[c]!.length; i += 1) worst = Math.max(worst, Math.abs(whole[c]![i]! - chunked[c]![i]!))
++    }
++    expect(worst).toBeLessThan(1e-6)
++  })
 +})
 diff --git a/src/shared/utils/true-peak-limiter.ts b/src/shared/utils/true-peak-limiter.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/true-peak-limiter.ts
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,84 @@
 +import { samplePeaks } from './loudness'
 +
 +/**
@@ -915,53 +935,79 @@ new file mode 100644
 + * then box-averaged over L, which keeps the gain at every peak no higher than
 + * that peak requires while ramping smoothly into it. Release is limited to
 + * recover gradually. Channels share one gain, so the image does not shift.
++ * It runs in chunks with a margin of original samples on each side, so memory
++ * stays bounded for long exports and the result matches one whole-mix pass.
 + * Algorithm id: tp-lookahead-1.5ms-v1.
 + */
 +
 +const LOOKAHEAD_SECONDS = 0.0015
 +const RELEASE_SECONDS = 0.05
 +
-+export function limitTruePeak(channels: Float32Array[], sampleRate: number, ceilingDbtp: number): void {
++export function limitTruePeak(
++  channels: Float32Array[],
++  sampleRate: number,
++  ceilingDbtp: number,
++  chunkSize = 1 << 16,
++): void {
 +  const length = channels[0]?.length ?? 0
 +  if (length === 0) return
 +  const ceiling = 10 ** (ceilingDbtp / 20)
-+  const peaks = samplePeaks(channels)
-+  const required = new Float32Array(length)
-+  let limiting = false
-+  for (let i = 0; i < length; i += 1) {
-+    required[i] = peaks[i]! > ceiling ? ceiling / peaks[i]! : 1
-+    if (required[i]! < 1) limiting = true
-+  }
-+  if (!limiting) return
-+
 +  const lookahead = Math.max(8, Math.round(LOOKAHEAD_SECONDS * sampleRate))
-+  // Running minimum over [i - L, i + L] with a monotonic deque.
-+  const windowMin = new Float32Array(length)
-+  const deque = new Int32Array(length)
-+  let head = 0
-+  let tail = 0
-+  let next = 0
-+  for (let i = 0; i < length; i += 1) {
-+    for (; next < length && next <= i + lookahead; next += 1) {
-+      while (tail > head && required[deque[tail - 1]!]! >= required[next]!) tail -= 1
-+      deque[tail++] = next
-+    }
-+    while (deque[head]! < i - lookahead) head += 1
-+    windowMin[i] = required[deque[head]!]!
-+  }
-+  // Box average over [i - L/2, i + L/2]; never above the peak's own requirement.
 +  const half = Math.floor(lookahead / 2)
-+  const prefix = new Float64Array(length + 1)
-+  for (let i = 0; i < length; i += 1) prefix[i + 1] = prefix[i]! + windowMin[i]!
++  // Each output sample reads required gains up to half + L away, whose peaks read a few taps further.
++  const margin = lookahead + half + 16
++  const chunk = Math.max(chunkSize, margin)
 +  const release = 1 - Math.exp(-1 / (RELEASE_SECONDS * sampleRate))
++  // Original samples just before the current chunk; the chunk before has already been limited.
++  let saved: Float32Array[] = channels.map(() => new Float32Array(0))
 +  let gain = 1
-+  for (let i = 0; i < length; i += 1) {
-+    const from = Math.max(0, i - half)
-+    const to = Math.min(length, i + half + 1)
-+    const smoothed = (prefix[to]! - prefix[from]!) / (to - from)
-+    // Attack follows the lookahead envelope; release rises at most at the release rate.
-+    gain = Math.min(smoothed, gain + (1 - gain) * release)
-+    for (const channel of channels) channel[i] = channel[i]! * gain
++
++  for (let start = 0; start < length; start += chunk) {
++    const end = Math.min(length, start + chunk)
++    const extFrom = Math.max(0, start - margin)
++    const extTo = Math.min(length, end + margin)
++    const ext = channels.map((channel, c) => {
++      const copy = new Float32Array(extTo - extFrom)
++      copy.set(saved[c]!.subarray(saved[c]!.length - (start - extFrom)))
++      copy.set(channel.subarray(start, extTo), start - extFrom)
++      return copy
++    })
++    saved = channels.map((channel) => channel.slice(Math.max(start, end - margin), end))
++
++    const peaks = samplePeaks(ext)
++    const required = new Float32Array(peaks.length)
++    let limiting = false
++    for (let i = 0; i < peaks.length; i += 1) {
++      required[i] = peaks[i]! > ceiling ? ceiling / peaks[i]! : 1
++      if (required[i]! < 1) limiting = true
++    }
++    if (!limiting && gain >= 1) continue
++
++    // Running minimum over [i - L, i + L] with a monotonic deque (indices within ext).
++    const windowMin = new Float32Array(required.length)
++    const deque = new Int32Array(required.length)
++    let head = 0
++    let tail = 0
++    let next = 0
++    for (let i = 0; i < required.length; i += 1) {
++      for (; next < required.length && next <= i + lookahead; next += 1) {
++        while (tail > head && required[deque[tail - 1]!]! >= required[next]!) tail -= 1
++        deque[tail++] = next
++      }
++      while (deque[head]! < i - lookahead) head += 1
++      windowMin[i] = required[deque[head]!]!
++    }
++    // Box average over [i - L/2, i + L/2]; never above the peak's own requirement.
++    const prefix = new Float64Array(windowMin.length + 1)
++    for (let i = 0; i < windowMin.length; i += 1) prefix[i + 1] = prefix[i]! + windowMin[i]!
++    for (let i = start; i < end; i += 1) {
++      const from = Math.max(0, i - half) - extFrom
++      const to = Math.min(length, i + half + 1) - extFrom
++      const smoothed = (prefix[to]! - prefix[from]!) / (to - from)
++      // Attack follows the lookahead envelope; release rises at most at the release rate.
++      gain = Math.min(smoothed, gain + (1 - gain) * release)
++      for (const channel of channels) channel[i] = channel[i]! * gain
++    }
 +  }
 +}
 diff --git a/src/types/export.ts b/src/types/export.ts

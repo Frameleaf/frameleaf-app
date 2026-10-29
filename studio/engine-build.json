@@ -713,13 +713,13 @@
     {
       "path": "patches/0145-dialogue-loudness-match-and-export-report.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "bc5f56f67aed5314d09983edf7a639a4f0727f297163129b54123a9606752c98"
+      "sha256": "c77e7a4fac647d9745ad0471e77440ea8ca086cf6e0247532ec1c9c5efac4580"
     },
     {
       "path": "patches/0150-master-true-peak-limiter.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "844cf345fac497f96068c71b39c47a40cecfad717ab071f74d270e33f91c0dd2"
+      "sha256": "d498ba5aaf61d05a12964494fea6f0fccb4b8fc581bbd3623be5cb1d6379ee7f"
     }
   ],
-  "sourceSha256": "af6263d8c4de187158b918ad571f8fd25f356800259f25b31cceb2d02da3b365"
+  "sourceSha256": "24d4df3b5fa047d286fd94e6a0720fb1d41333c2770263931e03b8b5f40f9e3b"
 }

@@ -1243,9 +1243,9 @@ diff --git a/src/shared/utils/loudness.test.ts b/src/shared/utils/loudness.test.
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/loudness.test.ts
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,63 @@
 +import { describe, expect, it } from 'vite-plus/test'
-+import { measureLoudness } from './loudness'
++import { channelWeights, measureLoudness } from './loudness'
 +
 +function sine(frequency: number, amplitudeDbfs: number, seconds: number, sampleRate = 48000, phase = 0) {
 +  const amplitude = 10 ** (amplitudeDbfs / 20)
@@ -1255,6 +1255,16 @@ new file mode 100644
 +  }
 +  return samples
 +}
++
++describe('channelWeights', () => {
++  it('follows the Web Audio speaker layouts, with no LFE', () => {
++    expect(channelWeights(1)).toEqual([1])
++    expect(channelWeights(2)).toEqual([1, 1])
++    expect(channelWeights(4)).toEqual([1, 1, 1.41, 1.41])
++    expect(channelWeights(5)).toEqual([1, 1, 1, 1.41, 1.41])
++    expect(channelWeights(6)).toEqual([1, 1, 1, 0, 1.41, 1.41])
++  })
++})
 +
 +describe('measureLoudness', () => {
 +  // EBU Tech 3341 case 1: stereo 1 kHz sine at -23 dBFS reads -23.0 LUFS (±0.1 LU).
@@ -1301,7 +1311,7 @@ diff --git a/src/shared/utils/loudness.ts b/src/shared/utils/loudness.ts
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/utils/loudness.ts
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,190 @@
 +/**
 + * Loudness measurement (FL-598): ITU-R BS.1770-4 integrated loudness with
 + * EBU R128 gating, and true peak by 4x oversampling. One implementation is
@@ -1312,7 +1322,7 @@ new file mode 100644
 +
 +export interface LoudnessInput {
 +  sampleRate: number
-+  /** One array per channel. Channels 0-2 weigh 1.0; channels 3+ (surrounds) weigh 1.41. */
++  /** One array per channel, in the Web Audio speaker order (see channelWeights). */
 +  channels: readonly Float32Array[]
 +}
 +
@@ -1373,6 +1383,19 @@ new file mode 100644
 +const toLufs = (power: number) => -0.691 + 10 * Math.log10(power)
 +const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length
 +
++/**
++ * BS.1770 channel weights for the Web Audio layouts: quad is L R SL SR, 5.0 is L R C SL SR,
++ * 5.1 and wider are L R C LFE SL SR …; the LFE is excluded and surrounds weigh 1.41.
++ */
++export function channelWeights(count: number): number[] {
++  return Array.from({ length: count }, (_, index) => {
++    if (count === 4) return index >= 2 ? 1.41 : 1
++    if (count === 5) return index >= 3 ? 1.41 : 1
++    if (count >= 6) return index === 3 ? 0 : index >= 4 ? 1.41 : 1
++    return 1
++  })
++}
++
 +function integratedLoudness(input: LoudnessInput): number | null {
 +  const { sampleRate, channels } = input
 +  const blockSize = Math.round(0.4 * sampleRate)
@@ -1381,7 +1404,7 @@ new file mode 100644
 +  if (length < blockSize) return null
 +
 +  const stages = kWeighting(sampleRate)
-+  const weights = channels.map((_, index) => (index >= 3 ? 1.41 : 1))
++  const weights = channelWeights(channels.length)
 +  // Prefix sums of squares make each 400 ms block O(channels).
 +  const prefix = channels.map((channel) => {
 +    const weighted = filter(channel, stages)
