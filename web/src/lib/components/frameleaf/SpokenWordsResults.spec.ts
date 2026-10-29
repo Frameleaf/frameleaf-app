@@ -95,3 +95,16 @@ it('reports unsupported older servers without issuing semantic or metadata searc
   expect(sdkMock.searchSmart).not.toHaveBeenCalled();
   expect(sdkMock.searchAssets).not.toHaveBeenCalled();
 });
+it('shows a rejected query as invalid without a retry, and clears a failure as soon as a retry starts', async () => {
+  sdkMock.searchSpokenWords.mockRejectedValueOnce({ status: 400 });
+  render(SpokenWordsResults, { query });
+  await screen.findByText("This search can't be run. Close any open quotes and use up to 64 words.");
+  expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  cleanup();
+
+  sdkMock.searchSpokenWords.mockRejectedValueOnce({ status: 500 });
+  render(SpokenWordsResults, { query });
+  await fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+  expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument();
+  await screen.findByText('hello world');
+});

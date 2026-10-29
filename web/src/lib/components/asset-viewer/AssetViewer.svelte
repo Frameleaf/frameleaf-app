@@ -349,6 +349,10 @@
 
   const setPlayOriginalVideo = (value: boolean) => {
     requestedOriginalVideo = value;
+    // "Play encoded" must win over a spoken-word seek still waiting for the original: keep its moment, drop its source.
+    if (!value && speechOriginal && videoSeek.pending) {
+      videoSeek.pending = { assetId: videoSeek.pending.assetId, seconds: videoSeek.pending.seconds };
+    }
   };
 
   const refreshStack = async () => {

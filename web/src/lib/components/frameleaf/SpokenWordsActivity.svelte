@@ -44,6 +44,7 @@
     const own = epoch,
       valid = authManager.captureSession();
     busy = true;
+    failed = false;
     try {
       const value = await retrySpeechIndexing({ speechRevisionDto: { expectedGeneration: status.generation } });
       if (own === epoch && valid()) {

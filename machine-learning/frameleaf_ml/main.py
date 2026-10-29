@@ -467,7 +467,12 @@ async def predict(
 @app.get("/transcribe/info")
 def transcribe_info() -> ORJSONResponse:
     try:
-        return ORJSONResponse(transcription_identity())
+        identity = transcription_identity()
+        # Without downloads the identity is only real once its verified files are staged; otherwise the server
+        # would advance its index to a model /transcribe cannot load.
+        if not settings.model_downloads and not TranscribeModel(identity["model"]).cached:
+            raise ModelUnavailableError("Transcription model is not staged")
+        return ORJSONResponse(identity)
     except ModelUnavailableError as error:
         raise HTTPException(503, "Transcription model unavailable") from error
 

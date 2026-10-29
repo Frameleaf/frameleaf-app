@@ -89,6 +89,18 @@ class TestModel:
         mocker.patch.object(settings, "transcription_model", "whisper-large-v3-turbo")
         assert TestClient(app).get("/transcribe/info").json()["fingerprint"] != identity["fingerprint"]
 
+    def test_speech_identity_is_unavailable_until_the_model_is_staged_when_downloads_are_off(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        from frameleaf_ml.main import app
+
+        mocker.patch.object(settings, "transcription_model", "whisper-small")
+        mocker.patch.object(settings, "model_downloads", False)
+        mocker.patch.object(TranscribeModel, "cached", new_callable=mocker.PropertyMock, return_value=False)
+        assert TestClient(app).get("/transcribe/info").status_code == 503
+        mocker.patch.object(TranscribeModel, "cached", new_callable=mocker.PropertyMock, return_value=True)
+        assert TestClient(app).get("/transcribe/info").status_code == 200
+
     def test_routes_the_transcribe_task_to_whisper(self) -> None:
         assert get_model_class(TRANSCRIBE_MODEL_ALIAS, ModelType.AUDIO, ModelTask.TRANSCRIBE) is TranscribeModel
 
@@ -196,6 +208,26 @@ class TestModel:
         with pytest.raises(ModelUnavailableError, match="checksum"):
             sut.download()
         assert not sut.cached
+
+    def test_a_cached_file_from_an_older_pin_is_a_miss_and_is_removed(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        sut = TranscribeModel("whisper-small", cache_dir=tmp_path)
+        source = get_transcribe_model_file("whisper-small")
+        assert source is not None
+        pinned = {path: hashlib.sha256(path.encode()).hexdigest() for path, _ in source.files}
+        mocker.patch(
+            "frameleaf_ml.models.transcribe.get_transcribe_model_file",
+            return_value=source._replace(files=tuple(pinned.items())),
+        )
+        for path in pinned:
+            (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / path).write_bytes(path.encode())
+        assert sut.cached
+        stale = next(iter(pinned))
+        (tmp_path / stale).write_bytes(b"an older model")
+        assert not sut.cached
+        assert not (tmp_path / stale).exists()
 
     def test_an_unknown_model_name_is_unavailable(self, tmp_path: Path, mocker: MockerFixture) -> None:
         sut = TranscribeModel("whisper-enormous", cache_dir=tmp_path)

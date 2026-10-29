@@ -771,12 +771,8 @@
     base = scope ? withPaletteScope(rest, scope) : rest;
   };
 
+  // Speech mode parses the same chips (`tokens.join(' ')`), so repeated person/tag/date tokens combine.
   const addToken = (raw: string) => {
-    if (mode === 'speech') {
-      base = { ...base, filter: { ...base.filter, ...parseSearchInput(raw, catalog).filter } };
-      input?.focus();
-      return;
-    }
     if (!tokens.includes(raw)) {
       tokens = [...tokens, raw];
     }
@@ -873,7 +869,7 @@
   const submitted = () => {
     const live =
       mode === 'speech'
-        ? { text, filter: parseSearchInput(tokens.join(' '), catalog).filter }
+        ? { text: text.slice(0, MAX_PALETTE_TEXT), filter: parseSearchInput(tokens.join(' '), catalog).filter }
         : parseSearchInput(liveInput, catalog);
     const target = scopeChoice === 'library' ? withoutPaletteScope(base, scope) : base;
     return compilePaletteQuery(target, live, mode) ?? compilePaletteQuery(target, live, 'originalFileName')!;

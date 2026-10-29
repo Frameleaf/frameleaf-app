@@ -38,3 +38,14 @@ it('evicts the safe aggregate on account revocation and ignores late status', as
   resolve({ enabled: true, indexed: 900, pending: 2, failed: 1 } as never);
   await waitFor(() => expect(screen.queryByText(/900 indexed/)).not.toBeInTheDocument());
 });
+it('clears an earlier retry error when a later retry succeeds', async () => {
+  const status = { enabled: true, generation: 'generation', indexed: 0, pending: 0, failed: 1 };
+  sdkMock.getSpeechStatus.mockResolvedValue(status as never);
+  sdkMock.retrySpeechIndexing.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(status as never);
+  render(SpokenWordsActivity);
+  const retry = await screen.findByRole('button', { name: 'Retry failed indexing' });
+  await fireEvent.click(retry);
+  await screen.findByText(/could not be loaded or saved/);
+  await fireEvent.click(retry);
+  await waitFor(() => expect(screen.queryByText(/could not be loaded or saved/)).not.toBeInTheDocument());
+});

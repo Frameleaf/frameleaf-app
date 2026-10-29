@@ -6,6 +6,7 @@ import {
   IntegrityReport,
   JobStatus,
   MediaOperationKind,
+  MediaOperationStatus,
   UserMetadataKey,
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -748,4 +749,21 @@ it('retains a checkpoint and its attempt budget across capacity requeue', async 
   await operations.beginValidation(resumed.operation.id, resumed.claimToken, true);
   expect(await repository.publish(resumed.operation, resumed.claimToken, 'whisper-small', 'en')).toBe(true);
   expect((await f.search('"hello world"')).total).toBe(1);
+});
+
+it('counts a transcript whose job was cancelled from Activity as failed, so retry is offered', async () => {
+  const f = await setup();
+  await f.asset();
+  await repository.reconcile(f.user.id);
+  const { operationId } = await db
+    .selectFrom('speech_transcript')
+    .select('operationId')
+    .where('ownerId', '=', f.user.id)
+    .executeTakeFirstOrThrow();
+  await db
+    .updateTable('media_operation')
+    .set({ status: MediaOperationStatus.Cancelled })
+    .where('id', '=', operationId!)
+    .execute();
+  expect(await repository.status(f.user.id)).toMatchObject({ indexed: 0, pending: 0, failed: 1 });
 });

@@ -17,7 +17,7 @@
   let total = $state(0);
   let nextCursor = $state<string | null>(null);
   let loading = $state(false);
-  let viewState = $state<'ready' | 'disabled' | 'unsupported' | 'failed'>('ready');
+  let viewState = $state<'ready' | 'disabled' | 'unsupported' | 'invalid' | 'failed'>('ready');
   let epoch = 0;
   let controller: AbortController | undefined;
   let validSession = authManager.captureSession();
@@ -42,6 +42,7 @@
     }
     if (!more) {
       clear();
+      viewState = 'ready';
     }
     const own = epoch,
       session = authManager.captureSession();
@@ -88,10 +89,11 @@
       items = more ? [...items, ...response.items] : response.items;
       total = response.total;
       nextCursor = response.nextCursor;
-    } catch {
+    } catch (error) {
       if (live()) {
         clear();
-        viewState = 'failed';
+        // The server rejects malformed queries (open quote, too many or too long words); retrying cannot help.
+        viewState = (error as { status?: number }).status === 400 ? 'invalid' : 'failed';
       }
     } finally {
       if (live()) {
@@ -196,6 +198,7 @@
   {#if viewState === 'unsupported'}<p role="status">{$t('frameleaf_speech_unsupported')}</p>
   {:else if viewState === 'disabled'}<p role="status">{$t('frameleaf_speech_disabled')}</p>
     <a href="/user-settings?section=feature#spoken-words">{$t('frameleaf_speech_settings')}</a>
+  {:else if viewState === 'invalid'}<p role="alert">{$t('frameleaf_speech_invalid')}</p>
   {:else if viewState === 'failed'}<p role="alert">{$t('frameleaf_speech_failed')}</p>
     <Button onclick={() => void load()}>{$t('retry')}</Button>
   {:else}

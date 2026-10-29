@@ -505,7 +505,12 @@ export class SpeechRepository {
         .filter((r) => r.status && ACTIVE_MEDIA_OPERATION_STATUSES.includes(r.status))
         .reduce((a, r) => a + r.count, 0),
       failed: rows
-        .filter((r) => !r.completed && (!r.status || r.status === MediaOperationStatus.Failed))
+        // A cancelled (Activity) incomplete transcript is never re-reconciled, so it is offered for retry like a failure.
+        .filter(
+          (r) =>
+            !r.completed &&
+            (!r.status || r.status === MediaOperationStatus.Failed || r.status === MediaOperationStatus.Cancelled),
+        )
         .reduce((a, r) => a + r.count, 0),
     };
   }
