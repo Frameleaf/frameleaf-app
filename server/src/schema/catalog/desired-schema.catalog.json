@@ -45751,6 +45751,327 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "browser_extension_sign_in_code",
+      "columns": [
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "codeHash",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "codeChallenge",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "redirectUri",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "client",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "installationId",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "serverId",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "browser_extension_sign_in_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "browser_extension_sign_in_code_expiresAt_idx",
+          "definition": "CREATE INDEX \"browser_extension_sign_in_code_expiresAt_idx\" ON public.browser_extension_sign_in_code USING btree (\"expiresAt\")",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "browser_extension_sign_in_code_sessionId_idx",
+          "definition": "CREATE INDEX \"browser_extension_sign_in_code_sessionId_idx\" ON public.browser_extension_sign_in_code USING btree (\"sessionId\")",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "sessionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "browser_extension_sign_in_code_userId_idx",
+          "definition": "CREATE INDEX \"browser_extension_sign_in_code_userId_idx\" ON public.browser_extension_sign_in_code USING btree (\"userId\")",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "userId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "browser_extension_sign_in_code_client_check",
+          "definition": "CHECK (((client)::text = ANY ((ARRAY['chrome'::character varying, 'edge'::character varying])::text[])))",
+          "tableName": "browser_extension_sign_in_code",
+          "expression": "(((client)::text = ANY ((ARRAY['chrome'::character varying, 'edge'::character varying])::text[])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "browser_extension_sign_in_code_hash_check",
+          "definition": "CHECK ((octet_length(\"codeHash\") = 32))",
+          "tableName": "browser_extension_sign_in_code",
+          "expression": "((octet_length(\"codeHash\") = 32))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "browser_extension_sign_in_code_pkey",
+          "definition": "PRIMARY KEY (\"codeHash\")",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "codeHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "browser_extension_sign_in_code_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "browser_extension_sign_in_code_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "browser_extension_sign_in_code",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "browser_extension_access",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "apiKeyId",
+          "tableName": "browser_extension_access",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "browser_extension_access",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "client",
+          "tableName": "browser_extension_access",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "redirectOrigin",
+          "tableName": "browser_extension_access",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "installationId",
+          "tableName": "browser_extension_access",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "browser_extension_access",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "browser_extension_access_client_check",
+          "definition": "CHECK (((client)::text = ANY ((ARRAY['chrome'::character varying, 'edge'::character varying])::text[])))",
+          "tableName": "browser_extension_access",
+          "expression": "(((client)::text = ANY ((ARRAY['chrome'::character varying, 'edge'::character varying])::text[])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "browser_extension_access_pkey",
+          "definition": "PRIMARY KEY (\"apiKeyId\")",
+          "tableName": "browser_extension_access",
+          "columnNames": [
+            "apiKeyId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "browser_extension_access_installation_uq",
+          "definition": "UNIQUE (\"userId\", client, \"redirectOrigin\", \"installationId\")",
+          "tableName": "browser_extension_access",
+          "columnNames": [
+            "userId",
+            "client",
+            "redirectOrigin",
+            "installationId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "browser_extension_access_apiKeyId_fkey",
+          "definition": "FOREIGN KEY (\"apiKeyId\") REFERENCES api_key(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "browser_extension_access",
+          "columnNames": [
+            "apiKeyId"
+          ],
+          "referenceTableName": "api_key",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "browser_extension_access_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "browser_extension_access",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [

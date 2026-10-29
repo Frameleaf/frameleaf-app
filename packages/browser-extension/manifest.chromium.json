@@ -28,7 +28,8 @@
     "activeTab",
     "scripting",
     "alarms",
-    "contextMenus"
+    "contextMenus",
+    "identity"
   ],
   "version": "0.1.0"
 }

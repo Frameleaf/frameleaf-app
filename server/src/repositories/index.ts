@@ -21,6 +21,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
+import { BrowserExtensionSignInRepository } from 'src/repositories/browser-extension-sign-in.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
@@ -143,6 +144,7 @@ export const repositories = [
   SpeechRepository,
   AssetPaletteRepository,
   CaptureRepository,
+  BrowserExtensionSignInRepository,
   AssetSourceRepository,
   BookmarkRepository,
   DevelopBatchRepository,

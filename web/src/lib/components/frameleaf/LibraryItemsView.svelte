@@ -48,6 +48,8 @@
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import SearchSaveDialog from '$lib/components/frameleaf/SearchSaveDialog.svelte';
+  import BoardsEaglePausedBanner from '$lib/components/frameleaf/eagle/BoardsEaglePausedBanner.svelte';
+  import { eagleImportUi } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import { activeFilterFields } from '$lib/components/discovery/query';
   import { withFilterCondition } from '$lib/frameleaf/search-filters';
   import { shouldIgnoreEvent } from '$lib/actions/shortcut';
@@ -59,9 +61,11 @@
     mdiChevronDown,
     mdiClose,
     mdiContentSaveOutline,
+    mdiImport,
     mdiLinkVariantPlus,
     mdiPaletteOutline,
     mdiPaletteSwatchOutline,
+    mdiPlus,
     mdiPuzzleOutline,
     mdiSort,
     mdiTrayArrowUp,
@@ -524,8 +528,35 @@
         <h1>{title}</h1>
         <p class="fl-items-description">{$t('frameleaf_pro_description')}</p>
       </div>{/if}
-    <LibraryLayoutSwitch {session} />
+    <div class="fl-items-heading-actions">
+      {#if workspace === 'design'}
+        <!-- Boards' Add menu (prototype screen 33): upload, save a link, Import from Eagle, the extension. -->
+        <Menu label={$t('add')} align="end">
+          {#snippet trigger()}<Icon icon={mdiPlus} size="18" aria-hidden={true} /><span aria-hidden="true"
+              >{$t('add')}</span
+            >{/snippet}
+          <MenuItem onSelect={upload}
+            ><Icon icon={mdiTrayArrowUp} size="18" aria-hidden={true} />{$t('frameleaf_boards_upload')}</MenuItem
+          >
+          {#if saveLink}<MenuItem onSelect={() => saveLink?.()}
+              ><Icon icon={mdiLinkVariantPlus} size="18" aria-hidden={true} />{$t(
+                'frameleaf_boards_save_link',
+              )}</MenuItem
+            >{/if}
+          <MenuItem onSelect={() => eagleImportUi.show()}
+            ><Icon icon={mdiImport} size="18" aria-hidden={true} />{$t('frameleaf_eagle_import_open')}</MenuItem
+          >
+          {#if getExtension}<MenuItem onSelect={getExtension}
+              ><Icon icon={mdiPuzzleOutline} size="18" aria-hidden={true} />{$t(
+                'frameleaf_boards_get_extension',
+              )}</MenuItem
+            >{/if}
+        </Menu>
+      {/if}
+      <LibraryLayoutSwitch {session} />
+    </div>
   </header>
+  {#if workspace === 'design'}<BoardsEaglePausedBanner />{/if}
   <ResultsToolbar
     {session}
     count={results.count}
@@ -903,6 +934,11 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .fl-items-heading-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-2);
   }
   .fl-items-heading {
     display: flex;
