@@ -133,7 +133,9 @@ export const sharedSearchSuggestions = (type: SearchSuggestionType, signal?: Abo
     const entry: SharedSuggestions = {
       controller,
       callers: 0,
-      request: getSearchSuggestions({ $type: type }, { signal: controller.signal }).finally(() => {
+      // never throws synchronously: a caller's Promise.all must receive every request it started
+      request: (async () =>
+        (await getSearchSuggestions({ $type: type }, { signal: controller.signal })) ?? [])().finally(() => {
         if (inFlightSuggestions.get(type) === entry) {
           inFlightSuggestions.delete(type);
         }
