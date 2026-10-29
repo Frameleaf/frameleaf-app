@@ -1,5 +1,6 @@
 """Tags derived from AI description text (FL-659)."""
 
+import json
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -42,7 +43,24 @@ def test_model_paths_use_the_filter(tmp_path):
         '{"description": "Her dog sits behind four white chairs in the image.", "objects": ["dog", "chair"]}'
     )
 
-    assert response["tags"] == ["chair", "chairs", "dog"]
+    assert response["tags"] == ["dog", "chair", "chairs"]
+
+
+def test_safety_tags_and_detector_labels_survive_the_twenty_tag_cut(tmp_path):
+    model = ImageDescriptionModel(next(iter(FLORENCE_MODELS)), acceleration="cuda", device="cpu", cache_dir=tmp_path)
+    caption = " ".join(f"thing{letter}" for letter in "abcdefghijklmnopqrstuvwxy")
+    response = model._normalize_response(
+        json.dumps(
+            {
+                "description": caption,
+                "objects": ["zebra", "yacht"],
+                "medical": {"is_medical_likely": True, "indicators": ["hospital"]},
+            }
+        )
+    )
+
+    assert len(response["tags"]) == TAG_LIMIT
+    assert response["tags"][:4] == ["medical", "hospital", "zebra", "yacht"]
 
 
 def test_drops_words_with_digits_whole_and_contractions():

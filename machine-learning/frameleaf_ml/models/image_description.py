@@ -905,27 +905,28 @@ class ImageDescriptionModel(InferenceModel):
         safety: dict[str, Any],
         medical: dict[str, Any],
     ) -> list[str]:
-        normalized = [self._normalize_tag(tag) for tag in tags]
-        tag_set = {tag for tag in normalized if tag}
-
+        # Order matters: the response keeps only the first 20 tags. Safety and medical tags go first so
+        # they are never cut, then the tags in the order given (detector labels before caption words).
+        signal_tags: list[str] = []
         has_strong_nsfw_tag = False
         if safety.get("is_nsfw_likely") and safety.get("confidence") == "high":
             for indicator in self._signal_indicators(safety):
                 tag = self._normalize_tag(indicator)
                 if tag in NSFW_TAGS:
-                    tag_set.add(tag)
+                    signal_tags.append(tag)
                     has_strong_nsfw_tag = True
         if has_strong_nsfw_tag:
-            tag_set.add("nsfw")
+            signal_tags.append("nsfw")
 
         if medical.get("is_medical_likely"):
-            tag_set.add("medical")
+            signal_tags.append("medical")
             for indicator in self._signal_indicators(medical):
                 tag = self._normalize_tag(indicator)
                 if tag in MEDICAL_TAGS:
-                    tag_set.add(tag)
+                    signal_tags.append(tag)
 
-        return sorted(tag_set)
+        ordered = [*signal_tags, *(self._normalize_tag(tag) for tag in tags)]
+        return list(dict.fromkeys(tag for tag in ordered if tag))
 
     def _list_of_strings(self, value: Any) -> list[str]:
         if not isinstance(value, list):
