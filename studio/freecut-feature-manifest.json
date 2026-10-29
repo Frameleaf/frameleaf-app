@@ -7842,7 +7842,7 @@
       "category": "Export",
       "frameleaf": {
         "evidence": ["fd9eaf9e0c", "e6da8fb537"],
-        "note": "The bundled Studio worker renders the project through the engine headlessly (WebCodecs H.264/AAC master) and writes the requested format with its own ffmpeg; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity. Rendering runs on the worker, not in the person’s browser.",
+        "note": "The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity. Rendering runs on the worker, not in the person’s browser.",
         "status": "shipped"
       },
       "id": "readme.export.1",
@@ -7917,7 +7917,7 @@
       "category": "Export",
       "frameleaf": {
         "evidence": ["fd9eaf9e0c", "e6da8fb537"],
-        "note": "Not reachable: an export renders the main timeline (optionally a range of it); the export request has no sequence choice. The bundled Studio worker renders the project through the engine headlessly (WebCodecs H.264/AAC master) and writes the requested format with its own ffmpeg; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "note": "Not reachable: an export renders the main timeline (optionally a range of it); the export request has no sequence choice. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "not-started"
       },
       "id": "readme.export.2",
@@ -7992,7 +7992,7 @@
       "category": "Export",
       "frameleaf": {
         "evidence": ["fd9eaf9e0c", "e6da8fb537"],
-        "note": "MP4, MOV, MKV and WebM. The bundled Studio worker renders the project through the engine headlessly (WebCodecs H.264/AAC master) and writes the requested format with its own ffmpeg; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "note": "MP4, MOV, MKV and WebM. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "shipped"
       },
       "id": "readme.export.3",
@@ -8067,7 +8067,7 @@
       "category": "Export",
       "frameleaf": {
         "evidence": ["fd9eaf9e0c", "e6da8fb537"],
-        "note": "H.264, H.265, VP8, VP9 and AV1 (plus ProRes 422 in MOV), each offered only where the worker’s own encoder passed its admission check. The bundled Studio worker renders the project through the engine headlessly (WebCodecs H.264/AAC master) and writes the requested format with its own ffmpeg; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "note": "H.264, H.265, VP8, VP9 and AV1 (plus ProRes 422 in MOV), each offered only where the worker’s own encoder passed its admission check. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "shipped"
       },
       "id": "readme.export.4",
@@ -8142,7 +8142,7 @@
       "category": "Export",
       "frameleaf": {
         "evidence": ["fd9eaf9e0c", "e6da8fb537"],
-        "note": "Sound-only exports as MP3, AAC and WAV/PCM from the master’s audio. The bundled Studio worker renders the project through the engine headlessly (WebCodecs H.264/AAC master) and writes the requested format with its own ffmpeg; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "note": "Sound-only exports as MP3, AAC and WAV/PCM from the master’s audio. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "shipped"
       },
       "id": "readme.export.5",
@@ -8223,7 +8223,7 @@
           "0105-subtitle-sidecar-shared-producer.patch",
           "fd9eaf9e0c"
         ],
-        "note": "Off, burn-in (the default), a private SRT sibling, or an embedded text track (mov_text, SubRip or WebVTT by container), admitted per format by server/src/utils/render-admission.ts. The bundled Studio worker renders the project through the engine headlessly (WebCodecs H.264/AAC master) and writes the requested format with its own ffmpeg; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "note": "Off, burn-in (the default), a private SRT sibling, or an embedded text track (mov_text, SubRip or WebVTT by container), admitted per format by server/src/utils/render-admission.ts. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "shipped"
       },
       "id": "readme.export.6",
@@ -8298,7 +8298,7 @@
       "category": "Export",
       "frameleaf": {
         "evidence": ["fd9eaf9e0c", "e6da8fb537"],
-        "note": "Low, medium, high and ultra (StudioExportQuality); the runtime capability check is the worker’s admission probe, and the dialog offers only formats an admitted worker advertises. The bundled Studio worker renders the project through the engine headlessly (WebCodecs H.264/AAC master) and writes the requested format with its own ffmpeg; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "note": "Low, medium, high and ultra (StudioExportQuality); the runtime capability check is the worker’s admission probe, and the dialog offers only formats an admitted worker advertises. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "shipped"
       },
       "id": "readme.export.7",
@@ -15347,7 +15347,7 @@
       "category": "Feature module inventory",
       "frameleaf": {
         "evidence": ["fd9eaf9e0c", "e6da8fb537"],
-        "note": "The engine’s export renderer is what the bundled worker runs headlessly to make every export; the in-editor export dialog is replaced by the host dialog. The bundled Studio worker renders the project through the engine headlessly (WebCodecs H.264/AAC master) and writes the requested format with its own ffmpeg; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
+        "note": "The engine’s export renderer is what the bundled worker runs headlessly to make every export; the in-editor export dialog is replaced by the host dialog. The bundled Studio worker renders the project through the engine headlessly. SDR exports come from its WebCodecs H.264/AAC master, written in the requested format by the worker’s own ffmpeg; HDR10 and HLG exports encode the engine’s float-route frames as HEVC Main10 (studio/tools/bundled-worker-hdr.mjs), with sound from the H.264 render; at admission it encodes a sample in every format and advertises only those ffprobe reads back as promised (studio/tools/bundled-worker-formats.mjs). Export is started from the host export dialog (shims/export-dialog.tsx) and followed in Activity.",
         "status": "shipped"
       },
       "id": "module.export",
