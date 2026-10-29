@@ -15,6 +15,7 @@ import {
   CAPTION_STYLE_ENGINE_STRINGS,
   type CaptionStyleEngineString,
 } from '@frameleaf/host/caption-style-strings'
+import {
   CAPTION_LANGUAGE_ENGINE_STRINGS,
   type CaptionLanguageEngineString,
 } from '@frameleaf/host/caption-language-strings'
