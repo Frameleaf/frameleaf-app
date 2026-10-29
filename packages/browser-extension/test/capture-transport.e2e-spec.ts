@@ -5,6 +5,7 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import { connectWithKey } from './connect-with-key';
 import { build } from 'vite';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -78,6 +79,17 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
         return;
       }
       if (!req.url?.startsWith('/frameleaf/api/')) {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === '/frameleaf/api/server/ping') {
+        res
+          .writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ res: 'pong' }));
+        return;
+      }
+      // an older server: no sign-in from the browser, so the key is used
+      if (req.url === '/frameleaf/api/browser-extension/sign-in') {
         res.writeHead(404).end();
         return;
       }
@@ -479,12 +491,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       captureId: id,
       filename: 'synthetic.svg',
     });
-    await page.getByLabel('Server address').fill(origin + '/frameleaf');
-    await page.getByLabel('Browser key', { exact: true }).fill(key);
-    await page
-      .getByRole('switch', { name: /Allow a local server without HTTPS/ })
-      .check();
-    await page.getByRole('button', { name: 'Connect', exact: true }).click();
+    await connectWithKey(page, origin + '/frameleaf', key);
     await expect(
       page.getByRole('heading', { name: 'Settings', exact: true }),
     ).toBeVisible();

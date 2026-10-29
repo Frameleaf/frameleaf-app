@@ -4949,6 +4949,8 @@ export type ApiKeyResponseDto = {
     name: string;
     /** List of permissions */
     permissions: ApiKeyResponsePermission[];
+    /** The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace. */
+    signedInFrom: string | null;
     /** Last update date */
     updatedAt: string;
 };
@@ -4974,6 +4976,8 @@ export type ApiKeyCreateResponseDto = {
     permissions: ApiKeyResponsePermission[];
     /** API key secret (only shown once) */
     secret: string;
+    /** The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace. */
+    signedInFrom: string | null;
     /** Last update date */
     updatedAt: string;
 };
@@ -6273,6 +6277,72 @@ export type BookmarkUpdateDto = {
 };
 export type BookmarkTagsDto = {
     ids: string[];
+};
+export type BrowserExtensionSignInInfoDto = {
+    /** The extension sign-in this server supports (1) */
+    version: number;
+};
+export type BrowserExtensionSignInAuthorizeDto = {
+    /** true for Allow, false for Cancel */
+    allow: boolean;
+    client: BrowserExtensionClient;
+    /** The base64url SHA-256 of the extension’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: CodeChallengeMethod;
+    /** A random id this installation of the extension made once; its access replaces only its own */
+    installationId: string;
+    /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
+    redirectUri: string;
+    /** Returned unchanged to the extension */
+    state: string;
+};
+export type BrowserExtensionSignInAuthorizeResponseDto = {
+    /** Where the sign-in window goes next: the return address with the code (or the cancellation) and state */
+    redirectUrl: string;
+};
+export type BrowserExtensionSignInExchangeDto = {
+    /** The single-use code from the return address */
+    code: string;
+    /** The code verifier the challenge was made from */
+    codeVerifier: string;
+    /** The same return address the sign-in started with */
+    redirectUri: string;
+};
+export type BrowserExtensionSignInExchangeResponseDto = {
+    /** The access, as listed in API keys */
+    apiKeyId: string;
+    /** How the access is listed in API keys */
+    name: string;
+    /** The new access key, shown once; it can only save captures and list collections and tags */
+    secret: string;
+    serverId: string;
+    userId: string;
+};
+export type BrowserExtensionSignInErrorDto = {
+    code: BrowserExtensionSignInErrorCode;
+    error: string;
+    message: string;
+    statusCode: number;
+};
+export type BrowserExtensionSignInStartDto = {
+    client: BrowserExtensionClient;
+    /** The base64url SHA-256 of the extension’s code verifier */
+    codeChallenge: string;
+    /** Only S256 is accepted */
+    codeChallengeMethod: CodeChallengeMethod;
+    /** A random id this installation of the extension made once; its access replaces only its own */
+    installationId: string;
+    /** The extension’s return address: https://<extension id>.chromiumapp.org/ or a path under it */
+    redirectUri: string;
+    /** Returned unchanged to the extension */
+    state: string;
+};
+export type BrowserExtensionSignInStartResponseDto = {
+    /** How the access is listed in API keys, e.g. “Save to Frameleaf · Chrome” */
+    accessName: string;
+    /** This browser’s extension already has access to your account, so Allow is not asked again */
+    alreadyAllowed: boolean;
 };
 export type CaptureAlbumCreateDto = {
     libraryScope: CaptureAlbumScope;
@@ -24310,6 +24380,74 @@ export function setBookmarkTags({ id, bookmarkTagsDto }: {
     })));
 }
 /**
+ * Sign Save to Frameleaf out
+ */
+export function signOutBrowserExtension(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/browser-extension/sign-in", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Check that Save to Frameleaf can sign in here
+ */
+export function getBrowserExtensionSignIn(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BrowserExtensionSignInInfoDto;
+    }>("/browser-extension/sign-in", {
+        ...opts
+    }));
+}
+/**
+ * Allow or cancel a Save to Frameleaf sign-in
+ */
+export function authorizeBrowserExtensionSignIn({ browserExtensionSignInAuthorizeDto }: {
+    browserExtensionSignInAuthorizeDto: BrowserExtensionSignInAuthorizeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BrowserExtensionSignInAuthorizeResponseDto;
+    }>("/browser-extension/sign-in/authorize", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: browserExtensionSignInAuthorizeDto
+    })));
+}
+/**
+ * Finish a Save to Frameleaf sign-in
+ */
+export function exchangeBrowserExtensionSignIn({ browserExtensionSignInExchangeDto }: {
+    browserExtensionSignInExchangeDto: BrowserExtensionSignInExchangeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BrowserExtensionSignInExchangeResponseDto;
+    } | {
+        status: 400;
+        data: BrowserExtensionSignInErrorDto;
+    }>("/browser-extension/sign-in/exchange", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: browserExtensionSignInExchangeDto
+    })));
+}
+/**
+ * Check a Save to Frameleaf sign-in before Allow
+ */
+export function startBrowserExtensionSignIn({ browserExtensionSignInStartDto }: {
+    browserExtensionSignInStartDto: BrowserExtensionSignInStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BrowserExtensionSignInStartResponseDto;
+    }>("/browser-extension/sign-in/start", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: browserExtensionSignInStartDto
+    })));
+}
+/**
  * Create an ordinary design album for capture
  */
 export function createCaptureAlbum({ captureAlbumCreateDto }: {
@@ -36292,6 +36430,17 @@ export enum AssetMediaSize {
 export enum AssetWaveformChannelMode {
     Mono = "mono",
     All = "all"
+}
+export enum BrowserExtensionClient {
+    Chrome = "chrome",
+    Edge = "edge"
+}
+export enum CodeChallengeMethod {
+    S256 = "S256"
+}
+export enum BrowserExtensionSignInErrorCode {
+    Expired = "expired",
+    Invalid = "invalid"
 }
 export enum CaptureAlbumScope {
     Design = "design"

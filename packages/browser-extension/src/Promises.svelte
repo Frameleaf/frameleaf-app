@@ -2,17 +2,17 @@
   import Icon from "./Icon.svelte";
 </script>
 
-<ul class="promises" aria-label="What this extension can do">
+<ul class="promises" aria-label="What Save to Frameleaf can do">
   <li>
-    <Icon name="check" size={14} />The key can only save things and list your
+    <Icon name="check" size={14} />It can only save things and list your
     collections and tags.
   </li>
   <li>
-    <Icon name="check" size={14} />Nothing is read from a page until you choose
-    to save from it.
+    <Icon name="check" size={14} />Nothing is read from a page until you save
+    from it.
   </li>
   <li>
-    <Icon name="check" size={14} />The key stays in this browser. Remove it any
-    time in Frameleaf.
+    <Icon name="check" size={14} />Sign out here, or remove its access in
+    Frameleaf, at any time.
   </li>
 </ul>
