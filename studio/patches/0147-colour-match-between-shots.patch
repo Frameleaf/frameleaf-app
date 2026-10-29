@@ -195,7 +195,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,124 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -303,6 +303,9 @@ new file mode 100644
 +    expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
 +    useItemsStore.getState().setItems([item])
 +    expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
++    // Moving the clip changes which source frame the analysed time sampled.
++    useItemsStore.getState().setItems([{ ...item, from: item.from + 10 } as VideoItem, referenceClip()])
++    expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
 +  })
 +
 +  it('refuses every result when the project has become HDR since analysis', () => {
@@ -321,7 +324,7 @@ diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
-@@ -0,0 +1,279 @@
+@@ -0,0 +1,282 @@
 +import type { ItemEffect } from '@/types/effects'
 +import type { TimelineItem, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
@@ -396,9 +399,12 @@ new file mode 100644
 + * full grade, and the project's colour management.
 + */
 +export function colourMatchBinding(item: TimelineItem, seconds: number, reference?: TimelineItem, referenceSeconds?: number): string {
++  // Timing and cadence too: they choose which source frame a timeline time samples.
++  const fps = useTimelineSettingsStore.getState().fps
 +  const describe = (clip: TimelineItem, effects: readonly ItemEffect[]) => {
 +    const video = clip as VideoItem
-+    return [clip.id, clip.mediaId, video.sourceStart ?? 0, video.sourceEnd ?? null, video.speed ?? 1, video.isReversed === true, effects]
++    return [clip.id, clip.mediaId, clip.from, clip.durationInFrames, video.sourceStart ?? 0, video.sourceEnd ?? null,
++      video.sourceFps ?? fps, fps, video.speed ?? 1, video.isReversed === true, effects]
 +  }
 +  return JSON.stringify([
 +    describe(item, (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect))), seconds,

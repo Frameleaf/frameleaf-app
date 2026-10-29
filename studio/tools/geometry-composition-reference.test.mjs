@@ -269,16 +269,17 @@ test('composition source bindings preserve every admitted legacy row and refuse 
   const admitted = [...raster.matchAll(/binding\.sourceSha256 ===\s*'([a-f0-9]{64})'/g)].map(
     (row) => row[1],
   )
-  assert.equal(admitted.length, 41)
-  assert.equal(new Set(admitted).size, 41)
+  assert.equal(admitted.length, 42)
+  assert.equal(new Set(admitted).size, 42)
   for (const source of admitted) {
     const a = fixture()
     a.contract.binding.sourceSha256 = source
-    if (source === current || source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' || source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' || source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' || source === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' || source === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' || source === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' || source === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9')
+    if (source === current || source === '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185' || source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' || source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' || source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' || source === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' || source === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' || source === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' || source === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9')
       a.contract.binding.browser = '156.0.8078.4'
     a.contract.sourceHashes = compositionSourcesFor(source)
     if (
       source === current ||
+      source === '449f82d3d69e448ebe11202dbd33f76fc55efb05d02ebd58fbce4adfda50f185' ||
       source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
       source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
       source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' ||
