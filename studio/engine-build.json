@@ -758,7 +758,7 @@
     {
       "path": "patches/0162-voice-cleanup.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "3bcfad414ec3e6a67d0e16319683d3eccfd88886110973543eaf9b447ce191ba"
+      "sha256": "4cb05221a3ac60bc853a4377647e33985a130d098c61c4b403868888a395daa5"
     }
   ],
   "sourceSha256": "59b8569f29f0eb58d2d9d42daeba048a3682990c1144652d629483805b11a1b4"

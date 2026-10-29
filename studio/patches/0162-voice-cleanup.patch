@@ -27,7 +27,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/voice-
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.test.tsx
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,132 @@
 +import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 +import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import type { ReactNode } from 'react'
@@ -142,12 +142,29 @@ new file mode 100644
 +    expect(await screen.findByText(`${k('analysisFailed')}(No computer is available now)`)).toBeInTheDocument()
 +    expect(screen.getByRole('button', { name: new RegExp(k('action')) })).toBeDisabled()
 +  })
++
++  it("does not carry a failed check over to a cleaned clip", async () => {
++    useItemsStore.getState().setItems([
++      clip('a1', 'Beach walk'),
++      clip('a2', 'Interview', {
++        mediaId: 'cleaned-2',
++        voiceCleanup: { importId: 'cleaned-2', strength: 'light', noises: ['wind'], humHz: null, cleanedStart: 30,
++          original: { mediaId: 'media-a2', sourceStart: 60, sourceEnd: 180 } },
++      }),
++    ])
++    host.current = fakeHost({ analyze: vi.fn().mockRejectedValue(new Error('No computer is available now')) })
++    render(<VoiceCleanupSection items={[clip('a1', 'Beach walk')]} />)
++    expect(await screen.findByText(`${k('analysisFailed')}(No computer is available now)`)).toBeInTheDocument()
++    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'a2' } })
++    await waitFor(() => expect(screen.queryByText(/analysisFailed/)).not.toBeInTheDocument())
++    expect(screen.getByLabelText(k('noise.wind'))).toBeChecked()
++  })
 +})
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.tsx
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.tsx
-@@ -0,0 +1,305 @@
+@@ -0,0 +1,307 @@
 +import { useEffect, useMemo, useRef, useState } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { CheckCircle2, Home, Mic, Play, Square, Wand2 } from 'lucide-react'
@@ -236,6 +253,8 @@ new file mode 100644
 +    if (!host || !clip) return
 +    work.current?.abort()
 +    setProgress(null)
++    // A failed look at another clip says nothing about this one.
++    setUnchecked(null)
 +    if (clip.voiceCleanup) {
 +      setStrength(clip.voiceCleanup.strength)
 +      setNoises(clip.voiceCleanup.noises)
