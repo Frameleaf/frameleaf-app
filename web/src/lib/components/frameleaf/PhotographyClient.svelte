@@ -81,6 +81,7 @@
   let comparison = $state<Record<string, string>>({});
   let compareIds = $state<string[]>([]);
   let compareOpen = $state(false);
+  let compareRequest = 0;
   let opened = $state<GuestPhoto | null>(null);
   let openedOutput = $state<NonNullable<GuestPhoto['outputs']>[number] | null>(null);
   let downloadChoices = $state<string[]>([]);
@@ -691,19 +692,23 @@
     comparison = {};
     compareOpen = true;
     const current = generation;
-    try {
-      for (const id of compareIds) {
-        const blob = await galleryMedia(galleryId, id, 'preview', session);
-        if (disposed || current !== generation || !compareOpen) {
-          return;
+    const request = ++compareRequest;
+    // Both previews load together; a reply for an earlier comparison is dropped, never shown or leaked.
+    await Promise.all(
+      compareIds.map(async (id) => {
+        try {
+          const blob = await galleryMedia(galleryId, id, 'preview', session);
+          if (disposed || current !== generation || request !== compareRequest || !compareOpen) {
+            return;
+          }
+          comparison[id] = URL.createObjectURL(blob);
+        } catch (error_) {
+          if (!disposed && current === generation && request === compareRequest) {
+            failure(error_);
+          }
         }
-        comparison[id] = URL.createObjectURL(blob);
-      }
-    } catch (error_) {
-      if (!disposed && current === generation) {
-        failure(error_);
-      }
-    }
+      }),
+    );
   }
   function downloadBlob(blob: Blob, name: string) {
     const url = URL.createObjectURL(blob);

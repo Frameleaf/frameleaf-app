@@ -467,4 +467,33 @@ describe('HDR and Dolby Vision clips (FL-113)', () => {
       expect(editAsset).not.toHaveBeenCalled();
     },
   );
+
+  it('copies a paused frame into the split view once, not on every animation frame', async () => {
+    // The media stage renders only after layout supplies its dimensions.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600));
+    const drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as never);
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => frames.push(callback));
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+    await opened();
+    const element = await waitFor(() => document.querySelector('video')!);
+    let at = 0;
+    Object.defineProperties(element, {
+      readyState: { configurable: true, get: () => 4 },
+      paused: { configurable: true, get: () => true },
+      videoWidth: { configurable: true, get: () => 1920 },
+      videoHeight: { configurable: true, get: () => 1080 },
+      currentTime: { configurable: true, get: () => at, set: (value: number) => (at = value) },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_split_view' }));
+    await waitFor(() => expect(drawImage).toHaveBeenCalledOnce());
+    for (let index = 0; index < 30; index++) {
+      frames.shift()?.(0);
+    }
+    expect(drawImage).toHaveBeenCalledOnce();
+    at = 3;
+    frames.shift()?.(0);
+    expect(drawImage).toHaveBeenCalledTimes(2);
+  });
 });
