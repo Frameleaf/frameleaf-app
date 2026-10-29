@@ -2,9 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { configureExpress } from 'src/app.common.js';
 import { ApiModule } from 'src/app.module.js';
+import { ExitCode } from 'src/enum.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ApiService } from 'src/services/api.service.js';
-import { isStartUpError } from 'src/utils/misc.js';
+import { isRetryableStartupError, isStartUpError } from 'src/utils/misc.js';
 import { HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
 async function bootstrap() {
@@ -35,5 +36,5 @@ bootstrap().catch((error) => {
     console.error(error);
   }
   // eslint-disable-next-line unicorn/no-process-exit
-  process.exit(1);
+  process.exit(isRetryableStartupError(error) ? ExitCode.StartupRetry : 1);
 });

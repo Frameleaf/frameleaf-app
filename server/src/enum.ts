@@ -2660,6 +2660,11 @@ export const PhysicalDeduplicationPlanModeSchema = z
 
 export enum ExitCode {
   AppRestart = 7,
+  /**
+   * FL-646: the API worker failed to start on a transient PostgreSQL conflict (lock timeout or deadlock); the supervisor
+   * starts it again with backoff instead of stopping the server.
+   */
+  StartupRetry = 8,
   /** FL-295: the "Getting Ready…" worker finished (or skipped) the safety copy; normal startup follows. */
 }
 

@@ -433,6 +433,27 @@ describe('supervisor worker-local restart lifecycle', () => {
     expect(restarts()).toBe(5);
   });
 
+  // FL-646: an API start-up that lost a lock race to another worker comes back instead of stopping the server.
+  it('restarts an API worker whose start-up hit a transient lock conflict, backing off while it keeps failing', async () => {
+    latest(FrameleafWorker.Api).emit('exit', ExitCode.StartupRetry);
+    expect(process.exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
+    latest(FrameleafWorker.Api).emit('exit', ExitCode.StartupRetry);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api']);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge', 'api', 'api']);
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  it('still stops the server when the API worker fails for any other reason', async () => {
+    latest(FrameleafWorker.Api).emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(process.exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
+  });
+
   it('still restarts a poisoned API pool without restarting healthy workers', async () => {
     latest(FrameleafWorker.Api).emit('message', { type: 'database-unusable' });
     latest(FrameleafWorker.Api).emit('exit', 1);

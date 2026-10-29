@@ -363,7 +363,12 @@ export class Workers {
 
     // Database cleanup failure poisons only its originating pool. Restart that worker; keep the
     // other API/edge/executor pools available. Safe queue publications remain token fenced.
-    if (this.databaseRestarts.delete(name) || name === FrameleafWorker.Microservices) {
+    // FL-646: likewise an API worker whose start-up lost a transient PostgreSQL lock conflict.
+    if (
+      this.databaseRestarts.delete(name) ||
+      name === FrameleafWorker.Microservices ||
+      (name === FrameleafWorker.Api && exitCode === ExitCode.StartupRetry)
+    ) {
       delete this.workers[name];
       const lifecycle = this.lifecycle;
       clearTimeout(this.workerRestarts.get(name));
