@@ -83,8 +83,30 @@ describe('shared mixed-item search boundary', () => {
     });
     const keyAuth = { ...auth, apiKey: { id: 'key', permissions: [Permission.AssetRead] } };
     expect((await service.search(keyAuth, LibraryItemSearchDto.schema.parse({}))).count).toBe(1);
-    expect(repo.searchLibrary).toHaveBeenCalledWith(keyAuth, expect.anything(), expect.anything(), false, undefined);
+    expect(repo.searchLibrary).toHaveBeenCalledWith(
+      keyAuth,
+      expect.anything(),
+      expect.anything(),
+      { assets: true, bookmarks: false },
+      undefined,
+    );
     expect(bookmarks.getForSearch).not.toHaveBeenCalled();
+  });
+  it('lists only the requested kinds and returns no media for a links-only semantic search', async () => {
+    const { service, repo, searches } = setup();
+    await service.search(auth, LibraryItemSearchDto.schema.parse({ kinds: ['bookmark'] }));
+    expect(repo.searchLibrary).toHaveBeenCalledWith(
+      auth,
+      expect.anything(),
+      expect.anything(),
+      { assets: false, bookmarks: true },
+      undefined,
+    );
+    await expect(
+      service.search(auth, LibraryItemSearchDto.schema.parse({ kinds: ['bookmark'], mode: 'smart', query: 'lodge' })),
+    ).resolves.toEqual({ items: [], count: 0, countCapped: false, nextCursor: null });
+    expect(searches.searchSmart).not.toHaveBeenCalled();
+    expect(() => LibraryItemSearchDto.schema.parse({ kinds: [] })).toThrow();
   });
   it('refuses a shared link before running the signed-in search adapter', async () => {
     const { service, repo } = setup();

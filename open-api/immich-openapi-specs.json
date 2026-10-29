@@ -93202,6 +93202,14 @@
           "filter": {
             "$ref": "#/components/schemas/SearchFilter"
           },
+          "kinds": {
+            "description": "Only these kinds of item; all kinds when omitted. Semantic search returns media only",
+            "items": {
+              "$ref": "#/components/schemas/LibraryItemSearchKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
           "limit": {
             "default": 100,
             "maximum": 200,
@@ -93227,6 +93235,13 @@
           }
         },
         "type": "object"
+      },
+      "LibraryItemSearchKind": {
+        "enum": [
+          "asset",
+          "bookmark"
+        ],
+        "type": "string"
       },
       "LibraryItemSearchMode": {
         "enum": [

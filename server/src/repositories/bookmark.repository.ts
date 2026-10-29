@@ -246,7 +246,7 @@ export class BookmarkRepository {
     auth: AuthDto,
     query: LibraryItemSearchDto,
     scope: AssetSearchScope,
-    includeBookmarks: boolean,
+    include: { assets: boolean; bookmarks: boolean },
     cursor?: Extract<LibraryCursor, { mode: 'text' }>,
   ): Promise<{ count: number; candidates: LibraryCandidate[] }> {
     const sort = query.sort ?? 'added';
@@ -260,6 +260,7 @@ export class BookmarkRepository {
             .limit(1)
         : sql<number>`0::double precision`;
     const assets = this.libraryAssets(auth, query, scope)
+      .where(sql<boolean>`${include.assets}`)
       .clearSelect()
       .select([
         'asset.id',
@@ -269,7 +270,7 @@ export class BookmarkRepository {
         assetRank.as('rank'),
       ]);
     const bookmarks = this.libraryBookmarks(auth, query)
-      .where(sql<boolean>`${includeBookmarks}`)
+      .where(sql<boolean>`${include.bookmarks}`)
       .select([
         'bookmark.id',
         sql<string>`'bookmark'::text`.as('kind'),

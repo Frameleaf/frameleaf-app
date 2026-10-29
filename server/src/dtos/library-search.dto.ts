@@ -10,6 +10,11 @@ export class LibraryItemSearchDto extends createZodDto(
       query: z.string().trim().max(500).default(''),
       mode: z.enum(['text', 'smart']).meta({ id: 'LibraryItemSearchMode' }).default('text'),
       queryAssetId: z.uuid().optional(),
+      kinds: z
+        .array(z.enum(['asset', 'bookmark']).meta({ id: 'LibraryItemSearchKind' }))
+        .min(1)
+        .optional()
+        .describe('Only these kinds of item; all kinds when omitted. Semantic search returns media only'),
       sort: z.enum(['added', 'color']).meta({ id: 'LibraryItemSearchSort' }).optional(),
       limit: z.int().min(1).max(200).default(100),
       cursor: z.string().max(1024).optional(),

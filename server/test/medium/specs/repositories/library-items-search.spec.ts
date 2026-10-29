@@ -21,6 +21,7 @@ afterAll(async () => {
 const setup = () => newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] }).ctx;
 const scope = (id: string) => ({ userIds: [id], lockedOwnerId: '', viewingUserId: id });
 
+const ALL = { assets: true, bookmarks: true };
 describe('mixed library search universe', () => {
   it('counts both kinds and pages equal timestamps without losing microsecond precision or repeating IDs', async () => {
     const ctx = setup();
@@ -53,7 +54,7 @@ describe('mixed library search universe', () => {
     const seen: typeof wanted = [];
     let cursor: Extract<LibraryCursor, { mode: 'text' }> | undefined;
     for (let index = 0; index < 4; index++) {
-      const result = await repo.searchLibrary(auth, request, scope(user.id), true, cursor);
+      const result = await repo.searchLibrary(auth, request, scope(user.id), ALL, cursor);
       expect(result.count).toBe(4);
       expect(result.candidates[0].dateKey).toBe(instant);
       const row = result.candidates[0];
@@ -67,7 +68,7 @@ describe('mixed library search universe', () => {
       };
     }
     expect(seen).toEqual(wanted);
-    expect((await repo.searchLibrary(auth, request, scope(user.id), true, cursor)).candidates).toEqual([]);
+    expect((await repo.searchLibrary(auth, request, scope(user.id), ALL, cursor)).candidates).toEqual([]);
   });
   it('does not match another owner’s private bookmark notes in a shared album', async () => {
     const ctx = setup();
@@ -90,15 +91,15 @@ describe('mixed library search universe', () => {
       query: 'private-project',
       filter: { albumIds: { any: [album.id] } },
     });
-    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), true)).count).toBe(1);
-    expect((await repo.searchLibrary({ user: viewer.user }, request, scope(viewer.user.id), true)).count).toBe(0);
+    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), ALL)).count).toBe(1);
+    expect((await repo.searchLibrary({ user: viewer.user }, request, scope(viewer.user.id), ALL)).count).toBe(0);
     expect(
       (
         await repo.searchLibrary(
           { user: viewer.user },
           { ...request, query: 'Public reference' },
           scope(viewer.user.id),
-          true,
+          ALL,
         )
       ).count,
     ).toBe(1);
@@ -161,7 +162,7 @@ describe('mixed library search universe', () => {
     const seen: typeof wanted = [];
     let cursor: Extract<LibraryCursor, { mode: 'text' }> | undefined;
     for (let index = 0; index < wanted.length; index++) {
-      const result = await repo.searchLibrary({ user }, request, scope(user.id), true, cursor);
+      const result = await repo.searchLibrary({ user }, request, scope(user.id), ALL, cursor);
       expect(result.count).toBe(wanted.length);
       const row = result.candidates[0];
       seen.push({ id: row.id, kind: row.kind });
@@ -180,7 +181,7 @@ describe('mixed library search universe', () => {
           { user },
           { ...request, filter: { ...request.filter, type: { eq: AssetType.Image } } },
           scope(user.id),
-          true,
+          ALL,
         )
       ).candidates.every(({ kind }) => kind === 'asset'),
     ).toBe(true);
@@ -209,14 +210,14 @@ describe('mixed library search universe', () => {
       .execute();
     await repo.addToAlbum({ user: owner.user }, album.id, [starred.id]);
     const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design', rating: { eq: 4 } } });
-    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), true)).count).toBe(1);
+    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), ALL)).count).toBe(1);
     expect(
       (
         await repo.searchLibrary(
           { user: viewer.user },
           { ...request, filter: { ...request.filter, albumIds: { any: [album.id] } } },
           scope(viewer.user.id),
-          true,
+          ALL,
         )
       ).count,
     ).toBe(0);
@@ -250,8 +251,8 @@ describe('mixed library search universe', () => {
     const request = LibraryItemSearchDto.schema.parse({
       filter: { libraryScope: 'design', text: { contains: 'packaging' }, albumIds: { any: [album.id] } },
     });
-    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), true)).count).toBe(2);
-    expect((await repo.searchLibrary({ user: viewer.user }, request, scope(viewer.user.id), true)).count).toBe(1);
+    expect((await repo.searchLibrary({ user: owner.user }, request, scope(owner.user.id), ALL)).count).toBe(2);
+    expect((await repo.searchLibrary({ user: viewer.user }, request, scope(viewer.user.id), ALL)).count).toBe(1);
   });
   it('does not count bookmark rows when the current key lacks BookmarkRead', async () => {
     const ctx = setup();
@@ -263,7 +264,27 @@ describe('mixed library search universe', () => {
       libraryScope: LibraryScope.Design,
     });
     const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' } });
-    expect((await repo.searchLibrary({ user }, request, scope(user.id), false)).count).toBe(0);
-    expect((await repo.searchLibrary({ user }, request, scope(user.id), true)).count).toBe(1);
+    expect(
+      (await repo.searchLibrary({ user }, request, scope(user.id), { assets: true, bookmarks: false })).count,
+    ).toBe(0);
+    expect((await repo.searchLibrary({ user }, request, scope(user.id), ALL)).count).toBe(1);
+  });
+  it('lists only saved links when media is left out, without scanning past them', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const repo = new BookmarkRepository(db);
+    await ctx.newAsset({ ownerId: user.id, libraryScope: LibraryScope.Design });
+    const link = await repo.create(user.id, {
+      url: 'https://example.org/links-only',
+      title: 'Links only',
+      libraryScope: LibraryScope.Design,
+    });
+    const request = LibraryItemSearchDto.schema.parse({ filter: { libraryScope: 'design' }, kinds: ['bookmark'] });
+    const linksOnly = await repo.searchLibrary({ user }, request, scope(user.id), { assets: false, bookmarks: true });
+    const mediaOnly = await repo.searchLibrary({ user }, request, scope(user.id), { assets: true, bookmarks: false });
+    expect({ links: linksOnly.candidates.map(({ id, kind }) => ({ id, kind })), media: mediaOnly.count }).toEqual({
+      links: [{ id: link.id, kind: 'bookmark' }],
+      media: 1,
+    });
   });
 });

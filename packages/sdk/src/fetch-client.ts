@@ -8924,6 +8924,8 @@ export type ValidateLibraryResponseDto = {
 export type LibraryItemSearchDto = {
     cursor?: string;
     filter?: SearchFilter;
+    /** Only these kinds of item; all kinds when omitted. Semantic search returns media only */
+    kinds?: LibraryItemSearchKind[];
     limit?: number;
     mode?: LibraryItemSearchMode;
     query?: string;
@@ -36216,6 +36218,10 @@ export enum LibraryImportPathReason {
     Duplicate = "duplicate",
     Nested = "nested",
     OtherLibrary = "other_library"
+}
+export enum LibraryItemSearchKind {
+    Asset = "asset",
+    Bookmark = "bookmark"
 }
 export enum LibraryItemSearchMode {
     Text = "text",

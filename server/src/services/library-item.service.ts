@@ -23,8 +23,11 @@ export class LibraryItemService {
 
   async search(auth: AuthDto, query: LibraryItemSearchDto): Promise<LibraryItemSearchResponseDto> {
     if (auth.sharedLink) throw new NotFoundException('Library search unavailable');
+    const kinds = query.kinds ?? ['asset', 'bookmark'];
+    const includeAssets = kinds.includes('asset');
     const includeBookmarks =
-      !auth.apiKey || isGranted({ requested: [Permission.BookmarkRead], current: auth.apiKey.permissions });
+      kinds.includes('bookmark') &&
+      (!auth.apiKey || isGranted({ requested: [Permission.BookmarkRead], current: auth.apiKey.permissions }));
     const { filter, scope } = await this.searches.resolveSearchScopeV3(auth, query);
     const effective = { ...query, filter };
     const queryHash = libraryQueryHash({
@@ -35,6 +38,7 @@ export class LibraryItemService {
       queryAssetId: query.queryAssetId,
       mode: query.mode,
       sort: query.mode === 'smart' ? 'relevance' : (query.sort ?? 'added'),
+      includeAssets,
       includeBookmarks,
       hiddenContent: auth.hiddenContent,
       hideNsfwAssets: auth.hideNsfwAssets,
@@ -42,6 +46,7 @@ export class LibraryItemService {
     });
     const cursor = decodeLibraryCursor(query.cursor, queryHash);
     if (cursor && cursor.mode !== query.mode) throw new BadRequestException('Cursor mode changed');
+    if (query.mode === 'smart' && !includeAssets) return { items: [], count: 0, countCapped: false, nextCursor: null };
     if (query.mode === 'smart') {
       const body = {
         filter,
@@ -74,7 +79,7 @@ export class LibraryItemService {
       auth,
       effective,
       scope,
-      includeBookmarks,
+      { assets: includeAssets, bookmarks: includeBookmarks },
       cursor?.mode === 'text' ? cursor : undefined,
     );
     const page = candidates.slice(0, query.limit);
