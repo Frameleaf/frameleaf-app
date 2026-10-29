@@ -68,10 +68,12 @@ export class QueueManager {
     const session = this.#session;
     this.#refreshing++;
     try {
-      this.#snapshots.push({
-        timestamp: DateTime.now().toMillis(),
-        snapshot: this.#listenerCount > 0 || !tick ? await getQueues().catch(() => undefined) : undefined,
-      });
+      const snapshot = this.#listenerCount > 0 || !tick ? await getQueues().catch(() => undefined) : undefined;
+      // an answer from before the last listener left is older than whatever a later listener has
+      if (session !== this.#session) {
+        return;
+      }
+      this.#snapshots.push({ timestamp: DateTime.now().toMillis(), snapshot });
       this.#snapshots = this.#snapshots.slice(-30);
     } finally {
       if (session === this.#session) {

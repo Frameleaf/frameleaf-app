@@ -116,3 +116,23 @@ it('lets a new listener poll even if a refresh from before the last listener lef
     second();
   }
 });
+
+it('keeps a late answer from before the last listener left out of the snapshots', async () => {
+  const manager = new QueueManager();
+  let answer: (value: never[] | undefined) => void = () => {};
+  sdkMock.getQueues.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
+  const first = manager.listen();
+  first();
+  sdkMock.getQueues.mockResolvedValue([{ name: 'fresh' }] as never);
+  const second = manager.listen();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    const count = manager.snapshots.length;
+    answer(undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.snapshots).toHaveLength(count);
+    expect(manager.snapshots.at(-1)?.snapshot).toEqual([{ name: 'fresh' }]);
+  } finally {
+    second();
+  }
+});
