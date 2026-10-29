@@ -134,7 +134,26 @@ export const ignoreCancelledDownload = (error: unknown): void => {
  * to save, and rejects when one fails or is cancelled (an `AbortError`), so a caller that reports
  * the outcome reports what actually happened.
  */
-export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto, 'archiveSize'>): Promise<void> => {
+/**
+ * What an archive holds besides the files (FL-660, Boards' Download dialog). Left out, each item
+ * downloads as it is shown and no library file is added.
+ */
+export type ArchiveContents = {
+  /** The original files, never the version on screen. */
+  originals?: boolean;
+  /**
+   * Adds `frameleaf-library.json` (collections, tags, ratings, notes and sources) beside the
+   * originals, for these saved links as well as the files. The server builds it for signed-in
+   * owners only, and always from the originals, so this downloads the originals.
+   */
+  library?: { bookmarkIds: string[] };
+};
+
+export const downloadArchive = (
+  fileName: string,
+  options: Omit<DownloadInfoDto, 'archiveSize'>,
+  contents: ArchiveContents = {},
+): Promise<void> => {
   const archiveSize = authManager.authenticated ? authManager.preferences.download.archiveSize : undefined;
   const dto = { ...options, archiveSize };
   const params = authManager.params;
@@ -163,12 +182,35 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
   // Each item downloads as it is shown (owner, 2026-10-16): `edited` asks the server for the version
   // on screen (the owner's current version or edit, else the original). The server fills in the
   // account's details-file choice (ACCOUNT-P5) because the request leaves it out.
-  const edited = true;
+  // FL-660: a library file is made from the originals, so an archive with one holds the originals.
+  const library = contents.library;
+  const edited = !library && !contents.originals;
+  // Every part gets a library file for its own files; the saved links, which have no file, go in
+  // the first part's only, so each link is listed once.
+  const libraryFields = (first: boolean) =>
+    library
+      ? {
+          includeLibraryMetadata: true,
+          includeSources: true,
+          ...(first && library.bookmarkIds.length > 0 && { bookmarkIds: library.bookmarkIds }),
+        }
+      : {};
+  const formFields = (first: boolean) =>
+    Object.fromEntries(
+      Object.entries(libraryFields(first)).map(([name, value]) => [
+        name,
+        Array.isArray(value) ? value.join(',') : String(value),
+      ]),
+    );
 
   const fetchArchive =
-    (archive: DownloadArchiveInfo, archiveName: string): DownloadTask =>
+    (archive: DownloadArchiveInfo, archiveName: string, first = false): DownloadTask =>
     (context) => {
-      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited));
+      const stream = new StreamedDownload(() =>
+        library
+          ? downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited, formFields(first))
+          : downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited),
+      );
       // A part that could never be held is ready at once; it does not wait for the parts before it.
       if (archive.size > bufferLimit()) {
         return Promise.resolve(stream);
@@ -179,7 +221,10 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
           size: archive.size,
           request: (fetch) =>
             requestArchive(
-              { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited } },
+              {
+                ...params,
+                downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited, ...libraryFields(first) },
+              },
               { signal: context.signal, fetch },
             ),
           stream,
@@ -220,7 +265,7 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
       const archiveName = nameOf(0, count);
       context.describe(describeArchive(plan.archives[0], archiveName));
       // The first part takes its turn before the parts after it are added behind it.
-      const first = fetchArchive(plan.archives[0], archiveName)(context);
+      const first = fetchArchive(plan.archives[0], archiveName, true)(context);
       if (firstPlan) {
         firstPlan = false;
         for (const [offset, archive] of plan.archives.slice(1).entries()) {

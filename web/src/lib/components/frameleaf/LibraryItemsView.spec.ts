@@ -1,5 +1,6 @@
 import {
   ColorTolerance,
+  LibraryAssetItemKind,
   LibraryBookmarkItemKind,
   LibraryScope,
   LibraryViewScope,
@@ -13,6 +14,7 @@ import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { renderWithTooltips } from '$tests/helpers';
+import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
@@ -235,4 +237,43 @@ it('rates and trashes a selected link from the Boards selection bar', async () =
     }),
   );
   await waitFor(() => expect(sdkMock.trashBookmark).toHaveBeenCalledWith({ id: 'book' }));
+});
+
+it('opens the Download dialog from the Boards selection bar and adds the library file with the links', async () => {
+  const file = assetFactory.build({ ownerId: user.id });
+  sdkMock.searchLibraryItems.mockResolvedValue({
+    count: 2,
+    countCapped: false,
+    items: [
+      { kind: LibraryAssetItemKind.Asset, asset: file },
+      { kind: LibraryBookmarkItemKind.Bookmark, bookmark },
+    ],
+    nextCursor: null,
+  });
+  sdkMock.getDownloadInfo.mockResolvedValue({ totalSize: 10, archives: [{ size: 10, assetIds: [file.id] }] });
+  sdkMock.downloadArchive.mockResolvedValue(new Blob(['zip']));
+  renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn() });
+  await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Packaging reference' }));
+  await fireEvent.click(await screen.findByRole('checkbox', { name: /^Select Image taken on/ }));
+  const bar = await screen.findByRole('toolbar', { name: '2 items selected' });
+  await fireEvent.click(within(bar).getByRole('button', { name: 'Download' }));
+
+  expect(await screen.findByRole('heading', { name: 'Download 2 items' })).toBeInTheDocument();
+  expect(screen.getByRole('switch', { name: /Include a library file/ })).toBeChecked();
+  await fireEvent.click(screen.getByRole('button', { name: 'Download .zip' }));
+
+  await waitFor(() =>
+    expect(sdkMock.downloadArchive).toHaveBeenCalledWith(
+      {
+        downloadArchiveDto: expect.objectContaining({
+          assetIds: [file.id],
+          edited: false,
+          includeLibraryMetadata: true,
+          includeSources: true,
+          bookmarkIds: ['book'],
+        }),
+      },
+      expect.anything(),
+    ),
+  );
 });
