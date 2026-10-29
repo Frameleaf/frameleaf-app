@@ -13,10 +13,10 @@ const finding = (id: string) => ({ id, path: `/data/upload/${id}.png`, type: Int
 
 const queue = (waiting = 0) =>
   ({
-    integrityCheck: {
-      jobCounts: { active: 0, waiting, delayed: 0, paused: 0, completed: 0, failed: 0 },
-      queueStatus: { isActive: false, isPaused: false },
-    },
+    name: 'integrityCheck',
+    isPaused: false,
+    hasUnfinishedWork: waiting > 0,
+    statistics: { active: 0, waiting, delayed: 0, paused: 0, completed: 0, failed: 0 },
   }) as never;
 const idle = queue();
 
@@ -27,7 +27,7 @@ describe('IntegrityReportSection (FL-81)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    sdkMock.getQueuesLegacy.mockResolvedValue(idle);
+    sdkMock.getQueue.mockResolvedValue(idle);
   });
 
   it('re-reads the findings after "Recheck findings" even when the refresh finishes between polls', async () => {
@@ -46,7 +46,7 @@ describe('IntegrityReportSection (FL-81)', () => {
 
   it('waits while the refresh is still queued behind other work', async () => {
     sdkMock.getIntegrityReport.mockResolvedValueOnce({ items: [finding('a')] }).mockResolvedValue({ items: [] });
-    sdkMock.getQueuesLegacy.mockResolvedValue(queue(1));
+    sdkMock.getQueue.mockResolvedValue(queue(1));
     handleCreateJob.mockResolvedValue(true);
 
     render(IntegrityReportSection, { type: IntegrityReport.UntrackedFile, pollMs: 5 });
@@ -55,7 +55,7 @@ describe('IntegrityReportSection (FL-81)', () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(sdkMock.getIntegrityReport).toHaveBeenCalledTimes(1);
 
-    sdkMock.getQueuesLegacy.mockResolvedValue(idle);
+    sdkMock.getQueue.mockResolvedValue(idle);
     await waitFor(() => expect(screen.queryByText('/data/upload/a.png')).not.toBeInTheDocument());
   });
 
@@ -74,7 +74,7 @@ describe('IntegrityReportSection (FL-81)', () => {
 
   it('keeps watching the queue after one poll fails', async () => {
     sdkMock.getIntegrityReport.mockResolvedValueOnce({ items: [finding('a')] }).mockResolvedValue({ items: [] });
-    sdkMock.getQueuesLegacy.mockRejectedValueOnce(new Error('restarting')).mockResolvedValue(idle);
+    sdkMock.getQueue.mockRejectedValueOnce(new Error('restarting')).mockResolvedValue(idle);
     handleCreateJob.mockResolvedValue(true);
 
     render(IntegrityReportSection, { type: IntegrityReport.UntrackedFile, pollMs: 5 });

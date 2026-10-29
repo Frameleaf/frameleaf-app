@@ -284,7 +284,34 @@ export class TrashRepository {
     ids: string[] | undefined,
     options: TrashScopeOptions = {},
   ): Promise<TrashReviewRow[]> {
-    const rows = await this.scope(this.db, userId, trashActionSourceStatus(action), options)
+    const rows = await this.reviewRowsQuery(userId, action, ids, options).orderBy('asset.id', 'asc').execute();
+    return rows.map((row) => ({ ...row, isLocked: !!row.isLocked, sharesOriginal: !!row.sharesOriginal }));
+  }
+
+  /**
+   * FL-539: the bytes an action over the whole visible trash frees, counted the way its review counts
+   * them (`summarizeTrashReview`: every item's size, less the originals another item still uses), in
+   * the database instead of reading every row of the trash for each summary.
+   */
+  async getFreedBytes(userId: string, action: TrashReviewAction, options: TrashScopeOptions = {}): Promise<number> {
+    const { bytes } = await this.db
+      .selectFrom(this.reviewRowsQuery(userId, action, undefined, options).as('review'))
+      .select(
+        sql<string>`coalesce(sum(greatest(review."fileSizeInByte", 0)) filter (where not review."sharesOriginal"), 0)`.as(
+          'bytes',
+        ),
+      )
+      .executeTakeFirstOrThrow();
+    return toByteCount(bytes);
+  }
+
+  private reviewRowsQuery(
+    userId: string,
+    action: TrashReviewAction,
+    ids: string[] | undefined,
+    options: TrashScopeOptions,
+  ) {
+    return this.scope(this.db, userId, trashActionSourceStatus(action), options)
       .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select([
@@ -313,10 +340,7 @@ export class TrashRepository {
               )
             )
         )`.as('sharesOriginal'),
-      ])
-      .orderBy('asset.id', 'asc')
-      .execute();
-    return rows.map((row) => ({ ...row, isLocked: !!row.isLocked, sharesOriginal: !!row.sharesOriginal }));
+      ]);
   }
   /**
    * Apply a reviewed action. The set is found again inside the transaction and its rows are locked

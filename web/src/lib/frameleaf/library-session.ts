@@ -57,6 +57,17 @@ export const LIBRARY_SORTS: readonly LibrarySort[] = [
 export const LIBRARY_GROUPINGS: readonly LibraryGrouping[] = ['all', 'days', 'months', 'years'];
 export const LIBRARY_SCOPE_KINDS: readonly LibraryScope['kind'][] = ['library', 'album', 'space'];
 
+/**
+ * The scope a page's session must carry. Only an album or a shared space page owns an album or space
+ * scope (it sets its own); every other page shows its owner's library, so a scope restored from the
+ * device's last view (or a link copied on an album) never narrows what "everything matching" means
+ * there. Null when the scope already fits.
+ */
+export const scopeForDestination = (scope: LibraryScope, destinationKind: string | undefined): LibraryScope | null =>
+  destinationKind && destinationKind !== 'album' && destinationKind !== 'space' && scope.kind !== 'library'
+    ? { kind: 'library' }
+    : null;
+
 /** Browse is the default layout (September 22, 2026 revision). */
 export const DEFAULT_LIBRARY_LAYOUT: LibraryLayout = 'browse';
 

@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { WorkflowRepository, WorkflowRunLog } from 'src/repositories/workflow.repository.js';
-import type { JobOf } from 'src/types.js';
+import type { JobItem, JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { AlbumsAddAssetsDto, CreateAlbumDto, GetAlbumsDto } from 'src/dtos/album.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -202,10 +202,18 @@ export class WorkflowExecutionService extends BaseService {
 
   @OnEvent({ name: 'PersonChanged' })
   async onPersonChanged({ ownerId, personGroupId }: ArgOf<'PersonChanged'>) {
+    // The person's photos all belong to `ownerId`: their workflows are read once, and nothing is paged
+    // through when none of them runs on a change. Each page is queued together.
+    const workflows = await this.workflowRepository.search({
+      userId: ownerId,
+      trigger: WorkflowTrigger.AssetChanged,
+      enabled: true,
+    });
+    if (workflows.length === 0) return;
     let after: string | undefined;
     while (true) {
       const ids = await this.personRepository.getAssetIdsForPeople(ownerId, [personGroupId], { after, limit: 500 });
-      for (const assetId of ids) await this.onAssetChanged({ assetId });
+      await this.jobRepository.queueAll(ids.flatMap((assetId) => this.assetTriggerJobs(workflows, assetId)));
       if (ids.length < 500) return;
       after = ids.at(-1);
     }
@@ -573,26 +581,28 @@ export class WorkflowExecutionService extends BaseService {
   private async onAssetTrigger({ userId, assetId, trigger }: AssetTrigger) {
     // paused workflows get no job at all; one paused after this still skips at run time
     const items = await this.workflowRepository.search({ userId, trigger, enabled: true });
+    await this.jobRepository.queueAll(this.assetTriggerJobs(items, assetId));
+  }
+
+  private assetTriggerJobs(workflows: Awaited<ReturnType<WorkflowRepository['search']>>, assetId: string): JobItem[] {
     const inherited = inheritWorkflowCausation({}).causation;
     const chain = inherited?.length ? inherited : [`chain:${crypto.randomUUID()}`];
-    await this.jobRepository.queueAll(
-      items
-        .filter((workflow) => !(inheritWorkflowCausation({}).causation ?? []).includes(`${workflow.id}:${assetId}`))
-        .map((workflow) => ({
-          name: JobName.WorkflowAssetTrigger,
-          // FL-179: fixed when queued, so a replay of this job continues the same run and its completed steps
-          data: {
-            workflowId: workflow.id,
-            assetId,
-            runId: crypto.randomUUID(),
-            executionId: crypto.randomUUID(),
-            causation: [...chain, `${workflow.id}:${assetId}`],
-            definitionSha256: workflowDefinitionHash(
-              workflow.definition ?? definitionFromSteps(workflow.trigger, workflow.steps ?? []),
-            ),
-          },
-        })),
-    );
+    return workflows
+      .filter((workflow) => !(inherited ?? []).includes(`${workflow.id}:${assetId}`))
+      .map((workflow) => ({
+        name: JobName.WorkflowAssetTrigger,
+        // FL-179: fixed when queued, so a replay of this job continues the same run and its completed steps
+        data: {
+          workflowId: workflow.id,
+          assetId,
+          runId: crypto.randomUUID(),
+          executionId: crypto.randomUUID(),
+          causation: [...chain, `${workflow.id}:${assetId}`],
+          definitionSha256: workflowDefinitionHash(
+            workflow.definition ?? definitionFromSteps(workflow.trigger, workflow.steps ?? []),
+          ),
+        },
+      }));
   }
 
   /**

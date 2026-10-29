@@ -506,6 +506,14 @@ export class JobRepository {
   hasUnfinishedWork(name: QueueName): Promise<boolean> {
     return this.store.hasUnfinishedWork(name);
   }
+  /** The paused queues, read once for a snapshot of every queue. */
+  getPausedQueues(): Promise<Set<string>> {
+    return this.store.pausedQueues();
+  }
+  /** Which of these queues have unfinished work, in one round trip. */
+  async getQueuesWithUnfinishedWork(names: readonly QueueName[]): Promise<Set<string>> {
+    return new Set(await this.store.queuesWithUnfinishedWork(names));
+  }
   hasDedupJob(name: QueueName, id: string) {
     return this.store.hasDedup(name, id);
   }

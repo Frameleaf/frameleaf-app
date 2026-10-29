@@ -80,6 +80,8 @@ describe(AlbumService.name, () => {
 
       const result = await sut.getAll(AuthFactory.create(owner), {});
 
+      // covers are put right for this person's albums only, not every album on the server
+      expect(mocks.album.updateThumbnails).toHaveBeenCalledWith({ userId: owner.id });
       expect(mocks.partnerOrigin.getOriginLabels).toHaveBeenCalledWith('album', [album.id, other.id], owner.id);
       expect(result[0].origin).toEqual({ rootOwnerId, rootOwnerName: 'Jamie' });
       expect(result[1]).not.toHaveProperty('origin');
@@ -1715,6 +1717,7 @@ describe(AlbumService.name, () => {
 
       const result = await sut.get(AuthFactory.create(owner), album.id);
 
+      expect(mocks.album.updateThumbnails).toHaveBeenCalledWith([album.id]);
       expect(mocks.album.getById).toHaveBeenCalledWith(
         album.id,
         { withAssets: false, othersRulesViewerId: owner.id },
@@ -2481,7 +2484,7 @@ describe(AlbumService.name, () => {
         { success: true, id: asset1.id },
       ]);
 
-      expect(mocks.album.updateThumbnails).toHaveBeenCalled();
+      expect(mocks.album.updateThumbnails).toHaveBeenCalledWith([album.id]);
     });
   });
 
