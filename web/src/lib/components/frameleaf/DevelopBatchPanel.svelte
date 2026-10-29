@@ -34,11 +34,11 @@
     localErrors = $state<Record<number, string>>({}),
     completed = $state(0);
   let stop = false;
+  let disposed = false;
+  // only an imported return changes on its own (the server renders it); a confirmed one waits for its file
   const rendering = (value: DevelopBatchResponseDto) =>
     value.status === 'open' &&
-    value.items.some((item) =>
-      item.returns.some((returned) => returned.status === 'confirmed' || returned.status === 'imported'),
-    );
+    value.items.some((item) => item.returns.some((returned) => returned.status === 'imported'));
   const reason = (code: string | null | undefined) => $t(`frameleaf_batch.reason_${batchReason(code)}` as Translations);
   const prepared = $derived(
     batch?.items.filter((item) => item.available && item.preparationStatus === 'prepared').length ?? 0,
@@ -113,7 +113,7 @@
       polling = true;
       void getDevelopBatch({ id })
         .then((value) => {
-          if (!stop && batch?.id === id && !busy && !uploading) {
+          if (!disposed && batch?.id === id && !busy && !uploading) {
             batch = value;
           }
         })
@@ -122,6 +122,7 @@
     }, 2500);
     return () => {
       stop = true;
+      disposed = true;
       clearInterval(timer);
     };
   });
