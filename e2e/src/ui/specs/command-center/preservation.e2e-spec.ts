@@ -377,7 +377,7 @@ test.describe('Preservation packages', () => {
         { originalPath: { like: 'Harbour Street' } },
       ],
     };
-    expect(mocks.state.preview).toEqual([{ scope: { filter }, includeLocked: false }]);
+    expect(mocks.state.preview).toEqual([{ scope: { filter }, includeMetadata: true, includeLocked: false }]);
     expect(mocks.state.created).toEqual([
       expect.objectContaining({ scope: { filter }, includeMetadata: true, includeLocked: false }),
     ]);
