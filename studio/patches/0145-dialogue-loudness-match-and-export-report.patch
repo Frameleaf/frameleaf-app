@@ -183,10 +183,10 @@ new file mode 100644
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -25,6 +25,15 @@ export {
-   type RetimePolicy,
- } from '@/features/timeline/utils/project-retime'
- export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
+@@ -33,6 +33,15 @@ export {
+   type SpeedRampEasing,
+   type SpeedRampPoint,
+ } from '@/features/timeline/stores/actions/edit/speed-ramp-actions'
 +export { applyLoudnessMatch } from '@/features/timeline/stores/actions/edit/loudness-match-actions'
 +export {
 +  analyzeClipLoudness,

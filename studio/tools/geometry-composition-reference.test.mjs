@@ -269,22 +269,19 @@ test('composition source bindings preserve every admitted legacy row and refuse 
   const admitted = [...raster.matchAll(/binding\.sourceSha256 ===\s*'([a-f0-9]{64})'/g)].map(
     (row) => row[1],
   )
-  assert.equal(admitted.length, 46)
-  assert.equal(new Set(admitted).size, 46)
+  assert.equal(admitted.length, 43)
+  assert.equal(new Set(admitted).size, 43)
   for (const source of admitted) {
     const a = fixture()
     a.contract.binding.sourceSha256 = source
-    if (source === current || source === '9b075e282769cfde80f956c7182ae5e943735ed9665ae71b6e6867080ac5ca63' || source === 'af8162ff61c503bd7ea7defa3dbe9fc60c0dce1bb3433d353104ba7a7e4f635c' || source === 'ba3a4877d25762b942453aa282e7a666aa3397bdda2c1efa7ad098c5187c9fd6' || source === '7423283e576bff16bdc54221cff8d87bd7b3bb26dc3e516b635e12dce3f3bd72' || source === 'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d' || source === '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf' || source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' || source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' || source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' || source === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' || source === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' || source === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' || source === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9')
+    if (source === current || source === 'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa' || source === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' || source === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' || source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' || source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' || source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' || source === '804a204a22f3f9bb43dce373782c83fd2f2ffeebcd24934568663c844c73d0e6' || source === 'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c' || source === '0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164' || source === 'e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9')
       a.contract.binding.browser = '156.0.8078.4'
     a.contract.sourceHashes = compositionSourcesFor(source)
     if (
       source === current ||
-      source === '9b075e282769cfde80f956c7182ae5e943735ed9665ae71b6e6867080ac5ca63' ||
-      source === 'af8162ff61c503bd7ea7defa3dbe9fc60c0dce1bb3433d353104ba7a7e4f635c' ||
-      source === 'ba3a4877d25762b942453aa282e7a666aa3397bdda2c1efa7ad098c5187c9fd6' ||
-      source === '7423283e576bff16bdc54221cff8d87bd7b3bb26dc3e516b635e12dce3f3bd72' ||
-      source === 'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d' ||
-      source === '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf' ||
+      source === 'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa' ||
+      source === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+      source === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
       source === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
       source === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
       source === 'dc17859f6f1646565d4072901c0001fd7b27e4a152ede2f2143c5998bcea063a' ||

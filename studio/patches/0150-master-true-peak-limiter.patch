@@ -87,10 +87,10 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudne
 diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
 --- a/src/features/editor/deps/timeline-store-contract.ts
 +++ b/src/features/editor/deps/timeline-store-contract.ts
-@@ -25,7 +25,7 @@ export {
-   type RetimePolicy,
- } from '@/features/timeline/utils/project-retime'
- export { rateStretchItemWithoutHistory } from '@/features/timeline/stores/actions/item-edit-actions'
+@@ -33,7 +33,7 @@ export {
+   type SpeedRampEasing,
+   type SpeedRampPoint,
+ } from '@/features/timeline/stores/actions/edit/speed-ramp-actions'
 -export { applyLoudnessMatch } from '@/features/timeline/stores/actions/edit/loudness-match-actions'
 +export { applyLoudnessMatch, setMasterLoudness } from '@/features/timeline/stores/actions/edit/loudness-match-actions'
  export {
@@ -664,7 +664,7 @@ diff --git a/src/runtime/composition-runtime/utils/preview-master-bus.ts b/src/r
    mute.gain.value = 0
    mute.connect(context.destination)
 +  // FL-623: while the project limiter is on, the mix passes a compressor set as a limiter at the
-+  // ceiling. Web Audio limits sample peaks with ~6 ms lookahead; export limits true peaks.
++  // ceiling. Web Audio limits sample peaks with about 6 ms lookahead; export limits true peaks.
 +  let limiter: DynamicsCompressorNode | null = null
 +  let limiterRouted = false
 +  const routeLimiter = () => {

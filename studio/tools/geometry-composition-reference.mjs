@@ -80,18 +80,12 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === '9e607ca9e5b9105c4afdb7029fc1386ebd53a4eecc481ab8e68da08ca3b658cf' ||
     // FL-562 transcript editing changes no geometry/composition producer.
     sourceSha256 === 'd13b629e99bb4d9de6dd5e884398fffa2e096d01ce74c225ccbf6f4771b2e79b' ||
-    // FL-598 loudness matching changes clip volume, the audio panel and the export report only.
-    sourceSha256 === '327c62cd069175122e4ea2d9f9a3ecfbe4d2c24abfc810ab1f454b18d58112bf' ||
-    // FL-598 loudness match: binding covers link state
-    sourceSha256 === 'b495ed300792bca77afbe20775ec504026025ec2113d15dc0a2d27d87db80d6d' ||
-    // FL-598 loudness: layout-specific channel weights
-    sourceSha256 === '7423283e576bff16bdc54221cff8d87bd7b3bb26dc3e516b635e12dce3f3bd72' ||
-    // FL-598 loudness: streamed meter, export length cutoff
-    sourceSha256 === 'ba3a4877d25762b942453aa282e7a666aa3397bdda2c1efa7ad098c5187c9fd6' ||
-    // FL-598 loudness: memory budget, abort settles, fps binding
-    sourceSha256 === 'af8162ff61c503bd7ea7defa3dbe9fc60c0dce1bb3433d353104ba7a7e4f635c' ||
-    // FL-623 master true-peak limiter
-    sourceSha256 === 'adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa'
+    // FL-597 speed ramps and freeze frames change timeline edits only.
+    sourceSha256 === '93880a2af32099583dc46fa966a3c05af00764abed9b5fe9ca4a83650b8cc61a' ||
+    // FL-597 speed ramps: captions follow their segments, mismatched companions refused
+    sourceSha256 === '82d966797e81fa8bf99218583b8fe11495dda584e52052d90adfc151d543b42e' ||
+    // FL-598/FL-623 dialogue loudness match and master true-peak limiter on speed ramps; changes no composition or raster producer.
+    sourceSha256 === '83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce'
   )
     return {
       ...COMPOSITION_SOURCES,

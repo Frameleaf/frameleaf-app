@@ -711,15 +711,20 @@
       "sha256": "73362d1a65af63134f396e20e89e5b9ab5133db7155ec449b8b3e92a53de897f"
     },
     {
+      "path": "patches/0145-speed-ramps-and-linked-freeze-frames.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e9cc60f8e795da201025e9ba35de8895853d48d796edc68f6f00e0967df86c5e"
+    },
+    {
       "path": "patches/0145-dialogue-loudness-match-and-export-report.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "8023cc07b64ddcc3f1777c666b9502c96891c36f57024ee5cae63644b63d3b8f"
+      "sha256": "8b347a4145cfffadecf7ed4fe08d0a00ba0ac216b83d374f3c97537197cf4e1c"
     },
     {
       "path": "patches/0150-master-true-peak-limiter.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "0d0e18c32cd8016db65b1c2888efca700403c227245d20ced875de0878ec82d2"
+      "sha256": "c33c56620d7e745abf6d02679a0c0fa9be5f19dea5484b4c90cb0c5614324515"
     }
   ],
-  "sourceSha256": "adb7779cb2a4c66db4a8503ace2e50d931e34b802b489f467927e90d75e4f0aa"
+  "sourceSha256": "83b80381237c83cdcee242dcc3e94f5a4f15256ae9e6a1611ce74059721d5bce"
 }
