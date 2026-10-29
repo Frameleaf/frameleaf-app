@@ -28,9 +28,9 @@
  */
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
-import type { CaptionStyleEngineString } from './caption-style-strings';
 import type { CaptionLanguageEngineString } from './caption-language-strings';
 import type { StudioCaptionTranslationRequest, StudioCaptionTranslationResult } from './caption-languages';
+import type { CaptionStyleEngineString } from './caption-style-strings';
 import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioGeneratedMedia } from './generated-media';
