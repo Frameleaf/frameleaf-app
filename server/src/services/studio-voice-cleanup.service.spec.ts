@@ -80,7 +80,12 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
     result: null,
     snapshot,
   } as unknown as MediaOperation;
-  const query = { set: vi.fn(), where: vi.fn(), execute: vi.fn().mockResolvedValue([]) };
+  const query = {
+    set: vi.fn(),
+    where: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
+    executeTakeFirst: vi.fn().mockResolvedValue({ numUpdatedRows: 1n }),
+  };
   query.set.mockReturnValue(query);
   query.where.mockReturnValue(query);
   const tx = { updateTable: vi.fn().mockReturnValue(query) };
@@ -384,11 +389,25 @@ describe(StudioVoiceCleanupService.name, () => {
     });
 
     it('removes the encoded file when it never reached the import service', async () => {
-      const { sut, operation, operations, imports, storage } = setup();
-      operations.beginValidation.mockResolvedValue(false);
+      const { sut, operation, imports, storage } = setup();
+      storage.stat.mockRejectedValue(new Error('disk'));
       await sut.run({ operation, claimToken });
       expect(imports.upload).not.toHaveBeenCalled();
       expect(storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/voice-.+\.m4a$/));
+    });
+
+    it('validates only an active claim, and publishes nothing once the lease has expired', async () => {
+      const { sut, operation, operations, query } = setup();
+      query.executeTakeFirst.mockResolvedValue({ numUpdatedRows: 0n });
+      await sut.run({ operation, claimToken });
+      expect(operations.beginValidation).toHaveBeenCalledWith(operationId, claimToken, true);
+      expect(query.where).toHaveBeenCalledWith('claimExpiresAt', '>', expect.anything());
+      expect(operations.fail).toHaveBeenCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ errorCode: 'studio_voice_cleanup_failed' }),
+        { retry: true },
+      );
     });
 
     it('leaves the encoded file to the import service once the upload started', async () => {

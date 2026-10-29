@@ -101,6 +101,27 @@ describe('FL-637 Clean up voice host', () => {
     expect(fetch).toHaveBeenLastCalledWith(`/api/media-operations/${jobId}/cancel`, expect.objectContaining({ method: 'POST' }))
   })
 
+  it('never seeds a result into another editor document or project', async () => {
+    vi.useFakeTimers()
+    const done = {
+      id: jobId, status: 'completed', progress: 100, error: null,
+      result: { import: kept, strength: 'light', noises: ['wind'], humHz: null, sourceStartSeconds: 1, durationSeconds: 6 },
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ id: jobId, status: 'queued' }, 201)).mockResolvedValue(json(done)))
+    const seedImport = vi.fn()
+    registerVoiceCleanupHost({ projectId: () => projectId, seedImport })
+    const cleaning = getVoiceCleanupHost()!.clean(
+      { clipId: 'a1', strength: 'light', noises: ['wind'], humHz: null }, () => {}, new AbortController().signal,
+    )
+    const settled = expect(cleaning).rejects.toThrow('The project changed while the voice was cleaned up')
+    const other = vi.fn()
+    registerVoiceCleanupHost({ projectId: () => '0195e2a0-0000-7000-8000-000000000099', seedImport: other })
+    await vi.advanceTimersByTimeAsync(1500)
+    await settled
+    expect(seedImport).not.toHaveBeenCalled()
+    expect(other).not.toHaveBeenCalled()
+  })
+
   it('refuses a project that is not saved yet, and passes on the server reason', async () => {
     registerVoiceCleanupHost({ projectId: () => null, seedImport: vi.fn() })
     await expect(getVoiceCleanupHost()!.analyze('a1', new AbortController().signal)).rejects.toThrow('Save the project first')

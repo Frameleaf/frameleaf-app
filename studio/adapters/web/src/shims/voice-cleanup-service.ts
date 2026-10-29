@@ -95,6 +95,7 @@ const host: VoiceCleanupHost = {
   },
 
   async clean(cleanup: VoiceCleanupRequest, onProgress, signal): Promise<VoiceCleanupResult> {
+    const started = binding
     const projectId = project()
     const queued = await request<{ id: string }>(`/studio/projects/${projectId}/voice-cleanups`, {
       method: 'POST',
@@ -119,7 +120,11 @@ const host: VoiceCleanupHost = {
           throw new Error(job.error ?? 'The voice clean-up did not finish')
         }
         const { import: kept, ...cleaned } = job.result
-        await binding?.seedImport(toImportRef(projectId, kept))
+        // Another editor document or project since the start: its bin must not take this file.
+        if (!started || binding !== started || started.projectId() !== projectId) {
+          throw new Error('The project changed while the voice was cleaned up')
+        }
+        await started.seedImport(toImportRef(projectId, kept))
         return { ...cleaned, importId: kept.id }
       }
     } catch (error) {

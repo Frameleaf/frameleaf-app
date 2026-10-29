@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -371,13 +372,9 @@ export class StudioVoiceCleanupService {
       this.storage.mkdirSync(studioImportIncomingFolder(operation.ownerId));
       await this.movies.encodeMusic(cleanedPath, incoming, cleaned.seconds + 1, controller.signal);
       const { size } = await this.storage.stat(incoming);
-      clearInterval(heartbeat);
-      await writing;
       controller.signal.throwIfAborted();
-      if (!(await this.operations.beginValidation(operation.id, claimToken))) {
-        throw new Error('Claim lost');
-      }
-      // From here the import service owns the file, and removes it if it refuses it.
+      // Kept while the heartbeat still holds the claim. From here the import service owns the file, and
+      // removes it if it refuses it.
       uploadStarted = true;
       const kept = await this.imports.upload(auth, snapshot.projectId, randomUUID(), {
         path: incoming,
@@ -385,6 +382,12 @@ export class StudioVoiceCleanupService {
         mimetype: 'audio/mp4',
         originalname: fileName,
       } as Express.Multer.File);
+      clearInterval(heartbeat);
+      await writing;
+      controller.signal.throwIfAborted();
+      if (!(await this.operations.beginValidation(operation.id, claimToken, true))) {
+        throw new Error('Claim lost');
+      }
       const result = StudioVoiceCleanupResultSchema.parse({
         import: kept,
         strength: snapshot.strength,
@@ -394,12 +397,15 @@ export class StudioVoiceCleanupService {
         durationSeconds: cleaned.seconds,
       });
       const outcome = await this.operations.publishValidated(operation.id, claimToken, async (tx) => {
-        await tx
+        // publishValidated holds the claim row; an expired lease is refused even before recovery takes it.
+        const updated = await tx
           .updateTable('media_operation')
           .set({ result, processedUnits: total })
           .where('id', '=', operation.id)
-          .execute();
-        return true;
+          .where('claimToken', '=', claimToken)
+          .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+          .executeTakeFirst();
+        return Number(updated.numUpdatedRows) === 1;
       });
       if (outcome !== 'completed') {
         throw new Error('Claim lost before the cleaned sound was recorded');

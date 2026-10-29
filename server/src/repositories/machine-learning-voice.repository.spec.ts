@@ -134,6 +134,8 @@ describe('MachineLearningRepository voice clean-up (FL-637)', () => {
       ndjson({ type: 'error', message: 'Voice clean-up failed' }),
       ndjson({ type: 'progress', done: 1, total: 2 }),
       ndjson({ type: 'audio', data: 'AAAA' }, { type: 'done' }),
+      // Finished, but with no sound.
+      ndjson({ type: 'info', sampleRate: 48_000, seconds: 4 }, { type: 'done' }),
     ]) {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamed(body)));
       await expect(

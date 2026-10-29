@@ -1163,6 +1163,7 @@ export class MachineLearningRepository implements RestorationInference {
     form.append('audio', await openAsBlob(wavPath, { type: 'audio/wav' }), 'audio.wav');
     const file = outPath ? await open(outPath, 'w') : null;
     let seconds: number | undefined;
+    let wroteAudio = false;
     let finished = false;
     try {
       await this.authorize(selection.endpoint);
@@ -1208,6 +1209,7 @@ export class MachineLearningRepository implements RestorationInference {
           }
           case 'audio': {
             if (seconds === undefined || !file) throw new Error('The voice clean-up worker sent audio out of turn');
+            wroteAudio = true;
             await file.write(Buffer.from(item.data, 'base64'));
             break;
           }
@@ -1239,6 +1241,9 @@ export class MachineLearningRepository implements RestorationInference {
       }
       if (!finished) {
         throw new Error('The voice clean-up worker stopped before it finished');
+      }
+      if (file && !wroteAudio) {
+        throw new Error('The voice clean-up worker sent no audio');
       }
     } catch (error) {
       if (!(error instanceof VoiceCleanupUnavailableError)) {
