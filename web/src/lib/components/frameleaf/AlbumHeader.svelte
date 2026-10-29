@@ -143,6 +143,8 @@
     onSlideshow?: () => void;
     onToggleActivity?: () => void;
     onToggleOwnerBadges?: () => void;
+    /** Replaces the immediate download, for Boards' Download dialog (FL-660). */
+    onDownload?: () => void;
   }
 
   let {
@@ -166,7 +168,9 @@
     onSlideshow,
     onToggleActivity,
     onToggleOwnerBadges,
+    onDownload,
   }: Props = $props();
+  const download = () => (onDownload ? onDownload() : void handleDownloadAlbum(album));
 
   const currentUserId = $derived(authManager.user.id);
   let automationAvailable = $state(false);
@@ -656,7 +660,7 @@
         <span>{$t('frameleaf_movie_make')}</span>
       </button>
 
-      <button type="button" class="action" disabled={assetCount === 0} onclick={() => void handleDownloadAlbum(album)}>
+      <button type="button" class="action" disabled={assetCount === 0} onclick={download}>
         <Icon icon={mdiDownloadOutline} size="18" />
         <span>{$t('download')}</span>
       </button>
@@ -707,7 +711,7 @@
           <Icon icon={mdiMovieOpenPlayOutline} size="18" />
           {$t('frameleaf_movie_make')}
         </MenuItem>
-        <MenuItem disabled={assetCount === 0} onSelect={() => void handleDownloadAlbum(album)}>
+        <MenuItem disabled={assetCount === 0} onSelect={download}>
           <Icon icon={mdiDownloadOutline} size="18" />
           {$t('download')}
         </MenuItem>

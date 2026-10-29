@@ -29,6 +29,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { changeAppLanguage, i18n, i18nReady } from '@/i18n'
 import { applyHostEngineStrings } from './host-engine-strings'
+import { registerStabiliseHost } from './shims/stabilise-service'
 import './editor.css'
 import { routeTree } from '@/routeTree.gen'
 import { ErrorBoundary } from '@/app/error-boundary'
@@ -64,6 +65,8 @@ import {
 } from '@frameleaf/host/studio-timing'
 import { handoffProjectFps, withStoredCadence } from './project-cadence'
 import { call, connectToHost, post } from './host-port'
+import { setCaptionTranslator } from '@/features/editor/services/caption-translation-host'
+import { createLibraryFinder } from './library-finder'
 import { setPersistenceGate } from './persistence-gate'
 import { VirtualWorkspace } from './virtual-workspace'
 import {
@@ -104,6 +107,7 @@ import { useCompositionNavigationStore } from '@/features/timeline/stores/compos
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { associateMediaWithProject } from '@/infrastructure/storage'
 import { timelineEditContent } from './shims/timeline-persistence'
+import { registerVoiceCleanupHost } from './shims/voice-cleanup-service'
 
 installBrowserShims()
 hideFileSystemPickers()
@@ -136,6 +140,10 @@ const graphVersionOf = (context: StudioHostContext): number => {
   const version = context.project.graphVersion
   return Number.isSafeInteger(version) && (version as number) >= 0 ? (version as number) : 0
 }
+
+/** The Studio project's UUID, or null for an unsaved draft (FL-638 Stabilise routes take a UUID). */
+const studioProjectUuidOf = (context: StudioHostContext): string | null =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.project.id) ? context.project.id : null
 
 /** The Freecut project id inside the stored graph, or a stable one for a project that has none. */
 const engineProjectIdOf = (context: StudioHostContext): string => {
@@ -182,6 +190,8 @@ interface Session extends DraftSendState {
   workspace: VirtualWorkspace
   media: LibraryMediaSeeder
   vectors: ReturnType<typeof createClosedVectorSources>
+  /** FL-636: the bin's Library view. */
+  libraryFinder?: ReturnType<typeof createLibraryFinder>
   root: Root
   /** The Freecut project id the host's graph carries; every draft is sent under it. */
   engineProjectId: string
@@ -196,6 +206,11 @@ interface Session extends DraftSendState {
   retiredProjectIds: Set<string>
   /** The mount generation whose editor instance is on screen; a remount renders a new one last. */
   renderedGeneration: number
+  /**
+   * FL-638: the Studio project (UUID) of the editor instance on screen, recorded when it renders.
+   * Stabilise queues its analysis for this one, never for a project a remount is still loading.
+   */
+  stabiliseProjectId?: string | null
   /** Files imported here, sent to the host to keep with the project (FL-103 / FL-105). */
   localImports?: LocalImportWatch
   relinkController?: AbortController
@@ -824,6 +839,7 @@ async function remount(state: Session, context: StudioHostContext, incoming: str
   )
     notifySuperseded(state)
   state.renderedGeneration = mount.generation
+  state.stabiliseProjectId = studioProjectUuidOf(context)
   reconcileVectors(state)
   state.render()
 }
@@ -974,6 +990,16 @@ async function mount(context: StudioHostContext): Promise<void> {
   }
   session = state
   reconcileVectors(state)
+  // FL-636: search the whole library from the bin; results are adopted through the host.
+  const libraryFinder = createLibraryFinder({
+    searchLibrary: (query) => call('searchLibrary', query),
+    libraryFacets: () => call('libraryFacets'),
+    addLibraryAssets: (assetIds) => call('addLibraryAssets', assetIds),
+    seed: (assets) => (state.disposed ? Promise.resolve() : state.media.restore(assets)),
+  })
+  state.libraryFinder = libraryFinder
+  libraryFinder.update(context)
+  state.unsubscribe.push(() => libraryFinder.dispose())
   usePreviewBridgeStore.setState({ scopeOwner: null })
   const first = state.mount
   // Every Freecut save is judged when it starts (see `shims/timeline-persistence.ts`).
@@ -998,9 +1024,26 @@ async function mount(context: StudioHostContext): Promise<void> {
       </StrictMode>,
     )
   state.render()
+  // FL-638: Stabilise queues its analysis for the project this editor is showing.
+  // The route takes the Studio project's id (a UUID), not the engine's; an unsaved draft has none.
+  // While a remount loads another graph the old instance stays editable, so nothing is queued until
+  // the new instance renders with its own project.
+  state.stabiliseProjectId = studioProjectUuidOf(context)
+  state.unsubscribe.push(
+    registerStabiliseHost(() =>
+      state.disposed || state.mount.generation !== state.renderedGeneration
+        ? null
+        : (state.stabiliseProjectId ?? null),
+    ),
+  )
   watchDrafts(state)
   watchImports(state)
   watchLocalImportsFor(state)
+  // FL-637: the voice clean-up card talks to this project's server and puts its result in this bin.
+  registerVoiceCleanupHost({
+    projectId: () => (session === state && !state.disposed ? state.context.project.id : null),
+    seedImport: (ref) => state.media.seedImports([ref]),
+  })
   installMediaRelink(state)
   watchDirty(state)
   watchPlayhead(state)
@@ -1041,6 +1084,9 @@ async function update(context: StudioHostContext): Promise<void> {
       })
     : 'hold'
   if (outcome !== 'remount' && !context.draftHeld) reconcileVectors(state)
+  // FL-638: the instance on screen keeps editing this context's project (a save as a copy can echo
+  // without a remount), so Stabilise follows it; a remount records its own project when it renders.
+  if (outcome !== 'remount') state.stabiliseProjectId = studioProjectUuidOf(context)
   if (outcome === 'remount') {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
     // command applied by the host. A fresh editor instance loads it.
@@ -1057,6 +1103,9 @@ async function update(context: StudioHostContext): Promise<void> {
   if (context.auth.locale !== previous.auth.locale)
     await changeAppLanguage(context.auth.locale).catch(() => undefined)
   applyHostEngineStrings(i18n, context.strings)
+  // An update can resume after dispose, when the finder must not register the view again, or after a
+  // newer update ran during the awaits above, so the finder follows the latest context, not this one.
+  if (!state.disposed) state.libraryFinder?.update(state.context)
   await state.media.seed([...context.assets, ...(context.generatedMedia ?? [])])
   await state.media.seedImports(context.projectImports ?? [])
   // A project saved for the first time (or a host that can keep files again) takes what was
@@ -1094,6 +1143,7 @@ async function dispose(): Promise<void> {
   session = null
   if (!state || state.disposed) return
   state.disposed = true
+  registerVoiceCleanupHost(null)
   state.vectors.dispose()
   state.relinkController?.abort()
   setPersistenceGate({ mayStartSave: () => false, loadFinished: () => undefined })
@@ -1200,5 +1250,8 @@ async function onHostMessage(message: StudioHostToFrameMessage) {
       return
   }
 }
+
+// FL-641: caption translation goes to the host, which translates on the processing order.
+setCaptionTranslator((request) => call('translateCaptions', request))
 
 connectToHost('editor', (message) => void onHostMessage(message))

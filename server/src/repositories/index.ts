@@ -22,6 +22,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
+import { BrowserExtensionSignInRepository } from 'src/repositories/browser-extension-sign-in.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
@@ -123,6 +124,7 @@ import { StudioPreviewRepository } from 'src/repositories/studio-preview.reposit
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
 import { StudioSourceResolutionRepository } from 'src/repositories/studio-source-resolution.repository.js';
+import { StudioStabiliseRepository } from 'src/repositories/studio-stabilise.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -144,6 +146,7 @@ export const repositories = [
   AssetAnnotationRepository,
   AssetPaletteRepository,
   CaptureRepository,
+  BrowserExtensionSignInRepository,
   AssetSourceRepository,
   BookmarkRepository,
   DevelopBatchRepository,
@@ -254,6 +257,7 @@ export const repositories = [
   StudioImportFileRepository,
   StudioReverseConformRepository,
   StudioMovieRepository,
+  StudioStabiliseRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,
   DerivativePrivacyRepository,

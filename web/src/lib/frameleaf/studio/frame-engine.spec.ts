@@ -147,7 +147,7 @@ describe('studio engine manifest', () => {
   });
 
   it('requires protocol8 and refuses a held protocol7 build', async () => {
-    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(8);
+    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(9);
     await expect(resolveStudioFrameManifest(async () => json({ ...manifest, protocolVersion: 7 }))).rejects.toThrow(
       /protocol 7/,
     );
@@ -182,6 +182,8 @@ describe('studio editor frame (FL-88)', () => {
     expect(stage.querySelector('iframe')).not.toBeNull();
     expect(received[0]).toMatchObject({ type: 'mount', protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION });
     expect(JSON.stringify(received[0])).not.toMatch(/"(accessToken|token|apiBase\w*|baseUrl|sdk)":/i);
+    // FL-636: a host without the Library services is told so, and the frame offers no Library view.
+    expect(received[0]).toMatchObject({ context: { librarySearch: false } });
 
     instance.update({ ...context(), online: false });
     await tick();
@@ -385,6 +387,50 @@ describe('studio editor frame (FL-88)', () => {
         expect.objectContaining({ type: 'service-result', callId, ok: false, error: 'Invalid project import' }),
       );
     }
+    await instance.dispose();
+  });
+
+  it('answers Library view searches and adoptions only in their shape, and says so without them (FL-636)', async () => {
+    const frame = fakeFrame();
+    const found = { items: [], nextPage: null };
+    const assetId = '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01';
+    const host = {
+      ...services(),
+      searchLibrary: vi.fn().mockResolvedValue(found),
+      addLibraryAssets: vi.fn().mockResolvedValue([]),
+    };
+    // Without libraryFacets the host cannot answer the whole view, so libraryFacets reports unavailable.
+    const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
+      newStage(),
+      context(),
+      host,
+    );
+    const port = frame.port()!;
+    const results: Array<{ callId?: number; ok?: boolean; value?: unknown; error?: string }> = [];
+    port.addEventListener('message', (event: MessageEvent) => {
+      results.push(event.data);
+    });
+    port.postMessage({ type: 'service', callId: 31, name: 'searchLibrary', args: [{ text: 'lake', type: 'video' }] });
+    port.postMessage({ type: 'service', callId: 32, name: 'searchLibrary', args: [{ albumIds: [assetId] }] });
+    port.postMessage({ type: 'service', callId: 33, name: 'addLibraryAssets', args: [[assetId]] });
+    port.postMessage({ type: 'service', callId: 34, name: 'addLibraryAssets', args: [['../admin']] });
+    port.postMessage({ type: 'service', callId: 35, name: 'libraryFacets', args: [] });
+    port.postMessage({ type: 'service', callId: 36, name: 'searchLibrary', args: [{ text: 'lake' }, 'extra'] });
+    port.postMessage({ type: 'service', callId: 37, name: 'addLibraryAssets', args: [[assetId], 'extra'] });
+    await tick();
+    await tick();
+
+    expect(host.searchLibrary).toHaveBeenCalledExactlyOnceWith({ text: 'lake', type: 'video' });
+    expect(host.addLibraryAssets).toHaveBeenCalledExactlyOnceWith([assetId]);
+    expect(results).toContainEqual({ type: 'service-result', callId: 31, ok: true, value: found });
+    expect(results).toContainEqual({ type: 'service-result', callId: 33, ok: true, value: [] });
+    expect(results).toContainEqual(expect.objectContaining({ callId: 32, ok: false, error: 'Invalid library search' }));
+    expect(results).toContainEqual(expect.objectContaining({ callId: 34, ok: false, error: 'Invalid library assets' }));
+    expect(results).toContainEqual(expect.objectContaining({ callId: 36, ok: false, error: 'Invalid library search' }));
+    expect(results).toContainEqual(expect.objectContaining({ callId: 37, ok: false, error: 'Invalid library assets' }));
+    expect(results).toContainEqual(
+      expect.objectContaining({ callId: 35, ok: false, error: 'LIBRARY_SEARCH_UNAVAILABLE' }),
+    );
     await instance.dispose();
   });
 

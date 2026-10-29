@@ -11,7 +11,7 @@
    */
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@frameleaf/ui';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -90,15 +90,26 @@
   } from '$lib/frameleaf/studio/project-session';
   import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
   import { readEditorContinuity, reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
-  import { getProfileImageUrl } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
+  import { downloadBlob, getPeopleThumbnailUrl, getProfileImageUrl } from '$lib/utils';
   import {
+    studioCaptionExportSidecars,
+    studioCaptionLanguageTracks,
+    studioCaptionSidecarName,
+  } from '$lib/frameleaf/studio/caption-languages';
+  import { handleError } from '$lib/utils/handle-error';
+  import { createStudioLibraryServices } from '$lib/frameleaf/studio/library-search';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import {
+    type AssetResponseDto,
+    type PersonResponseDto,
     AssetRestorationMode,
     createStudioExport,
     getMediaOperation,
     resolveStudioProjectSource,
     getStudioRestoredVersion,
     isHttpError,
+    StudioExportSubtitleMode,
+    translateStudioCaptions,
     type StudioRestoredVersionDto,
   } from '@frameleaf/sdk';
   import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
@@ -147,7 +158,18 @@
         : 'frameleaf_studio_restored_name',
       { values: { name: version.originalFileName } },
     );
-  const libraryAssets = $derived(toStudioAssets(data.assets));
+  /**
+   * FL-636: library items the person brought in from the bin's Library view, after the handoff
+   * selection. They are offered exactly like handoff items, so the eligibility check still applies
+   * (a Locked one drops out when the session locks) and the server grants each when it is placed.
+   */
+  let libraryAdded = $state<AssetResponseDto[]>([]);
+  const libraryAssets = $derived(
+    toStudioAssets([
+      ...data.assets,
+      ...libraryAdded.filter((added) => data.assets.every((asset) => asset.id !== added.id)),
+    ]),
+  );
   const assets = $derived(
     withHdrSources(
       [...libraryAssets, ...restoredVersions.map((version) => toStudioRestoredAsset(version, restoredName(version)))],
@@ -846,7 +868,19 @@
     resolve: (id, studioSourceResolutionRequestDto, signal) =>
       resolveStudioProjectSource({ id, studioSourceResolutionRequestDto }, { signal }),
   });
+  const libraryServices = createStudioLibraryServices({
+    language: () => $locale ?? 'en',
+    elevated: () => sessionAccess.isElevated,
+    offered: () => assets,
+    adopt: async (records) => {
+      const known = new Set(libraryAdded.map((asset) => asset.id));
+      libraryAdded = [...libraryAdded, ...records.filter((asset) => !known.has(asset.id))];
+      await tick();
+    },
+    personThumbnailUrl: (id) => getPeopleThumbnailUrl({ id } as PersonResponseDto),
+  });
   const services: StudioHostServices = {
+    ...libraryServices,
     resolveStudioProjectSource: resolveSource,
     submitCommands: (envelopes) => bridge.submit(envelopes),
     stageDraft,
@@ -978,6 +1012,16 @@
       }
     },
     cancelProjectImportPublication: cancelPublication,
+    // FL-641: caption lines, as text, translated on the processing order (this server, then home computers).
+    translateCaptions: async (request) => {
+      const { lines } = await translateStudioCaptions({
+        id: project.id,
+        studioCaptionTranslationCreateDto: request as Parameters<
+          typeof translateStudioCaptions
+        >[0]['studioCaptionTranslationCreateDto'],
+      });
+      return { lines };
+    },
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
       if (canExportVideo) {
@@ -1110,6 +1154,41 @@
     }
   };
   const canExportVideo = $derived(canExportBundle && writable);
+  /** FL-641: the language names Studio shows, in the person's own language. */
+  const captionLanguageName = (code: string) => {
+    try {
+      const name = new Intl.DisplayNames([$locale ?? 'en'], { type: 'language' }).of(code) ?? code;
+      return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+    } catch {
+      return code;
+    }
+  };
+  /** FL-641: the other languages ticked "Subtitle track in the export", named for the export dialog. */
+  const captionExportLanguages = $derived(
+    studioCaptionLanguageTracks(project.graph)
+      .filter((track) => track.subtitle)
+      .map((track) => captionLanguageName(track.language)),
+  );
+  /**
+   * FL-641: each ticked language travels with a video export as its own subtitle file (SRT), saved next
+   * to it when the export is queued. The picture carries the language "In the picture".
+   */
+  const saveCaptionSidecars = (choice: StudioExportChoice) => {
+    if (!choice.subtitleMode || choice.subtitleMode === StudioExportSubtitleMode.Off) {
+      return;
+    }
+    const sidecars = studioCaptionExportSidecars(project.graph, choice.range);
+    for (const sidecar of sidecars) {
+      downloadBlob(
+        new Blob([sidecar.srt], { type: 'application/x-subrip' }),
+        studioCaptionSidecarName(project.name, sidecar.language),
+      );
+    }
+    if (sidecars.length > 0) {
+      const languages = sidecars.map((sidecar) => captionLanguageName(sidecar.language)).join(', ');
+      toastManager.primary($t('frameleaf_studio_export_caption_languages_saved', { values: { languages } }));
+    }
+  };
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
       try {
@@ -1137,6 +1216,7 @@
       exportJob = operation;
       followExport(operation.id);
       toastManager.primary($t('frameleaf_studio_export_queued', { values: { name: project.name } }));
+      saveCaptionSidecars(choice);
     } catch (error) {
       // A 409 studio_export_unsupported names why no qualified render worker can take it (FL-42).
       const refusal = isHttpError(error) ? studioRenderRefusalFromError(error.data) : null;
@@ -1413,6 +1493,7 @@
   busy={exporting}
   {renderEvidence}
   projectId={storedRevision === null ? null : project.id}
+  captionLanguages={captionExportLanguages}
   onExport={(choice) => void onExportVideo(choice)}
 />
 

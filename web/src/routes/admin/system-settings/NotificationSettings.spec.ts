@@ -323,6 +323,8 @@ describe('Email delivery: signing in with Google or Microsoft (FL-379)', () => {
         password: '',
       });
       expect(save).not.toHaveBeenCalled();
+      // FL-630: nothing was saved, so the result does not say so
+      expect(screen.queryByText(new RegExp(en.frameleaf_notify_test_saved.trim()))).not.toBeInTheDocument();
     });
 
     it('shows the server’s reason when the test fails, without the password advice', async () => {

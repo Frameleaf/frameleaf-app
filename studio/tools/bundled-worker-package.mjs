@@ -29,6 +29,7 @@ export const WORKER_MODULES = [
   'bundled-worker-recipe.mjs',
   'bundled-worker-reframe.mjs',
   'bundled-worker-renderer.mjs',
+  'bundled-worker-word-captions.mjs',
 ];
 export const RUNTIME_MODULES = ['subtitle-sidecar.mjs'];
 export const ENGINE_RUNTIME_PACKAGES = ['playwright', 'playwright-core', 'zod'];

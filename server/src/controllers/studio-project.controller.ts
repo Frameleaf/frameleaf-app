@@ -37,6 +37,12 @@ import {
   StudioReverseConformQueuedDto,
 } from 'src/dtos/studio-reverse-conform.dto.js';
 import {
+  StudioStabiliseCreateDto,
+  StudioStabiliseDto,
+  StudioStabiliseParamDto,
+  StudioStabiliseQueuedDto,
+} from 'src/dtos/studio-stabilise.dto.js';
+import {
   StudioTranscriptionCreateDto,
   StudioTranscriptionDto,
   StudioTranscriptionParamDto,
@@ -47,6 +53,7 @@ import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioReverseConformCommandService } from 'src/services/studio-reverse-conform-command.service.js';
+import { StudioStabiliseService } from 'src/services/studio-stabilise.service.js';
 import { StudioTranscriptionService } from 'src/services/studio-transcription.service.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
@@ -69,6 +76,7 @@ export class StudioProjectController {
     private bundles: StudioBundleService,
     private reverse: StudioReverseConformCommandService,
     private transcriptions: StudioTranscriptionService,
+    private stabilise: StudioStabiliseService,
   ) {}
 
   @Get()
@@ -267,6 +275,38 @@ export class StudioProjectController {
     @Param() { id, transcriptionId }: StudioTranscriptionParamDto,
   ): Promise<StudioTranscriptionDto> {
     return this.transcriptions.get(auth, id, transcriptionId);
+  }
+
+  @Post(':id/stabilisations')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Analyse the camera movement of a Studio clip',
+    description:
+      'Owner only. Queues the camera movement analysis Stabilise needs for one video clip on the main timeline of the head revision. It runs on this server, never on Frameleaf Cloud. Follow the job in Activity (`/media-operations/{id}`, cancel with `/media-operations/{id}/cancel`); read the camera path with `GET /studio/projects/{id}/stabilisations/{stabiliseId}` and write it into the clip as `stabilisation.motion`. The graph is never edited.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  createStudioStabilise(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: StudioStabiliseCreateDto,
+  ): Promise<StudioStabiliseQueuedDto> {
+    return this.stabilise.create(auth, id, dto);
+  }
+
+  @Get(':id/stabilisations/:stabiliseId')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Get a Studio clip camera movement analysis',
+    description:
+      "Owner only. The job status and progress, and once it has completed the clip's camera path: cumulative shift and turn per sample, packed as float32 base64.",
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getStudioStabilise(
+    @Auth() auth: AuthDto,
+    @Param() { id, stabiliseId }: StudioStabiliseParamDto,
+  ): Promise<StudioStabiliseDto> {
+    return this.stabilise.get(auth, id, stabiliseId);
   }
 
   @Post(':id/lease')
