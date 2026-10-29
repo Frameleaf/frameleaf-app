@@ -16,6 +16,11 @@ export const STUDIO_MEDIA_CACHE_VERSION = 1;
 
 export const FILMSTRIP_COUNT = { min: 1, max: 120, default: 20 } as const;
 export const FILMSTRIP_HEIGHT = { min: 32, max: 240, default: 90 } as const;
+/**
+ * FL-650: the variant the web player's seek bar shows as preview thumbnails, made ahead of time so
+ * the first hover is instant. The web player asks for the same one (VideoNativeViewer.svelte).
+ */
+export const PLAYER_FILMSTRIP = { count: 120, height: 180 } as const;
 /** Sprites stay within a width every mobile GPU accepts as one texture. */
 export const FILMSTRIP_MAX_SPRITE_WIDTH = 4096;
 /** Extreme aspect ratios (panoramic video) are cover-cropped to this. */

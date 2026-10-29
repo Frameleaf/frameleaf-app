@@ -2323,6 +2323,7 @@ export enum JobName {
   AssetVideoEditGeneration = 'AssetVideoEditGeneration',
   AssetEncodeVideoQueueAll = 'AssetEncodeVideoQueueAll',
   AssetEncodeVideo = 'AssetEncodeVideo',
+  AssetWarmFilmstrip = 'AssetWarmFilmstrip',
   /** FL-97: make the Studio HDR intermediate of one HDR video. */
   StudioHdrProxyGenerate = 'StudioHdrProxyGenerate',
   AssetEmptyTrash = 'AssetEmptyTrash',

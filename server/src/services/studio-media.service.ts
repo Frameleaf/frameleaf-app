@@ -10,9 +10,10 @@ import type {
   AssetWaveformResponseDto,
 } from 'src/dtos/studio-media.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { OnEvent } from 'src/decorators.js';
-import { CacheControl, Permission, StorageFolder } from 'src/enum.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { CacheControl, JobName, JobStatus, Permission, QueueName, StorageFolder } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import {
@@ -20,6 +21,7 @@ import {
   FILMSTRIP_HEIGHT,
   FILMSTRIP_QUALITY,
   FilmstripFormat,
+  PLAYER_FILMSTRIP,
   PeakAccumulator,
   WAVEFORM_BUCKETS,
   WaveformChannelMode,
@@ -116,6 +118,20 @@ export class StudioMediaService extends BaseService {
     return { assetId: id, version: source.version, hasAudio: true, ...resampled };
   }
 
+  /** FL-650: the player's seek-bar previews, made after upload or encoding so the first hover is instant. */
+  @OnJob({ name: JobName.AssetWarmFilmstrip, queue: QueueName.VideoConversion })
+  async handleWarmFilmstrip({ id }: JobOf<JobName.AssetWarmFilmstrip>): Promise<JobStatus> {
+    try {
+      await this.ensureFilmstrip(await this.getSource(id), PLAYER_FILMSTRIP);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return JobStatus.Skipped; // not a video, file missing or nothing decodable
+      }
+      throw error;
+    }
+    return JobStatus.Success;
+  }
+
   /** The cache goes with the asset; nothing else refers to it. */
   @OnEvent({ name: 'AssetDelete' })
   async onAssetDelete({ assetId, userId }: ArgOf<'AssetDelete'>) {
@@ -126,6 +142,10 @@ export class StudioMediaService extends BaseService {
 
   private async resolveSource(auth: AuthDto, id: string): Promise<StudioMediaSource> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
+    return this.getSource(id);
+  }
+
+  private async getSource(id: string): Promise<StudioMediaSource> {
     const asset = await this.assetRepository.getForVideo(id);
     if (!asset) {
       throw new NotFoundException('Asset not found or asset is not a video');

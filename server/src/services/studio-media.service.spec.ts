@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Stats } from 'node:fs';
 import { Writable } from 'node:stream';
-import { CacheControl } from 'src/enum.js';
+import { CacheControl, JobStatus } from 'src/enum.js';
 import { StudioMediaService, fillMissingFrames, getStudioMediaFolder } from 'src/services/studio-media.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -154,6 +154,33 @@ describe(StudioMediaService.name, () => {
       expect(mocks.storage.readFile).toHaveBeenCalledWith(`${folder}/filmstrip-${version}-20x90.webp.json`);
       expect(mocks.media.probe).not.toHaveBeenCalled();
       expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    describe('handleWarmFilmstrip (FL-650)', () => {
+      it("makes the player's seek-bar variant ahead of time, with no user", async () => {
+        mocks.media.probe.mockResolvedValue(videoInfo(false));
+
+        await expect(sut.handleWarmFilmstrip({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+        expect(mocks.media.transcode).toHaveBeenCalledTimes(120);
+        expect(mocks.storage.rename).toHaveBeenCalledWith(
+          expect.stringContaining('/.work-'),
+          `${folder}/filmstrip-${version}-120x180.jpg`,
+        );
+      });
+
+      it('is a quick cache hit when the previews exist', async () => {
+        mocks.storage.readFile.mockResolvedValue(Buffer.from(JSON.stringify({ assetId, version, frames: [] })));
+
+        await expect(sut.handleWarmFilmstrip({ id: assetId })).resolves.toBe(JobStatus.Success);
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+      });
+
+      it('skips anything that is not a video', async () => {
+        mocks.asset.getForVideo.mockResolvedValue(undefined);
+        await expect(sut.handleWarmFilmstrip({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+      });
     });
 
     it('refuses a sprite for an index of an earlier version of the video', async () => {

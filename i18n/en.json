@@ -8367,6 +8367,7 @@
   "frameleaf_jobs_name_asset_palette_extract": "Read an item's colours",
   "frameleaf_jobs_name_asset_palette_queue_all": "Find items whose colours need reading",
   "frameleaf_jobs_name_asset_video_edit_generation": "Render a video edit",
+  "frameleaf_jobs_name_asset_warm_filmstrip": "Prepare seek-bar previews",
   "frameleaf_jobs_name_audit_table_cleanup": "Clean up change records",
   "frameleaf_jobs_name_backup_sequence": "Scheduled backups, one after another",
   "frameleaf_jobs_name_best_photos_score": "Score a photo for Best Photos",

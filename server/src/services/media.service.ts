@@ -1105,6 +1105,11 @@ export class MediaService extends BaseService {
       JobName.AssetEncodeVideo,
       this.assetJobRepository.selectionForVideoConversion(force),
     );
+    // FL-650: the same run makes seek-bar previews; a video whose previews exist is a quick cache hit
+    await this.jobRepository.queueSelection(
+      JobName.AssetWarmFilmstrip,
+      this.assetJobRepository.selectionForVideoConversion(true),
+    );
 
     return JobStatus.Success;
   }

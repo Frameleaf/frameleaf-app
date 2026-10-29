@@ -162,6 +162,11 @@ describe(JobService.name, () => {
         jobs: [],
       },
       {
+        // FL-650: seek-bar previews follow the encode, from the copy playback serves
+        item: { name: JobName.AssetEncodeVideo, data: { id: 'asset-1' } },
+        jobs: [JobName.AssetWarmFilmstrip],
+      },
+      {
         item: { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'owner-1', personGroupId: 'person-group-1' } },
         jobs: [],
       },

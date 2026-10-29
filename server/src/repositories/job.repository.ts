@@ -89,6 +89,7 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.ImageDescriptionQueueAll,
   JobName.NsfwDetectionQueueAll,
   JobName.AssetEncodeVideo,
+  JobName.AssetWarmFilmstrip,
   JobName.SmartSearch,
   JobName.Ocr,
   JobName.BestPhotosScore,

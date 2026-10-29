@@ -37392,6 +37392,7 @@ export enum JobName {
     AssetVideoEditGeneration = "AssetVideoEditGeneration",
     AssetEncodeVideoQueueAll = "AssetEncodeVideoQueueAll",
     AssetEncodeVideo = "AssetEncodeVideo",
+    AssetWarmFilmstrip = "AssetWarmFilmstrip",
     StudioHdrProxyGenerate = "StudioHdrProxyGenerate",
     AssetEmptyTrash = "AssetEmptyTrash",
     AssetExtractMetadataQueueAll = "AssetExtractMetadataQueueAll",
