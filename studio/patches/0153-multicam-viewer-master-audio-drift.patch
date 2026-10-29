@@ -202,7 +202,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
    const angles = [
      { itemId: 'v1', offsetSeconds: 0 },
      { itemId: 'v2', offsetSeconds: -1.5 },
-@@ -144,4 +144,34 @@ describe('multicam', () => {
+@@ -152,4 +152,34 @@ describe('multicam', () => {
      if (!outcome.ok) throw new Error(outcome.reason)
      expect(cutToAngle(outcome.groupId, 1, 100)).toEqual({ ok: false, reason: 'no-coverage', missing: [150, 300] })
    })
@@ -252,7 +252,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  }
  
  export interface MulticamGroupRecord {
-@@ -110,18 +112,22 @@ export async function analyzeMulticamSync(
+@@ -112,18 +114,22 @@ export async function analyzeMulticamSync(
    itemIds: readonly string[],
    referenceId: string,
    signal?: AbortSignal,
@@ -276,7 +276,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
        if (signal?.aborted) throw new DOMException('Sync cancelled', 'AbortError')
        if (id === referenceId) continue
        const item = items.find((candidate) => candidate.id === id)!
-@@ -148,12 +154,19 @@ const sourceSeconds = (item: VideoItem | AudioItem, fps: number) => (item.source
+@@ -150,12 +156,19 @@ const sourceSeconds = (item: VideoItem | AudioItem, fps: number) => (item.source
   * Create the multicamera edit in one undo step. `angles` gives each angle's
   * approved offset (the reference's is 0; manual offsets are allowed for
   * angles whose analysis failed). The master audio is the linked audio of
@@ -298,7 +298,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  }): { ok: true; groupId: string } | { ok: false; reason: MulticamRefusal } {
    const { items, tracks } = useItemsStore.getState()
    const ids = params.angles.map((angle) => angle.itemId)
-@@ -161,17 +174,23 @@ export function createMulticamEdit(params: {
+@@ -163,17 +176,23 @@ export function createMulticamEdit(params: {
    if (refusal) return { ok: false, reason: refusal }
    const angleItems = ids.map((id) => items.find((item) => item.id === id) as VideoItem)
    const reference = angleItems.find((item) => item.id === params.referenceId)
@@ -329,8 +329,8 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
 +    || items.some((item) => ownTrackIds.includes(item.trackId) && !participantIds.has(item.id))) {
      return { ok: false, reason: 'shared-track' }
    }
-   // An angle already in a group would be claimed twice, leaving the first group stale.
-@@ -182,19 +201,28 @@ export function createMulticamEdit(params: {
+   // An angle already in a group would be claimed twice, leaving the first group stale. Program records
+@@ -188,19 +207,28 @@ export function createMulticamEdit(params: {
  
    const fps = useTimelineSettingsStore.getState().fps
    const groupId = crypto.randomUUID()
@@ -368,7 +368,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
  
    const programTrackId = `multicam-program-${groupId}`
    const topOrder = Math.min(...tracks.map((track) => track.order))
-@@ -205,13 +233,16 @@ export function createMulticamEdit(params: {
+@@ -211,13 +239,16 @@ export function createMulticamEdit(params: {
        groupId, role: 'program',
        algorithm: params.angles.some((angle) => angle.manual) ? 'manual' : MULTICAM_SYNC_ALGORITHM,
        referenceItemId: reference.id, masterAudioItemId: masterAudio.id,
@@ -387,7 +387,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      const angleTrackSet = new Set(angleTrackIds)
      store.setTracks([
        programTrack,
-@@ -219,10 +250,11 @@ export function createMulticamEdit(params: {
+@@ -225,10 +256,11 @@ export function createMulticamEdit(params: {
          ? { ...track, visible: false, multicam: { groupId, role: 'angle' } }
          : track),
      ])
@@ -400,7 +400,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
      }
      const placedReference = store.itemById[reference.id] as VideoItem
      store._addItem(programClip(placedReference, programTrackId, groupId, angleItems.indexOf(reference), placedReference.from, placedReference.durationInFrames, fps))
-@@ -231,10 +263,10 @@ export function createMulticamEdit(params: {
+@@ -237,10 +269,10 @@ export function createMulticamEdit(params: {
    return { ok: true, groupId }
  }
  
@@ -413,7 +413,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
    return {
      ...angle,
      id: crypto.randomUUID(),
-@@ -242,7 +274,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
+@@ -248,7 +280,7 @@ function programClip(angle: VideoItem, trackId: string, groupId: string, angleIn
      from,
      durationInFrames: duration,
      sourceStart,

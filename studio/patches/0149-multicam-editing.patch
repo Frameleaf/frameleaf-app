@@ -228,7 +228,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.test.ts 
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/multicam-actions.test.ts
-@@ -0,0 +1,147 @@
+@@ -0,0 +1,155 @@
 +// @vitest-environment node
 +
 +import { beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -345,9 +345,17 @@ new file mode 100644
 +      useItemsStore.getState()._updateItem('v3', { speed: 2 })
 +      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
 +    }],
-+    ['unsupported-clip', () => {
++    ['generated-media', () => {
 +      // A generated clip has no media file.
 +      useItemsStore.getState()._updateItem('v3', { mediaId: undefined })
++      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
++    }],
++    ['already-multicam', () => {
++      // An angle moved off its group's track is still named by the program record.
++      useItemsStore.getState().setTracks([
++        { ...track('v0', -1), multicam: { groupId: 'g', role: 'program', angles: [{ trackId: 'x', itemId: 'v2', mediaId: 'cam2', offsetSeconds: 0 }] } } as TimelineTrack,
++        track('v1', 0), track('v2', 1), track('v3', 2), track('a1', 3), track('a2', 4), track('a3', 5),
++      ])
 +      return createMulticamEdit({ referenceId: 'v1', angles, masterItemId: 'v1' })
 +    }],
 +    ['already-multicam', () => {
@@ -380,7 +388,7 @@ diff --git a/src/features/timeline/stores/actions/edit/multicam-actions.ts b/src
 new file mode 100644
 --- /dev/null
 +++ b/src/features/timeline/stores/actions/edit/multicam-actions.ts
-@@ -0,0 +1,301 @@
+@@ -0,0 +1,307 @@
 +import type { AudioItem, TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
 +import { useItemsStore } from '../../items-store'
 +import { useTimelineSettingsStore } from '../../timeline-settings-store'
@@ -446,6 +454,7 @@ new file mode 100644
 +  | 'no-coverage'
 +  | 'before-start'
 +  | 'already-multicam'
++  | 'generated-media'
 +
 +export interface MulticamSyncProposal {
 +  itemId: string
@@ -461,8 +470,9 @@ new file mode 100644
 +  if (ids.length < 2 || ids.length > MAX_ANGLES || new Set(ids).size !== ids.length) return 'angle-count'
 +  const angles = ids.map((id) => items.find((item) => item.id === id))
 +  if (angles.some((item) => !item)) return 'not-found'
++  if (angles.some((item) => item!.type !== 'video')) return 'unsupported-clip'
 +  // Generated clips have no media file to sync by, and the angle record names the media.
-+  if (angles.some((item) => item!.type !== 'video' || !item!.mediaId)) return 'unsupported-clip'
++  if (angles.some((item) => !item!.mediaId)) return 'generated-media'
 +  if (angles.some((item) => (item as VideoItem).speed !== undefined && (item as VideoItem).speed !== 1)) return 'retimed'
 +  if (angles.some((item) => (item as VideoItem).isReversed === true)) return 'retimed'
 +  return null
@@ -557,8 +567,12 @@ new file mode 100644
 +    || items.some((item) => angleTrackIds.includes(item.trackId) && !participantIds.has(item.id))) {
 +    return { ok: false, reason: 'shared-track' }
 +  }
-+  // An angle already in a group would be claimed twice, leaving the first group stale.
-+  if ((tracks as TrackWithMulticam[]).some((track) => angleTrackIds.includes(track.id) && track.multicam)) {
++  // An angle already in a group would be claimed twice, leaving the first group stale. Program records
++  // name their angle items, which catches an angle moved off its group's track.
++  const claimed = new Set((tracks as TrackWithMulticam[]).flatMap((track) =>
++    track.multicam?.role === 'program' ? (track.multicam.angles ?? []).map((angle) => angle.itemId) : []))
++  if (ids.some((id) => claimed.has(id))
++    || (tracks as TrackWithMulticam[]).some((track) => angleTrackIds.includes(track.id) && track.multicam)) {
 +    return { ok: false, reason: 'already-multicam' }
 +  }
 +  if (hasLockedEditParticipants(participants)) return { ok: false, reason: 'locked' }
@@ -685,7 +699,7 @@ new file mode 100644
 diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
 --- a/src/i18n/locales/partials/de/editor.json
 +++ b/src/i18n/locales/partials/de/editor.json
-@@ -881,6 +881,43 @@
+@@ -881,6 +881,44 @@
      "colorPanel": {
        "emptyState": "Wähle einen Clip für die Farbkorrektur aus",
        "adjustmentLayerLabel": "Farbkorrektur"
@@ -724,7 +738,8 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 +        "no-coverage": "Dieser Winkel hat dort kein Bild.",
 +        "no-coverage-range": "Dieser Winkel hat von Bild {{from}} bis {{to}} kein Bild; es wurde nicht geschnitten.",
 +        "before-start": "Beim Ausrichten läge eine früher begonnene Aufnahme vor dem Anfang der Zeitleiste. Verschiebe die Clips zuerst nach hinten.",
-+        "already-multicam": "Diese Clips sind bereits Winkel einer Multicam-Bearbeitung."
++        "already-multicam": "Diese Clips sind bereits Winkel einer Multicam-Bearbeitung.",
++        "generated-media": "Generierte Clips haben keine Aufnahme zum Synchronisieren und können keine Winkel sein."
 +      }
      }
    }
@@ -732,7 +747,7 @@ diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -894,6 +894,43 @@
+@@ -894,6 +894,44 @@
        "dockTitle": "Color",
        "emptyState": "Select a clip to grade",
        "adjustmentLayerLabel": "Grade"
@@ -771,7 +786,8 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 +        "no-coverage": "That angle has no picture there.",
 +        "no-coverage-range": "That angle has no picture from frame {{from}} to {{to}}; the cut was not made.",
 +        "before-start": "Lining up would place a recording that started earlier before the start of the timeline. Move the clips later first.",
-+        "already-multicam": "These clips are already angles of a multicam edit."
++        "already-multicam": "These clips are already angles of a multicam edit.",
++        "generated-media": "Generated clips have no recording to sync, so they can’t be angles."
 +      }
      }
    }
@@ -779,7 +795,7 @@ diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
 --- a/src/i18n/locales/partials/es/editor.json
 +++ b/src/i18n/locales/partials/es/editor.json
-@@ -881,6 +881,43 @@
+@@ -881,6 +881,44 @@
      "colorPanel": {
        "emptyState": "Selecciona un clip para etalonar",
        "adjustmentLayerLabel": "Etalonaje"
@@ -818,7 +834,8 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 +        "no-coverage": "Ese ángulo no tiene imagen ahí.",
 +        "no-coverage-range": "Ese ángulo no tiene imagen del fotograma {{from}} al {{to}}; no se hizo el corte.",
 +        "before-start": "Al alinear, una grabación que empezó antes quedaría antes del inicio de la línea de tiempo. Mueve primero los clips más tarde.",
-+        "already-multicam": "Estos clips ya son ángulos de una edición multicámara."
++        "already-multicam": "Estos clips ya son ángulos de una edición multicámara.",
++        "generated-media": "Los clips generados no tienen grabación que sincronizar, así que no pueden ser ángulos."
 +      }
      }
    }
@@ -826,7 +843,7 @@ diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
 --- a/src/i18n/locales/partials/fr/editor.json
 +++ b/src/i18n/locales/partials/fr/editor.json
-@@ -881,6 +881,43 @@
+@@ -881,6 +881,44 @@
      "colorPanel": {
        "emptyState": "Sélectionnez un clip à étalonner",
        "adjustmentLayerLabel": "Étalonnage"
@@ -865,7 +882,8 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 +        "no-coverage": "Cet angle n’a pas d’image à cet endroit.",
 +        "no-coverage-range": "Cet angle n’a pas d’image de l’image {{from}} à {{to}} ; la coupe n’a pas été faite.",
 +        "before-start": "L’alignement placerait un enregistrement commencé plus tôt avant le début de la timeline. Décalez d’abord les clips plus tard.",
-+        "already-multicam": "Ces clips sont déjà des angles d’un montage multicam."
++        "already-multicam": "Ces clips sont déjà des angles d’un montage multicam.",
++        "generated-media": "Les clips générés n’ont pas d’enregistrement à synchroniser et ne peuvent pas être des angles."
 +      }
      }
    }
@@ -873,7 +891,7 @@ diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
 --- a/src/i18n/locales/partials/ja/editor.json
 +++ b/src/i18n/locales/partials/ja/editor.json
-@@ -881,6 +881,43 @@
+@@ -881,6 +881,44 @@
      "colorPanel": {
        "emptyState": "グレーディングするクリップを選択してください",
        "adjustmentLayerLabel": "グレーディング"
@@ -912,7 +930,8 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 +        "no-coverage": "そのアングルはそこに映像がありません。",
 +        "no-coverage-range": "そのアングルはフレーム {{from}}〜{{to}} に映像がないため、カットしませんでした。",
 +        "before-start": "揃えると、先に始まった録画がタイムラインの先頭より前になります。先にクリップを後ろへ移動してください。",
-+        "already-multicam": "これらのクリップはすでにマルチカム編集のアングルです。"
++        "already-multicam": "これらのクリップはすでにマルチカム編集のアングルです。",
++        "generated-media": "生成されたクリップには同期する録画がないため、アングルにできません。"
 +      }
      }
    }
@@ -920,7 +939,7 @@ diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
-@@ -881,6 +881,43 @@
+@@ -881,6 +881,44 @@
      "colorPanel": {
        "emptyState": "색 보정할 클립을 선택하세요",
        "adjustmentLayerLabel": "색 보정"
@@ -959,7 +978,8 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 +        "no-coverage": "그 앵글에는 그곳에 영상이 없습니다.",
 +        "no-coverage-range": "그 앵글은 프레임 {{from}}~{{to}}에 영상이 없어 컷하지 않았습니다.",
 +        "before-start": "맞추면 먼저 시작한 녹화가 타임라인 시작보다 앞에 놓입니다. 먼저 클립을 뒤로 옮기세요.",
-+        "already-multicam": "이 클립은 이미 멀티캠 편집의 앵글입니다."
++        "already-multicam": "이 클립은 이미 멀티캠 편집의 앵글입니다.",
++        "generated-media": "생성된 클립에는 동기화할 녹화가 없어 앵글로 쓸 수 없습니다."
 +      }
      }
    }
@@ -967,7 +987,7 @@ diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
 --- a/src/i18n/locales/partials/pt-BR/editor.json
 +++ b/src/i18n/locales/partials/pt-BR/editor.json
-@@ -881,6 +881,43 @@
+@@ -881,6 +881,44 @@
      "colorPanel": {
        "emptyState": "Selecione um clipe para corrigir as cores",
        "adjustmentLayerLabel": "Correção de cor"
@@ -1006,7 +1026,8 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 +        "no-coverage": "Esse ângulo não tem imagem ali.",
 +        "no-coverage-range": "Esse ângulo não tem imagem do quadro {{from}} ao {{to}}; o corte não foi feito.",
 +        "before-start": "Alinhar colocaria uma gravação que começou antes antes do início da linha do tempo. Mova os clipes para mais tarde primeiro.",
-+        "already-multicam": "Estes clipes já são ângulos de uma edição multicâmera."
++        "already-multicam": "Estes clipes já são ângulos de uma edição multicâmera.",
++        "generated-media": "Clipes gerados não têm gravação para sincronizar, então não podem ser ângulos."
 +      }
      }
    }
@@ -1014,7 +1035,7 @@ diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/part
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
-@@ -881,6 +881,43 @@
+@@ -881,6 +881,44 @@
      "colorPanel": {
        "emptyState": "Renk düzenlemek için bir klip seçin",
        "adjustmentLayerLabel": "Renk düzenleme"
@@ -1053,7 +1074,8 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 +        "no-coverage": "O açının orada görüntüsü yok.",
 +        "no-coverage-range": "O açının {{from}}–{{to}} kareleri arasında görüntüsü yok; kesme yapılmadı.",
 +        "before-start": "Hizalama, daha önce başlamış bir kaydı zaman çizelgesinin başından önceye koyar. Önce klipleri daha ileri taşıyın.",
-+        "already-multicam": "Bu klipler zaten bir çok kameralı düzenlemenin açılarıdır."
++        "already-multicam": "Bu klipler zaten bir çok kameralı düzenlemenin açılarıdır.",
++        "generated-media": "Oluşturulan kliplerin eşitlenecek kaydı olmadığı için açı olamazlar."
 +      }
      }
    }
@@ -1061,7 +1083,7 @@ diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partial
 diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
 --- a/src/i18n/locales/partials/zh/editor.json
 +++ b/src/i18n/locales/partials/zh/editor.json
-@@ -881,6 +881,43 @@
+@@ -881,6 +881,44 @@
      "colorPanel": {
        "emptyState": "选择要调色的剪辑",
        "adjustmentLayerLabel": "调色"
@@ -1100,7 +1122,8 @@ diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partial
 +        "no-coverage": "该机位在那里没有画面。",
 +        "no-coverage-range": "该机位在第 {{from}} 到 {{to}} 帧没有画面，未进行剪切。",
 +        "before-start": "对齐会把更早开始的录制放到时间线开头之前。请先把片段往后移。",
-+        "already-multicam": "这些片段已经是某个多机位剪辑的机位。"
++        "already-multicam": "这些片段已经是某个多机位剪辑的机位。",
++        "generated-media": "生成的片段没有可同步的录制内容，不能作为机位。"
 +      }
      }
    }
