@@ -1327,7 +1327,7 @@ diff --git a/src/shared/typography/word-captions.test.ts b/src/shared/typography
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/typography/word-captions.test.ts
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,167 @@
 +import { describe, expect, it } from 'vite-plus/test'
 +
 +import {
@@ -1339,6 +1339,7 @@ new file mode 100644
 +  resolveWordCaption,
 +  shiftCueWords,
 +  wordCaptionPlacement,
++  wordLookStylePatch,
 +} from './word-captions'
 +import type { CaptionWord, WordCaptionLook } from '@/types/word-captions'
 +
@@ -1462,6 +1463,30 @@ new file mode 100644
 +    expect(wordCaptionPlacement({ size: 'medium', position: 'middle' }, 1920, 1080).y).toBe(0)
 +  })
 +
++  it('gives captions without a box the default caption box, never a zero one', () => {
++    for (const transform of [
++      undefined,
++      { x: 5, y: 9, width: 0, height: 0, rotation: 0, opacity: 1 },
++    ]) {
++      const patch = wordLookStylePatch(look('highlight'), transform, 1920, 1080)
++      expect(patch.transform).toMatchObject({ width: 1574, height: 173, y: 0 })
++    }
++    const kept = wordLookStylePatch(
++      { size: 'small', position: 'top', style: 'word', highlightColor: '#fff' },
++      { x: 12, y: 300, width: 900, height: 120, rotation: 0, opacity: 1 },
++      1920,
++      1080,
++    )
++    expect(kept.transform).toEqual({
++      x: 12,
++      y: -324,
++      width: 900,
++      height: 120,
++      rotation: 0,
++      opacity: 1,
++    })
++  })
++
 +  it('defaults a Vertical 9:16 export to Highlight, Large, Middle', () => {
 +    expect(VERTICAL_WORD_CAPTION_LOOK).toMatchObject({
 +      style: 'highlight',
@@ -1474,7 +1499,7 @@ diff --git a/src/shared/typography/word-captions.ts b/src/shared/typography/word
 new file mode 100644
 --- /dev/null
 +++ b/src/shared/typography/word-captions.ts
-@@ -0,0 +1,231 @@
+@@ -0,0 +1,238 @@
 +/**
 + * Word-by-word captions (Frameleaf FL-640): the pure model shared by the preview, the export
 + * renderer and the Caption style card.
@@ -1701,9 +1726,16 @@ new file mode 100644
 +  canvasHeight: number,
 +): { fontSize: number; transform: TransformProperties } {
 +  const placement = wordCaptionPlacement(look, canvasWidth, canvasHeight)
++  const base = { ...BLANK_TRANSFORM, ...transform }
++  // An absent or zero box is not an automatic size: use the default caption box (82% × 16%).
 +  return {
 +    fontSize: placement.fontSize,
-+    transform: { ...(transform ?? BLANK_TRANSFORM), y: placement.y },
++    transform: {
++      ...base,
++      width: (base.width ?? 0) > 0 ? base.width! : Math.round(canvasWidth * 0.82),
++      height: (base.height ?? 0) > 0 ? base.height! : Math.round(canvasHeight * 0.16),
++      y: placement.y,
++    },
 +  }
 +}
 diff --git a/src/test/word-captions-render.test.tsx b/src/test/word-captions-render.test.tsx

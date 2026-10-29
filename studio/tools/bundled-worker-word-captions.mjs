@@ -53,17 +53,23 @@ const applyLook = (style, look, frame, safe, width) => {
   const placement = wordCaptionPlacement(look, frame.width, frame.height);
   style.fontSize = placement.fontSize;
   const transform = style.transform ?? {};
-  const height = finite(transform.height) ? transform.height : Math.round(frame.height * 0.16);
-  // Keep the box inside the safe area, as the reframe does for titles (clip captions skip it).
+  // A missing or non-positive size is not an automatic size: use the default caption box.
+  const positive = (value) => finite(value) && value > 0;
+  const height = positive(transform.height) ? transform.height : Math.round(frame.height * 0.16);
+  const boxWidth = positive(transform.width) ? Math.min(transform.width, width) : width;
+  // Keep the whole box inside the safe area, as the reframe does for titles (clip captions skip it).
   const top = frame.height * safe.top - frame.height / 2 + height / 2;
   const bottom = frame.height / 2 - frame.height * safe.bottom - height / 2;
+  const centreX = frame.width * ((safe.left - safe.right) / 2);
+  const slackX = (width - boxWidth) / 2;
+  const x = finite(transform.x) ? transform.x : 0;
   style.transform = {
-    x: 0,
     rotation: 0,
     opacity: 1,
     ...transform,
     height,
-    width: finite(transform.width) ? Math.min(transform.width, width) : width,
+    width: boxWidth,
+    x: Math.min(centreX + slackX, Math.max(centreX - slackX, x)),
     y: bottom < top ? (top + bottom) / 2 : Math.min(bottom, Math.max(top, placement.y)),
   };
 };

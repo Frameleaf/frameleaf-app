@@ -99,6 +99,29 @@ describe('FL-640 vertical export caption default', () => {
     );
   });
 
+  it('treats zero-size boxes as unset and keeps an offset clip caption inside the safe area', () => {
+    const frame = { width: 608, height: 1080 };
+    const safe = SAFE_AREA.vertical;
+    const safeWidth = Math.round(frame.width * (1 - safe.left - safe.right));
+    const items = [
+      shot({ id: 'a', transcriptCaptions: clipCaptions({ style: { transform: { x: 3, y: 0, width: 0, height: 0 } } }) }),
+      shot({ id: 'b', transcriptCaptions: clipCaptions({ style: { transform: { x: 400, y: 0, width: 500, height: 120 } } }) }),
+      shot({ id: 'c', transcriptCaptions: clipCaptions({ style: { transform: { x: -400, y: 0, width: 200, height: 120 } } }) }),
+    ];
+    assert.equal(applyShapedCaptionLooks(items, frame, 'vertical', safe), 3);
+    const [a, b, c] = items.map((item) => item.transcriptCaptions.style.transform);
+    assert.equal(a.width, safeWidth);
+    assert.equal(a.height, Math.round(frame.height * 0.16));
+    for (const box of [a, b, c]) {
+      assert.ok(box.x - box.width / 2 >= -frame.width / 2 + frame.width * safe.left - 1e-6, 'clear of the left edge');
+      assert.ok(box.x + box.width / 2 <= frame.width / 2 - frame.width * safe.right + 1e-6, 'clear of the right edge');
+    }
+    assert.equal(b.width, 500);
+    assert.ok(b.x < 400, 'an offset that fitted the wide frame is pulled in');
+    assert.equal(c.width, 200);
+    assert.ok(c.x < 0, 'a box that fits keeps its side');
+  });
+
   it('leaves captions without a chosen look alone in a square export, and skips hidden clip captions', () => {
     const graph = project([shot({ transcriptCaptions: clipCaptions({ enabled: false }) }), segment()]);
     const { graph: derived } = reframeGraph(graph, plan('square'));

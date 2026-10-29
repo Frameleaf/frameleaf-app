@@ -210,7 +210,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             'e974867a3a3553395cb4a7e94b199d16e9c3c03c3b5cc722afe46567b91fb232' ||
           // FL-596/FL-627 motion tracking and tracking box on colour match, loudness and speed ramps; changes no composition or raster producer.
           binding.sourceSha256 ===
-            'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f')),
+            'c2786f427993a90cffa5c776b346b9c7e845ec0b5e56cb83247fb46a77e34c6f' ||
+          // FL-640 word-by-word captions (caption cues, subtitle text and caption UI); changes no composition or raster producer.
+          binding.sourceSha256 ===
+            '4b5c68479b9bf642e2ed218c755939880c472c7b8d091e59f9c267b118047ee1')),
     'SOURCE_BROWSER',
   )
   check(

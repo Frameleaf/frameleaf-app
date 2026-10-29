@@ -748,8 +748,8 @@
     {
       "path": "patches/0168-word-by-word-captions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "c50c6e57ad990c0b2b32b135c989a69fed4d8cebddb8e71890771d76ee28d4cf"
+      "sha256": "c1728386c5702a182af284678aa74ff3330583dc2779959540ae2b299ec99722"
     }
   ],
-  "sourceSha256": "24bb9fc1d61fe366eeeb63687e300969a9b691cddcb1fa688196609c4b9e6e20"
+  "sourceSha256": "4b5c68479b9bf642e2ed218c755939880c472c7b8d091e59f9c267b118047ee1"
 }
