@@ -27,7 +27,7 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/voice-
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.test.tsx
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,169 @@
 +import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 +import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import type { ReactNode } from 'react'
@@ -143,6 +143,43 @@ new file mode 100644
 +    expect(screen.getByRole('button', { name: new RegExp(k('action')) })).toBeDisabled()
 +  })
 +
++  it('finishes a clean-up after the card unmounts, and applies it to its clip', async () => {
++    let finish: (value: unknown) => void = () => {}
++    host.current = fakeHost({ clean: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve })) })
++    const { unmount } = render(<VoiceCleanupSection items={[clip('a1', 'Beach walk')]} />)
++    await waitFor(() => expect(screen.getByLabelText(k('noise.wind'))).toBeChecked())
++    fireEvent.click(screen.getByRole('button', { name: new RegExp(k('action')) }))
++    // A new selection remounts the card while the job runs.
++    unmount()
++    await act(async () => {
++      finish({ importId: 'cleaned-1', strength: 'standard', noises: ['wind', 'background'], humHz: null,
++        sourceStartSeconds: 1, durationSeconds: 6 })
++    })
++    const cleaned = useItemsStore.getState().items.find((item) => item.id === 'a1') as AudioItem
++    expect(cleaned.mediaId).toBe('cleaned-1')
++  })
++
++  it("does not carry a failed check, or its hum frequency, over to another clip", async () => {
++    host.current = fakeHost({
++      analyze: vi.fn()
++        .mockResolvedValueOnce({ noises: ['hum'], humHz: 60 })
++        .mockRejectedValueOnce(new Error('No computer is available now')),
++    })
++    render(<VoiceCleanupSection items={[clip('a1', 'Beach walk')]} />)
++    await waitFor(() => expect(screen.getByLabelText(k('noise.hum'))).toBeChecked())
++    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'a2' } })
++    expect(await screen.findByText(`${k('analysisFailed')}(No computer is available now)`)).toBeInTheDocument()
++    fireEvent.click(screen.getByLabelText(k('noise.hum')))
++    await act(async () => {
++      fireEvent.click(screen.getByRole('button', { name: new RegExp(k('action')) }))
++    })
++    expect(host.current!.clean).toHaveBeenCalledWith(
++      expect.objectContaining({ clipId: 'a2', noises: ['hum'], humHz: null }),
++      expect.any(Function),
++      expect.any(AbortSignal),
++    )
++  })
++
 +  it("does not carry a failed check over to a cleaned clip", async () => {
 +    useItemsStore.getState().setItems([
 +      clip('a1', 'Beach walk'),
@@ -164,8 +201,8 @@ diff --git a/src/features/editor/components/properties-sidebar/clip-panel/voice-
 new file mode 100644
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-section.tsx
-@@ -0,0 +1,307 @@
-+import { useEffect, useMemo, useRef, useState } from 'react'
+@@ -0,0 +1,332 @@
++import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 +import { useTranslation } from 'react-i18next'
 +import { CheckCircle2, Home, Mic, Play, Square, Wand2 } from 'lucide-react'
 +import { toast } from 'sonner'
@@ -181,7 +218,11 @@ new file mode 100644
 +import { resolveMediaUrl } from '@/features/editor/deps/media-library'
 +import { PropertySection } from '../components'
 +// By its alias, so a host build can substitute it (studio/adapters/web/vite.config.mjs).
-+import { getVoiceCleanupHost } from '@/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service'
++import {
++  getVoiceCleanupHost,
++  type VoiceCleanupHost,
++  type VoiceCleanupRequest,
++} from '@/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service'
 +
 +const NOISES: readonly VoiceCleanupNoise[] = ['wind', 'hum', 'background', 'echo']
 +const STRENGTHS: readonly VoiceCleanupStrength[] = ['light', 'standard', 'strong']
@@ -193,6 +234,51 @@ new file mode 100644
 +const ordered = (noises: Iterable<VoiceCleanupNoise>) => {
 +  const chosen = new Set(noises)
 +  return NOISES.filter((noise) => chosen.has(noise))
++}
++
++/**
++ * Clean-ups in progress, by clip. They belong to the editor, not to the card: a new selection remounts
++ * the card, and a clean-up started from it still finishes, is applied to its clip and says so.
++ */
++const cleanups = new Map<string, number>()
++const watchers = new Set<() => void>()
++const changed = () => {
++  for (const watcher of watchers) watcher()
++}
++const watchCleanups = (watcher: () => void) => {
++  watchers.add(watcher)
++  return () => {
++    watchers.delete(watcher)
++  }
++}
++
++type Translate = (key: string, values?: Record<string, unknown>) => string
++
++/** Clean the clip and apply the result to it by id, however the card has changed meanwhile. */
++export async function runVoiceCleanup(host: VoiceCleanupHost, request: VoiceCleanupRequest, label: string, t: Translate) {
++  if (cleanups.has(request.clipId)) return
++  cleanups.set(request.clipId, 0)
++  changed()
++  try {
++    const result = await host.clean(
++      request,
++      (percent) => {
++        if (!cleanups.has(request.clipId)) return
++        cleanups.set(request.clipId, percent)
++        changed()
++      },
++      new AbortController().signal,
++    )
++    const outcome = applyVoiceCleanup(request.clipId, result)
++    if (outcome === 'applied') toast.success(t('editor.audioSection.voiceCleanup.cleaned', { name: label }))
++    else if (outcome === 'locked') toast.warning(t('editor.audioSection.voiceCleanup.locked'))
++    else toast.warning(t('editor.audioSection.voiceCleanup.clipGone'))
++  } catch (error) {
++    toast.error(t('editor.audioSection.voiceCleanup.failed', { reason: errorText(error) }))
++  } finally {
++    cleanups.delete(request.clipId)
++    changed()
++  }
 +}
 +
 +function Segmented<T extends string>({ label, options, value, onChange, disabled }: {
@@ -242,7 +328,7 @@ new file mode 100644
 +  const [humHz, setHumHz] = useState<50 | 60 | null>(done?.humHz ?? null)
 +  const [checking, setChecking] = useState(false)
 +  const [unchecked, setUnchecked] = useState<string | null>(null)
-+  const [progress, setProgress] = useState<number | null>(null)
++  const progress = useSyncExternalStore(watchCleanups, () => (clip ? (cleanups.get(clip.id) ?? null) : null))
 +  const [listen, setListen] = useState<'before' | 'after'>('after')
 +  const [playing, setPlaying] = useState(false)
 +  const work = useRef<AbortController | null>(null)
@@ -252,7 +338,6 @@ new file mode 100644
 +  useEffect(() => {
 +    if (!host || !clip) return
 +    work.current?.abort()
-+    setProgress(null)
 +    // A failed look at another clip says nothing about this one.
 +    setUnchecked(null)
 +    if (clip.voiceCleanup) {
@@ -265,6 +350,8 @@ new file mode 100644
 +    const controller = new AbortController()
 +    work.current = controller
 +    setNoises([])
++    // The last clip's mains frequency is not this one's: the worker looks again unless analysis finds it.
++    setHumHz(null)
 +    setUnchecked(null)
 +    setChecking(true)
 +    host
@@ -293,35 +380,10 @@ new file mode 100644
 +  if (!host || !clip) return null
 +
 +  const busy = progress !== null
-+  const changed = !!done && (done.strength !== strength || !sameNoises(done.noises, noises))
++  const settingsChanged = !!done && (done.strength !== strength || !sameNoises(done.noises, noises))
 +  const strengthLabel = (id: VoiceCleanupStrength) => t(`editor.audioSection.voiceCleanup.strength.${id}`)
 +
-+  const clean = async () => {
-+    work.current?.abort()
-+    const controller = new AbortController()
-+    work.current = controller
-+    setProgress(0)
-+    try {
-+      const result = await host.clean(
-+        { clipId: clip.id, strength, noises, humHz },
-+        (percent) => {
-+          if (!controller.signal.aborted) setProgress(percent)
-+        },
-+        controller.signal,
-+      )
-+      if (controller.signal.aborted) return
-+      const outcome = applyVoiceCleanup(clip.id, result)
-+      if (outcome === 'applied') toast.success(t('editor.audioSection.voiceCleanup.cleaned', { name: clip.label }))
-+      else if (outcome === 'locked') toast.warning(t('editor.audioSection.voiceCleanup.locked'))
-+      else toast.warning(t('editor.audioSection.voiceCleanup.clipGone'))
-+    } catch (error) {
-+      if (!controller.signal.aborted) {
-+        toast.error(t('editor.audioSection.voiceCleanup.failed', { reason: errorText(error) }))
-+      }
-+    } finally {
-+      if (work.current === controller) setProgress(null)
-+    }
-+  }
++  const clean = () => runVoiceCleanup(host, { clipId: clip.id, strength, noises, humHz }, clip.label, t)
 +
 +  const keepOriginal = () => {
 +    const outcome = restoreOriginalSound(clip.id)
@@ -448,7 +510,7 @@ new file mode 100644
 +              <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={busy} onClick={keepOriginal}>
 +                {t('editor.audioSection.voiceCleanup.useOriginal')}
 +              </Button>
-+              {changed && (
++              {settingsChanged && (
 +                <Button size="sm" className="h-7 text-xs" disabled={busy || noises.length === 0} onClick={() => void clean()}>
 +                  {t('editor.audioSection.voiceCleanup.again')}
 +                </Button>
