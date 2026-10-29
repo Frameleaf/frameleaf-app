@@ -713,8 +713,8 @@
     {
       "path": "patches/0148-motion-tracking.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "3cc30d3ab7b221a7d0b16fcf23290f500cbf1a09c6ecb0e50417fd6b69cc3f92"
+      "sha256": "f42c339a51a5710a6caa5c301fc70c9a3a90340f8e54206a00a8c735a94fbd5d"
     }
   ],
-  "sourceSha256": "4750757a0c3b48cd342bd886a63c9233e4d1024584793b10bd952e39f3938601"
+  "sourceSha256": "3fb72aceffb0e9c6ef31eb15008c1fe64997c783697fcab58dd669941eebda63"
 }
