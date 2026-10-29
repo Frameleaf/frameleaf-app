@@ -103,6 +103,64 @@ DEFAULT_OPENVINO_MAX_IMAGE_EDGE = 512
 PHI_OPENVINO_IMAGE_TAG = "<|image_1|>"
 QWEN_OPENVINO_IMAGE_TAG = "<|vision_start|><|image_pad|><|vision_end|>"
 
+# Words that never make a useful tag on their own (FL-659). Descriptions are
+# prose, so splitting them into words yields pronouns, prepositions, numbers,
+# colours, positions and describing verbs ("her", "behind", "four", "white",
+# "front", "wearing", "image"). Keep nouns: "dog", "beach", "table", "car".
+TAG_STOP_WORDS = frozenset(
+    {
+        # articles, conjunctions, determiners, quantifiers
+        *"the and but nor yet for are was were has had have been being does did not also than then".split(),
+        *"this that these those there here what which who whom whose when where while why how".split(),
+        *"all any each every both either neither few many much more most other others another some such".split(),
+        *"only own same just very too quite rather really almost nearly mostly mainly partly several".split(),
+        *"its it's one ones none nothing something someone somebody anything anyone everything everyone".split(),
+        # pronouns
+        *"you your yours she her hers him his they them their theirs our ours ourselves themselves".split(),
+        *"himself herself itself yourself myself".split(),
+        # prepositions and positions
+        *"about above across after against along alongside amid among around atop before behind below".split(),
+        *"beneath beside besides between beyond by down during except from inside into near nearby".split(),
+        *"off onto out outside over past per since through throughout toward towards under underneath".split(),
+        *"until upon via with within without top bottom front back side sides left right middle center".split(),
+        *"centre corner edge foreground background distance upper lower far close away together".split(),
+        # numbers and counting words
+        *"two three four five six seven eight nine ten eleven twelve twenty thirty hundred thousand".split(),
+        *"first second third fourth fifth last single double pair couple group number".split(),
+        # colours and plain adjectives
+        *"white black grey gray red blue green yellow orange purple pink brown beige gold silver".split(),
+        *"dark light bright colorful colourful large small big little tall short long wide old new".split(),
+        *"young various different several visible clear blurry full empty other".split(),
+        # describing verbs and photo-framing words
+        *"can could will would should may might must shall appears appear appearing seems seem".split(),
+        *"wearing standing sitting holding looking showing shown seen looks wears holds stands sits".split(),
+        *"shows depicts depicting featuring features captured taken placed located visible displayed".split(),
+        *"image images photo photos photograph picture pictures shot scene view frame closeup close-up".split(),
+        *"overall likely possibly perhaps something like looks kind type part parts area areas".split(),
+    }
+)
+TAG_MIN_LENGTH = 3
+TAG_LIMIT = 20
+
+
+def tags_from_text(text: str) -> list[str]:
+    """Searchable single-word tags from free text, without filler words, numbers or duplicates."""
+    tags: list[str] = []
+    for word in re.findall(r"[a-z][a-z0-9_'-]*", text.lower()):
+        word = word.strip("'_-")
+        if word.endswith("'s"):
+            word = word[:-2]
+        if len(word) < TAG_MIN_LENGTH or word in TAG_STOP_WORDS or any(char.isdigit() for char in word):
+            continue
+        tag = re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", word)).strip("-")
+        if len(tag) < TAG_MIN_LENGTH or tag in TAG_STOP_WORDS or tag in tags:
+            continue
+        tags.append(tag)
+        if len(tags) >= TAG_LIMIT:
+            break
+    return tags
+
+
 NSFW_TAGS = {
     "adult-nudity",
     "bare-buttocks",
@@ -512,7 +570,8 @@ class ImageDescriptionModel(InferenceModel):
             "objects": objects,
             "visible_text": visible_text,
             "context": "",
-            "tags": self._tags_from_text(" ".join([description, *objects, *visible_text])),
+            # Detector labels are the most reliable tags, so they fill the tag budget first.
+            "tags": self._tags_from_text(" ".join([*objects, description, *visible_text])),
         }
 
     def _run_florence_task(self, task_prompt: str, image: Image.Image) -> dict[str, Any]:
@@ -858,33 +917,7 @@ class ImageDescriptionModel(InferenceModel):
         return [item for item in value if isinstance(item, dict)]
 
     def _tags_from_text(self, text: str) -> list[str]:
-        stop_words = {
-            "about",
-            "after",
-            "also",
-            "and",
-            "are",
-            "around",
-            "from",
-            "has",
-            "have",
-            "into",
-            "near",
-            "that",
-            "the",
-            "their",
-            "there",
-            "this",
-            "with",
-        }
-        tags: list[str] = []
-        for word in re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", text.lower()):
-            if word in stop_words or word in tags:
-                continue
-            tags.append(self._normalize_tag(word))
-            if len(tags) >= 20:
-                break
-        return tags
+        return tags_from_text(text)
 
     def _normalize_tag(self, tag: str) -> str:
         return re.sub(r"-+", "-", re.sub(r"[^a-z0-9_-]+", "-", tag.lower().strip())).strip("-")
