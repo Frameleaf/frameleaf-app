@@ -55,6 +55,13 @@ const ApiKeyResponseSchema = z
       .meta({ format: 'date-time' })
       .nullable()
       .describe('When the key was last used to reach the server; null when it never has been'),
+    // FL-655: a plain string (chrome or edge), so a later browser never breaks a strict decoder
+    signedInFrom: z
+      .string()
+      .nullable()
+      .describe(
+        'The browser (chrome or edge) when Save to Frameleaf added this key by signing in; null for a key made by hand. It has no value to copy or replace.',
+      ),
   })
   .meta({ id: 'ApiKeyResponseDto' });
 
