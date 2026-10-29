@@ -1,7 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { ApiKey } from 'src/database.js';
-import { ApiKeyCreateDto, ApiKeyCreateResponseDto, ApiKeyResponseDto, ApiKeyUpdateDto } from 'src/dtos/api-key.dto.js';
+import {
+  ApiKeyCreateDto,
+  ApiKeyCreateResponseDto,
+  ApiKeyResponseDto,
+  ApiKeyUpdateDto,
+  splitApiKeyPermissions,
+} from 'src/dtos/api-key.dto.js';
 import { Permission, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
@@ -112,7 +118,7 @@ export class ApiKeyService extends BaseService {
       name: entity.name,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
-      permissions: entity.permissions as Permission[],
+      ...splitApiKeyPermissions(entity.permissions as Permission[]),
       lastUsedAt: used[entity.id] ?? null,
     };
   }

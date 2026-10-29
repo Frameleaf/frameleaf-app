@@ -4,7 +4,7 @@
  * they can be tested on their own. Every action goes to the account's own endpoints; nothing here
  * stores a password, PIN, key or activation key.
  */
-import { Permission, type SessionResponseDto } from '@frameleaf/sdk';
+import { Permission, type ApiKeyResponseDto, type SessionResponseDto } from '@frameleaf/sdk';
 
 /** The server's minimum for a new password (`ChangePasswordDto`). */
 export const PASSWORD_MIN_LENGTH = 8;
@@ -61,6 +61,12 @@ export const canSubmitPin = (
 };
 
 /** Every grantable permission except full access, in the server's order. */
+/** Every permission a key holds; design permissions are reported in their own field. */
+export const keyPermissions = (key: ApiKeyResponseDto): Permission[] => [
+  ...(key.permissions as string[] as Permission[]),
+  ...((key.designPermissions ?? []) as string[] as Permission[]),
+];
+
 export const INDIVIDUAL_PERMISSIONS: readonly Permission[] = Object.values(Permission).filter(
   (permission) => permission !== Permission.All,
 );

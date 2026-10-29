@@ -1,4 +1,4 @@
-import { Permission } from '@frameleaf/sdk';
+import { ApiKeyResponsePermission, Permission } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
@@ -97,7 +97,7 @@ describe('PinDialog (FL-67)', () => {
 describe('ApiKeyDialog (FL-67)', () => {
   it('creates a browser capture key without silently granting general library access', async () => {
     sdkMock.createApiKey.mockResolvedValue({
-      apiKey: { id: 'capture-key', name: 'Browser', permissions: [...PURPOSE_PERMISSIONS.capture] },
+      apiKey: { id: 'capture-key', name: 'Browser', permissions: [], designPermissions: [...PURPOSE_PERMISSIONS.capture] },
       secret: 'synthetic-capture-key',
     } as never);
     render(ApiKeyDialog, { onClose: vi.fn() });
@@ -134,9 +134,11 @@ describe('ApiKeyDialog (FL-67)', () => {
     const apiKey = {
       id: 'key-1',
       name: 'Script',
-      permissions: [Permission.AssetRead],
+      permissions: [ApiKeyResponsePermission.AssetRead],
+      designPermissions: [],
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      lastUsedAt: null,
     };
     render(ApiKeyDialog, { apiKey, onClose: vi.fn() });
 

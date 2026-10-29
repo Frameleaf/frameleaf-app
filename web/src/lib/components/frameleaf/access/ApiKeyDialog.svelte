@@ -14,6 +14,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import {
+    keyPermissions,
     API_KEY_NAME_MAX_LENGTH,
     filterPermissions,
     INDIVIDUAL_PERMISSIONS,
@@ -45,9 +46,9 @@
   let name = $state(apiKey?.name ?? '');
   let selected = $state<Permission[]>(
     apiKey
-      ? apiKey.permissions.includes(Permission.All)
+      ? keyPermissions(apiKey).includes(Permission.All)
         ? [Permission.All]
-        : [...apiKey.permissions]
+        : keyPermissions(apiKey)
       : [...PURPOSE_PERMISSIONS.view],
   );
   const choosePurpose = (next: KeyPurpose) => (selected = [...PURPOSE_PERMISSIONS[next]]);
