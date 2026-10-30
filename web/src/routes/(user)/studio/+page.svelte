@@ -86,6 +86,7 @@
   import { rational } from '$lib/frameleaf/studio/rational-time';
   import {
     createStudioProjectSession,
+    isEmptyStudioExport,
     STUDIO_DRAFT_PROJECT_ID,
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
@@ -116,7 +117,11 @@
     translateStudioCaptions,
     type StudioRestoredVersionDto,
   } from '@frameleaf/sdk';
-  import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
+  import {
+    studioKeepsHdrPicture,
+    studioRenderRefusalFromError,
+    studioRenderRefusalKey,
+  } from '$lib/frameleaf/studio/render-output';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
 
@@ -1054,7 +1059,7 @@
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
       if (canExportVideo) {
-        videoExportOpen = true;
+        void openVideoExport();
       } else {
         toastManager.danger($t('frameleaf_studio_export_unavailable'));
       }
@@ -1217,6 +1222,63 @@
       const languages = sidecars.map((sidecar) => captionLanguageName(sidecar.language)).join(', ');
       toastManager.primary($t('frameleaf_studio_export_caption_languages_saved', { values: { languages } }));
     }
+  };
+  /** How long Export waits for the editor to hand over an edit it has marked but not staged yet. */
+  const EDITOR_STAGE_WAIT_MS = 3000;
+  let stagedWaiters: Array<() => void> = [];
+  $effect(() => {
+    if (!dirty || sessionState?.hasDraft) {
+      const waiting = stagedWaiters;
+      stagedWaiters = [];
+      for (const resolve of waiting) {
+        resolve();
+      }
+    }
+  });
+  /** Resolves true once the editor's latest edit is staged with the session (or there is none). */
+  const editorStaged = () =>
+    new Promise<boolean>((resolve) => {
+      if (!dirty || sessionState?.hasDraft) {
+        resolve(true);
+        return;
+      }
+      const done = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        stagedWaiters = stagedWaiters.filter((waiter) => waiter !== done);
+        resolve(false);
+      }, EDITOR_STAGE_WAIT_MS);
+      stagedWaiters.push(done);
+    });
+
+  /**
+   * FL-674: the dialog picks its options from what the server knows about the project's sources
+   * (which are HDR, what is placed), so the latest edit is saved first: one the editor has marked but
+   * not staged yet (it stages after a short pause) is waited for, then the draft is flushed. A save
+   * that fails, or a session that can no longer write, leaves the dialog closed and says why.
+   */
+  const openVideoExport = async () => {
+    if ((dirty || sessionState?.hasDraft) && writable) {
+      if (!(await editorStaged())) {
+        toastManager.danger($t('frameleaf_studio_export_failed'));
+        return;
+      }
+      try {
+        await session.flush();
+      } catch (error) {
+        handleError(error, $t('frameleaf_studio_export_failed'));
+        return;
+      }
+      // The session reports a failed save in its state rather than throwing: the edit is still unsaved,
+      // or the project was lost (a 404 clears the draft and leaves the session forbidden).
+      if (session.state.hasDraft || !writable || forbidden || accessLost) {
+        toastManager.danger($t('frameleaf_studio_export_failed'));
+        return;
+      }
+    }
+    videoExportOpen = true;
   };
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
@@ -1486,7 +1548,7 @@
         void readReceipts();
       }
     : undefined}
-  onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
+  onExport={canExportVideo ? () => void openVideoExport() : undefined}
   onRename={canRename ? onRename : undefined}
   {workspace}
   {opening}
@@ -1529,6 +1591,8 @@
   {renderEvidence}
   projectId={storedRevision === null ? null : project.id}
   captionLanguages={captionExportLanguages}
+  empty={isEmptyStudioExport(project.graph)}
+  hdrPicture={studioKeepsHdrPicture(project.graph, sessionState?.resources?.hdrSources)}
   onExport={(choice) => void onExportVideo(choice)}
 />
 

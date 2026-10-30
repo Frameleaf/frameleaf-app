@@ -4,6 +4,7 @@ import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReaso
 import {
   ClaimAdmissionInput,
   RenderOutputRefusal,
+  SDR_TEN_BIT_PROFILE,
   SessionAdmissionInput,
   evaluateClaimAdmission,
   evaluateRenderOutput,
@@ -755,6 +756,22 @@ describe('evaluateRenderOutput (FL-42)', () => {
     };
     const pq = { ...hlg, color: 'hdr10', transfer: 'smpte2084' as const };
 
+    it('writes Main10 only as a master: an SDR picture in a 10-bit format needs the SDR 10-bit profile (FL-674)', () => {
+      const sdrPicture = { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p', transfer: null };
+      expect(evaluateRenderOutput([bundled], sdrPicture)).toEqual({
+        supported: false,
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      // Before the contract is sealed (no transfer known) the first check keeps its old meaning.
+      expect(evaluateRenderOutput([bundled], { ...sdrPicture, transfer: undefined })).toEqual({ supported: true });
+      // HDR masters and 8-bit formats are unaffected.
+      expect(evaluateRenderOutput([bundled], pq)).toEqual({ supported: true });
+      expect(evaluateRenderOutput([bundled], { ...sdrPicture, format: 'mp4-hevc' })).toEqual({ supported: true });
+      expect(
+        evaluateRenderOutput([{ ...bundled, formats: [...bundled.formats, SDR_TEN_BIT_PROFILE] }], sdrPicture),
+      ).toEqual({ supported: true });
+    });
+
     it('names the exact master evidence', () => {
       expect(hdrMasterEvidence('mp4-hevc-main10', 'smpte2084')).toBe('mp4-hevc-main10+pq');
       expect(hdrMasterEvidence('mp4-hevc-main10', 'arib-std-b67')).toBe('mp4-hevc-main10+hlg');
@@ -796,6 +813,31 @@ describe('evaluateRenderOutput (FL-42)', () => {
       expect(evaluateRenderOutput([bundled], request)).toEqual({ supported: true });
       expect(operationOutputRequest(settings, null)).toEqual(settings);
       expect(operationOutputRequest(settings, { contract: { video: { transfer: 'bt709' } } })).toEqual(settings);
+    });
+
+    it('keeps a sealed SDR picture SDR at claim time, so only a 10-bit SDR writer claims Main10 (FL-674)', () => {
+      const settings = { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p' };
+      const request = operationOutputRequest(settings, { contract: { video: { minBitDepth: 10, transfer: null } } });
+      expect(request).toEqual({ ...settings, minBitDepth: 10, transfer: null });
+      // The bundled worker writes Main10 only as an HDR master: it may not claim this export.
+      expect(evaluateRenderOutput([bundled], request)).toMatchObject({
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      expect(
+        evaluateRenderOutput([{ ...bundled, formats: [...bundled.formats, SDR_TEN_BIT_PROFILE] }], request),
+      ).toEqual({ supported: true });
+      // An 8-bit export of the same SDR picture is unaffected.
+      expect(
+        evaluateRenderOutput(
+          [bundled],
+          operationOutputRequest(
+            { ...settings, format: 'mp4-hevc' },
+            {
+              contract: { video: { minBitDepth: 8, transfer: null } },
+            },
+          ),
+        ),
+      ).toEqual({ supported: true });
     });
   });
 });

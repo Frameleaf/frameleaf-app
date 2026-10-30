@@ -139824,6 +139824,10 @@
             "description": "This session renders vertical and square exports of its SDR video formats (FL-563)",
             "type": "boolean"
           },
+          "sdrTenBit": {
+            "description": "This session writes its 10-bit video formats for an SDR picture; without it they are HDR masters only (FL-674)",
+            "type": "boolean"
+          },
           "sidecarOutputFormats": {
             "description": "Output formats whose versioned paired SRT profile this same session verified",
             "items": {
