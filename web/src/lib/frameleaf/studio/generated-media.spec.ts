@@ -295,3 +295,46 @@ describe('overlapping generated admission and focus checks', () => {
     }
   });
 });
+
+describe('library clip locators (FL-673)', () => {
+  const assetId = '0195e2a0-0000-7000-8000-0000000000a1';
+  const placed = {
+    timeline: {
+      items: [
+        {
+          id: 'photo',
+          type: 'image',
+          mediaId: assetId,
+          src: `/api/assets/${assetId}/thumbnail?size=preview&c=abc&edited=true`,
+          thumbnailUrl: 'blob:http://localhost/thumb',
+        },
+        { id: 'video', type: 'video', mediaId: assetId, src: `/api/assets/${assetId}/video/playback` },
+        { id: 'sound', type: 'audio', mediaId: assetId, src: 'blob:http://localhost/sound', audioSrc: 'https://x/y' },
+        { id: 'handoff', type: 'video', mediaId: assetId, src: '' },
+        { id: 'title', type: 'text', text: '/not/a/locator', src: '/kept/without/media' },
+      ],
+    },
+  };
+
+  it('stores a library clip as its media id, the way a handoff clip is stored', () => {
+    const stored = storeGeneratedMedia(placed) as typeof placed;
+    expect(stored.timeline.items).toEqual([
+      { id: 'photo', type: 'image', mediaId: assetId, src: '' },
+      { id: 'video', type: 'video', mediaId: assetId, src: '' },
+      { id: 'sound', type: 'audio', mediaId: assetId, src: '', audioSrc: '' },
+      { id: 'handoff', type: 'video', mediaId: assetId, src: '' },
+      { id: 'title', type: 'text', text: '/not/a/locator', src: '/kept/without/media' },
+    ]);
+    expect(JSON.stringify(stored)).not.toContain('/api/assets/');
+  });
+
+  it('compares a placed clip equal to the stored one, so a save is not repeated', () => {
+    const stored = storeGeneratedMedia(placed);
+    expect(storeGeneratedMedia(stored)).toEqual(stored);
+  });
+
+  it('loads a library clip without a locator, so the editor resolves it from its media id', () => {
+    const loaded = hydrateGeneratedMedia(placed, []) as typeof placed;
+    expect(loaded.timeline.items[1]).toEqual({ id: 'video', type: 'video', mediaId: assetId, src: '' });
+  });
+});

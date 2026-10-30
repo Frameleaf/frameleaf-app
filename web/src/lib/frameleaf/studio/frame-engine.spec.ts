@@ -264,6 +264,41 @@ describe('studio editor frame (FL-88)', () => {
     await instance.dispose();
   });
 
+  it('stages a clip added from the library by its media id, never by the URL it played from (FL-673)', async () => {
+    const frame = fakeFrame();
+    const host = services();
+    const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
+      newStage(),
+      context(),
+      host,
+    );
+    const assetId = '0195e2a0-0000-7000-8000-0000000000a1';
+    frame.port()!.postMessage({
+      type: 'service',
+      callId: 70,
+      name: 'stageDraft',
+      args: [
+        {
+          id: 'g',
+          timeline: {
+            items: [{ id: 'clip', type: 'video', mediaId: assetId, src: `/api/assets/${assetId}/video/playback` }],
+          },
+        },
+        ['editor.save'],
+        3,
+        1,
+      ],
+    });
+    await tick();
+    expect(host.stageDraft).toHaveBeenCalledWith(
+      { id: 'g', timeline: { items: [{ id: 'clip', type: 'video', mediaId: assetId, src: '' }] } },
+      ['editor.save'],
+      3,
+      1,
+    );
+    await instance.dispose();
+  });
+
   it('answers the frame’s service calls with the host services', async () => {
     const frame = fakeFrame();
     const host = services();
