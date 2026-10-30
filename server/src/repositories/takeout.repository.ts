@@ -714,13 +714,28 @@ export class TakeoutRepository {
     );
     return rows.map((row) => mapItem(row));
   }
-  async countPending(importId: string): Promise<number> {
+  /**
+   * The photos a run still imports, by checksum: the importer adds an album's copy of a photo once,
+   * so the import's progress counts photos as the check step does (FL-668). `total` leaves out a photo
+   * one of whose copies is already in (an earlier run imported or matched it and another copy is being
+   * retried); `alreadyIn` lists those photos' checksums, so their remaining copies do not count again.
+   */
+  async pendingPhotos(importId: string): Promise<{ total: number; alreadyIn: Buffer[] }> {
     const { rows } = await sql<{
-      total: string;
+      checksum: Buffer;
+      done: boolean;
     }>`
-      select count(*) as total from takeout_item where "importId" = ${importId}::uuid and state in ('ready', 'importing')
+      select file.checksum, bool_or(item.state in ('imported', 'matched')) as done
+      from takeout_item item
+      inner join takeout_file file on file.id = item.id
+      where item."importId" = ${importId}::uuid
+      group by file.checksum
+      having bool_or(item.state in ('ready', 'importing'))
     `.execute(this.db);
-    return toNumber(rows[0]?.total);
+    return {
+      total: rows.filter(({ done }) => !done).length,
+      alreadyIn: rows.filter(({ done }) => done).map(({ checksum }) => checksum),
+    };
   }
   /** Items that failed get their one automatic retry: back to ready, error kept until they run. */
   async retryFailed(importId: string): Promise<number> {
@@ -976,14 +991,6 @@ export class TakeoutRepository {
       limit ${limit}
     `.execute(this.db);
     return rows;
-  }
-  async countApprovedPairs(importId: string): Promise<number> {
-    const { rows } = await sql<{
-      total: string;
-    }>`
-      select count(*) as total from takeout_pair where "importId" = ${importId}::uuid and state = 'approved'
-    `.execute(this.db);
-    return toNumber(rows[0]?.total);
   }
   async pairDone(photoItemId: string, videoItemId: string, error: string | null): Promise<void> {
     await this.write((db) =>

@@ -641,10 +641,15 @@ export class TakeoutWorkerService {
   private async importItems(run: TakeoutRun): Promise<void> {
     const { row } = run;
     const options = parseTakeoutOptions(row.options);
-    run.total = (await this.repository.countPending(row.id)) + (await this.repository.countApprovedPairs(row.id));
+    // Progress counts unique photos, as the check step does (FL-668): an album's copy of a photo is
+    // the same photo, so it moves the count once, and linking Live Photos adds nothing to it.
+    const pending = await this.repository.pendingPhotos(row.id);
+    run.total = pending.total;
     await this.checkpoint(run, true);
 
     const seen = new Set<string>();
+    // A photo an earlier run already brought in is not counted again when another copy of it retries.
+    const photos = new Set(pending.alreadyIn.map((checksum) => checksum.toString('hex')));
     let sinceRefresh = 0;
     while (true) {
       this.throwIfStopped(run);
@@ -662,6 +667,12 @@ export class TakeoutWorkerService {
         seen.add(item.id);
         try {
           await this.importItem(run, item, options);
+          // A photo counts once one of its copies is in; a copy that fails leaves it for the next.
+          const photo = item.checksum.toString('hex');
+          if (!photos.has(photo)) {
+            photos.add(photo);
+            run.processed++;
+          }
         } catch (error) {
           if (error instanceof TakeoutStop || run.controller.signal.aborted) {
             throw error;
@@ -671,7 +682,6 @@ export class TakeoutWorkerService {
           }
           await this.repository.itemDone(item.id, 'failed', errorMessage(error));
         }
-        run.processed++;
         await this.checkpoint(run);
         if (++sinceRefresh >= AUTH_REFRESH_ITEMS) {
           sinceRefresh = 0;
@@ -699,7 +709,6 @@ export class TakeoutWorkerService {
       for (const pair of pairs) {
         this.throwIfStopped(run);
         await this.repository.pairDone(pair.photoItemId, pair.videoItemId, await this.linkPair(run, pair));
-        run.processed++;
         await this.checkpoint(run);
       }
     }
