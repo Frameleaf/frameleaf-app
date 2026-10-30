@@ -863,6 +863,9 @@ describe(DuplicateService.name, () => {
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetVideoFingerprint, data: { id: video.id } });
       expect(mocks.duplicateRepository.searchVideoFingerprints).not.toHaveBeenCalled();
       expect(mocks.duplicateRepository.merge).not.toHaveBeenCalled();
+      // its group and detection time stay until the fingerprint exists
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
     });
 
     it('should fingerprint candidates that have none and not group them yet', async () => {
@@ -880,6 +883,8 @@ describe(DuplicateService.name, () => {
         { name: JobName.AssetVideoFingerprint, data: { id: 'asset-2' } },
       ]);
       expect(mocks.duplicateRepository.merge).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
     });
 
     it('should not group videos whose timelines do not line up', async () => {

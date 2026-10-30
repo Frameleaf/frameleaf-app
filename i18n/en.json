@@ -6368,7 +6368,7 @@
   "frameleaf_dupes_video_match": "Video that must match",
   "frameleaf_dupes_video_match_help": "From 50 to 100 percent of the part two videos share. More is stricter.",
   "frameleaf_dupes_videos": "Compare whole videos",
-  "frameleaf_dupes_videos_help": "Before calling two videos alike, lines up their timelines picture by picture, so a shared title screen or intro is not enough. Trimmed and re-saved copies still match. Off: videos are matched on one picture alone.",
+  "frameleaf_dupes_videos_help": "Before calling two videos alike, lines up their timelines picture by picture, so a shared title screen or intro is not enough. A trimmed or re-saved copy matches when it still holds most of the video. Off: videos are matched on one picture alone.",
   "frameleaf_dupes_visual_search": "Uses what Visual search has read",
   "frameleaf_dupes_visual_search_help": "Look-alikes are found from the same reading of each photo. If Visual search is turned off, no new ones are found.",
   "frameleaf_dupes_visual_search_off_body": "Your choices here are kept. Turn Visual search on to start finding look-alike photos again.",

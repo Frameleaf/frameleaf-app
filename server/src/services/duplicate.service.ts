@@ -623,7 +623,16 @@ export class DuplicateService extends BaseService {
         });
 
         if (asset.type === AssetType.Video) {
-          duplicateAssets = await this.findVideoDuplicates(asset, duplicateAssets, machineLearning.duplicateDetection);
+          const videoDuplicates = await this.findVideoDuplicates(
+            asset,
+            duplicateAssets,
+            machineLearning.duplicateDetection,
+          );
+          if (videoDuplicates === 'pending') {
+            // its group stays as it is until the fingerprints exist; their jobs compare it again
+            return JobStatus.Success;
+          }
+          duplicateAssets = videoDuplicates;
         }
 
         let assetIds = [asset.id];
@@ -654,13 +663,15 @@ export class DuplicateService extends BaseService {
   /**
    * FL-651: the preview's look-alikes plus videos sharing a frame with this one's middle, kept only
    * when their timelines line up (utils/video-fingerprint.ts). Videos without a fingerprint yet are
-   * fingerprinted first; that job compares them again.
+   * fingerprinted first; that job compares them again. `pending` while this video has no
+   * fingerprint, or while nothing is confirmed and a candidate still has none, so no group is
+   * undone on missing data.
    */
   private async findVideoDuplicates(
     asset: { id: string; ownerId: string },
     clipMatches: AssetDuplicateResult[],
     duplicateDetection: SystemConfig['machineLearning']['duplicateDetection'],
-  ): Promise<AssetDuplicateResult[]> {
+  ): Promise<AssetDuplicateResult[] | 'pending'> {
     const { enabled, minMatchFraction, maxHashDistance } = duplicateDetection.enhancedVideo;
     if (!enabled) {
       return clipMatches;
@@ -669,7 +680,7 @@ export class DuplicateService extends BaseService {
     const [fingerprint] = await this.duplicateRepository.getVideoFingerprints([asset.id]);
     if (!fingerprint) {
       await this.jobRepository.queue({ name: JobName.AssetVideoFingerprint, data: { id: asset.id } });
-      return [];
+      return 'pending';
     }
 
     const hashMatches = await this.duplicateRepository.searchVideoFingerprints({
@@ -695,13 +706,14 @@ export class DuplicateService extends BaseService {
       );
     }
 
-    return candidates.filter(({ assetId }) => {
+    const confirmed = candidates.filter(({ assetId }) => {
       const other = fingerprints.get(assetId);
       return (
         other !== undefined &&
         compareVideoFingerprints(fingerprint, other, { maxBits: maxHashDistance, minMatchFraction }).isDuplicate
       );
     });
+    return confirmed.length === 0 && unfingerprinted.length > 0 ? 'pending' : confirmed;
   }
 
   private async updateDuplicates(
