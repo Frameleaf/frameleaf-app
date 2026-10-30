@@ -25,7 +25,8 @@ export function deferJobUntilDependency(reason: JobDependencyReason) {
 export function deferJobOnTransientFailure(reason: JobDependencyReason, maxAttempts: number) {
   const context = queueExecution.getStore();
   if (!context?.claim.safeToRetry || context.claim.attempt > maxAttempts) return;
-  deferJobUntilDependency(reason);
+  // A refusal already recorded in this execution (e.g. destination capacity) keeps its own reason.
+  deferJobUntilDependency(context.dependencyReason ?? reason);
 }
 
 /** Admission errors can be caught by services; retain the deferred outcome in their execution scope. */
