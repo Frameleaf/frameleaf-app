@@ -47,8 +47,10 @@
   import {
     AssetTypeEnum,
     LibraryItemSearchKind,
+    LibraryScope,
     LibraryViewScope,
     getAlbumHierarchy,
+    type AlbumResponseDto,
     searchLibraryItems,
     type SearchFilter,
     getPartners,
@@ -125,7 +127,16 @@
   const flipped = new SvelteSet<string>();
 
   let treeRequest = 0;
-  const workspaceScope = $derived(searchContextFor(new URL(page.url.href)).query.filter.libraryScope);
+  /**
+   * The workspace the URL names; failing that, a Boards collection opened by its own address
+   * (`/albums/<id>`) is still in Boards (FL-670).
+   */
+  const workspaceScope = $derived(
+    searchContextFor(new URL(page.url.href)).query.filter.libraryScope ??
+      ((page.data as { album?: AlbumResponseDto } | undefined)?.album?.libraryScope === LibraryScope.Design
+        ? LibraryViewScope.Design
+        : undefined),
+  );
   const scopedHref = (href: string) => workspaceHref(href, workspaceScope, page.url.origin);
   const refreshAlbums = async (scope = workspaceScope) => {
     const version = ++treeRequest;

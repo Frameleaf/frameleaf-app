@@ -89,7 +89,12 @@
   let { slideshowState, slideshowNavigation } = slideshowStore;
 
   let album = $state(data.album);
-  const tree = $derived(data.tree);
+  /** The tree of the workspace shown (FL-670), chosen here so a filter change never reloads the trees. */
+  const tree = $derived(
+    albumSearchContext(new URL(page.url.href), album).filter.libraryScope === LibraryViewScope.Design
+      ? data.workspaceTrees[1]
+      : data.workspaceTrees[0],
+  );
   let timelineManager = $state<TimelineManager>() as TimelineManager;
   let viewerInvisible = $state(false);
   let activityOpen = $state(false);
@@ -518,6 +523,7 @@
       !album.albumName &&
       bookmarkCount === 0 &&
       childAlbums.length === 0 &&
+      data.workspaceTrees.every((each) => directoryAlbums(each).every(({ parentId }) => parentId !== album.id)) &&
       isOwner(album, currentUserId)
     ) {
       await handleDeleteAlbum(album, { notify: false });
@@ -655,7 +661,7 @@
 />
 <CommandPaletteDefaultProvider name={$t('album')} actions={[Upload, Cast, Close]} />
 
-{#snippet header()}
+{#snippet header(filteredCount: number | null = null)}
   {#key albumId}
     {@const view = albumView}
     <AlbumHeader
@@ -673,6 +679,7 @@
       ownerBadges={showAlbumUsers}
       {assetCount}
       itemCount={assetCount + bookmarkCount}
+      {filteredCount}
       onAlbumChange={(next) => (album = next)}
       onRefresh={() => refreshEverything(view)}
       onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
@@ -692,6 +699,7 @@
   toolbar band spans the page (LIB-P4). The comments sheet is fixed over the right edge (SHARING-P2).
 -->
 <UserPageLayout
+  fill={mixedAlbum}
   scrollbar={false}
   onUploadClick={() =>
     void openFileUploadDialog({ albumId, libraryScope: designContext ? LibraryScope.Design : undefined })}
