@@ -87,6 +87,21 @@ describe(DuplicateRepository.name, () => {
       await expect(sut.getVideoFingerprints([asset.id])).resolves.toEqual([]);
     });
 
+    it("lists the other members of an asset's group", async () => {
+      const { assetRepository, database, sut, userRepository } = setup();
+      const user = await createUser(userRepository);
+      const [a, b, c, alone] = [
+        await createAsset(assetRepository, user.id),
+        await createAsset(assetRepository, user.id),
+        await createAsset(assetRepository, user.id),
+        await createAsset(assetRepository, user.id),
+      ];
+      await database.updateTable('asset').set({ duplicateId: a.id }).where('id', 'in', [a.id, b.id, c.id]).execute();
+
+      await expect(sut.getGroupMateIds(a.id).then((ids) => ids.toSorted())).resolves.toEqual([b.id, c.id].toSorted());
+      await expect(sut.getGroupMateIds(alone.id)).resolves.toEqual([]);
+    });
+
     it("finds the owner's videos with a frame within the bit distance", async () => {
       const { assetRepository, sut, userRepository } = setup();
       const user = await createUser(userRepository);

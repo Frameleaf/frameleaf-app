@@ -440,6 +440,19 @@ export class DuplicateRepository {
     return this.db.selectFrom('asset_video_fingerprint').selectAll().where('assetId', '=', anyUuid(assetIds)).execute();
   }
 
+  /** FL-651: the other members of the look-alike group an asset is in. */
+  async getGroupMateIds(assetId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.duplicateId', '=', (eb) =>
+        eb.selectFrom('asset as member').select('member.duplicateId').where('member.id', '=', asUuid(assetId)),
+      )
+      .where('asset.id', '!=', asUuid(assetId))
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
   async upsertVideoFingerprint(fingerprint: Insertable<AssetVideoFingerprintTable>) {
     await this.db
       .insertInto('asset_video_fingerprint')

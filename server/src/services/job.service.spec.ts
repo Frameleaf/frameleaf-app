@@ -142,6 +142,23 @@ describe(JobService.name, () => {
         name: JobName.AssetDetectDuplicates,
         data: { id: 'asset-1' },
       });
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('should check a fingerprinted video and its group mates for duplicates again', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+      mocks.duplicateRepository.getGroupMateIds.mockResolvedValue(['asset-2']);
+
+      await sut.onJobRun(QueueName.VideoDuplicateDetection, {
+        name: JobName.AssetVideoFingerprint,
+        data: { id: 'asset-1' },
+      });
+
+      expect(mocks.duplicateRepository.getGroupMateIds).toHaveBeenCalledWith('asset-1');
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetDetectDuplicates, data: { id: 'asset-1' } },
+        { name: JobName.AssetDetectDuplicates, data: { id: 'asset-2' } },
+      ]);
     });
 
     const tests: Array<{ item: JobItem; jobs: JobName[]; stub?: any }> = [
