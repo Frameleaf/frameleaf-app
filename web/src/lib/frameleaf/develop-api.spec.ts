@@ -1,11 +1,5 @@
 import { AssetDevelopFileKind, defaults } from '@frameleaf/sdk';
-import {
-  developFileUrl,
-  parseHdrHistogram,
-  PREVIEW_BUSY_GIVE_UP_MS,
-  PREVIEW_BUSY_RETRY_MS,
-  requestDevelopPreview,
-} from './develop-api';
+import { developFileUrl, parseHdrHistogram, requestDevelopPreview } from './develop-api';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { params: {} } }));
 
@@ -85,7 +79,8 @@ describe('a preview while the server is busy with another render (FL-677)', () =
     const fetch = vi.fn().mockResolvedValueOnce(busy()).mockResolvedValueOnce(busy()).mockResolvedValueOnce(image());
     defaults.fetch = fetch;
     const pending = requestDevelopPreview('asset', { version: 1 } as never, 1280);
-    await vi.advanceTimersByTimeAsync(PREVIEW_BUSY_RETRY_MS[0] + PREVIEW_BUSY_RETRY_MS[1]);
+    // Waits 0.5 s, then 1 s, before the third request.
+    await vi.advanceTimersByTimeAsync(1500);
     await expect(pending).resolves.toMatchObject({ url: 'blob:preview' });
     expect(fetch).toHaveBeenCalledTimes(3);
   });
@@ -102,11 +97,29 @@ describe('a preview while the server is busy with another render (FL-677)', () =
     expect(fetch).toHaveBeenCalledOnce();
   });
 
+  it('bounds a retry that is still rendering when the wait runs out', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(busy())
+      .mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise((_resolve, reject) =>
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))),
+          ),
+      );
+    defaults.fetch = fetch;
+    const pending = requestDevelopPreview('asset', { version: 1 } as never, 1280);
+    const assertion = expect(pending).rejects.toMatchObject({ status: 503 });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await assertion;
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('gives up after a bounded wait and fails at once on other errors', async () => {
     defaults.fetch = vi.fn().mockImplementation(() => Promise.resolve(busy()));
     const pending = requestDevelopPreview('asset', { version: 1 } as never, 1280);
     const assertion = expect(pending).rejects.toMatchObject({ status: 503 });
-    await vi.advanceTimersByTimeAsync(PREVIEW_BUSY_GIVE_UP_MS + 5000);
+    await vi.advanceTimersByTimeAsync(125_000);
     await assertion;
 
     const failed = vi.fn().mockResolvedValue(new Response('{}', { status: 500 }));

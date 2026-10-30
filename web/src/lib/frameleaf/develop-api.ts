@@ -128,7 +128,9 @@ const pause = (ms: number, signal?: AbortSignal) =>
 /**
  * Renders the recipe on the server at preview size and returns an object URL. The caller owns
  * the URL and revokes it when a newer preview replaces it; an aborted request resolves to null.
- * While the server is busy with another render it waits and retries instead of failing.
+ * While the server is busy with another render it waits and retries instead of failing. From the
+ * first busy answer, every pause and retry shares one bounded wait; when it runs out, the last busy
+ * error is thrown.
  */
 export async function requestDevelopPreview(
   assetId: string,
@@ -137,19 +139,39 @@ export async function requestDevelopPreview(
   signal?: AbortSignal,
   dynamicRange?: 'auto' | 'sdr' | 'hdr',
 ): Promise<PreviewResult | null> {
-  const started = Date.now();
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await renderPreview(assetId, recipe, size, signal, dynamicRange);
-    } catch (error) {
-      if (!isBusy(error) || Date.now() - started >= PREVIEW_BUSY_GIVE_UP_MS) {
-        throw error;
-      }
-      const delay = PREVIEW_BUSY_RETRY_MS[Math.min(attempt, PREVIEW_BUSY_RETRY_MS.length - 1)];
-      if (!(await pause(delay, signal))) {
-        return null;
+  let giveUp: AbortController | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let busy: unknown;
+  const bounded = () => (giveUp ? (signal ? AbortSignal.any([signal, giveUp.signal]) : giveUp.signal) : signal);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const result = await renderPreview(assetId, recipe, size, bounded(), dynamicRange);
+        if (result === null && giveUp?.signal.aborted && !signal?.aborted) {
+          throw busy;
+        }
+        return result;
+      } catch (error) {
+        if (!isBusy(error)) {
+          throw error;
+        }
+        busy = error;
+        if (!giveUp) {
+          const controller = new AbortController();
+          giveUp = controller;
+          timer = setTimeout(() => controller.abort(), PREVIEW_BUSY_GIVE_UP_MS);
+        }
+        const delay = PREVIEW_BUSY_RETRY_MS[Math.min(attempt, PREVIEW_BUSY_RETRY_MS.length - 1)];
+        if (!(await pause(delay, bounded()))) {
+          if (signal?.aborted) {
+            return null;
+          }
+          throw busy;
+        }
       }
     }
+  } finally {
+    clearTimeout(timer);
   }
 }
 
