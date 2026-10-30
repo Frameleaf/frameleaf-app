@@ -205,6 +205,49 @@ export const mergeBackupHistory = (
   return newer;
 };
 
+/**
+ * FL-697: Frameleaf Cloud's copy of the signed records may only advance a history saved here. Each record
+ * must be signed by a key already pinned in that history and extend its anchor link by link; the first
+ * one that does not ends the extension (`refused`), so Cloud can withhold newer records but never forge,
+ * reorder or roll back.
+ */
+export const extendBackupHistory = (history: BackupRecoveryHistory, remote: unknown[]) => {
+  let head = selectBackupSnapshot(history).record;
+  const accepted: BackupSnapshotRecord[] = [];
+  let refused = false;
+  for (const input of remote) {
+    let record: BackupSnapshotRecord;
+    try {
+      record = verifyBackupSnapshot(input, history.pinnedKeys);
+    } catch {
+      refused = true;
+      break;
+    }
+    if (record.descriptor.sequence <= history.anchor.sequence) continue;
+    if (record.descriptor.sequence !== head.descriptor.sequence + 1 || record.descriptor.previousDigest !== head.digest) {
+      refused = true;
+      break;
+    }
+    accepted.push(record);
+    head = record;
+  }
+  if (accepted.length === 0) return { history, refused };
+  const extended = mergeBackupHistory(history, {
+    pinnedKeys: history.pinnedKeys,
+    snapshots: [
+      ...history.snapshots.filter((record) => record.descriptor.sequence <= history.anchor.sequence),
+      ...accepted,
+    ],
+    anchor: {
+      instanceId: head.descriptor.instanceId,
+      vaultId: head.descriptor.vaultId,
+      sequence: head.descriptor.sequence,
+      digest: head.digest,
+    },
+  })!;
+  return { history: extended, refused };
+};
+
 export const backupRecoveryPackageSchema = keyEscrowBlobSchema.extend({
   version: z.literal(2),
   vaultId: z.uuid(),
