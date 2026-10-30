@@ -66,6 +66,11 @@ export class SpeechService {
     await this.assetsChanged([assetId]);
   }
 
+  @OnEvent({ name: 'AssetsChanged' })
+  async onAssetsChanged({ assetIds }: { assetIds: string[] }) {
+    await this.assetsChanged(assetIds);
+  }
+
   @OnEvent({ name: 'AssetLocked' })
   async onAssetLocked({ assetIds }: { assetIds: string[] }) {
     await this.assetsChanged(assetIds);

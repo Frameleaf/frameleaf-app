@@ -5716,7 +5716,7 @@
   "frameleaf_cloud_unlink_dialog_title": "Unlink this server from Frameleaf?",
   "frameleaf_cloud_unlink_title": "Unlink this server",
   "frameleaf_cloud_unlinked_description": "Frameleaf works fully without an account. Linking is optional and only adds cloud features.",
-  "frameleaf_cloud_unlinked_how": "You approve the link on {host} with a short code. Nothing from your library is uploaded by linking.",
+  "frameleaf_cloud_unlinked_how": "You approve the link in your Frameleaf Cloud account with a short code. Nothing from your library is uploaded by linking.",
   "frameleaf_cloud_unlinked_notice": "Server unlinked. Local features are unchanged.",
   "frameleaf_cloud_unlinked_title": "This server is not linked",
   "frameleaf_cloud_waiting": "Waiting for approval…",

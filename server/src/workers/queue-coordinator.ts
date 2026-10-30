@@ -48,6 +48,10 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   let progressBusy = false;
   let nextQueue = 0;
   let reconciliationDue = true;
+  // An idle server reconciles every queue less often: the 5 s scan doubles up to 30 s while full
+  // passes find nothing to run, and the first claim brings it back. Wakes still check for work each scan.
+  let idleReconciliations = 0;
+  let scansBeforeReconciliation = 0;
   const progress = new Map<string, number>();
 
   parentPort!.on('message', (message: QueueWorkerMessage) => {
@@ -109,6 +113,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   const tick = coalescedTask(async () => {
     const reconcile = reconciliationDue;
     reconciliationDue = false;
+    let claimed = 0;
     try {
       if (!ready) {
         await store.initialize(queues, workerId);
@@ -150,12 +155,21 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
           await store.feedManifest(queue);
           if (stopping) break;
           const claims = await store.claim(queue, workerId, capacity);
+          claimed += claims.length;
           for (const claim of claims) {
             active.set(claim.id, claim);
             watchdog.add(claim.id, performance.now(), claim.deadlineMs);
             parentPort!.postMessage({ type: 'execute', claim });
           }
         }
+      }
+      if (claimed > 0 || active.size > 0) {
+        idleReconciliations = 0;
+        scansBeforeReconciliation = 0;
+      } else if (reconcile) {
+        idleReconciliations = Math.min(idleReconciliations + 1, 3);
+        // 2, 4, then 6 scans: 10 s, 20 s, then 30 s apart
+        scansBeforeReconciliation = Math.min(2 ** idleReconciliations, 6) - 1;
       }
     } catch {
       if (reconcile) reconciliationDue = true;
@@ -166,7 +180,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   const notifications = queueNotifications(listener, () => void tick());
   notifications.connect();
   const scan = setInterval(() => {
-    reconciliationDue = true;
+    if (scansBeforeReconciliation-- <= 0) reconciliationDue = true;
     notifications.connect();
     void tick();
   }, QUEUE_TIMING.scan);

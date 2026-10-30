@@ -1992,7 +1992,7 @@ describe(AlbumService.name, () => {
         owner.id,
       );
       expect(mocks.album.addAssetIds).toHaveBeenCalledWith(album.id, [asset1.id, asset2.id, asset3.id]);
-      expect(mocks.event.emit).toHaveBeenCalledWith('AssetChanged', { assetId: asset1.id });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [asset1.id, asset2.id, asset3.id] });
     });
 
     it('should not set the thumbnail if the album has one already', async () => {

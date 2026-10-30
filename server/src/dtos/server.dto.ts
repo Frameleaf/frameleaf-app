@@ -266,6 +266,9 @@ const ServerConfigSchema = z
     userDeleteDelay: z.int().describe('Delay in days before deleted users are permanently removed'),
     isInitialized: z.boolean().describe('Whether the server has been initialized'),
     isOnboarded: z.boolean().describe('Whether the admin has completed onboarding'),
+    isNewServerSetup: z
+      .boolean()
+      .describe('Whether first-run setup in progress is for a new server rather than an existing library'),
     externalDomain: z.string().describe('External domain URL'),
     publicUsers: z.boolean().describe('Whether public user registration is enabled'),
     mapDarkStyleUrl: z.string().describe('Map dark style URL'),

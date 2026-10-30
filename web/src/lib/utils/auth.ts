@@ -28,16 +28,12 @@ export const authenticate = async (url: URL, options?: AuthOptions) => {
   }
 
   // FL-176: until Frameleaf setup is complete, an administrator is sent to it; others are not.
-  let server: { isInitialized: boolean; isOnboarded: boolean } | undefined;
-  try {
-    server = serverConfigManager.value;
-  } catch {
-    server = undefined;
-  }
+  // a config that cannot be read fails the load rather than letting it past the setup redirect
+  const server = await serverConfigManager.ready();
   // The path is read only while setup could redirect. Reading `url.pathname` here made every page
   // load that calls this depend on the path, so opening or closing an item in an album (or any other
   // view with the item in its address) loaded the whole page's data again.
-  const setup = server ? setupRedirect(() => url.pathname, authManager.user, server) : null;
+  const setup = setupRedirect(() => url.pathname, authManager.user, server);
   if (setup) {
     redirect(307, setup);
   }

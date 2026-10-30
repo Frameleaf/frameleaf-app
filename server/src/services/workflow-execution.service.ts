@@ -195,6 +195,28 @@ export class WorkflowExecutionService extends BaseService {
     );
   }
 
+  @OnEvent({ name: 'AssetsChanged' })
+  async onAssetsChanged({ assetIds }: ArgOf<'AssetsChanged'>) {
+    // one owner lookup and one workflow read per owner, then one queue write per page, instead of a
+    // round trip per photo; pages keep a 10,000-photo edit from building one huge statement
+    for (let start = 0; start < assetIds.length; start += 500) {
+      const owners = Map.groupBy(
+        await this.workflowRepository.getAssetOwners(assetIds.slice(start, start + 500)),
+        ({ ownerId }) => ownerId,
+      );
+      const jobs: JobItem[] = [];
+      for (const [userId, assets] of owners) {
+        const workflows = await this.workflowRepository.search({
+          userId,
+          trigger: WorkflowTrigger.AssetChanged,
+          enabled: true,
+        });
+        jobs.push(...assets.flatMap(({ id }) => this.assetTriggerJobs(workflows, id)));
+      }
+      await this.jobRepository.queueAll(jobs);
+    }
+  }
+
   @OnEvent({ name: 'AssetUntag' })
   onAssetUntagged({ assetId }: ArgOf<'AssetUntag'>) {
     return this.onAssetChanged({ assetId });

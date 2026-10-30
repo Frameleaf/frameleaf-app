@@ -18,7 +18,10 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getStorage: vi.fn(),
 }));
-const server = vi.hoisted(() => ({ value: { isInitialized: true, isOnboarded: false } }));
+const server = vi.hoisted(() => ({
+  value: { isInitialized: true, isOnboarded: false },
+  ready: () => Promise.resolve(server.value),
+}));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({ serverConfigManager: server }));
 

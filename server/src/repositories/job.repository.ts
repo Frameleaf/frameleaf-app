@@ -115,6 +115,9 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.LandmarkMatchAll,
   // FL-413: every batch saves the run's cursor; a retry carries on from it
   JobName.IdenticalFilesCheck,
+  // a restart mid-batch must not leave the partner card "queued" forever; copies are keyed by
+  // source and recipient, so a re-run batch copies nothing twice
+  JobName.PartnerBackfill,
 ]);
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;

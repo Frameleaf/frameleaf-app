@@ -78,7 +78,8 @@
     getIntegrityOverview,
     getIntegrityReport,
     getIntegrityReportSummary,
-    getQueuesLegacy,
+    getQueue,
+    QueueName,
     getSummary,
     IntegrityCheckOutcome,
     IntegrityReport,
@@ -238,10 +239,10 @@
   // A check that is queued but not picked up yet is running too, or its results would be read early.
   $effect(() => {
     const interval = setInterval(() => {
-      void getQueuesLegacy()
-        .then(({ integrityCheck }) => {
-          const { active, waiting, delayed } = integrityCheck.jobCounts;
-          const busy = integrityCheck.queueStatus.isActive || active + waiting + delayed > 0;
+      void getQueue({ name: QueueName.IntegrityCheck })
+        .then(({ statistics: { active, waiting, delayed }, hasUnfinishedWork }) => {
+          // a paused or not yet admitted check has no counts but is still to run
+          const busy = hasUnfinishedWork || active + waiting + delayed > 0;
           if (!busy && running) {
             void load();
           } else if (busy) {

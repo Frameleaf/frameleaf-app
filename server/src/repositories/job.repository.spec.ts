@@ -144,6 +144,7 @@ describe(JobRepository.name, () => {
       { name: JobName.AssetExtractMetadata, data: { id: 'asset' } },
       { name: JobName.AssetDetectFaces, data: { id: 'asset' } },
       { name: JobName.SmartSearchQueueAll, data: { force: true } },
+      { name: JobName.PartnerBackfill, data: { sharedById: 'owner', sharedWithId: 'partner' } },
     ] as const) {
       await sut.queue(item);
       expect(enqueue.mock.lastCall?.[0][0].safeToRetry).toBe(true);

@@ -928,7 +928,7 @@ export class PersonService extends BaseService {
 
     const affected = ownerId ? await this.workflowPersonAssets(ownerId, groupIds) : [];
     const people = await this.personRepository.delete(groupIds, ownerId);
-    for (const assetId of affected) await this.eventRepository.emit('AssetChanged', { assetId });
+    await this.emitAssetsChanged(affected);
     await this.cleanupRemovedPeople(people, ownerId);
   }
 
@@ -1554,7 +1554,7 @@ export class PersonService extends BaseService {
             );
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
-          for (const assetId of affected) await this.eventRepository.emit('AssetChanged', { assetId });
+          await this.emitAssetsChanged(affected);
           await this.cleanupRemovedPeople(people, targetPerson.ownerId);
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
@@ -1867,7 +1867,7 @@ export class PersonService extends BaseService {
     if (assetIds.length === 0) {
       return;
     }
-    for (const assetId of new Set(assetIds)) await this.eventRepository.emit('AssetChanged', { assetId });
+    await this.emitAssetsChanged(assetIds);
     const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', [...new Set(assetIds)]);
     if (sources.length > 0) {
       await this.jobRepository.queueAll(
