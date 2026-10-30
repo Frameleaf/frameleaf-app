@@ -358,7 +358,7 @@
     "frameleaf_maintenance_restore_consequence_data": "Metadata, albums, people, edits and settings return to the state in this backup.",
     "frameleaf_maintenance_restore_consequence_later": "Changes made after the backup are lost unless you create a backup first.",
     "frameleaf_maintenance_restore_consequence_originals": "Original files on disk are not touched.",
-    "frameleaf_maintenance_restore_consequence_signed_out": "Everyone is signed out, and the server stays in maintenance mode until you end it.",
+    "frameleaf_maintenance_restore_consequence_signed_out": "When the restore finishes, the server opens again on its own. Anyone who signed in after this backup was made needs to sign in again. If the restore fails, the server stays in maintenance mode so you can read what happened.",
     "frameleaf_maintenance_restore_kind_pre_restore": "Before restore",
     "frameleaf_maintenance_restore_steps": "The restore runs in 4 steps: enter maintenance mode, restore the database, run migrations, verify the library.",
     "frameleaf_maintenance_restore_summary": "{kind} backup from {date} · {size}",

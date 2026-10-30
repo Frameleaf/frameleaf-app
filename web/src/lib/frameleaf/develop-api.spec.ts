@@ -59,3 +59,74 @@ it('collects HDR evidence through the configured SDK fetch wrapper', async () =>
     revoke.mockRestore();
   }
 });
+
+describe('a preview while the server is busy with another render (FL-677)', () => {
+  let previous: typeof defaults.fetch;
+  beforeEach(() => {
+    previous = defaults.fetch;
+    vi.useFakeTimers();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview');
+  });
+  afterEach(() => {
+    defaults.fetch = previous;
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+  const busy = () => Response.json({ message: 'Native development is busy; try again shortly' }, { status: 503 });
+  const image = () => new Response(new Blob(['jpeg']), { headers: { 'Content-Type': 'image/jpeg' } });
+
+  it('waits and asks again instead of failing', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(busy()).mockResolvedValueOnce(busy()).mockResolvedValueOnce(image());
+    defaults.fetch = fetch;
+    const pending = requestDevelopPreview('asset', { version: 1 } as never, 1280);
+    // Waits 0.5 s, then 1 s, before the third request.
+    await vi.advanceTimersByTimeAsync(1500);
+    await expect(pending).resolves.toMatchObject({ url: 'blob:preview' });
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops waiting as soon as a newer preview supersedes it', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(busy()));
+    defaults.fetch = fetch;
+    const controller = new AbortController();
+    const pending = requestDevelopPreview('asset', { version: 1 } as never, 1280, controller.signal);
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await expect(pending).resolves.toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it('bounds a retry that is still rendering when the wait runs out', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(busy())
+      .mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise((_resolve, reject) =>
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))),
+          ),
+      );
+    defaults.fetch = fetch;
+    const pending = requestDevelopPreview('asset', { version: 1 } as never, 1280);
+    const assertion = expect(pending).rejects.toMatchObject({ status: 503 });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await assertion;
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after a bounded wait and fails at once on other errors', async () => {
+    defaults.fetch = vi.fn().mockImplementation(() => Promise.resolve(busy()));
+    const pending = requestDevelopPreview('asset', { version: 1 } as never, 1280);
+    const assertion = expect(pending).rejects.toMatchObject({ status: 503 });
+    await vi.advanceTimersByTimeAsync(125_000);
+    await assertion;
+
+    const failed = vi.fn().mockResolvedValue(new Response('{}', { status: 500 }));
+    defaults.fetch = failed;
+    await expect(requestDevelopPreview('asset', { version: 1 } as never, 1280)).rejects.toMatchObject({
+      status: 500,
+    });
+    expect(failed).toHaveBeenCalledOnce();
+  });
+});
