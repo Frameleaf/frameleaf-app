@@ -84,8 +84,15 @@
     projectId = null,
     captionLanguages = [],
     empty = false,
+    hdrPicture = false,
     onExport,
   }: {
+    /**
+     * FL-674: an export that keeps the source colour keeps an HDR picture (every placed video is an
+     * HDR original). Otherwise it is SDR, whatever the working range, and a 10-bit format needs a
+     * render worker that writes 10-bit SDR.
+     */
+    hdrPicture?: boolean;
     /** FL-677: nothing is placed on the timeline, so there is nothing to export yet. */
     empty?: boolean;
     /** FL-641: other caption languages that go with the export as subtitle files, already named. */
@@ -290,8 +297,8 @@
     }
   });
 
-  /** FL-674: the project's picture, which decides whether a 10-bit format is an HDR master or SDR. */
-  const picture = $derived({ hdrPicture: outputIntent === 'hdr' });
+  /** FL-674: the export's picture, which decides whether a 10-bit format is an HDR master or SDR. */
+  const picture = $derived({ hdrPicture });
 
   /**
    * FL-674: where an opening starts. The prototype's defaults (HEVC Main10 at 2160p) when the render
@@ -302,7 +309,7 @@
   const startingChoice = (): { format: StudioExportFormat; resolution: StudioExportResolution } => {
     const fallback = { format: StudioExportFormat.Mp4HevcMain10, resolution: StudioExportResolution.$2160P };
     const evidence = untrack(() => renderEvidence);
-    const hdrPicture = untrack(() => outputIntent === 'hdr');
+    const keepsHdr = untrack(() => hdrPicture);
     for (const { value: candidate } of [...videoFormats, ...moreVideoFormats]) {
       for (const { value: size } of videoResolutions) {
         const supported = evaluateStudioRender(evidence, MediaOperationDestination.Local, {
@@ -311,7 +318,7 @@
           resolution: size,
           quality: StudioExportQuality.High,
           subtitleMode: StudioExportSubtitleMode.Burn,
-          hdrPicture,
+          hdrPicture: keepsHdr,
         }).supported;
         if (supported) {
           return { format: candidate, resolution: size };
@@ -321,12 +328,16 @@
     return fallback;
   };
 
+  /** The person picked a format, resolution, preset or shape in this opening. */
+  let chosen = $state(false);
+
   // Every opening starts from the prototype's defaults, or the best the render workers can produce.
   $effect(() => {
     if (!open) {
       return;
     }
 
+    chosen = false;
     const start = startingChoice();
     format = start.format;
     color = StudioExportColor.Preserve;
@@ -348,6 +359,19 @@
     framingState = 'idle';
   });
 
+  // FL-674: the render evidence (or which sources are HDR) can arrive after the dialog opens. Until the
+  // person picks something, the starting choice follows it rather than staying on a refused default.
+  $effect(() => {
+    void renderEvidence;
+    void hdrPicture;
+    if (!untrack(() => open) || untrack(() => chosen)) {
+      return;
+    }
+    const start = startingChoice();
+    format = start.format;
+    resolution = start.resolution;
+  });
+
   /* Shape (FL-563): Original, Vertical 9:16 or Square 1:1, chosen per export; the project is not changed. */
   const shapes: { value: StudioExportShape; label: Translations }[] = [
     { value: StudioExportShape.Original, label: 'frameleaf_studio_export_shape_original' },
@@ -366,6 +390,7 @@
     !STUDIO_AUDIO_FORMATS.includes(value) &&
     ![StudioExportFormat.Mp4HevcMain10, StudioExportFormat.WebmAv1, StudioExportFormat.Prores422Hq].includes(value);
   const chooseShape = (value: StudioExportShape) => {
+    chosen = true;
     shape = value;
     if (isReshaped(value)) {
       // Vertical and square films are for sharing: an SDR video format, the colour kept as it is.
@@ -518,6 +543,7 @@
     )?.id ?? null,
   );
   const applyPreset = (preset: (typeof presets)[number]) => {
+    chosen = true;
     format = preset.format;
     color = StudioExportColor.Preserve;
     resolution = preset.resolution;
@@ -631,7 +657,7 @@
     <div class="grid">
       <label class="field" for="{fieldId}-format">
         <span>{$t('frameleaf_studio_export_format')}</span>
-        <select id="{fieldId}-format" bind:value={format}>
+        <select id="{fieldId}-format" bind:value={format} onchange={() => (chosen = true)}>
           {#each formatGroups as group (group.label)}
             <optgroup label={$t(group.label)}>
               {#each group.items as item (item.value)}
@@ -651,7 +677,12 @@
       </label>
       <label class="field" for="{fieldId}-resolution">
         <span>{$t('frameleaf_studio_export_resolution')}</span>
-        <select id="{fieldId}-resolution" bind:value={resolution} disabled={photo || audioOnly}>
+        <select
+          id="{fieldId}-resolution"
+          bind:value={resolution}
+          disabled={photo || audioOnly}
+          onchange={() => (chosen = true)}
+        >
           {#each resolutions as item (item.value)}
             <option value={item.value} disabled={unsupported(choices.resolutions, item.value)}
               >{reshaped && shapedSize(shape, item.value)

@@ -787,6 +787,9 @@ export const operationOutputRequest = (settings: Record<string, unknown>, snapsh
     ...(settings as { format: string; color: string; resolution: string }),
     ...(typeof video?.minBitDepth === 'number' && { minBitDepth: video.minBitDepth }),
     ...(transfer && { transfer }),
+    // FL-674: a sealed SDR picture stays SDR at claim time, so a 10-bit format goes only to a session
+    // that writes 10-bit SDR, never to one whose 10-bit output is only an HDR master.
+    ...(video?.transfer === null && { transfer: null }),
   };
 };
 

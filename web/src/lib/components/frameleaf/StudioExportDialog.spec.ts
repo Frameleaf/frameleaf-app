@@ -522,19 +522,61 @@ describe('Studio export dialog', () => {
     );
   });
 
-  it('keeps Main10 for an HDR project on the bundled worker, where it is an HDR master (FL-674)', () => {
+  it('keeps Main10 when every placed video is HDR on the bundled worker, where it is an HDR master (FL-674)', () => {
     const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
     const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
     render(StudioExportDialog, {
       open: true,
       sequenceName: 'Lake trip',
       outputIntent: 'hdr',
+      hdrPicture: true,
       renderEvidence: [{ ...bundled, candidates: [candidate] }],
       onExport: vi.fn(),
     });
     expect(screen.getByLabelText('frameleaf_studio_export_format')).toHaveValue(StudioExportFormat.Mp4HevcMain10);
     expect(screen.getByLabelText('frameleaf_studio_export_resolution')).toHaveValue(StudioExportResolution.$1440P);
     expect(exportButton()).not.toBeDisabled();
+  });
+
+  it('judges an HDR working range with SDR sources as SDR, as the server seals it (FL-674)', () => {
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      outputIntent: 'hdr',
+      hdrPicture: false,
+      renderEvidence: [{ ...bundled, candidates: [candidate] }],
+      onExport: vi.fn(),
+    });
+    expect(screen.getByLabelText('frameleaf_studio_export_format')).toHaveValue(StudioExportFormat.Mp4H264);
+  });
+
+  it('follows render evidence that arrives after opening, until the person picks something (FL-674)', async () => {
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    const arrived = [{ ...bundled, candidates: [candidate] }];
+    const view = render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [],
+      onExport: vi.fn(),
+    });
+    const format = screen.getByLabelText('frameleaf_studio_export_format');
+    const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
+    // Nothing known yet: the prototype's defaults, explained.
+    expect(format).toHaveValue(StudioExportFormat.Mp4HevcMain10);
+    expect(screen.getByText('frameleaf_studio_render_refusal_no_qualified_worker')).toBeInTheDocument();
+
+    await view.rerender({ renderEvidence: arrived });
+    expect(format).toHaveValue(StudioExportFormat.Mp4H264);
+    expect(resolution).toHaveValue(StudioExportResolution.$1440P);
+    expect(exportButton()).not.toBeDisabled();
+
+    // A choice the person made stays put when the evidence changes again.
+    await fireEvent.change(resolution, { target: { value: StudioExportResolution.$720P } });
+    await view.rerender({ renderEvidence: [...arrived] });
+    expect(resolution).toHaveValue(StudioExportResolution.$720P);
   });
 
   it('refuses an empty timeline before anything is queued, and says why (FL-677)', () => {

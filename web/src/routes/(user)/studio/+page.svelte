@@ -117,7 +117,11 @@
     translateStudioCaptions,
     type StudioRestoredVersionDto,
   } from '@frameleaf/sdk';
-  import { studioRenderRefusalFromError, studioRenderRefusalKey } from '$lib/frameleaf/studio/render-output';
+  import {
+    studioKeepsHdrPicture,
+    studioRenderRefusalFromError,
+    studioRenderRefusalKey,
+  } from '$lib/frameleaf/studio/render-output';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
 
@@ -1525,6 +1529,7 @@
   projectId={storedRevision === null ? null : project.id}
   captionLanguages={captionExportLanguages}
   empty={isEmptyStudioGraph(project.graph)}
+  hdrPicture={studioKeepsHdrPicture(project.graph, sessionState?.resources?.hdrSources)}
   onExport={(choice) => void onExportVideo(choice)}
 />
 

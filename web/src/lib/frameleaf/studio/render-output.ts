@@ -174,6 +174,46 @@ export const evaluateStudioRender = (
   return { supported: true };
 };
 
+/**
+ * FL-674: whether an export that keeps the source colour keeps an HDR picture. The server seals one
+ * only when every placed video is an HDR original (`resources.hdrSources`), whatever the project's
+ * working range, so anything less is judged as SDR. Mixed PQ and HLG sources also seal SDR; the
+ * host cannot tell those apart, and the server still refuses such an export before any job.
+ */
+export const studioKeepsHdrPicture = (graph: unknown, hdrSources: readonly string[] | null | undefined): boolean => {
+  const hdr = new Set((hdrSources ?? []).map((id) => id.toLowerCase()));
+  if (hdr.size === 0) {
+    return false;
+  }
+  const videos = new Set<string>();
+  let budget = 100_000;
+  const visit = (value: unknown, depth: number) => {
+    if (--budget < 0 || depth > 64 || !value || typeof value !== 'object') {
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item, depth + 1);
+      }
+      return;
+    }
+    const node = value as Record<string, unknown>;
+    if (node.type === 'video' && typeof node.mediaId === 'string') {
+      videos.add(node.mediaId.toLowerCase());
+    }
+    for (const item of Object.values(node)) {
+      visit(item, depth + 1);
+    }
+  };
+  visit((graph as { timeline?: unknown } | null)?.timeline, 0);
+  for (const id of videos) {
+    if (!hdr.has(id)) {
+      return false;
+    }
+  }
+  return videos.size > 0;
+};
+
 export type StudioRenderChoice<T> = { value: T; verdict: StudioRenderVerdict };
 
 export type StudioRenderChoices = {

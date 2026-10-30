@@ -9,6 +9,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import {
   evaluateStudioRender,
+  studioKeepsHdrPicture,
   studioRenderChoices,
   studioRenderRefusalFromError,
   studioRenderRefusalKey,
@@ -181,6 +182,23 @@ describe('Studio render output (FL-42)', () => {
       supported: true,
     });
     expect(evaluateStudioRender([evidence()], lan, sdr)).toEqual({ supported: true });
+  });
+
+  it('keeps an HDR picture only when every placed video is an HDR original, as the server seals it (FL-674)', () => {
+    const graph = (...ids: string[]) => ({
+      timeline: {
+        items: [
+          ...ids.map((mediaId, index) => ({ id: `v${index}`, type: 'video', mediaId })),
+          { id: 'still', type: 'image', mediaId: 'photo' },
+        ],
+        compositions: [],
+      },
+    });
+    expect(studioKeepsHdrPicture(graph('A', 'B'), ['a', 'b'])).toBe(true);
+    expect(studioKeepsHdrPicture(graph('a', 'sdr'), ['a'])).toBe(false);
+    expect(studioKeepsHdrPicture(graph(), ['a'])).toBe(false);
+    expect(studioKeepsHdrPicture(graph('a'), [])).toBe(false);
+    expect(studioKeepsHdrPicture(null, ['a'])).toBe(false);
   });
 
   it('accepts a combination a qualified session verified', () => {
