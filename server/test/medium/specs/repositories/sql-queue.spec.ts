@@ -1120,6 +1120,59 @@ describe('PostgreSQL queue', () => {
     ).toHaveLength(2);
   });
 
+  it.each([true, false])(
+    'retries interrupted repeatable work after an unconfirmed stop and holds other work (safeToRetry=%s)',
+    async (safeToRetry) => {
+      await store.enqueue([intent({ safeToRetry })]);
+      const [old] = await store.claim(queue, workerA);
+      // A replaced container never wrote its stop proof; only the expired lease remains.
+      await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${old.id}::uuid`.execute(
+        db,
+      );
+      await store.recoverExpired();
+      const {
+        rows: [row],
+      } = await sql<{ state: string; token: string | null; finished: boolean; error: string }>`select state, token,
+        "finishedAt" is not null finished, error from job where id=${old.id}::uuid`.execute(db);
+      expect(await store.complete(old, [])).toBe(false);
+      if (!safeToRetry) {
+        expect(row).toEqual({
+          state: 'needs_attention',
+          token: null,
+          finished: true,
+          error: 'Executor stop could not be confirmed; review the worker before retrying',
+        });
+        await sql`update job set "availableAt" = now() where id = ${old.id}::uuid`.execute(db);
+        expect(await store.claim(queue, workerB)).toEqual([]);
+        return;
+      }
+      expect(row).toMatchObject({ state: 'pending', token: null, finished: false });
+      expect(row.error).toContain('retried automatically');
+      await sql`update job set "availableAt" = now() where id = ${old.id}::uuid`.execute(db);
+      const [retry] = await store.claim(queue, workerB);
+      expect(retry).toMatchObject({ id: old.id, attempt: 2 });
+      expect(await store.complete(retry, [])).toBe(true);
+      const { rows: attempts } = await sql<{ outcome: string }>`select outcome from job_attempt
+        where "jobId" = ${old.id}::uuid order by attempt`.execute(db);
+      expect(attempts.map(({ outcome }) => outcome)).toEqual(['pending', 'completed']);
+    },
+  );
+
+  it('keeps the retry budget for repeatable work whose stop is never confirmed', async () => {
+    await store.enqueue([intent()]);
+    for (const expected of ['pending', 'failed']) {
+      await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+      const [claim] = await store.claim(queue, workerA);
+      await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${claim.id}::uuid`.execute(
+        db,
+      );
+      await store.recoverExpired();
+      const { rows } = await sql`select state from job where id=${claim.id}::uuid`.execute(db);
+      expect(rows).toEqual([{ state: expected }]);
+    }
+    expect(await store.retryFailed(queue)).toBe(1);
+  });
+
   it('fences the linked operation without giving its dispatcher an independent retry after an unconfirmed stop', async () => {
     const { ctx } = newMediumService(BaseService, { database: db, mock: [LoggingRepository], real: [] });
     const operations = ctx.get(MediaOperationRepository);
