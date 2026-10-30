@@ -492,7 +492,7 @@
       <AlbumMark icon={icon.icon} color={icon.color} size="1.25em" class="fl-icon" />
     {/if}
     {#if !iconOnly}<span class="fl-label">{label}</span>{/if}
-    {#if boards && typeof icon !== 'string' && !iconOnly}<small class="fl-count">{icon.assetCount}</small>{/if}
+    {#if boards && typeof icon !== 'string' && !iconOnly}<small class="fl-count">{icon.itemCount}</small>{/if}
   </a>
 {/snippet}
 
@@ -533,7 +533,7 @@
         >
           <AlbumMark icon={node.icon} color={node.color} size="1.25em" class="fl-icon" />
           <span class="fl-label" title={node.name}>{node.name}</span>
-          {#if boards}<small class="fl-count">{node.assetCount}</small>{/if}
+          {#if boards}<small class="fl-count">{node.itemCount}</small>{/if}
         </a>
       </div>
       {#if isCollectionOpen(node.id)}

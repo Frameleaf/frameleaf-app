@@ -824,9 +824,9 @@
               <span>{childName}</span>
             </strong>
             <small class="sub-meta">
-              {$t('frameleaf_albums_items', { values: { count: child.assetCount } })}{inside > 0
-                ? ` · ${$t('frameleaf_boards_inside_count', { values: { count: inside } })}`
-                : ''}
+              {$t('frameleaf_albums_items', {
+                values: { count: child.assetCount + (child.bookmarkCount ?? 0) },
+              })}{inside > 0 ? ` · ${$t('frameleaf_boards_inside_count', { values: { count: inside } })}` : ''}
             </small>
           </a>
         {/each}

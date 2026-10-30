@@ -65652,6 +65652,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "bookmarkCount": {
+            "description": "Number of links (Boards). Populated by GET /albums/tree and GET /albums/hierarchy.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "color": {
             "description": "Colour name (grey, green, teal, blue, purple, pink, amber, red) or null",
             "nullable": true,

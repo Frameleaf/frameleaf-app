@@ -60,7 +60,7 @@ const bookmarkTextPredicate = (text: string, viewerId: string) =>
     case when bookmark."ownerId" = ${viewerId}::uuid then bookmark.note else null end))), lower(f_unaccent(${text}))) > 0`;
 
 // Apply the same session boundary to the final write, so a concurrent lock cannot be edited while locked.
-const visible = (auth: AuthDto) => sql<boolean>`
+export const visible = (auth: AuthDto) => sql<boolean>`
   (bookmark."isLocked" = false or bookmark."ownerId" = ${getLockedOwnerId(auth) ?? null}::uuid)
   and not ${auth.hiddenContent ? hiddenContentBookmarkIdExists(sql.ref('bookmark.id'), auth.hiddenContent) : sql`false`}
   and (bookmark."ownerId" = ${getLockedOwnerId(auth) ?? null}::uuid or not exists (

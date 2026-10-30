@@ -4127,6 +4127,8 @@ export type AlbumResponseDto = {
     albumUsers: AlbumUserResponseDto[];
     /** Number of assets */
     assetCount: number;
+    /** Number of links (Boards). Populated by GET /albums/tree and GET /albums/hierarchy. */
+    bookmarkCount?: number;
     /** Colour name (grey, green, teal, blue, purple, pink, amber, red) or null */
     color: string | null;
     contributorCounts?: ContributorCountResponseDto[];

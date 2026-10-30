@@ -3,7 +3,7 @@ import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { CaptureCommitDto } from 'src/dtos/capture.dto.js';
-import { AlbumUserRole, LibraryScope, Permission, UserMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetStatus, LibraryScope, Permission, UserMetadataKey } from 'src/enum.js';
 import { AssetSourceRepository } from 'src/repositories/asset-source.repository.js';
 import { DB } from 'src/schema/index.js';
 import { CaptureReceiptTable } from 'src/schema/tables/capture-receipt.table.js';
@@ -202,6 +202,20 @@ export class CaptureRepository {
       });
       return { kind: 'asset', itemId: asset.id, status: published.status };
     });
+  }
+
+  /** The owner's Boards copy of these bytes sitting in the Trash, which publication would reuse as the duplicate. */
+  async getTrashedCapture(auth: AuthDto, sha256: string) {
+    const asset = await this.db
+      .selectFrom('asset')
+      .select('id')
+      .where('ownerId', '=', auth.user.id)
+      .where('checksum', '=', Buffer.from(sha256, 'hex'))
+      .where('libraryId', 'is', null)
+      .where('status', '=', AssetStatus.Trashed)
+      .where('libraryScope', 'in', [LibraryScope.Design, LibraryScope.Both])
+      .executeTakeFirst();
+    return asset?.id;
   }
 
   getCapturedAsset(auth: AuthDto, id: string, tx: Kysely<DB> = this.db) {
