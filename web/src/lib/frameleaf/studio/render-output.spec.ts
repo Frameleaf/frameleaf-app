@@ -184,7 +184,7 @@ describe('Studio render output (FL-42)', () => {
     expect(evaluateStudioRender([evidence()], lan, sdr)).toEqual({ supported: true });
   });
 
-  it('keeps an HDR picture only when every placed video is an HDR original, as the server seals it (FL-674)', () => {
+  it('keeps an HDR picture only when every placed video shares one HDR transfer, as the server seals it (FL-674, FL-689)', () => {
     const graph = (...ids: string[]) => ({
       timeline: {
         items: [
@@ -194,11 +194,18 @@ describe('Studio render output (FL-42)', () => {
         compositions: [],
       },
     });
-    expect(studioKeepsHdrPicture(graph('A', 'B'), ['a', 'b'])).toBe(true);
-    expect(studioKeepsHdrPicture(graph('a', 'sdr'), ['a'])).toBe(false);
-    expect(studioKeepsHdrPicture(graph(), ['a'])).toBe(false);
-    expect(studioKeepsHdrPicture(graph('a'), [])).toBe(false);
-    expect(studioKeepsHdrPicture(null, ['a'])).toBe(false);
+    const pq = { pqSources: ['a', 'b'], hlgSources: ['h'] };
+    expect(studioKeepsHdrPicture(graph('A', 'B'), pq)).toBe(true);
+    expect(studioKeepsHdrPicture(graph('h'), pq)).toBe(true);
+    // PQ mixed with HLG seals SDR, so a 10-bit format needs a worker that writes 10-bit SDR.
+    expect(studioKeepsHdrPicture(graph('a', 'h'), pq)).toBe(false);
+    // Dolby Vision with neither transfer is an HDR original, but seals SDR too.
+    expect(studioKeepsHdrPicture(graph('dolby'), pq)).toBe(false);
+    expect(studioKeepsHdrPicture(graph('a', 'sdr'), pq)).toBe(false);
+    expect(studioKeepsHdrPicture(graph(), pq)).toBe(false);
+    expect(studioKeepsHdrPicture(graph('a'), { pqSources: [], hlgSources: [] })).toBe(false);
+    expect(studioKeepsHdrPicture(graph('a'), undefined)).toBe(false);
+    expect(studioKeepsHdrPicture(null, pq)).toBe(false);
   });
 
   it('accepts a combination a qualified session verified', () => {

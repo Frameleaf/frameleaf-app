@@ -1592,7 +1592,7 @@
   projectId={storedRevision === null ? null : project.id}
   captionLanguages={captionExportLanguages}
   empty={isEmptyStudioExport(project.graph)}
-  hdrPicture={studioKeepsHdrPicture(project.graph, sessionState?.resources?.hdrSources)}
+  hdrPicture={studioKeepsHdrPicture(project.graph, sessionState?.resources)}
   onExport={(choice) => void onExportVideo(choice)}
 />
 

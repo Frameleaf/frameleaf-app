@@ -43,6 +43,8 @@ const detail = (access: StudioProjectAccess): StudioProjectDetailDto => ({
     unsupportedSources: [],
     hiddenSources: [],
     hdrSources: [],
+    pqSources: [],
+    hlgSources: [],
     hdrProxySources: [],
     checkedAt: '2026-10-09T12:00:00Z',
   },

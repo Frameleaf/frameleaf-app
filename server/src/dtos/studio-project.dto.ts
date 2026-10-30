@@ -89,6 +89,13 @@ const StudioProjectResourcesSchema = z
       .describe(
         'Placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named',
       ),
+    // FL-689
+    pqSources: z
+      .array(z.uuidv4())
+      .describe(
+        'The hdrSources with the PQ (SMPTE 2084) transfer. An export that keeps the source colour keeps an HDR picture only when every placed video shares one transfer',
+      ),
+    hlgSources: z.array(z.uuidv4()).describe('The hdrSources with the HLG (ARIB STD-B67) transfer'),
     // FL-97
     hdrProxySources: z
       .array(z.uuidv4())

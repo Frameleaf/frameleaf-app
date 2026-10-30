@@ -175,16 +175,15 @@ export const evaluateStudioRender = (
 };
 
 /**
- * FL-674: whether an export that keeps the source colour keeps an HDR picture. The server seals one
- * only when every placed video is an HDR original (`resources.hdrSources`), whatever the project's
- * working range, so anything less is judged as SDR. Mixed PQ and HLG sources also seal SDR; the
- * host cannot tell those apart, and the server still refuses such an export before any job.
+ * FL-674, FL-689: whether an export that keeps the source colour keeps an HDR picture. The server
+ * seals one only when every placed video shares one HDR transfer, whatever the project's working
+ * range: all PQ (`resources.pqSources`) or all HLG (`resources.hlgSources`). Anything less, such as
+ * PQ mixed with HLG, SDR, or Dolby Vision without either transfer, is judged as SDR.
  */
-export const studioKeepsHdrPicture = (graph: unknown, hdrSources: readonly string[] | null | undefined): boolean => {
-  const hdr = new Set((hdrSources ?? []).map((id) => id.toLowerCase()));
-  if (hdr.size === 0) {
-    return false;
-  }
+export const studioKeepsHdrPicture = (
+  graph: unknown,
+  resources: { pqSources?: readonly string[]; hlgSources?: readonly string[] } | null | undefined,
+): boolean => {
   const videos = new Set<string>();
   let budget = 100_000;
   const visit = (value: unknown, depth: number) => {
@@ -206,12 +205,16 @@ export const studioKeepsHdrPicture = (graph: unknown, hdrSources: readonly strin
     }
   };
   visit((graph as { timeline?: unknown } | null)?.timeline, 0);
-  for (const id of videos) {
-    if (!hdr.has(id)) {
-      return false;
+  const sharesTransfer = (sources: readonly string[] | undefined) => {
+    const transfer = new Set((sources ?? []).map((id) => id.toLowerCase()));
+    for (const id of videos) {
+      if (!transfer.has(id)) {
+        return false;
+      }
     }
-  }
-  return videos.size > 0;
+    return true;
+  };
+  return videos.size > 0 && (sharesTransfer(resources?.pqSources) || sharesTransfer(resources?.hlgSources));
 };
 
 export type StudioRenderChoice<T> = { value: T; verdict: StudioRenderVerdict };

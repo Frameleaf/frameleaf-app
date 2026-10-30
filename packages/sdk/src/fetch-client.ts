@@ -15889,6 +15889,10 @@ export type StudioProjectResourcesDto = {
     hdrSources: string[];
     /** The owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer */
     hiddenSources: string[];
+    /** The hdrSources with the HLG (ARIB STD-B67) transfer */
+    hlgSources: string[];
+    /** The hdrSources with the PQ (SMPTE 2084) transfer. An export that keeps the source colour keeps an HDR picture only when every placed video shares one transfer */
+    pqSources: string[];
     /** References that were refused for the acting account */
     refusedCount: number;
     /** Placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer */
