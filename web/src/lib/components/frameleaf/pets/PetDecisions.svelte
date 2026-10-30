@@ -18,6 +18,7 @@
     deletePetObservation,
     getPetObservations,
     type PetObservationResponseDto,
+    type PetSpecies,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiAlertCircleOutline } from '@mdi/js';
@@ -25,11 +26,13 @@
 
   interface Props {
     petId: string;
+    /** The pet's species, so its photo thumbnails crop towards the head (`petThumbnailFocus`). */
+    species?: PetSpecies;
     /** Called after a decision changed, so the page can reload the pet's photos. */
     onChanged?: () => void;
   }
 
-  let { petId, onChanged }: Props = $props();
+  let { petId, species, onChanged }: Props = $props();
 
   let observations = $state<PetObservationResponseDto[]>([]);
   let loadedFor = $state<string | null>(null);
@@ -139,7 +142,7 @@
     <ul>
       {#each ordered as observation (observation.id)}
         <li class:stale={isStaleObservation(observation)} data-testid="pet-decision">
-          <PetThumbnail assetId={observation.assetId} size={56} alt="" />
+          <PetThumbnail assetId={observation.assetId} {species} size={56} alt="" />
           <div class="text">
             <p>
               {observation.state === PetObservationState.Confirmed

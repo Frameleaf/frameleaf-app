@@ -185,7 +185,7 @@
             </div>
           </div>
           <!-- FL-58: every decision about this pet, with remove/undo and review of changed photos. -->
-          <PetDecisions petId={pet.id} onChanged={() => void reload()} />
+          <PetDecisions petId={pet.id} species={pet.species} onChanged={() => void reload()} />
         </header>
       {/snippet}
 
