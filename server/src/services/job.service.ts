@@ -304,6 +304,12 @@ export class JobService extends BaseService {
         break;
       }
 
+      case JobName.AssetEncodeVideo: {
+        // FL-650: seek-bar previews come from the copy playback serves, so they follow the encode
+        await this.jobRepository.queue({ name: JobName.AssetWarmFilmstrip, data: { id: item.data.id } });
+        break;
+      }
+
       case JobName.AssetVideoEditGeneration: {
         const asset = await this.sendAssetEditReady(item.data.id);
         if (asset) {

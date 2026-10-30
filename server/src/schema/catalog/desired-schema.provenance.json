@@ -1,7 +1,7 @@
 {
   "sourceCommit": "107dfb49954d7712fce7d2d672b1c37d26ef03f6",
   "sourceHashes": {
-    "src/enum.ts": "d34b6a42251d64c2b8f690255cde86cfda0c7103d58658aba1ef73c85c100197",
+    "src/enum.ts": "4bee7f6766d95143327823b4838bd3f180287af919832bbfec36fb73f3e98f44",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",

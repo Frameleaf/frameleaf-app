@@ -57,6 +57,15 @@ describe('media scrub lifecycle', () => {
     range.dispatchEvent(new Event(event));
     expect(received).toHaveLength(1);
   });
+  it('seeks as you drag when live (FL-650: a file played directly)', () => {
+    range.setAttribute('live', '');
+    range.dispatchEvent(new Event('pointerdown'));
+    seek(1);
+    seek(2);
+    expect(received.map(({ detail }) => detail)).toEqual([1, 2]);
+    range.dispatchEvent(new Event('pointerup'));
+    expect(received).toHaveLength(2);
+  });
   it('commits keyboard input after 750 ms with the element as receiver', () => {
     key();
     seek(5);

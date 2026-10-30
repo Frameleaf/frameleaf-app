@@ -2323,6 +2323,7 @@ export enum JobName {
   AssetVideoEditGeneration = 'AssetVideoEditGeneration',
   AssetEncodeVideoQueueAll = 'AssetEncodeVideoQueueAll',
   AssetEncodeVideo = 'AssetEncodeVideo',
+  AssetWarmFilmstrip = 'AssetWarmFilmstrip',
   /** FL-97: make the Studio HDR intermediate of one HDR video. */
   StudioHdrProxyGenerate = 'StudioHdrProxyGenerate',
   AssetEmptyTrash = 'AssetEmptyTrash',
@@ -2478,10 +2479,12 @@ export enum JobName {
   IntegrityDeleteReports = 'IntegrityDeleteReports',
 }
 
-// Internal photography jobs are observed through the scoped workflow API, not legacy queue clients.
+// Internal jobs stay out of the public enum, which strict native decoders reject new values of:
+// photography jobs are observed through the scoped workflow API, and FL-650's seek-bar preview
+// warm-up is a background cache fill nobody watches.
 export const JobNameSchema = z
   .enum(JobName)
-  .exclude([JobName.PhotographyWorkflowRender])
+  .exclude([JobName.PhotographyWorkflowRender, JobName.AssetWarmFilmstrip])
   .describe('Job name')
   .meta({ id: 'JobName' });
 

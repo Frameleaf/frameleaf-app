@@ -545,6 +545,7 @@ export type JobItem =
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
   | { name: JobName.AssetEncodeVideo; data: IEntityJob }
+  | { name: JobName.AssetWarmFilmstrip; data: IEntityJob }
   | { name: JobName.StudioHdrProxyGenerate; data: IEntityJob }
   | { name: JobName.AssetVideoEditGeneration; data: IEntityJob & IEditOperationJob & { versionId?: string } }
 

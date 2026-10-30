@@ -3075,6 +3075,9 @@ describe(MediaService.name, () => {
       await sut.handleQueueVideoConversion({ force });
       expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(force);
       expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetEncodeVideo, query);
+      // FL-650: every video's seek-bar previews, which are a cache hit where they exist
+      expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetWarmFilmstrip, query);
       expect(mocks.assetJob.streamForVideoConversion).not.toHaveBeenCalled();
     });
   });

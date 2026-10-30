@@ -16,6 +16,11 @@ export const STUDIO_MEDIA_CACHE_VERSION = 1;
 
 export const FILMSTRIP_COUNT = { min: 1, max: 120, default: 20 } as const;
 export const FILMSTRIP_HEIGHT = { min: 32, max: 240, default: 90 } as const;
+/**
+ * FL-650: the variant the web player's seek bar shows as preview thumbnails, made ahead of time so
+ * the first hover is instant. The web player asks for the same one (VideoNativeViewer.svelte).
+ */
+export const PLAYER_FILMSTRIP = { count: 120, height: 180 } as const;
 /** Sprites stay within a width every mobile GPU accepts as one texture. */
 export const FILMSTRIP_MAX_SPRITE_WIDTH = 4096;
 /** Extreme aspect ratios (panoramic video) are cover-cropped to this. */
@@ -127,6 +132,58 @@ export const getFilmstripFrameCommand = (
     ],
     twoPass: false,
     progress: { frameCount: 1, percentInterval: 100 },
+  };
+};
+
+/**
+ * FL-650: up to this length a filmstrip is cut in one decoding pass, which for a phone clip takes
+ * a fraction of a second where a seek per frame starts ffmpeg up to 120 times. Longer videos keep
+ * the per-frame seeks, which skip decoding everything in between.
+ */
+export const FILMSTRIP_SINGLE_PASS_MAX_MS = 10 * 60 * 1000;
+
+/**
+ * All the frames of a filmstrip in one pass, as `<n>.jpg` (1-based) in the output pattern's folder:
+ * the first at the centre of the first slice, then one per slice, like `getFilmstripFrameCommand`.
+ */
+export const getFilmstripPassCommand = (
+  config: ConfigFFmpegDto,
+  video: VideoStreamInfo,
+  durationMs: number,
+  count: number,
+  height: number,
+): TranscodeCommand => {
+  const tonemap = new ThumbnailConfig({ ...config, targetResolution: 'original' }).getToneMapping(video);
+  const slice = Math.max(0, durationMs) / count;
+  return {
+    inputOptions: ['-ss', (slice / 2 / 1000).toFixed(3)],
+    outputOptions: [
+      '-map',
+      `0:${video.index}`,
+      '-map_metadata',
+      '-1',
+      '-an',
+      '-sn',
+      '-dn',
+      '-frames:v',
+      String(count),
+      '-vf',
+      [
+        `fps=${count * 1000}/${Math.max(1, Math.round(durationMs))}`,
+        ...tonemap,
+        `scale=-2:${height}:flags=bilinear`,
+      ].join(','),
+      '-pix_fmt',
+      'yuvj420p',
+      '-c:v',
+      'mjpeg',
+      '-q:v',
+      '3',
+      '-f',
+      'image2',
+    ],
+    twoPass: false,
+    progress: { frameCount: count, percentInterval: 100 },
   };
 };
 

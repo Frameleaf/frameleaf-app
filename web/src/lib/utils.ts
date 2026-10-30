@@ -261,6 +261,10 @@ export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
   });
 };
 
+/** FL-650: a video's filmstrip sprite, the variant and version its filmstrip index names. */
+export const getAssetFilmstripSpriteUrl = (id: string, options: { count: number; height: number; version: string }) =>
+  createUrl(`/assets/${id}/filmstrip/sprite`, { ...authManager.params, ...options });
+
 /** FL-97: the Studio HDR intermediate of an HDR original, read under asset.view; never the original. */
 export const getStudioHdrVideoUrl = (id: string) =>
   createUrl(`/assets/${id}/video/studio-hdr`, { ...authManager.params });
