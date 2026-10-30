@@ -1059,7 +1059,7 @@
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
       if (canExportVideo) {
-        videoExportOpen = true;
+        void openVideoExport();
       } else {
         toastManager.danger($t('frameleaf_studio_export_unavailable'));
       }
@@ -1222,6 +1222,27 @@
       const languages = sidecars.map((sidecar) => captionLanguageName(sidecar.language)).join(', ');
       toastManager.primary($t('frameleaf_studio_export_caption_languages_saved', { values: { languages } }));
     }
+  };
+  /**
+   * FL-674: the dialog picks its options from what the server knows about the project's sources
+   * (which are HDR, what is placed), so a pending edit is saved first. A save that fails leaves the
+   * dialog closed and says why.
+   */
+  const openVideoExport = async () => {
+    if (sessionState?.hasDraft && writable) {
+      try {
+        await session.flush();
+      } catch (error) {
+        handleError(error, $t('frameleaf_studio_export_failed'));
+        return;
+      }
+      // The session reports a failed save in its state rather than throwing; the edit is still unsaved.
+      if (session.state.hasDraft) {
+        toastManager.danger($t('frameleaf_studio_export_failed'));
+        return;
+      }
+    }
+    videoExportOpen = true;
   };
   const onExportVideo = async (choice: StudioExportChoice) => {
     if (sessionState?.hasDraft && writable) {
@@ -1485,7 +1506,7 @@
         void readReceipts();
       }
     : undefined}
-  onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
+  onExport={canExportVideo ? () => void openVideoExport() : undefined}
   onRename={canRename ? onRename : undefined}
   {workspace}
   {opening}

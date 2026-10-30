@@ -8,12 +8,19 @@ import type { PageData } from './$types';
 import StudioPage from './+page.svelte';
 
 const harness = vi.hoisted(() => ({
-  exportDialog: undefined as { onExport: (choice: object) => void } | undefined,
+  exportDialog: undefined as { onExport: (choice: object) => void; open?: boolean } | undefined,
+  host: undefined as { services: { requestExport: () => void }; onExport?: () => void } | undefined,
+  hasDraft: false,
+  flush: undefined as undefined | (() => Promise<void>),
 }));
 
 vi.mock('$app/navigation', () => ({ beforeNavigate: vi.fn(), goto: vi.fn(), replaceState: vi.fn() }));
 vi.mock('$lib/components/shared-components/navigation-bar/NavigationBar.svelte', () => ({ default: () => {} }));
-vi.mock('$lib/components/frameleaf/StudioHost.svelte', () => ({ default: () => {} }));
+vi.mock('$lib/components/frameleaf/StudioHost.svelte', () => ({
+  default: (_anchor: unknown, props: NonNullable<typeof harness.host>) => {
+    harness.host = props;
+  },
+}));
 vi.mock('$lib/components/frameleaf/StudioBundleExportDialog.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/Dialog.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/StudioExportDialog.svelte', () => ({
@@ -43,10 +50,12 @@ vi.mock('$lib/frameleaf/studio/project-imports', () => ({
 vi.mock('$lib/frameleaf/studio/import-retention', () => ({
   onStudioImportSessionRetired: () => () => {},
   reconcileRetainedImports: vi.fn().mockResolvedValue({ items: [] }),
+  retireStudioImportSessions: vi.fn(),
   submitRetainedImport: vi.fn(),
 }));
 vi.mock('$lib/frameleaf/studio/project-session', () => ({
   STUDIO_DRAFT_PROJECT_ID: 'draft',
+  isEmptyStudioGraph: () => false,
   createStudioProjectSession: (options: { onChange: (state: object) => void }) => {
     const state = {
       project: {
@@ -61,13 +70,17 @@ vi.mock('$lib/frameleaf/studio/project-session', () => ({
       },
       status: 'saved',
       access: 'owner',
-      hasDraft: false,
+      hasDraft: harness.hasDraft,
     };
     return {
       state,
       open: vi.fn(async () => options.onChange(state)),
       dispose: vi.fn(async () => {}),
-      flush: vi.fn(async () => {}),
+      flush: vi.fn(async () => {
+        await harness.flush?.();
+        state.hasDraft = false;
+        options.onChange({ ...state });
+      }),
       comments: vi.fn().mockResolvedValue({ items: [] }),
       setOnline: vi.fn(),
     };
@@ -115,4 +128,28 @@ it('stops following an export once the page is gone, even with a status read in 
   inFlight.resolve(running);
   await vi.advanceTimersByTimeAsync(60_000);
   expect(getMediaOperation).toHaveBeenCalledTimes(1);
+});
+
+it('saves a pending edit before the export dialog opens, and keeps it closed when the save fails (FL-674)', async () => {
+  authManager.setUser(userAdminFactory.build());
+  harness.hasDraft = true;
+  harness.flush = () => Promise.reject(new Error('offline'));
+  try {
+    render(StudioPage, { data });
+    await vi.waitFor(() => expect(harness.host).toBeDefined());
+    await tick();
+
+    harness.host!.services.requestExport();
+    await vi.waitFor(() => expect(harness.flush).toBeDefined());
+    await tick();
+    await tick();
+    expect(harness.exportDialog?.open).toBeFalsy();
+
+    harness.flush = async () => {};
+    harness.host!.services.requestExport();
+    await vi.waitFor(() => expect(harness.exportDialog?.open).toBe(true));
+  } finally {
+    harness.hasDraft = false;
+    harness.flush = undefined;
+  }
 });
