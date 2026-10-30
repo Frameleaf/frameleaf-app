@@ -103,6 +103,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.AssetGenerateVideoDuplicateFrames,
   JobName.AssetDetectDuplicatesQueueAll,
   JobName.AssetGenerateVideoDuplicateFramesQueueAll,
+  JobName.AssetVideoFingerprint,
+  JobName.AssetVideoFingerprintQueueAll,
   JobName.PetRecognition,
   JobName.VideoMomentCaptions,
   JobName.ImageDescription,
@@ -992,6 +994,11 @@ export class JobRepository {
       }
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
+      }
+      case JobName.AssetDetectDuplicates: {
+        // FL-651: a recheck after each group mate's fingerprint is its own run item, so one queued
+        // before the mate's own fingerprint existed does not swallow the later ones
+        return item.data.recheckAfter ? { jobId: `${item.data.id}/after/${item.data.recheckAfter}` } : null;
       }
       case JobName.StudioHdrProxyGenerate: {
         // FL-97: every project read asks for missing intermediates; one per video is enough

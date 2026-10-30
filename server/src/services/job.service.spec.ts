@@ -51,6 +51,25 @@ describe(JobService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.PetRecognition }));
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.BestPhotosScore }));
     });
+    it.each([
+      [true, JobName.AssetVideoFingerprint],
+      [false, JobName.AssetDetectDuplicates],
+    ])('follows an uploaded video with %s video comparison by %s (FL-651)', async (enabled, next) => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { duplicateDetection: { enhancedVideo: { enabled } } },
+      });
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+
+      await sut.onJobRun(QueueName.SmartSearch, {
+        name: JobName.SmartSearch,
+        data: { id: asset.id, source: 'upload' },
+      });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: next, data: { id: asset.id, source: 'upload' } });
+    });
+
     it('should process a successful job', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Success);
 
@@ -132,16 +151,33 @@ describe(JobService.name, () => {
       expect(mocks.asset.getByIdsWithAllRelationsButStacks).not.toHaveBeenCalled();
     });
 
-    it('should not run duplicate detection follow-up when video duplicate frame generation is skipped', async () => {
+    it('should not run duplicate detection follow-up when a video fingerprint is skipped', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Skipped);
 
-      const job: JobItem = { name: JobName.AssetGenerateVideoDuplicateFrames, data: { id: 'asset-1' } };
+      const job: JobItem = { name: JobName.AssetVideoFingerprint, data: { id: 'asset-1' } };
       await sut.onJobRun(QueueName.VideoDuplicateDetection, job);
 
       expect(mocks.job.queue).not.toHaveBeenCalledWith({
         name: JobName.AssetDetectDuplicates,
         data: { id: 'asset-1' },
       });
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('should check a fingerprinted video and its group mates for duplicates again', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+      mocks.duplicateRepository.getGroupMateIds.mockResolvedValue(['asset-2']);
+
+      await sut.onJobRun(QueueName.VideoDuplicateDetection, {
+        name: JobName.AssetVideoFingerprint,
+        data: { id: 'asset-1' },
+      });
+
+      expect(mocks.duplicateRepository.getGroupMateIds).toHaveBeenCalledWith('asset-1');
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetDetectDuplicates, data: { id: 'asset-1', recheckAfter: 'asset-1' } },
+        { name: JobName.AssetDetectDuplicates, data: { id: 'asset-2', recheckAfter: 'asset-1' } },
+      ]);
     });
 
     const tests: Array<{ item: JobItem; jobs: JobName[]; stub?: any }> = [

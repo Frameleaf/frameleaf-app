@@ -162,6 +162,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
       preferOriginalFormat: true,
       enhancedVideo: {
         enabled: true,
+        minMatchFraction: 0.7,
+        maxHashDistance: 8,
         frameCount: 4,
         minMatchingFrames: 2,
         maxDistance: 0.01,

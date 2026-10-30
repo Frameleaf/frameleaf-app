@@ -28,6 +28,8 @@ describe('public queue job compatibility (FL-283)', () => {
     const internal = new Set<JobName>([
       JobName.PhotographyWorkflowRender,
       JobName.AssetWarmFilmstrip,
+      JobName.AssetVideoFingerprintQueueAll,
+      JobName.AssetVideoFingerprint,
       JobName.DescriptionFillerTagCleanup,
     ]);
     const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));

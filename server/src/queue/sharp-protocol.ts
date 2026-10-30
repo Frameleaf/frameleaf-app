@@ -15,6 +15,7 @@ export const SHARP_OPERATIONS = [
   'writeStrippedStill',
   'composeImageGrid',
   'composeFilmstrip',
+  'filmstripFrameGrids',
   'renderDevelopGeometry',
   'encodeDevelopOutput',
   'generateThumbhash',

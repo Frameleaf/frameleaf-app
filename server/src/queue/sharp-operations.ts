@@ -25,6 +25,7 @@ import { extractPalette } from '../utils/asset-palette.js';
 import { applyDevelopCleanup } from '../utils/develop-cleanup.js';
 import { perspectiveFor, warpPerspective } from '../utils/develop-perspective.js';
 import { developRenderArtifacts, isActiveMask, planDevelopGeometry } from '../utils/develop-recipe.js';
+import { HASH_GRID } from '../utils/video-fingerprint.js';
 
 import type { KnownAssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
 import type { AssetEditActionItem } from 'src/dtos/editing.dto.js';
@@ -601,6 +602,30 @@ export class SharpOperations {
         ? sheet.webp({ quality, effort: 2 })
         : sheet.jpeg({ quality, chromaSubsampling: '4:2:0', progressive: false })
     ).toFile(output);
+  }
+
+  /** FL-651: each filmstrip tile as the small grayscale grid its difference hash is made from. */
+  async filmstripFrameGrids(
+    input: string,
+    tiles: Array<{ left: number; top: number; width: number; height: number }>,
+  ): Promise<number[][]> {
+    const sheet = await sharp(input, { limitInputPixels: this.maxPixels })
+      .grayscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const raw = { width: sheet.info.width, height: sheet.info.height, channels: sheet.info.channels };
+    const grids: number[][] = [];
+    for (const tile of tiles) {
+      const grid = await sharp(sheet.data, { raw })
+        .extract(tile)
+        .resize(HASH_GRID.width, HASH_GRID.height, { fit: 'fill' })
+        .extractChannel(0)
+        .raw()
+        .toBuffer();
+      grids.push([...grid]);
+      this.progress();
+    }
+    return grids;
   }
 
   private getImageDecodingPipeline(input: string | Buffer, options: DecodeToBufferOptions) {

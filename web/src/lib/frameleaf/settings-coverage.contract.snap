@@ -695,6 +695,17 @@
     "minimum": 0.001,
     "maximum": 0.1
   },
+  "machineLearning.duplicateDetection.enhancedVideo.maxHashDistance": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 16
+  },
+  "machineLearning.duplicateDetection.enhancedVideo.minMatchFraction": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0.5,
+    "maximum": 1
+  },
   "machineLearning.duplicateDetection.enhancedVideo.minMatchingFrames": {
     "type": "integer",
     "minimum": 1,

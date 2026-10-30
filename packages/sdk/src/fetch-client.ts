@@ -1649,11 +1649,15 @@ export type AdminConfigDuplicateDetectionDto = {
     enhancedVideo: {
         /** Whether enhanced video duplicate detection is enabled */
         enabled: boolean;
-        /** Number of video frames to sample for duplicate confirmation */
+        /** Deprecated: videos are compared by their whole timeline */
         frameCount: number;
-        /** Maximum distance threshold for enhanced video duplicate frame matching */
+        /** Deprecated: videos are compared by their whole timeline */
         maxDistance: number;
-        /** Minimum matching sampled frames required to confirm a video duplicate */
+        /** Most bits two frame hashes (64 bits) may differ by and still count as the same picture */
+        maxHashDistance?: number;
+        /** Share of the frames two videos have in common that must match to call them duplicates */
+        minMatchFraction?: number;
+        /** Deprecated: videos are compared by their whole timeline */
         minMatchingFrames: number;
     };
     /** Maximum distance threshold for duplicate detection */

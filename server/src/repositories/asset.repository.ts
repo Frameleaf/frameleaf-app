@@ -134,7 +134,6 @@ export type RemovedAsset = {
   reservationTemporaryPath: string | null;
   /** Its generated, edited and sidecar files. */
   files: AssetFile[];
-  videoDuplicateFramePaths: string[];
   /** Outputs of its restorations and develop revisions, whose rows go with it. */
   derivedPaths: string[];
   videoEditPaths?: string[];
@@ -1914,7 +1913,6 @@ export class AssetRepository {
       originalPath: lockedAsset.originalPath,
       reservationTemporaryPath: lockedAsset.reservationTemporaryPath,
       files: lockedAsset.files,
-      videoDuplicateFramePaths: lockedAsset.videoDuplicateFramePaths,
       derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths, ...studioHdrPaths])],
       ...(videoEditPaths.length > 0 && { videoEditPaths }),
       pendingMoves: lockedAsset.pendingMoves,
@@ -2064,12 +2062,6 @@ export class AssetRepository {
       .select(['id', 'type', 'path', 'isEdited'])
       .where('assetId', '=', asUuid(id))
       .execute();
-    // the asset's video duplicate frames
-    const frames = await sql<{
-      path: string;
-    }>`
-      SELECT path FROM public.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
-    `.execute(tx);
     // restorations are removed with the asset (ON DELETE CASCADE), so their outputs are read here
     const restorations = await tx
       .selectFrom('asset_restoration')
@@ -2096,7 +2088,6 @@ export class AssetRepository {
     return {
       ...row,
       files,
-      videoDuplicateFramePaths: frames.rows.map(({ path }) => path),
       restorationPaths,
       derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? []), ...studioHdrPaths])],
       ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),

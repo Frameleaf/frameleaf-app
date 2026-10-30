@@ -168,7 +168,6 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
   const derivedFixture = async () => {
     const video = await original('derived-video.mov', undefined, AssetType.Video);
     await mkdir(join(root, 'source', '.attempts', 'accepted-claim'), { recursive: true });
-    const duplicate = await file('.attempts/accepted-claim/duplicate.jpg');
     const moment = await file('.attempts/accepted-claim/moment.jpg');
     const thumbnail = await file('.attempts/accepted-claim/person.jpg');
     const { person } = await ctx.newPerson({ ownerId });
@@ -177,16 +176,6 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       .set({ thumbnailPath: thumbnail.path })
       .where('ownerId', '=', ownerId)
       .where('personGroupId', '=', person.personGroupId)
-      .execute();
-    await db
-      .insertInto('asset_video_duplicate_frame')
-      .values({
-        assetId: video.asset.id,
-        frameIndex: 0,
-        timestampMs: 1000,
-        path: duplicate.path,
-        embedding: `[${Array.from({ length: 512 }, () => 0).join(',')}]`,
-      })
       .execute();
     await db
       .insertInto('video_moment_frame')
@@ -201,7 +190,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         rank: 1,
       })
       .execute();
-    return { video, person, duplicate, moment, thumbnail };
+    return { video, person, moment, thumbnail };
   };
 
   it('leaves out an offline item whose original is gone instead of failing the whole capture', async () => {
@@ -265,23 +254,14 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     const { capture } = fixture(async () => {
       const pinned = (await references(run.runId)).map((row) => row.path);
       expect(pinned).toEqual(
-        expect.arrayContaining([
-          own.duplicate.path,
-          own.moment.path,
-          own.thumbnail.path,
-          otherThumbnail.path,
-          otherFrame.path,
-        ]),
+        expect.arrayContaining([own.moment.path, own.thumbnail.path, otherThumbnail.path, otherFrame.path]),
       );
     });
     const result = await capture.capture(run);
     expect(result.derivedInventoryVersion).toBe(1);
     const ownedFiles = result.manifest.library.assets[own.video.asset.id].files;
     expect(ownedFiles).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: own.duplicate.path, role: 'video-duplicate-frame' }),
-        expect.objectContaining({ path: own.moment.path, role: 'video-moment-frame' }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ path: own.moment.path, role: 'video-moment-frame' })]),
     );
     expect(
       ownedFiles.some((entry) => [otherFrame.path, own.thumbnail.path, otherThumbnail.path].includes(entry.path)),
@@ -300,14 +280,14 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       ...Object.values(result.manifest.library.assets).flatMap((asset) => asset.files),
       ...result.manifest.dependencies,
     ];
-    for (const source of [own.duplicate, own.moment, own.thumbnail, otherThumbnail, otherFrame]) {
+    for (const source of [own.moment, own.thumbnail, otherThumbnail, otherFrame]) {
       const entry = inventory.find((entry) => entry.path === source.path)!;
       expect(await restoreBytes(result, run.runId, entry.sha256)).toEqual(source.bytes);
     }
     await capture.release(run.runId);
   });
 
-  it.each(['duplicate', 'moment', 'thumbnail'] as const)(
+  it.each(['moment', 'thumbnail'] as const)(
     'refuses a missing selected %s rather than publishing an incomplete derived inventory',
     async (kind) => {
       const source = await derivedFixture();
@@ -326,7 +306,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         ...Object.values(excluded.manifest.library.assets).flatMap((asset) => asset.files),
         ...excluded.manifest.dependencies,
       ].map((entry) => entry.path);
-      for (const file of [source.duplicate, source.moment, source.thumbnail]) expect(paths).not.toContain(file.path);
+      for (const file of [source.moment, source.thumbnail]) expect(paths).not.toContain(file.path);
       expect((await references(excludedRun.runId)).map((entry) => entry.path)).not.toContain(source[kind].path);
       await capture.release(excludedRun.runId);
     },

@@ -63011,20 +63011,38 @@
                 "type": "boolean"
               },
               "frameCount": {
-                "description": "Number of video frames to sample for duplicate confirmation",
+                "deprecated": true,
+                "description": "Deprecated: videos are compared by their whole timeline",
                 "maximum": 8,
                 "minimum": 2,
                 "type": "integer"
               },
               "maxDistance": {
-                "description": "Maximum distance threshold for enhanced video duplicate frame matching",
+                "deprecated": true,
+                "description": "Deprecated: videos are compared by their whole timeline",
                 "format": "double",
                 "maximum": 0.1,
                 "minimum": 0.001,
                 "type": "number"
               },
+              "maxHashDistance": {
+                "default": 8,
+                "description": "Most bits two frame hashes (64 bits) may differ by and still count as the same picture",
+                "maximum": 16,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "minMatchFraction": {
+                "default": 0.7,
+                "description": "Share of the frames two videos have in common that must match to call them duplicates",
+                "format": "double",
+                "maximum": 1,
+                "minimum": 0.5,
+                "type": "number"
+              },
               "minMatchingFrames": {
-                "description": "Minimum matching sampled frames required to confirm a video duplicate",
+                "deprecated": true,
+                "description": "Deprecated: videos are compared by their whole timeline",
                 "maximum": 8,
                 "minimum": 1,
                 "type": "integer"

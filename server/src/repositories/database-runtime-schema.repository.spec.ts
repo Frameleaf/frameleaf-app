@@ -8,12 +8,7 @@ vi.mock('@frameleaf/sql-tools', async (original) => ({
   schemaFromDatabase: vi.fn(),
 }));
 
-const stores = new Set([
-  'smart_search',
-  'smart_search_description',
-  'asset_video_duplicate_frame',
-  'video_moment_frame_embedding',
-]);
+const stores = new Set(['smart_search', 'smart_search_description', 'video_moment_frame_embedding']);
 
 const inspect = async (target: ReturnType<typeof getFrameleafSchema>) => {
   const { db } = scriptedKysely();
@@ -44,7 +39,7 @@ it('accepts the captured bootstrap catalog without modifying its authority', asy
   expect(getFrameleafSchema()).toEqual(baseline);
 });
 
-it.each([512, 768, 1024])('accepts all four CLIP stores resized together to supported width %s', async (size) => {
+it.each([512, 768, 1024])('accepts all three CLIP stores resized together to supported width %s', async (size) => {
   expect((await inspect(resized(size))).items).toEqual([]);
 });
 
@@ -52,7 +47,7 @@ it.each(['mixed-widths', 'unknown-width', 'missing-column', 'nullable', 'wrong-t
   'continues to report %s as schema drift',
   async (change) => {
     const target = resized(change === 'unknown-width' ? 333 : 768);
-    const table = target.tables.find(({ name }) => name === 'asset_video_duplicate_frame')!;
+    const table = target.tables.find(({ name }) => name === 'video_moment_frame_embedding')!;
     const column = table.columns.find(({ name }) => name === 'embedding')!;
     switch (change) {
       case 'mixed-widths': {
