@@ -14,6 +14,7 @@ import type { PostgresError } from 'postgres';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { type Tag, columns } from 'src/database.js';
 import { Chunked, ChunkedSet, DATABASE_PARAMETER_CHUNK_SIZE, DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetMetadataKey } from 'src/enum.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -550,6 +551,47 @@ export class TagRepository {
         eb.selectFrom('tag').select('tag.id').where('tag.userId', '=', userId).where('tag.value', 'in', values),
       )
       .execute();
+  }
+
+  /**
+   * FL-667: one page of the assets whose AI description applied a tag with one of these values, in
+   * asset id order after `afterAssetId`, with the owner and the stored enrichment record. Only the
+   * description step's own record (`description.appliedTagValues`) counts, never a tag a person added.
+   */
+  getDescriptionTaggedAssets(values: string[], afterAssetId: string | undefined, limit: number) {
+    return this.db
+      .selectFrom('asset_metadata')
+      .innerJoin('asset', 'asset.id', 'asset_metadata.assetId')
+      .select(['asset_metadata.assetId', 'asset.ownerId', 'asset_metadata.value'])
+      .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
+      .where(sql<boolean>`"asset_metadata"."value"->'description'->'appliedTagValues' ?| ${values}::text[]`)
+      .$if(!!afterAssetId, (qb) => qb.where('asset_metadata.assetId', '>', afterAssetId!))
+      .orderBy('asset_metadata.assetId')
+      .limit(limit)
+      .execute();
+  }
+
+  /**
+   * FL-667: deletes the owner's tags with these values that no asset carries and that hold no other
+   * tag; a tag still on any asset, or with a tag inside it, stays. Returns how many were deleted.
+   */
+  async deleteUnusedTagValues(userId: string, values: string[]): Promise<number> {
+    if (values.length === 0) {
+      return 0;
+    }
+
+    const result = await this.db
+      .deleteFrom('tag')
+      .where('tag.userId', '=', userId)
+      .where('tag.value', 'in', values)
+      .where(({ not, exists, selectFrom }) =>
+        not(exists(selectFrom('tag_asset').select('tag_asset.tagId').whereRef('tag_asset.tagId', '=', 'tag.id'))),
+      )
+      .where(({ not, exists, selectFrom }) =>
+        not(exists(selectFrom('tag as child').select('child.id').whereRef('child.parentId', '=', 'tag.id'))),
+      )
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })

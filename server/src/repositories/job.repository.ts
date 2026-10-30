@@ -118,6 +118,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // a restart mid-batch must not leave the partner card "queued" forever; copies are keyed by
   // source and recipient, so a re-run batch copies nothing twice
   JobName.PartnerBackfill,
+  // FL-667: removing a filler tag that is already gone changes nothing, so a re-run is harmless
+  JobName.DescriptionFillerTagCleanup,
 ]);
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
@@ -967,6 +969,10 @@ export class JobRepository {
       }
       case JobName.ImageDescriptionQueueAll: {
         return { deduplication: { id: JobName.ImageDescriptionQueueAll } };
+      }
+      case JobName.DescriptionFillerTagCleanup: {
+        // FL-667: a restart while it is still queued or running adds no second run
+        return { deduplication: { id: JobName.DescriptionFillerTagCleanup } };
       }
       case JobName.SmartAlbumReevaluateAll: {
         // Kind-scoped dispatches get their own dedup namespace so they don't
