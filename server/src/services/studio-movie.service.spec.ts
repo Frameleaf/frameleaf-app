@@ -99,14 +99,23 @@ const setup = (snapshot: Record<string, unknown> = snapshotOf()) => {
   query.set.mockReturnValue(query);
   query.where.mockReturnValue(query);
   const tx = { updateTable: vi.fn().mockReturnValue(query) };
+  // Like the repository: validation begins only from preparing or rendering (FL-682 found it refused from validating).
+  let reported: MediaOperationStatus | undefined;
   const operations = {
     claimNext: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockImplementation((value) => Promise.resolve({ ...value, id: operationId, status: 'queued' })),
     getForWorker: vi.fn().mockResolvedValue(operation),
     getForOwner: vi.fn().mockResolvedValue(operation),
     heartbeat: vi.fn().mockResolvedValue(true),
-    reportProgress: vi.fn().mockResolvedValue(true),
-    beginValidation: vi.fn().mockResolvedValue(true),
+    reportProgress: vi.fn().mockImplementation((_id, _claim, { status }: { status: MediaOperationStatus }) => {
+      reported = status;
+      return Promise.resolve(true);
+    }),
+    beginValidation: vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(reported === MediaOperationStatus.Preparing || reported === MediaOperationStatus.Rendering),
+      ),
     fail: vi.fn().mockResolvedValue('failed'),
     acknowledgeCancel: vi.fn().mockResolvedValue(true),
     publishValidated: vi
