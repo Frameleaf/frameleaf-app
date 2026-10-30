@@ -164,7 +164,8 @@ a {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--fl-success-text, var(--fl-accent));
+  /* --fl-success-text is the dark text used on green buttons, unreadable on this background */
+  color: var(--fl-accent);
 }
 
 /* Controls */
@@ -431,29 +432,6 @@ details.source[open] {
   color: var(--fl-muted);
   font-size: 13px;
 }
-.privacy {
-  display: flex;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--fl-radius-control);
-  background: var(--fl-raised);
-  color: var(--fl-muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-.privacy > .icon {
-  color: var(--fl-accent);
-}
-.privacy .link-button {
-  display: block;
-  font-size: 13px;
-}
-.preview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
 .candidate-list {
   list-style: none;
   margin: 0;
@@ -516,14 +494,6 @@ details.source[open] {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.preview-button {
-  min-height: 28px;
-  font-size: 12px;
-  font-weight: 500;
-}
-.candidate-list .error {
-  font-size: 12px;
 }
 
 /* Page link */
@@ -885,7 +855,14 @@ details.source[open] {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  /* the whole row is the touch target, so it keeps the shared control floor */
+  min-height: 44px;
   cursor: pointer;
+}
+@media (pointer: coarse) {
+  .switch {
+    min-height: 48px;
+  }
 }
 .switch > span {
   flex: 1;
@@ -906,6 +883,9 @@ details.source[open] {
   position: relative;
   width: 36px;
   height: 22px;
+  /* the shared .frameleaf touch-target rule would stretch it to 44px; the whole row is the target */
+  min-width: 36px;
+  min-height: 22px;
   margin: 0;
   border-radius: 11px;
   background: var(--fl-border-strong);
@@ -933,6 +913,25 @@ details.source[open] {
   .switch input,
   .switch input::after {
     transition: none;
+  }
+}
+.destination {
+  border-radius: var(--fl-radius-control);
+}
+/* the first pick on a page points at where it will be saved */
+.destination.nudge {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 8px;
+  animation: destination-nudge 1s ease-in-out 2;
+}
+@keyframes destination-nudge {
+  50% {
+    outline-color: color-mix(in srgb, var(--fl-accent) 30%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .destination.nudge {
+    animation: none;
   }
 }
 .connect-form {

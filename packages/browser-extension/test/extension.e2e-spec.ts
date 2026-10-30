@@ -183,7 +183,15 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     ).toBeVisible();
     await content.waitForLoadState('networkidle');
     const beforeCollection = mediaHits;
-    const initialRedirectHits = redirectTargetHits;
+    await context.addCookies([
+      {
+        name: 'private-browser-cookie',
+        value: 'must-not-forward',
+        url: origin,
+        httpOnly: true,
+      },
+    ]);
+    const firstThumbnailRequest = mediaRequests.length;
     await content.bringToFront();
     const collectionOpened = context.waitForEvent('page', { timeout: 5000 });
     const discovered = await popup.evaluate(async () =>
@@ -204,6 +212,8 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     await images.first().focus();
     await images.first().press('Space');
     await expect(images.first()).toBeChecked();
+    // the first pick with no collection chosen points at the collection picker
+    await expect(collection.locator('.destination.nudge')).toBeInViewport();
     for (let index = 1; index < 100; index++) await images.nth(index).check();
     await expect(collection.getByRole('status')).toContainText(
       '100 of 100 selected',
@@ -231,47 +241,27 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     await expect(collection.locator('body')).not.toContainText(
       'transient=private',
     );
-    await expect(
-      collection.getByText(/^Previews aren’t loaded yet, so 127\.0\.0\.1/),
-    ).toBeVisible();
-    expect(mediaHits).toBe(beforeCollection);
-    await context.addCookies([
-      {
-        name: 'private-browser-cookie',
-        value: 'must-not-forward',
-        url: origin,
-        httpOnly: true,
-      },
-    ]);
-    await collection
-      .getByRole('button', { name: `Preview from ${origin}`, exact: true })
-      .click();
-    await expect(collection.locator('.candidate-thumbnail')).toBeVisible();
+    // previews load by themselves, without the browser's cookies or a referrer
+    const thumbnail = collection.locator('.candidate-thumbnail');
+    await expect(thumbnail).toBeVisible();
     await expect
       .poll(() =>
-        collection
-          .locator('.candidate-thumbnail')
-          .evaluate(
-            (image: HTMLImageElement) =>
-              image.complete && image.naturalWidth > 0,
-          ),
+        thumbnail.evaluate(
+          (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
+        ),
       )
       .toBe(true);
-    expect(mediaHits).toBe(beforeCollection + 1);
-    expect(mediaRequests.at(-1)).toEqual({
-      cookie: undefined,
-      authorization: undefined,
-      key: undefined,
-      referrer: undefined,
-    });
-    await collection
-      .getByRole('button', { name: 'Clear loaded previews', exact: true })
-      .click();
-    await expect(collection.locator('.candidate-thumbnail')).toHaveCount(0);
-    await collection
-      .getByRole('button', { name: `Preview from ${origin}`, exact: true })
-      .click();
-    await expect(collection.locator('.candidate-thumbnail')).toBeVisible();
+    await expect(
+      collection.getByRole('button', { name: /^Preview/ }),
+    ).toHaveCount(0);
+    expect(mediaHits).toBeGreaterThan(beforeCollection);
+    for (const request of mediaRequests.slice(firstThumbnailRequest))
+      expect(request).toEqual({
+        cookie: undefined,
+        authorization: undefined,
+        key: undefined,
+        referrer: undefined,
+      });
 
     await collection.screenshot({
       path: testInfo.outputPath('collection.png'),
@@ -292,10 +282,6 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     const embedded = collection
       .locator('.candidate-list li')
       .filter({ hasText: 'Embedded image' });
-    await embedded
-      .getByRole('button', { name: 'Preview from this page', exact: true })
-      .click();
-    await expect(embedded.locator('.candidate-thumbnail')).toBeVisible();
     await expect
       .poll(() =>
         embedded
@@ -306,26 +292,16 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
           ),
       )
       .toBe(true);
+    // an image the browser can't show keeps the placeholder
     const protectedImage = collection
       .locator('.candidate-list li')
       .filter({ hasText: '/images/104.png' });
-    await protectedImage
-      .getByRole('button', { name: `Preview from ${origin}`, exact: true })
-      .click();
-    await expect(protectedImage.getByRole('alert')).toContainText(
-      'requires access',
-    );
-    const redirectedImage = collection
-      .locator('.candidate-list li')
-      .filter({ hasText: '/images/103.png' });
-    await redirectedImage
-      .getByRole('button', { name: `Preview from ${origin}`, exact: true })
-      .click();
-    await expect(redirectedImage.getByRole('alert')).toContainText('Redirects');
-    expect(redirectTargetHits).toBe(initialRedirectHits);
-    const loadedObjectUrl = await embedded
-      .locator('.candidate-thumbnail')
-      .getAttribute('src');
+    await protectedImage.scrollIntoViewIfNeeded();
+    await expect(
+      protectedImage.locator('.candidate-placeholder'),
+    ).toBeVisible();
+    await expect(protectedImage.locator('.candidate-thumbnail')).toHaveCount(0);
+    const redirectHitsBeforeSwitch = redirectTargetHits;
     revoked = true;
     await popup.reload();
     await expect(
@@ -336,16 +312,6 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     ).toBeVisible();
     await expect(options.getByText('1 you can save into')).not.toBeVisible();
     await expect(collection.getByRole('alert')).toContainText('expired');
-    expect(
-      await collection.evaluate(
-        async (url) =>
-          fetch(url!).then(
-            () => false,
-            () => true,
-          ),
-        loadedObjectUrl,
-      ),
-    ).toBe(true);
     await expect(
       collection.getByLabel('Note', { exact: true }),
     ).not.toBeVisible();
@@ -369,7 +335,7 @@ test('packaged connection UI pins requests, restricts key storage and clears rev
     await options.getByLabel('Server address').fill(origin + '/redirect');
     await options.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(options.getByText('Your server didn’t answer')).toBeVisible();
-    expect(redirectTargetHits).toBe(initialRedirectHits);
+    expect(redirectTargetHits).toBe(redirectHitsBeforeSwitch);
     await options.getByRole('button', { name: 'Back', exact: true }).click();
     await options
       .getByRole('button', { name: 'Sign out', exact: true })

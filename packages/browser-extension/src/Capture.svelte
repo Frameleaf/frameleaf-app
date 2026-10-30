@@ -18,9 +18,9 @@
   import { captureInput, bookmarkInput } from "./capture-input";
   import { sameBinding } from "./api";
   import { openOptions, requestMediaOrigins } from "./platform";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { acquireCandidate, mediaOrigin, MediaFailure } from "./acquisition";
-  import { requestMediaAccess, watchMediaAccess } from "./platform";
+  import { hasMediaAccess, watchMediaAccess } from "./platform";
   import {
     candidateFormat,
     filterCandidates,
@@ -29,7 +29,11 @@
   import { sanitizeSourceUrl } from "./source-url";
   import { sendRequest, watchConnection } from "./platform";
   import type { CapturePreview } from "./preview";
-  import type { ConnectionStatus } from "./settings";
+  import {
+    lastCollection,
+    rememberCollection,
+    type ConnectionStatus,
+  } from "./settings";
   let preview = $state<CapturePreview | null>(null);
   let connection = $state<ConnectionStatus | null>(null);
   let error = $state("");
@@ -54,82 +58,119 @@
   let busy = $derived(saving || creating || preparingScreenshot);
   let creationNeedsRefresh = $state(false);
   let queuedAny = $state(false);
-  let bulkPreview = $state<string | null>(null);
   let notice = $state("");
   let saveController: AbortController | undefined;
 
-  const imageBytes = new Map<string, Blob>();
   const approvedOrigins = new Set<string>();
+  const savedCandidates = new Set<string>();
+  const imageBytes = new Map<string, Blob>();
   let thumbnails = $state<Record<string, string>>({});
-  let previewErrors = $state<Record<string, string>>({});
-  let downloading = $state<string | null>(null);
-  let download: AbortController | undefined;
+  let thumbnailController = new AbortController();
+  const thumbnailQueue: CaptureCandidate[] = [];
+  const queuedThumbnails = new Set<string>();
+  let thumbnailsLoading = 0;
+  /** Bumped by clearImages so rows already on screen ask for their thumbnails again. */
+  let thumbnailRound = $state(0);
   function clearImages() {
-    download?.abort();
     saveController?.abort();
+    thumbnailController.abort();
+    thumbnailController = new AbortController();
+    thumbnailQueue.length = 0;
+    queuedThumbnails.clear();
+    previewBudgetSpent = false;
+    thumbnailRound++;
     for (const url of Object.values(thumbnails)) URL.revokeObjectURL(url);
-    imageBytes.clear();
     thumbnails = {};
-    previewErrors = {};
+    imageBytes.clear();
     approvedOrigins.clear();
     if (screenshotUrl) URL.revokeObjectURL(screenshotUrl);
     screenshotUrl = "";
     screenshotBlob = null;
     preparingScreenshot = false;
   }
-  async function previewImage(candidate: CaptureCandidate) {
-    if (!preview || downloading || busy) return;
-    const currentPreview = preview.id;
-    const controller = new AbortController();
-    download = controller;
-    downloading = candidate.id;
-    previewErrors[candidate.id] = "";
+  /**
+   * Thumbnails download by themselves as their rows come into view, a few at a time, the same way
+   * saving does (no cookies, referrer or redirects); the bytes are kept for saving.
+   */
+  function showThumbnail(
+    node: HTMLElement,
+    row: { candidate: CaptureCandidate; round: number },
+  ) {
+    let { candidate } = row;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        if (queuedThumbnails.has(candidate.id)) return;
+        queuedThumbnails.add(candidate.id);
+        thumbnailQueue.push(candidate);
+        pumpThumbnails();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return {
+      update(next: { candidate: CaptureCandidate; round: number }) {
+        candidate = next.candidate;
+        observer.disconnect();
+        observer.observe(node);
+      },
+      destroy: () => observer.disconnect(),
+    };
+  }
+  const PREVIEW_BUDGET = 512 * 1024 * 1024;
+  const cachedBytes = () =>
+    [...imageBytes.values()].reduce((total, value) => total + value.size, 0);
+  /** Set the first time a preview doesn't fit; prefetching then stops until previews are cleared. */
+  let previewBudgetSpent = false;
+  function pumpThumbnails() {
+    // Once the preview cache is full, rows keep their placeholder and saving downloads them.
+    // ponytail: sizes are only known after a download, so at most the 4 in flight are wasted
+    if (previewBudgetSpent || cachedBytes() >= PREVIEW_BUDGET) {
+      thumbnailQueue.length = 0;
+      return;
+    }
+    // ponytail: 4 at once is plenty for a list scrolled by hand
+    while (thumbnailsLoading < 4 && thumbnailQueue.length) {
+      const candidate = thumbnailQueue.shift()!;
+      thumbnailsLoading++;
+      void loadThumbnail(candidate, thumbnailController.signal).finally(() => {
+        thumbnailsLoading--;
+        pumpThumbnails();
+      });
+    }
+  }
+  async function loadThumbnail(candidate: CaptureCandidate, signal: AbortSignal) {
     try {
       const origin = mediaOrigin(candidate.url);
       if (origin && !approvedOrigins.has(origin)) {
-        if (!(await requestMediaAccess(origin)))
-          throw new MediaFailure(
-            "Access to these images wasn’t allowed. You can try again, or save the page link or a screenshot instead.",
-          );
+        if (!(await hasMediaAccess(origin))) throw new Error();
         approvedOrigins.add(origin);
       }
-      const blob = await acquireCandidate(
-        candidate,
-        approvedOrigins,
-        controller.signal,
-      );
-      if (controller.signal.aborted || preview?.id !== currentPreview) return;
-      const used = [...imageBytes.values()].reduce(
-        (total, value) => total + value.size,
-        0,
-      );
-      if (used + blob.size > 512 * 1024 * 1024)
-        throw new MediaFailure(
-          "Previews have reached 512 MB. Clear previews to load more.",
-        );
-      const thumbnail = URL.createObjectURL(blob);
-      imageBytes.set(candidate.id, blob);
-      thumbnails[candidate.id] = thumbnail;
-    } catch (reason) {
-      if (!controller.signal.aborted && preview?.id === currentPreview)
-        previewErrors[candidate.id] =
-          reason instanceof MediaFailure
-            ? reason.message
-            : "Could not preview this image. Try again, or save the page link or a screenshot instead.";
-    } finally {
-      if (download === controller) {
-        download = undefined;
-        downloading = null;
+      const blob = await acquireCandidate(candidate, approvedOrigins, signal);
+      // saved (and released) while it downloaded: nothing left to show it in
+      if (
+        signal.aborted ||
+        savedCandidates.has(candidate.id) ||
+        !preview?.discovery.candidates.some((item) => item.id === candidate.id)
+      )
+        return;
+      if (cachedBytes() + blob.size > PREVIEW_BUDGET) {
+        previewBudgetSpent = true;
+        thumbnailQueue.length = 0;
+        throw new Error();
       }
+      imageBytes.set(candidate.id, blob);
+      thumbnails[candidate.id] = URL.createObjectURL(blob);
+    } catch {
+      // the row keeps its placeholder; saving tries again and says why
     }
   }
-  function previewFailed(id: string, url: string) {
-    if (thumbnails[id] !== url) return;
+  function thumbnailFailed(id: string) {
     if (thumbnails[id]) URL.revokeObjectURL(thumbnails[id]);
     delete thumbnails[id];
+    // bytes the browser can't show aren't kept for saving either; saving downloads again
     imageBytes.delete(id);
-    previewErrors[id] =
-      "Your browser can’t show this image. Save the page link or a screenshot instead.";
   }
   const visible = $derived(
     filterCandidates(preview?.discovery.candidates ?? [], {
@@ -158,7 +199,9 @@
       const nextPreview = reply.ok ? (reply.preview ?? null) : null;
       if (preview?.id !== nextPreview?.id) {
         clearImages();
+        savedCandidates.clear();
         notice = "";
+        nudged = false;
         sourcePage = nextPreview?.discovery.pageUrl ?? "";
         bookmarkTarget = nextPreview?.discovery.bookmarkUrl ?? sourcePage;
         bookmarkQueued = false;
@@ -168,6 +211,12 @@
         queuedAny = false;
         sourceTitle = (nextPreview?.discovery.title ?? "").slice(0, 2000);
       }
+      // A reload can land before the background has released what was just queued; keep it gone.
+      if (nextPreview && savedCandidates.size)
+        nextPreview.discovery.candidates =
+          nextPreview.discovery.candidates.filter(
+            (candidate) => !savedCandidates.has(candidate.id),
+          );
       preview = nextPreview;
       error = reply.ok ? "" : reply.error;
       if (
@@ -298,6 +347,7 @@
           ? `Saving, cut short at ${px(WHOLE_PAGE_LIMIT)} px. In Boards it’s called “${wholePageFilename(whole, siteName(sourcePage)).replace(/\.png$/, "")}”, and its note says where it stops.`
           : "Saving the screenshot.";
         queuedAny = true;
+        void rememberCollection(input.binding.origin, input.albumId);
       }
       void sendRequest({ type: "wake-queue" }).catch(() => {});
       await sendRequest({ type: "release-screenshot", id }).catch(() => {});
@@ -316,7 +366,6 @@
       !preview ||
       connection?.status !== "connected" ||
       busy ||
-      downloading ||
       !selected.length ||
       !albumId
     )
@@ -343,9 +392,9 @@
     const origins = [
       ...new Set(
         batch
-          .filter((candidate) => !imageBytes.has(candidate.id))
           .map((candidate) => mediaOrigin(candidate.url))
-          .filter((origin): origin is string => !!origin),
+          .filter((origin): origin is string => !!origin)
+          .filter((origin) => !approvedOrigins.has(origin)),
       ),
     ];
     const controller = new AbortController();
@@ -385,6 +434,7 @@
           ),
         );
         queued++;
+        savedCandidates.add(candidate.id);
         selected = selected.filter((id) => id !== candidate.id);
         if (thumbnails[candidate.id])
           URL.revokeObjectURL(thumbnails[candidate.id]);
@@ -396,6 +446,7 @@
           );
           notice = `Saving ${queued} ${queued === 1 ? "image" : "images"}.`;
           queuedAny = true;
+          void rememberCollection(form.binding.origin, form.albumId);
         }
         // Delivery owns its controller after the atomic enqueue; closing this page cannot cancel it.
         void sendRequest({ type: "wake-queue" }).catch(() => {});
@@ -423,7 +474,6 @@
       !preview ||
       connection?.status !== "connected" ||
       busy ||
-      downloading ||
       !albumId ||
       bookmarkQueued
     )
@@ -444,6 +494,7 @@
         bookmarkQueued = true;
         notice = "Saving the link.";
         queuedAny = true;
+        void rememberCollection(input.binding.origin, input.albumId);
       }
       void sendRequest({ type: "wake-queue" }).catch(() => {});
     } catch (reason) {
@@ -546,7 +597,40 @@
         ? [...selected, id]
         : selected
       : selected.filter((value) => value !== id);
+    if (checked) void showDestination();
   }
+  let destinationBox = $state<HTMLDivElement>();
+  let nudged = false;
+  let nudging = $state(false);
+  /** The first pick on a page with no collection chosen brings the collection picker into view, once. */
+  async function showDestination() {
+    if (nudged || albumId) return;
+    nudged = true;
+    await tick();
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    destinationBox?.scrollIntoView({
+      block: "center",
+      behavior: still ? "auto" : "smooth",
+    });
+    nudging = true;
+    setTimeout(() => (nudging = false), 2000);
+  }
+  $effect(() => {
+    // Start in the collection last saved into on this server, while it still exists.
+    if (albumId || connection?.status !== "connected") return;
+    const origin = connection.binding.origin;
+    void lastCollection(origin).then((id) => {
+      // checked against the catalog as it is now: a refresh may have replaced it meanwhile
+      if (
+        !albumId &&
+        id &&
+        connection?.status === "connected" &&
+        connection.binding.origin === origin &&
+        connection.catalog?.albums.some((album) => album.id === id)
+      )
+        albumId = id;
+    });
+  });
   const collections = $derived<CollectionChoice[]>(
     connection?.catalog?.albums ?? [],
   );
@@ -557,55 +641,10 @@
     [1600, "1,600 px wide"],
   ] as const;
   const formats = ["jpeg", "png", "webp", "avif", "gif", "svg"];
-  const host = (origin: string | null) =>
-    origin ? origin.replace(/^https?:\/\//, "") : "this page";
-  let approvedOriginsView = $state<string[]>([]);
-  $effect(() => {
-    // Keep a reactive copy so the privacy note updates when access is granted or cleared.
-    void thumbnails;
-    approvedOriginsView = [...approvedOrigins];
-  });
-  /** Image origins on screen that haven't been asked for anything yet. */
-  const unaskedOrigins = $derived(
-    [
-      ...new Set(
-        visible
-          .map((candidate) => mediaOrigin(candidate.url))
-          .filter((origin): origin is string => !!origin),
-      ),
-    ].filter(
-      (origin) =>
-        !approvedOriginsView.includes(origin) &&
-        !visible.some(
-          (candidate) =>
-            mediaOrigin(candidate.url) === origin && thumbnails[candidate.id],
-        ),
-    ),
-  );
-  async function previewOrigin(origin: string) {
-    if (!preview || downloading || busy || bulkPreview) return;
-    bulkPreview = origin;
-    const currentPreview = preview.id;
-    try {
-      for (const candidate of visible.filter(
-        (value) => mediaOrigin(value.url) === origin && !thumbnails[value.id],
-      )) {
-        if (bulkPreview !== origin || preview?.id !== currentPreview) break;
-        await previewImage(candidate);
-        // Stop if access was refused or the download was cancelled.
-        if (!approvedOrigins.has(origin) || previewErrors[candidate.id]) break;
-      }
-    } finally {
-      bulkPreview = null;
-    }
-  }
-  function cancelPreviews() {
-    bulkPreview = null;
-    download?.abort();
-  }
   function selectAllShown() {
     const ids = visible.map((candidate) => candidate.id);
     selected = [...new Set([...selected, ...ids])].slice(0, 100);
+    if (ids.length) void showDestination();
   }
   const imageWord = (count: number) => (count === 1 ? "image" : "images");
   const screenshotSize = $derived(
@@ -638,14 +677,16 @@
 </script>
 
 {#snippet destination()}
-  <CollectionPicker
-    {collections}
-    bind:value={albumId}
-    disabled={busy}
-    createLocked={creationNeedsRefresh}
-    onCreate={createCollection}
-    onRefresh={refreshCollections}
-  />
+  <div class="destination" class:nudge={nudging} bind:this={destinationBox}>
+    <CollectionPicker
+      {collections}
+      bind:value={albumId}
+      disabled={busy}
+      createLocked={creationNeedsRefresh}
+      onCreate={createCollection}
+      onRefresh={refreshCollections}
+    />
+  </div>
   <TagPicker
     tags={connection?.catalog?.tags ?? []}
     bind:selected={tagIds}
@@ -890,46 +931,17 @@
                 disabled={busy || !visible.length}>Select all shown</button
               >{/if}
           </div>
-          {#if unaskedOrigins.length}
-            <div class="privacy">
-              <Icon name="shieldLockOutline" size={18} />
-              <div>
-                <p>
-                  Previews aren’t loaded yet, so {unaskedOrigins.length === 1
-                    ? `${host(unaskedOrigins[0])} hasn’t`
-                    : "these sites haven’t"} been asked for anything.
-                </p>
-                {#each unaskedOrigins.slice(0, 3) as origin (origin)}<button
-                    type="button"
-                    class="link-button"
-                    disabled={busy || !!downloading || !!bulkPreview}
-                    onclick={() => void previewOrigin(origin)}
-                    >Show previews from {host(origin)}</button
-                  >{/each}
-              </div>
-            </div>
-          {/if}
-          <div class="preview-actions">
-            {#if downloading || bulkPreview}<button
-                type="button"
-                class="small"
-                onclick={cancelPreviews}>Stop loading previews</button
-              >{/if}
-            <button
-              type="button"
-              class="small"
-              disabled={busy || !Object.keys(thumbnails).length}
-              onclick={clearImages}>Clear loaded previews</button
-            >
-          </div>
           {#if !visible.length}<p class="hint">
               No images on this page match. Try a smaller width or another
               format.
             </p>{/if}
           <ul class="candidate-list">
             {#each visible as candidate (candidate.id)}
-              {@const origin = mediaOrigin(candidate.url)}
-              <li class:on={selected.includes(candidate.id)}>
+              {@const thumbnail = thumbnails[candidate.id]}
+              <li
+                class:on={selected.includes(candidate.id)}
+                use:showThumbnail={{ candidate, round: thumbnailRound }}
+              >
                 <label class="candidate"
                   ><input
                     type="checkbox"
@@ -939,15 +951,12 @@
                         !selected.includes(candidate.id))}
                     onchange={(event) =>
                       toggle(candidate.id, event.currentTarget.checked)}
-                  />{#if thumbnails[candidate.id]}<img
+                  />{#if thumbnail}<img
                       class="candidate-thumbnail"
-                      src={thumbnails[candidate.id]}
+                      src={thumbnail}
                       alt=""
-                      onerror={(event) =>
-                        previewFailed(
-                          candidate.id,
-                          event.currentTarget.getAttribute("src") ?? "",
-                        )}
+                      decoding="async"
+                      onerror={() => thumbnailFailed(candidate.id)}
                     />{:else}<span
                       class="candidate-placeholder"
                       aria-hidden="true"
@@ -962,21 +971,6 @@
                     >{label(candidate.url)}</span
                   ></label
                 >
-                {#if !thumbnails[candidate.id]}<button
-                    type="button"
-                    class="preview-button"
-                    aria-label={downloading === candidate.id
-                      ? undefined
-                      : `Preview from ${origin ?? "this page"}`}
-                    disabled={busy || !!downloading || !!bulkPreview}
-                    onclick={() => void previewImage(candidate)}
-                    >{downloading === candidate.id
-                      ? "Loading preview…"
-                      : "Preview"}</button
-                  >{/if}
-                {#if previewErrors[candidate.id]}<p class="error" role="alert">
-                    {previewErrors[candidate.id]}
-                  </p>{/if}
               </li>
             {/each}
           </ul>
@@ -1013,7 +1007,7 @@
         <button
           type="button"
           class="primary"
-          disabled={busy || !!downloading || !albumId || bookmarkQueued}
+          disabled={busy || !albumId || bookmarkQueued}
           onclick={() => void saveBookmark()}
           >{bookmarkQueued ? "Link is saving" : "Save link"}</button
         >
@@ -1021,7 +1015,7 @@
         <button
           class="primary"
           type="button"
-          disabled={busy || !!downloading || !selected.length || !albumId}
+          disabled={busy || !selected.length || !albumId}
           onclick={() => void saveSelected()}
           >{saving
             ? "Saving…"

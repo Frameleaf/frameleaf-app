@@ -37,14 +37,17 @@ export default defineConfig({
             resolve(import.meta.dirname, 'node_modules/srcset/license'),
           ),
         });
-        for (const size of [16, 48])
+        for (const size of [16, 48, 128])
           this.emitFile({
             type: 'asset',
             fileName: `icons/icon${size}.png`,
+            // the store's 128 icon is 96 px artwork with 16 px of transparent padding
             source: readFileSync(
               resolve(
                 import.meta.dirname,
-                `../../web/static/favicon-${size}.png`,
+                size === 128
+                  ? 'icons/icon128.png'
+                  : `../../web/static/favicon-${size}.png`,
               ),
             ),
           });

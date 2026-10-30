@@ -176,6 +176,15 @@ describe('trusted connection storage', () => {
       /key|token|password/i,
     );
   });
+  it('remembers the last collection saved into for each server', async () => {
+    const settings = await import('./settings');
+    expect(await settings.lastCollection('https://a.example')).toBe('');
+    await settings.rememberCollection('https://a.example', 'album-1');
+    await settings.rememberCollection('https://b.example', 'album-2');
+    await settings.rememberCollection('https://a.example', 'album-3');
+    expect(await settings.lastCollection('https://a.example')).toBe('album-3');
+    expect(await settings.lastCollection('https://b.example')).toBe('album-2');
+  });
   it('keeps the last sign-in notice for the next popup (FL-655)', async () => {
     const settings = await import('./settings');
     await settings.setSignInNotice({
