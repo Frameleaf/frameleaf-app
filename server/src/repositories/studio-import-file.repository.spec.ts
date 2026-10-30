@@ -4,7 +4,11 @@ import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LinuxDurabilityQualification } from 'src/repositories/studio-import-file.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { LinuxDurabilityAdapter, StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
+import {
+  LinuxDurabilityAdapter,
+  StudioImportFileRepository,
+  StudioStorageRefusal,
+} from 'src/repositories/studio-import-file.repository.js';
 import { assertSameOwnedInode } from 'src/utils/studio-import-durability.js';
 import { DECLARATION, KEY } from 'test/fixtures/studio-import-retention.js';
 
@@ -199,17 +203,18 @@ describe('unqualified deployment refusal', () => {
       baseFolder.mockRestore();
     }
   });
-  it('defers default storage resolution until use and retains its unqualified adapter', async () => {
+  it('defers default storage resolution until use and retains its adapter', async () => {
     const baseFolder = vi.spyOn(StorageCore, 'getBaseFolder').mockImplementation(() => {
       throw new Error('Media location is not set.');
     });
+    runtime.platform.mockReturnValue('darwin');
     try {
       const repository = new StudioImportFileRepository();
       baseFolder.mockReturnValue(root);
-      await expect(repository.prepare(KEY, stage, declaration)).rejects.toThrow('UNQUALIFIED');
+      await expect(repository.prepare(KEY, stage, declaration)).rejects.toBeInstanceOf(StudioStorageRefusal);
       const resolutions = baseFolder.mock.calls.length;
       baseFolder.mockReturnValue('/different-exports');
-      await expect(repository.prepare(KEY, stage, declaration)).rejects.toThrow('UNQUALIFIED');
+      await expect(repository.prepare(KEY, stage, declaration)).rejects.toBeInstanceOf(StudioStorageRefusal);
       expect(baseFolder).toHaveBeenCalledTimes(resolutions);
       expect(native.open).not.toHaveBeenCalled();
       expect(native.link).not.toHaveBeenCalled();
@@ -248,7 +253,8 @@ describe('unqualified deployment refusal', () => {
   it('does not substitute Linux barriers for a native Darwin runtime', async () => {
     const fake = syntheticLinux();
     runtime.platform.mockReturnValue('darwin');
-    await expect(fake.adapter.requireQualified(root)).rejects.toThrow('UNQUALIFIED');
+    await expect(fake.adapter.requireQualified(root)).rejects.toThrow(StudioStorageRefusal);
+    expect(fake.qualification).not.toHaveBeenCalled();
     expect(native.open).not.toHaveBeenCalled();
   });
   it.each([false, 'claimed', 1, null])(
