@@ -1160,15 +1160,19 @@ describe('PostgreSQL queue', () => {
 
   it('keeps the retry budget for repeatable work whose stop is never confirmed', async () => {
     await store.enqueue([intent()]);
-    for (const expected of ['pending', 'failed']) {
+    for (const [expected, message] of [
+      ['pending', 'it is retried automatically'],
+      ['failed', 'out of automatic retries; retry failed jobs to run it again'],
+    ]) {
       await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
       const [claim] = await store.claim(queue, workerA);
       await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${claim.id}::uuid`.execute(
         db,
       );
       await store.recoverExpired();
-      const { rows } = await sql`select state from job where id=${claim.id}::uuid`.execute(db);
-      expect(rows).toEqual([{ state: expected }]);
+      const { rows } = await sql<{ state: string; error: string }>`select state, error from job
+        where id=${claim.id}::uuid`.execute(db);
+      expect(rows).toEqual([{ state: expected, error: expect.stringContaining(message) }]);
     }
     expect(await store.retryFailed(queue)).toBe(1);
   });

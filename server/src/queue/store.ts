@@ -556,8 +556,9 @@ export class SqlQueueStore {
           stopRequested: boolean;
           cancelled: boolean;
           safeToRetry: boolean;
+          retryAvailable: boolean;
           operationId: string | null;
-        }>`select data->>'operationId' "operationId", "safeToRetry",
+        }>`select data->>'operationId' "operationId", "safeToRetry", attempt < "retryBaseAttempt" + 2 "retryAvailable",
           "leaseExpiresAt" <= clock_timestamp() - interval '30 seconds' "graceElapsed",
           "cancelRequestedAt" is not null "stopRequested",
           ("cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline') cancelled,
@@ -597,7 +598,10 @@ export class SqlQueueStore {
         if (unconfirmedAttention) {
           reason = 'Executor stop could not be confirmed; review the worker before retrying';
         } else if (unconfirmedStop) {
-          reason = 'Interrupted before it finished (for example by a restart); it is retried automatically';
+          // Same budget as the state chosen below: another attempt is scheduled, or the job fails and waits for retry.
+          reason = job.retryAvailable
+            ? 'Interrupted before it finished (for example by a restart); it is retried automatically'
+            : 'Interrupted before it finished (for example by a restart) and out of automatic retries; retry failed jobs to run it again';
         }
         const operationId =
           options.expiredRecovery || (options.queuedCancellation && unconfirmedStop) ? job.operationId : null;
