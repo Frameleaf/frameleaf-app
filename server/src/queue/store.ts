@@ -654,11 +654,17 @@ export class SqlQueueStore {
         if (rows[0].state !== 'pending') {
           const terminalParents = [claim.id];
           await finishSelections(tx, claim.id, false);
-          await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
+          // Repeatable work that ran out of retries on an unconfirmed stop keeps its deferred request on the
+          // failed job: nothing runs while the stop is unknown, and "retry failed" reruns the job, whose
+          // completion then schedules the held request. Nothing is discarded.
+          const holdLatest = unconfirmedStop && !unconfirmedAttention;
+          if (!holdLatest) {
+            await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
+          }
           const latest = rows[0].latestPending;
           if (unconfirmedStop && latest) {
-            // Discard the one deferred intent only after every positively identified obligation
-            // is terminal. A later history copy may not appear in its original membership list.
+            // Settle every positively identified obligation of the deferred intent for attention (it is
+            // discarded unless held above). A later history copy may not appear in its original membership list.
             const identities = [{ runId: latest.runId, itemKey: latest.itemKey }, ...(latest.memberships ?? [])];
             const { rows: stopped } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
               update job_run_item i set state = 'needs_attention'

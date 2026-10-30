@@ -1177,33 +1177,66 @@ describe('PostgreSQL queue', () => {
     expect(await store.retryFailed(queue)).toBe(1);
   });
 
-  it('does not run a deferred latest request once repeatable work ends on an unconfirmed stop', async () => {
-    const runId = await store.createRun('unconfirmed-exhausted', {});
-    const latestRun = await store.createRun('latest-after-exhausted', {});
-    const options = { deduplication: { id: randomUUID(), keepLastIfActive: true } };
-    await store.enqueue([intent({ runId, itemKey: 'old', rootItemKey: 'old', options })]);
-    await store.finishEnumeration(runId);
-    for (const expected of ['pending', 'failed']) {
-      await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
-      const [claim] = await store.claim(queue, workerA);
-      if (expected === 'failed') {
-        // A newer request arrives while the final attempt runs; it is held as the job's latest.
-        await store.enqueue([intent({ runId: latestRun, itemKey: 'latest', rootItemKey: 'latest', options })]);
-        await store.finishEnumeration(latestRun);
+  it.each([true, false])(
+    'holds a deferred latest request after repeatable work ends on an unconfirmed stop, and runs it after retry (run item=%s)',
+    async (withRunItem) => {
+      const runId = await store.createRun('unconfirmed-exhausted', {});
+      const latestRun = await store.createRun('latest-after-exhausted', {});
+      const options = { deduplication: { id: randomUUID(), keepLastIfActive: true } };
+      await store.enqueue([intent({ runId, itemKey: 'old', rootItemKey: 'old', options })]);
+      await store.finishEnumeration(runId);
+      const latestData = { id: randomUUID(), kind: 'latest' };
+      let failedId = '';
+      for (const expected of ['pending', 'failed']) {
+        await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+        const [claim] = await store.claim(queue, workerA);
+        if (expected === 'failed') {
+          // A newer request arrives while the final attempt runs; it is held as the job's latest.
+          await store.enqueue([
+            withRunItem
+              ? intent({ runId: latestRun, itemKey: 'latest', rootItemKey: 'latest', options, data: latestData })
+              : intent({ options, data: latestData }),
+          ]);
+          await store.finishEnumeration(latestRun);
+        }
+        await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${claim.id}::uuid`.execute(
+          db,
+        );
+        await store.recoverExpired();
+        expect((await sql`select state from job where id=${claim.id}::uuid`.execute(db)).rows).toEqual([
+          { state: expected },
+        ]);
+        failedId = claim.id;
       }
-      await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${claim.id}::uuid`.execute(
-        db,
-      );
-      await store.recoverExpired();
-      expect((await sql`select state from job where id=${claim.id}::uuid`.execute(db)).rows).toEqual([
-        { state: expected },
-      ]);
-    }
-    await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
-    expect(await store.claim(queue, workerB)).toEqual([]);
-    const { rows: latest } = await sql`select state from job_run_item where "runId" = ${latestRun}::uuid`.execute(db);
-    expect(latest).toEqual([{ state: 'needs_attention' }]);
-  });
+      // Nothing runs while the stop is unconfirmed, and the request is kept, not discarded.
+      await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+      expect(await store.claim(queue, workerB)).toEqual([]);
+      const {
+        rows: [held],
+      } = await sql<{ latest: { data: unknown } | null }>`select "latestPending" latest from job
+        where id = ${failedId}::uuid`.execute(db);
+      expect(held.latest?.data).toEqual(latestData);
+      if (withRunItem) {
+        const { rows } = await sql`select state from job_run_item where "runId" = ${latestRun}::uuid`.execute(db);
+        expect(rows).toEqual([{ state: 'needs_attention' }]);
+      }
+
+      // "Retry failed" reruns the job; its completion schedules the held request.
+      expect(await store.retryFailed(queue)).toBe(1);
+      await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+      const [rerun] = await store.claim(queue, workerB);
+      expect(rerun.id).toBe(failedId);
+      expect(await store.complete(rerun, [])).toBe(true);
+      await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+      const [next] = await store.claim(queue, workerB);
+      expect(next.data).toEqual(latestData);
+      expect(await store.complete(next, [])).toBe(true);
+      if (withRunItem) {
+        const { rows } = await sql`select state from job_run_item where "runId" = ${latestRun}::uuid`.execute(db);
+        expect(rows).toEqual([{ state: 'completed' }]);
+      }
+    },
+  );
 
   it('fences the linked operation without giving its dispatcher an independent retry after an unconfirmed stop', async () => {
     const { ctx } = newMediumService(BaseService, { database: db, mock: [LoggingRepository], real: [] });
