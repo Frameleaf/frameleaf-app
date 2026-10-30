@@ -15,7 +15,7 @@
   import TagPicker from "./TagPicker.svelte";
   import type { CollectionChoice } from "./collections";
   import { enqueueCapture, QueueFailure } from "./queue";
-  import { captureInput, bookmarkInput } from "./capture-input";
+  import { captureInput, bookmarkInput, localIsoTime } from "./capture-input";
   import { sameBinding } from "./api";
   import { openOptions, requestMediaOrigins } from "./platform";
   import { onMount, tick } from "svelte";
@@ -404,7 +404,7 @@
     const source = {
       pageUrl: sourcePage,
       title: sourceTitle,
-      capturedAt: new Date().toISOString(),
+      capturedAt: localIsoTime(),
     };
     const batch = preview.discovery.candidates
       .filter((candidate) => selected.includes(candidate.id))

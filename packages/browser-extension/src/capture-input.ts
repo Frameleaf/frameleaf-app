@@ -2,6 +2,16 @@ import type { CaptureCandidate } from './candidates';
 import type { ServerBinding } from './api';
 import { QueueFailure, type EnqueueCapture } from './queue';
 import { sanitizeSourceUrl } from './source-url';
+/**
+ * A time as ISO with this browser's UTC offset rather than Z, so the server knows the zone it was saved in and
+ * Captured reads in local time (FL-698).
+ */
+export function localIsoTime(date = new Date()) {
+  const offset = -date.getTimezoneOffset();
+  const pad = (value: number) => String(Math.abs(value)).padStart(2, '0');
+  const wall = new Date(date.getTime() + offset * 60_000).toISOString().slice(0, -1);
+  return `${wall}${offset < 0 ? '-' : '+'}${pad(Math.trunc(offset / 60))}:${pad(offset % 60)}`;
+}
 const extensions: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -25,7 +35,7 @@ export function captureInput(
   },
   candidate: CaptureCandidate,
   blob: Blob,
-  capturedAt = new Date().toISOString(),
+  capturedAt = localIsoTime(),
 ): EnqueueCapture {
   const pageUrl = sanitizeSourceUrl(candidate.pageUrl);
   if (!pageUrl)
@@ -72,7 +82,7 @@ export function bookmarkInput(
   target: string,
   page: string,
   title: string,
-  capturedAt = new Date().toISOString(),
+  capturedAt = localIsoTime(),
 ): EnqueueCapture {
   const pageUrl = sanitizeSourceUrl(page);
   let url: URL;

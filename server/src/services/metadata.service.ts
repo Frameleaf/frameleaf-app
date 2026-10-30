@@ -300,7 +300,7 @@ export class MetadataService extends BaseService {
     // LIB-02: a time zone set in Frameleaf stays locked (the sidecar holds only an offset), and the file's
     // date is read in it rather than in the zone its GPS position suggests
     const lockedTimeZone = lockedProperties.includes('timeZone') ? previous?.timeZone : undefined;
-    const dates = this.getDates(asset, exifTags, stats, lockedTimeZone);
+    const dates = this.getDates(asset, exifTags, stats, lockedTimeZone, previous?.timeZone);
 
     const { width, height } = this.getImageDimensions(exifTags);
     const locationLocked = lockedProperties.includes('latitude');
@@ -1239,6 +1239,7 @@ export class MetadataService extends BaseService {
     exifTags: ImmichTags,
     stats: Stats,
     lockedTimeZone?: string | null,
+    storedTimeZone?: string | null,
   ) {
     const result = firstDateTime(exifTags);
     const tag = result?.tag;
@@ -1287,7 +1288,12 @@ export class MetadataService extends BaseService {
       this.logger.debug(
         `No exif date time found, falling back on ${earliestDate.toISO()}, earliest of file creation and modification for asset ${asset.id}: ${asset.originalPath}`,
       );
-      dateTimeOriginal = localDateTime = earliestDate;
+      // FL-698: a file date is an instant, not a wall time. Read it in the item's zone (one a capture kept on the
+      // row, or a locked or EXIF one) so its local date is where it was saved, not in UTC.
+      timeZone ??= storedTimeZone ?? null;
+      const zoned = timeZone ? earliestDate.setZone(timeZone) : undefined;
+      dateTimeOriginal = earliestDate;
+      localDateTime = zoned?.isValid ? zoned.setZone('UTC', { keepLocalTime: true }) : earliestDate;
     }
 
     this.logger.verbose(`Found local date time ${localDateTime.toISO()} for asset ${asset.id}: ${asset.originalPath}`);

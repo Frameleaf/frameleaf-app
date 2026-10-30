@@ -197,6 +197,17 @@ function targetUrl(raw: string): string {
     throw invalid();
   }
 }
+/** ISO with an offset and a real calendar date, as the server accepts: Date.parse rolls Feb 30 over to March and 24:00 to the next day. */
+function isIsoTime(value: string) {
+  const match =
+    /^(\d{4})-(\d\d)-(\d\d)T([01]\d|2[0-3]):\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)$/.exec(
+      value,
+    );
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const [year, month, day] = match.slice(1, 4).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
 function sourceCopy(
   source: CaptureCommitDto['source'],
 ): CaptureCommitDto['source'] {
@@ -205,7 +216,7 @@ function sourceCopy(
     typeof source.title !== 'string' ||
     source.title.length > 2000 ||
     typeof source.capturedAt !== 'string' ||
-    !Number.isFinite(Date.parse(source.capturedAt))
+    !isIsoTime(source.capturedAt)
   )
     throw invalid();
   for (const value of [source.creator])
@@ -218,7 +229,8 @@ function sourceCopy(
   return {
     pageUrl: cleanUrl(source.pageUrl),
     title: source.title,
-    capturedAt: new Date(source.capturedAt).toISOString(),
+    // Kept as written: its UTC offset is the zone the item was saved in (FL-698).
+    capturedAt: source.capturedAt,
     ...(source.mediaUrl != null && { mediaUrl: cleanUrl(source.mediaUrl) }),
     ...(source.licenseUrl != null && {
       licenseUrl: cleanUrl(source.licenseUrl),

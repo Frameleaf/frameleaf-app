@@ -165,6 +165,7 @@ describe('durable capture transactions', () => {
         bookmark: undefined,
         uploadResourceId: captureId,
         sha256: checksum.toString('hex'),
+        source: { ...dto.source, capturedAt: '2026-10-29T23:08:00.000-06:00' },
       });
       await uploads.create(captureId, auth.user.id, {
         metadata: {
@@ -221,6 +222,14 @@ describe('durable capture transactions', () => {
         .quotaUsageInBytes,
     ).toBe(4);
     expect((await uploads.get(dto.captureId, auth.user.id)).state).toBe('published');
+    // FL-698: the capture's UTC offset is the zone its file date is read in.
+    expect(
+      await db
+        .selectFrom('asset_exif')
+        .select('timeZone')
+        .where('assetId', '=', first.itemId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ timeZone: 'UTC-6' });
   });
   it('recovers one known upload UUID after concurrent or lost creation responses and rejects changed bytes', async () => {
     const { auth, dto } = await setup();
