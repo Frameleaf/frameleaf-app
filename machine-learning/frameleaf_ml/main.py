@@ -157,7 +157,7 @@ async def preload_models(preload: PreloadModelData) -> None:
         for model_name in model_string.split(","):
             model_name = model_name.strip()
             model = await model_cache.get(model_name, model_type, model_task)
-            if isinstance(model, InferenceModel) and (reason := model.missing_runtime()) is not None:
+            if isinstance(model, InferenceModel) and (reason := await _missing_runtime(model)) is not None:
                 # Startup must not fail on a model this container can't run; requests for it are refused.
                 log.warning(f"Not preloading '{model_name}': {reason}.")
                 continue
@@ -438,6 +438,12 @@ async def inference_busy(_: Request, __: Exception) -> JSONResponse:
 # Models this container was asked for but can never run, logged once each instead of a traceback per photo.
 _missing_runtime_logged: set[str] = set()
 _missing_runtime_lock = threading.Lock()
+
+
+async def _missing_runtime(model: InferenceModel) -> str | None:
+    # The first check may import a native runtime; keep it off the event loop (and out of the inference
+    # pool, which refuses work when full). The answer is cached after that.
+    return await asyncio.to_thread(model.missing_runtime)
 
 
 def _refuse_missing_runtime(model_name: str, reason: str) -> None:
@@ -883,7 +889,7 @@ async def run_inference(
         model = await model_cache.get(
             entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
         )
-        if isinstance(model, InferenceModel) and (reason := model.missing_runtime()) is not None:
+        if isinstance(model, InferenceModel) and (reason := await _missing_runtime(model)) is not None:
             _refuse_missing_runtime(entry["name"], reason)
         inputs: list[Any] = [payload]
         if entry["task"] == ModelTask.INPAINT:

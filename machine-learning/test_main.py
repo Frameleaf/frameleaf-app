@@ -2979,6 +2979,9 @@ def test_refuses_a_model_this_container_cannot_run_without_loading_it(
     warning = mock.Mock()
     monkeypatch.setattr("frameleaf_ml.main.log.warning", warning)
     monkeypatch.setattr("frameleaf_ml.main._missing_runtime_logged", set())
+    # The runtime probe may import a native library, so it runs off the event loop.
+    to_thread = mock.AsyncMock(side_effect=asyncio.to_thread)
+    monkeypatch.setattr("frameleaf_ml.main.asyncio.to_thread", to_thread)
     buffer = BytesIO()
     Image.new("RGB", (8, 8)).save(buffer, format="PNG")
     entries = {
@@ -2998,6 +3001,8 @@ def test_refuses_a_model_this_container_cannot_run_without_loading_it(
 
     download.assert_not_called()
     assert warning.call_count == 1
+    assert to_thread.await_count == 2
+    assert all(call.args[0].__name__ == "missing_runtime" for call in to_thread.await_args_list)
 
 
 def test_options_validation_rejects_unknown_keys(deployed_app: TestClient) -> None:
