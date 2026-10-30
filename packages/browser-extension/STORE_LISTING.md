@@ -43,7 +43,7 @@ ORGANISED AS YOU SAVE
 • Each item keeps where it came from, so you can always find the original.
 
 IT JUST KEEPS GOING
-Saving carries on in the background, even if you close the tab or the browser. If your server is offline, it waits and finishes when it's back. Nothing is lost.
+Saving carries on in the background after you close the tab. If you close the browser, or your server is offline, what's left waits and finishes once they're back. Nothing is lost.
 
 SIGN IN, NO SETUP
 Choose your Frameleaf server, sign in with your Frameleaf account and allow access once. There's no key to copy or paste. You can sign out, or remove the extension's access from Frameleaf, at any time.
