@@ -381,21 +381,27 @@ export class PhotographySiteService {
   private async tell(ownerId: string, site: PhotographySite, inquiry: PhotographyInquiry) {
     const title =
       inquiry.kind === 'gallery-link' ? 'Gallery link requested' : `New inquiry from ${inquiry.name || inquiry.email}`;
-    const item = await this.notifications.create({
-      userId: ownerId,
-      type: NotificationType.Custom,
-      level: NotificationLevel.Info,
-      title,
-      description:
-        inquiry.kind === 'gallery-link'
-          ? `${inquiry.email} asked your website for their gallery link.`
-          : inquiry.message.slice(0, 200),
-      data: JSON.stringify({ link: '/photography?section=website' }),
-    });
-    this.websocket.clientSend('on_notification', ownerId, mapNotification(item));
-    const owner = await this.repository.studioOwner(ownerId);
-    if (!owner?.email) return;
+    // The inquiry is already saved: a notification or mail problem is logged, never sent back to the visitor,
+    // who would otherwise think it failed and send it again.
     try {
+      const item = await this.notifications.create({
+        userId: ownerId,
+        type: NotificationType.Custom,
+        level: NotificationLevel.Info,
+        title,
+        description:
+          inquiry.kind === 'gallery-link'
+            ? `${inquiry.email} asked your website for their gallery link.`
+            : inquiry.message.slice(0, 200),
+        data: JSON.stringify({ link: '/photography?section=website' }),
+      });
+      this.websocket.clientSend('on_notification', ownerId, mapNotification(item));
+    } catch (error) {
+      this.logger.warn(`Studio inquiry notification not created: ${error}`);
+    }
+    try {
+      const owner = await this.repository.studioOwner(ownerId);
+      if (!owner?.email) return;
       const { server, templates } = await getConfig(
         { configRepo: this.configRepository, metadataRepo: this.metadata, logger: this.logger },
         { withCache: true },
@@ -413,7 +419,6 @@ export class PhotographySiteService {
       });
       await this.jobs.queue({ name: JobName.SendMail, data: { to: owner.email, subject: title, html, text } });
     } catch (error) {
-      // The inquiry is saved and the notification shown; a mail problem must not lose it.
       this.logger.warn(`Studio inquiry email not queued: ${error}`);
     }
   }

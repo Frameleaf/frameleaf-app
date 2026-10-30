@@ -885,6 +885,11 @@ describe('photography workflow integration boundaries', () => {
     expect(s.jobs.queue).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ to: 'studio@example.com' }) }),
     );
+    // A notification problem after the inquiry is saved is not the visitor's failure.
+    s.notifications.create.mockRejectedValueOnce(new Error('database busy'));
+    await expect(s.siteService.inquire('old-studio', { ...inquiry, message: 'Second try' })).resolves.toBeUndefined();
+    expect(s.studio().record.inquiries).toHaveLength(2);
+    s.studio().record.inquiries!.shift();
     // Form-filling bots are told it worked; nothing is kept.
     await s.siteService.inquire(s.ownerId, { ...inquiry, message: 'Buy now', website: 'https://spam.example' });
     expect(s.studio().record.inquiries).toHaveLength(1);
