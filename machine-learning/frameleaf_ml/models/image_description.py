@@ -5,7 +5,9 @@ import re
 import threading
 import unicodedata
 from collections.abc import Callable, Iterable
+from functools import cache
 from hashlib import sha256
+from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, cast
@@ -100,6 +102,18 @@ OPENVINO_MODEL_ALIASES = {
     "Qwen/Qwen2.5-VL-7B-Instruct": "llmware/qwen2.5-vl-7b-ov",
 }
 OPENVINO_GENAI_MISSING = "openvino-genai is required for image description models"
+
+
+@cache
+def openvino_genai_importable() -> bool:
+    """Whether OpenVINO GenAI really imports here (it can be found yet fail to load), probed once."""
+    try:
+        import_module("openvino_genai")
+    except ImportError:
+        return False
+    return True
+
+
 DEFAULT_OPENVINO_MAX_IMAGE_EDGE = 512
 PHI_OPENVINO_IMAGE_TAG = "<|image_1|>"
 QWEN_OPENVINO_IMAGE_TAG = "<|vision_start|><|image_pad|><|vision_end|>"
@@ -333,7 +347,9 @@ class ImageDescriptionModel(InferenceModel):
         # OpenVINO GenAI unless CUDA was chosen, and only the OpenVINO image installs it (FL-676).
         if florence_manifest(self.hf_model_name) or self.acceleration != ImageDescriptionAcceleration.OPENVINO:
             return None
-        return OPENVINO_GENAI_MISSING if find_spec("openvino_genai") is None else None
+        if find_spec("openvino_genai") is None or not openvino_genai_importable():
+            return OPENVINO_GENAI_MISSING
+        return None
 
     def configure(self, **kwargs: Any) -> None:
         if "acceleration" in kwargs:

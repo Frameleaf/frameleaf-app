@@ -425,7 +425,26 @@ class TestImageDescriptionModel:
         assert ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda").missing_runtime() is None
 
         monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: object())
+        monkeypatch.setattr("frameleaf_ml.models.image_description.openvino_genai_importable", lambda: True)
         assert ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino").missing_runtime() is None
+
+    def test_reports_openvino_genai_that_is_found_but_fails_to_import(self, monkeypatch: MonkeyPatch) -> None:
+        from frameleaf_ml.models.image_description import openvino_genai_importable
+
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: object())
+        # A None entry in sys.modules makes `import openvino_genai` raise ImportError.
+        monkeypatch.setitem(sys.modules, "openvino_genai", None)
+        download = mock.Mock()
+        monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", download)
+        openvino_genai_importable.cache_clear()
+        try:
+            model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+            assert "openvino-genai" in (model.missing_runtime() or "")
+            with pytest.raises(ImportError, match="openvino-genai"):
+                model._download()
+            download.assert_not_called()
+        finally:
+            openvino_genai_importable.cache_clear()
 
     def test_auto_uses_cuda_backend_when_available(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setattr(ImageDescriptionModel, "_cuda_available", lambda _: True)
