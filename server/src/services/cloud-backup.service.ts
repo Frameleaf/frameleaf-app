@@ -54,6 +54,7 @@ import {
   CloudBackupManifestItemsResponseDto,
   CloudBackupManifestsResponseDto,
   CloudBackupPruneDto,
+  CloudBackupRecoveryHistoryDto,
   CloudBackupRestoreDto,
   CloudBackupRunState,
   CloudBackupS3,
@@ -4554,6 +4555,19 @@ export class CloudBackupService {
     }));
     this.logger.log(`Cloud backup key escrow stored with Frameleaf Cloud by ${auth.user.id}`);
     return this.getStatus();
+  }
+
+  /**
+   * The signed snapshot history behind every encrypted backup. Your own bucket has no other copy of it, so an
+   * encrypted restore after losing this server needs it in the recovery file; it holds no key material.
+   */
+  async getRecoveryHistory(): Promise<CloudBackupRecoveryHistoryDto> {
+    const metadata = await this.requireClaim();
+    const history = mergeBackupHistory(
+      await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
+      this.importedHistory.get(metadata.keyFingerprint),
+    );
+    return { history: history ? JSON.stringify(history) : null };
   }
 
   /** Remove the key copy from Frameleaf Cloud. A copy that is already gone counts as removed. */

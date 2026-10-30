@@ -436,6 +436,16 @@ const CloudBackupStatusSchema = z
   })
   .meta({ id: 'CloudBackupStatusResponseDto' });
 
+const CloudBackupRecoveryHistorySchema = z
+  .object({
+    history: z
+      .string()
+      .nullable()
+      .describe('The signed snapshot history as JSON, for the recovery file’s `recovery` field. Holds no keys'),
+  })
+  .meta({ id: 'CloudBackupRecoveryHistoryDto' });
+
+export class CloudBackupRecoveryHistoryDto extends createZodDto(CloudBackupRecoveryHistorySchema) {}
 export class CloudBackupCheckDto extends createZodDto(CloudBackupCheckSchema) {}
 export class CloudBackupCheckResponseDto extends createZodDto(CloudBackupCheckResponseSchema) {}
 export class CloudBackupGeneratedKeyDto extends createZodDto(CloudBackupGeneratedKeySchema) {}

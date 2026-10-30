@@ -3886,6 +3886,18 @@ describe(CloudBackupService.name, () => {
       },
     );
 
+    it('hands out the signed history for the recovery file, without any key material', async () => {
+      await expect(sut.getRecoveryHistory()).resolves.toEqual({ history: null });
+
+      const fixture = recoveryFixture();
+      const binding = (metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup).bucketRef;
+      await writeBackupHistory(sut['clientHistoryPath'](binding), fixture.history);
+      const { history } = await sut.getRecoveryHistory();
+      expect(JSON.parse(history!)).toEqual(fixture.history);
+      expect(history).not.toContain(key.toString('base64'));
+      expect(history).not.toContain(clientRing.keys[1]);
+    });
+
     it('counts a stored copy without a key version as version 1', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ escrow: { storedAt: '2026-09-26T00:00:00.000Z' } });
       await expect(sut.getStatus()).resolves.toMatchObject({ escrow: { stored: true, outdated: false } });

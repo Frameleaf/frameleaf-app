@@ -32,8 +32,11 @@
     RETENTION_FIELDS,
     endpointHost,
     isEscrowPassphraseValid,
+    keyFileName,
     readBackupKeyFile,
+    withRecoveryHistory,
   } from '$lib/frameleaf/cloud-backup';
+  import { downloadBlob } from '$lib/utils';
   import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -50,6 +53,7 @@
     CloudBackupTask,
     CloudBackupVerifyDepth,
     CloudBackupVerifyStatus,
+    getCloudBackupRecoveryHistory,
     getCloudBackupStatus,
     startCloudBackupRun,
     storeCloudBackupEscrow,
@@ -93,6 +97,7 @@
   let unlockError = $state<Translations | null>(null);
   let unlockFailure = $state('');
   let fileInput = $state<HTMLInputElement>();
+  let recoveryInput = $state<HTMLInputElement>();
 
   const load = async () => {
     try {
@@ -306,6 +311,33 @@
     unlockError = null;
     unlockFailure = '';
   });
+
+  /** Adds the latest signed history to the recovery file the administrator picks; keys never come from the server. */
+  const refreshRecoveryFile = async (file: File | undefined) => {
+    if (!file || !status?.keyFingerprint) {
+      return;
+    }
+    failure = '';
+    const read = readBackupKeyFile(await file.text(), status.keyFingerprint);
+    if ('error' in read) {
+      failure = $t(read.error);
+      return;
+    }
+    busy = true;
+    try {
+      const { history } = await getCloudBackupRecoveryHistory();
+      const refreshed = history ? withRecoveryHistory(read.key, history) : read.key;
+      downloadBlob(new Blob([refreshed], { type: 'application/json' }), keyFileName(status.keyFingerprint));
+      notice = $t('frameleaf_cloud_backup_recovery_file_refreshed');
+    } catch (error) {
+      failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
+    } finally {
+      busy = false;
+      if (recoveryInput) {
+        recoveryInput.value = '';
+      }
+    }
+  };
 
   const readKeyFile = async (file: File | undefined) => {
     if (!file) {
@@ -631,6 +663,19 @@
           : $t('frameleaf_cloud_backup_verify')}
       </Button>
     </Row>
+    <Row label={$t('frameleaf_cloud_backup_recovery_file')} help={$t('frameleaf_cloud_backup_recovery_file_help')}>
+      <input
+        bind:this={recoveryInput}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onchange={(event) => void refreshRecoveryFile(event.currentTarget.files?.[0])}
+      />
+      <Button disabled={busy} onclick={() => recoveryInput?.click()}>
+        <Icon icon={mdiKeyOutline} size="18" />
+        {$t('frameleaf_cloud_backup_recovery_file_refresh')}
+      </Button>
+    </Row>
     {#if status.escrow.outdated}
       <Row
         label={$t('frameleaf_cloud_backup_escrow_outdated')}
@@ -749,7 +794,9 @@
   closeLabel={$t('close')}
   onRequestClose={() => {
     // The request can't be cancelled once sent, so the dialog stays until it answers.
-    if (!busy) escrowOpen = false;
+    if (!busy) {
+      escrowOpen = false;
+    }
   }}
 >
   <p>{$t('frameleaf_cloud_backup_escrow_outdated_help')}</p>

@@ -116,6 +116,10 @@ export const readBackupKeyFile = (
   return { key: text };
 };
 
+/** The saved recovery file with the server's latest signed history, which an encrypted restore needs. */
+export const withRecoveryHistory = (file: string, history: string) =>
+  JSON.stringify({ ...(JSON.parse(file) as object), recovery: JSON.parse(history) as unknown }, null, 2);
+
 export type BucketSettings = { endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string };
 
 /** What is wrong with each field of your own bucket's settings, as i18n keys; empty when nothing is. */
