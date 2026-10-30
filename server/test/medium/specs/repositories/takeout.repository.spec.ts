@@ -430,6 +430,23 @@ describe(TakeoutRepository.name, () => {
     await expect(sut.matchSummary(user.id, row.id)).resolves.toEqual({ matchedOriginals: 1, newAssets: 2 });
   });
 
+  it('counts the photos a run still imports once each, as the check step does (FL-668)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    const shared = randomBytes(32);
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_1.jpg', checksum: shared });
+    await seedItem(sut, row.id, source.id, { folder: 'Beach', name: 'IMG_1.jpg', checksum: shared });
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_2.jpg' });
+    const finished = await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_3.jpg' });
+    await sut.itemDone(finished, 'imported');
+
+    await expect(sut.countPendingPhotos(row.id)).resolves.toBe(2);
+    // the photos still to import are the ones the check step counts
+    const summary = await sut.matchSummary(user.id, row.id);
+    expect(summary.matchedOriginals + summary.newAssets).toBe(2);
+  });
+
   it('reuses the album a folder became only while the owner still has it', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

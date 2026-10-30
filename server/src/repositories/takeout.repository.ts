@@ -714,11 +714,18 @@ export class TakeoutRepository {
     );
     return rows.map((row) => mapItem(row));
   }
-  async countPending(importId: string): Promise<number> {
+  /**
+   * The unique photos among the items a run still imports, by checksum: the importer adds an album's
+   * copy of a photo once, so the import's progress counts photos as the check step does (FL-668).
+   */
+  async countPendingPhotos(importId: string): Promise<number> {
     const { rows } = await sql<{
       total: string;
     }>`
-      select count(*) as total from takeout_item where "importId" = ${importId}::uuid and state in ('ready', 'importing')
+      select count(distinct file.checksum) as total
+      from takeout_item item
+      inner join takeout_file file on file.id = item.id
+      where item."importId" = ${importId}::uuid and item.state in ('ready', 'importing')
     `.execute(this.db);
     return toNumber(rows[0]?.total);
   }
@@ -976,14 +983,6 @@ export class TakeoutRepository {
       limit ${limit}
     `.execute(this.db);
     return rows;
-  }
-  async countApprovedPairs(importId: string): Promise<number> {
-    const { rows } = await sql<{
-      total: string;
-    }>`
-      select count(*) as total from takeout_pair where "importId" = ${importId}::uuid and state = 'approved'
-    `.execute(this.db);
-    return toNumber(rows[0]?.total);
   }
   async pairDone(photoItemId: string, videoItemId: string, error: string | null): Promise<void> {
     await this.write((db) =>

@@ -641,10 +641,13 @@ export class TakeoutWorkerService {
   private async importItems(run: TakeoutRun): Promise<void> {
     const { row } = run;
     const options = parseTakeoutOptions(row.options);
-    run.total = (await this.repository.countPending(row.id)) + (await this.repository.countApprovedPairs(row.id));
+    // Progress counts unique photos, as the check step does (FL-668): an album's copy of a photo is
+    // the same photo, so it moves the count once, and linking Live Photos adds nothing to it.
+    run.total = await this.repository.countPendingPhotos(row.id);
     await this.checkpoint(run, true);
 
     const seen = new Set<string>();
+    const photos = new Set<string>();
     let sinceRefresh = 0;
     while (true) {
       this.throwIfStopped(run);
@@ -671,7 +674,11 @@ export class TakeoutWorkerService {
           }
           await this.repository.itemDone(item.id, 'failed', errorMessage(error));
         }
-        run.processed++;
+        const photo = item.checksum.toString('hex');
+        if (!photos.has(photo)) {
+          photos.add(photo);
+          run.processed++;
+        }
         await this.checkpoint(run);
         if (++sinceRefresh >= AUTH_REFRESH_ITEMS) {
           sinceRefresh = 0;
@@ -699,7 +706,6 @@ export class TakeoutWorkerService {
       for (const pair of pairs) {
         this.throwIfStopped(run);
         await this.repository.pairDone(pair.photoItemId, pair.videoItemId, await this.linkPair(run, pair));
-        run.processed++;
         await this.checkpoint(run);
       }
     }
