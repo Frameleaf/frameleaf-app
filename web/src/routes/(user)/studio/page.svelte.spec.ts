@@ -9,9 +9,13 @@ import StudioPage from './+page.svelte';
 
 const harness = vi.hoisted(() => ({
   exportDialog: undefined as { onExport: (choice: object) => void; open?: boolean } | undefined,
-  host: undefined as { services: { requestExport: () => void }; onExport?: () => void } | undefined,
+  host: undefined as
+    { services: { requestExport: () => void; setDirty: (dirty: boolean) => void }; onExport?: () => void } | undefined,
   hasDraft: false,
-  flush: undefined as undefined | (() => Promise<void>),
+  /** Runs inside the session's flush; may change the session state it is given. */
+  flush: undefined as undefined | ((state: Record<string, unknown>) => Promise<void>),
+  /** The live session: its state and the page's change callback. */
+  session: undefined as undefined | { state: Record<string, unknown>; onChange: (state: object) => void },
 }));
 
 vi.mock('$app/navigation', () => ({ beforeNavigate: vi.fn(), goto: vi.fn(), replaceState: vi.fn() }));
@@ -72,13 +76,14 @@ vi.mock('$lib/frameleaf/studio/project-session', () => ({
       access: 'owner',
       hasDraft: harness.hasDraft,
     };
+    harness.session = { state, onChange: options.onChange };
     return {
       state,
       open: vi.fn(async () => options.onChange(state)),
       dispose: vi.fn(async () => {}),
       flush: vi.fn(async () => {
-        await harness.flush?.();
         state.hasDraft = false;
+        await harness.flush?.(state);
         options.onChange({ ...state });
       }),
       comments: vi.fn().mockResolvedValue({ items: [] }),
@@ -130,26 +135,76 @@ it('stops following an export once the page is gone, even with a status read in 
   expect(getMediaOperation).toHaveBeenCalledTimes(1);
 });
 
-it('saves a pending edit before the export dialog opens, and keeps it closed when the save fails (FL-674)', async () => {
-  authManager.setUser(userAdminFactory.build());
-  harness.hasDraft = true;
-  harness.flush = () => Promise.reject(new Error('offline'));
-  try {
+describe('opening the export dialog (FL-674)', () => {
+  const opened = async () => {
+    authManager.setUser(userAdminFactory.build());
     render(StudioPage, { data });
     await vi.waitFor(() => expect(harness.host).toBeDefined());
     await tick();
+  };
+  const settle = async () => {
+    for (let index = 0; index < 5; index++) {
+      await tick();
+    }
+  };
+
+  afterEach(() => {
+    harness.hasDraft = false;
+    harness.flush = undefined;
+    harness.exportDialog = undefined;
+    harness.host = undefined;
+  });
+
+  it('saves a pending edit first, and keeps the dialog closed when the save fails', async () => {
+    harness.hasDraft = true;
+    harness.flush = () => Promise.reject(new Error('offline'));
+    await opened();
 
     harness.host!.services.requestExport();
-    await vi.waitFor(() => expect(harness.flush).toBeDefined());
-    await tick();
-    await tick();
+    await settle();
     expect(harness.exportDialog?.open).toBeFalsy();
 
     harness.flush = async () => {};
     harness.host!.services.requestExport();
     await vi.waitFor(() => expect(harness.exportDialog?.open).toBe(true));
-  } finally {
-    harness.hasDraft = false;
-    harness.flush = undefined;
-  }
+  });
+
+  it('waits for an edit the editor has marked but not staged yet, then saves it', async () => {
+    await opened();
+    harness.host!.services.setDirty(true);
+    await settle();
+
+    harness.host!.services.requestExport();
+    await settle();
+    // The editor stages after its pause: nothing is opened on the stale timeline meanwhile.
+    expect(harness.exportDialog?.open).toBeFalsy();
+
+    const { state, onChange } = harness.session!;
+    state.hasDraft = true;
+    onChange({ ...state });
+    await vi.waitFor(() => expect(harness.exportDialog?.open).toBe(true));
+  });
+
+  it('keeps the dialog closed when the edit is never staged', async () => {
+    vi.useFakeTimers();
+    await opened();
+    harness.host!.services.setDirty(true);
+    await settle();
+    harness.host!.services.requestExport();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(harness.exportDialog?.open).toBeFalsy();
+  });
+
+  it('keeps the dialog closed when the save leaves the session unable to write (a 404)', async () => {
+    harness.hasDraft = true;
+    harness.flush = async (state) => {
+      // A missing project clears the draft and leaves the session forbidden, without throwing.
+      state.status = 'forbidden';
+      state.project = { ...(state.project as object), hasLease: false };
+    };
+    await opened();
+    harness.host!.services.requestExport();
+    await settle();
+    expect(harness.exportDialog?.open).toBeFalsy();
+  });
 });
