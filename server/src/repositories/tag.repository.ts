@@ -555,20 +555,86 @@ export class TagRepository {
 
   /**
    * FL-667: one page of the assets whose AI description applied a tag with one of these values, in
-   * asset id order after `afterAssetId`, with the owner and the stored enrichment record. Only the
+   * asset id order after `afterAssetId`, with each asset's owner. Only the
    * description step's own record (`description.appliedTagValues`) counts, never a tag a person added.
    */
   getDescriptionTaggedAssets(values: string[], afterAssetId: string | undefined, limit: number) {
     return this.db
       .selectFrom('asset_metadata')
       .innerJoin('asset', 'asset.id', 'asset_metadata.assetId')
-      .select(['asset_metadata.assetId', 'asset.ownerId', 'asset_metadata.value'])
+      .select(['asset_metadata.assetId', 'asset.ownerId'])
       .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
       .where(sql<boolean>`"asset_metadata"."value"->'description'->'appliedTagValues' ?| ${values}::text[]`)
       .$if(!!afterAssetId, (qb) => qb.where('asset_metadata.assetId', '>', afterAssetId!))
       .orderBy('asset_metadata.assetId')
       .limit(limit)
       .execute();
+  }
+
+  /**
+   * FL-667: takes tags the AI description applied off one asset. Under the enrichment record's row lock
+   * it reads `description.appliedTagValues`, lets `choose` pick the values to remove, removes the
+   * owner's tags with those values from the asset, and drops them from `description.appliedTagValues`
+   * and `description.result.tags` in place, leaving the rest of the record as it is. Returns the values
+   * removed.
+   */
+  removeDescriptionTagValues(
+    assetId: string,
+    userId: string,
+    choose: (applied: string[]) => string[],
+  ): Promise<string[]> {
+    return this.db.transaction().execute(async (tx) => {
+      const row = await tx
+        .selectFrom('asset_metadata')
+        .select(sql<unknown>`"value"->'description'`.as('description'))
+        .where('assetId', '=', assetId)
+        .where('key', '=', AssetMetadataKey.MlEnrichment)
+        .forUpdate()
+        .executeTakeFirst();
+      const description = row?.description as { status?: unknown; appliedTagValues?: unknown } | null | undefined;
+      if (description?.status !== 'success' || !Array.isArray(description.appliedTagValues)) {
+        return [];
+      }
+      const applied = description.appliedTagValues.filter((value): value is string => typeof value === 'string');
+      const removed = [...new Set(choose(applied))];
+      if (removed.length === 0) {
+        return [];
+      }
+
+      await tx
+        .deleteFrom('tag_asset')
+        .where('assetId', '=', assetId)
+        .where('tagId', 'in', (eb) =>
+          eb.selectFrom('tag').select('tag.id').where('tag.userId', '=', userId).where('tag.value', 'in', removed),
+        )
+        .execute();
+
+      const without = (path: string) => sql<unknown>`coalesce(
+        (
+          select jsonb_agg(element order by position)
+          from jsonb_array_elements("value" #> ${path}::text[]) with ordinality as list(element, position)
+          where not ((element #>> '{}') = any(${removed}::text[]))
+        ),
+        '[]'::jsonb
+      )`;
+      await tx
+        .updateTable('asset_metadata')
+        .set({
+          value: sql`jsonb_set(
+            case
+              when jsonb_typeof("value" #> '{description,result,tags}') = 'array'
+                then jsonb_set("value", '{description,result,tags}', ${without('{description,result,tags}')})
+              else "value"
+            end,
+            '{description,appliedTagValues}',
+            ${without('{description,appliedTagValues}')}
+          )`,
+        })
+        .where('assetId', '=', assetId)
+        .where('key', '=', AssetMetadataKey.MlEnrichment)
+        .execute();
+      return removed;
+    });
   }
 
   /**

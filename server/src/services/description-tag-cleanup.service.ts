@@ -1,22 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { AssetMetadataKey, FrameleafWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { FrameleafWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { afterJobCommit } from 'src/queue/context.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DESCRIPTION_TAG_STOP_WORDS } from 'src/utils/description-tag-stop-words.js';
 
 /** Assets read and cleaned per page. */
 const PAGE_SIZE = 500;
-
-/** The part of an asset's `ml-enrichment` record the clean-up reads and rewrites. */
-type DescriptionRecord = {
-  status?: string;
-  appliedTagValues?: unknown;
-  result?: { tags?: unknown };
-};
-
-const isFiller = (value: unknown): value is string =>
-  typeof value === 'string' && DESCRIPTION_TAG_STOP_WORDS.has(value);
 
 /**
  * FL-667: AI description tagging made a tag of nearly every word before FL-659 gave it a stop list,
@@ -58,8 +48,8 @@ export class DescriptionTagCleanupService extends BaseService {
       afterAssetId = page.at(-1)!.assetId;
 
       const changed: string[] = [];
-      for (const { assetId, ownerId, value } of page) {
-        const filler = await this.cleanAsset(assetId, ownerId, value);
+      for (const { assetId, ownerId } of page) {
+        const filler = await this.cleanAsset(assetId, ownerId);
         if (filler.length === 0) {
           continue;
         }
@@ -104,28 +94,15 @@ export class DescriptionTagCleanupService extends BaseService {
   }
 
   /**
-   * Removes the filler tags the description step applied to one asset, and drops them from its
-   * enrichment record so a later re-apply of the stored description does not add them back.
-   * Returns the tag values removed.
+   * Removes the filler tags the description step applied to one asset and drops them from its
+   * enrichment record, so a later re-apply of the stored description does not add them back. The
+   * repository reads the record under its row lock and edits only those two lists in place, so an
+   * enrichment written meanwhile is neither lost nor acted on from a stale copy. Returns the tag
+   * values removed.
    */
-  private async cleanAsset(assetId: string, ownerId: string, value: Record<string, unknown>): Promise<string[]> {
-    const description = value.description as DescriptionRecord | undefined;
-    if (description?.status !== 'success' || !Array.isArray(description.appliedTagValues)) {
-      return [];
-    }
-    const applied: unknown[] = description.appliedTagValues;
-    const filler = applied.filter((tag) => isFiller(tag));
-    if (filler.length === 0) {
-      return [];
-    }
-
-    await this.tagRepository.removeAssetTagValues(assetId, ownerId, filler);
-
-    description.appliedTagValues = applied.filter((tag) => !isFiller(tag));
-    if (description.result && Array.isArray(description.result.tags)) {
-      description.result.tags = (description.result.tags as unknown[]).filter((tag) => !isFiller(tag));
-    }
-    await this.assetRepository.upsertMetadata(assetId, [{ key: AssetMetadataKey.MlEnrichment, value }]);
-    return filler;
+  private cleanAsset(assetId: string, ownerId: string): Promise<string[]> {
+    return this.tagRepository.removeDescriptionTagValues(assetId, ownerId, (applied) =>
+      applied.filter((tag) => DESCRIPTION_TAG_STOP_WORDS.has(tag)),
+    );
   }
 }

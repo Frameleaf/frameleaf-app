@@ -146,6 +146,40 @@ describe(DescriptionTagCleanupService.name, () => {
     expect(await ownerTags(ctx, other.id)).toEqual(['four']);
   });
 
+  it('keeps an enrichment written after the page was read, editing only the description lists', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await tag(ctx, user.id, asset.id, ['dog', 'her']);
+    await recordDescription(ctx, asset.id, ['dog', 'her']);
+    const tags = ctx.get(TagRepository);
+    const read = tags.getDescriptionTaggedAssets.bind(tags);
+    const nsfwDetection = {
+      status: 'success',
+      modelName: 'nsfw',
+      updatedAt: new Date().toISOString(),
+      result: { isNsfw: false, score: 0.01, labels: {} },
+    };
+    vi.spyOn(tags, 'getDescriptionTaggedAssets').mockImplementationOnce(async (...args) => {
+      const page = await read(...args);
+      // an enrichment run finishes between the page read and the clean-up of this asset
+      const row = await ctx.get(AssetRepository).getMetadataByKey(asset.id, AssetMetadataKey.MlEnrichment);
+      await ctx
+        .get(AssetRepository)
+        .upsertMetadata(asset.id, [{ key: AssetMetadataKey.MlEnrichment, value: { ...row!.value, nsfwDetection } }]);
+      return page;
+    });
+
+    await sut.handleDescriptionFillerTagCleanup();
+
+    const row = await ctx.get(AssetRepository).getMetadataByKey(asset.id, AssetMetadataKey.MlEnrichment);
+    expect(row?.value).toMatchObject({
+      nsfwDetection,
+      description: { appliedTagValues: ['dog'], appliedTagHash: 'abcd1234', result: { tags: ['dog'] } },
+    });
+    expect(await assetTags(ctx, asset.id)).toEqual(['dog']);
+  });
+
   it('runs once: the bootstrap queues it until it has finished, and a second run changes nothing', async () => {
     const { sut, ctx } = setup();
     const metadata = ctx.get(SystemMetadataRepository);
