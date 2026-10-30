@@ -438,10 +438,14 @@ export class DatabaseRepository {
     await this.assertFrameleafDatabase();
     // 1.1.17 put new migrations before the 1.1.16 chain, so upgrades refused to start (issue 626).
     // They now sort after 2100000003013 in the same order; fresh 1.1.17 installs recorded the old names.
+    // Kysely orders the ledger by timestamp, so those rows also move to just after the 1.1.16 chain.
     await sql`
-      UPDATE public.frameleaf_migrations m SET name = r.new
-      FROM (VALUES ${sql.join(RENAMED_MIGRATIONS.map(([old, name]) => sql`(${old}, ${name})`))}) AS r(old, new)
-      WHERE m.name = r.old
+      UPDATE public.frameleaf_migrations m SET name = r.new, timestamp = to_char(
+        (SELECT max(timestamp::timestamptz) FROM public.frameleaf_migrations WHERE name <= '2100000003013-DevelopBatches')
+          AT TIME ZONE 'UTC' + r.n * interval '1 millisecond', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+      FROM (VALUES ${sql.join(RENAMED_MIGRATIONS.map(([old, name], n) => sql`(${old}, ${name}, ${n + 1}::int)`))})
+        AS r(old, new, n)
+      WHERE m.name IN (r.old, r.new)
     `
       .execute(this.db)
       .catch((error: { code?: string }) => {

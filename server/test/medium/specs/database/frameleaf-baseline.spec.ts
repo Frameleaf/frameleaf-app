@@ -88,13 +88,19 @@ it('accepts the migrated catalog and supported CLIP widths without hiding other 
 it('starts a database whose ledger has the 1.1.17 migration names (issue 626)', async () => {
   const db = await getKyselyDB();
   try {
-    for (const [old, name] of RENAMED_MIGRATIONS) {
-      await sql`UPDATE public.frameleaf_migrations SET name = ${old} WHERE name = ${name}`.execute(db);
+    // A fresh 1.1.17 install ran the Boards migrations (1793…) before the 2100… chain, the rest after it.
+    for (const [index, [old, name]] of RENAMED_MIGRATIONS.entries()) {
+      const at = `${old.startsWith('1793') ? 2000 : 2999}-01-01T00:00:00.0${String(index).padStart(2, '0')}Z`;
+      await sql`UPDATE public.frameleaf_migrations SET name = ${old}, timestamp = ${at} WHERE name = ${name}`.execute(
+        db,
+      );
     }
-    await new DatabaseRepository(db, LoggingRepository.create(), new ConfigRepository()).runMigrations();
-    const { rows } = await sql<{ name: string }>`SELECT name FROM public.frameleaf_migrations ORDER BY name`.execute(
-      db,
-    );
+    const repository = new DatabaseRepository(db, LoggingRepository.create(), new ConfigRepository());
+    await repository.runMigrations();
+    await repository.runMigrations();
+    const { rows } = await sql<{
+      name: string;
+    }>`SELECT name FROM public.frameleaf_migrations ORDER BY timestamp::timestamptz, name`.execute(db);
     expect(rows.map(({ name }) => name)).toEqual(
       readOrder(fileURLToPath(new URL('../../../../src/schema/migrations/', import.meta.url))),
     );
