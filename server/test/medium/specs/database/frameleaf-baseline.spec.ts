@@ -2,7 +2,7 @@ import { readOrder } from '@frameleaf/sql-tools';
 import { sql } from 'kysely';
 import { fileURLToPath } from 'node:url';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DatabaseRepository, RENAMED_MIGRATIONS } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -80,6 +80,24 @@ it('accepts the migrated catalog and supported CLIP widths without hiding other 
     }
     await sql`ALTER TABLE asset ADD COLUMN native_fixture_unexpected text`.execute(db);
     expect((await repository.getSchemaDrift()).items.length).toBeGreaterThan(0);
+  } finally {
+    await db.destroy();
+  }
+});
+
+it('starts a database whose ledger has the 1.1.17 migration names (issue 626)', async () => {
+  const db = await getKyselyDB();
+  try {
+    for (const [old, name] of RENAMED_MIGRATIONS) {
+      await sql`UPDATE public.frameleaf_migrations SET name = ${old} WHERE name = ${name}`.execute(db);
+    }
+    await new DatabaseRepository(db, LoggingRepository.create(), new ConfigRepository()).runMigrations();
+    const { rows } = await sql<{ name: string }>`SELECT name FROM public.frameleaf_migrations ORDER BY name`.execute(
+      db,
+    );
+    expect(rows.map(({ name }) => name)).toEqual(
+      readOrder(fileURLToPath(new URL('../../../../src/schema/migrations/', import.meta.url))),
+    );
   } finally {
     await db.destroy();
   }

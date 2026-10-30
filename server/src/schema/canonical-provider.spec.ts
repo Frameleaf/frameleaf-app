@@ -1,5 +1,5 @@
 import { createMigrationProvider } from '@frameleaf/sql-tools';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -29,6 +29,13 @@ describe('canonical migration discovery', () => {
     }).getMigrations();
     expect(migrations[first].up).toBeTypeOf('function');
     expect(migrations[first].down).toBeTypeOf('function');
+  });
+
+  // Kysely refuses to start when a new migration sorts before one a database already ran (issue 626),
+  // so the released chain must stay an exact prefix of ORDER. Bump both values when cutting a release.
+  it('appends new migrations after the released chain', async () => {
+    const order = (await readFile(new URL('migrations/ORDER', import.meta.url), 'utf8')).trim().split('\n');
+    expect(order.indexOf('2100000003013-DevelopBatches')).toBe(49);
   });
 
   it('checks ORDER before invoking an injected module loader', async () => {
