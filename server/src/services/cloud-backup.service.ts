@@ -170,6 +170,7 @@ import {
   appendBackupSnapshot,
   backupRecoveryHistorySchema,
   backupRecoveryPackageSchema,
+  extendBackupHistory,
   mergeBackupHistory,
   readBackupHistory,
   selectBackupSnapshot,
@@ -4444,7 +4445,7 @@ export class CloudBackupService {
       throw new Error('Export key file does not match this vault');
     connection.vaultId = marker.instanceId;
     connection.recoveryKeys = ring?.keys;
-    const history = await this.recoveryHistory(connection, root, original.recovery);
+    const history = await this.recoveryHistory(connection, root, original.recovery, options.managed);
     let key = options.manifestKey;
     if (!key && history) key = selectBackupSnapshot(history).record.descriptor.manifest.objectKey;
     if (!key) throw new Error('Choose a legacy manifest explicitly, or supply the pinned client recovery history');
@@ -4795,7 +4796,30 @@ export class CloudBackupService {
     );
   }
 
-  private async recoveryHistory(connection: CloudBackupConnection, key: Buffer, imported: unknown) {
+  /**
+   * FL-697: a saved recovery file or escrow copy holds history only up to when it was saved. Managed
+   * storage also reads the signed records Frameleaf Cloud keeps, accepting only those that verify against
+   * the pinned keys and chain from the saved anchor. Unreachable or refused records keep the saved history.
+   */
+  private async withCloudHistory(history: BackupRecoveryHistory | null) {
+    if (!history) return history;
+    try {
+      const remote = await this.cloudBackup.listSnapshots(
+        await this.managedApi(),
+        history.anchor.vaultId,
+        history.anchor.sequence,
+      );
+      const extended = extendBackupHistory(history, remote);
+      if (extended.refused)
+        this.logger.warn('Frameleaf Cloud returned backup snapshot history that does not verify; it was not used.');
+      return extended.history;
+    } catch (error) {
+      this.logger.warn(`Could not read backup snapshot history from Frameleaf Cloud: ${errorMessage(error)}`);
+      return history;
+    }
+  }
+
+  private async recoveryHistory(connection: CloudBackupConnection, key: Buffer, imported: unknown, managed = false) {
     const physical = bucketRef(connection.endpoint, connection.bucket);
     let local = await readBackupHistory(this.clientHistoryPath(physical));
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
@@ -4810,7 +4834,8 @@ export class CloudBackupService {
         await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
         local ?? undefined,
       );
-    const history = mergeBackupHistory(local, imported ? backupRecoveryHistorySchema.parse(imported) : undefined);
+    let history = mergeBackupHistory(local, imported ? backupRecoveryHistorySchema.parse(imported) : undefined);
+    if (managed) history = await this.withCloudHistory(history);
     if (history && connection.vaultId && history.anchor.vaultId !== connection.vaultId)
       throw new Error('Recovery history belongs to another vault');
     return history;
@@ -4822,7 +4847,8 @@ export class CloudBackupService {
     imported = this.importedHistory.get(metadata.keyFingerprint),
   ) {
     const local = await readBackupHistory(this.clientHistoryPath(metadata.bucketRef));
-    const history = mergeBackupHistory(local, imported);
+    let history = mergeBackupHistory(local, imported);
+    if (metadata.target === 'managed') history = await this.withCloudHistory(history);
     if (history) {
       if (history.anchor.instanceId !== metadata.instanceId || history.anchor.vaultId !== metadata.instanceId)
         throw new Error('Backup history belongs to another server');

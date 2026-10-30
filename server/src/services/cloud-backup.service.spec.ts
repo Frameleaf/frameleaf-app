@@ -57,6 +57,7 @@ import {
   loadBackupWorkerIdentity,
 } from 'src/utils/cloud-backup-key-channel.js';
 import {
+  type BackupRecoveryHistory,
   appendBackupSnapshot,
   readBackupHistory,
   selectBackupSnapshot,
@@ -523,6 +524,7 @@ describe(CloudBackupService.name, () => {
       getEscrow: vi.fn(),
       deleteEscrow: vi.fn().mockResolvedValue(undefined),
       reportSnapshot: vi.fn().mockResolvedValue(undefined),
+      listSnapshots: vi.fn().mockResolvedValue([]),
       putRecoveryPackage: vi.fn().mockResolvedValue(undefined),
       deleteRecoveryPackages: vi.fn().mockResolvedValue(undefined),
     };
@@ -534,6 +536,42 @@ describe(CloudBackupService.name, () => {
   afterEach(() => rm(identityDir, { recursive: true, force: true }));
   // FL-406: every cloud backup notice carries a system template whose English matches the supplied text
   afterEach(() => expectLocalisedSystemNotices(mocks.event.emit));
+
+  // FL-697: managed restores advance the saved history with Cloud's signed records, never trusting them blindly
+  describe('managed snapshot history from Frameleaf Cloud', () => {
+    const internal = () =>
+      sut as unknown as {
+        withCloudHistory: (history: BackupRecoveryHistory | null) => Promise<BackupRecoveryHistory | null>;
+        managedApi: () => Promise<{ api: string; token: string }>;
+      };
+
+    beforeEach(() => {
+      vi.spyOn(internal(), 'managedApi').mockResolvedValue({ api: 'https://cloud.test', token: 'synthetic' });
+    });
+
+    it('selects the newest Cloud record that chains from the saved anchor', async () => {
+      const fixture = recoveryFixture();
+      const third = fixture.snapshot(3, fixture.second.digest);
+      cloudBackup.listSnapshots.mockResolvedValue([third]);
+      const history = await internal().withCloudHistory(fixture.history);
+      expect(cloudBackup.listSnapshots).toHaveBeenCalledWith(expect.anything(), fixture.vaultId, 2);
+      expect(selectBackupSnapshot(history!).record.digest).toBe(third.digest);
+    });
+
+    it('keeps the saved history when Cloud is unreachable', async () => {
+      const fixture = recoveryFixture();
+      cloudBackup.listSnapshots.mockRejectedValue(new Error('offline'));
+      await expect(internal().withCloudHistory(fixture.history)).resolves.toBe(fixture.history);
+    });
+
+    it('keeps the saved history when Cloud returns a record the pinned keys did not sign', async () => {
+      const fixture = recoveryFixture();
+      const forged = recoveryFixture().snapshot(3, fixture.second.digest);
+      cloudBackup.listSnapshots.mockResolvedValue([forged]);
+      const history = await internal().withCloudHistory(fixture.history);
+      expect(selectBackupSnapshot(history!).record.digest).toBe(fixture.second.digest);
+    });
+  });
 
   describe('metadata update races', () => {
     const internal = () =>

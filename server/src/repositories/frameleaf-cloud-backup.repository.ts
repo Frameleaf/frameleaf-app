@@ -45,6 +45,12 @@ import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 /** Where to reach Frameleaf Cloud's API and the DPoP-bound instance token for it (FL-178). */
 export type ManagedBackupApi = { api: string; token: FrameleafInstanceToken };
 
+/** Records stay unparsed here: the caller verifies each against its own pinned keys. */
+const backupSnapshotListSchema = z.object({
+  snapshots: z.array(z.unknown()).max(100),
+  nextAfterSequence: z.int().positive().nullable(),
+});
+
 /**
  * Frameleaf Cloud's managed backup routes (FL-164, CLD-302; FC-33 BAK-001 and FC-38 BAK-002): the bucket
  * grant and its rotation, usage, run telemetry, the agent's settings and key escrow. Every body is checked
@@ -175,6 +181,23 @@ export class FrameleafCloudBackupRepository {
       dpop: target.token,
       body: { descriptor, signature },
     });
+  }
+
+  /** FL-697: every signed record Cloud holds for the vault after `afterSequence`, oldest first. Unverified. */
+  async listSnapshots(target: ManagedBackupApi, vaultId: string, afterSequence: number): Promise<unknown[]> {
+    const records: unknown[] = [];
+    // A trusted history holds at most 100,000 snapshots (100 per page).
+    for (let after: number | null = afterSequence, pages = 0; after !== null; pages++) {
+      if (pages >= 1000) throw new Error('Frameleaf Cloud returned more snapshot pages than a history can hold');
+      const url = new URL(`${target.api.replace(/\/+$/, '')}/v2/backup/snapshots`);
+      url.search = new URLSearchParams({ vaultId, afterSequence: String(after), limit: '100' }).toString();
+      const page = await this.cloud.requestJson(backupSnapshotListSchema, { url: url.href, dpop: target.token });
+      records.push(...page.snapshots);
+      if (page.nextAfterSequence !== null && page.nextAfterSequence <= after)
+        throw new Error('Frameleaf Cloud snapshot pages did not advance');
+      after = page.nextAfterSequence;
+    }
+    return records;
   }
 
   /* FL-362, FC-149: numeric run coverage. Every body is checked against the contract before it is sent. */
