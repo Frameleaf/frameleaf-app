@@ -339,6 +339,15 @@
     }
   };
 
+  // The passphrase never outlives its dialog, however it closes.
+  $effect(() => {
+    if (escrowOpen) {
+      return;
+    }
+    escrowPassphrase = { first: '', second: '' };
+    escrowFailure = '';
+  });
+
   const readKeyFile = async (file: File | undefined) => {
     if (!file) {
       return;
@@ -359,7 +368,6 @@
       status = await storeCloudBackupEscrow({ cloudBackupEscrowDto: { passphrase: escrowPassphrase.first } });
       notice = $t('frameleaf_cloud_backup_escrow_updated');
       escrowOpen = false;
-      escrowPassphrase = { first: '', second: '' };
     } catch (error) {
       escrowFailure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     } finally {
