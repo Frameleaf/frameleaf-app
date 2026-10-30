@@ -178,7 +178,10 @@
       !!session.query.filter.hasTransparency ||
       !!session.query.filter.durationMs,
   );
-  /** Filters the page itself states (the workspace, the collection) are not the person's own narrowing. */
+  /**
+   * Filters the page itself states (the workspace, the collection) are not the person's own narrowing:
+   * they get no chip and no count in the toolbar either (FL-670).
+   */
   const scopeFields = $derived(album ? ['libraryScope', 'albumIds'] : ['libraryScope']);
   const narrowingFields = $derived(activeFilterFields(session.query).filter((field) => !scopeFields.includes(field)));
   const narrowed = $derived(narrowingFields.length > 0 || session.query.text.trim() !== '');
@@ -565,6 +568,7 @@
     onCloseFilterPanel={() => (filterSection = null)}
     {inspectorOpen}
     onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
+    unappliedFields={scopeFields}
   />
   <div class="fl-items-controls" role="toolbar" aria-label={$t('frameleaf_boards_filters')}>
     <div class="fl-items-popover-host">
@@ -929,11 +933,13 @@
   {/await}{/if}
 
 <style>
+  /* The page scrolls as one, header and filters included (FL-670): no small scroll area for the grid. */
   .fl-items-view {
     height: 100%;
     min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
   }
   .fl-items-heading-actions {
     display: flex;
@@ -968,19 +974,22 @@
   }
   .fl-items-panes {
     display: flex;
-    flex: 1;
-    min-height: 0;
+    flex: 1 0 auto;
   }
   .fl-items-scroll {
     flex: 1;
     min-width: 0;
-    overflow: auto;
     padding: var(--fl-space-4);
   }
+  /* Filters and details stay in view while the page scrolls under them. */
   .fl-items-panel {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
     flex: 0 0 20rem;
     width: 20rem;
     max-width: 100%;
+    max-height: calc(100dvh - var(--fl-topbar-height, 0px));
     overflow: auto;
     border-inline-start: 1px solid var(--fl-border);
   }
@@ -1087,6 +1096,9 @@
     border-top: 1px solid var(--fl-border);
   }
   .fl-items-selection {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
     background: var(--fl-raised);
     border-top: 1px solid var(--fl-border);
   }

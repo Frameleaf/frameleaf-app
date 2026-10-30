@@ -1,4 +1,4 @@
-import { AlbumUserRole, type AlbumResponseDto } from '@frameleaf/sdk';
+import { AlbumUserRole, LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -481,6 +481,28 @@ describe('AlbumHeader in Boards', () => {
     expect(card).toHaveTextContent('Moodboard');
     expect(card).toHaveTextContent('4 items · 2 inside');
     expect(card.querySelector('[data-color="teal"]')).not.toBeNull();
+  });
+
+  it('keeps a Boards collection compact: Boards path, no empty albums strip, extras in the menu (FL-670)', async () => {
+    const album = albumAs(AlbumUserRole.Owner, { libraryScope: LibraryScope.Design, description: '' });
+    render(AlbumHeader, {
+      album,
+      uploadScope: LibraryScope.Design,
+      assetCount: 3,
+      onAlbumChange: vi.fn(),
+      onRefresh: vi.fn(),
+      onAddPhotos: vi.fn(),
+      onSlideshow: vi.fn(),
+    });
+    expect(screen.getByRole('link', { name: 'Boards' })).toHaveAttribute('href', '/pro');
+    expect(screen.queryByRole('region', { name: 'Collections' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New album' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add photos' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Slideshow' })).toBeNull();
+    expect(screen.queryByText('Add a description')).toBeNull();
+    const menu = await openMore();
+    expect(menu.getByRole('menuitem', { name: 'New collection' })).toBeInTheDocument();
+    expect(menu.getByRole('menuitem', { name: 'Slideshow' })).toBeInTheDocument();
   });
 
   it('spells out what Delete does: items stay, albums inside move up, people lose access', async () => {

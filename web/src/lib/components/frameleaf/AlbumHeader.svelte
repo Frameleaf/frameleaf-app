@@ -205,6 +205,13 @@
   /** Phones (apple-style.css `max-width: 700px`): the secondary actions live in the "…" menu. */
   const phone = new MediaQuery('max-width: 700px');
   const compact = $derived(phone.current);
+  /**
+   * A Boards collection (prototype screen 02, FL-670): the path starts at Boards, the board's own Add
+   * replaces Add photos, the secondary actions sit in "…", and the cards of collections inside show
+   * only when there are any, so the items start near the top.
+   */
+  const boards = $derived(uploadScope === LibraryScope.Design);
+  const folded = $derived(compact || boards);
 
   /** "Icon and colour…" (README point 22): the header's icon tile and the "…" menu open it. */
   let iconOpen = $state(false);
@@ -478,6 +485,8 @@
   <nav class="crumbs" aria-label={$t('frameleaf_album_breadcrumb')}>
     {#if album.kind === AlbumKind.Space}
       <a href={Route.sharing()}>{$t('frameleaf_shared_spaces')}</a>
+    {:else if boards}
+      <a href="/pro">{$t('frameleaf_pro_title')}</a>
     {:else}
       <a href={Route.albums()}>{$t('albums')}</a>
     {/if}
@@ -541,15 +550,15 @@
         {/if}
       </div>
 
-      <AlbumInlineEdit
-        as="p"
-        label={$t('frameleaf_album_edit_description')}
-        value={album.description}
-        editable={editor}
-        multiline
-        placeholder={$t('frameleaf_album_add_description')}
-        onSave={(description) => save({ description }, $t('frameleaf_album_description_saved'))}
-      />
+      {#if !boards || album.description}<AlbumInlineEdit
+          as="p"
+          label={$t('frameleaf_album_edit_description')}
+          value={album.description}
+          editable={editor}
+          multiline
+          placeholder={$t('frameleaf_album_add_description')}
+          onSave={(description) => save({ description }, $t('frameleaf_album_description_saved'))}
+        />{/if}
 
       {#if rule}
         <div class="rule-row">
@@ -599,7 +608,7 @@
         <Icon icon={mdiPlus} size="18" />
         <span>{$t('frameleaf_albums_create_album')}</span>
       </button>
-    {:else if editor && !album.isSmart}
+    {:else if editor && !album.isSmart && !boards}
       <!-- CollectionHeader.jsx:1373: Add photos is the header's primary menu. -->
       <div class="primary-menu">
         <Menu label={$t('add_photos')} align="start">
@@ -635,7 +644,7 @@
       (CollectionHeader.jsx:1142-1154, 1410-1510; apple-style.css:872-877): only Add photos (or New
       album), Re-evaluate and Share stay in the row.
     -->
-    {#if !compact}
+    {#if !folded}
       {#if owner}
         <button type="button" class="action" onclick={openLinks}>
           <Icon icon={mdiLinkVariant} size="18" />
@@ -690,7 +699,13 @@
       {#snippet trigger()}
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
-      {#if compact}
+      {#if folded}
+        {#if boards && editor}
+          <MenuItem onSelect={() => (createOpen = true)}>
+            <Icon icon={mdiPlus} size="18" />
+            {$t('frameleaf_boards_new_collection')}
+          </MenuItem>
+        {/if}
         {#if owner}
           <MenuItem onSelect={openLinks}>
             <Icon icon={mdiLinkVariant} size="18" />
@@ -799,12 +814,12 @@
 
   <p class="status" role="status" aria-live="polite">{status}</p>
 
-  {#if album.kind !== AlbumKind.Space && (childAlbums.length > 0 || editor)}
-    <section class="strip" aria-label={$t('albums')}>
-      <div class="strip-head">
-        <h2>{$t('albums')}</h2>
-        <small>{$t('frameleaf_albums_count', { values: { count: childAlbums.length } })}</small>
-      </div>
+  {#if album.kind !== AlbumKind.Space && (childAlbums.length > 0 || (editor && !boards))}
+    <section class="strip" class:boards aria-label={$t(boards ? 'frameleaf_boards_collections' : 'albums')}>
+      {#if !boards}<div class="strip-head">
+          <h2>{$t('albums')}</h2>
+          <small>{$t('frameleaf_albums_count', { values: { count: childAlbums.length } })}</small>
+        </div>{/if}
       <div class="strip-grid">
         {#each childAlbums as child (child.id)}
           {@const cover = coverOf(child)}
@@ -830,7 +845,7 @@
             </small>
           </a>
         {/each}
-        {#if editor}
+        {#if editor && !boards}
           <button type="button" class="new-tile" onclick={() => (createOpen = true)}>
             <Icon icon={mdiPlus} size="22" />
             <span>{$t('frameleaf_albums_create_album')}</span>
@@ -1356,6 +1371,36 @@
     margin-block-start: var(--fl-space-2);
     padding-block-start: var(--fl-space-4);
     border-block-start: 1px solid var(--fl-border);
+  }
+  /* Boards (prototype screen 02): small cards in a row, cover beside the name, no rule above. */
+  .strip.boards {
+    padding-block-start: 0;
+    border-block-start: 0;
+  }
+  .strip.boards .strip-grid {
+    grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+    gap: var(--fl-space-3);
+  }
+  .strip.boards .sub-card {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: var(--fl-space-3);
+    row-gap: 2px;
+    padding: var(--fl-space-2);
+    border: 1px solid var(--fl-border);
+  }
+  .strip.boards .sub-cover {
+    grid-row: span 2;
+    border-radius: var(--fl-radius-control);
+  }
+  .strip.boards .sub-name,
+  .strip.boards .sub-meta {
+    align-self: end;
+  }
+  .strip.boards .sub-meta {
+    align-self: start;
   }
   .strip-head {
     display: flex;

@@ -1,4 +1,4 @@
-import { getAlbumInfo, getAlbumTree } from '@frameleaf/sdk';
+import { getAlbumInfo, getAlbumTree, LibraryScope, LibraryViewScope } from '@frameleaf/sdk';
 import { authenticate } from '$lib/utils/auth';
 import type { PageLoad } from './$types';
 
@@ -14,7 +14,10 @@ export const load = (async ({ params, url, depends }) => {
 
   return {
     album,
-    tree,
+    // A Boards collection's collections live in the Boards tree (FL-670). ponytail: a second request
+    // only for Boards collections; read the album's scope from the URL first if the wait shows.
+    tree:
+      album.libraryScope === LibraryScope.Design ? await getAlbumTree({ libraryScope: LibraryViewScope.Design }) : tree,
     meta: {
       title: album.albumName,
     },

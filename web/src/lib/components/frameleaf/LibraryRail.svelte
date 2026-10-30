@@ -35,7 +35,7 @@
   import { canAnimate, prefersReducedMotion } from '$lib/frameleaf/motion';
   import { DURATION } from '$lib/frameleaf/tokens';
   import '$lib/frameleaf/tokens.css';
-  import { searchContextFor, workspaceHref } from '$lib/frameleaf/search-context';
+  import { libraryUploadScope, searchContextFor, workspaceHref } from '$lib/frameleaf/search-context';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -47,8 +47,10 @@
   import {
     AssetTypeEnum,
     LibraryItemSearchKind,
+    LibraryScope,
     LibraryViewScope,
     getAlbumHierarchy,
+    type AlbumResponseDto,
     searchLibraryItems,
     type SearchFilter,
     getPartners,
@@ -125,7 +127,13 @@
   const flipped = new SvelteSet<string>();
 
   let treeRequest = 0;
-  const workspaceScope = $derived(searchContextFor(new URL(page.url.href)).query.filter.libraryScope);
+  /** A Boards collection opened by its own address (`/albums/<id>`) is still in Boards (FL-670). */
+  const workspaceScope = $derived(
+    libraryUploadScope(new URL(page.url.href), (page.data as { album?: AlbumResponseDto } | undefined)?.album) ===
+      LibraryScope.Design
+      ? LibraryViewScope.Design
+      : searchContextFor(new URL(page.url.href)).query.filter.libraryScope,
+  );
   const scopedHref = (href: string) => workspaceHref(href, workspaceScope, page.url.origin);
   const refreshAlbums = async (scope = workspaceScope) => {
     const version = ++treeRequest;

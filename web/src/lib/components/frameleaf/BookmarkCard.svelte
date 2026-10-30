@@ -41,6 +41,7 @@
 <div
   class="fl-bookmark"
   class:is-selected={selected}
+  class:is-selecting={selecting}
   data-testid="frameleaf-bookmark-card"
   data-asset-id="bookmark:{bookmark.id}"
   use:dragSelect
@@ -147,6 +148,15 @@
     place-items: center;
     width: 44px;
     height: 44px;
+    /* Like an image tile's ring (AssetTile): shown on hover, focus, or once a selection is under way. */
+    opacity: 0;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-bookmark:hover .fl-bookmark-select,
+  .fl-bookmark:focus-within .fl-bookmark-select,
+  .fl-bookmark.is-selecting .fl-bookmark-select,
+  .fl-bookmark.is-selected .fl-bookmark-select {
+    opacity: 1;
   }
   .fl-bookmark-select input {
     width: 20px;
