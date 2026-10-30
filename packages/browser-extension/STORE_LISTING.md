@@ -83,7 +83,7 @@ The extension sends data only to the Frameleaf server the user connects. There a
 | Screenshot 4            | 1280 × 800 | The save list, with items saving and saved                    |
 | Screenshot 5            | 1280 × 800 | What you saved, in Boards in the web app                      |
 | Small promo tile        | 440 × 280  | The Frameleaf mark with "Save to Frameleaf"                   |
-| Marquee (optional)      | 1400 × 560 | Only if the store features the extension                      |
+| Marquee promo tile      | 1400 × 560 | The name and tagline beside the image picker, no transparency |
 
 Capture the screenshots from the real extension against a test server, not the prototype, and with no personal photos in view.
 
