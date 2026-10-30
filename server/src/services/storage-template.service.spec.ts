@@ -844,6 +844,74 @@ describe(StorageTemplateService.name, () => {
       expect(await movedOriginals()).toContainEqual({ id: asset.id, originalPath: newPath });
     });
 
+    describe('empty upload folders (OPS-08)', () => {
+      const uploaded = (folder: (ownerId: string) => string, sidecarFolder?: (ownerId: string) => string) => {
+        const factory = AssetFactory.from({ fileCreatedAt: new Date('2022-06-19T23:41:36.910Z') }).exif();
+        const ownerId = factory.build().ownerId;
+        const asset = (
+          sidecarFolder
+            ? factory.file({ type: AssetFileType.Sidecar, path: `${sidecarFolder(ownerId)}/efgh.xmp` })
+            : factory
+        ).build();
+        return { ...asset, originalPath: `${folder(asset.ownerId)}/abcd.jpg` };
+      };
+      const run = async (asset: ReturnType<typeof uploaded>) => {
+        mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
+        mocks.user.getList.mockResolvedValue([userStub.user1]);
+        mocks.move.create.mockImplementation((move) => Promise.resolve({ id: `move-${move.pathType}`, ...move }));
+        await sut.handleMigration();
+      };
+
+      it('removes the xx/yy folders a moved upload leaves empty, never the user folder', async () => {
+        mocks.storage.removeDirIfEmpty.mockResolvedValue(true);
+        const asset = uploaded((owner) => `/data/upload/${owner}/ab/cd`);
+
+        await run(asset);
+
+        expect(await movedOriginals()).toHaveLength(1);
+        expect(mocks.storage.removeDirIfEmpty.mock.calls).toEqual([
+          [`/data/upload/${asset.ownerId}/ab/cd`],
+          [`/data/upload/${asset.ownerId}/ab`],
+        ]);
+      });
+
+      it('also removes the folders an uploaded sidecar leaves empty', async () => {
+        mocks.storage.removeDirIfEmpty.mockResolvedValue(true);
+        const asset = uploaded(
+          (owner) => `/data/upload/${owner}/ab/cd`,
+          (owner) => `/data/upload/${owner}/ef/gh`,
+        );
+
+        await run(asset);
+
+        expect(mocks.storage.removeDirIfEmpty.mock.calls).toEqual([
+          [`/data/upload/${asset.ownerId}/ef/gh`],
+          [`/data/upload/${asset.ownerId}/ef`],
+          [`/data/upload/${asset.ownerId}/ab/cd`],
+          [`/data/upload/${asset.ownerId}/ab`],
+        ]);
+      });
+
+      it('stops at a folder that still holds files', async () => {
+        mocks.storage.removeDirIfEmpty.mockResolvedValue(false);
+        const asset = uploaded((owner) => `/data/upload/${owner}/ab/cd`);
+
+        await run(asset);
+
+        expect(mocks.storage.removeDirIfEmpty.mock.calls).toEqual([[`/data/upload/${asset.ownerId}/ab/cd`]]);
+      });
+
+      it('leaves folders alone when the move fails or the file is outside upload/<user>/xx/yy', async () => {
+        await run(uploaded((owner) => `/data/library/${owner}/old`));
+        await run(uploaded((owner) => `/data/upload/${owner}`));
+        mocks.storage.rename.mockRejectedValue(new Error('Read only system'));
+        mocks.storage.copyFile.mockRejectedValue(new Error('Read only system'));
+        await run(uploaded((owner) => `/data/upload/${owner}/ab/cd`));
+
+        expect(mocks.storage.removeDirIfEmpty).not.toHaveBeenCalled();
+      });
+    });
+
     it('should use the user storage label', async () => {
       const user = UserFactory.create({ storageLabel: 'label-1' });
       const asset = AssetFactory.from({

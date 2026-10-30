@@ -23,6 +23,10 @@ describe('setting words (FL-368)', () => {
     expect(describeChange($t(), 'server', { path: 'map.enabled', before: true, after: false }).said).toBe(
       'Show photos on a map turned off',
     );
+    // OPS-08: the Folder layout switch read "Enabled"
+    expect(describeChange($t(), 'server', { path: 'storageTemplate.enabled', before: false, after: true }).label).toBe(
+      'Sort originals into folders',
+    );
   });
 
   it('says a choice in the words of its options, and a number with its unit', () => {
@@ -134,7 +138,7 @@ describe('setting words (FL-368)', () => {
     }).toMatchInlineSnapshot(`
       {
         "preference": 7,
-        "server": 170,
+        "server": 167,
       }
     `);
   });
