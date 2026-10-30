@@ -31,7 +31,7 @@ Save images, pages and screenshots to your own Frameleaf library, into the colle
 > • Right-click any image or page and choose "Save to Frameleaf".
 > • Saving carries on in the background, even after you close the window, and waits if your server is offline.
 >
-> Sign in with your Frameleaf account: choose your server, sign in and allow access once. There is no key to copy. The extension can only save things and list your collections and tags, and you can sign out or remove its access at any time.
+> Sign in with your Frameleaf account: choose your server, sign in and allow access once. There is no key to copy. The extension can only save things, list your collections and tags, and make a new collection when you ask it to, and you can sign out or remove its access at any time.
 >
 > You need a Frameleaf server of your own, at home or with Frameleaf Cloud. Nothing you save goes anywhere else.
 

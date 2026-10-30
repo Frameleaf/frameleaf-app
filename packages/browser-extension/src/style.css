@@ -855,7 +855,14 @@ details.source[open] {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  /* the whole row is the touch target, so it keeps the shared control floor */
+  min-height: 44px;
   cursor: pointer;
+}
+@media (pointer: coarse) {
+  .switch {
+    min-height: 48px;
+  }
 }
 .switch > span {
   flex: 1;

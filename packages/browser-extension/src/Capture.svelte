@@ -69,12 +69,15 @@
   const thumbnailQueue: CaptureCandidate[] = [];
   const queuedThumbnails = new Set<string>();
   let thumbnailsLoading = 0;
+  /** Bumped by clearImages so rows already on screen ask for their thumbnails again. */
+  let thumbnailRound = $state(0);
   function clearImages() {
     saveController?.abort();
     thumbnailController.abort();
     thumbnailController = new AbortController();
     thumbnailQueue.length = 0;
     queuedThumbnails.clear();
+    thumbnailRound++;
     for (const url of Object.values(thumbnails)) URL.revokeObjectURL(url);
     thumbnails = {};
     imageBytes.clear();
@@ -88,7 +91,11 @@
    * Thumbnails download by themselves as their rows come into view, a few at a time, the same way
    * saving does (no cookies, referrer or redirects); the bytes are kept for saving.
    */
-  function showThumbnail(node: HTMLElement, candidate: CaptureCandidate) {
+  function showThumbnail(
+    node: HTMLElement,
+    row: { candidate: CaptureCandidate; round: number },
+  ) {
+    let { candidate } = row;
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -101,7 +108,14 @@
       { rootMargin: "200px" },
     );
     observer.observe(node);
-    return { destroy: () => observer.disconnect() };
+    return {
+      update(next: { candidate: CaptureCandidate; round: number }) {
+        candidate = next.candidate;
+        observer.disconnect();
+        observer.observe(node);
+      },
+      destroy: () => observer.disconnect(),
+    };
   }
   function pumpThumbnails() {
     // ponytail: 4 at once is plenty for a list scrolled by hand
@@ -122,7 +136,13 @@
         approvedOrigins.add(origin);
       }
       const blob = await acquireCandidate(candidate, approvedOrigins, signal);
-      if (signal.aborted) return;
+      // saved (and released) while it downloaded: nothing left to show it in
+      if (
+        signal.aborted ||
+        savedCandidates.has(candidate.id) ||
+        !preview?.discovery.candidates.some((item) => item.id === candidate.id)
+      )
+        return;
       const used = [...imageBytes.values()].reduce(
         (total, value) => total + value.size,
         0,
@@ -137,6 +157,8 @@
   function thumbnailFailed(id: string) {
     if (thumbnails[id]) URL.revokeObjectURL(thumbnails[id]);
     delete thumbnails[id];
+    // bytes the browser can't show aren't kept for saving either; saving downloads again
+    imageBytes.delete(id);
   }
   const visible = $derived(
     filterCandidates(preview?.discovery.candidates ?? [], {
@@ -906,7 +928,7 @@
               {@const thumbnail = thumbnails[candidate.id]}
               <li
                 class:on={selected.includes(candidate.id)}
-                use:showThumbnail={candidate}
+                use:showThumbnail={{ candidate, round: thumbnailRound }}
               >
                 <label class="candidate"
                   ><input

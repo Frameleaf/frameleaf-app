@@ -41,11 +41,12 @@ if (manifest.version !== version) {
   );
 }
 if (
-  !/^\d+(\.\d+){0,3}$/.test(version) ||
-  version.split('.').some((part) => Number(part) > 65_535)
+  !/^(0|[1-9]\d*)(\.(0|[1-9]\d*)){0,3}$/.test(version) ||
+  version.split('.').some((part) => Number(part) > 65_535) ||
+  version.split('.').every((part) => part === '0')
 ) {
   fail(
-    `${version} is not a version Chrome accepts (1 to 4 numbers, each 0 to 65535)`,
+    `${version} is not a version Chrome accepts (1 to 4 numbers, each 0 to 65535 with no leading zeros, not all zero)`,
   );
 }
 if ('key' in manifest) {
