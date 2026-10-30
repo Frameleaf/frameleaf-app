@@ -332,7 +332,7 @@ describe(StudioVoiceCleanupService.name, () => {
       );
       expect(movies.encodeMusic).toHaveBeenCalledWith(
         expect.stringMatching(/cleaned\.wav$/),
-        expect.stringMatching(/\.m4a$/),
+        expect.stringMatching(/\/studio-imports\/incoming\/[\da-f-]{36}\.upload$/),
         5,
         expect.any(AbortSignal),
       );
@@ -340,7 +340,11 @@ describe(StudioVoiceCleanupService.name, () => {
         expect.objectContaining({ user: expect.objectContaining({ id: owner.user.id }) }),
         projectId,
         expect.any(String),
-        expect.objectContaining({ mimetype: 'audio/mp4', originalname: 'Beach walk (cleaned voice).m4a' }),
+        expect.objectContaining({
+          path: expect.stringMatching(/\/studio-imports\/incoming\/[\da-f-]{36}\.upload$/),
+          mimetype: 'audio/mp4',
+          originalname: 'Beach walk (cleaned voice).m4a',
+        }),
       );
       expect(query.set).toHaveBeenCalledWith({
         result: {
@@ -393,7 +397,9 @@ describe(StudioVoiceCleanupService.name, () => {
       storage.stat.mockRejectedValue(new Error('disk'));
       await sut.run({ operation, claimToken });
       expect(imports.upload).not.toHaveBeenCalled();
-      expect(storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/voice-.+\.m4a$/));
+      expect(storage.unlink).toHaveBeenCalledWith(
+        expect.stringMatching(/\/studio-imports\/incoming\/[\da-f-]{36}\.upload$/),
+      );
     });
 
     it('validates only an active claim, and publishes nothing once the lease has expired', async () => {
