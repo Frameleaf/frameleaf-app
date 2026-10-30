@@ -184,19 +184,26 @@ export class PhotographySiteService {
         const site = normalisePhotographySite(record.site, owner?.name ?? '');
         const { created } = await this.copyNewPhotos(ownerId, site, record.media ?? {}, true);
         if (created.length === 0) return;
-        const unused = await this.repository.mutateStudio(ownerId, undefined, (current) => {
-          // Keep only copies the site still shows and that no save made meanwhile.
-          const wanted = new Set(
-            portfolioItems(normalisePhotographySite(current.site, '')).map((item) => portfolioKey(item)),
-          );
-          current.media ??= {};
-          const left: StudioSiteMedia[] = [];
-          for (const { key, copy } of created) {
-            if (wanted.has(key) && !current.media[key]) current.media[key] = copy;
-            else left.push(copy);
-          }
-          return left;
-        });
+        let unused;
+        try {
+          unused = await this.repository.mutateStudio(ownerId, undefined, (current) => {
+            // Keep only copies the site still shows and that no save made meanwhile.
+            const wanted = new Set(
+              portfolioItems(normalisePhotographySite(current.site, '')).map((item) => portfolioKey(item)),
+            );
+            current.media ??= {};
+            const left: StudioSiteMedia[] = [];
+            for (const { key, copy } of created) {
+              if (wanted.has(key) && !current.media[key]) current.media[key] = copy;
+              else left.push(copy);
+            }
+            return left;
+          });
+        } catch (error) {
+          // Not recorded, so nothing would ever refer to these copies.
+          for (const { copy } of created) await this.removeFiles(copy);
+          throw error;
+        }
         for (const copy of unused.result) await this.removeFiles(copy);
       } catch (error) {
         this.logger.warn(`Studio website photo catch-up failed: ${error}`);
