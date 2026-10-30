@@ -1046,7 +1046,10 @@ export class AssetService extends BaseService {
           assetFiles.editedPreviewFile?.path,
           assetFiles.editedThumbnailFile?.path,
           assetFiles.encodedVideoFile?.path,
-          ...removed.videoDuplicateFramePaths,
+          // FL-651: the CLIP frames of the retired video duplicate check, which may still be on disk
+          ...(asset.type === AssetType.Video
+            ? StorageCore.getLegacyVideoDuplicateFramePaths(asset.ownerId, asset.id)
+            : []),
           ...(removed.videoEditPaths ?? []),
           // restoration and develop outputs; never the original they were made from
           ...removed.derivedPaths,

@@ -779,6 +779,7 @@ where
 -- AssetJobRepository.getForAssetDeletion
 select
   "asset"."id",
+  "asset"."type",
   "asset"."visibility",
   "asset"."libraryId",
   "asset"."ownerId",

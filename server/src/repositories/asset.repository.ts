@@ -21,7 +21,6 @@ import type { SearchFilter } from 'src/dtos/search.dto.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile, LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
@@ -135,7 +134,6 @@ export type RemovedAsset = {
   reservationTemporaryPath: string | null;
   /** Its generated, edited and sidecar files. */
   files: AssetFile[];
-  videoDuplicateFramePaths: string[];
   /** Outputs of its restorations and develop revisions, whose rows go with it. */
   derivedPaths: string[];
   videoEditPaths?: string[];
@@ -1915,7 +1913,6 @@ export class AssetRepository {
       originalPath: lockedAsset.originalPath,
       reservationTemporaryPath: lockedAsset.reservationTemporaryPath,
       files: lockedAsset.files,
-      videoDuplicateFramePaths: lockedAsset.videoDuplicateFramePaths,
       derivedPaths: [...new Set([...lockedAsset.restorationPaths, ...developPaths, ...studioHdrPaths])],
       ...(videoEditPaths.length > 0 && { videoEditPaths }),
       pendingMoves: lockedAsset.pendingMoves,
@@ -2046,14 +2043,10 @@ export class AssetRepository {
     | undefined
   > {
     const rows = await sql<{
-      ownerId: string;
-      type: AssetType;
       originalPath: string;
       reservationTemporaryPath: string | null;
     }>`
       SELECT
-        asset."ownerId" AS "ownerId",
-        asset.type AS "type",
         asset."originalPath" AS "originalPath",
         NULL::text AS "reservationTemporaryPath"
       FROM public.asset asset
@@ -2095,9 +2088,6 @@ export class AssetRepository {
     return {
       ...row,
       files,
-      // FL-651: the CLIP frames of the retired video duplicate check, which may still be on disk
-      videoDuplicateFramePaths:
-        row.type === AssetType.Video ? StorageCore.getLegacyVideoDuplicateFramePaths(row.ownerId, id) : [],
       restorationPaths,
       derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? []), ...studioHdrPaths])],
       ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),

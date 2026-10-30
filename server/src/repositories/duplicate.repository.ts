@@ -437,7 +437,14 @@ export class DuplicateRepository {
     if (assetIds.length === 0) {
       return Promise.resolve([]);
     }
-    return this.db.selectFrom('asset_video_fingerprint').selectAll().where('assetId', '=', anyUuid(assetIds)).execute();
+    return (
+      this.db
+        .selectFrom('asset_video_fingerprint')
+        // as JSON strings: the driver would read bigint[] as lossy numbers
+        .select(['assetId', 'durationMs', sql<Array<string | null>>`to_json("hashes"::text[])`.as('hashes')])
+        .where('assetId', '=', anyUuid(assetIds))
+        .execute()
+    );
   }
 
   /** FL-651: the other members of the look-alike group an asset is in. */

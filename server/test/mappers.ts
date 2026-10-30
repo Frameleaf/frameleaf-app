@@ -219,6 +219,7 @@ export const getForSidecarWrite = (asset: ReturnType<AssetFactory['build']>) => 
 
 export const getForAssetDeletion = (asset: ReturnType<AssetFactory['build']>) => ({
   id: asset.id,
+  type: asset.type,
   visibility: asset.visibility,
   libraryId: asset.libraryId,
   ownerId: asset.ownerId,

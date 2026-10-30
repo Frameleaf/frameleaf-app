@@ -476,6 +476,7 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .select([
         'asset.id',
+        'asset.type',
         'asset.visibility',
         'asset.libraryId',
         'asset.ownerId',
