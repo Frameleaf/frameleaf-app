@@ -23,11 +23,14 @@
     assetId,
     canRead = false,
     added,
+    headingClass = '',
   }: {
     assetId: string;
     canRead?: boolean;
     /** When the item was added to the library (ISO date). */
     added?: string;
+    /** Lets a host panel give the heading its own label style. */
+    headingClass?: string;
   } = $props();
   const headingId = $props.id();
   let sources = $state<AssetSourceResponseDto[]>([]);
@@ -88,7 +91,7 @@
 
 {#if canRead || added}
   <section class="fl-asset-sources" aria-labelledby={headingId} aria-busy={loading}>
-    <h3 id={headingId}>{$t('frameleaf_boards_source')}</h3>
+    <h3 id={headingId} class={headingClass}>{$t('frameleaf_boards_source')}</h3>
     {#if loading}<p role="status">{$t('loading')}</p>
     {:else if failed}
       <p role="status">{$t('frameleaf_sources_unavailable')}</p>

@@ -193,13 +193,14 @@ export class AlbumService extends BaseService {
     }
 
     const ids = albums.map((album) => album.id);
-    const [results, smartBackedIds, ruleAlbumIds, rules, positions, recovered] = await Promise.all([
+    const [results, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts] = await Promise.all([
       this.albumRepository.getMetadataForIds(ids, privacyOptions),
       this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
       this.classificationRepository.getRuleAlbumIds(ids),
       this.classificationRepository.getRules(auth.user.id),
       this.albumRepository.getPositions(auth.user.id),
       this.recoveredAlbumIds(),
+      this.albumRepository.getBookmarkCounts(auth, ids),
     ]);
     const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
     const albumMetadata: Record<string, AlbumAssetCount> = {};
@@ -215,6 +216,7 @@ export class AlbumService extends BaseService {
       buildAlbumTree(
         albums.map((album) => ({
           ...this.withReadableParent(this.toListItem(album, albumMetadata), readable),
+          bookmarkCount: bookmarkCounts.get(album.id) ?? 0,
           isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
           smartRuleId: ruleByAlbum.get(album.id) ?? null,
           smartKind: (smartBackedIds.get(album.id) as SmartAlbumBuiltInKind | undefined) ?? null,

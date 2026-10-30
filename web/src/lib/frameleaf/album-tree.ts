@@ -44,6 +44,8 @@ export interface FrameleafAlbumNode {
   color: AlbumColor | null;
   kind: FrameleafAlbumKind;
   assetCount: number;
+  /** Media plus links: what Boards shows as an album's item count. */
+  itemCount: number;
   shared: boolean;
   /** Visible child albums and collections. */
   children: FrameleafAlbumNode[];
@@ -72,6 +74,7 @@ const toNode = (
   color: albumColor(album.color),
   kind,
   assetCount: album.assetCount,
+  itemCount: album.assetCount + (album.bookmarkCount ?? 0),
   shared: album.shared,
   children,
 });

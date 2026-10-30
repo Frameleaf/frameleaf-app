@@ -1,7 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { CaptureCommitDto } from 'src/dtos/capture.dto.js';
-import { AlbumUserRole, LibraryScope, Permission } from 'src/enum.js';
+import { AlbumUserRole, AssetStatus, LibraryScope, Permission } from 'src/enum.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -340,5 +340,24 @@ describe('durable capture transactions', () => {
       [],
     );
     expect(await db.selectFrom('asset_source').selectAll().where('assetId', '=', asset.id).execute()).toEqual([]);
+  });
+
+  it("finds only the owner's trashed Boards copy of the captured bytes", async () => {
+    const { ctx, auth, repo } = await setup();
+    const trashed = { status: AssetStatus.Trashed, deletedAt: new Date() };
+    const design = randomBytes(32);
+    const personal = randomBytes(32);
+    const active = randomBytes(32);
+    const { asset } = await ctx.newAsset({
+      ownerId: auth.user.id,
+      libraryScope: LibraryScope.Design,
+      checksum: design,
+      ...trashed,
+    });
+    await ctx.newAsset({ ownerId: auth.user.id, libraryScope: LibraryScope.Personal, checksum: personal, ...trashed });
+    await ctx.newAsset({ ownerId: auth.user.id, libraryScope: LibraryScope.Design, checksum: active });
+    expect(await repo.getTrashedCapture(auth, design.toString('hex'))).toBe(asset.id);
+    expect(await repo.getTrashedCapture(auth, personal.toString('hex'))).toBeUndefined();
+    expect(await repo.getTrashedCapture(auth, active.toString('hex'))).toBeUndefined();
   });
 });

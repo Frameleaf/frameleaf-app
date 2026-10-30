@@ -160,6 +160,7 @@ describe('buildCatalogueCommands', () => {
           color: null,
           kind: 'album',
           assetCount: 12,
+          itemCount: 12,
           shared: false,
           children: [],
         },
@@ -176,7 +177,17 @@ describe('buildCatalogueCommands', () => {
     const commands = buildCatalogueCommands($t, {
       ...emptyCommandCatalogue(),
       albums: [
-        { id: 's1', name: 'Family', icon: null, color: null, kind: 'space', assetCount: 3, shared: true, children: [] },
+        {
+          id: 's1',
+          name: 'Family',
+          icon: null,
+          color: null,
+          kind: 'space',
+          assetCount: 3,
+          itemCount: 3,
+          shared: true,
+          children: [],
+        },
       ],
     });
     expect(commands.collections[0].href).toBe('/sharing/s1');

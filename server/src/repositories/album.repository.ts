@@ -16,8 +16,10 @@ import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AlbumUserRole, LibraryScope, type LibraryViewScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { visible as bookmarkVisible } from 'src/repositories/bookmark.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -277,6 +279,23 @@ export class AlbumRepository {
         .groupBy('album_asset.albumId')
         .execute()
     );
+  }
+  /** Links in each album that this session may see, as an album's own page counts them. */
+  async getBookmarkCounts(auth: AuthDto, ids: string[]): Promise<Map<string, number>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('bookmark')
+      .innerJoin('album_bookmark', 'album_bookmark.bookmarkId', 'bookmark.id')
+      .select('album_bookmark.albumId')
+      .select(sql<number>`count(*)::int`.as('count'))
+      .where('album_bookmark.albumId', 'in', ids)
+      .where('bookmark.deletedAt', 'is', null)
+      .where(bookmarkVisible(auth))
+      .groupBy('album_bookmark.albumId')
+      .execute();
+    return new Map(rows.map(({ albumId, count }) => [albumId, count]));
   }
   /**
    * FL-349: the few items a shared space shows someone invited to it, newest first. Only Timeline and

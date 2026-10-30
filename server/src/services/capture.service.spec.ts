@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { CaptureCancelResponseDto, CaptureCommitDto, CaptureResponseDto } from 'src/dtos/capture.dto.js';
 import { LibraryScope, Permission } from 'src/enum.js';
 import { CaptureReceipt, CaptureRepository } from 'src/repositories/capture.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { BookmarkService } from 'src/services/bookmark.service.js';
@@ -44,7 +46,9 @@ describe('capture application boundary', () => {
   const albums = mockBaseService(AlbumService);
   const tags = automock(TagRepository, { args: [{}, { setContext: () => {} }] });
   const system = automock(SystemMetadataRepository, { args: [{}] });
-  const service = new CaptureService(captures, uploads, bookmarks, albums, tags, system);
+  const trash = automock(TrashRepository);
+  const events = automock(EventRepository, { args: [undefined, undefined, { setContext: () => {} }], strict: false });
+  const service = new CaptureService(captures, uploads, bookmarks, albums, tags, system, trash, events);
   beforeEach(() => {
     captures.resetAllMocks();
     uploads.resetAllMocks();
@@ -52,8 +56,11 @@ describe('capture application boundary', () => {
     albums.resetAllMocks();
     tags.resetAllMocks();
     system.resetAllMocks();
+    trash.resetAllMocks();
+    events.resetAllMocks();
     captures.getCompleted.mockResolvedValueOnce(undefined).mockResolvedValue(receipt);
     captures.commitBookmark.mockResolvedValue(receipt);
+    captures.getTrashedCapture.mockResolvedValue(undefined);
     bookmarks.get.mockResolvedValue({
       id: receipt.itemId,
       ownerId: auth.user.id,
@@ -144,6 +151,32 @@ describe('capture application boundary', () => {
     await expect(service.commit(auth, file)).rejects.toThrow('source write failed');
     expect(captures.getCompleted).toHaveBeenCalledTimes(1);
     expect(captures.commitBookmark).not.toHaveBeenCalled();
+  });
+
+  it('brings a trashed Boards copy of the same bytes back before publication reuses it', async () => {
+    const file = { ...dto, bookmark: undefined, uploadResourceId: dto.captureId, sha256: 'a'.repeat(64) };
+    const asset = AssetFactory.create({ ownerId: auth.user.id, libraryScope: LibraryScope.Design });
+    captures.getCompleted
+      .mockReset()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValue({
+        ...receipt,
+        kind: 'asset',
+        itemId: asset.id,
+        status: 'duplicate',
+      });
+    captures.getTrashedCapture.mockResolvedValue(asset.id);
+    trash.restoreAll.mockResolvedValue([asset.id]);
+    uploads.commitCapture.mockResolvedValue(undefined as never);
+    captures.getCapturedAsset.mockResolvedValue(asset);
+    const result = await service.commit(auth, file);
+    expect(captures.getTrashedCapture).toHaveBeenCalledWith(auth, 'a'.repeat(64));
+    expect(trash.restoreAll).toHaveBeenCalledWith([asset.id], auth, expect.any(Function));
+    expect(events.emit).toHaveBeenCalledWith('AssetRestoreAll', { assetIds: [asset.id], userId: auth.user.id });
+    expect(trash.restoreAll.mock.invocationCallOrder[0]).toBeLessThan(
+      uploads.commitCapture.mock.invocationCallOrder[0],
+    );
+    expect(result.status).toBe('duplicate');
   });
 
   it('does not return an asset receipt whose media became protected', async () => {
