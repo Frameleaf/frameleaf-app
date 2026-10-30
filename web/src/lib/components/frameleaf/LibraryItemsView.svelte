@@ -103,7 +103,8 @@
     title: string;
     query: DiscoveryQuery;
     onQueryChange: (query: DiscoveryQuery) => void;
-    header?: Snippet;
+    /** The page's own heading; it gets the result count while something narrows the results. */
+    header?: Snippet<[number | null]>;
     context?: string;
     workspace?: 'personal' | 'design';
     album?: import('@frameleaf/sdk').AlbumResponseDto;
@@ -535,7 +536,7 @@
   aria-label={title}
 >
   <header class="fl-items-heading">
-    {#if header}{@render header()}{:else}<div>
+    {#if header}{@render header(narrowed ? results.count : null)}{:else}<div>
         <h1>{title}</h1>
         <!-- Prototype screen 01: the count is the title's subtitle (FL-670). -->
         <p class="fl-items-description" aria-live="polite" data-testid="frameleaf-items-count">

@@ -661,7 +661,7 @@
 />
 <CommandPaletteDefaultProvider name={$t('album')} actions={[Upload, Cast, Close]} />
 
-{#snippet header()}
+{#snippet header(filteredCount: number | null = null)}
   {#key albumId}
     {@const view = albumView}
     <AlbumHeader
@@ -679,6 +679,7 @@
       ownerBadges={showAlbumUsers}
       {assetCount}
       itemCount={assetCount + bookmarkCount}
+      {filteredCount}
       onAlbumChange={(next) => (album = next)}
       onRefresh={() => refreshEverything(view)}
       onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
@@ -698,6 +699,7 @@
   toolbar band spans the page (LIB-P4). The comments sheet is fixed over the right edge (SHARING-P2).
 -->
 <UserPageLayout
+  fill={mixedAlbum}
   scrollbar={false}
   onUploadClick={() =>
     void openFileUploadDialog({ albumId, libraryScope: designContext ? LibraryScope.Design : undefined })}

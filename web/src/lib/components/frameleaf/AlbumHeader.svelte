@@ -147,6 +147,8 @@
     onToggleOwnerBadges?: () => void;
     /** Replaces the immediate download, for Boards' Download dialog (FL-660). */
     onDownload?: () => void;
+    /** What a filter or search shows, when one narrows the items; the summary counts it instead. */
+    filteredCount?: number | null;
   }
 
   let {
@@ -171,6 +173,7 @@
     onToggleActivity,
     onToggleOwnerBadges,
     onDownload,
+    filteredCount = null,
   }: Props = $props();
   const download = () => (onDownload ? onDownload() : void handleDownloadAlbum(album));
 
@@ -581,7 +584,7 @@
       {/if}
 
       <div class="summary">
-        <span>{$t('frameleaf_albums_items', { values: { count: itemCount ?? assetCount } })}</span>
+        <span>{$t('frameleaf_albums_items', { values: { count: filteredCount ?? itemCount ?? assetCount } })}</span>
         {#if span}
           <span>{span}</span>
         {/if}
