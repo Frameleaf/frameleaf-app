@@ -117,7 +117,15 @@
       destroy: () => observer.disconnect(),
     };
   }
+  const PREVIEW_BUDGET = 512 * 1024 * 1024;
+  const cachedBytes = () =>
+    [...imageBytes.values()].reduce((total, value) => total + value.size, 0);
   function pumpThumbnails() {
+    // Once the preview cache is full, rows keep their placeholder and saving downloads them.
+    if (cachedBytes() >= PREVIEW_BUDGET) {
+      thumbnailQueue.length = 0;
+      return;
+    }
     // ponytail: 4 at once is plenty for a list scrolled by hand
     while (thumbnailsLoading < 4 && thumbnailQueue.length) {
       const candidate = thumbnailQueue.shift()!;
@@ -143,11 +151,7 @@
         !preview?.discovery.candidates.some((item) => item.id === candidate.id)
       )
         return;
-      const used = [...imageBytes.values()].reduce(
-        (total, value) => total + value.size,
-        0,
-      );
-      if (used + blob.size > 512 * 1024 * 1024) throw new Error();
+      if (cachedBytes() + blob.size > PREVIEW_BUDGET) throw new Error();
       imageBytes.set(candidate.id, blob);
       thumbnails[candidate.id] = URL.createObjectURL(blob);
     } catch {
