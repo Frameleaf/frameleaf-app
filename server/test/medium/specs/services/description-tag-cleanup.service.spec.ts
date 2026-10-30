@@ -197,6 +197,7 @@ describe(DescriptionTagCleanupService.name, () => {
     expect(await assetTags(ctx, asset.id)).toEqual(['dog']);
   });
 
+  // the 30 s timeout outlasts the lock-wait poll's 10 s deadline, so the poll reports first
   it('keeps a tag a person puts on a photo while the clean-up deletes it', async () => {
     const { ctx } = setup();
     const { user } = await ctx.newUser();
@@ -221,7 +222,7 @@ describe(DescriptionTagCleanupService.name, () => {
 
     await expect(deleting).resolves.toBe(0);
     expect(await assetTags(ctx, asset.id)).toEqual(['her']);
-  });
+  }, 30_000);
 
   it('runs once: the bootstrap queues it until it has finished, and a second run changes nothing', async () => {
     const { sut, ctx } = setup();
