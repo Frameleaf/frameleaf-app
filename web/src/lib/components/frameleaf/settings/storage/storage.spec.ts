@@ -24,6 +24,7 @@ const sdk = vi.hoisted(() => ({
   getStorageMigrationStatus: vi.fn(),
   runStorageMigrationInBackground: vi.fn(),
   getManagerAccess: vi.fn(),
+  getMyUser: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
@@ -60,6 +61,7 @@ describe('Storage & originals (FL-365)', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
     draft.store = { draft: config(), baseline: config() };
+    sdk.getMyUser.mockImplementation(() => Promise.resolve({ ...auth.user }));
     sdk.getStorage.mockResolvedValue({
       diskSizeRaw: 4000e9,
       diskUseRaw: 1000e9,
@@ -145,6 +147,12 @@ describe('Storage & originals (FL-365)', () => {
       (await screen.findAllByText(new RegExp(`Photo library › ${auth.user.id} › 2024 › 2024-06-15`))).length,
     ).toBeGreaterThan(0);
     auth.user.storageLabel = 'admin';
+  });
+
+  it('reads the storage label again on open, as another administrator may have changed it', async () => {
+    sdk.getMyUser.mockResolvedValue({ ...auth.user, storageLabel: 'family' });
+    render(FolderLayout);
+    expect((await screen.findAllByText(/Photo library › family › 2024 › 2024-06-15/)).length).toBeGreaterThan(0);
   });
 
   it('sends a move without Frameleaf Manager to a backup restore or the checklist', async () => {

@@ -845,22 +845,20 @@ describe(StorageTemplateService.name, () => {
     });
 
     describe('empty upload folders (OPS-08)', () => {
-      const uploaded = (folder: (ownerId: string) => string) => {
-        const asset = AssetFactory.from({ fileCreatedAt: new Date('2022-06-19T23:41:36.910Z') })
-          .exif()
-          .build();
+      const uploaded = (folder: (ownerId: string) => string, sidecarFolder?: (ownerId: string) => string) => {
+        const factory = AssetFactory.from({ fileCreatedAt: new Date('2022-06-19T23:41:36.910Z') }).exif();
+        const ownerId = factory.build().ownerId;
+        const asset = (
+          sidecarFolder
+            ? factory.file({ type: AssetFileType.Sidecar, path: `${sidecarFolder(ownerId)}/efgh.xmp` })
+            : factory
+        ).build();
         return { ...asset, originalPath: `${folder(asset.ownerId)}/abcd.jpg` };
       };
       const run = async (asset: ReturnType<typeof uploaded>) => {
         mocks.assetJob.streamForStorageTemplateJob.mockReturnValue(makeStream([getForStorageTemplate(asset)]));
         mocks.user.getList.mockResolvedValue([userStub.user1]);
-        mocks.move.create.mockResolvedValue({
-          id: '123',
-          entityId: asset.id,
-          pathType: AssetPathType.Original,
-          oldPath: asset.originalPath,
-          newPath: `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`,
-        });
+        mocks.move.create.mockImplementation((move) => Promise.resolve({ id: `move-${move.pathType}`, ...move }));
         await sut.handleMigration();
       };
 
@@ -872,6 +870,23 @@ describe(StorageTemplateService.name, () => {
 
         expect(await movedOriginals()).toHaveLength(1);
         expect(mocks.storage.removeEmptyDir.mock.calls).toEqual([
+          [`/data/upload/${asset.ownerId}/ab/cd`],
+          [`/data/upload/${asset.ownerId}/ab`],
+        ]);
+      });
+
+      it('also removes the folders an uploaded sidecar leaves empty', async () => {
+        mocks.storage.removeEmptyDir.mockResolvedValue(true);
+        const asset = uploaded(
+          (owner) => `/data/upload/${owner}/ab/cd`,
+          (owner) => `/data/upload/${owner}/ef/gh`,
+        );
+
+        await run(asset);
+
+        expect(mocks.storage.removeEmptyDir.mock.calls).toEqual([
+          [`/data/upload/${asset.ownerId}/ef/gh`],
+          [`/data/upload/${asset.ownerId}/ef`],
           [`/data/upload/${asset.ownerId}/ab/cd`],
           [`/data/upload/${asset.ownerId}/ab`],
         ]);

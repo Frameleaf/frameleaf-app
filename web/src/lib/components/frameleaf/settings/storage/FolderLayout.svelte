@@ -26,6 +26,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import {
+    getMyUser,
     getStorageMigrationStatus,
     runStorageMigrationInBackground,
     type StorageMigrationStatusResponseDto,
@@ -57,7 +58,15 @@
       status = null;
     }
   };
+  const loadMe = async () => {
+    try {
+      me = await getMyUser();
+    } catch {
+      // keep the signed-in copy
+    }
+  };
   onMount(() => {
+    void loadMe();
     void loadStatus();
     timer = setInterval(() => {
       if (status?.isActive || status?.hasUnfinishedWork) {
@@ -72,7 +81,9 @@
   const pathWords = (value: string) => placeSample(value).parts.join(' › ');
   const example = $derived(placeSample(template));
   // OPS-08: the server names each person's folder by storage label, else account ID (StorageCore.getLibraryFolder)
-  const ownFolder = $derived(authManager.authenticated ? authManager.user.storageLabel || authManager.user.id : '');
+  // read again on open: another administrator may have changed this account's label since sign-in
+  let me = $state(authManager.authenticated ? authManager.user : undefined);
+  const ownFolder = $derived(me ? me.storageLabel || me.id : '');
   const whole = $derived([$t('frameleaf_layout_sample_root'), ownFolder, ...example.parts].filter(Boolean));
   const long = $derived(whole.join('/').length > 80);
   const refiling = $derived(!!status && (status.isActive || (status.hasUnfinishedWork && !status.isPaused)));

@@ -385,12 +385,16 @@ export class StorageTemplateService extends BaseService {
         // A shared copy cannot reserve a template original path; keep its per-asset sidecar path.
         // FL-179: an original whose move was deferred or failed keeps its sidecar beside it
         if (sidecarPath && moved && !isSharedNonCanonical) {
-          await this.storageCore.moveFile({
+          const sidecarMoved = await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetFileType.Sidecar,
             oldPath: sidecarPath,
             newPath: `${newPath}.xmp`,
           });
+          // an uploaded sidecar has its own upload/<user>/xx/yy folder
+          if (sidecarMoved && sidecarPath !== `${newPath}.xmp`) {
+            await this.removeEmptyUploadFolders(asset.ownerId, sidecarPath);
+          }
         }
         if (moved && !isSharedNonCanonical && oldPath !== newPath) {
           await this.removeEmptyUploadFolders(asset.ownerId, oldPath);
