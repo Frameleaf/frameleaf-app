@@ -121,6 +121,10 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'trash.days': { label: 'frameleaf_deleted_keep_photos', values: count('frameleaf_deleted_days') },
   'trash.enabled': { label: 'trash' },
   'user.deleteDelay': { label: 'frameleaf_deleted_keep_account', values: count('frameleaf_deleted_days') },
+  // Storage & originals › Folder layout
+  'storageTemplate.enabled': { label: 'frameleaf_layout_sort' },
+  'storageTemplate.hashVerificationEnabled': { label: 'frameleaf_layout_verify' },
+  'storageTemplate.template': { label: 'frameleaf_layout_pattern' },
   // Access & security › Sign in with Frameleaf
   'frameleafCloud.signIn.showOnLocalLogin': { label: 'frameleaf_signin_offer_home' },
   'frameleafCloud.signIn.buttonText': { label: 'frameleaf_signin_words' },

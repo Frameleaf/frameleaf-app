@@ -228,6 +228,23 @@ describe(StorageRepository.name, () => {
     });
   });
 
+  describe('removeEmptyDir', () => {
+    it('removes only an empty folder, never one with files, a link or a missing path (OPS-08)', async () => {
+      await writeFiles({ '/upload/ab/full/keep.jpg': 'original', '/outside/keep.jpg': 'outside' });
+      await fs.mkdir(fixturePath('/upload/ab/empty'), { recursive: true });
+      await fs.symlink(fixturePath('/outside'), fixturePath('/upload/ab/link'), 'dir');
+
+      await expect(sut.removeEmptyDir(fixturePath('/upload/ab/empty'))).resolves.toBe(true);
+      await expect(sut.removeEmptyDir(fixturePath('/upload/ab/full'))).resolves.toBe(false);
+      await expect(sut.removeEmptyDir(fixturePath('/upload/ab/link'))).resolves.toBe(false);
+      await expect(sut.removeEmptyDir(fixturePath('/upload/ab/gone'))).resolves.toBe(false);
+
+      await expect(fs.stat(fixturePath('/upload/ab/empty'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.readFile(fixturePath('/upload/ab/full/keep.jpg'), 'utf8')).resolves.toBe('original');
+      expect((await fs.lstat(fixturePath('/upload/ab/link'))).isSymbolicLink()).toBe(true);
+    });
+  });
+
   describe('removeEmptyDirs', () => {
     it('removes empty descendants while retaining files, nonempty directories and the root', async () => {
       await writeFiles({ '/cleanup/full/keep.jpg': 'original', '/cleanup/.hidden/keep.txt': 'hidden' });

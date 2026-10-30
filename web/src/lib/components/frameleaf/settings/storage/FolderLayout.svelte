@@ -22,6 +22,7 @@
   import { FOLDER_LAYOUTS, layoutOf, placeSample } from '$lib/components/frameleaf/settings/storage/storage';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import {
@@ -70,7 +71,9 @@
   const layoutName = (id: string) => $t(`frameleaf_layout_${id}` as Translations);
   const pathWords = (value: string) => placeSample(value).parts.join(' › ');
   const example = $derived(placeSample(template));
-  const whole = $derived([$t('frameleaf_layout_sample_root'), $t('frameleaf_layout_sample_person'), ...example.parts]);
+  // OPS-08: the server names each person's folder by storage label, else account ID (StorageCore.getLibraryFolder)
+  const ownFolder = $derived(authManager.authenticated ? authManager.user.storageLabel || authManager.user.id : '');
+  const whole = $derived([$t('frameleaf_layout_sample_root'), ownFolder, ...example.parts].filter(Boolean));
   const long = $derived(whole.join('/').length > 80);
   const refiling = $derived(!!status && (status.isActive || (status.hasUnfinishedWork && !status.isPaused)));
 
@@ -151,11 +154,9 @@
       body={savedSorted
         ? $t('frameleaf_layout_hero_body', {
             values: {
-              path: [
-                $t('frameleaf_layout_sample_root'),
-                $t('frameleaf_layout_sample_person'),
-                ...placeSample(savedTemplate).parts,
-              ].join(' › '),
+              path: [$t('frameleaf_layout_sample_root'), ownFolder, ...placeSample(savedTemplate).parts]
+                .filter(Boolean)
+                .join(' › '),
             },
           })
         : $t('frameleaf_layout_hero_off_body')}

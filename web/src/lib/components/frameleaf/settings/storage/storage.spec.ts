@@ -10,6 +10,10 @@ import StorageLanding from './StorageLanding.svelte';
 import { growthPerDay, keepChoice, layoutOf, placeSample, roomLeft } from './storage';
 
 const draft = vi.hoisted(() => ({ store: undefined as unknown }));
+const auth = vi.hoisted(() => ({
+  authenticated: true,
+  user: { id: '0b1c2d3e-4f50-4617-8293-a4b5c6d7e8f9', storageLabel: 'admin' as string | null },
+}));
 const sdk = vi.hoisted(() => ({
   getStorage: vi.fn(),
   getAnalyticsReport: vi.fn(),
@@ -22,6 +26,7 @@ const sdk = vi.hoisted(() => ({
   getManagerAccess: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { configFile: false } },
 }));
@@ -127,9 +132,19 @@ describe('Storage & originals (FL-365)', () => {
   it('names the layouts, shows where a photo goes and offers to re-file with the count', async () => {
     render(FolderLayout);
     expect(await screen.findByRole('heading', { name: /New photos are filed by year, then day/ })).toBeInTheDocument();
-    expect(screen.getAllByText(/Photo library › Taylor › 2024 › 2024-06-15 › IMG_1234\.jpg/).length).toBeGreaterThan(0);
+    // OPS-08: the folder the server really uses, the viewer's storage label, not a person's name
+    expect(screen.getAllByText(/Photo library › admin › 2024 › 2024-06-15 › IMG_1234\.jpg/).length).toBeGreaterThan(0);
     await fireEvent.click(screen.getByRole('button', { name: /^By year, then month 2024/ }));
     expect((draft.store as { draft: Config }).draft.storageTemplate.template).toBe('{{y}}/{{MM}}/{{filename}}');
+  });
+
+  it('shows the account ID as the folder when there is no storage label', async () => {
+    auth.user.storageLabel = null;
+    render(FolderLayout);
+    expect(
+      (await screen.findAllByText(new RegExp(`Photo library › ${auth.user.id} › 2024 › 2024-06-15`))).length,
+    ).toBeGreaterThan(0);
+    auth.user.storageLabel = 'admin';
   });
 
   it('sends a move without Frameleaf Manager to a backup restore or the checklist', async () => {
