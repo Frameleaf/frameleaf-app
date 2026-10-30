@@ -69,6 +69,15 @@ export class StudioStorageRefusal extends ServiceUnavailableException {
  * exclusive hard link, unlink and directory sync primitives the publication journal relies on.
  */
 export async function qualifyExportsRoot(root: string): Promise<LinuxDurabilityQualification> {
+  try {
+    return await observeExportsRoot(root);
+  } catch (error) {
+    // Unreadable, read-only or missing storage is refused the same way, never answered with a 500.
+    throw error instanceof StudioStorageRefusal ? error : new StudioStorageRefusal('exports_root_unavailable', error);
+  }
+}
+
+async function observeExportsRoot(root: string): Promise<LinuxDurabilityQualification> {
   if (platform() !== 'linux') throw new StudioStorageRefusal('not_linux');
   await fs.mkdir(root, { recursive: true, mode: 0o700 });
   const handle = await fs.open(root, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY);

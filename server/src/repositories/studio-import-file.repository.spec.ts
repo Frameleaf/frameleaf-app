@@ -8,6 +8,7 @@ import {
   LinuxDurabilityAdapter,
   StudioImportFileRepository,
   StudioStorageRefusal,
+  qualifyExportsRoot,
 } from 'src/repositories/studio-import-file.repository.js';
 import { assertSameOwnedInode } from 'src/utils/studio-import-durability.js';
 import { DECLARATION, KEY } from 'test/fixtures/studio-import-retention.js';
@@ -235,6 +236,13 @@ describe('unqualified deployment refusal', () => {
     } finally {
       baseFolder.mockRestore();
     }
+  });
+  it('refuses storage it cannot open with the retail refusal, not a raw filesystem error', async () => {
+    native.mkdir.mockRejectedValueOnce(error('EROFS'));
+    const refusal = qualifyExportsRoot(root);
+    await expect(refusal).rejects.toBeInstanceOf(StudioStorageRefusal);
+    await expect(refusal).rejects.toMatchObject({ cause: expect.objectContaining({ code: 'EROFS' }) });
+    expect(native.open).not.toHaveBeenCalled();
   });
   it('has no default deployment qualification', async () => {
     await expect(new LinuxDurabilityAdapter().requireQualified(root)).rejects.toThrow('UNQUALIFIED');
