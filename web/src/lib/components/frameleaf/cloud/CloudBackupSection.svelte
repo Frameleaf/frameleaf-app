@@ -34,6 +34,7 @@
     isEscrowPassphraseValid,
     keyFileName,
     readBackupKeyFile,
+    savedRecovery,
     withRecoveryHistory,
   } from '$lib/frameleaf/cloud-backup';
   import { downloadBlob } from '$lib/utils';
@@ -323,9 +324,14 @@
       failure = $t(read.error);
       return;
     }
+    const saved = savedRecovery(read.key);
+    if (!saved) {
+      failure = $t('frameleaf_cloud_backup_recovery_file_incomplete');
+      return;
+    }
     busy = true;
     try {
-      const { history } = await getCloudBackupRecoveryHistory();
+      const { history } = await getCloudBackupRecoveryHistory({ cloudBackupRecoveryHistoryRequestDto: saved });
       const refreshed = history ? withRecoveryHistory(read.key, history) : read.key;
       downloadBlob(new Blob([refreshed], { type: 'application/json' }), keyFileName(status.keyFingerprint));
       notice = $t('frameleaf_cloud_backup_recovery_file_refreshed');

@@ -116,7 +116,16 @@ export const readBackupKeyFile = (
   return { key: text };
 };
 
-/** The saved recovery file with the server's latest signed history, which an encrypted restore needs. */
+/** The saved file's own signed history, or null when the file has no client roots and can't open a backup. */
+export const savedRecovery = (file: string): { recovery?: string } | null => {
+  const parsed = JSON.parse(file) as { client?: { keys?: unknown }; recovery?: unknown };
+  if (!parsed.client?.keys || typeof parsed.client.keys !== 'object') {
+    return null;
+  }
+  return parsed.recovery === undefined ? {} : { recovery: JSON.stringify(parsed.recovery) };
+};
+
+/** The saved recovery file with the merged signed history, which an encrypted restore needs. */
 export const withRecoveryHistory = (file: string, history: string) =>
   JSON.stringify({ ...(JSON.parse(file) as object), recovery: JSON.parse(history) as unknown }, null, 2);
 

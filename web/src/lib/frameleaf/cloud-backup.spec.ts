@@ -20,6 +20,7 @@ import {
   managedBucketName,
   readBackupKeyFile,
   retentionValue,
+  savedRecovery,
   withRecoveryHistory,
 } from '$lib/frameleaf/cloud-backup';
 
@@ -134,6 +135,16 @@ describe('cloud backup keys in the browser (FL-160)', () => {
       secretAccessKey: 'frameleaf_cloud_backup_secret_missing',
     });
     expect(endpointHost('https://s3.eu-central-2.storage.example/')).toBe('s3.eu-central-2.storage.example');
+  });
+});
+
+describe('savedRecovery (FL-696)', () => {
+  it('refuses a file without client roots and hands on a saved history', () => {
+    expect(savedRecovery(JSON.stringify({ key: 'k' }))).toBeNull();
+    expect(savedRecovery(JSON.stringify({ key: 'k', client: { keys: { 1: 'r' } } }))).toEqual({});
+    expect(savedRecovery(JSON.stringify({ client: { keys: { 1: 'r' } }, recovery: { snapshots: [] } }))).toEqual({
+      recovery: '{"snapshots":[]}',
+    });
   });
 });
 

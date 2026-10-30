@@ -589,6 +589,10 @@ export type CloudBackupEscrowDto = {
     /** Wraps the bucket key before it is sent; never stored and never sent to Frameleaf Cloud */
     passphrase: string;
 };
+export type CloudBackupRecoveryHistoryRequestDto = {
+    /** The `recovery` field of the saved recovery file, as JSON: merged, so a newer saved history is kept */
+    recovery?: string;
+};
 export type CloudBackupRecoveryHistoryDto = {
     /** The signed snapshot history as JSON, for the recovery file’s `recovery` field. Holds no keys */
     history: string | null;
@@ -20282,13 +20286,17 @@ export function storeCloudBackupEscrow({ cloudBackupEscrowDto }: {
 /**
  * Get the signed backup history for the recovery file
  */
-export function getCloudBackupRecoveryHistory(opts?: Oazapfts.RequestOpts) {
+export function getCloudBackupRecoveryHistory({ cloudBackupRecoveryHistoryRequestDto }: {
+    cloudBackupRecoveryHistoryRequestDto: CloudBackupRecoveryHistoryRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: CloudBackupRecoveryHistoryDto;
-    }>("/admin/cloud/backup/history", {
-        ...opts
-    }));
+    }>("/admin/cloud/backup/history", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupRecoveryHistoryRequestDto
+    })));
 }
 /**
  * Generate a bucket key

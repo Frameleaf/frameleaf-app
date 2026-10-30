@@ -55,6 +55,7 @@ import {
   CloudBackupManifestsResponseDto,
   CloudBackupPruneDto,
   CloudBackupRecoveryHistoryDto,
+  CloudBackupRecoveryHistoryRequestDto,
   CloudBackupRestoreDto,
   CloudBackupRunState,
   CloudBackupS3,
@@ -4561,13 +4562,23 @@ export class CloudBackupService {
    * The signed snapshot history behind every encrypted backup. Your own bucket has no other copy of it, so an
    * encrypted restore after losing this server needs it in the recovery file; it holds no key material.
    */
-  async getRecoveryHistory(): Promise<CloudBackupRecoveryHistoryDto> {
+  async getRecoveryHistory(dto: CloudBackupRecoveryHistoryRequestDto = {}): Promise<CloudBackupRecoveryHistoryDto> {
     const metadata = await this.requireClaim();
-    const history = mergeBackupHistory(
-      await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
-      this.importedHistory.get(metadata.keyFingerprint),
-    );
-    return { history: history ? JSON.stringify(history) : null };
+    try {
+      const saved = dto.recovery ? backupRecoveryHistorySchema.parse(JSON.parse(dto.recovery)) : undefined;
+      const history = mergeBackupHistory(
+        mergeBackupHistory(
+          await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
+          this.importedHistory.get(metadata.keyFingerprint),
+        ),
+        saved,
+      );
+      if (history && history.anchor.vaultId !== metadata.instanceId)
+        throw new Error('Recovery history belongs to another vault');
+      return { history: history ? JSON.stringify(history) : null };
+    } catch (error) {
+      throw new BadRequestException(`This recovery file’s backup history can’t be used: ${errorMessage(error)}`);
+    }
   }
 
   /** Remove the key copy from Frameleaf Cloud. A copy that is already gone counts as removed. */

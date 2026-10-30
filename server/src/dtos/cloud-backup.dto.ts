@@ -436,6 +436,16 @@ const CloudBackupStatusSchema = z
   })
   .meta({ id: 'CloudBackupStatusResponseDto' });
 
+const CloudBackupRecoveryHistoryRequestSchema = z
+  .object({
+    recovery: z
+      .string()
+      .max(8 * 1024 * 1024)
+      .optional()
+      .describe('The `recovery` field of the saved recovery file, as JSON: merged, so a newer saved history is kept'),
+  })
+  .meta({ id: 'CloudBackupRecoveryHistoryRequestDto' });
+
 const CloudBackupRecoveryHistorySchema = z
   .object({
     history: z
@@ -446,6 +456,7 @@ const CloudBackupRecoveryHistorySchema = z
   .meta({ id: 'CloudBackupRecoveryHistoryDto' });
 
 export class CloudBackupRecoveryHistoryDto extends createZodDto(CloudBackupRecoveryHistorySchema) {}
+export class CloudBackupRecoveryHistoryRequestDto extends createZodDto(CloudBackupRecoveryHistoryRequestSchema) {}
 export class CloudBackupCheckDto extends createZodDto(CloudBackupCheckSchema) {}
 export class CloudBackupCheckResponseDto extends createZodDto(CloudBackupCheckResponseSchema) {}
 export class CloudBackupGeneratedKeyDto extends createZodDto(CloudBackupGeneratedKeySchema) {}

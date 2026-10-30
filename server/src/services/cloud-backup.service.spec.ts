@@ -3898,6 +3898,18 @@ describe(CloudBackupService.name, () => {
       expect(history).not.toContain(clientRing.keys[1]);
     });
 
+    it('keeps a newer history from the saved file and refuses one from another vault', async () => {
+      const fixture = recoveryFixture();
+      const binding = (metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup).bucketRef;
+      await writeBackupHistory(sut['clientHistoryPath'](binding), fixture.older);
+      const { history } = await sut.getRecoveryHistory({ recovery: JSON.stringify(fixture.history) });
+      expect(JSON.parse(history!)).toEqual(fixture.history);
+
+      await expect(
+        sut.getRecoveryHistory({ recovery: JSON.stringify(recoveryFixture().history) }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it('counts a stored copy without a key version as version 1', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ escrow: { storedAt: '2026-09-26T00:00:00.000Z' } });
       await expect(sut.getStatus()).resolves.toMatchObject({ escrow: { stored: true, outdated: false } });

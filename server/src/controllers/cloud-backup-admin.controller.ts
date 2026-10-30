@@ -19,6 +19,7 @@ import {
   CloudBackupManifestsResponseDto,
   CloudBackupPruneDto,
   CloudBackupRecoveryHistoryDto,
+  CloudBackupRecoveryHistoryRequestDto,
   CloudBackupRestoreDto,
   CloudBackupSetupDto,
   CloudBackupStatusResponseDto,
@@ -296,17 +297,18 @@ export class CloudBackupAdminController {
     return this.service.storeEscrow(auth, dto);
   }
 
-  @Get('history')
+  @Post('history')
+  @HttpCode(HttpStatus.OK)
   @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
   @Endpoint({
     operationId: 'getCloudBackupRecoveryHistory',
     summary: 'Get the signed backup history for the recovery file',
     description:
-      'The signed snapshot history an encrypted restore needs to trust a backup. It holds no keys: the browser adds it to the recovery file the administrator already keeps.',
+      'The signed snapshot history an encrypted restore needs to trust a backup, merged with the saved file’s history (the newer is kept; conflicting histories are refused). It holds no keys: the browser adds it to the recovery file the administrator already keeps.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  getRecoveryHistory(): Promise<CloudBackupRecoveryHistoryDto> {
-    return this.service.getRecoveryHistory();
+  getRecoveryHistory(@Body() dto: CloudBackupRecoveryHistoryRequestDto): Promise<CloudBackupRecoveryHistoryDto> {
+    return this.service.getRecoveryHistory(dto);
   }
 
   @Delete('escrow')

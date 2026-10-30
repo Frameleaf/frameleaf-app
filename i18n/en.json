@@ -5171,6 +5171,7 @@
   "frameleaf_cloud_backup_read_only_title": "Backups are read-only",
   "frameleaf_cloud_backup_recovery_file": "Recovery file",
   "frameleaf_cloud_backup_recovery_file_help": "Choose your saved recovery file to download it again with your latest backups added. A new server needs this to open your newest backup, so do it after backing up and keep the file somewhere safe.",
+  "frameleaf_cloud_backup_recovery_file_incomplete": "This file has the bucket key but not the keys your backups are encrypted with. Choose the complete recovery file you saved when you set up backup.",
   "frameleaf_cloud_backup_recovery_file_refresh": "Update recovery file",
   "frameleaf_cloud_backup_recovery_file_refreshed": "Your recovery file now includes your latest backups. Replace your saved copy with it.",
   "frameleaf_cloud_backup_refused_title": "Frameleaf Cloud refused backup storage",
