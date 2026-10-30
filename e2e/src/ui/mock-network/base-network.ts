@@ -169,6 +169,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         oauthButtonText: 'Sign in with your provider',
         isInitialized: true,
         isOnboarded: true,
+        isNewServerSetup: false,
         externalDomain: '',
         publicUsers: true,
         mapDarkStyleUrl: 'https://tiles.frameleaf.cloud/v1/style/dark.json',

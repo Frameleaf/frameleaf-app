@@ -1,7 +1,8 @@
-import { LibraryViewScope } from '@frameleaf/sdk';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { LibraryViewScope, SearchSuggestionType } from '@frameleaf/sdk';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { loadFilterPanelOptions, loadPaletteCount } from '$lib/frameleaf/search-options';
+import { loadFilterPanelOptions, loadPaletteCount, sharedSearchSuggestions } from '$lib/frameleaf/search-options';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
 
 beforeEach(() => {
@@ -42,4 +43,42 @@ it('counts mixed Design matches through the shared library endpoint, including b
     { signal: undefined },
   );
   expect(sdkMock.searchAssetStatistics).not.toHaveBeenCalled();
+});
+
+describe('sharedSearchSuggestions', () => {
+  const pending = () => {
+    let resolve!: (value: string[]) => void;
+    sdkMock.getSearchSuggestions.mockImplementation(() => new Promise<string[]>((done) => (resolve = done)) as never);
+    return (value: string[]) => resolve(value);
+  };
+
+  it('asks once for callers that overlap', async () => {
+    const answer = pending();
+    const first = sharedSearchSuggestions(SearchSuggestionType.City);
+    const second = sharedSearchSuggestions(SearchSuggestionType.City);
+    answer(['Paris']);
+    await expect(Promise.all([first, second])).resolves.toEqual([['Paris'], ['Paris']]);
+    expect(sdkMock.getSearchSuggestions).toHaveBeenCalledOnce();
+  });
+
+  it('lets an aborted caller go at once and aborts the request when no caller is left', async () => {
+    pending();
+    const controller = new AbortController();
+    const waiting = sharedSearchSuggestions(SearchSuggestionType.City, controller.signal);
+    controller.abort();
+    await expect(waiting).rejects.toBeDefined();
+    const requestSignal = (sdkMock.getSearchSuggestions.mock.calls[0][1] as { signal: AbortSignal }).signal;
+    expect(requestSignal.aborted).toBe(true);
+    // a later caller starts a fresh request instead of joining the stalled one
+    sharedSearchSuggestions(SearchSuggestionType.City).catch(() => {});
+    expect(sdkMock.getSearchSuggestions).toHaveBeenCalledTimes(2);
+  });
+
+  it('never hands a request started before sign-out to the next account', () => {
+    pending();
+    sharedSearchSuggestions(SearchSuggestionType.Country).catch(() => {});
+    eventManager.emit('AuthLogout');
+    sharedSearchSuggestions(SearchSuggestionType.Country).catch(() => {});
+    expect(sdkMock.getSearchSuggestions).toHaveBeenCalledTimes(2);
+  });
 });

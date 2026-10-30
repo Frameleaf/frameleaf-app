@@ -30,6 +30,7 @@ describe(AlbumService.name, () => {
     ({ sut, mocks } = newTestService(AlbumService));
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.album.getPositions.mockResolvedValue(new Map());
+    mocks.album.getBookmarkCounts.mockResolvedValue(new Map());
     mocks.album.withMembershipWrite.mockImplementation(async (_ids, write) =>
       write(undefined!, mocks.album as unknown as AlbumRepository),
     );
@@ -1488,6 +1489,7 @@ describe(AlbumService.name, () => {
         { albumId: loose.id, assetCount: 2, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },
       ]);
       mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map([[loose.id, 'food']]));
+      mocks.album.getBookmarkCounts.mockResolvedValue(new Map([[loose.id, 3]]));
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([collection.id]));
 
       const tree = await sut.getTree(auth);
@@ -1499,6 +1501,9 @@ describe(AlbumService.name, () => {
       expect(tree.collections[0]).toMatchObject({ albumCount: 1, assetCount: 5 });
       expect(tree.albums.map(({ id }) => id)).toEqual([loose.id, sharedWithMe.id]);
       expect(tree.albums.find(({ id }) => id === loose.id)?.isSmart).toBe(true);
+      // Boards counts links as items, so the tree carries them beside the media count.
+      expect(tree.albums.find(({ id }) => id === loose.id)).toMatchObject({ assetCount: 2, bookmarkCount: 3 });
+      expect(tree.albums.find(({ id }) => id === sharedWithMe.id)?.bookmarkCount).toBe(0);
       expect(tree.albums.find(({ id }) => id === sharedWithMe.id)?.isSmart).toBe(false);
       // FL-83 (AL-6): a built-in smart album names its kind, so Re-evaluate can scope to that album.
       expect(tree.albums.find(({ id }) => id === loose.id)?.smartKind).toBe('food');
@@ -1992,7 +1997,7 @@ describe(AlbumService.name, () => {
         owner.id,
       );
       expect(mocks.album.addAssetIds).toHaveBeenCalledWith(album.id, [asset1.id, asset2.id, asset3.id]);
-      expect(mocks.event.emit).toHaveBeenCalledWith('AssetChanged', { assetId: asset1.id });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [asset1.id, asset2.id, asset3.id] });
     });
 
     it('should not set the thumbnail if the album has one already', async () => {

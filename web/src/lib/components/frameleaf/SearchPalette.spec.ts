@@ -383,6 +383,8 @@ describe('SearchPalette', () => {
   it('shows all results on Enter and remembers the search with its chips', async () => {
     const { input, onClose } = setup();
     await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    // let the mocked vocabulary settle (its shared suggestion requests resolve a few ticks later)
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await type(input, 'person:Jamie ');
     await type(input, 'beach');
     await fireEvent.keyDown(input, { key: 'Enter' });

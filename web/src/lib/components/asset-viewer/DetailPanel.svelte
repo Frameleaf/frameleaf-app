@@ -8,6 +8,7 @@
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
   import DetailPanelClassification from '$lib/components/asset-viewer/DetailPanelClassification.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
+  import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
   import DocumentTextSection from '$lib/components/frameleaf/DocumentTextSection.svelte';
   import VideoMomentsPanel from '$lib/components/frameleaf/VideoMomentsPanel.svelte';
   import ViewerDetailRows from '$lib/components/frameleaf/ViewerDetailRows.svelte';
@@ -23,6 +24,7 @@
   import {
     AssetMediaSize,
     getAllAlbums,
+    LibraryScope,
     getAssetInfo,
     type AlbumResponseDto,
     type AssetResponseDto,
@@ -165,6 +167,11 @@
 
     <DetailPanelLocation {isOwner} {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
   </section>
+
+  <!-- A Boards item's Source (Saved with, Page, the saved note, Added), as the Boards inspector shows it. -->
+  {#if asset.libraryScope === LibraryScope.Design || asset.libraryScope === LibraryScope.Both}
+    <AssetSources assetId={asset.id} canRead={isOwner} added={asset.createdAt} headingClass="fl-info-heading" />
+  {/if}
 
   <!--
       FL-36: the file, path, image, camera, lens, exposure, video and checksum rows the design

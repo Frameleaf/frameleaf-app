@@ -27,7 +27,11 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
+import {
+  StudioProjectImportService,
+  studioImportIncomingFolder,
+  studioImportStagePath,
+} from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { getConfig } from 'src/utils/config.js';
@@ -294,7 +298,7 @@ export class StudioCutoutService {
       const importId = randomUUID();
       const incoming = studioImportIncomingFolder(job.ownerId);
       await mkdir(incoming, { recursive: true });
-      const file = path.join(incoming, `${importId}.png`);
+      const file = studioImportStagePath(job.ownerId);
       matteFile = file;
       await writeFile(file, atlas, { flag: 'wx' });
       const { size } = await stat(file);

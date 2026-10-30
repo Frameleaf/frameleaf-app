@@ -761,14 +761,19 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       .getByRole('button', { name: 'Save link', exact: true })
       .click();
     await expect(
-      bookmarkPage.getByText('Saving the link.', { exact: true }),
+      bookmarkPage.getByText(/^(Saving the link|Link saved)\.$/),
     ).toBeVisible();
+    // Once the queue has it saved, the button says so instead of "Link is saving".
     await expect(
-      bookmarkPage.getByRole('button', {
-        name: 'Link is saving',
-        exact: true,
-      }),
+      bookmarkPage.getByRole('button', { name: 'Link saved', exact: true }),
     ).toBeDisabled();
+    await expect(
+      bookmarkPage.getByText('Link saved.', { exact: true }),
+    ).toBeVisible();
+    await bookmarkPage.screenshot({
+      path: testInfo.outputPath('bookmark-link-saved.png'),
+      fullPage: true,
+    });
     await bookmarkPage.close();
     const bookmarkRow = popup
       .locator('.queue-list li')
@@ -888,7 +893,7 @@ test('capture delivery preserves one receipt through HTTP faults and browser res
       .getByRole('button', { name: 'Save link', exact: true })
       .click();
     await expect(
-      menuPage.getByText('Saving the link.', { exact: true }),
+      menuPage.getByText(/^(Saving the link|Link saved)\.$/),
     ).toBeVisible();
     await menuPage.close();
     await expect.poll(() => sourceCount).toBe(6);

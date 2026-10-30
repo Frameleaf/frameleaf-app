@@ -1251,6 +1251,12 @@
       const refusal = isHttpError(error) ? studioRenderRefusalFromError(error.data) : null;
       if (refusal) {
         toastManager.danger($t(studioRenderRefusalKey(refusal)));
+      } else if (
+        isHttpError(error) &&
+        (error.data as { code?: unknown } | null)?.code === 'studio_export_sources_refused'
+      ) {
+        // FL-673: name why, rather than a generic failure.
+        toastManager.danger($t('frameleaf_studio_export_sources_refused'));
       } else {
         handleError(error, $t('frameleaf_studio_export_failed'));
       }

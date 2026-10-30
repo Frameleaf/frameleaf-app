@@ -229,10 +229,10 @@ export class DevelopBatchRepository {
             : 'open',
       createdAt: new Date(batch.createdAt).toISOString(),
       includeSidecars: batch.includeSidecars,
-      items: items.map((item) => ({
+      items: items.map(({ status, ...item }) => ({
         ...item,
         sourceChecksum: item.sourceChecksum?.toString('hex') ?? null,
-        preparationStatus: item.status as BatchItem['preparationStatus'],
+        preparationStatus: status as BatchItem['preparationStatus'],
         available: true,
         returns: (returnsByItem.get(item.id) ?? []).map(({ itemId: _, ...r }) => r),
       })),

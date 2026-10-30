@@ -675,6 +675,8 @@ export enum SystemMetadataKey {
    * password.
    */
   FrameleafSetup = 'frameleaf-setup',
+  /** FL-667: when the one-off removal of filler tags left by AI descriptions before FL-659 finished. */
+  DescriptionFillerTagCleanup = 'description-filler-tag-cleanup',
 }
 
 export enum UserMetadataKey {
@@ -2413,6 +2415,8 @@ export enum JobName {
   IdenticalFilesCheck = 'IdenticalFilesCheck',
 
   TagCleanup = 'TagCleanup',
+  /** FL-667: once after upgrade, removes filler tags AI descriptions added before FL-659's stop list. */
+  DescriptionFillerTagCleanup = 'DescriptionFillerTagCleanup',
 
   VersionCheck = 'VersionCheck',
 
@@ -2486,8 +2490,8 @@ export enum JobName {
 
 // Internal jobs stay out of the public enum, which strict native decoders reject new values of:
 // photography jobs are observed through the scoped workflow API, FL-650's seek-bar preview
-// warm-up is a background cache fill nobody watches, and FL-651's video fingerprints run on the
-// video duplicate queue, observed as that queue.
+// warm-up is a background cache fill nobody watches, FL-651's video fingerprints run on the video
+// duplicate queue, observed as that queue, and FL-667's filler-tag clean-up runs once.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2495,6 +2499,7 @@ export const JobNameSchema = z
     JobName.AssetWarmFilmstrip,
     JobName.AssetVideoFingerprintQueueAll,
     JobName.AssetVideoFingerprint,
+    JobName.DescriptionFillerTagCleanup,
   ])
   .describe('Job name')
   .meta({ id: 'JobName' });

@@ -193,13 +193,14 @@ export class AlbumService extends BaseService {
     }
 
     const ids = albums.map((album) => album.id);
-    const [results, smartBackedIds, ruleAlbumIds, rules, positions, recovered] = await Promise.all([
+    const [results, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts] = await Promise.all([
       this.albumRepository.getMetadataForIds(ids, privacyOptions),
       this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
       this.classificationRepository.getRuleAlbumIds(ids),
       this.classificationRepository.getRules(auth.user.id),
       this.albumRepository.getPositions(auth.user.id),
       this.recoveredAlbumIds(),
+      this.albumRepository.getBookmarkCounts(auth, ids),
     ]);
     const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
     const albumMetadata: Record<string, AlbumAssetCount> = {};
@@ -215,6 +216,7 @@ export class AlbumService extends BaseService {
       buildAlbumTree(
         albums.map((album) => ({
           ...this.withReadableParent(this.toListItem(album, albumMetadata), readable),
+          bookmarkCount: bookmarkCounts.get(album.id) ?? 0,
           isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
           smartRuleId: ruleByAlbum.get(album.id) ?? null,
           smartKind: (smartBackedIds.get(album.id) as SmartAlbumBuiltInKind | undefined) ?? null,
@@ -679,7 +681,7 @@ export class AlbumService extends BaseService {
     );
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
-    for (const assetId of newAssetIds) await this.eventRepository.emit('AssetChanged', { assetId });
+    await this.emitAssetsChanged(newAssetIds);
     // Putting an item in a rule's smart album by hand is a decision the rule keeps (FL-60).
     await this.classificationRepository.recordAlbumAdditions(id, newAssetIds, auth.user.id);
     if (newAssetIds.length > 0) {
@@ -786,8 +788,7 @@ export class AlbumService extends BaseService {
       const added = albumAssetValues.filter((value) => value.albumId === albumId).map(({ assetId }) => assetId);
       await this.classificationRepository.recordAlbumAdditions(albumId, added, auth.user.id);
     }
-    for (const assetId of new Set(albumAssetValues.map((item) => item.assetId)))
-      await this.eventRepository.emit('AssetChanged', { assetId });
+    await this.emitAssetsChanged(albumAssetValues.map((item) => item.assetId));
     for (const event of events) {
       await this.eventRepository.emit('AlbumUpdate', event);
     }
@@ -855,7 +856,7 @@ export class AlbumService extends BaseService {
     );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
-    for (const assetId of removedIds) await this.eventRepository.emit('AssetChanged', { assetId });
+    await this.emitAssetsChanged(removedIds);
     const isOwner = album.albumUsers.some(({ role, user }) => role === AlbumUserRole.Owner && user.id === auth.user.id);
     await this.recordSmartAlbumRemovals(id, removedIds, auth.user.id, isOwner);
     if (removedIds.length > 0) {

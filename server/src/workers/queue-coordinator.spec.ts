@@ -192,7 +192,7 @@ describe('coordinator capacity admission', () => {
     expect(fixture.store.claim).toHaveBeenLastCalledWith('deep', 'worker', QUEUE_EXECUTION_CAPACITY - 1);
   });
 
-  it('reconciles all queues on startup and every five seconds despite dropped notifications, including idle cleanup', async () => {
+  it('finds work within five seconds despite dropped notifications, and reconciles after a claim', async () => {
     vi.useFakeTimers();
     await coordinate(coordinatorData);
     expect(fixture.store.feedManifest.mock.calls).toEqual(coordinatorData.queues.map((queue) => [queue]));
@@ -202,8 +202,11 @@ describe('coordinator capacity admission', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.store.queuesWithUnfinishedWork).toHaveBeenCalledOnce();
     expect(fixture.store.feedManifest).not.toHaveBeenCalled();
-    // A durable child commits with no delivered notification. Only the full scan discovers it.
+    // A durable child commits with no delivered notification. The scan's discovery probe finds it.
     let childAvailable = true;
+    fixture.store.queuesWithUnfinishedWork.mockImplementation(() =>
+      Promise.resolve(childAvailable ? ['thumbnail'] : []),
+    );
     fixture.store.claim.mockImplementation((queue: string) => {
       if (queue !== 'thumbnail' || !childAvailable) return Promise.resolve([]);
       childAvailable = false;
@@ -214,15 +217,39 @@ describe('coordinator capacity admission', () => {
       type: 'execute',
       claim: { id: 'dropped-child', queue: 'thumbnail', deadlineMs: 60_000 },
     });
-    expect(fixture.store.feedManifest.mock.calls).toEqual(coordinatorData.queues.map((queue) => [queue]));
-    expect(fixture.store.queuesWithUnfinishedWork).toHaveBeenCalledOnce();
     fixture.store.feedManifest.mockClear();
     fixture.port!.emit('message', { type: 'settled', id: 'dropped-child' });
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.store.feedManifest).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
-    // feedManifest runs sharing/terminal-alias settlement and redaction even without unfinished work.
-    expect(fixture.store.feedManifest.mock.calls).toEqual(coordinatorData.queues.map((queue) => [queue]));
+    // feedManifest runs sharing/terminal-alias settlement and redaction even without unfinished work;
+    // the pass starts from the queue after the last one served
+    expect(fixture.store.feedManifest.mock.calls.flat().toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual(
+      coordinatorData.queues.toSorted((a, b) => a.localeCompare(b)),
+    );
+  });
+
+  it('backs off full reconciliation while every queue is idle, up to 30 seconds', async () => {
+    vi.useFakeTimers();
+    fixture.store.queuesWithUnfinishedWork.mockResolvedValue([]);
+    await coordinate(coordinatorData);
+    const advance = async (ms: number) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      await vi.advanceTimersByTimeAsync(0);
+    };
+    const fullPasses = () => fixture.store.feedManifest.mock.calls.length / coordinatorData.queues.length;
+    expect(fullPasses()).toBe(1);
+    // idle passes are spaced 10 s, 20 s, then 30 s apart
+    await advance(10_000);
+    expect(fullPasses()).toBe(2);
+    await advance(20_000);
+    expect(fullPasses()).toBe(3);
+    await advance(25_000);
+    expect(fullPasses()).toBe(3);
+    await advance(5000);
+    expect(fullPasses()).toBe(4);
+    await advance(30_000);
+    expect(fullPasses()).toBe(5);
   });
 
   it('remembers a full scan requested while an ordinary dispatch visit is waiting', async () => {
@@ -237,7 +264,8 @@ describe('coordinator capacity admission', () => {
       fixture.wake!();
       await vi.advanceTimersByTimeAsync(0);
       expect(fixture.store.feedManifest.mock.calls).toEqual([['deep']]);
-      await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan);
+      // an idle start-up skips the first scan's full pass, so the second one asks for it
+      await vi.advanceTimersByTimeAsync(QUEUE_TIMING.scan * 2);
       expect(fixture.store.feedManifest).toHaveBeenCalledOnce();
       release();
       await vi.advanceTimersByTimeAsync(0);

@@ -30,6 +30,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.AssetWarmFilmstrip,
       JobName.AssetVideoFingerprintQueueAll,
       JobName.AssetVideoFingerprint,
+      JobName.DescriptionFillerTagCleanup,
     ]);
     const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));
     const schema = QueueJobResponseDto.schema.shape.name;

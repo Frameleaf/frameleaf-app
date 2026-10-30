@@ -620,7 +620,7 @@ export class AssetService extends BaseService {
     // and every album read hides it from everyone but its owner's elevated session, so it is back in
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
-    for (const assetId of ids) await this.eventRepository.emit('AssetChanged', { assetId });
+    await this.emitAssetsChanged(ids);
     // A sidecar holds the description, capture date and time zone, location and rating only: a favorite,
     // archive, lock or duplicate change leaves it as it is, so it queues no rewrite of every item's file.
     const sidecarFields = [dateTimeOriginal, latitude, longitude, rating, description, dateTimeRelative, timeZone];

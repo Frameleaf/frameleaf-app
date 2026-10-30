@@ -256,6 +256,11 @@ export const AlbumResponseSchema = z
       ),
     hasSharedLink: z.boolean().describe('Has shared link'),
     assetCount: z.int().min(0).describe('Number of assets'),
+    bookmarkCount: z
+      .int()
+      .min(0)
+      .optional()
+      .describe('Number of links (Boards). Populated by GET /albums/tree and GET /albums/hierarchy.'),
     // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
     lastModifiedAssetTimestamp: z
       .string()

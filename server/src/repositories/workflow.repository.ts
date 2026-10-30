@@ -12,7 +12,7 @@ import { DB } from 'src/schema/index.js';
 import { WorkflowLogTable } from 'src/schema/tables/workflow-log.table.js';
 import { WorkflowStepTable } from 'src/schema/tables/workflow-step.table.js';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
-import { nsfwAssetIdExists, searchAssetBuilder, withTags } from 'src/utils/database.js';
+import { anyUuid, nsfwAssetIdExists, searchAssetBuilder, withTags } from 'src/utils/database.js';
 import { effectiveVisibility } from 'src/utils/locked.js';
 import { type WorkflowSource, workflowDefinitionHash } from 'src/utils/workflow-source.js';
 
@@ -572,6 +572,10 @@ export class WorkflowRepository {
   }
   async getAssetOwner(assetId: string) {
     return (await this.db.selectFrom('asset').select('ownerId').where('id', '=', assetId).executeTakeFirst())?.ownerId;
+  }
+
+  getAssetOwners(assetIds: string[]) {
+    return this.db.selectFrom('asset').select(['id', 'ownerId']).where('id', '=', anyUuid(assetIds)).execute();
   }
 
   private async replaceAndReturn(

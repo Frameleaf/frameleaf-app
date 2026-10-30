@@ -14,6 +14,7 @@ import type { PostgresError } from 'postgres';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { type Tag, columns } from 'src/database.js';
 import { Chunked, ChunkedSet, DATABASE_PARAMETER_CHUNK_SIZE, DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetMetadataKey } from 'src/enum.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -550,6 +551,136 @@ export class TagRepository {
         eb.selectFrom('tag').select('tag.id').where('tag.userId', '=', userId).where('tag.value', 'in', values),
       )
       .execute();
+  }
+
+  /**
+   * FL-667: one page of the assets whose AI description applied a tag with one of these values, in
+   * asset id order after `afterAssetId`, with each asset's owner. Only the
+   * description step's own record (`description.appliedTagValues`) counts, never a tag a person added.
+   */
+  getDescriptionTaggedAssets(values: string[], afterAssetId: string | undefined, limit: number) {
+    return this.db
+      .selectFrom('asset_metadata')
+      .innerJoin('asset', 'asset.id', 'asset_metadata.assetId')
+      .select(['asset_metadata.assetId', 'asset.ownerId'])
+      .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
+      .where(sql<boolean>`"asset_metadata"."value"->'description'->'appliedTagValues' ?| ${values}::text[]`)
+      .$if(!!afterAssetId, (qb) => qb.where('asset_metadata.assetId', '>', afterAssetId!))
+      .orderBy('asset_metadata.assetId')
+      .limit(limit)
+      .execute();
+  }
+
+  /**
+   * FL-667: takes tags the AI description applied off one asset. Under the enrichment record's row lock
+   * it reads `description.appliedTagValues`, lets `choose` pick the values to remove, removes the
+   * owner's tags with those values from the asset, and drops them from `description.appliedTagValues`
+   * and `description.result.tags` in place, leaving the rest of the record as it is. Returns the values
+   * removed. Runs in `kysely` when given, else in its own transaction.
+   */
+  removeDescriptionTagValues(
+    assetId: string,
+    userId: string,
+    choose: (applied: string[]) => string[],
+    kysely?: Kysely<DB>,
+  ): Promise<string[]> {
+    const execute = async (tx: Kysely<DB>) => {
+      const row = await tx
+        .selectFrom('asset_metadata')
+        .select(sql<unknown>`"value"->'description'`.as('description'))
+        .where('assetId', '=', assetId)
+        .where('key', '=', AssetMetadataKey.MlEnrichment)
+        .forUpdate()
+        .executeTakeFirst();
+      const description = row?.description as { status?: unknown; appliedTagValues?: unknown } | null | undefined;
+      if (description?.status !== 'success' || !Array.isArray(description.appliedTagValues)) {
+        return [];
+      }
+      const applied = description.appliedTagValues.filter((value): value is string => typeof value === 'string');
+      const removed = [...new Set(choose(applied))];
+      if (removed.length === 0) {
+        return [];
+      }
+
+      await tx
+        .deleteFrom('tag_asset')
+        .where('assetId', '=', assetId)
+        .where('tagId', 'in', (eb) =>
+          eb.selectFrom('tag').select('tag.id').where('tag.userId', '=', userId).where('tag.value', 'in', removed),
+        )
+        .execute();
+
+      const without = (path: string) => sql<unknown>`coalesce(
+        (
+          select jsonb_agg(element order by position)
+          from jsonb_array_elements("value" #> ${path}::text[]) with ordinality as list(element, position)
+          where not ((element #>> '{}') = any(${removed}::text[]))
+        ),
+        '[]'::jsonb
+      )`;
+      await tx
+        .updateTable('asset_metadata')
+        .set({
+          value: sql`jsonb_set(
+            case
+              when jsonb_typeof("value" #> '{description,result,tags}') = 'array'
+                then jsonb_set("value", '{description,result,tags}', ${without('{description,result,tags}')})
+              else "value"
+            end,
+            '{description,appliedTagValues}',
+            ${without('{description,appliedTagValues}')}
+          )`,
+        })
+        .where('assetId', '=', assetId)
+        .where('key', '=', AssetMetadataKey.MlEnrichment)
+        .execute();
+      return removed;
+    };
+    // a caller holding the asset's metadata lock passes its transaction (see `withAssetMetadataLock`)
+    return kysely ? execute(kysely) : this.db.transaction().execute(execute);
+  }
+
+  /**
+   * FL-667: deletes the owner's tags with these values that no asset carries and that hold no other
+   * tag; a tag still on any asset, or with a tag inside it, stays. Returns how many were deleted.
+   */
+  async deleteUnusedTagValues(userId: string, values: string[]): Promise<number> {
+    if (values.length === 0) {
+      return 0;
+    }
+
+    return this.db.transaction().execute(async (tx) => {
+      // Lock the candidates first: a membership being added meanwhile holds a key-share lock on its tag,
+      // so this waits for it, and the check below (a new statement) then sees it and keeps the tag.
+      // Checking before the lock would let the delete cascade away a membership committed meanwhile.
+      const candidates = await tx
+        .selectFrom('tag')
+        .select('tag.id')
+        .where('tag.userId', '=', userId)
+        .where('tag.value', 'in', values)
+        .orderBy('tag.id')
+        .forUpdate()
+        .execute();
+      if (candidates.length === 0) {
+        return 0;
+      }
+
+      const result = await tx
+        .deleteFrom('tag')
+        .where(
+          'tag.id',
+          'in',
+          candidates.map(({ id }) => id),
+        )
+        .where(({ not, exists, selectFrom }) =>
+          not(exists(selectFrom('tag_asset').select('tag_asset.tagId').whereRef('tag_asset.tagId', '=', 'tag.id'))),
+        )
+        .where(({ not, exists, selectFrom }) =>
+          not(exists(selectFrom('tag as child').select('child.id').whereRef('child.parentId', '=', 'tag.id'))),
+        )
+        .executeTakeFirst();
+      return Number(result.numDeletedRows);
+    });
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })

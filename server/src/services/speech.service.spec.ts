@@ -269,3 +269,29 @@ it('requeues upstream worker capacity refusals without spending attempts or losi
   expect(f.operations.fail).not.toHaveBeenCalled();
   expect(f.repository.publish).not.toHaveBeenCalled();
 });
+
+describe('AssetsChanged', () => {
+  it('wakes the speech index of every owner in a bulk change, once each', async () => {
+    const repository = { assetOwners: vi.fn().mockResolvedValue(['owner-a', 'owner-b']), wake: vi.fn() };
+    const websocket = { clientSend: vi.fn() };
+    const logger = { setContext: vi.fn() };
+    const none = {} as never;
+    const service = new SpeechService(
+      repository as never,
+      none,
+      none,
+      none,
+      none,
+      none,
+      none,
+      logger as never,
+      websocket as never,
+    );
+
+    await service.onAssetsChanged({ assetIds: ['a1', 'a2', 'a3'] });
+
+    expect(repository.assetOwners).toHaveBeenCalledWith(['a1', 'a2', 'a3']);
+    expect(repository.wake.mock.calls).toEqual([['owner-a'], ['owner-b']]);
+    expect(websocket.clientSend).toHaveBeenCalledWith('on_speech_index_change', 'owner-a');
+  });
+});

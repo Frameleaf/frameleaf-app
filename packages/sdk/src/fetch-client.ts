@@ -4131,6 +4131,8 @@ export type AlbumResponseDto = {
     albumUsers: AlbumUserResponseDto[];
     /** Number of assets */
     assetCount: number;
+    /** Number of links (Boards). Populated by GET /albums/tree and GET /albums/hierarchy. */
+    bookmarkCount?: number;
     /** Colour name (grey, green, teal, blue, purple, pink, amber, red) or null */
     color: string | null;
     contributorCounts?: ContributorCountResponseDto[];
@@ -14610,6 +14612,8 @@ export type ServerConfigDto = {
     frameleaf: ServerFrameleafConfigDto;
     /** Whether the server has been initialized */
     isInitialized: boolean;
+    /** Whether first-run setup in progress is for a new server rather than an existing library */
+    isNewServerSetup: boolean;
     /** Whether the admin has completed onboarding */
     isOnboarded: boolean;
     /** Login page message */

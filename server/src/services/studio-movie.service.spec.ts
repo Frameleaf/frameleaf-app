@@ -319,6 +319,7 @@ describe(StudioMovieService.name, () => {
       const upload = context.imports.upload.mock.calls[0];
       expect(upload[1]).toBe(projectId);
       expect(upload[3]).toMatchObject({ mimetype: 'audio/mp4', originalname: 'Lake weekend music.m4a', size: 1234 });
+      expect(upload[3].path).toMatch(/\/studio-imports\/incoming\/[\da-f-]{36}\.upload$/);
 
       const saved = context.studio.save.mock.calls[0][2];
       expect(saved).toMatchObject({ expectedRevision: 0, clientId: `studio-movie:${operationId}` });

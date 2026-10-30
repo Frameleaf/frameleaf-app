@@ -35,7 +35,11 @@ import { StudioMovieRepository } from 'src/repositories/studio-movie.repository.
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
-import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
+import {
+  StudioProjectImportService,
+  studioImportIncomingFolder,
+  studioImportStagePath,
+} from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
@@ -368,7 +372,7 @@ export class StudioVoiceCleanupService {
       // Kept with the project as an audio import, like music someone adds in Studio.
       const name = fileSafe(resolved.clip.label) || 'Clip';
       const fileName = `${name.slice(0, 120)} (cleaned voice).m4a`;
-      incoming = join(studioImportIncomingFolder(operation.ownerId), `voice-${operation.id}-${randomUUID()}.m4a`);
+      incoming = studioImportStagePath(operation.ownerId);
       this.storage.mkdirSync(studioImportIncomingFolder(operation.ownerId));
       await this.movies.encodeMusic(cleanedPath, incoming, cleaned.seconds + 1, controller.signal);
       const { size } = await this.storage.stat(incoming);

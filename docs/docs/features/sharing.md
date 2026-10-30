@@ -47,7 +47,7 @@ https://photos.example.com/share/JUckRMxlgpo7F9BpyqGk_cZEwDzaU_U5LU5_oNZp1ETIBa9
 You can create a public share link from a selection of photos or videos, or from an album:
 
 - **From a selection**: select the photos or videos in the timeline, then choose **Share link** in the selection bar.
-- **From an album**: open the album and choose **Create link** in the album header.
+- **From an album**: open the album and choose **Links** in the album header.
 
 ### Customizing the public share link
 

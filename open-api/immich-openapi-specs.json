@@ -65670,6 +65670,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "bookmarkCount": {
+            "description": "Number of links (Boards). Populated by GET /albums/tree and GET /albums/hierarchy.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "color": {
             "description": "Colour name (grey, green, teal, blue, purple, pink, amber, red) or null",
             "nullable": true,
@@ -131525,6 +131531,10 @@
             "description": "Whether the server has been initialized",
             "type": "boolean"
           },
+          "isNewServerSetup": {
+            "description": "Whether first-run setup in progress is for a new server rather than an existing library",
+            "type": "boolean"
+          },
           "isOnboarded": {
             "description": "Whether the admin has completed onboarding",
             "type": "boolean"
@@ -131593,6 +131603,7 @@
           "externalDomain",
           "frameleaf",
           "isInitialized",
+          "isNewServerSetup",
           "isOnboarded",
           "loginPageMessage",
           "loginPageMessageFormat",
