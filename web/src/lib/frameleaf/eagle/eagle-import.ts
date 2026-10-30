@@ -99,6 +99,8 @@ export interface EagleItem {
   comments: EagleComment[];
   /** The file itself, when it was found in the item's folder. */
   file?: File;
+  /** The file is in the library folder on the server (a library the server reads, FL-653). */
+  present?: boolean;
   /** The item's `metadata.json` could not be read. */
   unreadable?: boolean;
 }
@@ -299,9 +301,12 @@ export interface EagleUnsupported {
   reason: UnsupportedReason;
 }
 
+/** Whether the item's file is there: chosen in this browser, or in the library folder on the server. */
+export const hasFile = (item: EagleItem) => !!item.file || item.present === true;
+
 /** Whether a record comes over: in the library, of a type Boards holds, and its file is there. */
 export function isComing(item: EagleItem, supported: ReadonlySet<string>) {
-  return !item.unreadable && !item.isDeleted && supported.has(item.ext) && !!item.file;
+  return !item.unreadable && !item.isDeleted && supported.has(item.ext) && hasFile(item);
 }
 
 /**
@@ -385,7 +390,7 @@ export function planEagleImport(library: EagleLibrary, options: EaglePlanOptions
     .map((item) => ({ name: eagleFileName(item), reason: UNSUPPORTED_REASON[item.ext] ?? 'other' }));
   const missing = [
     ...library.items.filter((item) => item.unreadable).map((item) => `${item.id}.info`),
-    ...live.filter((item) => supported.has(item.ext) && !item.file).map((item) => eagleFileName(item)),
+    ...live.filter((item) => supported.has(item.ext) && !hasFile(item)).map((item) => eagleFileName(item)),
   ];
   const coming = live.filter((item) => isComing(item, supported));
   const isAlready = (item: EagleItem) =>

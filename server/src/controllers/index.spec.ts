@@ -87,6 +87,10 @@ const ADMIN_ROUTES = new Set([
   'GET system-metadata/version-check-state',
   // Lists the server's permitted import folders; only an administrator may point an import at one.
   'GET takeout/roots',
+  // FL-653: an Eagle library in a permitted import folder is an administrator's choice, as for takeout.
+  'GET eagle-imports/libraries',
+  'POST eagle-imports',
+  'POST eagle-imports/check',
   'PATCH libraries/:id',
   'POST jobs',
   'POST libraries',

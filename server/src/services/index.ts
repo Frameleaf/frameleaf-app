@@ -57,6 +57,8 @@ import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
+import { EagleImportWorkerService } from 'src/services/eagle-import-worker.service.js';
+import { EagleImportService } from 'src/services/eagle-import.service.js';
 import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
@@ -365,6 +367,8 @@ export const services = [
   SystemConfigService,
   SystemMetadataService,
   TagService,
+  EagleImportService,
+  EagleImportWorkerService,
   TakeoutService,
   TakeoutWorkerService,
   TimelineService,

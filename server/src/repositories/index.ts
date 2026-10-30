@@ -46,6 +46,8 @@ import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { EagleImportRepository } from 'src/repositories/eagle-import.repository.js';
+import { EagleLibraryRepository } from 'src/repositories/eagle-library.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
@@ -275,6 +277,8 @@ export const repositories = [
   TagRepository,
   TakeoutRepository,
   TakeoutStagingRepository,
+  EagleImportRepository,
+  EagleLibraryRepository,
   TrashRepository,
   UserRepository,
   ViewRepository,
