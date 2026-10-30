@@ -21,19 +21,43 @@ Save images, pages and screenshots to your own Frameleaf library, into the colle
 
 **Language:** English
 
-**Description:**
+**Description** (plain text; paste as is):
 
-> Save to Frameleaf puts what you find on the web straight into Boards, the free designer workspace in your own Frameleaf library.
->
-> • Save images from any page: choose which ones, then pick a collection, tags and a note.
-> • Save a page as a link with its title, never a copy of the page.
-> • Take a screenshot of what you can see, an area you select, or the whole page.
-> • Right-click any image or page and choose "Save to Frameleaf".
-> • Saving carries on in the background, even after you close the window, and waits if your server is offline.
->
-> Sign in with your Frameleaf account: choose your server, sign in and allow access once. There is no key to copy. The extension can only save things, list your collections and tags, and make a new collection when you ask it to, and you can sign out or remove its access at any time.
->
-> You need a Frameleaf server of your own, at home or with Frameleaf Cloud. Nothing you save goes anywhere else.
+```text
+Save to Frameleaf: your inspiration, in your own library
+
+See something worth keeping? Save it to Frameleaf in two clicks. Images, pages and screenshots go straight into Boards, the free designer workspace in your own Frameleaf library. Not someone else's cloud.
+
+Built for designers, makers and anyone who collects references: mood boards, brand refreshes, renovation ideas, product research.
+
+WHAT YOU CAN SAVE
+• Images from any page. Previews load by themselves as you scroll the list. Pick the ones you want, or select all, and filter by size and format.
+• Whole pages as links, with their title, so your board shows more than a bare address.
+• Screenshots: what you can see, an area you select, or the whole page in one picture (a very tall page is cut short, and you're told where).
+• Right-click any image or page and save it to Frameleaf.
+
+ORGANISED AS YOU SAVE
+• Choose a collection, or make a new one, without leaving the page.
+• Add tags and a note while it's fresh in your mind.
+• Your last collection is remembered, so the next save is one click.
+• Each item keeps where it came from, so you can always find the original.
+
+IT JUST KEEPS GOING
+Saving carries on in the background after you close the tab. If you close the browser, or your server is offline, what's left waits and finishes once they're back. Nothing is lost.
+
+SIGN IN, NO SETUP
+Choose your Frameleaf server, sign in with your Frameleaf account and allow access once. There's no key to copy or paste. You can sign out, or remove the extension's access from Frameleaf, at any time.
+
+PRIVATE BY DESIGN
+• What you save goes only to your own Frameleaf server, at home or on Frameleaf Cloud.
+• No analytics, no ads, no third-party services.
+• The extension only reads a page when you choose to save from it.
+
+WHAT YOU NEED
+A Frameleaf server of your own, running at home or with Frameleaf Cloud. Boards is free with every Frameleaf library.
+
+Learn more at https://frameleaf.app
+```
 
 **Website:** https://frameleaf.app
 **Support:** https://frameleaf.app/help
@@ -52,7 +76,7 @@ Save images, pages and screenshots from the browser into the user's own Framelea
 | `activeTab`                               | Reads the page you are on only when you open Save to Frameleaf on it, to list its images or take a screenshot.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `scripting`                               | Runs a small script in the page you chose to save from, to find its images or scroll it for a whole-page screenshot. Nothing runs on pages you don't save from.                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `alarms`                                  | Retries saving items that are waiting when your server was offline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `contextMenus`                            | Adds "Save image to Frameleaf" and "Save page to Frameleaf" to the right-click menu.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `contextMenus`                            | Adds "Save image to Frameleaf" (on images) and "Save page bookmark to Frameleaf" (on pages) to the right-click menu. They only start a save when you pick one.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `identity`                                | Opens Chrome's sign-in window, so you sign in to your Frameleaf server instead of pasting a key.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Host access (`https://*/*`, `http://*/*`) | Shows previews of a page's images as soon as you open the image list, downloads the ones you save from whatever site hosts them (over `https` or plain `http`), and sends what you save to your Frameleaf server, which lives at an address each person chooses. Chrome asks once, when the extension is added, instead of for every site. Previews and downloads go without cookies or a referrer, and nothing is saved until you choose Save. Connecting to your Frameleaf server over plain `http` is only allowed for a server on your own computer, when you turn that on. |
 
