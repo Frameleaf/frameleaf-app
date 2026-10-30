@@ -423,8 +423,8 @@ export class StudioMovieService {
         throw new BadRequestException('None of these photos or videos can be placed in a movie');
       }
 
-      // 4. The title, and the project.
-      await step(MediaOperationStatus.Validating, PROGRESS.title);
+      // 4. The title, and the project. Still rendering: validation begins only once the project is saved.
+      await step(MediaOperationStatus.Rendering, PROGRESS.title);
       const graph = buildStudioMovieGraph({
         name,
         title: snapshot.title || snapshot.sourceName,
@@ -471,7 +471,7 @@ export class StudioMovieService {
         musicImportId: music.importId,
         musicSeconds: music.seconds,
       });
-      if (!(await this.operations.beginValidation(operation.id, claimToken))) {
+      if (!(await this.operations.beginValidation(operation.id, claimToken, true))) {
         throw new Error('Claim lost');
       }
       const outcome = await this.operations.publishValidated(operation.id, claimToken, async (tx) => {
