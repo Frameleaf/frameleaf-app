@@ -743,7 +743,15 @@
   {/snippet}
 </Dialog>
 
-<Dialog bind:open={escrowOpen} title={$t('frameleaf_cloud_backup_escrow_update')} closeLabel={$t('close')}>
+<Dialog
+  bind:open={escrowOpen}
+  title={$t('frameleaf_cloud_backup_escrow_update')}
+  closeLabel={$t('close')}
+  onRequestClose={() => {
+    // The request can't be cancelled once sent, so the dialog stays until it answers.
+    if (!busy) escrowOpen = false;
+  }}
+>
   <p>{$t('frameleaf_cloud_backup_escrow_outdated_help')}</p>
   <div class="fc-form">
     <label class="fc-stack">
@@ -772,7 +780,7 @@
     <p class="cc-error" role="alert">{escrowFailure}</p>
   {/if}
   {#snippet actions()}
-    <Button onclick={() => (escrowOpen = false)}>{$t('frameleaf_cloud_cancel')}</Button>
+    <Button disabled={busy} onclick={() => (escrowOpen = false)}>{$t('frameleaf_cloud_cancel')}</Button>
     <Button
       variant="primary"
       disabled={busy || !isEscrowPassphraseValid(escrowPassphrase.first, escrowPassphrase.second)}

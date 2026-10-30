@@ -31,7 +31,6 @@
     isOwnMemoryAcknowledged,
     keyFileName,
     managedBucketName,
-    recoveryKitText,
     type BackupKey,
   } from '$lib/frameleaf/cloud-backup';
   import { downloadBlob } from '$lib/utils';
@@ -148,22 +147,8 @@
     }
   });
 
-  const kit = $derived(
-    generated
-      ? managed
-        ? recoveryFile
-        : recoveryKitText({
-            heading: $t('frameleaf_cloud_backup_kit_heading'),
-            instance: $t('frameleaf_cloud_backup_kit_instance', { values: { instanceId } }),
-            bucket: $t('frameleaf_cloud_backup_kit_bucket', { values: { bucket: bucketName } }),
-            fingerprint: $t('frameleaf_cloud_backup_kit_fingerprint', {
-              values: { fingerprint: generated.fingerprint },
-            }),
-            keep: $t('frameleaf_cloud_backup_kit_keep'),
-            code: $t('frameleaf_cloud_backup_kit_code', { values: { code: generated.recoveryCode } }),
-          })
-      : '',
-  );
+  // Every backup is encrypted with the client roots, so the kit is always the complete recovery file.
+  const kit = $derived(generated ? recoveryFile : '');
 
   const fields = [
     { field: 'endpoint', labelKey: 'frameleaf_cloud_backup_endpoint', type: 'url' },

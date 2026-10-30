@@ -147,16 +147,6 @@ export const bucketSettingsErrors = (settings: BucketSettings): Partial<Record<k
   return errors;
 };
 
-/** The recovery kit's text: shown once, downloaded or printed, and holding the key as its recovery code. */
-export const recoveryKitText = (lines: {
-  heading: string;
-  instance: string;
-  bucket: string;
-  fingerprint: string;
-  code: string;
-  keep: string;
-}) => [lines.heading, '', lines.instance, lines.bucket, lines.fingerprint, '', lines.keep, '', lines.code].join('\n');
-
 /** The storage address without its scheme, for "On s3.example.com". */
 export const endpointHost = (endpoint: string | null | undefined) => {
   if (!endpoint) {
