@@ -23,7 +23,7 @@
   font-family: var(--ss-body);
   font-size: 16px;
   line-height: 1.6;
-  text-align: left;
+  text-align: start;
 }
 .ss * {
   box-sizing: border-box;
@@ -407,7 +407,7 @@
 }
 .ss-problems {
   margin: 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   color: #b3261e;
   font-size: 14px;
 }
@@ -571,7 +571,7 @@
   border: 0;
   border-radius: 0;
   padding: 0;
-  text-align: left;
+  text-align: start;
   display: grid;
   gap: 8px;
   opacity: 0.55;
@@ -672,7 +672,7 @@
   overflow: hidden;
   display: grid;
   gap: 4px;
-  text-align: left;
+  text-align: start;
   background: color-mix(in srgb, var(--ss-paper) 90%, var(--ss-text));
   border: 2px solid transparent;
   color: var(--ss-text);

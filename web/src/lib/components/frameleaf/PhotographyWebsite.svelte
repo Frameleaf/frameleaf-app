@@ -30,9 +30,11 @@
     type StudioSite as StoredSite,
     type Workflow,
   } from '$lib/frameleaf/photography/workflow-api';
+  import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
+  import { DateTime } from 'luxon';
   import {
     mdiArrowDown,
     mdiArrowUp,
@@ -711,7 +713,11 @@
                       <a href={`mailto:${item.email}`}>{item.email}</a>
                       <small>{item.message}</small>
                     {/if}
-                    <small>{new Date(item.createdAt).toLocaleString()}</small>
+                    <small
+                      >{DateTime.fromISO(item.createdAt).toLocaleString(DateTime.DATETIME_MED, {
+                        locale: $locale,
+                      })}</small
+                    >
                   </li>
                 {/each}
               </ul>
