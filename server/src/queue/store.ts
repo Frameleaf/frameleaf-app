@@ -656,7 +656,7 @@ export class SqlQueueStore {
           await finishSelections(tx, claim.id, false);
           await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
           const latest = rows[0].latestPending;
-          if (unconfirmedAttention && latest) {
+          if (unconfirmedStop && latest) {
             // Discard the one deferred intent only after every positively identified obligation
             // is terminal. A later history copy may not appear in its original membership list.
             const identities = [{ runId: latest.runId, itemKey: latest.itemKey }, ...(latest.memberships ?? [])];

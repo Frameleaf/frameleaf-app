@@ -1177,6 +1177,34 @@ describe('PostgreSQL queue', () => {
     expect(await store.retryFailed(queue)).toBe(1);
   });
 
+  it('does not run a deferred latest request once repeatable work ends on an unconfirmed stop', async () => {
+    const runId = await store.createRun('unconfirmed-exhausted', {});
+    const latestRun = await store.createRun('latest-after-exhausted', {});
+    const options = { deduplication: { id: randomUUID(), keepLastIfActive: true } };
+    await store.enqueue([intent({ runId, itemKey: 'old', rootItemKey: 'old', options })]);
+    await store.finishEnumeration(runId);
+    for (const expected of ['pending', 'failed']) {
+      await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+      const [claim] = await store.claim(queue, workerA);
+      if (expected === 'failed') {
+        // A newer request arrives while the final attempt runs; it is held as the job's latest.
+        await store.enqueue([intent({ runId: latestRun, itemKey: 'latest', rootItemKey: 'latest', options })]);
+        await store.finishEnumeration(latestRun);
+      }
+      await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${claim.id}::uuid`.execute(
+        db,
+      );
+      await store.recoverExpired();
+      expect((await sql`select state from job where id=${claim.id}::uuid`.execute(db)).rows).toEqual([
+        { state: expected },
+      ]);
+    }
+    await sql`update job set "availableAt" = now() where queue = ${queue}`.execute(db);
+    expect(await store.claim(queue, workerB)).toEqual([]);
+    const { rows: latest } = await sql`select state from job_run_item where "runId" = ${latestRun}::uuid`.execute(db);
+    expect(latest).toEqual([{ state: 'needs_attention' }]);
+  });
+
   it('fences the linked operation without giving its dispatcher an independent retry after an unconfirmed stop', async () => {
     const { ctx } = newMediumService(BaseService, { database: db, mock: [LoggingRepository], real: [] });
     const operations = ctx.get(MediaOperationRepository);
