@@ -881,21 +881,25 @@ export class SqlQueueStore {
     return observeQueueRun(this.db, name);
   }
 
-  async clear(queue: string, states: QueueState[]) {
+  /** `entityIds` narrows the clear to the jobs about those items (their `data.id`), e.g. removed assets. */
+  async clear(queue: string, states: QueueState[], entityIds?: string[]) {
+    if (entityIds?.length === 0) return;
+    const about = entityIds ? sql`and j.data ->> 'id' = any(${entityIds}::text[])` : sql``;
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
     await withSelectionSharing(this.db, async (tx) => {
       await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
       const { rows: cancelledLatest } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
         update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
-        and j."latestPending" ->> 'name' = i.stage and (
+        ${about} and j."latestPending" ->> 'name' = i.stage and (
           (j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey")
           or exists (select 1 from jsonb_to_recordset(coalesce(j."latestPending" -> 'memberships', '[]'::jsonb))
             as member("runId" uuid, "itemKey" text) where member."runId" = i."runId" and member."itemKey" = i."itemKey")))
           returning i."runId", i."rootItemKey", i."itemKey", i.stage`.execute(tx);
       cancelledLatest.push(...(await mirrorSelectionLineage(tx, { items: cancelledLatest })));
       const affectedRuns = cancelledLatest.map((item) => item.runId);
-      if (states.includes('pending') || states.includes('waiting')) {
+      // a selection still being enumerated is the whole queue's, never one item's
+      if (!entityIds && (states.includes('pending') || states.includes('waiting'))) {
         const { rows: cancelled } = await sql<{
           runId: string;
         }>`with cancelled as (
@@ -904,9 +908,9 @@ export class SqlQueueStore {
         ) select distinct m."runId" from cancelled c join job_selection_run m on m."selectionId" = c.id`.execute(tx);
         affectedRuns.push(...cancelled.map((item) => item.runId));
       }
-      const { rows } = await sql<{ id: string }>`update job set state = 'cancelled', data = '{}'::jsonb,
-        "latestPending" = null, "finishedAt" = now() where queue = ${queue} and state = any(${states}::text[])
-        and state != 'active' returning id`.execute(tx);
+      const { rows } = await sql<{ id: string }>`update job j set state = 'cancelled', data = '{}'::jsonb,
+        "latestPending" = null, "finishedAt" = now() where j.queue = ${queue} and j.state = any(${states}::text[])
+        and j.state != 'active' ${about} returning id`.execute(tx);
       for (const { id } of rows) {
         affectedRuns.push(...(await this.syncItem(id, tx)));
         await finishSelections(tx, id, false);
@@ -918,7 +922,7 @@ export class SqlQueueStore {
         )),
       );
       await this.finishSupersededProducers(cancelledLatest, tx);
-      await redactLibrarySourcePage(tx, queue);
+      if (!entityIds) await redactLibrarySourcePage(tx, queue);
       await this.settleRuns(tx, affectedRuns);
     });
   }

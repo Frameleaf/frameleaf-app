@@ -1,4 +1,5 @@
 import { ErrorMessages } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { FrameleafStartupError } from 'src/utils/misc.js';
@@ -320,6 +321,49 @@ describe(StorageService.name, () => {
 
       expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('removes the folders a removal left empty, keeping a running job its staging folder', async () => {
+      StorageCore.setMediaLocation('/data');
+      const folder = '/data/thumbs/user-id/ab/cd';
+      const done = { job: '11111111-1111-4111-8111-111111111111', token: '22222222-2222-4222-8222-222222222222' };
+      const running = { job: '33333333-3333-4333-8333-333333333333', token: '44444444-4444-4444-8444-444444444444' };
+      mocks.storage.readdir.mockImplementation((path: string) =>
+        Promise.resolve(
+          path === `${folder}/.attempts`
+            ? [done.job, running.job]
+            : path === `${folder}/.attempts/${done.job}`
+              ? [done.token]
+              : [running.token],
+        ),
+      );
+      mocks.job.getLiveClaims.mockResolvedValue(new Set([`${running.job}/${running.token}`]));
+      mocks.storage.removeDirIfEmpty.mockResolvedValue(true);
+
+      await sut.handleDeleteFiles({ files: [`${folder}/asset-thumbnail.webp`, `${folder}/asset-preview.jpeg`] });
+
+      expect(mocks.job.getLiveClaims).toHaveBeenCalledWith([
+        { jobId: done.job, token: done.token },
+        { jobId: running.job, token: running.token },
+      ]);
+      expect(mocks.storage.removeEmptyDirs).toHaveBeenCalledTimes(1);
+      expect(mocks.storage.removeEmptyDirs).toHaveBeenCalledWith(`${folder}/.attempts/${done.job}/${done.token}`, true);
+      expect(mocks.storage.removeDirIfEmpty).toHaveBeenCalledWith(`${folder}/.attempts/${done.job}`);
+      expect(mocks.storage.removeDirIfEmpty).not.toHaveBeenCalledWith(`${folder}/.attempts/${running.job}`);
+      expect(mocks.storage.removeDirIfEmpty).toHaveBeenCalledWith(`${folder}/.attempts`);
+      expect(mocks.storage.removeDirIfEmpty).toHaveBeenCalledWith(folder);
+      expect(mocks.storage.removeDirIfEmpty).toHaveBeenCalledWith('/data/thumbs/user-id/ab');
+      // never the owner's folder, nor anything outside the generated-file folders
+      expect(mocks.storage.removeDirIfEmpty).not.toHaveBeenCalledWith('/data/thumbs/user-id');
+    });
+
+    it('leaves folders outside the generated-file folders alone', async () => {
+      StorageCore.setMediaLocation('/data');
+
+      await sut.handleDeleteFiles({ files: ['/data/library/user-id/ab/cd/photo.jpg', '/mnt/photos/photo.jpg'] });
+
+      expect(mocks.storage.readdir).not.toHaveBeenCalled();
+      expect(mocks.storage.removeDirIfEmpty).not.toHaveBeenCalled();
     });
 
     it('should handle an error removing a file', async () => {

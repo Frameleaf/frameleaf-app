@@ -3069,6 +3069,20 @@ export class AssetRepository {
       .execute();
     return result.map((row) => row.path as string);
   }
+  /**
+   * A scanned file's size, recorded with its new item as an upload's is, so the library's size counts it
+   * before its metadata is read. Metadata extraction writes the size again; an existing row is left alone.
+   */
+  async setExternalFileSizes(libraryId: string, files: { path: string; size: number }[]) {
+    if (files.length === 0) {
+      return;
+    }
+    await sql`insert into "asset_exif" ("assetId", "fileSizeInByte")
+      select "asset"."id", "file"."size"
+      from unnest(${files.map((file) => file.path)}::text[], ${files.map((file) => file.size)}::bigint[]) as "file"("path", "size")
+      join "asset" on "asset"."originalPath" = "file"."path" and "asset"."libraryId" = ${asUuid(libraryId)}
+      on conflict ("assetId") do nothing`.execute(this.db);
+  }
   async getLibraryAssetCount(libraryId: string): Promise<number> {
     const { count } = await this.db
       .selectFrom('asset')

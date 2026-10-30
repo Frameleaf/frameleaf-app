@@ -24,6 +24,7 @@
   import { DEFAULT_EXCLUSION_PATTERNS, libraryKey } from '$lib/frameleaf/libraries';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getAllLibraries, MediaOperationStatus, scanLibrary, type LibraryResponseDto } from '@frameleaf/sdk';
@@ -47,7 +48,11 @@
       folders = [];
     }
   };
-  onMount(() => void load());
+  // The Libraries manager above this section adds and removes folders; follow it without a reload.
+  onMount(() => {
+    void load();
+    return eventManager.on({ LibrariesChange: () => void load() });
+  });
 
   const ago = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '';
   const failed = (library: LibraryResponseDto) =>

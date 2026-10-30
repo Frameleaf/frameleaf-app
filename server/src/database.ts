@@ -57,6 +57,8 @@ export type Library = {
   deletedAt: Date | null;
   refreshedAt: Date | null;
   assets?: MapAsset[];
+  /** Items in the library, counted as its statistics' total. */
+  assetCount?: number;
 };
 
 export type AuthApiKey = {

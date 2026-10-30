@@ -48,6 +48,7 @@ describe(LibraryService.name, () => {
 
     mocks.database.tryLock.mockResolvedValue(true);
     mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
+    mocks.library.getAssetCounts.mockResolvedValue(new Map());
     // FL-78: libraries belong to a live account unless a test says otherwise
     mocks.user.get.mockResolvedValue(UserFactory.create());
     mocks.library.getAll.mockResolvedValue([]);
@@ -674,6 +675,15 @@ describe(LibraryService.name, () => {
       mocks.library.getAll.mockResolvedValue([library]);
 
       await expect(sut.getAll()).resolves.toEqual([expect.objectContaining({ id: library.id })]);
+    });
+
+    it('reports the item count the repository counted', async () => {
+      const library = factory.library();
+
+      mocks.library.getAll.mockResolvedValue([library]);
+      mocks.library.getAssetCounts.mockResolvedValue(new Map([[library.id, 21]]));
+
+      await expect(sut.getAll()).resolves.toEqual([expect.objectContaining({ id: library.id, assetCount: 21 })]);
     });
   });
 
@@ -1322,6 +1332,23 @@ describe(LibraryService.name, () => {
       mocks.library.streamAssetIds.mockReturnValue(makeStream([AssetFactory.create()]));
 
       await expect(sut.handleDeleteLibrary({ id: library.id })).resolves.toBe(JobStatus.Success);
+    });
+
+    it('cancels the waiting work for its items before queueing their removal', async () => {
+      const library = factory.library();
+      const asset = AssetFactory.create();
+
+      mocks.library.streamAssetIds.mockReturnValue(makeStream([asset]));
+
+      await sut.handleDeleteLibrary({ id: library.id });
+
+      expect(mocks.job.cancelAssetJobs).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.job.cancelAssetJobs.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.queueAll.mock.invocationCallOrder[0],
+      );
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetDelete, data: { id: asset.id, deleteOnDisk: false } },
+      ]);
     });
   });
 

@@ -193,7 +193,7 @@ export class LibraryRemovalReviewDto extends createZodDto(LibraryRemovalReviewSc
 export class LibraryRemovalDto extends createZodDto(LibraryRemovalSchema) {}
 
 export function mapLibrary(entity: Library, scan: LibraryScanResponseDto | null = null): LibraryResponseDto {
-  const assetCount = entity.assets ? entity.assets.length : 0;
+  const assetCount = entity.assetCount ?? entity.assets?.length ?? 0;
   return {
     id: entity.id,
     ownerId: entity.ownerId,

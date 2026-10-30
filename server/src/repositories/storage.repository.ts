@@ -218,6 +218,19 @@ export class StorageRepository {
     await fs.rm(folder, { ...options, maxRetries: 5, retryDelay: 100 });
   }
 
+  /** Remove the folder when it is empty; false when it is not, or is gone already. */
+  async removeDirIfEmpty(directory: string): Promise<boolean> {
+    try {
+      await fs.rmdir(directory);
+      return true;
+    } catch (error) {
+      if (['ENOENT', 'ENOTEMPTY', 'EEXIST', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   async removeEmptyDirs(directory: string, self: boolean = false) {
     // lstat does not follow symlinks (in contrast to stat)
     const stats = await fs.lstat(directory, { bigint: true });

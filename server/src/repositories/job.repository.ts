@@ -124,6 +124,23 @@ const REPEATABLE_JOBS = new Set<JobName>([
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
 
+/** Queues whose jobs each name one asset as `data.id`. */
+const ASSET_WORK_QUEUES = [
+  QueueName.ThumbnailGeneration,
+  QueueName.MetadataExtraction,
+  QueueName.VideoConversion,
+  QueueName.Sidecar,
+  QueueName.FaceDetection,
+  QueueName.SmartSearch,
+  QueueName.Ocr,
+  QueueName.DuplicateDetection,
+  QueueName.VideoDuplicateDetection,
+  QueueName.ImageEnrichment,
+  QueueName.ImageDescription,
+  QueueName.NsfwDetection,
+  QueueName.PetRecognition,
+];
+
 @Injectable()
 export class JobRepository {
   private handlers: Partial<Record<JobName, JobMapItem>> = {};
@@ -499,6 +516,12 @@ export class JobRepository {
   }
   empty(name: QueueName) {
     return this.store.clear(name, ['pending', 'waiting']);
+  }
+  /** Removed items' waiting work in the queues that process one item at a time: none of it can run any more. */
+  async cancelAssetJobs(assetIds: string[]) {
+    for (const queue of ASSET_WORK_QUEUES) {
+      await this.store.clear(queue, ['pending', 'waiting'], assetIds);
+    }
   }
   clear(name: QueueName, _type: QueueCleanType) {
     return this.store.clear(name, ['failed', 'needs_attention', 'blocked']);
@@ -898,6 +921,17 @@ export class JobRepository {
       from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
       ) jobs where status = any(${statuses}::text[]) order by timestamp desc, id limit ${limit}`.execute(this.store.db);
     return rows;
+  }
+
+  /** The `job/token` pairs among `claims` that are still running; any other claim's staging folder is spent. */
+  async getLiveClaims(claims: { jobId: string; token: string }[]): Promise<Set<string>> {
+    if (claims.length === 0) {
+      return new Set();
+    }
+    const { rows } = await sql<{ id: string; token: string }>`select j.id, j.token from job j
+      join unnest(${claims.map((claim) => claim.jobId)}::uuid[], ${claims.map((claim) => claim.token)}::uuid[])
+        as c("jobId", token) on j.id = c."jobId" and j.token = c.token`.execute(this.store.db);
+    return new Set(rows.map((row) => `${row.id}/${row.token}`));
   }
 
   async removeJob(name: JobName, jobID: string): Promise<void> {

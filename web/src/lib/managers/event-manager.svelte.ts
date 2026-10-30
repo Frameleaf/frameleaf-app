@@ -72,6 +72,9 @@ export type Events = {
 
   QueueUpdate: [QueueResponseDto];
 
+  /** The Libraries manager read the libraries again (one added, removed, or a scan moved). */
+  LibrariesChange: [];
+
   SharedLinkCreate: [SharedLinkResponseDto];
   SharedLinkUpdate: [SharedLinkResponseDto];
   SharedLinkDelete: [SharedLinkResponseDto];
