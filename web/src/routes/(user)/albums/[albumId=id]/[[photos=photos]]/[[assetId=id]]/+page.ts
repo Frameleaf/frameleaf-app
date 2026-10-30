@@ -1,4 +1,5 @@
-import { getAlbumInfo, getAlbumTree, LibraryScope, LibraryViewScope } from '@frameleaf/sdk';
+import { getAlbumInfo, getAlbumTree, LibraryViewScope } from '@frameleaf/sdk';
+import { albumSearchContext } from '$lib/frameleaf/search-context';
 import { authenticate } from '$lib/utils/auth';
 import type { PageLoad } from './$types';
 
@@ -20,7 +21,8 @@ export const load = (async ({ params, url, depends }) => {
 
   return {
     album,
-    tree: album.libraryScope === LibraryScope.Design ? designTree : personalTree,
+    // The workspace the page shows: the URL's, else the album's own (as `albumSearchContext` decides).
+    tree: albumSearchContext(url, album).filter.libraryScope === LibraryViewScope.Design ? designTree : personalTree,
     workspaceTrees: [personalTree, designTree],
     meta: {
       title: album.albumName,
