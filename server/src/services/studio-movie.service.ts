@@ -471,7 +471,7 @@ export class StudioMovieService {
         musicImportId: music.importId,
         musicSeconds: music.seconds,
       });
-      if (!(await this.operations.beginValidation(operation.id, claimToken))) {
+      if (!(await this.operations.beginValidation(operation.id, claimToken, true))) {
         throw new Error('Claim lost');
       }
       const outcome = await this.operations.publishValidated(operation.id, claimToken, async (tx) => {
