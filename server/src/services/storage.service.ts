@@ -214,7 +214,10 @@ export class StorageService extends BaseService {
       }
     }
 
-    await this.removeEmptyFolders(files);
+    // tidying folders is best effort; it never fails the deletion
+    await this.removeEmptyFolders(files).catch((error) =>
+      this.logger.warn(`Unable to remove the folders the deleted files left empty: ${error}`),
+    );
     return JobStatus.Success;
   }
 

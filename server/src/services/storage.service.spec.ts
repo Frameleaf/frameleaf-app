@@ -1,6 +1,6 @@
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { SystemMetadataKey } from 'src/enum.js';
+import { JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { FrameleafStartupError } from 'src/utils/misc.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -355,6 +355,17 @@ describe(StorageService.name, () => {
       expect(mocks.storage.removeDirIfEmpty).toHaveBeenCalledWith('/data/thumbs/user-id/ab');
       // never the owner's folder, nor anything outside the generated-file folders
       expect(mocks.storage.removeDirIfEmpty).not.toHaveBeenCalledWith('/data/thumbs/user-id');
+    });
+
+    it('still succeeds when the empty folders cannot be tidied', async () => {
+      mocks.job.getStoppedClaims.mockRejectedValue(new Error('database unavailable'));
+      StorageCore.setMediaLocation('/data');
+      mocks.storage.readdir.mockResolvedValue([]);
+
+      await expect(sut.handleDeleteFiles({ files: ['/data/thumbs/user-id/ab/cd/asset-thumbnail.webp'] })).resolves.toBe(
+        JobStatus.Success,
+      );
+      expect(mocks.storage.unlink).toHaveBeenCalledWith('/data/thumbs/user-id/ab/cd/asset-thumbnail.webp');
     });
 
     it('leaves folders outside the generated-file folders alone', async () => {
