@@ -11640,7 +11640,7 @@ export type PhotographySiteDto = {
         date: string;
         email: string;
         id: string;
-        kind: Kind10;
+        kind: PhotographySiteInquiryKind;
         message: string;
         name: string;
         "type": string;
@@ -11656,14 +11656,14 @@ export type PhotographySiteDto = {
             }[];
             name: string;
         }[];
-        colours: Colours;
+        colours: PhotographySiteColours;
         contact: string;
         cover: {
             captureId: string;
             shootId: string;
         } | null;
         coverFocal: number;
-        domain: "" | string;
+        domain: string;
         enabled: boolean;
         faq: {
             a: string;
@@ -11675,13 +11675,13 @@ export type PhotographySiteDto = {
             price: string;
         }[];
         sections: {
-            id: Id;
+            id: PhotographySiteSectionId;
             on: boolean;
         }[];
         seoDescription: string;
         seoTitle: string;
         slug: string;
-        template: Template2;
+        template: PhotographySiteTemplate;
         testimonials: {
             name: string;
             quote: string;
@@ -11704,14 +11704,14 @@ export type PhotographySiteSaveDto = {
             }[];
             name: string;
         }[];
-        colours: Colours;
+        colours: PhotographySiteColours;
         contact: string;
         cover: {
             captureId: string;
             shootId: string;
         } | null;
         coverFocal: number;
-        domain: "" | string;
+        domain: string;
         enabled: boolean;
         faq: {
             a: string;
@@ -11723,13 +11723,13 @@ export type PhotographySiteSaveDto = {
             price: string;
         }[];
         sections: {
-            id: Id;
+            id: PhotographySiteSectionId;
             on: boolean;
         }[];
         seoDescription: string;
         seoTitle: string;
         slug: string;
-        template: Template2;
+        template: PhotographySiteTemplate;
         testimonials: {
             name: string;
             quote: string;
@@ -11764,7 +11764,7 @@ export type PhotographyPublicSiteDto = {
             width: number;
         }[];
     }[];
-    colours: Colours;
+    colours: PhotographySiteColours;
     contact: string;
     cover: {
         alt: string;
@@ -11787,10 +11787,10 @@ export type PhotographyPublicSiteDto = {
         price: string;
     }[];
     sections: {
-        id: Id;
+        id: PhotographySiteSectionId;
         on: boolean;
     }[];
-    template: Template2;
+    template: PhotographySiteTemplate;
     testimonials: {
         name: string;
         quote: string;
@@ -11801,7 +11801,7 @@ export type PhotographyPublicSiteDto = {
 export type PhotographyInquiryCreateDto = {
     date: "" | string;
     email: string;
-    kind: Kind10;
+    kind: PhotographySiteInquiryKind;
     message: string;
     name: string;
     "type": string;
@@ -11882,7 +11882,7 @@ export type PhotographyWorkflowDto = {
         currency: string;
         downloadOutputs?: {
             key: string;
-            kind: Kind11;
+            kind: Kind9;
             label: string;
             maxEdge: number;
             watermark: {
@@ -11950,7 +11950,7 @@ export type PhotographyWorkflowDto = {
             showChapters: boolean;
             showNumbers: boolean;
             spacing: Spacing;
-            template: Template3;
+            template: Template;
         };
         proofWatermark: {
             alignment?: Alignment;
@@ -12029,7 +12029,7 @@ export type PhotographyWorkflowDto = {
                     quality: Quality;
                 };
                 id: string;
-                kind: Kind11;
+                kind: Kind9;
                 label: string;
                 ready: boolean;
                 renderStatus: RenderStatus;
@@ -12069,7 +12069,7 @@ export type PhotographyWorkflowDto = {
             currency: string;
             downloadOutputs?: {
                 key: string;
-                kind: Kind11;
+                kind: Kind9;
                 label: string;
                 maxEdge: number;
                 watermark: {
@@ -12137,7 +12137,7 @@ export type PhotographyWorkflowDto = {
                 showChapters: boolean;
                 showNumbers: boolean;
                 spacing: Spacing;
-                template: Template3;
+                template: Template;
             };
             proofWatermark: {
                 alignment?: Alignment;
@@ -12259,7 +12259,7 @@ export type PhotographyWorkflowDto = {
                 currency: string;
                 downloadOutputs?: {
                     key: string;
-                    kind: Kind11;
+                    kind: Kind9;
                     label: string;
                     maxEdge: number;
                     watermark: {
@@ -12327,7 +12327,7 @@ export type PhotographyWorkflowDto = {
                     showChapters: boolean;
                     showNumbers: boolean;
                     spacing: Spacing;
-                    template: Template3;
+                    template: Template;
                 };
                 proofWatermark: {
                     alignment?: Alignment;
@@ -12381,6 +12381,8 @@ export type PhotographyWorkflowDto = {
         }[];
         revision: string | null;
     };
+    /** Captures whose approved web photograph is published, so the studio website can show them */
+    websiteReady?: string[];
 };
 export type PhotographyApprovalDto = {
     captureId: string;
@@ -12418,7 +12420,7 @@ export type PhotographyWorkflowConfigDto = {
         currency: string;
         downloadOutputs?: {
             key: string;
-            kind: Kind11;
+            kind: Kind9;
             label: string;
             maxEdge: number;
             watermark: {
@@ -12486,7 +12488,7 @@ export type PhotographyWorkflowConfigDto = {
             showChapters: boolean;
             showNumbers: boolean;
             spacing: Spacing;
-            template: Template3;
+            template: Template;
         };
         proofWatermark: {
             alignment?: Alignment;
@@ -12547,7 +12549,7 @@ export type PhotographyOrderCreateDto = {
     expectedRevision: string | null;
     outputs?: {
         key: string;
-        kind: Kind11;
+        kind: Kind9;
         label: string;
         maxEdge: number;
         revisions?: {
@@ -12663,7 +12665,7 @@ export type PhotographyInvitationDto = {
             currency: string;
             downloadOutputs?: {
                 key: string;
-                kind: Kind11;
+                kind: Kind9;
                 label: string;
                 maxEdge: number;
                 watermark: {
@@ -12731,7 +12733,7 @@ export type PhotographyInvitationDto = {
                 showChapters: boolean;
                 showNumbers: boolean;
                 spacing: Spacing;
-                template: Template3;
+                template: Template;
             };
             proofWatermark: {
                 alignment?: Alignment;
@@ -12810,7 +12812,7 @@ export type PhotographyInvitationDto = {
                         quality: Quality;
                     };
                     id: string;
-                    kind: Kind11;
+                    kind: Kind9;
                     label: string;
                     ready: boolean;
                     renderStatus: RenderStatus;
@@ -12850,7 +12852,7 @@ export type PhotographyInvitationDto = {
                 currency: string;
                 downloadOutputs?: {
                     key: string;
-                    kind: Kind11;
+                    kind: Kind9;
                     label: string;
                     maxEdge: number;
                     watermark: {
@@ -12918,7 +12920,7 @@ export type PhotographyInvitationDto = {
                     showChapters: boolean;
                     showNumbers: boolean;
                     spacing: Spacing;
-                    template: Template3;
+                    template: Template;
                 };
                 proofWatermark: {
                     alignment?: Alignment;
@@ -13040,7 +13042,7 @@ export type PhotographyInvitationDto = {
                     currency: string;
                     downloadOutputs?: {
                         key: string;
-                        kind: Kind11;
+                        kind: Kind9;
                         label: string;
                         maxEdge: number;
                         watermark: {
@@ -13108,7 +13110,7 @@ export type PhotographyInvitationDto = {
                         showChapters: boolean;
                         showNumbers: boolean;
                         spacing: Spacing;
-                        template: Template3;
+                        template: Template;
                     };
                     proofWatermark: {
                         alignment?: Alignment;
@@ -13162,6 +13164,8 @@ export type PhotographyInvitationDto = {
             }[];
             revision: string | null;
         };
+        /** Captures whose approved web photograph is published, so the studio website can show them */
+        websiteReady?: string[];
     };
 };
 export type PhotographyRecipientUpdateDto = {
@@ -13592,7 +13596,7 @@ export type PushDeviceRegisterDto = {
 };
 export type PushActivityTokenDto = {
     /** The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes) */
-    kind: Kind12;
+    kind: Kind10;
     /** Required for studio-render: the owned Studio render media operation this activity follows */
     operationId?: string;
     /** The ActivityKit push token of this activity */
@@ -16404,7 +16408,7 @@ export type StudioProjectSaveResponseDto = {
 export type StudioReverseConformEnqueueDto = {
     clientId: string;
     command: {
-        id: Id2;
+        id: Id;
         idempotencyKey: string;
         issuedAt: number;
         payload: {
@@ -17613,7 +17617,7 @@ export type PinnedCollection = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind13;
+    kind: Kind11;
     /** Null when unavailable; the inaccessible target identity is not disclosed */
     targetId: string | null;
     /** Current access-filtered title; null when unavailable */
@@ -17628,7 +17632,7 @@ export type PinnedCollectionsResponseDto = {
 export type PinnedCollectionRef = {
     /** Opaque pin ID chosen by the client and retained across reorders */
     id: string;
-    kind: Kind13;
+    kind: Kind11;
     /** Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID */
     targetId: string | null;
 };
@@ -19516,7 +19520,7 @@ export type SyncPinnedCollectionV1 = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind13;
+    kind: Kind11;
     position: number;
     targetId: string;
     /** Current access-filtered title; null when unavailable */
@@ -19574,7 +19578,7 @@ export type SyncSharedSpaceV1 = {
     description: string | null;
     icon: string | null;
     id: string;
-    kind: Kind14;
+    kind: Kind12;
     name: string;
     updatedAt: string;
 };
@@ -29413,9 +29417,24 @@ export function photographyPublicLogo({ ownerId }: {
     }));
 }
 /**
- * A website photograph at one of its widths (640, 1280, 2048). URLs carry ?v=, so it is cached for a year.
+ * A website photograph at its largest width (links made before FL-702 have no width).
  */
-export function photographyPublicPhoto({ captureId, ownerId, shootId, width }: {
+export function photographyPublicPhoto({ captureId, ownerId, shootId }: {
+    captureId: string;
+    ownerId: string;
+    shootId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/studios/${encodeURIComponent(ownerId)}/photos/${encodeURIComponent(shootId)}/${encodeURIComponent(captureId)}`, {
+        ...opts
+    }));
+}
+/**
+ * A website photograph at one of its widths (640, 1280, 2048).
+ */
+export function photographyPublicSitePhoto({ captureId, ownerId, shootId, width }: {
     captureId: string;
     ownerId: string;
     shootId: string;
@@ -38020,15 +38039,15 @@ export enum Processing {
     Pending = "pending",
     Failed = "failed"
 }
-export enum Kind10 {
+export enum PhotographySiteInquiryKind {
     Inquiry = "inquiry",
     GalleryLink = "gallery-link"
 }
-export enum Colours {
+export enum PhotographySiteColours {
     Template = "template",
     Brand = "brand"
 }
-export enum Id {
+export enum PhotographySiteSectionId {
     Cover = "cover",
     Portfolio = "portfolio",
     About = "about",
@@ -38038,7 +38057,7 @@ export enum Id {
     Inquiry = "inquiry",
     Clients = "clients"
 }
-export enum Template2 {
+export enum PhotographySiteTemplate {
     Editorial = "editorial",
     Minimal = "minimal",
     Gallery = "gallery",
@@ -38053,11 +38072,6 @@ export enum State6 {
     Approved = "approved",
     Delivered = "delivered"
 }
-export enum Kind11 {
-    Print = "print",
-    Web = "web",
-    Social = "social"
-}
 export enum Type9 {
     Chapter = "chapter",
     Grid = "grid",
@@ -38070,12 +38084,6 @@ export enum Font11 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
-}
-export enum Template3 {
-    Wedding = "wedding",
-    Portrait = "portrait",
-    FineArt = "fine-art",
-    Proofing = "proofing"
 }
 export enum Font12 {
     Script = "script",
@@ -38404,7 +38412,7 @@ export enum PushPlatform {
     Ios = "ios",
     Android = "android"
 }
-export enum Kind12 {
+export enum Kind10 {
     CloudBackupActivation = "cloud-backup-activation",
     StudioRender = "studio-render"
 }
@@ -38870,7 +38878,7 @@ export enum StudioProjectResourceKind {
     Lut = "lut",
     Model = "model"
 }
-export enum Id2 {
+export enum Id {
     JobEnqueueReverseConform = "job.enqueueReverseConform"
 }
 export enum DestinationId {
@@ -39338,7 +39346,7 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
-export enum Kind13 {
+export enum Kind11 {
     Album = "album",
     SmartAlbum = "smart-album",
     SavedSearch = "saved-search",
@@ -39488,7 +39496,7 @@ export enum Status12 {
     Trashed = "trashed",
     Deleted = "deleted"
 }
-export enum Kind14 {
+export enum Kind12 {
     Space = "space"
 }
 export enum UserMetadataKey {

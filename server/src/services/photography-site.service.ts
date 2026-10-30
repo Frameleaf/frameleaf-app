@@ -21,6 +21,7 @@ import {
   PhotographyWorkflowRepository,
   StudioRecord,
   StudioSiteMedia,
+  WorkflowRow,
 } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -52,6 +53,8 @@ const MAX_INQUIRIES = 500;
  */
 @Injectable()
 export class PhotographySiteService {
+  /** Studios whose older websites are having their photo copies made (see `catchUp`). */
+  private catchingUp = new Set<string>();
   constructor(
     private repository: PhotographyWorkflowRepository,
     private workspace: PhotographyWorkspaceRepository,
@@ -81,13 +84,20 @@ export class PhotographySiteService {
     // ponytail: two studios saving the same new address in the same instant can both win; a unique index on
     // value->'site'->>'slug' closes that if it ever matters.
     const { record: current } = await this.repository.studioRecord(ownerId);
-    const media = await this.copyNewPhotos(ownerId, site, current.media ?? {});
-    const saved = await this.repository.mutateStudio(ownerId, expectedRevision, (record) => {
-      const removed = Object.entries(record.media ?? {}).filter(([key]) => !media[key]);
-      record.site = site;
-      record.media = media;
-      return removed.map(([, item]) => item);
-    });
+    const { media, created } = await this.copyNewPhotos(ownerId, site, current.media ?? {});
+    let saved;
+    try {
+      saved = await this.repository.mutateStudio(ownerId, expectedRevision, (record) => {
+        const removed = Object.entries(record.media ?? {}).filter(([key]) => !media[key]);
+        record.site = site;
+        record.media = media;
+        return removed.map(([, item]) => item);
+      });
+    } catch (error) {
+      // Nothing refers to copies from a save that did not happen.
+      for (const { copy } of created) await this.removeFiles(copy);
+      throw error;
+    }
     for (const item of saved.result) await this.removeFiles(item);
     return this.view(saved.revision, site, saved.record);
   }
@@ -96,9 +106,19 @@ export class PhotographySiteService {
     return { revision, site, url: `/studio/${site.slug}`, inquiries: record.inquiries ?? [] };
   }
 
-  /** Copies each newly added photograph at every website width; keeps copies that are still current. */
-  private async copyNewPhotos(ownerId: string, site: PhotographySite, existing: Record<string, StudioSiteMedia>) {
+  /**
+   * Copies each newly added photograph at every website width; keeps copies that are still current.
+   * `skipFailures` (the background catch-up for older sites) leaves out a photograph it cannot copy;
+   * otherwise the first failure removes this call's copies and is thrown.
+   */
+  private async copyNewPhotos(
+    ownerId: string,
+    site: PhotographySite,
+    existing: Record<string, StudioSiteMedia>,
+    skipFailures = false,
+  ) {
     const media: Record<string, StudioSiteMedia> = {};
+    const created: { key: string; copy: StudioSiteMedia }[] = [];
     const shoots = new Map();
     // ponytail: copies are made inside the save request (about 0.1 s per photograph); move to a job if
     // photographers add hundreds at once and saves feel slow.
@@ -108,11 +128,30 @@ export class PhotographySiteService {
         media[key] = existing[key];
         continue;
       }
-      const source = await this.workflow.portfolioSource(ownerId, item.shootId, item.captureId, shoots);
-      const version = randomUUID().slice(0, 8);
-      const folder = path.join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), 'photography', 'site');
-      const files: StudioSiteMedia['files'] = [];
-      let size = { width: 0, height: 0 };
+      try {
+        const copy = await this.copyPhoto(ownerId, item, shoots);
+        created.push({ key, copy });
+        media[key] = copy;
+      } catch (error) {
+        if (skipFailures) continue;
+        for (const made of created) await this.removeFiles(made.copy);
+        throw error;
+      }
+    }
+    return { media, created };
+  }
+
+  private async copyPhoto(
+    ownerId: string,
+    item: { shootId: string; captureId: string },
+    shoots: Map<string, Promise<WorkflowRow>>,
+  ): Promise<StudioSiteMedia> {
+    const source = await this.workflow.portfolioSource(ownerId, item.shootId, item.captureId, shoots);
+    const version = randomUUID().slice(0, 8);
+    const folder = path.join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), 'photography', 'site');
+    const files: StudioSiteMedia['files'] = [];
+    let size = { width: 0, height: 0 };
+    try {
       for (const width of SITE_PHOTO_WIDTHS) {
         const { data, info } = await sharp(source.path, { failOn: 'warning' })
           .resize({ width, height: width, fit: 'inside', withoutEnlargement: true })
@@ -123,9 +162,48 @@ export class PhotographySiteService {
         files.push({ width: info.width, path: file });
         size = { width: info.width, height: info.height };
       }
-      media[key] = { revisionId: source.revisionId, version, assetId: source.assetId, ...size, files };
+    } catch (error) {
+      for (const file of files) await rm(file.path, { force: true });
+      throw error;
     }
-    return media;
+    return { revisionId: source.revisionId, version, assetId: source.assetId, ...size, files };
+  }
+
+  /**
+   * FL-702 review: sites saved before the website kept its own copies have none yet. Make them in the
+   * background on the first public view (one studio at a time), so the photographer does not have to
+   * save again; until then those photographs are shown the old way, from their gallery.
+   */
+  private catchUp(ownerId: string) {
+    if (this.catchingUp.has(ownerId)) return;
+    this.catchingUp.add(ownerId);
+    void (async () => {
+      try {
+        const { record } = await this.repository.studioRecord(ownerId);
+        const owner = await this.repository.studioOwner(ownerId);
+        const site = normalisePhotographySite(record.site, owner?.name ?? '');
+        const { created } = await this.copyNewPhotos(ownerId, site, record.media ?? {}, true);
+        if (created.length === 0) return;
+        const unused = await this.repository.mutateStudio(ownerId, undefined, (current) => {
+          // Keep only copies the site still shows and that no save made meanwhile.
+          const wanted = new Set(
+            portfolioItems(normalisePhotographySite(current.site, '')).map((item) => portfolioKey(item)),
+          );
+          current.media ??= {};
+          const left: StudioSiteMedia[] = [];
+          for (const { key, copy } of created) {
+            if (wanted.has(key) && !current.media[key]) current.media[key] = copy;
+            else left.push(copy);
+          }
+          return left;
+        });
+        for (const copy of unused.result) await this.removeFiles(copy);
+      } catch (error) {
+        this.logger.warn(`Studio website photo catch-up failed: ${error}`);
+      } finally {
+        this.catchingUp.delete(ownerId);
+      }
+    })();
   }
 
   private async removeFiles(item: StudioSiteMedia) {
@@ -156,6 +234,22 @@ export class PhotographySiteService {
       ownerId,
       items.map((item) => ({ ...item, revisionId: media[portfolioKey(item)]?.revisionId })),
     );
+    // Photographs from a site saved before FL-702 have no copies yet: show them from their gallery,
+    // the way that site showed them, while the copies are made.
+    const fromGallery = new Set<string>();
+    const missing = items.filter((item) => !media[portfolioKey(item)]);
+    if (missing.length > 0) {
+      const shoots = new Map<string, Promise<WorkflowRow>>();
+      for (const item of missing) {
+        try {
+          await this.workflow.portfolioSource(ownerId, item.shootId, item.captureId, shoots);
+          fromGallery.add(portfolioKey(item));
+        } catch {
+          // Not publishable from its gallery any more; left out, as before FL-702.
+        }
+      }
+      this.catchUp(ownerId);
+    }
     const descriptions = await this.repository.assetDescriptions(
       ownerId,
       items.map((item) => media[portfolioKey(item)]?.assetId).filter((id): id is string => !!id),
@@ -163,6 +257,15 @@ export class PhotographySiteService {
     const photo = (item: { shootId: string; captureId: string }, fallbackAlt: string) => {
       const key = portfolioKey(item);
       const copy = media[key];
+      if (!copy && fromGallery.has(key))
+        return {
+          key,
+          alt: fallbackAlt,
+          width: 0,
+          height: 0,
+          url: `/api/photography/studios/${ownerId}/photos/${item.shootId}/${item.captureId}`,
+          srcset: '',
+        };
       if (!copy || !allowed.has(key)) return null;
       const url = (width: number) =>
         `/api/photography/studios/${ownerId}/photos/${item.shootId}/${item.captureId}/${width}?v=${copy.version}`;
@@ -211,13 +314,26 @@ export class PhotographySiteService {
     };
   }
 
-  async publicPhoto(ownerId: string, shootId: string, captureId: string, width: number) {
+  /** `width` absent: the largest copy, or (before the copies exist) the gallery's web photograph. */
+  async publicPhoto(ownerId: string, shootId: string, captureId: string, width?: number) {
     const { site, record } = await this.resolve(ownerId);
     const key = portfolioKey({ shootId, captureId });
+    if (portfolioItems(site).every((item) => portfolioKey(item) !== key)) throw new NotFoundException();
     const copy = record.media?.[key];
-    const index = SITE_PHOTO_WIDTHS.indexOf(width as (typeof SITE_PHOTO_WIDTHS)[number]);
-    if (!copy || index === -1 || portfolioItems(site).every((item) => portfolioKey(item) !== key))
-      throw new NotFoundException();
+    if (!copy) {
+      if (width !== undefined) throw new NotFoundException();
+      const source = await this.workflow.portfolioSource(ownerId, shootId, captureId);
+      return new FileDownloadResponse({
+        path: source.path,
+        contentType: 'image/jpeg',
+        cacheControl: CacheControl.None,
+      });
+    }
+    const index =
+      width === undefined
+        ? SITE_PHOTO_WIDTHS.length - 1
+        : SITE_PHOTO_WIDTHS.indexOf(width as (typeof SITE_PHOTO_WIDTHS)[number]);
+    if (index === -1) throw new NotFoundException();
     if (
       !(await this.workflow.portfolioAllowed(ownerId, [{ shootId, captureId, revisionId: copy.revisionId }])).has(key)
     )

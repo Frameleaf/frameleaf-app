@@ -496,6 +496,18 @@ export class PhotographyWorkflowService {
       approvals: value.approvals.filter(
         (approval) => visible.has(approval.captureId) && revisions.has(approval.revisionId),
       ),
+      // FL-702: what portfolioSource accepts, so the website editor offers only these
+      websiteReady: (value.published?.photos ?? [])
+        .filter((photo) => {
+          const capture = value.captures.find((c) => c.id === photo.captureId);
+          return (
+            visible.has(photo.captureId) &&
+            !!photo.revisionId &&
+            photo.revisionId === capture?.approvedRevisionId &&
+            revisions.has(photo.revisionId)
+          );
+        })
+        .map((photo) => photo.captureId),
     };
   }
   private publicationView(publication: Publication | null) {

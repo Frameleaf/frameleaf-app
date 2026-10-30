@@ -83,11 +83,12 @@
       ),
     ),
   );
-  const pickable = $derived(
-    workflows[pickShoot]?.captures.filter(
-      (capture) => capture.eligible && !capture.withheld && capture.approvedRevisionId && capture.assetId,
-    ) ?? [],
-  );
+  /** Only photographs whose approved web version is published can go on the website. */
+  const pickable = $derived.by(() => {
+    const workflow = workflows[pickShoot];
+    const ready = new Set(workflow?.websiteReady);
+    return workflow?.captures.filter((capture) => ready.has(capture.id) && capture.assetId) ?? [];
+  });
   const slugOk = $derived(!!draft && validSlug(draft.slug));
   const domainOk = $derived(!!draft && validDomain(draft.domain));
   const seo = $derived(draft ? seoPreview(draft, brand?.tagline || draft.about.slice(0, 160)) : null);
@@ -150,7 +151,7 @@
 
   async function loadWorkflow(shootId: string) {
     // The shoot list may still be loading, so ask for any shoot; the server refuses one that is not the studio's.
-    if (Object.hasOwn(workflows, shootId) || shoots.find((shoot) => shoot.id === shootId)?.unavailable) {
+    if (!shootId || Object.hasOwn(workflows, shootId) || shoots.find((shoot) => shoot.id === shootId)?.unavailable) {
       return;
     }
     try {
@@ -193,20 +194,25 @@
     busy = true;
     error = '';
     message = '';
+    // Copies of new photographs are made during the save; edits typed meanwhile are kept.
+    const sent = { ...$state.snapshot(draft), domain: draft.domain.trim().toLowerCase() };
+    const sentJson = JSON.stringify($state.snapshot(draft));
     try {
-      const result = await siteRequest('PUT', { expectedRevision: stored.revision, site: $state.snapshot(draft) });
+      const result = await siteRequest('PUT', { expectedRevision: stored.revision, site: sent });
       if (disposed) {
         return;
       }
       stored = result;
-      draft = structuredClone(result.site);
+      if (JSON.stringify($state.snapshot(draft)) === sentJson) {
+        draft = structuredClone(result.site);
+      }
       message = result.site.enabled
         ? $t('frameleaf_photography_site_saved_published')
         : $t('frameleaf_photography_site_saved');
     } catch (error_) {
       if (!disposed) {
         error =
-          error_ instanceof PhotographyError && error_.status === 409 && draft.slug !== stored.site.slug
+          error_ instanceof PhotographyError && error_.status === 409 && sent.slug !== stored.site.slug
             ? $t('frameleaf_studio_site_address_taken')
             : $t(photographyErrorKey(error_));
       }

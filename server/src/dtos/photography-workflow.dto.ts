@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
-import { PhotographySiteFields, PhotographySiteSchema } from 'src/utils/photography-site.js';
+import { PhotographySiteFields, PhotographySiteSchema, SiteInquiryKindSchema } from 'src/utils/photography-site.js';
 
 const blockedReasons = ['permission', 'order', 'payment', 'approval', 'render'] as const;
 // Keep runtime null validation while avoiding a null member in generated TypeScript string enums.
@@ -397,6 +397,9 @@ export const PhotographyWorkflowViewSchema = z.object({
   publication: PublicationSchema,
   receipts: z.array(ReceiptSchema),
   approvals: z.array(ApprovalSchema),
+  websiteReady: Ids.optional().describe(
+    'Captures whose approved web photograph is published, so the studio website can show them',
+  ),
 });
 export class PhotographyWorkflowDto extends createZodDto(PhotographyWorkflowViewSchema) {}
 export class PhotographyInvitationDto extends createZodDto(
@@ -483,7 +486,7 @@ export class PhotographySiteSaveDto extends createZodDto(
 export const PhotographyInquirySchema = z.object({
   id: Id,
   createdAt: z.iso.datetime({ offset: true }),
-  kind: z.enum(['inquiry', 'gallery-link']),
+  kind: SiteInquiryKindSchema,
   name: z.string(),
   email: z.string(),
   date: z.string(),
@@ -530,7 +533,7 @@ export class PhotographyPublicSiteDto extends createZodDto(
 ) {}
 export class PhotographyInquiryCreateDto extends createZodDto(
   z.strictObject({
-    kind: z.enum(['inquiry', 'gallery-link']),
+    kind: SiteInquiryKindSchema,
     name: z.string().trim().max(120),
     email: z.email().max(254),
     date: z.union([z.literal(''), z.iso.date()]),

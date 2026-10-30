@@ -38670,10 +38670,58 @@
         ]
       }
     },
+    "/photography/studios/{ownerId}/photos/{shootId}/{captureId}": {
+      "get": {
+        "description": "A website photograph at its largest width (links made before FL-702 have no width).",
+        "operationId": "photographyPublicPhoto",
+        "parameters": [
+          {
+            "name": "captureId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "shootId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
     "/photography/studios/{ownerId}/photos/{shootId}/{captureId}/{width}": {
       "get": {
-        "description": "A website photograph at one of its widths (640, 1280, 2048). URLs carry ?v=, so it is cached for a year.",
-        "operationId": "photographyPublicPhoto",
+        "description": "A website photograph at one of its widths (640, 1280, 2048).",
+        "operationId": "photographyPublicSitePhoto",
         "parameters": [
           {
             "name": "captureId",
@@ -109477,11 +109525,7 @@
             "type": "string"
           },
           "kind": {
-            "enum": [
-              "inquiry",
-              "gallery-link"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/PhotographySiteInquiryKind"
           },
           "message": {
             "maxLength": 5000,
@@ -113114,6 +113158,16 @@
                   "presets"
                 ],
                 "type": "object"
+              },
+              "websiteReady": {
+                "description": "Captures whose approved web photograph is published, so the studio website can show them",
+                "items": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "maxItems": 10000,
+                "type": "array"
               }
             },
             "required": [
@@ -114606,11 +114660,7 @@
             "type": "array"
           },
           "colours": {
-            "enum": [
-              "template",
-              "brand"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/PhotographySiteColours"
           },
           "contact": {
             "maxLength": 5000,
@@ -114717,17 +114767,7 @@
               "additionalProperties": false,
               "properties": {
                 "id": {
-                  "enum": [
-                    "cover",
-                    "portfolio",
-                    "about",
-                    "services",
-                    "testimonials",
-                    "faq",
-                    "inquiry",
-                    "clients"
-                  ],
-                  "type": "string"
+                  "$ref": "#/components/schemas/PhotographySiteSectionId"
                 },
                 "on": {
                   "type": "boolean"
@@ -114744,15 +114784,7 @@
             "type": "array"
           },
           "template": {
-            "enum": [
-              "editorial",
-              "minimal",
-              "gallery",
-              "cinematic",
-              "noir",
-              "commercial"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/PhotographySiteTemplate"
           },
           "testimonials": {
             "items": {
@@ -115120,6 +115152,13 @@
         ],
         "type": "object"
       },
+      "PhotographySiteColours": {
+        "enum": [
+          "template",
+          "brand"
+        ],
+        "type": "string"
+      },
       "PhotographySiteDto": {
         "properties": {
           "inquiries": {
@@ -115143,11 +115182,7 @@
                   "type": "string"
                 },
                 "kind": {
-                  "enum": [
-                    "inquiry",
-                    "gallery-link"
-                  ],
-                  "type": "string"
+                  "$ref": "#/components/schemas/PhotographySiteInquiryKind"
                 },
                 "message": {
                   "type": "string"
@@ -115236,11 +115271,7 @@
                 "type": "array"
               },
               "colours": {
-                "enum": [
-                  "template",
-                  "brand"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/PhotographySiteColours"
               },
               "contact": {
                 "maxLength": 5000,
@@ -115273,18 +115304,7 @@
                 "type": "integer"
               },
               "domain": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "enum": [
-                      ""
-                    ]
-                  },
-                  {
-                    "type": "string",
-                    "pattern": "^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
-                  }
-                ]
+                "type": "string"
               },
               "enabled": {
                 "type": "boolean"
@@ -115343,17 +115363,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "id": {
-                      "enum": [
-                        "cover",
-                        "portfolio",
-                        "about",
-                        "services",
-                        "testimonials",
-                        "faq",
-                        "inquiry",
-                        "clients"
-                      ],
-                      "type": "string"
+                      "$ref": "#/components/schemas/PhotographySiteSectionId"
                     },
                     "on": {
                       "type": "boolean"
@@ -115382,15 +115392,7 @@
                 "type": "string"
               },
               "template": {
-                "enum": [
-                  "editorial",
-                  "minimal",
-                  "gallery",
-                  "cinematic",
-                  "noir",
-                  "commercial"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/PhotographySiteTemplate"
               },
               "testimonials": {
                 "items": {
@@ -115464,6 +115466,13 @@
         ],
         "type": "object"
       },
+      "PhotographySiteInquiryKind": {
+        "enum": [
+          "inquiry",
+          "gallery-link"
+        ],
+        "type": "string"
+      },
       "PhotographySiteSaveDto": {
         "additionalProperties": false,
         "properties": {
@@ -115530,11 +115539,7 @@
                 "type": "array"
               },
               "colours": {
-                "enum": [
-                  "template",
-                  "brand"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/PhotographySiteColours"
               },
               "contact": {
                 "maxLength": 5000,
@@ -115567,18 +115572,7 @@
                 "type": "integer"
               },
               "domain": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "enum": [
-                      ""
-                    ]
-                  },
-                  {
-                    "type": "string",
-                    "pattern": "^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
-                  }
-                ]
+                "type": "string"
               },
               "enabled": {
                 "type": "boolean"
@@ -115637,17 +115631,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "id": {
-                      "enum": [
-                        "cover",
-                        "portfolio",
-                        "about",
-                        "services",
-                        "testimonials",
-                        "faq",
-                        "inquiry",
-                        "clients"
-                      ],
-                      "type": "string"
+                      "$ref": "#/components/schemas/PhotographySiteSectionId"
                     },
                     "on": {
                       "type": "boolean"
@@ -115676,15 +115660,7 @@
                 "type": "string"
               },
               "template": {
-                "enum": [
-                  "editorial",
-                  "minimal",
-                  "gallery",
-                  "cinematic",
-                  "noir",
-                  "commercial"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/PhotographySiteTemplate"
               },
               "testimonials": {
                 "items": {
@@ -115751,6 +115727,30 @@
           "site"
         ],
         "type": "object"
+      },
+      "PhotographySiteSectionId": {
+        "enum": [
+          "cover",
+          "portfolio",
+          "about",
+          "services",
+          "testimonials",
+          "faq",
+          "inquiry",
+          "clients"
+        ],
+        "type": "string"
+      },
+      "PhotographySiteTemplate": {
+        "enum": [
+          "editorial",
+          "minimal",
+          "gallery",
+          "cinematic",
+          "noir",
+          "commercial"
+        ],
+        "type": "string"
       },
       "PhotographyStudioPresetApplyDto": {
         "additionalProperties": false,
@@ -121103,6 +121103,16 @@
               "presets"
             ],
             "type": "object"
+          },
+          "websiteReady": {
+            "description": "Captures whose approved web photograph is published, so the studio website can show them",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "type": "array"
           }
         },
         "required": [

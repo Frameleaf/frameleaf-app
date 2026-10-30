@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -797,6 +797,59 @@ describe('photography workflow integration boundaries', () => {
     });
     expect(s.studio().record.media).toEqual({});
     await expect(readFile(copies[0].files[0].path)).rejects.toThrow();
+  });
+  it('shows an older site from its galleries until its copies are made, then uses them (FL-702 review)', async () => {
+    const s = await setup();
+    await s.published();
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    await s.published();
+    s.studio().record.site = {
+      presentation: { layout: 'editorial', spacing: 'comfortable', font: 'editorial', palette: 'studio' },
+      enabled: true,
+      title: 'Old studio',
+      about: '',
+      services: '',
+      contact: '',
+      portfolio: [{ shootId: s.shootId, captureId: s.captureId, consent: true }],
+    } as never;
+    const before = await s.siteService.publicSite(s.ownerId);
+    expect(before.cover).toMatchObject({
+      url: `/api/photography/studios/${s.ownerId}/photos/${s.shootId}/${s.captureId}`,
+      srcset: '',
+    });
+    const legacy = await s.siteService.publicPhoto(s.ownerId, s.shootId, s.captureId);
+    expect(legacy.path).toContain('-preview.jpg');
+    await vi.waitFor(() => expect(Object.keys(s.studio().record.media ?? {})).toHaveLength(1));
+    const after = await s.siteService.publicSite(s.ownerId);
+    expect(after.cover!.srcset).toContain(' 640w');
+    expect((await s.siteService.publicPhoto(s.ownerId, s.shootId, s.captureId)).path).toContain('-2048.jpg');
+  });
+  it('removes the copies of a save that did not happen', async () => {
+    const s = await setup();
+    await s.published();
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    await s.published();
+    const item = { shootId: s.shootId, captureId: s.captureId };
+    const folder = path.join(StorageCore.getFolderLocation('' as never, s.ownerId), 'photography', 'site');
+    await expect(
+      s.siteService.saveSite(s.auth, {
+        expectedRevision: randomUUID(),
+        site: { ...defaultPhotographySite('Studio'), collections: [{ id: 'w', name: 'Work', items: [item] }] },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(readdir(folder)).resolves.toEqual([]);
   });
   it('reads a website saved before FL-702, refuses a taken address and keeps inquiries apart from edits', async () => {
     const s = await setup();

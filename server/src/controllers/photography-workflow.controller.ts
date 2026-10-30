@@ -144,11 +144,10 @@ export class PhotographyWorkflowController {
     return new StreamableFile(await this.service.publicLogo(ownerId), { type: 'image/png' });
   }
   @RemoteMediaCeiling()
-  @Get('studios/:ownerId/photos/:shootId/:captureId/:width')
+  @Get('studios/:ownerId/photos/:shootId/:captureId')
   @ApiOperation({
     operationId: 'photographyPublicPhoto',
-    description:
-      'A website photograph at one of its widths (640, 1280, 2048). URLs carry ?v=, so it is cached for a year.',
+    description: 'A website photograph at its largest width (links made before FL-702 have no width).',
   })
   @Authenticated({ public: true })
   @FileResponse()
@@ -156,13 +155,52 @@ export class PhotographyWorkflowController {
     @Param('ownerId', uuid) ownerId: string,
     @Param('shootId', uuid) shootId: string,
     @Param('captureId', uuid) captureId: string,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    await this.sendSitePhoto(res, next, ownerId, shootId, captureId);
+  }
+  @RemoteMediaCeiling()
+  @Get('studios/:ownerId/photos/:shootId/:captureId/:width')
+  @ApiOperation({
+    operationId: 'photographyPublicSitePhoto',
+    description: 'A website photograph at one of its widths (640, 1280, 2048).',
+  })
+  @Authenticated({ public: true })
+  @FileResponse()
+  async publicSitePhoto(
+    @Param('ownerId', uuid) ownerId: string,
+    @Param('shootId', uuid) shootId: string,
+    @Param('captureId', uuid) captureId: string,
     @Param('width', ParseIntPipe) width: number,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    // Each copy's URL carries its version, and a removed photograph is refused, so a long cache is safe.
-    res.header('Cache-Control', 'public, max-age=31536000, immutable');
-    await sendFile(res, next, () => this.siteService.publicPhoto(ownerId, shootId, captureId, width), this.logger);
+    await this.sendSitePhoto(res, next, ownerId, shootId, captureId, width);
+  }
+  /**
+   * Cached for five minutes, and only once the photograph is allowed: a photograph taken off the
+   * website, or withheld, disappears from browsers and shared caches within minutes.
+   */
+  private async sendSitePhoto(
+    res: Response,
+    next: NextFunction,
+    ownerId: string,
+    shootId: string,
+    captureId: string,
+    width?: number,
+  ) {
+    res.header('Cache-Control', 'no-store');
+    await sendFile(
+      res,
+      next,
+      async () => {
+        const file = await this.siteService.publicPhoto(ownerId, shootId, captureId, width);
+        res.header('Cache-Control', 'public, max-age=300, must-revalidate');
+        return file;
+      },
+      this.logger,
+    );
   }
   @RemoteMediaCeiling()
   @Get('galleries/:id/logo')

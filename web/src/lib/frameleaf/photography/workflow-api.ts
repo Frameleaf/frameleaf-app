@@ -172,6 +172,8 @@ export type Workflow = {
   presets: { id: string; name: string; config: WorkflowConfig }[];
   studioPresets?: StudioPresets;
   approvedVersions?: { captureId: string; revisionId: string; approvedAt: string }[];
+  /** FL-702: captures whose approved web photograph is published, so the website can show them. */
+  websiteReady?: string[];
   pendingEdits?: number;
   captures: Capture[];
   chapters: Chapter[];

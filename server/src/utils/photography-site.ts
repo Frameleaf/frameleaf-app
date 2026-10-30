@@ -22,6 +22,11 @@ export const REQUIRED_SITE_SECTIONS: readonly string[] = ['cover', 'portfolio'];
 export const SITE_PHOTO_WIDTHS = [640, 1280, 2048] as const;
 
 const Id = z.uuidv4();
+// Named, so the generated SDK keeps its existing numbered enum names (Kind10, Id2, …) stable.
+export const SiteTemplateSchema = z.enum(SITE_TEMPLATES).meta({ id: 'PhotographySiteTemplate' });
+const SiteColoursSchema = z.enum(['template', 'brand']).meta({ id: 'PhotographySiteColours' });
+const SiteSectionIdSchema = z.enum(SITE_SECTIONS).meta({ id: 'PhotographySiteSectionId' });
+export const SiteInquiryKindSchema = z.enum(['inquiry', 'gallery-link']).meta({ id: 'PhotographySiteInquiryKind' });
 export const SITE_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/;
 const DOMAIN = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
@@ -30,12 +35,12 @@ const PortfolioItem = z.strictObject({ shootId: Id, captureId: Id });
 /** The fields alone (`.pick` refuses a schema with refinements). */
 export const PhotographySiteFields = z.strictObject({
   enabled: z.boolean(),
-  template: z.enum(SITE_TEMPLATES),
-  colours: z.enum(['template', 'brand']),
+  template: SiteTemplateSchema,
+  colours: SiteColoursSchema,
   coverFocal: z.int().min(0).max(100),
   cover: PortfolioItem.nullable(),
   sections: z
-    .array(z.strictObject({ id: z.enum(SITE_SECTIONS), on: z.boolean() }))
+    .array(z.strictObject({ id: SiteSectionIdSchema, on: z.boolean() }))
     .length(SITE_SECTIONS.length)
     .refine((sections) => new Set(sections.map((s) => s.id)).size === SITE_SECTIONS.length, 'Repeated section')
     .refine((sections) => sections[0]?.id === 'cover', 'The cover comes first')
@@ -65,7 +70,11 @@ export const PhotographySiteFields = z.strictObject({
   trustedBy: z.array(z.string().trim().min(1).max(60)).max(12),
   slug: z.string().regex(SITE_SLUG),
   /** FL-701 decision A: served through the Frameleaf Cloud relay for subscribers. */
-  domain: z.union([z.literal(''), z.string().toLowerCase().regex(DOMAIN)]),
+  domain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .refine((domain) => domain === '' || DOMAIN.test(domain), 'Enter a domain like cedarandlight.ca'),
   seoTitle: z.string().max(120),
   seoDescription: z.string().max(300),
 });
