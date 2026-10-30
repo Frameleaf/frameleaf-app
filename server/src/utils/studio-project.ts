@@ -174,6 +174,16 @@ export const isEmptyStudioTimeline = (graph: unknown): boolean => {
   );
 };
 
+/**
+ * FL-677: a Freecut graph whose main timeline places nothing. What is exported is the main timeline,
+ * so a nested sequence that holds items but is placed nowhere still renders nothing. Used only to
+ * refuse an export; drafts keep `isEmptyStudioTimeline`.
+ */
+export const hasNoMainTimelineItems = (graph: unknown): boolean => {
+  const items = ((graph as { timeline?: unknown } | null)?.timeline as { items?: unknown } | null | undefined)?.items;
+  return Array.isArray(items) && items.length === 0;
+};
+
 export const studioEnvelopeDigest = (envelope: StudioProjectEnvelope): string =>
   createHash('sha256').update(canonicalJson(envelope)).digest('hex');
 

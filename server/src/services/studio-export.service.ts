@@ -133,7 +133,7 @@ import {
 } from 'src/utils/studio-export.js';
 import { syncAncestors } from 'src/utils/studio-import-durability.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
-import { canonicalJson, isEmptyStudioTimeline } from 'src/utils/studio-project.js';
+import { canonicalJson, hasNoMainTimelineItems, isEmptyStudioTimeline } from 'src/utils/studio-project.js';
 import { StudioReframeError, StudioReframeSeal, isReframeShape, sealStudioReframe } from 'src/utils/studio-reframe.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
 import {
@@ -366,8 +366,9 @@ export class StudioExportService {
         refusedCount: authorized.manifest.refusedCount,
       });
     }
-    // FL-677: nothing placed renders nothing; refused before a job is queued for a worker to fail.
-    if (isEmptyStudioTimeline(authorized.envelope.graph)) {
+    // FL-677: nothing on the main timeline renders nothing (a nested sequence placed nowhere is not
+    // output); refused before a job is queued for a worker to fail with empty_timeline.
+    if (isEmptyStudioTimeline(authorized.envelope.graph) || hasNoMainTimelineItems(authorized.envelope.graph)) {
       throw new BadRequestException({
         message: 'There is nothing on the timeline to export yet',
         code: 'studio_export_empty',

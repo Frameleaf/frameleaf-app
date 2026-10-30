@@ -10,6 +10,7 @@ import {
   checkStudioEnvelope,
   diffStudioGraphs,
   formatStudioTime,
+  hasNoMainTimelineItems,
   isEmptyStudioTimeline,
   isStudioLeaseHeld,
   mergeCommandSummaries,
@@ -83,6 +84,15 @@ describe('isEmptyStudioTimeline (FL-677)', () => {
     // Other shapes are the renderer's to judge.
     expect(isEmptyStudioTimeline({ tracks: [] })).toBe(false);
     expect(isEmptyStudioTimeline(null)).toBe(false);
+  });
+});
+
+describe('hasNoMainTimelineItems (FL-677)', () => {
+  it('looks at the main timeline only', () => {
+    expect(hasNoMainTimelineItems({ timeline: { items: [], compositions: [{ id: 'c', items: [{}] }] } })).toBe(true);
+    expect(hasNoMainTimelineItems({ timeline: { items: [{ id: 'clip' }] } })).toBe(false);
+    expect(hasNoMainTimelineItems({ tracks: [] })).toBe(false);
+    expect(hasNoMainTimelineItems(null)).toBe(false);
   });
 });
 

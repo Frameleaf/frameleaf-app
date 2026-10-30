@@ -1465,6 +1465,18 @@ describe(StudioExportService.name, () => {
       expect(repository.createWithRender).not.toHaveBeenCalled();
     });
 
+    it('refuses a main timeline with nothing placed, even when an unplaced nested sequence holds items (FL-677)', async () => {
+      const graph = clipGraph();
+      const nestedOnly = {
+        ...graph,
+        timeline: { ...graph.timeline, items: [], compositions: [{ id: 'unused', items: graph.timeline.items }] },
+      };
+      await expect(snapshotOf(nestedOnly, { format: 'mp4-h264' })).rejects.toMatchObject({
+        response: { code: 'studio_export_empty' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
     it('promises the widest source layout, or a stereo downmix only when asked for', async () => {
       const surround = { codecName: 'eac3', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 };
       repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { audio: surround })]);
