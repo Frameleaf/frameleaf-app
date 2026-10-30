@@ -144,7 +144,7 @@ it('fences an admitted binding after physical vector dimensions change', async (
 it('preserves existing vectors and timestamps through an unadmitted downgrade and upgrade', async () => {
   const { up, down } = await import('src/schema/migrations/2100000002999-DesktopClipIndex.js');
   // FL-651 dropped the video duplicate frame store; bring it back for the older migration
-  const fingerprints = await import('src/schema/migrations/2100000003020-VideoTimelineFingerprint.js');
+  const fingerprints = await import('src/schema/migrations/2100000003033-VideoTimelineFingerprint.js');
   await db.transaction().execute((tx) => fingerprints.down(tx));
   await sql`ALTER TABLE asset_video_duplicate_frame ALTER COLUMN embedding TYPE vector(768)`.execute(db);
   await db.transaction().execute((tx) => down(tx));

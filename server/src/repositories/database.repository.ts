@@ -27,6 +27,23 @@ import { vectorIndexQuery } from 'src/utils/database.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
 
+// 1.1.17 name -> current name, in the order 1.1.17 ran them
+export const RENAMED_MIGRATIONS = [
+  ['1793164441799-LibraryScope', '2100000003021-LibraryScope'],
+  ['1793189000000-BookmarksAndSources', '2100000003022-BookmarksAndSources'],
+  ['1793191100000-CaptureReceipts', '2100000003023-CaptureReceipts'],
+  ['1793196800000-AssetPalettes', '2100000003024-AssetPalettes'],
+  ['1793209000000-ClassificationSearchFilter', '2100000003025-ClassificationSearchFilter'],
+  ['1793210000000-BookmarkRatings', '2100000003026-BookmarkRatings'],
+  ['1793250000000-AlbumColor', '2100000003027-AlbumColor'],
+  ['2100000003014-SpeechIndex', '2100000003028-SpeechIndex'],
+  ['2100000003015-BrowserExtensionSignIn', '2100000003029-BrowserExtensionSignIn'],
+  ['2100000003017-AssetSourceImportedFrom', '2100000003030-AssetSourceImportedFrom'],
+  ['2100000003018-AssetAnnotations', '2100000003031-AssetAnnotations'],
+  ['2100000003019-EagleServerImport', '2100000003032-EagleServerImport'],
+  ['2100000003020-VideoTimelineFingerprint', '2100000003033-VideoTimelineFingerprint'],
+] as const;
+
 const CLIP_TABLES = ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'] as const;
 
 export const getVectorExtension = (_runner?: Kysely<DB>): Promise<VectorExtension> =>
@@ -419,6 +436,21 @@ export class DatabaseRepository {
 
   async runMigrations(): Promise<void> {
     await this.assertFrameleafDatabase();
+    // 1.1.17 put new migrations before the 1.1.16 chain, so upgrades refused to start (issue 626).
+    // They now sort after 2100000003013 in the same order; fresh 1.1.17 installs recorded the old names.
+    // Kysely orders the ledger by timestamp, so those rows also move to just after the 1.1.16 chain.
+    await sql`
+      UPDATE public.frameleaf_migrations m SET name = r.new, timestamp = to_char(
+        (SELECT max(timestamp::timestamptz) FROM public.frameleaf_migrations WHERE name <= '2100000003013-DevelopBatches')
+          AT TIME ZONE 'UTC' + r.n * interval '1 millisecond', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+      FROM (VALUES ${sql.join(RENAMED_MIGRATIONS.map(([old, name], n) => sql`(${old}, ${name}, ${n + 1}::int)`))})
+        AS r(old, new, n)
+      WHERE m.name IN (r.old, r.new)
+    `
+      .execute(this.db)
+      .catch((error: { code?: string }) => {
+        if (error.code !== '42P01') throw error; // no ledger yet on a fresh database
+      });
     const migrator = new Migrator({
       db: this.db,
       migrationTableName: 'frameleaf_migrations',

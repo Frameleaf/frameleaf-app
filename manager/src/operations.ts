@@ -6,7 +6,7 @@ import { Store } from './store.js';
 import { Docker } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
-import { isNewerRelease } from './release-order.js';
+import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
 import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
@@ -415,7 +415,7 @@ export class Operations {
       if (operation.kind === 'update') {
         const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
-        return this.applyUpdate(operation, review);
+        return this.applyUpdate(operation, await this.retargetWithdrawnUpdate(operation, review));
       }
       if (['start', 'stop', 'restart', 'backup'].includes(operation.kind)) return this.runControl(operation);
       if (operation.kind === 'reconfigure') return this.applyReconfigure(operation);
@@ -1038,6 +1038,39 @@ export class Operations {
     const { operation, created } = this.store.start('update', key, { reviewId: id });
     if (created) this.launch(operation, () => this.applyUpdate(operation, review));
     return operation;
+  }
+  // A failed update keeps the operation lock, so retrying is the only way forward. When its release was
+  // withdrawn (1.1.17, issue 626), retry with the newest offered release instead. The database checkpoint
+  // taken before the failed attempt is kept: the withdrawn release never started.
+  private async retargetWithdrawnUpdate(operation: Operation, review: UpdateReview): Promise<UpdateReview> {
+    const withdrawn = await this.releases.eligible(review.release.nas.tag).then(
+      () => false,
+      (error) => {
+        if (error instanceof Refusal && error.code === 'release_not_eligible') return true;
+        throw error;
+      },
+    );
+    if (!withdrawn) return review;
+    // Same checks as reviewUpdate: a release that changes PostgreSQL or lacks this platform needs a restore instead.
+    const postgres = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+    let release: VerifiedRelease | undefined;
+    const newer = (await this.releases.available())
+      .map(({ tag }) => tag)
+      .filter((tag) => isNewerRelease(tag, review.release.nas.tag))
+      .sort((a, b) => compareReleases(b, a));
+    for (const tag of newer) {
+      const candidate = await this.releases.acquire(tag);
+      if (candidate.nas.images.postgres === postgres && candidate.nas.platforms.includes(review.platform)) {
+        release = candidate;
+        break;
+      }
+    }
+    if (!release) throw new Refusal('release_not_eligible');
+    const retargeted = { ...review, release };
+    this.store.set(`update:${operation.input.reviewId}`, retargeted);
+    operation.completed = operation.completed.filter((step) => step !== 'download-images');
+    this.store.save(operation);
+    return retargeted;
   }
   private async applyUpdate(operation: Operation, review: UpdateReview): Promise<void> {
     await this.step(operation, 'download-images', async () => {
