@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { MemoryExport } from 'src/database.js';
 import { MemoryHighlightOptionsDto, MemoryHighlightSettings, mapMemoryHighlight } from 'src/dtos/memory.dto.js';
@@ -29,9 +29,20 @@ import {
 import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION } from 'src/utils/studio-project.js';
 
-/** The Studio export settings a highlight renders with: the prototype ExportDialog's defaults. */
-const HIGHLIGHT_FORMAT = 'mp4-hevc-main10';
+/**
+ * The Studio export settings a highlight renders with: the prototype ExportDialog's defaults first,
+ * then what a smaller worker can make (FL-690: the bundled CPU worker writes neither SDR Main10 nor
+ * 2160p). Like the export dialog, the first format a worker takes wins, at the largest resolution it
+ * takes; a resolution the owner chose is kept.
+ */
+const HIGHLIGHT_FORMATS = ['mp4-hevc-main10', 'mp4-h264'] as const;
+const HIGHLIGHT_RESOLUTIONS = ['2160p', '1440p', '1080p'] as const;
 const HIGHLIGHT_COLOR = 'preserve';
+
+const isUnsupportedOutput = (error: unknown) => {
+  const response = error instanceof ConflictException ? error.getResponse() : undefined;
+  return typeof response === 'object' && (response as { code?: string }).code === 'studio_export_unsupported';
+};
 
 const ACTIVE = new Set<string>([MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling]);
 
@@ -126,23 +137,41 @@ export class MemoryHighlightService {
       // Off the Studio shelf: it belongs to the memory, and archiving also drops the editor lease.
       await this.studioProjects.update(auth, project.id, { archived: true });
 
-      const { version } = await this.studioExports.create(
-        auth,
-        project.id,
-        {
-          destination: settings.destination,
-          format: HIGHLIGHT_FORMAT,
-          color: HIGHLIGHT_COLOR,
-          resolution: settings.resolution,
-          requestKey: key,
-        },
-        { retainInProject: true },
-      );
+      // A refusal comes before the export saves anything, so the next choice can reuse the request key.
+      const resolutions = options.resolution ? [options.resolution] : HIGHLIGHT_RESOLUTIONS;
+      let version: { id: string } | undefined;
+      let refusal: unknown;
+      for (const format of HIGHLIGHT_FORMATS) {
+        for (const resolution of resolutions) {
+          try {
+            ({ version } = await this.studioExports.create(
+              auth,
+              project.id,
+              { destination: settings.destination, format, color: HIGHLIGHT_COLOR, resolution, requestKey: key },
+              { retainInProject: true },
+            ));
+            settings.resolution = resolution;
+            break;
+          } catch (error) {
+            if (!isUnsupportedOutput(error)) {
+              throw error;
+            }
+            refusal = error;
+          }
+        }
+        if (version) {
+          break;
+        }
+      }
+      if (!version) {
+        throw refusal;
+      }
 
       const started = await this.memoryRepository.updateExport(run.id, {
         status: MemoryExportStatus.Running,
         startedAt: new Date(),
         studioExportVersionId: version.id,
+        settings,
       });
       this.logger.log(`Memory highlight ${run.id} rendering as Studio export ${version.id}`);
       return (started ?? run) as MemoryExport;
