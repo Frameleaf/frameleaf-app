@@ -14947,6 +14947,7 @@
   "frameleaf_studio_export_smooth_motion_local": "When the export is in your library, a Smooth motion preview of it is made on {name}, saved as a new version. The export itself isn't changed.",
   "frameleaf_studio_export_smooth_motion_off": "Off",
   "frameleaf_studio_export_smooth_motion_unavailable": "Smooth motion isn't available yet. Export without it. Smooth motion needs Frameleaf Cloud or another computer at home set up for restoring video.",
+  "frameleaf_studio_export_sources_refused": "This project couldn't be exported yet. Make a small edit so Studio saves it again, then export. If it still can't export, a photo or video in it may no longer be available to you.",
   "frameleaf_studio_export_start": "Export",
   "frameleaf_studio_export_stills_group": "Still image",
   "frameleaf_studio_export_subtitles": "Subtitles",

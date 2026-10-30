@@ -34,6 +34,34 @@ function mapGraph(graph: unknown, visit: (node: Record<string, unknown>) => Reco
   return walk(graph, 0);
 }
 
+/** A URL, scheme or absolute path: what the server refuses where a resource id belongs. */
+const LOCATOR = /^(?:[a-z][\d+.a-z-]*:|\/|\\\\|[a-z]:\\)/i;
+
+/**
+ * FL-673: a clip of library or project media is named by its `mediaId`; the editor resolves what
+ * to play from that id. The URL it played from (`/api/assets/…`, a `blob:`) is the session's, so it
+ * is stored blank, as a handoff clip is, and never reaches the server, which refuses locators.
+ */
+function withoutMediaLocators(node: Record<string, unknown>): Record<string, unknown> {
+  if (typeof node.mediaId !== 'string' || node.mediaId.length === 0) {
+    return node;
+  }
+  const isLocator = (value: unknown) => typeof value === 'string' && LOCATOR.test(value);
+  if (!isLocator(node.src) && !isLocator(node.audioSrc) && !isLocator(node.thumbnailUrl)) {
+    return node;
+  }
+  const stored: Record<string, unknown> = { ...node };
+  for (const key of ['src', 'audioSrc'] as const) {
+    if (isLocator(stored[key])) {
+      stored[key] = '';
+    }
+  }
+  if (isLocator(stored.thumbnailUrl)) {
+    delete stored.thumbnailUrl;
+  }
+  return stored;
+}
+
 /** Remove browser aliases and all transient URLs before comparison, commands, or persistence. */
 export function storeGeneratedMedia(graph: unknown): unknown {
   return mapGraph(graph, (node) => {
@@ -41,7 +69,7 @@ export function storeGeneratedMedia(graph: unknown): unknown {
       typeof node.mediaId === 'string' && node.mediaId.startsWith(ALIAS) ? node.mediaId.slice(ALIAS.length) : null;
     const id = alias ?? node.generatedId;
     if (id === undefined) {
-      return node;
+      return withoutMediaLocators(node);
     }
     if (
       typeof id !== 'string' ||
