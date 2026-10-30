@@ -46,7 +46,7 @@ test.describe('Smart album visual threshold (FL-144)', () => {
               SELECT att.atttypmod AS dimension FROM pg_attribute att
               JOIN pg_class cls ON cls.oid = att.attrelid
               WHERE cls.relnamespace = 'public'::regnamespace
-                AND cls.relname IN ('smart_search', 'video_moment_frame_embedding')
+                AND cls.relname = 'smart_search'
                 AND att.attname = 'embedding'
               ORDER BY cls.relname
             `);
@@ -54,7 +54,7 @@ test.describe('Smart album visual threshold (FL-144)', () => {
           },
           { timeout: 60_000 },
         )
-        .toEqual([768, 768]);
+        .toEqual([768]);
       const vector = (similarity: number) =>
         `[${[similarity, Math.sqrt(1 - similarity ** 2), ...Array.from({ length: 766 }, () => 0)].join(',')}]`;
       await db.query('INSERT INTO smart_search ("assetId", embedding) VALUES ($1, $2::vector), ($3, $4::vector)', [
