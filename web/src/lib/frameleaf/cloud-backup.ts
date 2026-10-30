@@ -116,6 +116,19 @@ export const readBackupKeyFile = (
   return { key: text };
 };
 
+/** The saved file's own signed history, or null when the file has no client roots and can't open a backup. */
+export const savedRecovery = (file: string): { recovery?: string } | null => {
+  const parsed = JSON.parse(file) as { client?: { keys?: unknown }; recovery?: unknown };
+  if (!parsed.client?.keys || typeof parsed.client.keys !== 'object') {
+    return null;
+  }
+  return parsed.recovery === undefined ? {} : { recovery: JSON.stringify(parsed.recovery) };
+};
+
+/** The saved recovery file with the merged signed history, which an encrypted restore needs. */
+export const withRecoveryHistory = (file: string, history: string) =>
+  JSON.stringify({ ...(JSON.parse(file) as object), recovery: JSON.parse(history) as unknown }, null, 2);
+
 export type BucketSettings = { endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string };
 
 /** What is wrong with each field of your own bucket's settings, as i18n keys; empty when nothing is. */
@@ -146,16 +159,6 @@ export const bucketSettingsErrors = (settings: BucketSettings): Partial<Record<k
   }
   return errors;
 };
-
-/** The recovery kit's text: shown once, downloaded or printed, and holding the key as its recovery code. */
-export const recoveryKitText = (lines: {
-  heading: string;
-  instance: string;
-  bucket: string;
-  fingerprint: string;
-  code: string;
-  keep: string;
-}) => [lines.heading, '', lines.instance, lines.bucket, lines.fingerprint, '', lines.keep, '', lines.code].join('\n');
 
 /** The storage address without its scheme, for "On s3.example.com". */
 export const endpointHost = (endpoint: string | null | undefined) => {

@@ -25,6 +25,11 @@ import {
 import { OperationClaimLostError } from 'src/utils/operation-execution.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
+vi.mock('src/utils/disk-usage.js', () => ({
+  getDiskUsage: () =>
+    Promise.resolve({ total: 4096 * 1_000_000_000, free: 4096 * 1_000_000_000, available: 4096 * 1_000_000_000 }),
+}));
+
 vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
 
 const sha = (body: Buffer) => createHash('sha256').update(body).digest('hex');

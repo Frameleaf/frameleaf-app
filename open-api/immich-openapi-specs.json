@@ -1988,6 +1988,63 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/history": {
+      "post": {
+        "description": "The signed snapshot history an encrypted restore needs to trust a backup, merged with the saved file’s history (the newer is kept; conflicting histories are refused). It holds no keys: the browser adds it to the recovery file the administrator already keeps.",
+        "operationId": "getCloudBackupRecoveryHistory",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupRecoveryHistoryRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupRecoveryHistoryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the signed backup history for the recovery file",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/key": {
       "post": {
         "description": "A new 256-bit key made by this server for \"Generate a key for me\", returned this once for the recovery kit. Nothing is stored until setup claims a bucket with it.",
@@ -78931,6 +78988,10 @@
             "description": "Server key mode and a linked server: escrow can be turned on",
             "type": "boolean"
           },
+          "outdated": {
+            "description": "The stored copy predates the current backup key: store it again",
+            "type": "boolean"
+          },
           "stored": {
             "type": "boolean"
           },
@@ -78941,6 +79002,7 @@
         },
         "required": [
           "available",
+          "outdated",
           "stored",
           "storedAt"
         ],
@@ -79765,6 +79827,29 @@
         "required": [
           "dryRun"
         ],
+        "type": "object"
+      },
+      "CloudBackupRecoveryHistoryDto": {
+        "properties": {
+          "history": {
+            "description": "The signed snapshot history as JSON, for the recovery file’s `recovery` field. Holds no keys",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "history"
+        ],
+        "type": "object"
+      },
+      "CloudBackupRecoveryHistoryRequestDto": {
+        "properties": {
+          "recovery": {
+            "description": "The `recovery` field of the saved recovery file, as JSON: merged, so a newer saved history is kept",
+            "maxLength": 8388608,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "CloudBackupRestoreDetails": {

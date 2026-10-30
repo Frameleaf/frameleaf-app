@@ -31,7 +31,7 @@ import {
   type BuddyKeyring,
   buddyObjectId,
   decryptBuddyBlock,
-  encryptBuddyBlock,
+  sealBuddyBlock,
 } from 'src/utils/buddy-backup-crypto.js';
 import { type BuddyAssetFidelity, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
@@ -156,7 +156,7 @@ export class BuddyBackupCaptureService {
       } catch (readError) {
         if ((readError as NodeJS.ErrnoException).code !== 'ENOENT') throw readError;
         const nonce = randomBytes(12);
-        const sealed = encryptBuddyBlock(key, { vaultId: ring.vaultId, id, keyVersion: ring.current }, bytes, nonce);
+        const sealed = sealBuddyBlock(key, { vaultId: ring.vaultId, id, keyVersion: ring.current }, bytes, nonce);
         journal = {
           nonce: nonce.toString('base64url'),
           digest: BuddyVault.receipt(id, sealed).digest,
@@ -164,7 +164,7 @@ export class BuddyBackupCaptureService {
         };
         await writeBuddyFile(journalPath, JSON.stringify(journal), true);
       }
-      encrypted = encryptBuddyBlock(
+      encrypted = sealBuddyBlock(
         key,
         { vaultId: ring.vaultId, id, keyVersion: ring.current },
         bytes,

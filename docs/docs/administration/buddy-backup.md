@@ -21,13 +21,15 @@ The default schedule is 02:00 in the source server's timezone. Sending and recei
 
 Backups capture originals, videos, Live Photo components, sidecars, edited outputs, retained project dependencies, metadata and a verified database dump. Every snapshot includes Frameleaf settings, user preferences, environment settings and the configuration files declared during setup, including secrets contained in those inputs and the database. Mount external libraries and declared configuration files before capture; inaccessible or changed required files stop a complete restore point from being published. This is not a whole operating-system image.
 
-Locally stored Cloud Backup recovery keys are included in the encrypted snapshot and imported during settings or server recovery. The server identity credentials and Buddy recovery kit remain excluded; recovery preserves the replacement server's identity. Keys held only in memory are not captured. Keep an independent copy of each backup system's recovery kit or key, including Cloud Backup when both destinations are used.
+Locally stored Cloud Backup recovery keys are included in the encrypted snapshot and imported during settings or server recovery. The server identity credentials and Buddy recovery kit remain excluded; recovery preserves the replacement server's identity. Keys held only in memory are not captured. Because of this, anyone who holds your Buddy recovery kit can also open those Cloud backups. Keep an independent copy of each backup system's recovery kit or key, including Cloud Backup when both destinations are used.
 
 Only new or changed encrypted media objects are transferred after the initial backup. Metadata-only changes do not upload originals again. Received Buddy vaults, temporary transfer files and regenerable caches are excluded; thumbnails and transcoded media are optional.
 
 **My backup** reports the latest complete restore point separately from the latest successful restore verification. **Hosting for my buddy** shows storage usage and reservations without exposing the buddy's filenames, albums or media. Overview and Analytics show these outgoing and incoming directions alongside Cloud Backup. Their server-wide operational snapshot is independent of library filters; refresh it to read the latest destination status.
 
-The Backup screen has **Overview**, **Schedule** and **Restore** tabs, and a page for each place a backup is kept: **Cloud Backup**, **Buddy Backup** and **On this server**. Recovery opens your source server's backup only. The comparison describes the distinct encryption models: Cloud Backup uses provider-side SSE-C, while Buddy encrypts before transmission.
+The Backup screen has **Overview**, **Schedule** and **Restore** tabs, and a page for each place a backup is kept: **Cloud Backup**, **Buddy Backup** and **On this server**. Recovery opens your source server's backup only. Cloud Backup and Buddy Backup both encrypt every file, file name and the library database on your server before anything is sent.
+
+What your buddy can see: how many encrypted objects you store, their sizes, and when each restore point was made. File names, paths, albums, people and media stay encrypted.
 
 - **Pause sending / receiving** keeps acknowledged progress. **Resume** continues it.
 - **Restart backup** abandons an incomplete run, scans again and reuses verified objects at the destination.
