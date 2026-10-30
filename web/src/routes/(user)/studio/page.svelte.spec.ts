@@ -59,7 +59,7 @@ vi.mock('$lib/frameleaf/studio/import-retention', () => ({
 }));
 vi.mock('$lib/frameleaf/studio/project-session', () => ({
   STUDIO_DRAFT_PROJECT_ID: 'draft',
-  isEmptyStudioGraph: () => false,
+  isEmptyStudioExport: () => false,
   createStudioProjectSession: (options: { onChange: (state: object) => void }) => {
     const state = {
       project: {

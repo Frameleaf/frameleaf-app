@@ -110,6 +110,19 @@ export const isEmptyStudioGraph = (graph: unknown): boolean => {
   );
 };
 
+/**
+ * FL-677: whether an export of this graph would render nothing. What is exported is the main
+ * timeline, so a nested sequence that holds items but is placed nowhere still renders nothing; the
+ * server refuses the same graphs (`hasNoMainTimelineItems`). Drafts keep `isEmptyStudioGraph`.
+ */
+export const isEmptyStudioExport = (graph: unknown): boolean => {
+  if (isEmptyStudioGraph(graph)) {
+    return true;
+  }
+  const items = ((graph as { timeline?: unknown } | null)?.timeline as { items?: unknown } | null | undefined)?.items;
+  return Array.isArray(items) && items.length === 0;
+};
+
 /* ------------------------------------------------------------------ */
 /* Conflicts                                                            */
 /* ------------------------------------------------------------------ */

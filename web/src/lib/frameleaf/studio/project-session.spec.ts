@@ -13,6 +13,7 @@ import { generatedMediaAlias, storeGeneratedMedia } from './generated-media';
 import { createStudioGeneratedAccess } from './generated-media-client';
 import {
   createStudioProjectSession,
+  isEmptyStudioExport,
   isEmptyStudioGraph,
   STUDIO_DRAFT_PROJECT_ID,
   type StudioProjectApi,
@@ -1300,6 +1301,16 @@ describe('studio project session', () => {
       expect(api.create).toHaveBeenCalledOnce();
       expect(api.create.mock.calls[0][0].envelope.graph).toEqual(placed);
       expect(last()).toMatchObject({ status: 'saved', project: { id: 'p-new' } });
+    });
+
+    it('calls an export empty when its main timeline places nothing, as the server does (FL-677)', () => {
+      const nestedOnly = { timeline: { items: [], compositions: [{ id: 'c', items: [{ id: 'clip' }] }] } };
+      // A draft that holds a nested sequence is kept, but exporting it would render nothing.
+      expect(isEmptyStudioGraph(nestedOnly)).toBe(false);
+      expect(isEmptyStudioExport(nestedOnly)).toBe(true);
+      expect(isEmptyStudioExport(null)).toBe(true);
+      expect(isEmptyStudioExport({ timeline: { items: [{ id: 'clip' }] } })).toBe(false);
+      expect(isEmptyStudioExport({ tracks: [] })).toBe(false);
     });
 
     it('calls a graph empty only when nothing is placed (FL-677)', () => {
