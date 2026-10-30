@@ -32,7 +32,11 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioMovieRepository } from 'src/repositories/studio-movie.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
-import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
+import {
+  StudioProjectImportService,
+  studioImportIncomingFolder,
+  studioImportStagePath,
+} from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
@@ -563,7 +567,7 @@ export class StudioMovieService {
     }
 
     // Kept with the project as an audio import, like music someone adds in Studio.
-    const incoming = join(studioImportIncomingFolder(operation.ownerId), `movie-${operation.id}-${randomUUID()}.m4a`);
+    const incoming = studioImportStagePath(operation.ownerId);
     this.storage.mkdirSync(studioImportIncomingFolder(operation.ownerId));
     await this.movies.encodeMusic(source, incoming, seconds, signal);
     const { size } = await this.storage.stat(incoming);

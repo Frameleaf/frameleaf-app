@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -41,6 +42,7 @@ vi.mock('src/utils/studio-cutout.js', async (importOriginal) => {
 vi.mock('src/services/studio-project-import.service.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/services/studio-project-import.service.js')>()),
   studioImportIncomingFolder: () => incomingFolder,
+  studioImportStagePath: () => `${incomingFolder}/${randomUUID()}.upload`,
 }));
 
 let incomingFolder = '';
@@ -360,6 +362,7 @@ describe(StudioCutoutService.name, () => {
       matteHeight: 108,
     });
     expect(imports.upload).toHaveBeenCalledOnce();
+    expect(imports.upload.mock.calls[0][3].path).toMatch(/\/[\da-f-]{36}\.upload$/);
     expect(uploads[0].name).toBe(`frameleaf-subject-matte-${uploads[0].id}.png`);
     const atlas = await sharp(uploads[0].png).metadata();
     expect([atlas.format, atlas.width, atlas.height]).toEqual(['png', 3 * 192, 108]);

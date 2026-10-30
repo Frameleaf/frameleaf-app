@@ -36,7 +36,11 @@ import {
 } from 'src/repositories/studio-storage-admission.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
-import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
+import {
+  StudioProjectImportService,
+  studioImportIncomingFolder,
+  studioImportStagePath,
+} from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -460,7 +464,7 @@ export class StudioBundleService {
       ownerId: auth.user.id,
       path:
         kind === 'import'
-          ? join(studioImportIncomingFolder(auth.user.id), `${randomUUID()}.upload`)
+          ? studioImportStagePath(auth.user.id)
           : join(studioBundleUploadFolder(auth.user.id), `${randomUUID()}.zip`),
       sizeBytes: bytes,
       digest: '',
