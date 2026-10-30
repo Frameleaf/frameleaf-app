@@ -654,17 +654,16 @@ export class SqlQueueStore {
         if (rows[0].state !== 'pending') {
           const terminalParents = [claim.id];
           await finishSelections(tx, claim.id, false);
-          // Repeatable work that ran out of retries on an unconfirmed stop keeps its deferred request on the
-          // failed job: nothing runs while the stop is unknown, and "retry failed" reruns the job, whose
-          // completion then schedules the held request. Nothing is discarded.
-          const holdLatest = unconfirmedStop && !unconfirmedAttention;
-          if (!holdLatest) {
-            await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
-          }
+          await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
           const latest = rows[0].latestPending;
-          if (unconfirmedStop && latest) {
-            // Settle every positively identified obligation of the deferred intent for attention (it is
-            // discarded unless held above). A later history copy may not appear in its original membership list.
+          // Work held for attention never replays its deferred request. Repeatable work that ran out of retries
+          // on an unconfirmed stop schedules it like any other failure: a second executor of repeatable work is
+          // already accepted above (publication is fenced by the revoked claim token), the request keeps its
+          // place in the deduplication sequence and its run stays open, and scheduleLatest still holds an
+          // unsafe request for attention.
+          if (unconfirmedAttention && latest) {
+            // Discard the one deferred intent only after every positively identified obligation
+            // is terminal. A later history copy may not appear in its original membership list.
             const identities = [{ runId: latest.runId, itemKey: latest.itemKey }, ...(latest.memberships ?? [])];
             const { rows: stopped } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
               update job_run_item i set state = 'needs_attention'
