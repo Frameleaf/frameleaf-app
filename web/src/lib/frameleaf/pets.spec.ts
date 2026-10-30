@@ -17,6 +17,7 @@ import {
   confirmedObservations,
   isRecognitionRunActive,
   isStaleObservation,
+  petThumbnailFocus,
   observationToCreate,
   recognitionDestinationKey,
   recognitionReasonKey,
@@ -307,5 +308,17 @@ describe('pet observations (FL-58)', () => {
       imageWidth: 10,
       imageHeight: 10,
     });
+  });
+});
+
+describe('petThumbnailFocus', () => {
+  it('crops dogs and cats high, towards the head', () => {
+    expect(petThumbnailFocus(PetSpecies.Dog)).toBe('50% 20%');
+    expect(petThumbnailFocus(PetSpecies.Cat)).toBe('50% 20%');
+  });
+
+  it('keeps the centre crop for other species and an unknown one', () => {
+    expect(petThumbnailFocus(PetSpecies.Fish)).toBe('50% 50%');
+    expect(petThumbnailFocus(null)).toBe('50% 50%');
   });
 });

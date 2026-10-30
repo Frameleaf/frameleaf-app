@@ -207,7 +207,13 @@
         <li class="pet" data-testid="viewer-pet">
           <a href={Route.viewPet({ id: observation.petId })} class="pet-link">
             <!-- Pets get the squircle photo shape, as people do (owner decision, FL-146). -->
-            <PetThumbnail assetId={pet?.featuredAssetId} cacheKey={pet?.updatedAt} size={72} alt="" />
+            <PetThumbnail
+              assetId={pet?.featuredAssetId}
+              cacheKey={pet?.updatedAt}
+              species={pet?.species}
+              size={72}
+              alt=""
+            />
             <span class="name">{nameOf(pet)}</span>
           </a>
           {#if isStaleObservation(observation)}
