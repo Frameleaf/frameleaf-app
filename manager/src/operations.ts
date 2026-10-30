@@ -415,7 +415,7 @@ export class Operations {
       if (operation.kind === 'update') {
         const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
-        return this.applyUpdate(operation, review);
+        return this.applyUpdate(operation, await this.retargetWithdrawnUpdate(operation, review));
       }
       if (['start', 'stop', 'restart', 'backup'].includes(operation.kind)) return this.runControl(operation);
       if (operation.kind === 'reconfigure') return this.applyReconfigure(operation);
@@ -1038,6 +1038,28 @@ export class Operations {
     const { operation, created } = this.store.start('update', key, { reviewId: id });
     if (created) this.launch(operation, () => this.applyUpdate(operation, review));
     return operation;
+  }
+  // A failed update keeps the operation lock, so retrying is the only way forward. When its release was
+  // withdrawn (1.1.17, issue 626), retry with the newest offered release instead. The database checkpoint
+  // taken before the failed attempt is kept: the withdrawn release never started.
+  private async retargetWithdrawnUpdate(operation: Operation, review: UpdateReview): Promise<UpdateReview> {
+    const withdrawn = await this.releases.eligible(review.release.nas.tag).then(
+      () => false,
+      (error) => {
+        if (error instanceof Refusal && error.code === 'release_not_eligible') return true;
+        throw error;
+      },
+    );
+    if (!withdrawn) return review;
+    const newest = (await this.releases.available()).find(({ tag }) => isNewerRelease(tag, review.release.nas.tag));
+    if (!newest) throw new Refusal('release_not_eligible');
+    const release = await this.releases.acquire(newest.tag);
+    if (!release.nas.platforms.includes(review.platform)) throw new Refusal('release_architecture_unavailable');
+    const retargeted = { ...review, release };
+    this.store.set(`update:${operation.input.reviewId}`, retargeted);
+    operation.completed = operation.completed.filter((step) => step !== 'download-images');
+    this.store.save(operation);
+    return retargeted;
   }
   private async applyUpdate(operation: Operation, review: UpdateReview): Promise<void> {
     await this.step(operation, 'download-images', async () => {
