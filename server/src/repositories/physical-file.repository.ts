@@ -104,7 +104,6 @@ export const countPathReferences = async (
     SELECT 1 FROM public.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
     UNION ALL SELECT 1 FROM public.person person WHERE person."thumbnailPath"=${path}
     UNION ALL SELECT 1 FROM public."user" owner WHERE owner."profileImagePath"=${path}
-    UNION ALL SELECT 1 FROM public.asset_video_duplicate_frame frame WHERE frame.path=${path}
     UNION ALL SELECT 1 FROM public.video_moment_frame frame WHERE frame.path=${path}
     UNION ALL SELECT 1 FROM public.photography_workflow workflow
     WHERE workflow.value->'published'->>'logoPath'=${path}

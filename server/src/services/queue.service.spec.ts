@@ -318,7 +318,7 @@ describe(QueueService.name, () => {
       await sut.runCommandLegacy(QueueName.VideoDuplicateDetection, { command: QueueCommand.Start, force: true });
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.AssetGenerateVideoDuplicateFramesQueueAll,
+        name: JobName.AssetVideoFingerprintQueueAll,
         data: { force: true },
       });
     });

@@ -62,7 +62,6 @@ describe(AssetService.name, () => {
     ({ sut, mocks } = newTestService(AssetService));
     mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
     mocks.partner.getAll.mockResolvedValue([]);
-    mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     mocks.search.getAssetLandmarks.mockResolvedValue([]);
@@ -76,7 +75,6 @@ describe(AssetService.name, () => {
         originalPath: deletion.originalPath,
         reservationTemporaryPath: null,
         files: deletion.files ?? [],
-        videoDuplicateFramePaths: [],
         derivedPaths: [],
         pendingMoves: [],
         ...removedExtras,
@@ -2051,6 +2049,18 @@ describe(AssetService.name, () => {
   });
 
   describe('handleAssetDeletion', () => {
+    it("removes a video's frames from the retired video duplicate check (FL-651)", async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      const { files } = (mocks.job.queue.mock.calls[0][0] as { data: { files: string[] } }).data;
+      expect(files).toEqual(
+        expect.arrayContaining(StorageCore.getLegacyVideoDuplicateFramePaths(asset.ownerId, asset.id)),
+      );
+    });
+
     it('should clean up files', async () => {
       const asset = AssetFactory.from()
         .file({ type: AssetFileType.Thumbnail })
@@ -2060,7 +2070,6 @@ describe(AssetService.name, () => {
         .file({ type: AssetFileType.Thumbnail, isEdited: true })
         .build();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
-      removedExtras = { videoDuplicateFramePaths: ['/data/thumbs/video-frame.jpeg'] };
 
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
 
@@ -2069,7 +2078,7 @@ describe(AssetService.name, () => {
           {
             name: JobName.FileDelete,
             data: {
-              files: [...asset.files.map(({ path }) => path), '/data/thumbs/video-frame.jpeg', asset.originalPath],
+              files: [...asset.files.map(({ path }) => path), asset.originalPath],
               removedAssetId: asset.id,
               // universal storage: the original goes to the file trash with who held it
               original: {

@@ -39768,196 +39768,6 @@
       "synchronize": true
     },
     {
-      "name": "asset_video_duplicate_frame",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "frameIndex",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "timestampMs",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "path",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "vector",
-          "primary": false,
-          "name": "embedding",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": false,
-          "isArray": false,
-          "length": 512,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "producerModelKey",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "producerAdmissionKey",
-          "tableName": "asset_video_duplicate_frame",
-          "nullable": false,
-          "isArray": false,
-          "default": "'legacy'::text",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_video_duplicate_frame_assetId_idx",
-          "definition": "CREATE INDEX \"asset_video_duplicate_frame_assetId_idx\" ON public.asset_video_duplicate_frame USING btree (\"assetId\")",
-          "tableName": "asset_video_duplicate_frame",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "asset_video_duplicate_frame_updatedAt",
-          "definition": "CREATE TRIGGER \"asset_video_duplicate_frame_updatedAt\" BEFORE UPDATE ON public.asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION media_health_updated_at()",
-          "tableName": "asset_video_duplicate_frame",
-          "functionName": "media_health_updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        },
-        {
-          "name": "asset_video_duplicate_frame_producer_guard",
-          "definition": "CREATE TRIGGER asset_video_duplicate_frame_producer_guard BEFORE INSERT OR UPDATE ON public.asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION desktop_clip_producer_guard()",
-          "tableName": "asset_video_duplicate_frame",
-          "functionName": "desktop_clip_producer_guard",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "insert",
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_video_duplicate_frame_pkey",
-          "definition": "PRIMARY KEY (\"assetId\", \"frameIndex\")",
-          "tableName": "asset_video_duplicate_frame",
-          "columnNames": [
-            "assetId",
-            "frameIndex"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_video_duplicate_frame_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset_video_duplicate_frame",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_video_duplicate_frame_producer_key_check",
-          "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
-          "tableName": "asset_video_duplicate_frame",
-          "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_video_duplicate_frame_producerAdmissionKey_fkey",
-          "definition": "FOREIGN KEY (\"producerAdmissionKey\") REFERENCES desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT",
-          "tableName": "asset_video_duplicate_frame",
-          "columnNames": [
-            "producerAdmissionKey"
-          ],
-          "referenceTableName": "desktop_clip_producer",
-          "referenceColumnNames": [
-            "key"
-          ],
-          "onUpdate": "RESTRICT",
-          "onDelete": "RESTRICT",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "video_moment_frame_embedding",
       "columns": [
         {
@@ -46588,6 +46398,71 @@
             "importId"
           ],
           "referenceTableName": "eagle_import",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_video_fingerprint",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_video_fingerprint",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "durationMs",
+          "tableName": "asset_video_fingerprint",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "hashes",
+          "tableName": "asset_video_fingerprint",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_video_fingerprint_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_video_fingerprint",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_video_fingerprint_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_video_fingerprint",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
           "referenceColumnNames": [
             "id"
           ],
