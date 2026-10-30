@@ -130,7 +130,7 @@ describe(DuplicateRepository.name, () => {
           maxBits: 3,
           userIds: [user.id],
         }),
-      ).resolves.toEqual([{ assetId: near.id, duplicateId: null, distance: 0 }]);
+      ).resolves.toEqual([{ assetId: near.id, duplicateId: null, distance: 3 }]);
     });
   });
 });

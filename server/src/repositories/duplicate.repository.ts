@@ -483,21 +483,30 @@ export class DuplicateRepository {
       return [];
     }
     return this.db
-      .selectFrom('asset')
-      .$call(withDefaultVisibility)
-      .innerJoin('asset_video_fingerprint as fingerprint', 'fingerprint.assetId', 'asset.id')
-      .select(['asset.id as assetId', 'asset.duplicateId', sql<number>`0`.as('distance')])
-      .where('asset.ownerId', '=', anyUuid(options.userIds))
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.type', '=', AssetType.Video)
-      .where('asset.id', '!=', asUuid(options.assetId))
-      .where('asset.stackId', 'is', null)
-      .where(
-        sql<boolean>`exists (
-          select 1 from unnest(fingerprint.hashes) frame, unnest(${options.hashes}::bigint[]) wanted
-          where bit_count((frame # wanted)::bit(64)) <= ${options.maxBits}
-        )`,
+      .with('cte', (qb) =>
+        qb
+          .selectFrom('asset')
+          .$call(withDefaultVisibility)
+          .innerJoin('asset_video_fingerprint as fingerprint', 'fingerprint.assetId', 'asset.id')
+          .select([
+            'asset.id as assetId',
+            'asset.duplicateId',
+            // the closest frame, in bits
+            sql<number>`(
+                select min(bit_count((frame # wanted)::bit(64)))
+                from unnest(fingerprint.hashes) frame, unnest(${options.hashes}::bigint[]) wanted
+              )`.as('distance'),
+          ])
+          .where('asset.ownerId', '=', anyUuid(options.userIds))
+          .where('asset.deletedAt', 'is', null)
+          .where('asset.type', '=', AssetType.Video)
+          .where('asset.id', '!=', asUuid(options.assetId))
+          .where('asset.stackId', 'is', null),
       )
+      .selectFrom('cte')
+      .selectAll()
+      .where('cte.distance', '<=', options.maxBits)
+      .orderBy('cte.distance')
       .limit(DUPLICATE_SEARCH_LIMIT)
       .execute();
   }

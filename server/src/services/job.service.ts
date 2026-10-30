@@ -459,8 +459,12 @@ export class JobService extends BaseService {
         if (asset && asset.libraryScope !== LibraryScope.Design)
           await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
         if (item.data.source === 'upload') {
+          // FL-651: a video is fingerprinted first, unless video comparison is off
+          const fingerprint =
+            asset?.type === AssetType.Video &&
+            (await this.getConfig({ withCache: true })).machineLearning.duplicateDetection.enhancedVideo.enabled;
           await this.jobRepository.queue({
-            name: asset?.type === AssetType.Video ? JobName.AssetVideoFingerprint : JobName.AssetDetectDuplicates,
+            name: fingerprint ? JobName.AssetVideoFingerprint : JobName.AssetDetectDuplicates,
             data: item.data,
           });
         }
@@ -480,7 +484,8 @@ export class JobService extends BaseService {
         // FL-651: its group mates too, whose check may have waited on this fingerprint
         const mates = await this.duplicateRepository.getGroupMateIds(item.data.id);
         await this.jobRepository.queueAll([
-          { name: JobName.AssetDetectDuplicates, data: { id: item.data.id } },
+          // its own check, a new run item beside the one that found it without a fingerprint
+          { name: JobName.AssetDetectDuplicates, data: { id: item.data.id, recheckAfter: item.data.id } },
           ...mates.map((id) => ({
             name: JobName.AssetDetectDuplicates as const,
             data: { id, recheckAfter: item.data.id },
