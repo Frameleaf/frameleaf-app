@@ -69,19 +69,34 @@ test("metadata artifacts cannot request changes for another PR or workflow", () 
     repository: { full_name: repo },
     head_repository: { full_name: repo },
     pull_requests: [{ number: 12 }],
+    head_sha: "abc",
   };
-  validatePlanRequest(run, { number: 12 });
-  assert.throws(() => validatePlanRequest(run, { number: 13 }));
+  const head = { number: 12, head: { sha: "abc" } };
+  validatePlanRequest(run, { number: 12 }, head);
+  assert.throws(() =>
+    validatePlanRequest(run, { number: 13 }, { ...head, number: 13 }),
+  );
+  // merged PR whose head branch was deleted: GitHub lists no pull_requests
+  validatePlanRequest({ ...run, pull_requests: [] }, { number: 12 }, head);
+  assert.throws(() =>
+    validatePlanRequest(
+      { ...run, pull_requests: [] },
+      { number: 12 },
+      { ...head, head: { sha: "other" } },
+    ),
+  );
   assert.throws(() =>
     validatePlanRequest(
       { ...run, path: ".github/workflows/ci.yml" },
       { number: 12 },
+      head,
     ),
   );
   assert.throws(() =>
     validatePlanRequest(
       { ...run, head_repository: { full_name: "attacker/app" } },
       { number: 12 },
+      head,
     ),
   );
 });

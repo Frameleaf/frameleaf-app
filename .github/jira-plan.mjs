@@ -19,7 +19,7 @@ const repositories = {
   "Frameleaf/swift-app": { product: "iOS", projects: ["FL", "FIOS"] },
   "Frameleaf/kotlin-app": { product: "Android", projects: ["FL"] },
 };
-export function validatePlanRequest(run, event) {
+export function validatePlanRequest(run, event, pr) {
   assert(
     run.path === ".github/workflows/jira-plan-request.yml" &&
       run.event === "pull_request" &&
@@ -31,9 +31,14 @@ export function validatePlanRequest(run, event) {
     run.head_repository?.full_name === run.repository?.full_name,
     "Fork request is not trusted",
   );
+  // Merging auto-deletes the head branch, which empties run.pull_requests, so
+  // a closed PR is matched by the head commit the request ran on instead.
   assert(
     Number.isSafeInteger(event.number) &&
-      run.pull_requests.some((pr) => pr.number === event.number),
+      pr.number === event.number &&
+      (run.pull_requests.length
+        ? run.pull_requests.some((p) => p.number === event.number)
+        : pr.head.sha === run.head_sha),
     "Request is not associated with this PR",
   );
 }
@@ -97,7 +102,7 @@ if (
       );
       return response.json();
     };
-    let event;
+    let event, run;
     if (process.env.GITHUB_EVENT_NAME === "workflow_dispatch") {
       event = { number: Number(trigger.inputs.pr_number) };
     } else {
@@ -105,7 +110,7 @@ if (
         Number.isSafeInteger(trigger.workflow_run?.id),
         "Missing plan request run",
       );
-      const run = await api(`actions/runs/${trigger.workflow_run.id}`);
+      run = await api(`actions/runs/${trigger.workflow_run.id}`);
       assert.equal(run.repository.full_name, repo, "Foreign plan request");
       assert.equal(
         run.run_attempt,
@@ -149,13 +154,14 @@ if (
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
-      validatePlanRequest(run, event);
     }
     assert(
       Number.isSafeInteger(event.number) && event.number > 0,
       "Invalid PR number",
     );
-    const change = planChanges(repo, event, await api(`pulls/${event.number}`));
+    const pr = await api(`pulls/${event.number}`);
+    if (run) validatePlanRequest(run, event, pr);
+    const change = planChanges(repo, event, pr);
     if (change) {
       const options = { product: change.config.product, request: jiraClient() };
       if (change.receipt)
