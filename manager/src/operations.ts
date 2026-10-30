@@ -6,7 +6,7 @@ import { Store } from './store.js';
 import { Docker } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
-import { isNewerRelease } from './release-order.js';
+import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
 import { ApplicationConfig, checkServiceOverrides, releaseImages, renderCompose, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
@@ -1054,8 +1054,11 @@ export class Operations {
     // Same checks as reviewUpdate: a release that changes PostgreSQL or lacks this platform needs a restore instead.
     const postgres = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
     let release: VerifiedRelease | undefined;
-    for (const { tag } of await this.releases.available()) {
-      if (!isNewerRelease(tag, review.release.nas.tag)) continue;
+    const newer = (await this.releases.available())
+      .map(({ tag }) => tag)
+      .filter((tag) => isNewerRelease(tag, review.release.nas.tag))
+      .sort((a, b) => compareReleases(b, a));
+    for (const tag of newer) {
       const candidate = await this.releases.acquire(tag);
       if (candidate.nas.images.postgres === postgres && candidate.nas.platforms.includes(review.platform)) {
         release = candidate;

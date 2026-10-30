@@ -145,9 +145,10 @@ test('resuming an update whose release was withdrawn retries with the newest off
       eligible: async (tag: string) => {
         if (!offered.has(tag)) throw new Refusal('release_not_eligible');
       },
+      // Publication order, not version order: a 1.1.18 backport published after 1.1.19.
       available: async () => [
-        { tag: 'frameleaf-v1.1.19' },
         { tag: 'frameleaf-v1.1.18' },
+        { tag: 'frameleaf-v1.1.19' },
         { tag: 'frameleaf-v1.1.16' },
       ],
       acquire: async (tag: string) => (acquired.push(tag), release(tag)),
