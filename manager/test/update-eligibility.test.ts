@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -121,15 +121,32 @@ test('resuming an update whose release was withdrawn retries with the newest off
   const store = new Store(directory);
   try {
     const release = (tag: string) => ({
-      nas: { tag, platforms: ['linux/amd64'] },
+      nas: {
+        tag,
+        platforms: ['linux/amd64'],
+        images: {
+          postgres: tag === 'frameleaf-v1.1.19' ? 'postgres:20' : 'postgres:19',
+        },
+      },
     });
-    const offered = new Set(['frameleaf-v1.1.16', 'frameleaf-v1.1.18']);
+    await mkdir(join(directory, 'stack'));
+    await writeFile(
+      join(directory, 'stack', 'compose.json'),
+      JSON.stringify({ services: { database: { image: 'postgres:19' } } }),
+    );
+    // 1.1.19 changes PostgreSQL, which needs a restore rather than an update.
+    const offered = new Set([
+      'frameleaf-v1.1.16',
+      'frameleaf-v1.1.18',
+      'frameleaf-v1.1.19',
+    ]);
     const acquired: string[] = [];
     const releases = {
       eligible: async (tag: string) => {
         if (!offered.has(tag)) throw new Refusal('release_not_eligible');
       },
       available: async () => [
+        { tag: 'frameleaf-v1.1.19' },
         { tag: 'frameleaf-v1.1.18' },
         { tag: 'frameleaf-v1.1.16' },
       ],
@@ -174,7 +191,7 @@ test('resuming an update whose release was withdrawn retries with the newest off
 
     // A release that is still offered is retried as it is.
     assert.equal(await retarget(operation, retargeted), retargeted);
-    assert.deepEqual(acquired, ['frameleaf-v1.1.18']);
+    assert.deepEqual(acquired, ['frameleaf-v1.1.19', 'frameleaf-v1.1.18']);
     offered.delete('frameleaf-v1.1.18');
     await assert.rejects(
       retarget(operation, retargeted),

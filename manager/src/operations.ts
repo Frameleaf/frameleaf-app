@@ -1051,10 +1051,18 @@ export class Operations {
       },
     );
     if (!withdrawn) return review;
-    const newest = (await this.releases.available()).find(({ tag }) => isNewerRelease(tag, review.release.nas.tag));
-    if (!newest) throw new Refusal('release_not_eligible');
-    const release = await this.releases.acquire(newest.tag);
-    if (!release.nas.platforms.includes(review.platform)) throw new Refusal('release_architecture_unavailable');
+    // Same checks as reviewUpdate: a release that changes PostgreSQL or lacks this platform needs a restore instead.
+    const postgres = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services.database.image;
+    let release: VerifiedRelease | undefined;
+    for (const { tag } of await this.releases.available()) {
+      if (!isNewerRelease(tag, review.release.nas.tag)) continue;
+      const candidate = await this.releases.acquire(tag);
+      if (candidate.nas.images.postgres === postgres && candidate.nas.platforms.includes(review.platform)) {
+        release = candidate;
+        break;
+      }
+    }
+    if (!release) throw new Refusal('release_not_eligible');
     const retargeted = { ...review, release };
     this.store.set(`update:${operation.input.reviewId}`, retargeted);
     operation.completed = operation.completed.filter((step) => step !== 'download-images');
