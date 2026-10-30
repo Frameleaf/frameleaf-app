@@ -89,7 +89,11 @@ beforeEach(() => {
 });
 
 const emptyTree = () => ({ collections: [], albums: [], spaces: [] });
-const data = (value: AlbumResponseDto, libraryTree = emptyTree()) => ({ album: value, tree: emptyTree(), libraryTree });
+const data = (value: AlbumResponseDto, otherTree = emptyTree()) => ({
+  album: value,
+  tree: emptyTree(),
+  workspaceTrees: [emptyTree(), otherTree],
+});
 
 it('restores a collection selection after remounting its flat results view (FL-40)', async () => {
   const collection = albumFactory.build({
@@ -335,9 +339,13 @@ describe('leaving an empty, unnamed album', () => {
     expect(handleDeleteAlbum).toHaveBeenCalledWith(album, { notify: false });
   });
 
-  it('keeps a Boards album holding an album of the other workspace (FL-670)', async () => {
-    const album = owned({ id: 'boards-draft', libraryScope: LibraryScope.Design });
-    const child = albumFactory.build({ id: 'personal-child', parentId: 'boards-draft' });
+  it('keeps a Library album whose only album inside is in Boards (FL-670)', async () => {
+    const album = owned({ id: 'library-draft', libraryScope: LibraryScope.Personal });
+    const child = albumFactory.build({
+      id: 'boards-child',
+      parentId: 'library-draft',
+      libraryScope: LibraryScope.Design,
+    });
     render(AlbumPage, { data: data(album, { ...emptyTree(), albums: [child] as never[] }) as never });
     await leaveTo('/(user)/photos');
     expect(handleDeleteAlbum).not.toHaveBeenCalled();

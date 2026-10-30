@@ -518,7 +518,7 @@
       !album.albumName &&
       bookmarkCount === 0 &&
       childAlbums.length === 0 &&
-      directoryAlbums(data.libraryTree).every(({ parentId }) => parentId !== album.id) &&
+      data.workspaceTrees.every((each) => directoryAlbums(each).every(({ parentId }) => parentId !== album.id)) &&
       isOwner(album, currentUserId)
     ) {
       await handleDeleteAlbum(album, { notify: false });

@@ -705,7 +705,7 @@
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
       {#if folded}
-        {#if boards && editor}
+        {#if boards && editor && !isCollection}
           <MenuItem onSelect={() => (createOpen = true)}>
             <Icon icon={mdiPlus} size="18" />
             {$t('frameleaf_boards_new_collection')}
