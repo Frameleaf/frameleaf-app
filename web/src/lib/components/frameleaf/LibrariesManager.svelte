@@ -118,6 +118,15 @@
     return () => clearInterval(timer);
   });
 
+  // Once the last scan ends, read the list once more: its sizes and counts settle with the last batch.
+  let wasMoving = false;
+  $effect(() => {
+    if (wasMoving && !moving) {
+      void refresh();
+    }
+    wasMoving = moving;
+  });
+
   const run = async (action: () => Promise<unknown>, success: string, failure: string) => {
     busy = true;
     error = '';

@@ -121,6 +121,19 @@ describe('LibrariesManager (FL-78)', () => {
     expect(sdkMock.cancelLibraryScan).toHaveBeenCalledWith({ id: 'lib-1' });
   });
 
+  it('reads the list once more when the last scan ends, so its sizes are current', async () => {
+    const { refresh, rerender, rows, library } = setup(scanOf({}));
+    expect(refresh).not.toHaveBeenCalled();
+
+    const done = scanOf({ status: MediaOperationStatus.Completed, finishedAt: new Date().toISOString() });
+    await rerender({
+      rows: rows.map((row) => ({ ...row, scan: done })),
+      libraries: [{ ...library, scan: done }],
+    });
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('does not poll when nothing is scanning', async () => {
     vi.useFakeTimers();
     const { refresh } = setup(null);

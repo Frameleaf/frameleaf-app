@@ -325,7 +325,8 @@ export const scanMessage = (scan: LibraryScanResponseDto | null | undefined): Sc
       return {
         key: 'frameleaf_libraries_scan_completed',
         values: {
-          matched: Math.max(0, scan.checked - scan.offlined),
+          // the check phase also looks at the items this scan just added; they were not there to match
+          matched: Math.max(0, scan.checked - scan.added - scan.offlined),
           added: scan.added,
           missing: scan.offlined,
         },

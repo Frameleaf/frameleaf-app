@@ -1,9 +1,10 @@
 import { MediaOperationStatus, type AdminConfigDto, type LibraryResponseDto } from '@frameleaf/sdk';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { DEFAULT_EXCLUSION_PATTERNS } from '$lib/frameleaf/libraries';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import en from '../../../../../i18n/en.json';
 import LibrarySettings from './LibrarySettings.svelte';
 
@@ -79,5 +80,18 @@ describe('Folder checks (FL-539)', () => {
     render(LibrarySettings);
 
     expect(await screen.findByRole('heading', { name: 'These apply once you add a folder' })).toBeInTheDocument();
+  });
+
+  it('follows a folder added in the Libraries manager without a reload', async () => {
+    sdkMock.getAllLibraries.mockResolvedValue([]);
+    render(LibrarySettings);
+    expect(await screen.findByRole('heading', { name: 'These apply once you add a folder' })).toBeInTheDocument();
+
+    sdkMock.getAllLibraries.mockResolvedValue([library('Family photos', {})]);
+    eventManager.emit('LibrariesChange');
+
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'These apply once you add a folder' })).not.toBeInTheDocument(),
+    );
   });
 });

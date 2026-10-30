@@ -124,6 +124,23 @@ const REPEATABLE_JOBS = new Set<JobName>([
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
 
+/** Queues whose jobs each name one asset as `data.id`. */
+const ASSET_WORK_QUEUES = [
+  QueueName.ThumbnailGeneration,
+  QueueName.MetadataExtraction,
+  QueueName.VideoConversion,
+  QueueName.Sidecar,
+  QueueName.FaceDetection,
+  QueueName.SmartSearch,
+  QueueName.Ocr,
+  QueueName.DuplicateDetection,
+  QueueName.VideoDuplicateDetection,
+  QueueName.ImageEnrichment,
+  QueueName.ImageDescription,
+  QueueName.NsfwDetection,
+  QueueName.PetRecognition,
+];
+
 @Injectable()
 export class JobRepository {
   private handlers: Partial<Record<JobName, JobMapItem>> = {};
@@ -499,6 +516,23 @@ export class JobRepository {
   }
   empty(name: QueueName) {
     return this.store.clear(name, ['pending', 'waiting']);
+  }
+  /** Removed items' waiting work in the queues that process one item at a time: none of it can run any more. */
+  async cancelAssetJobs(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return;
+    }
+    for (const queue of ASSET_WORK_QUEUES) {
+      await this.store.clear(queue, ['pending', 'waiting'], assetIds);
+    }
+    // facial recognition names a face, and the items' faces go with them
+    const { rows: faces } = await sql<{ id: string }>`select id from asset_face
+      where "assetId" = any(${assetIds}::uuid[])`.execute(this.store.db);
+    await this.store.clear(
+      QueueName.FacialRecognition,
+      ['pending', 'waiting'],
+      faces.map((face) => face.id),
+    );
   }
   clear(name: QueueName, _type: QueueCleanType) {
     return this.store.clear(name, ['failed', 'needs_attention', 'blocked']);
@@ -898,6 +932,25 @@ export class JobRepository {
       from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
       ) jobs where status = any(${statuses}::text[]) order by timestamp desc, id limit ${limit}`.execute(this.store.db);
     return rows;
+  }
+
+  /**
+   * The `job/token` pairs among `claims` whose attempt is proven stopped, by the same evidence the queue
+   * uses: it completed, or its attempt or worker recorded a stop. A cleared token alone is not proof.
+   */
+  async getStoppedClaims(claims: { jobId: string; token: string }[]): Promise<Set<string>> {
+    if (claims.length === 0) {
+      return new Set();
+    }
+    const { rows } = await sql<{ jobId: string; token: string }>`select a."jobId", a.token from job_attempt a
+      join unnest(${claims.map((claim) => claim.jobId)}::uuid[], ${claims.map((claim) => claim.token)}::uuid[])
+        as c("jobId", token) on a."jobId" = c."jobId" and a.token = c.token
+      where (a.outcome = 'completed' and a."finishedAt" is not null)
+        or exists (select 1 from system_metadata m where m.key = 'frameleaf-attempt-evidence:' || a.token::text
+          and m.value->>'jobId' = a."jobId"::text and m.value ? 'stoppedAt')
+        or exists (select 1 from system_metadata m where m.key = 'frameleaf-worker-stopped:' || a."workerId"::text
+          and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt')`.execute(this.store.db);
+    return new Set(rows.map((row) => `${row.jobId}/${row.token}`));
   }
 
   async removeJob(name: JobName, jobID: string): Promise<void> {

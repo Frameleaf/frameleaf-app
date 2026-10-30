@@ -761,6 +761,7 @@ export class LibraryScanService {
     }
 
     const rows: ReturnType<typeof libraryAssetFromFile>[] = [];
+    const sizes = new Map<string, number>();
     for (const filePath of paths) {
       signal.throwIfAborted();
       const assetPath = path.normalize(filePath);
@@ -772,6 +773,7 @@ export class LibraryScanService {
         signal.throwIfAborted();
         const stat = await this.storageRepository.stat(assetPath);
         signal.throwIfAborted();
+        sizes.set(assetPath, stat.size);
         rows.push(
           libraryAssetFromFile(
             { path: assetPath, mtime: stat.mtime },
@@ -800,7 +802,13 @@ export class LibraryScanService {
             rows.map((row) => row.originalPath),
           ),
         );
-        return assets.createAll(rows.filter((row) => fresh.has(row.originalPath)));
+        const created = rows.filter((row) => fresh.has(row.originalPath));
+        const ids = await assets.createAll(created);
+        await assets.setExternalFileSizes(
+          library.id,
+          created.map((row) => ({ path: row.originalPath, size: sizes.get(row.originalPath) ?? 0 })),
+        );
+        return ids;
       },
       {
         examined: paths.length,
