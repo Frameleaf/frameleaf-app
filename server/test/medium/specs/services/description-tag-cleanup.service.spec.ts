@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetMetadataKey, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -70,6 +70,23 @@ const ownerTags = async (ctx: Context, ownerId: string) => {
 const enrichment = async (ctx: Context, assetId: string) => {
   const row = await ctx.get(AssetRepository).getMetadataByKey(assetId, AssetMetadataKey.MlEnrichment);
   return (row?.value as { description: { appliedTagValues: string[]; result: { tags: string[] } } }).description;
+};
+
+/** Waits until a `SELECT … FOR UPDATE` on `tag` in this database is blocked on a lock. */
+const waitForLockedTagSelect = async (ctx: Context) => {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const { rows } = await sql<{ waiting: number }>`
+      select count(*)::int as waiting from pg_stat_activity
+      where datname = current_database() and wait_event_type = 'Lock'
+        and query ilike '%from "tag"%' and query ilike '%for update%'
+    `.execute(ctx.database);
+    if (rows[0]?.waiting > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('The clean-up never waited on the tag lock');
 };
 
 beforeAll(async () => {
@@ -198,7 +215,7 @@ describe(DescriptionTagCleanupService.name, () => {
     });
     await adding;
     const deleting = ctx.get(TagRepository).deleteUnusedTagValues(user.id, ['her']);
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await waitForLockedTagSelect(ctx);
     release();
     await tagging;
 
