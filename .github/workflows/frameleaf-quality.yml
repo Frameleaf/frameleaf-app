@@ -124,17 +124,8 @@ jobs:
           git diff --exit-code -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
           pnpm --filter @frameleaf/sdk build
           pnpm --filter @frameleaf/sdk test
-      - name: Check server types and lint
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
-        run: |
-          pnpm --filter frameleaf check
-          pnpm --filter frameleaf lint
-      - name: Check web types and Svelte components
-        run: |
-          pnpm --filter frameleaf-web exec svelte-kit sync
-          pnpm --filter frameleaf-web check:typescript
-          pnpm --filter frameleaf-web check:svelte
+      # Server lint/types and web types/unit tests run in test.yml (Test & Lint Server, Test Web),
+      # which release qualification already requires on the same SHA; not repeated here.
       - name: Check CLI and migration command
         run: |
           pnpm --filter @frameleaf/cli check
@@ -144,8 +135,6 @@ jobs:
           node packages/cli/bin/immich migrate --help
       - name: Check end-to-end fixtures against generated clients
         run: pnpm --filter frameleaf-e2e check
-      - name: Run web unit tests
-        run: pnpm --filter frameleaf-web test --run
 
   machine-learning:
     if: github.repository == 'Frameleaf/frameleaf-app'
