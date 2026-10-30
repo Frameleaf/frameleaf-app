@@ -835,6 +835,41 @@ describe(TakeoutWorkerService.name, () => {
       expect(operations.complete).toHaveBeenCalled();
     });
 
+    it('counts a photo when a later copy succeeds after the first copy failed (FL-668)', async () => {
+      const copy = itemOf({ id: '6f1c1a0e-2222-4222-8222-222222222222', relativePath: 'Beach/IMG_1.jpg' });
+      pending = [[itemOf(), copy]];
+      repository.countPendingPhotos.mockResolvedValue(1);
+      assetMedia.bulkUploadCheck.mockRejectedValueOnce(new Error('check failed'));
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'failed', 'check failed');
+      expect(repository.itemDone).toHaveBeenCalledWith(copy.id, 'imported');
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ processedUnits: 1, totalUnits: 1 }),
+      );
+    });
+
+    it('does not count a photo none of whose copies came in (FL-668)', async () => {
+      pending = [[itemOf()]];
+      assetMedia.bulkUploadCheck.mockRejectedValue(new Error('check failed'));
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(operations.setBulkResult).toHaveBeenCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ processedUnits: 0, totalUnits: 1 }),
+      );
+      expect(operations.setBulkResult).not.toHaveBeenCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ processedUnits: 1 }),
+      );
+    });
+
     it('links an approved Live Photo once both parts are in the library', async () => {
       repository.countPendingPhotos.mockResolvedValue(0);
       repository.approvedPairs

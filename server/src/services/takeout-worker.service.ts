@@ -665,6 +665,12 @@ export class TakeoutWorkerService {
         seen.add(item.id);
         try {
           await this.importItem(run, item, options);
+          // A photo counts once one of its copies is in; a copy that fails leaves it for the next.
+          const photo = item.checksum.toString('hex');
+          if (!photos.has(photo)) {
+            photos.add(photo);
+            run.processed++;
+          }
         } catch (error) {
           if (error instanceof TakeoutStop || run.controller.signal.aborted) {
             throw error;
@@ -673,11 +679,6 @@ export class TakeoutWorkerService {
             this.logger.warn(`Google Photos import ${row.id}: ${item.relativePath} failed: ${errorMessage(error)}`);
           }
           await this.repository.itemDone(item.id, 'failed', errorMessage(error));
-        }
-        const photo = item.checksum.toString('hex');
-        if (!photos.has(photo)) {
-          photos.add(photo);
-          run.processed++;
         }
         await this.checkpoint(run);
         if (++sinceRefresh >= AUTH_REFRESH_ITEMS) {
