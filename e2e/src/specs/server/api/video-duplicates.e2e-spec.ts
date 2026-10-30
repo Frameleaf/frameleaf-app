@@ -54,6 +54,19 @@ describe('video look-alikes', () => {
     });
     await utils.waitForQueueFinish(admin.accessToken, 'videoDuplicateDetection');
     await utils.waitForQueueFinish(admin.accessToken, 'duplicateDetection');
+  }, 180_000);
+
+  it('fingerprints every frame of all three videos', async () => {
+    // a fingerprint of skipped (null) frames would be rejected without comparing any picture
+    const db = await utils.connectDatabase();
+    const { rows } = await db.query<{ assetId: string; frames: number; informative: number }>(
+      `SELECT "assetId", cardinality(hashes) AS frames, cardinality(array_remove(hashes, NULL)) AS informative
+       FROM asset_video_fingerprint WHERE "assetId" = ANY($1::uuid[])`,
+      [[first, second, trimmed]],
+    );
+    expect(rows.toSorted((a, b) => byId(a.assetId, b.assetId))).toEqual(
+      [first, second, trimmed].toSorted(byId).map((assetId) => ({ assetId, frames: 120, informative: 120 })),
+    );
   });
 
   it('keeps apart two videos that only share a title screen, and groups a trim with its source', async () => {
