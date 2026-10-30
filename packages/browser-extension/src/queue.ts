@@ -197,10 +197,10 @@ function targetUrl(raw: string): string {
     throw invalid();
   }
 }
-/** ISO with an offset and a real calendar date, as the server accepts: Date.parse rolls Feb 30 over to March. */
+/** ISO with an offset and a real calendar date, as the server accepts: Date.parse rolls Feb 30 over to March and 24:00 to the next day. */
 function isIsoTime(value: string) {
   const match =
-    /^(\d{4})-(\d\d)-(\d\d)T\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)$/.exec(
+    /^(\d{4})-(\d\d)-(\d\d)T([01]\d|2[0-3]):\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)$/.exec(
       value,
     );
   if (!match || !Number.isFinite(Date.parse(value))) return false;
