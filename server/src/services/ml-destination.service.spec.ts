@@ -1506,6 +1506,21 @@ describe(MlDestinationService.name, () => {
         }
       });
 
+      it('says which sessions write their 10-bit formats for an SDR picture (FL-674)', async () => {
+        const masters = { codecs: ['hevc_nvenc'], formats: ['mp4', 'mp4-hevc-main10+pq'] };
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([
+          liveSession({ destination: MediaOperationDestination.Local }, masters),
+        ]);
+        mocks.renderWorker.getSessionCapabilities.mockResolvedValue(masters);
+        expect((await sut.getCapabilities()).studio.render[0].candidates?.[0]).not.toHaveProperty('sdrTenBit');
+        const sdrTenBit = { ...masters, formats: [...masters.formats, 'sdr-10bit-v1'] };
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([
+          liveSession({ destination: MediaOperationDestination.Local }, sdrTenBit),
+        ]);
+        mocks.renderWorker.getSessionCapabilities.mockResolvedValue(sdrTenBit);
+        expect((await sut.getCapabilities()).studio.render[0].candidates?.[0]).toMatchObject({ sdrTenBit: true });
+      });
+
       it('publishes export candidates only for live, unrevoked, fresh StudioExport scopes', async () => {
         mocks.renderWorker.listLiveSessions.mockResolvedValue([
           liveSession(

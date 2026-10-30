@@ -85,6 +85,31 @@ export const STUDIO_SAVE_RETRY_MAX_MS = 60_000;
 /** The id a project has before its first save creates it on the server. */
 export const STUDIO_DRAFT_PROJECT_ID = 'draft';
 
+/**
+ * FL-677: a Freecut graph with nothing placed: no timeline item and no nested sequence holding one.
+ * A missing graph counts as empty; any other shape is never called empty here (the server mirrors
+ * this in `isEmptyStudioTimeline`).
+ */
+export const isEmptyStudioGraph = (graph: unknown): boolean => {
+  if (graph === null || graph === undefined) {
+    return true;
+  }
+  const timeline = (graph as { timeline?: unknown }).timeline as
+    { items?: unknown; compositions?: unknown } | null | undefined;
+  if (!timeline || typeof timeline !== 'object' || !Array.isArray(timeline.items) || timeline.items.length > 0) {
+    return false;
+  }
+  const compositions = timeline.compositions;
+  return (
+    compositions === undefined ||
+    (Array.isArray(compositions) &&
+      compositions.every((composition) => {
+        const items = (composition as { items?: unknown } | null)?.items;
+        return !Array.isArray(items) || items.length === 0;
+      }))
+  );
+};
+
 /* ------------------------------------------------------------------ */
 /* Conflicts                                                            */
 /* ------------------------------------------------------------------ */
@@ -730,6 +755,13 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       creating = null;
     }
     const current = !projectId && creating ? creating.draft : draft;
+    // FL-677: opening Studio without a project creates one only once something is placed, so an
+    // untouched visit leaves no empty "Untitled project" behind.
+    if (!projectId && !creating && isEmptyStudioGraph(current.graph)) {
+      draft = null;
+      emit({ status: 'saved' });
+      return;
+    }
     current.requestKey ??= newKey();
     inflightDraft = current;
     const sourceLeaseEpoch = state.project.leaseEpoch;

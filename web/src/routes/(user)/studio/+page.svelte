@@ -86,6 +86,7 @@
   import { rational } from '$lib/frameleaf/studio/rational-time';
   import {
     createStudioProjectSession,
+    isEmptyStudioGraph,
     STUDIO_DRAFT_PROJECT_ID,
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
@@ -1523,6 +1524,7 @@
   {renderEvidence}
   projectId={storedRevision === null ? null : project.id}
   captionLanguages={captionExportLanguages}
+  empty={isEmptyStudioGraph(project.graph)}
   onExport={(choice) => void onExportVideo(choice)}
 />
 

@@ -10008,6 +10008,8 @@ export type StudioRenderCandidateDto = {
     outputFormats: StudioExportFormat[];
     /** This session renders vertical and square exports of its SDR video formats (FL-563) */
     reframe?: boolean;
+    /** This session writes its 10-bit video formats for an SDR picture; without it they are HDR masters only (FL-674) */
+    sdrTenBit?: boolean;
     /** Output formats whose versioned paired SRT profile this same session verified */
     sidecarOutputFormats?: StudioExportFormat[];
 };

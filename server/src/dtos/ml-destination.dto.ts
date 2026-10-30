@@ -378,6 +378,12 @@ const StudioRenderCandidateSchema = z
       .boolean()
       .optional()
       .describe('This session renders vertical and square exports of its SDR video formats (FL-563)'),
+    sdrTenBit: z
+      .boolean()
+      .optional()
+      .describe(
+        'This session writes its 10-bit video formats for an SDR picture; without it they are HDR masters only (FL-674)',
+      ),
     maxBitDepth: z.int(),
     hdr10: z.boolean(),
     dolbyVision: z.boolean(),

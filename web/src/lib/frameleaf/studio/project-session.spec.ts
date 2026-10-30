@@ -13,6 +13,7 @@ import { generatedMediaAlias, storeGeneratedMedia } from './generated-media';
 import { createStudioGeneratedAccess } from './generated-media-client';
 import {
   createStudioProjectSession,
+  isEmptyStudioGraph,
   STUDIO_DRAFT_PROJECT_ID,
   type StudioProjectApi,
   type StudioProjectSession,
@@ -1278,6 +1279,37 @@ describe('studio project session', () => {
       });
       expect(last()).toMatchObject({ status: 'saved', project: { id: 'p-new', revision: 1, hasLease: true } });
       expect(timers.pending().map((timer) => timer.ms)).toEqual([30_000]);
+    });
+
+    it('creates nothing on the server until something is placed (FL-677)', async () => {
+      api.create.mockResolvedValue(detail({ id: 'p-new', name: 'Untitled project', revision: 1 }));
+      const session = create(null);
+      await session.open();
+
+      // Opening Studio stages the editor's empty project: it stays a draft in this tab.
+      const empty = { id: 'g', timeline: { tracks: [{ id: 't1' }], items: [], compositions: [] } };
+      session.stageEditor(empty, ['editor.save'], 0, 0);
+      await session.flush();
+      expect(api.create).not.toHaveBeenCalled();
+      expect(last()).toMatchObject({ status: 'saved', hasDraft: false, project: { id: STUDIO_DRAFT_PROJECT_ID } });
+
+      // The first clip creates it.
+      const placed = { ...empty, timeline: { ...empty.timeline, items: [{ id: 'clip', mediaId: 'a' }] } };
+      session.stageEditor(placed, ['editor.save'], 0, 0);
+      await session.flush();
+      expect(api.create).toHaveBeenCalledOnce();
+      expect(api.create.mock.calls[0][0].envelope.graph).toEqual(placed);
+      expect(last()).toMatchObject({ status: 'saved', project: { id: 'p-new' } });
+    });
+
+    it('calls a graph empty only when nothing is placed (FL-677)', () => {
+      expect(isEmptyStudioGraph(null)).toBe(true);
+      expect(isEmptyStudioGraph({ timeline: { items: [] } })).toBe(true);
+      expect(isEmptyStudioGraph({ timeline: { items: [], compositions: [{ id: 'c', items: [] }] } })).toBe(true);
+      expect(isEmptyStudioGraph({ timeline: { items: [{ id: 'clip' }] } })).toBe(false);
+      expect(isEmptyStudioGraph({ timeline: { items: [], compositions: [{ id: 'c', items: [{}] }] } })).toBe(false);
+      // Other shapes are left to the renderer.
+      expect(isEmptyStudioGraph({ tracks: [] })).toBe(false);
     });
 
     it('serializes creation and retries a lost response with the same request before saving to the returned project', async () => {

@@ -35,6 +35,7 @@
    * defaults must change; submission still requires the full chosen combination to be supported.
    * The time, size and cost rows are not shown, because nothing on the server measures them for a Studio export yet and the prototype's figures are simulated.
    */
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import {
     MediaOperationDestination,
@@ -82,8 +83,11 @@
     hdrEnabled = false,
     projectId = null,
     captionLanguages = [],
+    empty = false,
     onExport,
   }: {
+    /** FL-677: nothing is placed on the timeline, so there is nothing to export yet. */
+    empty?: boolean;
     /** FL-641: other caption languages that go with the export as subtitle files, already named. */
     captionLanguages?: readonly string[];
     open?: boolean;
@@ -286,15 +290,47 @@
     }
   });
 
-  // Every opening starts from the prototype's defaults.
+  /** FL-674: the project's picture, which decides whether a 10-bit format is an HDR master or SDR. */
+  const picture = $derived({ hdrPicture: outputIntent === 'hdr' });
+
+  /**
+   * FL-674: where an opening starts. The prototype's defaults (HEVC Main10 at 2160p) when the render
+   * workers can produce them; otherwise the first video format in the list they can produce, at the
+   * largest resolution they can produce it, so the dialog never opens on a choice that is refused.
+   * With nothing supported it keeps the prototype's defaults and says why.
+   */
+  const startingChoice = (): { format: StudioExportFormat; resolution: StudioExportResolution } => {
+    const fallback = { format: StudioExportFormat.Mp4HevcMain10, resolution: StudioExportResolution.$2160P };
+    const evidence = untrack(() => renderEvidence);
+    const hdrPicture = untrack(() => outputIntent === 'hdr');
+    for (const { value: candidate } of [...videoFormats, ...moreVideoFormats]) {
+      for (const { value: size } of videoResolutions) {
+        const supported = evaluateStudioRender(evidence, MediaOperationDestination.Local, {
+          format: candidate,
+          color: StudioExportColor.Preserve,
+          resolution: size,
+          quality: StudioExportQuality.High,
+          subtitleMode: StudioExportSubtitleMode.Burn,
+          hdrPicture,
+        }).supported;
+        if (supported) {
+          return { format: candidate, resolution: size };
+        }
+      }
+    }
+    return fallback;
+  };
+
+  // Every opening starts from the prototype's defaults, or the best the render workers can produce.
   $effect(() => {
     if (!open) {
       return;
     }
 
-    format = StudioExportFormat.Mp4HevcMain10;
+    const start = startingChoice();
+    format = start.format;
     color = StudioExportColor.Preserve;
-    resolution = StudioExportResolution.$2160P;
+    resolution = start.resolution;
     quality = StudioExportQuality.High;
     declarePqMastering = false;
     maxNits = undefined;
@@ -373,13 +409,20 @@
   );
 
   const choices = $derived(
-    studioRenderChoices(renderEvidence, destination, { format, color, resolution, ...(reshaped && { shape }) }),
+    studioRenderChoices(renderEvidence, destination, {
+      format,
+      color,
+      resolution,
+      ...picture,
+      ...(reshaped && { shape }),
+    }),
   );
   const availableChoices = $derived(
     studioRenderChoices(renderEvidence, destination, {
       format,
       color: StudioExportColor.Preserve,
       resolution: StudioExportResolution.$720P,
+      ...picture,
     }),
   );
   const verdict = $derived(
@@ -389,6 +432,7 @@
       resolution,
       ...(!photo && { quality }),
       ...(!photo && !audioOnly && { subtitleMode }),
+      ...picture,
       ...(reshaped && { shape }),
     }),
   );
@@ -399,6 +443,7 @@
       resolution,
       subtitleMode: StudioExportSubtitleMode.Sidecar,
       quality,
+      ...picture,
       ...(reshaped && { shape }),
     }).supported,
   );
@@ -409,6 +454,7 @@
       resolution,
       subtitleMode: StudioExportSubtitleMode.Embedded,
       quality,
+      ...picture,
       ...(reshaped && { shape }),
     }).supported,
   );
@@ -440,6 +486,7 @@
   });
   const canExport = $derived(
     !busy &&
+      !empty &&
       verdict.supported &&
       (!reshaped || framingState === 'ready' || framingState === 'failed') &&
       (!needsMastering || mastering !== null) &&
@@ -459,6 +506,7 @@
       format: preset.format,
       color: StudioExportColor.Preserve,
       resolution: preset.resolution,
+      ...picture,
     }).supported;
   const activePreset = $derived(
     presets.find(
@@ -742,6 +790,12 @@
       </p>
     {/if}
 
+    {#if empty}
+      <p class="note warning" role="status" data-testid="studio-export-empty">
+        <Icon icon={mdiAlertOutline} size="14" aria-hidden={true} />
+        {$t('frameleaf_studio_export_empty')}
+      </p>
+    {/if}
     {#if !verdict.supported}
       <p class="note warning" role="status">
         <Icon icon={mdiAlertOutline} size="14" aria-hidden={true} />

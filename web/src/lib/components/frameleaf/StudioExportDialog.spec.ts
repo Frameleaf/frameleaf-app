@@ -49,6 +49,8 @@ describe('Studio export dialog', () => {
           maxBitDepth: row.maxBitDepth,
           hdr10: row.hdr10,
           dolbyVision: row.dolbyVision,
+          // FL-674: this worker writes its 10-bit formats for an SDR picture too.
+          sdrTenBit: true,
         },
       ],
       ...overrides,
@@ -465,10 +467,10 @@ describe('Studio export dialog', () => {
       onExport,
     });
 
-    // 2160p needs 8 GB: refused before anything is submitted.
-    expect(screen.getByText('frameleaf_studio_render_refusal_insufficient_memory')).toBeInTheDocument();
-    expect(exportButton()).toBeDisabled();
+    // FL-674: 2160p needs 8 GB, so the dialog opens on the largest resolution this worker can render.
     const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
+    expect(resolution).toHaveValue(StudioExportResolution.$1080P);
+    expect(screen.queryByText('frameleaf_studio_render_refusal_insufficient_memory')).not.toBeInTheDocument();
     const option = (value: string) =>
       within(resolution)
         .getAllByRole('option')
@@ -482,13 +484,72 @@ describe('Studio export dialog', () => {
       expect.arrayContaining([StudioExportFormat.WebmAv1, StudioExportFormat.Prores422Hq]),
     );
 
+    // Asking for 2160p anyway is refused before anything is submitted, with the reason.
+    await fireEvent.change(resolution, { target: { value: StudioExportResolution.$2160P } });
+    expect(screen.getByText('frameleaf_studio_render_refusal_insufficient_memory')).toBeInTheDocument();
+    expect(exportButton()).toBeDisabled();
+
     await fireEvent.change(resolution, { target: { value: StudioExportResolution.$1080P } });
-    expect(screen.queryByText('frameleaf_studio_render_refusal_insufficient_memory')).not.toBeInTheDocument();
     await fireEvent.click(exportButton());
-    expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ resolution: StudioExportResolution.$1080P }));
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ format: StudioExportFormat.Mp4HevcMain10, resolution: StudioExportResolution.$1080P }),
+    );
   });
 
-  it('keeps Studio export and Memory highlight in agreement for split-worker and supported evidence (FL-342)', () => {
+  it('opens on what the bundled CPU worker can render and never offers Main10 for an SDR project (FL-674)', async () => {
+    const onExport = vi.fn();
+    // The bundled worker: a software renderer admitted with 7 GiB, 10-bit only as HDR masters.
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    const renderEvidence = [{ ...bundled, candidates: [candidate] }];
+    render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence, onExport });
+
+    const format = screen.getByLabelText('frameleaf_studio_export_format');
+    const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
+    expect(format).toHaveValue(StudioExportFormat.Mp4H264);
+    expect(resolution).toHaveValue(StudioExportResolution.$1440P);
+    expect(exportButton()).not.toBeDisabled();
+    const main10 = within(format)
+      .getAllByRole('option')
+      .find((item) => (item as HTMLOptionElement).value === StudioExportFormat.Mp4HevcMain10) as HTMLOptionElement;
+    expect(main10).toBeDisabled();
+    expect(main10.title).toBe('frameleaf_studio_render_refusal_incompatible_color');
+    expect(screen.getByRole('radio', { name: 'frameleaf_studio_export_preset_best' })).toBeDisabled();
+
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ format: StudioExportFormat.Mp4H264, resolution: StudioExportResolution.$1440P }),
+    );
+  });
+
+  it('keeps Main10 for an HDR project on the bundled worker, where it is an HDR master (FL-674)', () => {
+    const bundled = evidence({ gpuMemoryBytes: 7 * 1024 ** 3 });
+    const { sdrTenBit: _, ...candidate } = bundled.candidates![0];
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      outputIntent: 'hdr',
+      renderEvidence: [{ ...bundled, candidates: [candidate] }],
+      onExport: vi.fn(),
+    });
+    expect(screen.getByLabelText('frameleaf_studio_export_format')).toHaveValue(StudioExportFormat.Mp4HevcMain10);
+    expect(screen.getByLabelText('frameleaf_studio_export_resolution')).toHaveValue(StudioExportResolution.$1440P);
+    expect(exportButton()).not.toBeDisabled();
+  });
+
+  it('refuses an empty timeline before anything is queued, and says why (FL-677)', () => {
+    render(StudioExportDialog, {
+      open: true,
+      sequenceName: 'Lake trip',
+      renderEvidence: [evidence()],
+      empty: true,
+      onExport: vi.fn(),
+    });
+    expect(screen.getByTestId('studio-export-empty')).toHaveTextContent('frameleaf_studio_export_empty');
+    expect(exportButton()).toBeDisabled();
+  });
+
+  it('keeps Studio export and Memory highlight in agreement for split-worker and supported evidence (FL-342)', async () => {
     const [candidate] = evidence().candidates!;
     for (const candidates of [
       [
@@ -503,6 +564,13 @@ describe('Studio export dialog', () => {
         sequenceName: 'Lake trip',
         renderEvidence,
         onExport: vi.fn(),
+      });
+      // A highlight renders with the Best quality settings; compare the export at the same settings.
+      await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), {
+        target: { value: StudioExportFormat.Mp4HevcMain10 },
+      });
+      await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_resolution'), {
+        target: { value: StudioExportResolution.$2160P },
       });
       const exportDisabled = (exportButton() as HTMLButtonElement).disabled;
       studio.unmount();
@@ -520,7 +588,7 @@ describe('Studio export dialog', () => {
     }
   });
 
-  it('can reach H264/720p when qualified export proof cannot support either default (FL-342)', async () => {
+  it('opens on H264/720p when qualified export proof cannot support either default (FL-342, FL-674)', async () => {
     const onExport = vi.fn();
     const [candidate] = evidence().candidates!;
     render(StudioExportDialog, {
@@ -542,20 +610,8 @@ describe('Studio export dialog', () => {
         }),
       ],
     });
-    const format = screen.getByLabelText('frameleaf_studio_export_format');
-    const h264 = within(format)
-      .getAllByRole('option')
-      .find((item) => (item as HTMLOptionElement).value === StudioExportFormat.Mp4H264) as HTMLOptionElement;
-    expect(h264).not.toBeDisabled();
-    expect(exportButton()).toBeDisabled();
-    await fireEvent.change(format, { target: { value: StudioExportFormat.Mp4H264 } });
-    expect(exportButton()).toBeDisabled();
-    const resolution = screen.getByLabelText('frameleaf_studio_export_resolution');
-    const smallest = within(resolution)
-      .getAllByRole('option')
-      .find((item) => (item as HTMLOptionElement).value === StudioExportResolution.$720P) as HTMLOptionElement;
-    expect(smallest).not.toBeDisabled();
-    await fireEvent.change(resolution, { target: { value: StudioExportResolution.$720P } });
+    expect(screen.getByLabelText('frameleaf_studio_export_format')).toHaveValue(StudioExportFormat.Mp4H264);
+    expect(screen.getByLabelText('frameleaf_studio_export_resolution')).toHaveValue(StudioExportResolution.$720P);
     expect(exportButton()).not.toBeDisabled();
     await fireEvent.click(exportButton());
     expect(onExport).toHaveBeenCalledWith({

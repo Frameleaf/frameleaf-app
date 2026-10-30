@@ -37,6 +37,7 @@ import { StudioExportService, settleStudioExportPublication } from 'src/services
 import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import * as ownerPaths from 'src/utils/cloud-backup-owner-path.js';
 import { tryPromise } from 'src/utils/promise.js';
+import { SDR_TEN_BIT_PROFILE } from 'src/utils/render-admission.js';
 import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -1428,12 +1429,50 @@ describe(StudioExportService.name, () => {
       expect(repository.createWithRender).not.toHaveBeenCalled();
     });
 
+    it('refuses a 10-bit format for an SDR picture unless a worker writes one, not only HDR masters (FL-674)', async () => {
+      repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
+      const precision = { maxBitDepth: 10, hdr10: true, dolbyVision: false };
+      // The bundled worker: Main10 proven only as HDR10 and HLG masters.
+      mockRenderSessions([
+        liveSession({
+          codecs: ['hevc_nvenc', 'h264_nvenc'],
+          formats: ['mp4', 'mp4-hevc-main10', 'mp4-hevc-main10+pq', 'mp4-hevc-main10+hlg'],
+          colorPrecision: precision,
+        }),
+      ]);
+      await expect(snapshotOf(clipGraph(), { format: 'mp4-hevc-main10' })).rejects.toMatchObject({
+        response: { code: 'studio_export_unsupported', reason: 'incompatible-color' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+      // The same worker still takes the 8-bit format for that project.
+      await expect(snapshotOf(clipGraph(), { format: 'mp4-h264' })).resolves.toBeDefined();
+
+      mockRenderSessions([
+        liveSession({
+          codecs: ['hevc_nvenc', 'h264_nvenc'],
+          formats: ['mp4', SDR_TEN_BIT_PROFILE],
+          colorPrecision: precision,
+        }),
+      ]);
+      await expect(snapshotOf(clipGraph(), { format: 'mp4-hevc-main10' })).resolves.toBeDefined();
+    });
+
+    it('refuses an empty timeline before a job is queued (FL-677)', async () => {
+      const empty = { ...clipGraph(), timeline: { ...clipGraph().timeline, items: [] } };
+      await expect(snapshotOf(empty, { format: 'mp4-h264' }, [])).rejects.toMatchObject({
+        response: { code: 'studio_export_empty' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
     it('promises the widest source layout, or a stereo downmix only when asked for', async () => {
       const surround = { codecName: 'eac3', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 };
       repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { audio: surround })]);
       mockRenderSessions([
         liveSession({
           codecs: ['hevc_nvenc', 'h264_nvenc'],
+          // FL-674: this worker writes Main10 for an SDR picture.
+          formats: ['mp4', SDR_TEN_BIT_PROFILE],
           colorPrecision: { maxBitDepth: 10, hdr10: false, dolbyVision: false },
         }),
       ]);

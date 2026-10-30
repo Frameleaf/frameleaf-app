@@ -14877,6 +14877,7 @@
   "frameleaf_studio_export_color_preserve": "Preserve source",
   "frameleaf_studio_export_destination": "Render on",
   "frameleaf_studio_export_dolby_note": "This server can't make Dolby Vision video yet. Choose HDR10 or Preserve source instead.",
+  "frameleaf_studio_export_empty": "There's nothing on the timeline yet. Add a photo or video, then export.",
   "frameleaf_studio_export_failed": "The export could not be started.",
   "frameleaf_studio_export_format": "Format",
   "frameleaf_studio_export_format_audio_aac": "AAC (M4A) · sound only",

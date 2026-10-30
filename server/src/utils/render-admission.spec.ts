@@ -4,6 +4,7 @@ import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReaso
 import {
   ClaimAdmissionInput,
   RenderOutputRefusal,
+  SDR_TEN_BIT_PROFILE,
   SessionAdmissionInput,
   evaluateClaimAdmission,
   evaluateRenderOutput,
@@ -754,6 +755,22 @@ describe('evaluateRenderOutput (FL-42)', () => {
       transfer: 'arib-std-b67' as const,
     };
     const pq = { ...hlg, color: 'hdr10', transfer: 'smpte2084' as const };
+
+    it('writes Main10 only as a master: an SDR picture in a 10-bit format needs the SDR 10-bit profile (FL-674)', () => {
+      const sdrPicture = { format: 'mp4-hevc-main10', color: 'preserve', resolution: '1080p', transfer: null };
+      expect(evaluateRenderOutput([bundled], sdrPicture)).toEqual({
+        supported: false,
+        refusal: RenderOutputRefusal.IncompatibleColor,
+      });
+      // Before the contract is sealed (no transfer known) the first check keeps its old meaning.
+      expect(evaluateRenderOutput([bundled], { ...sdrPicture, transfer: undefined })).toEqual({ supported: true });
+      // HDR masters and 8-bit formats are unaffected.
+      expect(evaluateRenderOutput([bundled], pq)).toEqual({ supported: true });
+      expect(evaluateRenderOutput([bundled], { ...sdrPicture, format: 'mp4-hevc' })).toEqual({ supported: true });
+      expect(
+        evaluateRenderOutput([{ ...bundled, formats: [...bundled.formats, SDR_TEN_BIT_PROFILE] }], sdrPicture),
+      ).toEqual({ supported: true });
+    });
 
     it('names the exact master evidence', () => {
       expect(hdrMasterEvidence('mp4-hevc-main10', 'smpte2084')).toBe('mp4-hevc-main10+pq');

@@ -169,6 +169,8 @@ export const setupMemoryMockApiRoutes = async (
                   maxBitDepth: 10,
                   hdr10: true,
                   dolbyVision: false,
+                  // FL-674: a GPU worker that writes Main10 for an SDR picture too.
+                  sdrTenBit: true,
                 },
               ],
             },

@@ -37,6 +37,7 @@ const evidence = (overrides: Partial<StudioRenderEvidenceDto> = {}): StudioRende
         maxBitDepth: row.maxBitDepth,
         hdr10: row.hdr10,
         dolbyVision: row.dolbyVision,
+        sdrTenBit: true,
       },
     ],
     ...overrides,
@@ -150,6 +151,36 @@ describe('Studio render output (FL-42)', () => {
       supported: false,
       refusal: 'insufficient-memory',
     });
+  });
+
+  it('offers a 10-bit format for an SDR picture only from a session that writes one (FL-674)', () => {
+    const lan = MediaOperationDestination.Lan;
+    const { sdrTenBit: _, ...mastersOnly } = evidence().candidates![0];
+    const bundled = evidence({ candidates: [mastersOnly] });
+    for (const format of [
+      StudioExportFormat.Mp4HevcMain10,
+      StudioExportFormat.WebmAv1,
+      StudioExportFormat.Prores422Hq,
+    ]) {
+      const tenBit = { ...settings, format, resolution: StudioExportResolution.$1080P };
+      expect(
+        evaluateStudioRender([{ ...bundled, candidates: [{ ...mastersOnly, outputFormats: [format] }] }], lan, tenBit),
+      ).toEqual({
+        supported: false,
+        refusal: 'incompatible-color',
+      });
+    }
+    const sdr = { ...settings, resolution: StudioExportResolution.$1080P };
+    // An HDR project's Main10 is an HDR master, which the bundled worker writes; so is asking for HDR10.
+    expect(evaluateStudioRender([bundled], lan, { ...sdr, hdrPicture: true })).toEqual({ supported: true });
+    expect(evaluateStudioRender([bundled], lan, { ...sdr, color: StudioExportColor.Hdr10 })).toEqual({
+      supported: true,
+    });
+    // 8-bit formats are unaffected, and a worker that verified 10-bit SDR keeps Main10.
+    expect(evaluateStudioRender([bundled], lan, { ...sdr, format: StudioExportFormat.Mp4H264 })).toEqual({
+      supported: true,
+    });
+    expect(evaluateStudioRender([evidence()], lan, sdr)).toEqual({ supported: true });
   });
 
   it('accepts a combination a qualified session verified', () => {

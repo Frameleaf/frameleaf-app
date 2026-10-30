@@ -32,6 +32,11 @@ export type StudioRenderSettings = {
   quality?: StudioExportQuality;
   /** FL-563: vertical and square need SDR video and a session that reframes (`reframe-v1`). */
   shape?: StudioExportShape;
+  /**
+   * FL-674: the project keeps an HDR picture. Without it the picture is SDR, and a 10-bit video
+   * format needs a session that writes one for SDR (`sdrTenBit`), not only HDR masters.
+   */
+  hdrPicture?: boolean;
 };
 
 export type StudioRenderVerdict = { supported: true } | { supported: false; refusal: StudioRenderRefusal };
@@ -85,13 +90,24 @@ export const STUDIO_AUDIO_FORMATS: readonly StudioExportFormat[] = [
   StudioExportFormat.AudioWav,
 ];
 
+const isVideoFormat = (format: StudioExportFormat) =>
+  !STUDIO_STILL_FORMATS.includes(format) && !STUDIO_AUDIO_FORMATS.includes(format);
+
 /** SDR video formats: the only ones that can carry captions as a file or a track. */
-const isSdrVideoFormat = (format: StudioExportFormat) =>
-  !STUDIO_STILL_FORMATS.includes(format) && !STUDIO_AUDIO_FORMATS.includes(format) && FORMAT_BIT_DEPTH[format] === 8;
+const isSdrVideoFormat = (format: StudioExportFormat) => isVideoFormat(format) && FORMAT_BIT_DEPTH[format] === 8;
 
 const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderCandidateDto) => {
   const depth = Math.max(FORMAT_BIT_DEPTH[settings.format], settings.color === StudioExportColor.Preserve ? 8 : 10);
   if (evidence.maxBitDepth < depth) {
+    return false;
+  }
+  if (
+    settings.color === StudioExportColor.Preserve &&
+    !settings.hdrPicture &&
+    isVideoFormat(settings.format) &&
+    FORMAT_BIT_DEPTH[settings.format] > 8 &&
+    evidence.sdrTenBit !== true
+  ) {
     return false;
   }
   if (settings.format === StudioExportFormat.HdrJpeg || settings.format === StudioExportFormat.HdrHeic) {
