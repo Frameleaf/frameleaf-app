@@ -77,6 +77,7 @@
     thumbnailController = new AbortController();
     thumbnailQueue.length = 0;
     queuedThumbnails.clear();
+    previewBudgetSpent = false;
     thumbnailRound++;
     for (const url of Object.values(thumbnails)) URL.revokeObjectURL(url);
     thumbnails = {};
@@ -120,9 +121,12 @@
   const PREVIEW_BUDGET = 512 * 1024 * 1024;
   const cachedBytes = () =>
     [...imageBytes.values()].reduce((total, value) => total + value.size, 0);
+  /** Set the first time a preview doesn't fit; prefetching then stops until previews are cleared. */
+  let previewBudgetSpent = false;
   function pumpThumbnails() {
     // Once the preview cache is full, rows keep their placeholder and saving downloads them.
-    if (cachedBytes() >= PREVIEW_BUDGET) {
+    // ponytail: sizes are only known after a download, so at most the 4 in flight are wasted
+    if (previewBudgetSpent || cachedBytes() >= PREVIEW_BUDGET) {
       thumbnailQueue.length = 0;
       return;
     }
@@ -151,7 +155,11 @@
         !preview?.discovery.candidates.some((item) => item.id === candidate.id)
       )
         return;
-      if (cachedBytes() + blob.size > PREVIEW_BUDGET) throw new Error();
+      if (cachedBytes() + blob.size > PREVIEW_BUDGET) {
+        previewBudgetSpent = true;
+        thumbnailQueue.length = 0;
+        throw new Error();
+      }
       imageBytes.set(candidate.id, blob);
       thumbnails[candidate.id] = URL.createObjectURL(blob);
     } catch {
