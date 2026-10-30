@@ -21,6 +21,7 @@ import type { SearchFilter } from 'src/dtos/search.dto.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile, LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
@@ -2045,10 +2046,14 @@ export class AssetRepository {
     | undefined
   > {
     const rows = await sql<{
+      ownerId: string;
+      type: AssetType;
       originalPath: string;
       reservationTemporaryPath: string | null;
     }>`
       SELECT
+        asset."ownerId" AS "ownerId",
+        asset.type AS "type",
         asset."originalPath" AS "originalPath",
         NULL::text AS "reservationTemporaryPath"
       FROM public.asset asset
@@ -2064,12 +2069,6 @@ export class AssetRepository {
       .select(['id', 'type', 'path', 'isEdited'])
       .where('assetId', '=', asUuid(id))
       .execute();
-    // the asset's video duplicate frames
-    const frames = await sql<{
-      path: string;
-    }>`
-      SELECT path FROM public.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
-    `.execute(tx);
     // restorations are removed with the asset (ON DELETE CASCADE), so their outputs are read here
     const restorations = await tx
       .selectFrom('asset_restoration')
@@ -2096,7 +2095,9 @@ export class AssetRepository {
     return {
       ...row,
       files,
-      videoDuplicateFramePaths: frames.rows.map(({ path }) => path),
+      // FL-651: the CLIP frames of the retired video duplicate check, which may still be on disk
+      videoDuplicateFramePaths:
+        row.type === AssetType.Video ? StorageCore.getLegacyVideoDuplicateFramePaths(row.ownerId, id) : [],
       restorationPaths,
       derivedPaths: [...new Set([...restorationPaths, ...(developPaths ?? []), ...studioHdrPaths])],
       ...(videoEditPaths && videoEditPaths.length > 0 && { videoEditPaths }),

@@ -132,10 +132,10 @@ describe(JobService.name, () => {
       expect(mocks.asset.getByIdsWithAllRelationsButStacks).not.toHaveBeenCalled();
     });
 
-    it('should not run duplicate detection follow-up when video duplicate frame generation is skipped', async () => {
+    it('should not run duplicate detection follow-up when a video fingerprint is skipped', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Skipped);
 
-      const job: JobItem = { name: JobName.AssetGenerateVideoDuplicateFrames, data: { id: 'asset-1' } };
+      const job: JobItem = { name: JobName.AssetVideoFingerprint, data: { id: 'asset-1' } };
       await sut.onJobRun(QueueName.VideoDuplicateDetection, job);
 
       expect(mocks.job.queue).not.toHaveBeenCalledWith({

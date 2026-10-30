@@ -25,7 +25,12 @@ const setup = (rows: QueueJobRow[]) => {
 
 describe('public queue job compatibility (FL-283)', () => {
   it('retains every legacy job name in runtime validation and the response schema', () => {
-    const internal = new Set<JobName>([JobName.PhotographyWorkflowRender, JobName.AssetWarmFilmstrip]);
+    const internal = new Set<JobName>([
+      JobName.PhotographyWorkflowRender,
+      JobName.AssetWarmFilmstrip,
+      JobName.AssetVideoFingerprintQueueAll,
+      JobName.AssetVideoFingerprint,
+    ]);
     const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));
     const schema = QueueJobResponseDto.schema.shape.name;
 

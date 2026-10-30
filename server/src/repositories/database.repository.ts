@@ -27,12 +27,7 @@ import { vectorIndexQuery } from 'src/utils/database.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
 
-const CLIP_TABLES = [
-  'smart_search',
-  'smart_search_description',
-  'asset_video_duplicate_frame',
-  'video_moment_frame_embedding',
-] as const;
+const CLIP_TABLES = ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'] as const;
 
 export const getVectorExtension = (_runner?: Kysely<DB>): Promise<VectorExtension> =>
   Promise.resolve(DatabaseExtension.Vector);
@@ -53,7 +48,6 @@ const MEDIA_PATH_COLUMNS: ReadonlyArray<readonly [string, readonly string[]]> = 
   ['physical_file', ['path']],
   ['physical_file_trash', ['path']],
   ['move_history', ['oldPath', 'newPath']],
-  ['asset_video_duplicate_frame', ['path']],
   ['video_moment_frame', ['path']],
   ['video_edit_version', ['masterPath', 'proxyPath', 'sourcePath']],
   ['asset_develop_revision', ['masterPath', 'previewPath', 'hdrMasterPath', 'hdrPreviewPath']],
@@ -363,7 +357,7 @@ export class DatabaseRepository {
       .setIsolationLevel('read committed')
       .execute(async (trx) => {
         await this.assertLegacyClipIndex(trx);
-        await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('asset_video_duplicate_frame')}, ${sql.table('video_moment_frame_embedding')}`.execute(
+        await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('video_moment_frame_embedding')}`.execute(
           trx,
         );
       });

@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Stats } from 'node:fs';
 import { Writable } from 'node:stream';
-import { CacheControl, JobStatus } from 'src/enum.js';
+import { AssetVisibility, CacheControl, JobStatus } from 'src/enum.js';
 import { StudioMediaService, fillMissingFrames, getStudioMediaFolder } from 'src/services/studio-media.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -218,6 +218,65 @@ describe(StudioMediaService.name, () => {
       it('skips anything that is not a video', async () => {
         mocks.asset.getForVideo.mockResolvedValue(undefined);
         await expect(sut.handleWarmFilmstrip({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+      });
+    });
+
+    describe('handleVideoFingerprint (FL-651)', () => {
+      const index = {
+        assetId,
+        version,
+        durationMs: 2000,
+        frameWidth: 320,
+        frameHeight: 180,
+        frames: [
+          { index: 0, timeMs: 500, x: 0, y: 0 },
+          { index: 1, timeMs: 1500, x: 320, y: 0 },
+        ],
+      };
+
+      beforeEach(() => {
+        mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
+          id: assetId,
+          ownerId,
+          visibility: AssetVisibility.Timeline,
+        } as never);
+        mocks.storage.readFile.mockResolvedValue(Buffer.from(JSON.stringify(index)));
+        mocks.duplicateRepository.upsertVideoFingerprint.mockResolvedValue();
+      });
+
+      it("hashes every frame of the seek-bar filmstrip and removes the retired check's frames", async () => {
+        const rising = Array.from({ length: 72 }, (_, pixel) => (pixel % 9) * 20);
+        const black = Array.from({ length: 72 }, () => 0);
+        mocks.media.filmstripFrameGrids.mockResolvedValue([rising, black]);
+        mocks.storage.checkFileExists.mockImplementation((path) =>
+          Promise.resolve(!path.includes('_video_duplicate_7')),
+        );
+
+        await expect(sut.handleVideoFingerprint({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+        expect(mocks.media.filmstripFrameGrids).toHaveBeenCalledWith(`${folder}/filmstrip-${version}-120x180.jpg`, [
+          { left: 0, top: 0, width: 320, height: 180 },
+          { left: 320, top: 0, width: 320, height: 180 },
+        ]);
+        expect(mocks.duplicateRepository.upsertVideoFingerprint).toHaveBeenCalledWith({
+          assetId,
+          durationMs: 2000,
+          hashes: ['-1', null],
+        });
+        const { files } = (mocks.job.queue.mock.calls[0][0] as { data: { files: string[] } }).data;
+        expect(files).toHaveLength(7);
+        expect(files[0]).toMatch(new RegExp(String.raw`${assetId}_video_duplicate_0\.jpeg$`));
+      });
+
+      it('skips locked videos', async () => {
+        mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
+          id: assetId,
+          ownerId,
+          visibility: AssetVisibility.Locked,
+        } as never);
+        await expect(sut.handleVideoFingerprint({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+        expect(mocks.duplicateRepository.upsertVideoFingerprint).not.toHaveBeenCalled();
       });
     });
 

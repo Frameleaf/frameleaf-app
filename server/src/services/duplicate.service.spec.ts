@@ -7,12 +7,19 @@ import { DuplicateService } from 'src/services/duplicate.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { probeStub } from 'test/fixtures/media.stub.js';
 import { getForDuplicate } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 vitest.useFakeTimers();
+
+/** A minute of 4-frame scenes from `seed`, as stored. */
+const timeline = (seed: number) => ({
+  durationMs: 60_000,
+  hashes: Array.from({ length: 120 }, (_, index) =>
+    BigInt.asIntN(64, BigInt(seed * 1000 + Math.floor(index / 4) + 1) * 0x9e_37_79_b9_7f_4a_7c_15n).toString(),
+  ),
+});
 
 const hasEmbedding = {
   id: 'asset-1',
@@ -217,326 +224,35 @@ describe(DuplicateService.name, () => {
     });
   });
 
-  describe('handleQueueGenerateVideoDuplicateFrames', () => {
-    beforeEach(() => {
-      mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: {
-          enabled: true,
-          clip: { enabled: true },
-          duplicateDetection: {
-            enabled: true,
-            enhancedVideo: {
-              enabled: true,
-              frameCount: 4,
-              minMatchingFrames: 2,
-              maxDistance: 0.01,
-            },
-          },
-        },
-      });
-    });
-
-    it('should queue videos with missing enhanced frames', async () => {
+  describe('handleQueueVideoFingerprints', () => {
+    it('should queue videos without a fingerprint', async () => {
       const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.selectionForVideoDuplicateFrames.mockReturnValue({ selected: [asset] } as never);
+      mocks.assetJob.selectionForVideoFingerprint.mockReturnValue({ selected: [asset] } as never);
 
-      await expect(sut.handleQueueGenerateVideoDuplicateFrames({})).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleQueueVideoFingerprints({})).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.assetJob.selectionForVideoDuplicateFrames).toHaveBeenCalledWith({ force: undefined, frameCount: 4 });
+      expect(mocks.assetJob.selectionForVideoFingerprint).toHaveBeenCalledWith(undefined);
       expect(mocks.job.queueSelection).toHaveBeenCalledWith(
-        JobName.AssetGenerateVideoDuplicateFrames,
-        mocks.assetJob.selectionForVideoDuplicateFrames.mock.results[0].value,
+        JobName.AssetVideoFingerprint,
+        mocks.assetJob.selectionForVideoFingerprint.mock.results[0].value,
       );
     });
 
-    it('should skip when enhanced video duplicate detection is disabled', async () => {
+    it('should skip when video comparison is off', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: {
-          enabled: true,
-          clip: { enabled: true },
-          duplicateDetection: {
-            enabled: true,
-            enhancedVideo: {
-              enabled: false,
-              frameCount: 4,
-              minMatchingFrames: 2,
-              maxDistance: 0.01,
-            },
-          },
-        },
+        machineLearning: { duplicateDetection: { enhancedVideo: { enabled: false } } },
       });
 
-      await expect(sut.handleQueueGenerateVideoDuplicateFrames({})).resolves.toBe(JobStatus.Skipped);
-      expect(mocks.assetJob.selectionForVideoDuplicateFrames).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      await expect(sut.handleQueueVideoFingerprints({})).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.selectionForVideoFingerprint).not.toHaveBeenCalled();
     });
   });
 
-  describe('handleGenerateVideoDuplicateFrames', () => {
-    beforeEach(() => {
-      mocks.systemMetadata.get.mockResolvedValue({
-        image: {
-          preview: {
-            size: 1440,
-          },
-        },
-        ffmpeg: {},
-        machineLearning: {
-          enabled: true,
-          clip: {
-            enabled: true,
-            modelName: 'ViT-B-16-SigLIP-384__webli',
-          },
-          duplicateDetection: {
-            enabled: true,
-            enhancedVideo: {
-              enabled: true,
-              frameCount: 4,
-              minMatchingFrames: 2,
-              maxDistance: 0.01,
-            },
-          },
-        },
-      });
-    });
-
-    it('should generate and persist sampled video duplicate frames', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
-        id: asset.id,
-        ownerId: asset.ownerId,
-        originalPath: '/data/library/video.mp4',
-        visibility: AssetVisibility.Timeline,
-        videoStream: probeStub.videoStream2160p.videoStream!,
-        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
-      });
-      mocks.machineLearning.encodeImage.mockResolvedValue('[1, 2, 3, 4]');
-      mocks.duplicateRepository.replaceVideoDuplicateFrames.mockResolvedValue(['/data/thumbs/old-frame.jpeg']);
-
-      await expect(sut.handleGenerateVideoDuplicateFrames({ id: asset.id })).resolves.toBe(JobStatus.Success);
-
-      expect(mocks.media.transcode).toHaveBeenCalledTimes(4);
-      expect(mocks.machineLearning.encodeImage).toHaveBeenCalledTimes(4);
-      expect(mocks.duplicateRepository.replaceVideoDuplicateFrames).toHaveBeenCalledWith(
-        asset.id,
-        expect.arrayContaining([
-          expect.objectContaining({ assetId: asset.id, frameIndex: 0, timestampMs: 24_000 }),
-          expect.objectContaining({ assetId: asset.id, frameIndex: 1, timestampMs: 48_000 }),
-          expect.objectContaining({ assetId: asset.id, frameIndex: 2, timestampMs: 72_000 }),
-          expect.objectContaining({ assetId: asset.id, frameIndex: 3, timestampMs: 96_000 }),
-        ]),
-      );
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: ['/data/thumbs/old-frame.jpeg'] },
-      });
-    });
-
-    it('should treat asset duration as milliseconds when sampling frame timestamps', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
-        id: asset.id,
-        ownerId: asset.ownerId,
-        originalPath: '/data/library/video.mp4',
-        visibility: AssetVisibility.Timeline,
-        videoStream: probeStub.videoStream2160p.videoStream!,
-        format: { ...probeStub.videoStream2160p.format, duration: 60_720 },
-      });
-      mocks.machineLearning.encodeImage.mockResolvedValue('[1, 2, 3, 4]');
-      mocks.duplicateRepository.replaceVideoDuplicateFrames.mockResolvedValue([]);
-
-      await expect(sut.handleGenerateVideoDuplicateFrames({ id: asset.id })).resolves.toBe(JobStatus.Success);
-
-      expect(mocks.duplicateRepository.replaceVideoDuplicateFrames).toHaveBeenCalledWith(
-        asset.id,
-        expect.arrayContaining([
-          expect.objectContaining({ assetId: asset.id, frameIndex: 0, timestampMs: 12_144 }),
-          expect.objectContaining({ assetId: asset.id, frameIndex: 1, timestampMs: 24_288 }),
-          expect.objectContaining({ assetId: asset.id, frameIndex: 2, timestampMs: 36_432 }),
-          expect.objectContaining({ assetId: asset.id, frameIndex: 3, timestampMs: 48_576 }),
-        ]),
-      );
-    });
-
-    it('should mark videos too short for at least two sampled frames as detected', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
-        id: asset.id,
-        ownerId: asset.ownerId,
-        originalPath: '/data/library/video.mp4',
-        visibility: AssetVisibility.Timeline,
-        videoStream: probeStub.videoStream2160p.videoStream!,
-        format: { ...probeStub.videoStream2160p.format, duration: 2000 },
-      });
-
-      await expect(sut.handleGenerateVideoDuplicateFrames({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
-      expect(mocks.media.transcode).not.toHaveBeenCalled();
-      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({
-        assetId: asset.id,
-        duplicatesDetectedAt: expect.any(Date),
-      });
-    });
-
-    it('should delete generated files and skip when the CLIP model changes before persistence', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
-        id: asset.id,
-        ownerId: asset.ownerId,
-        originalPath: '/data/library/video.mp4',
-        visibility: AssetVisibility.Timeline,
-        videoStream: probeStub.videoStream2160p.videoStream!,
-        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
-      });
-      mocks.machineLearning.encodeImage.mockResolvedValue('[1, 2, 3, 4]');
-      mocks.systemMetadata.get
-        .mockResolvedValueOnce({
-          image: {
-            preview: {
-              size: 1440,
-            },
-          },
-          ffmpeg: {},
-          machineLearning: {
-            enabled: true,
-            clip: {
-              enabled: true,
-              modelName: 'ViT-B-16-SigLIP-384__webli',
-            },
-            duplicateDetection: {
-              enabled: true,
-              enhancedVideo: {
-                enabled: true,
-                frameCount: 4,
-                minMatchingFrames: 2,
-                maxDistance: 0.01,
-              },
-            },
-          },
-        })
-        .mockResolvedValueOnce({
-          image: {
-            preview: {
-              size: 1440,
-            },
-          },
-          ffmpeg: {},
-          machineLearning: {
-            enabled: true,
-            clip: {
-              enabled: true,
-              modelName: 'ViT-L-14__openai',
-            },
-            duplicateDetection: {
-              enabled: true,
-              enhancedVideo: {
-                enabled: true,
-                frameCount: 4,
-                minMatchingFrames: 2,
-                maxDistance: 0.01,
-              },
-            },
-          },
-        });
-
-      await expect(sut.handleGenerateVideoDuplicateFrames({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
-
-      expect(mocks.duplicateRepository.replaceVideoDuplicateFrames).not.toHaveBeenCalled();
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: {
-          files: expect.arrayContaining([
-            expect.stringContaining(`${asset.id}_video_duplicate_0.jpeg`),
-            expect.stringContaining(`${asset.id}_video_duplicate_1.jpeg`),
-            expect.stringContaining(`${asset.id}_video_duplicate_2.jpeg`),
-            expect.stringContaining(`${asset.id}_video_duplicate_3.jpeg`),
-          ]),
-        },
-      });
-    });
-
-    it('should keep sampled frame timestamps clear of the EOF dead zone for short clips with many frames', async () => {
-      // Regression: with a flat 1s end-pad, a high frameCount on a short clip
-      // sampled a frame at duration-1 (10_000ms on an 11s clip). Under
-      // `-skip_frame nointra` that start_time lands in the sparse-keyframe dead
-      // zone near EOF, ffmpeg writes no packets, transcode() rejects, and the
-      // whole job hard-fails. A proportional end-pad keeps the latest sample
-      // (duration * 0.8 = 8_800ms here) comfortably clear of the end.
-      mocks.systemMetadata.get.mockResolvedValue({
-        image: { preview: { size: 1440 } },
-        ffmpeg: {},
-        machineLearning: {
-          enabled: true,
-          clip: { enabled: true, modelName: 'ViT-B-16-SigLIP-384__webli' },
-          duplicateDetection: {
-            enabled: true,
-            enhancedVideo: { enabled: true, frameCount: 10, minMatchingFrames: 2, maxDistance: 0.01 },
-          },
-        },
-      });
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
-        id: asset.id,
-        ownerId: asset.ownerId,
-        originalPath: '/data/library/video.mp4',
-        visibility: AssetVisibility.Timeline,
-        videoStream: probeStub.videoStream2160p.videoStream!,
-        format: { ...probeStub.videoStream2160p.format, duration: 11_000 },
-      });
-      mocks.machineLearning.encodeImage.mockResolvedValue('[1, 2, 3, 4]');
-      mocks.duplicateRepository.replaceVideoDuplicateFrames.mockResolvedValue([]);
-
-      await expect(sut.handleGenerateVideoDuplicateFrames({ id: asset.id })).resolves.toBe(JobStatus.Success);
-
-      const [, frames] = mocks.duplicateRepository.replaceVideoDuplicateFrames.mock.calls[0];
-      const timestampsMs = (frames as Array<{ timestampMs: number }>).map(({ timestampMs }) => timestampMs);
-      expect(Math.max(...timestampsMs)).toBe(8800);
-      expect(timestampsMs).not.toContain(10_000);
-    });
-
-    it('should skip a single failed frame instead of failing the whole job', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
-        id: asset.id,
-        ownerId: asset.ownerId,
-        originalPath: '/data/library/video.mp4',
-        visibility: AssetVisibility.Timeline,
-        videoStream: probeStub.videoStream2160p.videoStream!,
-        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
-      });
-      // The first sampled frame fails to extract (e.g. dead-zone start_time);
-      // the remaining frames succeed.
-      mocks.media.transcode
-        .mockRejectedValueOnce(
-          new Error('Nothing was written into output file, because at least one of its streams received no packets'),
-        )
-        .mockResolvedValue(void 0);
-      mocks.machineLearning.encodeImage.mockResolvedValue('[1, 2, 3, 4]');
-      mocks.duplicateRepository.replaceVideoDuplicateFrames.mockResolvedValue([]);
-
-      await expect(sut.handleGenerateVideoDuplicateFrames({ id: asset.id })).resolves.toBe(JobStatus.Success);
-
-      expect(mocks.media.transcode).toHaveBeenCalledTimes(4);
-      expect(mocks.machineLearning.encodeImage).toHaveBeenCalledTimes(3);
-      const [, frames] = mocks.duplicateRepository.replaceVideoDuplicateFrames.mock.calls[0];
-      expect(frames).toHaveLength(3);
-    });
-
-    it('should fail without clobbering existing frames when every frame fails', async () => {
-      const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.getForVideoDuplicateFrameJob.mockResolvedValue({
-        id: asset.id,
-        ownerId: asset.ownerId,
-        originalPath: '/data/library/video.mp4',
-        visibility: AssetVisibility.Timeline,
-        videoStream: probeStub.videoStream2160p.videoStream!,
-        format: { ...probeStub.videoStream2160p.format, duration: 120_000 },
-      });
-      mocks.media.transcode.mockRejectedValue(new Error('Nothing was written into output file'));
-
-      await expect(sut.handleGenerateVideoDuplicateFrames({ id: asset.id })).resolves.toBe(JobStatus.Failed);
-
-      // Must not replace with an empty set, which would delete previously-good frames.
-      expect(mocks.duplicateRepository.replaceVideoDuplicateFrames).not.toHaveBeenCalled();
+  describe('retired video duplicate frame jobs', () => {
+    it('should change nothing for jobs queued before the upgrade', async () => {
+      await expect(sut.handleQueueGenerateVideoDuplicateFrames()).resolves.toBe(JobStatus.Skipped);
+      await expect(sut.handleGenerateVideoDuplicateFrames()).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 
@@ -1136,42 +852,49 @@ describe(DuplicateService.name, () => {
       });
     });
 
-    it('should queue enhanced frames and defer grouping when frames are missing', async () => {
+    it('should fingerprint the video first and defer grouping when it has none', async () => {
       const video = { ...hasEmbedding, type: AssetType.Video };
-      const duplicate = { assetId: 'asset-2', distance: 0.01, duplicateId: null };
       mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue(video);
-      mocks.duplicateRepository.search.mockResolvedValue([duplicate]);
-      mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
-      mocks.duplicateRepository.merge.mockResolvedValue();
+      mocks.duplicateRepository.search.mockResolvedValue([{ assetId: 'asset-2', distance: 0.01, duplicateId: null }]);
+      mocks.duplicateRepository.getVideoFingerprints.mockResolvedValue([]);
 
-      const result = await sut.handleSearchDuplicates({ id: video.id });
+      await expect(sut.handleSearchDuplicates({ id: video.id })).resolves.toBe(JobStatus.Success);
 
-      expect(result).toBe(JobStatus.Success);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetVideoFingerprint, data: { id: video.id } });
+      expect(mocks.duplicateRepository.searchVideoFingerprints).not.toHaveBeenCalled();
+      expect(mocks.duplicateRepository.merge).not.toHaveBeenCalled();
+    });
+
+    it('should fingerprint candidates that have none and not group them yet', async () => {
+      const video = { ...hasEmbedding, type: AssetType.Video };
+      mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue(video);
+      mocks.duplicateRepository.search.mockResolvedValue([{ assetId: 'asset-2', distance: 0.01, duplicateId: null }]);
+      mocks.duplicateRepository.getVideoFingerprints.mockImplementation((ids) =>
+        Promise.resolve(ids.includes(video.id) ? [{ assetId: video.id, ...timeline(1) }] : []),
+      );
+      mocks.duplicateRepository.searchVideoFingerprints.mockResolvedValue([]);
+
+      await expect(sut.handleSearchDuplicates({ id: video.id })).resolves.toBe(JobStatus.Success);
+
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.AssetGenerateVideoDuplicateFrames, data: { id: video.id } },
-        { name: JobName.AssetGenerateVideoDuplicateFrames, data: { id: duplicate.assetId } },
+        { name: JobName.AssetVideoFingerprint, data: { id: 'asset-2' } },
       ]);
       expect(mocks.duplicateRepository.merge).not.toHaveBeenCalled();
-      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({
-        assetId: video.id,
-        duplicatesDetectedAt: expect.any(Date),
-      });
     });
 
-    it('should not group video duplicates when enhanced frames do not match', async () => {
+    it('should not group videos whose timelines do not line up', async () => {
       const video = { ...hasEmbedding, type: AssetType.Video };
-      const duplicate = { assetId: 'asset-2', distance: 0.01, duplicateId: null };
       mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue(video);
-      mocks.duplicateRepository.search.mockResolvedValue([duplicate]);
-      mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([
-        ...[0, 1, 2, 3].map((frameIndex) => ({ assetId: video.id, frameIndex })),
-        ...[0, 1, 2, 3].map((frameIndex) => ({ assetId: duplicate.assetId, frameIndex })),
-      ] as any);
-      mocks.duplicateRepository.getVideoDuplicateFrameMatches.mockResolvedValue([]);
+      mocks.duplicateRepository.search.mockResolvedValue([{ assetId: 'asset-2', distance: 0.01, duplicateId: null }]);
+      mocks.duplicateRepository.getVideoFingerprints.mockImplementation((ids) =>
+        Promise.resolve(
+          ids.includes(video.id) ? [{ assetId: video.id, ...timeline(1) }] : [{ assetId: 'asset-2', ...timeline(2) }],
+        ),
+      );
+      mocks.duplicateRepository.searchVideoFingerprints.mockResolvedValue([]);
 
-      const result = await sut.handleSearchDuplicates({ id: video.id });
+      await expect(sut.handleSearchDuplicates({ id: video.id })).resolves.toBe(JobStatus.Success);
 
-      expect(result).toBe(JobStatus.Success);
       expect(mocks.duplicateRepository.merge).not.toHaveBeenCalled();
       expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({
         assetId: video.id,
@@ -1179,36 +902,33 @@ describe(DuplicateService.name, () => {
       });
     });
 
-    it('should group video duplicates when enough enhanced frames match', async () => {
+    it('should group a copy found by its middle frames when the preview does not match', async () => {
       const video = { ...hasEmbedding, type: AssetType.Video };
-      const duplicate = { assetId: 'asset-2', distance: 0.01, duplicateId: null };
       mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue(video);
-      mocks.duplicateRepository.search.mockResolvedValue([duplicate]);
-      mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([
-        ...[0, 1, 2, 3].map((frameIndex) => ({ assetId: video.id, frameIndex })),
-        ...[0, 1, 2, 3].map((frameIndex) => ({ assetId: duplicate.assetId, frameIndex })),
-      ] as any);
-      mocks.duplicateRepository.getVideoDuplicateFrameMatches.mockResolvedValue([duplicate.assetId]);
+      mocks.duplicateRepository.search.mockResolvedValue([]);
+      mocks.duplicateRepository.getVideoFingerprints.mockImplementation((ids) =>
+        Promise.resolve(
+          ids.includes(video.id) ? [{ assetId: video.id, ...timeline(1) }] : [{ assetId: 'asset-2', ...timeline(1) }],
+        ),
+      );
+      mocks.duplicateRepository.searchVideoFingerprints.mockResolvedValue([
+        { assetId: 'asset-2', distance: 0, duplicateId: null },
+      ]);
       mocks.duplicateRepository.merge.mockResolvedValue();
-      const expectedAssetIds = [duplicate.assetId, video.id];
 
-      const result = await sut.handleSearchDuplicates({ id: video.id });
+      await expect(sut.handleSearchDuplicates({ id: video.id })).resolves.toBe(JobStatus.Success);
 
-      expect(result).toBe(JobStatus.Success);
-      expect(mocks.duplicateRepository.getVideoDuplicateFrameMatches).toHaveBeenCalledWith({
+      expect(mocks.duplicateRepository.searchVideoFingerprints).toHaveBeenCalledWith({
         assetId: video.id,
-        candidateAssetIds: [duplicate.assetId],
-        maxDistance: 0.01,
-        minMatchingFrames: 2,
+        hashes: expect.any(Array),
+        maxBits: 8,
+        userIds: [video.ownerId],
       });
       expect(mocks.duplicateRepository.merge).toHaveBeenCalledWith({
-        assetIds: expectedAssetIds,
+        assetIds: ['asset-2', video.id],
         targetId: expect.any(String),
         sourceIds: [],
       });
-      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith(
-        ...expectedAssetIds.map((assetId) => ({ assetId, duplicatesDetectedAt: expect.any(Date) })),
-      );
     });
 
     it('should remove duplicateId if no duplicates found and asset has duplicateId', async () => {

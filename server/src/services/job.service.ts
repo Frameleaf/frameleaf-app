@@ -220,7 +220,7 @@ export class JobService extends BaseService {
       response &&
       typeof response === 'string' &&
       [JobStatus.Success, JobStatus.Skipped].includes(response) &&
-      !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
+      !(job.name === JobName.AssetVideoFingerprint && response === JobStatus.Skipped);
     if (shouldRunFollowUp) {
       await this.onDone(job);
     }
@@ -460,10 +460,7 @@ export class JobService extends BaseService {
           await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
         if (item.data.source === 'upload') {
           await this.jobRepository.queue({
-            name:
-              asset?.type === AssetType.Video
-                ? JobName.AssetGenerateVideoDuplicateFrames
-                : JobName.AssetDetectDuplicates,
+            name: asset?.type === AssetType.Video ? JobName.AssetVideoFingerprint : JobName.AssetDetectDuplicates,
             data: item.data,
           });
         }
@@ -479,8 +476,8 @@ export class JobService extends BaseService {
         break;
       }
 
-      case JobName.AssetGenerateVideoDuplicateFrames: {
-        await this.jobRepository.queue({ name: JobName.AssetDetectDuplicates, data: item.data });
+      case JobName.AssetVideoFingerprint: {
+        await this.jobRepository.queue({ name: JobName.AssetDetectDuplicates, data: { id: item.data.id } });
         break;
       }
 

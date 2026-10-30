@@ -99,9 +99,6 @@ type DerivedBackupPath = { path: string; role: string; assetId: string | null };
 const derivedPaths = sql<DerivedBackupPath>`
   SELECT p."thumbnailPath" AS path, 'person-thumbnail'::text AS role, NULL::uuid AS "assetId"
   FROM public.person p WHERE p."thumbnailPath" <> ''
-  UNION ALL SELECT f.path, 'video-duplicate-frame'::text, f."assetId"
-  FROM public.asset_video_duplicate_frame f JOIN public.asset a ON a.id = f."assetId"
-  WHERE a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})
   UNION ALL SELECT f.path, 'video-moment-frame'::text, f."assetId"
   FROM public.video_moment_frame f JOIN public.asset a ON a.id = f."assetId"
   WHERE a.status IN (${AssetStatus.Active}, ${AssetStatus.Trashed})`;

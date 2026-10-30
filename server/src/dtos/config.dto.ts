@@ -409,18 +409,39 @@ export const DuplicateDetectionConfigSchema = AdminConfigMachineLearningTaskSche
   enhancedVideo: z
     .object({
       enabled: z.boolean().describe('Whether enhanced video duplicate detection is enabled'),
-      frameCount: z.int().min(2).max(8).describe('Number of video frames to sample for duplicate confirmation'),
+      // FL-651: videos are compared by their whole timeline; the sampled-frame settings below are kept
+      // for compatibility and no longer read.
+      minMatchFraction: z
+        .number()
+        .meta({ format: 'double' })
+        .min(0.5)
+        .max(1)
+        .default(0.7)
+        .describe('Share of the frames two videos have in common that must match to call them duplicates'),
+      maxHashDistance: z
+        .int()
+        .min(0)
+        .max(16)
+        .default(8)
+        .describe('Most bits two frame hashes (64 bits) may differ by and still count as the same picture'),
+      frameCount: z
+        .int()
+        .min(2)
+        .max(8)
+        .describe('Deprecated: videos are compared by their whole timeline')
+        .meta({ deprecated: true }),
       minMatchingFrames: z
         .int()
         .min(1)
         .max(8)
-        .describe('Minimum matching sampled frames required to confirm a video duplicate'),
+        .describe('Deprecated: videos are compared by their whole timeline')
+        .meta({ deprecated: true }),
       maxDistance: z
         .number()
-        .meta({ format: 'double' })
+        .meta({ format: 'double', deprecated: true })
         .min(0.001)
         .max(0.1)
-        .describe('Maximum distance threshold for enhanced video duplicate frame matching'),
+        .describe('Deprecated: videos are compared by their whole timeline'),
     })
     .meta({ id: 'AdminConfigEnhancedVideoDuplicateDetectionDto' })
     .refine(({ frameCount, minMatchingFrames }) => minMatchingFrames <= frameCount, {
@@ -1723,6 +1744,8 @@ export const defaults = Object.freeze<SystemConfig>({
       preferOriginalFormat: true,
       enhancedVideo: {
         enabled: true,
+        minMatchFraction: 0.7,
+        maxHashDistance: 8,
         frameCount: 4,
         minMatchingFrames: 2,
         maxDistance: 0.01,

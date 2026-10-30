@@ -15,12 +15,7 @@ export type DesktopClipReadGuard = {
   assertCurrent: () => Promise<void>;
   publish: <T>(write: () => Promise<T>) => Promise<T>;
 };
-const tables = [
-  'smart_search',
-  'smart_search_description',
-  'asset_video_duplicate_frame',
-  'video_moment_frame_embedding',
-];
+const tables = ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'];
 const keys = (space: DesktopClipSpace) =>
   [`image:${space.visualModelKey}`, ...space.textModelKeys.map((key) => `text:${key}`)].sort();
 const identity = (space: DesktopClipSpace) =>

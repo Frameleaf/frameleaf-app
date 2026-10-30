@@ -2313,8 +2313,13 @@ export enum JobName {
   AssetDetectDuplicatesQueueAll = 'AssetDetectDuplicatesQueueAll',
   AssetDetectDuplicates = 'AssetDetectDuplicates',
   DuplicateResolutionLifecycle = 'DuplicateResolutionLifecycle',
+  /** @deprecated FL-651 replaced the sampled CLIP frames: a queued job changes nothing. */
   AssetGenerateVideoDuplicateFramesQueueAll = 'AssetGenerateVideoDuplicateFramesQueueAll',
+  /** @deprecated FL-651 replaced the sampled CLIP frames: a queued job changes nothing. */
   AssetGenerateVideoDuplicateFrames = 'AssetGenerateVideoDuplicateFrames',
+  /** FL-651: timeline hashes from the seek-bar filmstrip, which video look-alikes are confirmed with. */
+  AssetVideoFingerprintQueueAll = 'AssetVideoFingerprintQueueAll',
+  AssetVideoFingerprint = 'AssetVideoFingerprint',
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
   AssetDevelopRender = 'AssetDevelopRender',
   AssetPaletteExtract = 'AssetPaletteExtract',
@@ -2480,11 +2485,17 @@ export enum JobName {
 }
 
 // Internal jobs stay out of the public enum, which strict native decoders reject new values of:
-// photography jobs are observed through the scoped workflow API, and FL-650's seek-bar preview
-// warm-up is a background cache fill nobody watches.
+// photography jobs are observed through the scoped workflow API, FL-650's seek-bar preview
+// warm-up is a background cache fill nobody watches, and FL-651's video fingerprints run on the
+// video duplicate queue, observed as that queue.
 export const JobNameSchema = z
   .enum(JobName)
-  .exclude([JobName.PhotographyWorkflowRender, JobName.AssetWarmFilmstrip])
+  .exclude([
+    JobName.PhotographyWorkflowRender,
+    JobName.AssetWarmFilmstrip,
+    JobName.AssetVideoFingerprintQueueAll,
+    JobName.AssetVideoFingerprint,
+  ])
   .describe('Job name')
   .meta({ id: 'JobName' });
 

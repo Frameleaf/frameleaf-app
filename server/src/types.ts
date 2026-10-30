@@ -634,6 +634,8 @@ export type JobItem =
   | { name: JobName.AssetDetectDuplicates; data: IEntityJob }
   | { name: JobName.AssetGenerateVideoDuplicateFramesQueueAll; data: IBaseJob }
   | { name: JobName.AssetGenerateVideoDuplicateFrames; data: IEntityJob }
+  | { name: JobName.AssetVideoFingerprintQueueAll; data: IBaseJob }
+  | { name: JobName.AssetVideoFingerprint; data: IEntityJob }
 
   // Memories
   | { name: JobName.MemoryCleanup; data?: IBaseJob }

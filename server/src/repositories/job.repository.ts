@@ -103,6 +103,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.AssetGenerateVideoDuplicateFrames,
   JobName.AssetDetectDuplicatesQueueAll,
   JobName.AssetGenerateVideoDuplicateFramesQueueAll,
+  JobName.AssetVideoFingerprint,
+  JobName.AssetVideoFingerprintQueueAll,
   JobName.PetRecognition,
   JobName.VideoMomentCaptions,
   JobName.ImageDescription,

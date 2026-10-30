@@ -73,12 +73,7 @@ it('accepts the migrated catalog and supported CLIP widths without hiding other 
     const repository = new DatabaseRepository(db, LoggingRepository.create(), config);
     expect((await repository.getSchemaDrift()).items).toEqual([]);
     for (const size of [768, 1024, 512]) {
-      for (const table of [
-        'smart_search',
-        'smart_search_description',
-        'asset_video_duplicate_frame',
-        'video_moment_frame_embedding',
-      ]) {
+      for (const table of ['smart_search', 'smart_search_description', 'video_moment_frame_embedding']) {
         await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(${sql.lit(size)})`.execute(db);
       }
       expect((await repository.getSchemaDrift()).items, `CLIP width ${size}`).toEqual([]);

@@ -277,22 +277,27 @@ export class AssetJobRepository {
       );
   }
 
-  @GenerateSql({ params: [{ force: false, frameCount: 4 }], stream: true })
-  streamForVideoDuplicateFrames(options: { force?: boolean; frameCount: number }) {
-    return this.selectionForVideoDuplicateFrames(options).stream();
-  }
-
-  selectionForVideoDuplicateFrames(options: { force?: boolean; frameCount: number }) {
+  /** FL-651: videos to fingerprint; all of them when forced, else those without a fingerprint. */
+  selectionForVideoFingerprint(force?: boolean) {
     return this.db
       .selectFrom('asset')
-      .leftJoin('asset_video_duplicate_frame as frame', 'frame.assetId', 'asset.id')
       .select(['asset.id'])
       .where('asset.type', '=', sql.lit(AssetType.Video))
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
       .where(isNotLocked('asset'))
-      .groupBy('asset.id')
-      .$if(!options.force, (qb) => qb.having((eb) => eb.fn.count('frame.assetId'), '<', options.frameCount));
+      .$if(!force, (qb) =>
+        qb.where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('asset_video_fingerprint')
+                .select('asset_video_fingerprint.assetId')
+                .whereRef('asset_video_fingerprint.assetId', '=', 'asset.id'),
+            ),
+          ),
+        ),
+      );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

@@ -3,8 +3,6 @@ import { randomUUID } from 'node:crypto';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobOf } from 'src/types.js';
-import type { ClipEmbedding } from 'src/utils/clip-embedding.js';
-import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset, mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -22,14 +20,11 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
-  MlWorkload,
   Permission,
   QueueName,
-  StorageFolder,
   SystemMetadataKey,
-  TranscodeTarget,
 } from 'src/enum.js';
-import { attemptOutputPath, deferJobAdoption, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
@@ -38,8 +33,8 @@ import { duplicateDisposalReasons, reviewKindOf } from 'src/utils/duplicate-revi
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
-import { ThumbnailConfig } from 'src/utils/media.js';
 import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
+import { compareVideoFingerprints, middleFrameHashes } from 'src/utils/video-fingerprint.js';
 
 type ResolveRequest = {
   assetUpdate: {
@@ -61,42 +56,8 @@ type ResolveRequest = {
   mergedTagValues: string[];
 };
 
-// Minimum number of sampled frame timestamps required before we attempt
-// enhanced video duplicate detection. (Used as a count threshold.)
 /** FL-520: photos sampled for the look-alike estimate on Library care › Duplicates. */
 export const DUPLICATE_ESTIMATE_SAMPLE = 200;
-const VIDEO_DUPLICATE_FRAME_MIN_COUNT = 2;
-// Minimum video duration in seconds for enhanced video duplicate detection to
-// be attempted. Coincidentally the same numeric value as the min count above,
-// but separated for clarity since the units are different.
-const VIDEO_DUPLICATE_MIN_DURATION_SECONDS = 2;
-const VIDEO_DUPLICATE_FRAME_START_PADDING_SECONDS = 1;
-const VIDEO_DUPLICATE_FRAME_END_PADDING_SECONDS = 1;
-// The ffmpeg keyframe sampler (`-skip_frame nointra`) emits no frames when the
-// sampled start_time lands in the sparse-keyframe dead zone near EOF, which
-// makes transcode() fail. A flat 1s tail is too small for short clips with a
-// high frameCount (a sample can collapse onto duration-1), so additionally keep
-// the latest sample a fraction of the duration clear of the end. 0.2 matches the
-// last evenly-spaced sample (duration * frameCount / (frameCount + 1)) for the
-// default frameCount of 4, so typical clips are unaffected.
-const VIDEO_DUPLICATE_FRAME_END_PADDING_FRACTION = 0.2;
-
-const getEnhancedVideoDuplicateConfig = (machineLearning: SystemConfig['machineLearning']) => {
-  const { duplicateDetection } = machineLearning;
-  const enhancedVideo = duplicateDetection.enhancedVideo ?? {
-    enabled: true,
-    frameCount: 4,
-    minMatchingFrames: 2,
-    maxDistance: duplicateDetection.maxDistance,
-  };
-
-  return {
-    enabled: enhancedVideo.enabled,
-    frameCount: enhancedVideo.frameCount,
-    minMatchingFrames: enhancedVideo.minMatchingFrames,
-    maxDistance: enhancedVideo.maxDistance ?? duplicateDetection.maxDistance,
-  };
-};
 
 const uniqueNonEmptyLines = (values: Array<string | null | undefined>): string[] => {
   const unique = new Set<string>();
@@ -571,140 +532,35 @@ export class DuplicateService extends BaseService {
     return JobStatus.Success;
   }
 
-  @OnJob({ name: JobName.AssetGenerateVideoDuplicateFramesQueueAll, queue: QueueName.VideoDuplicateDetection })
-  async handleQueueGenerateVideoDuplicateFrames({
-    force,
-  }: JobOf<JobName.AssetGenerateVideoDuplicateFramesQueueAll>): Promise<JobStatus> {
+  @OnJob({ name: JobName.AssetVideoFingerprintQueueAll, queue: QueueName.VideoDuplicateDetection })
+  async handleQueueVideoFingerprints({ force }: JobOf<JobName.AssetVideoFingerprintQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isDuplicateDetectionEnabled(machineLearning)) {
       deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
-
-    const enhancedVideo = getEnhancedVideoDuplicateConfig(machineLearning);
-    if (!enhancedVideo.enabled) {
+    if (!machineLearning.duplicateDetection.enhancedVideo.enabled) {
       return JobStatus.Skipped;
     }
 
     await this.jobRepository.queueSelection(
-      JobName.AssetGenerateVideoDuplicateFrames,
-      this.assetJobRepository.selectionForVideoDuplicateFrames({ force, frameCount: enhancedVideo.frameCount }),
+      JobName.AssetVideoFingerprint,
+      this.assetJobRepository.selectionForVideoFingerprint(force),
     );
 
     return JobStatus.Success;
   }
 
+  /** FL-651 retired the sampled CLIP frames; a job queued before the upgrade changes nothing. */
+  @OnJob({ name: JobName.AssetGenerateVideoDuplicateFramesQueueAll, queue: QueueName.VideoDuplicateDetection })
+  handleQueueGenerateVideoDuplicateFrames(): Promise<JobStatus> {
+    return Promise.resolve(JobStatus.Skipped);
+  }
+
+  /** FL-651 retired the sampled CLIP frames; a job queued before the upgrade changes nothing. */
   @OnJob({ name: JobName.AssetGenerateVideoDuplicateFrames, queue: QueueName.VideoDuplicateDetection })
-  async handleGenerateVideoDuplicateFrames({
-    id,
-  }: JobOf<JobName.AssetGenerateVideoDuplicateFrames>): Promise<JobStatus> {
-    const config = await this.getConfig({ withCache: true });
-    const { machineLearning } = config;
-    if (!isDuplicateDetectionEnabled(machineLearning)) {
-      deferJobUntilDependency('workload-disabled');
-      return JobStatus.Skipped;
-    }
-
-    const enhancedVideo = getEnhancedVideoDuplicateConfig(machineLearning);
-    if (!enhancedVideo.enabled) {
-      return JobStatus.Skipped;
-    }
-
-    await this.jobRepository.guardAssetSource(id);
-    const asset = await this.assetJobRepository.getForVideoDuplicateFrameJob(id);
-    if (!asset) {
-      this.logger.error(`Asset ${id} not found`);
-      return JobStatus.Failed;
-    }
-
-    if (asset.visibility === AssetVisibility.Hidden || asset.visibility === AssetVisibility.Locked) {
-      this.logger.debug(`Asset ${id} is not visible, skipping`);
-      return JobStatus.Skipped;
-    }
-
-    const timestamps = this.getVideoDuplicateFrameTimestamps(enhancedVideo.frameCount, asset.format);
-    if (timestamps.length < VIDEO_DUPLICATE_FRAME_MIN_COUNT) {
-      this.logger.debug(`Asset ${id} is too short for enhanced video duplicate detection`);
-      await publishJobResult(() =>
-        this.assetRepository.upsertJobStatus({ assetId: asset.id, duplicatesDetectedAt: new Date() }),
-      );
-      return JobStatus.Skipped;
-    }
-
-    const frames: Array<{
-      assetId: string;
-      frameIndex: number;
-      timestampMs: number;
-      path: string;
-      embedding: ClipEmbedding;
-    }> = [];
-    for (const [frameIndex, timestamp] of timestamps.entries()) {
-      const path = attemptOutputPath(
-        StorageCore.getNestedPath(
-          StorageFolder.Thumbnails,
-          asset.ownerId,
-          `${asset.id}_video_duplicate_${frameIndex}.jpeg`,
-        ),
-      );
-      this.storageCore.ensureFolders(path);
-
-      const command = ThumbnailConfig.create(
-        { ...config.ffmpeg, targetResolution: config.image.preview.size.toString() },
-        timestamp,
-      ).getCommand(TranscodeTarget.Video, asset.videoStream, undefined, asset.format);
-
-      try {
-        await this.mediaRepository.transcode(asset.originalPath, path, command);
-        const selection = await this.selectRoutedMlDestination({
-          workload: MlWorkload.Clip,
-          jobId: asset.id,
-          jobName: JobName.AssetGenerateVideoDuplicateFrames,
-        });
-        const embedding = await this.machineLearningRepository.encodeImage(selection, path, machineLearning.clip);
-
-        frames.push({
-          assetId: asset.id,
-          frameIndex,
-          timestampMs: Math.round(timestamp * 1000),
-          path,
-          embedding,
-        });
-      } catch (error: any) {
-        jobSignal()?.throwIfAborted();
-        // A single frame can fail to extract when its sampled start_time lands in
-        // the sparse-keyframe dead zone near EOF (ffmpeg writes no packets and
-        // exits non-zero). Skip just that frame instead of failing the whole job.
-        this.logger.warn(
-          `Failed to extract video duplicate frame ${frameIndex} for asset ${asset.id} at ${timestamp}s: ${error}`,
-          error?.stack,
-        );
-      }
-    }
-
-    if (frames.length === 0) {
-      // Every frame failed: don't fall through to replaceVideoDuplicateFrames([]),
-      // which would delete any previously-stored frames for this asset. Surface
-      // the job as failed so it can be retried.
-      this.logger.warn(`Failed to extract any video duplicate frames for asset ${asset.id}`);
-      return JobStatus.Failed;
-    }
-
-    const newConfig = await this.getConfig({ withCache: false });
-    if (machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName) {
-      if (frames.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: frames.map(({ path }) => path) } });
-      }
-      return JobStatus.Skipped;
-    }
-
-    await publishJobResult(async () => {
-      const stalePaths = await this.duplicateRepository.replaceVideoDuplicateFrames(asset.id, frames);
-      if (stalePaths.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: stalePaths } });
-      }
-    });
-
-    return JobStatus.Success;
+  handleGenerateVideoDuplicateFrames(): Promise<JobStatus> {
+    return Promise.resolve(JobStatus.Skipped);
   }
 
   @OnJob({ name: JobName.AssetDetectDuplicates, queue: QueueName.DuplicateDetection })
@@ -766,12 +622,8 @@ export class DuplicateService extends BaseService {
           userIds: [asset.ownerId],
         });
 
-        if (asset.type === AssetType.Video && duplicateAssets.length > 0) {
-          duplicateAssets = await this.filterConfirmedVideoDuplicates(
-            asset,
-            duplicateAssets,
-            machineLearning.duplicateDetection,
-          );
+        if (asset.type === AssetType.Video) {
+          duplicateAssets = await this.findVideoDuplicates(asset, duplicateAssets, machineLearning.duplicateDetection);
         }
 
         let assetIds = [asset.id];
@@ -799,71 +651,57 @@ export class DuplicateService extends BaseService {
     return publish();
   }
 
-  private getVideoDuplicateFrameTimestamps(frameCount: number, format: { duration: number }): number[] {
-    const duration = format.duration / 1000;
-    if (!Number.isFinite(duration) || duration <= VIDEO_DUPLICATE_MIN_DURATION_SECONDS) {
-      return [];
-    }
-
-    const endPadding = Math.max(
-      VIDEO_DUPLICATE_FRAME_END_PADDING_SECONDS,
-      duration * VIDEO_DUPLICATE_FRAME_END_PADDING_FRACTION,
-    );
-    const latest = duration - endPadding;
-    if (latest <= VIDEO_DUPLICATE_FRAME_START_PADDING_SECONDS) {
-      return [];
-    }
-
-    return [
-      ...new Set(
-        Array.from({ length: frameCount }, (_, index) => {
-          const timestamp = (duration * (index + 1)) / (frameCount + 1);
-          return Number(Math.min(Math.max(timestamp, VIDEO_DUPLICATE_FRAME_START_PADDING_SECONDS), latest).toFixed(3));
-        }),
-      ),
-    ].filter((timestamp) => Number.isFinite(timestamp) && timestamp > 0);
-  }
-
-  private async filterConfirmedVideoDuplicates(
-    asset: { id: string },
-    duplicateAssets: AssetDuplicateResult[],
+  /**
+   * FL-651: the preview's look-alikes plus videos sharing a frame with this one's middle, kept only
+   * when their timelines line up (utils/video-fingerprint.ts). Videos without a fingerprint yet are
+   * fingerprinted first; that job compares them again.
+   */
+  private async findVideoDuplicates(
+    asset: { id: string; ownerId: string },
+    clipMatches: AssetDuplicateResult[],
     duplicateDetection: SystemConfig['machineLearning']['duplicateDetection'],
   ): Promise<AssetDuplicateResult[]> {
-    const enhancedVideo = getEnhancedVideoDuplicateConfig({ duplicateDetection } as SystemConfig['machineLearning']);
-    if (!enhancedVideo.enabled) {
-      return duplicateAssets;
+    const { enabled, minMatchFraction, maxHashDistance } = duplicateDetection.enhancedVideo;
+    if (!enabled) {
+      return clipMatches;
     }
 
-    const assetIds = [asset.id, ...duplicateAssets.map(({ assetId }) => assetId)];
-    const frames = await this.duplicateRepository.getVideoDuplicateFrames(assetIds);
-    const frameCounts = new Map<string, number>();
-    for (const frame of frames) {
-      frameCounts.set(frame.assetId, (frameCounts.get(frame.assetId) ?? 0) + 1);
-    }
-
-    const missingFrameAssetIds = assetIds.filter(
-      (assetId) => (frameCounts.get(assetId) ?? 0) < enhancedVideo.minMatchingFrames,
-    );
-    if (missingFrameAssetIds.length > 0) {
-      await this.jobRepository.queueAll(
-        [...new Set(missingFrameAssetIds)].map((id) => ({
-          name: JobName.AssetGenerateVideoDuplicateFrames,
-          data: { id },
-        })),
-      );
+    const [fingerprint] = await this.duplicateRepository.getVideoFingerprints([asset.id]);
+    if (!fingerprint) {
+      await this.jobRepository.queue({ name: JobName.AssetVideoFingerprint, data: { id: asset.id } });
       return [];
     }
 
-    const matchingAssetIds = new Set(
-      await this.duplicateRepository.getVideoDuplicateFrameMatches({
-        assetId: asset.id,
-        candidateAssetIds: duplicateAssets.map(({ assetId }) => assetId),
-        maxDistance: enhancedVideo.maxDistance,
-        minMatchingFrames: enhancedVideo.minMatchingFrames,
-      }),
+    const hashMatches = await this.duplicateRepository.searchVideoFingerprints({
+      assetId: asset.id,
+      hashes: middleFrameHashes(fingerprint),
+      maxBits: maxHashDistance,
+      userIds: [asset.ownerId],
+    });
+    const candidates = new Map([...hashMatches, ...clipMatches].map((match) => [match.assetId, match]))
+      .values()
+      .toArray();
+    const fingerprints = new Map(
+      (await this.duplicateRepository.getVideoFingerprints(candidates.map(({ assetId }) => assetId))).map((other) => [
+        other.assetId,
+        other,
+      ]),
     );
 
-    return duplicateAssets.filter(({ assetId }) => matchingAssetIds.has(assetId));
+    const unfingerprinted = candidates.filter(({ assetId }) => !fingerprints.has(assetId));
+    if (unfingerprinted.length > 0) {
+      await this.jobRepository.queueAll(
+        unfingerprinted.map(({ assetId }) => ({ name: JobName.AssetVideoFingerprint, data: { id: assetId } })),
+      );
+    }
+
+    return candidates.filter(({ assetId }) => {
+      const other = fingerprints.get(assetId);
+      return (
+        other !== undefined &&
+        compareVideoFingerprints(fingerprint, other, { maxBits: maxHashDistance, minMatchFraction }).isDuplicate
+      );
+    });
   }
 
   private async updateDuplicates(

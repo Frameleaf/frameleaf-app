@@ -462,29 +462,6 @@ where
   )
   and "job_status"."duplicatesDetectedAt" is null
 
--- AssetJobRepository.streamForVideoDuplicateFrames
-select
-  "asset"."id"
-from
-  "asset"
-  left join "asset_video_duplicate_frame" as "frame" on "frame"."assetId" = "asset"."id"
-where
-  "asset"."type" = 'VIDEO'
-  and "asset"."deletedAt" is null
-  and "asset"."visibility" != 'hidden'
-  and not exists (
-    select
-      1
-    from
-      asset_lock
-    where
-      asset_lock."assetId" = "asset"."id"
-  )
-group by
-  "asset"."id"
-having
-  count("frame"."assetId") < $1
-
 -- AssetJobRepository.getForVideoDuplicateFrameJob
 select
   "asset"."id",

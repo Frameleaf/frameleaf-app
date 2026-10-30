@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, NotNull, Selectable, ShallowDehydrateObject, Transaction, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import type { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { columns } from 'src/database.js';
 import { Chunked, DummyValue, GenerateSql } from 'src/decorators.js';
@@ -11,8 +12,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
-import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
-import { type ClipEmbedding, clipEmbeddingForStorage } from 'src/utils/clip-embedding.js';
+import { AssetVideoFingerprintTable } from 'src/schema/tables/asset-video-fingerprint.table.js';
 import { anyUuid, asUuid, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -32,16 +32,6 @@ interface DuplicateMergeOptions {
   sourceIds: string[];
 }
 type DuplicatePrivacyOptions = HiddenContentQueryOptions;
-type VideoDuplicateFrameInsert = Pick<
-  Insertable<AssetVideoDuplicateFrameTable>,
-  'assetId' | 'frameIndex' | 'timestampMs' | 'path' | 'embedding'
->;
-type VideoDuplicateFrameMatchOptions = {
-  assetId: string;
-  candidateAssetIds: string[];
-  maxDistance: number;
-  minMatchingFrames: number;
-};
 @Injectable()
 export class DuplicateRepository {
   constructor(
@@ -443,75 +433,58 @@ export class DuplicateRepository {
       )
       .execute();
   }
-  async getVideoDuplicateFrames(assetIds: string[]) {
+  getVideoFingerprints(assetIds: string[]) {
     if (assetIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.db.selectFrom('asset_video_fingerprint').selectAll().where('assetId', '=', anyUuid(assetIds)).execute();
+  }
+
+  async upsertVideoFingerprint(fingerprint: Insertable<AssetVideoFingerprintTable>) {
+    await this.db
+      .insertInto('asset_video_fingerprint')
+      .values(fingerprint)
+      .onConflict((oc) =>
+        oc.column('assetId').doUpdateSet((eb) => ({
+          durationMs: eb.ref('excluded.durationMs'),
+          hashes: eb.ref('excluded.hashes'),
+        })),
+      )
+      .execute();
+  }
+
+  /**
+   * FL-651: the same videos `search` may return, here found by a filmstrip frame within `maxBits` of
+   * one of `hashes`, so copies whose first frame differs are still compared.
+   * ponytail: scans the owner's fingerprints (~120 hashes each); an index on frame hashes if large
+   * video libraries make the duplicate queue slow.
+   */
+  async searchVideoFingerprints(options: {
+    assetId: string;
+    hashes: string[];
+    maxBits: number;
+    userIds: string[];
+  }): Promise<AssetDuplicateResult[]> {
+    if (options.hashes.length === 0) {
       return [];
     }
-
     return this.db
-      .withSchema('public')
-      .selectFrom('asset_video_duplicate_frame')
-      .selectAll()
-      .where('assetId', '=', anyUuid(assetIds))
-      .orderBy('assetId')
-      .orderBy('frameIndex')
+      .selectFrom('asset')
+      .$call(withDefaultVisibility)
+      .innerJoin('asset_video_fingerprint as fingerprint', 'fingerprint.assetId', 'asset.id')
+      .select(['asset.id as assetId', 'asset.duplicateId', sql<number>`0`.as('distance')])
+      .where('asset.ownerId', '=', anyUuid(options.userIds))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.type', '=', AssetType.Video)
+      .where('asset.id', '!=', asUuid(options.assetId))
+      .where('asset.stackId', 'is', null)
+      .where(
+        sql<boolean>`exists (
+          select 1 from unnest(fingerprint.hashes) frame, unnest(${options.hashes}::bigint[]) wanted
+          where bit_count((frame # wanted)::bit(64)) <= ${options.maxBits}
+        )`,
+      )
+      .limit(DUPLICATE_SEARCH_LIMIT)
       .execute();
-  }
-  async replaceVideoDuplicateFrames(
-    assetId: string,
-    frames: (Omit<VideoDuplicateFrameInsert, 'embedding'> & { embedding: ClipEmbedding })[],
-  ): Promise<string[]> {
-    const prepared = frames.map(({ embedding, ...frame }) => ({ ...frame, ...clipEmbeddingForStorage(embedding) }));
-    return this.db.transaction().execute(async (trx) => {
-      if (prepared.some((frame) => frame.assetId !== assetId)) {
-        throw new Error(`Cannot replace video duplicate frames for multiple assets`);
-      }
-      const stalePaths: string[] = await this.replaceFramesIn(trx.withSchema('public'), assetId, prepared);
-      return stalePaths;
-    });
-  }
-  private async replaceFramesIn(
-    db: Kysely<DB>,
-    assetId: string,
-    frames: (VideoDuplicateFrameInsert & { producerModelKey: string | null })[],
-  ): Promise<string[]> {
-    const existing = await db
-      .selectFrom('asset_video_duplicate_frame')
-      .select('path')
-      .where('assetId', '=', asUuid(assetId))
-      .execute();
-    const nextPaths = new Set(frames.map(({ path }) => path));
-    const stalePaths = existing.map(({ path }) => path).filter((path) => !nextPaths.has(path));
-    await db.deleteFrom('asset_video_duplicate_frame').where('assetId', '=', asUuid(assetId)).execute();
-    if (frames.length > 0) {
-      await db.insertInto('asset_video_duplicate_frame').values(frames).execute();
-    }
-    return stalePaths;
-  }
-  async getVideoDuplicateFrameMatches({
-    assetId,
-    candidateAssetIds,
-    maxDistance,
-    minMatchingFrames,
-  }: VideoDuplicateFrameMatchOptions): Promise<string[]> {
-    if (candidateAssetIds.length === 0) {
-      return [];
-    }
-
-    const framesTable = sql.raw('public.asset_video_duplicate_frame');
-    const { rows } = await sql<{
-      assetId: string;
-    }>`
-      select candidate."assetId" as "assetId"
-      from ${framesTable} source
-      inner join ${framesTable} candidate
-        on candidate."frameIndex" = source."frameIndex"
-        and candidate."assetId" = ${anyUuid(candidateAssetIds)}
-      where source."assetId" = ${asUuid(assetId)}
-        and source."embedding" <=> candidate."embedding" <= ${maxDistance}
-      group by candidate."assetId"
-      having count(*) >= ${minMatchingFrames}
-    `.execute(this.db);
-    return rows.map(({ assetId }) => assetId);
   }
 }

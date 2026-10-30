@@ -62,7 +62,6 @@ describe(AssetService.name, () => {
     ({ sut, mocks } = newTestService(AssetService));
     mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
     mocks.partner.getAll.mockResolvedValue([]);
-    mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     mocks.search.getAssetLandmarks.mockResolvedValue([]);

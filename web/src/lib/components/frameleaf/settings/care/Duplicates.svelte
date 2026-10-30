@@ -10,8 +10,10 @@
    *   "Find look-alike photos", which is on only while both are on and writes both.
    * - `machineLearning.duplicateDetection.maxDistance`: "How alike they must be" (see ./duplicates.ts),
    *   and the photo distance under Advanced.
-   * - `machineLearning.duplicateDetection.enhancedVideo.enabled`, `.frameCount`, `.minMatchingFrames`
-   *   and `.maxDistance`: the video comparison, its numbers under Advanced.
+   * - `machineLearning.duplicateDetection.enhancedVideo.enabled`, `.minMatchFraction` and
+   *   `.maxHashDistance`: the video comparison (FL-651: whole timelines lined up), its numbers under
+   *   Advanced. `enhancedVideo.frameCount`, `enhancedVideo.minMatchingFrames` and
+   *   `enhancedVideo.maxDistance` are deprecated: the sampled frames they tuned are no longer made.
    * - `machineLearning.duplicateDetection.preferOriginalFormat` is deprecated and always on: camera
    *   originals are always suggested first, so it is said as a promise, not a switch.
    *
@@ -571,46 +573,28 @@
           onChange={(value) => (settingsDraft.draft.machineLearning.duplicateDetection.maxDistance = value)}
         />
       </Row>
-      <Row label={$t('frameleaf_dupes_frames')} help={$t('frameleaf_dupes_frames_help')}>
+      <Row label={$t('frameleaf_dupes_video_match')} help={$t('frameleaf_dupes_video_match_help')}>
         <Amount
-          label={$t('frameleaf_dupes_frames')}
-          unit={$t('frameleaf_dupes_unit_moments')}
-          min={2}
-          max={8}
-          value={dupes.enhancedVideo.frameCount}
-          disabled={disabled || !looking || !dupes.enhancedVideo.enabled}
-          onChange={(value) => {
-            const video = settingsDraft.draft.machineLearning.duplicateDetection.enhancedVideo;
-            video.frameCount = value;
-            if (video.minMatchingFrames > value) {
-              video.minMatchingFrames = value;
-            }
-          }}
-        />
-      </Row>
-      <Row label={$t('frameleaf_dupes_matching')} help={$t('frameleaf_dupes_matching_help')}>
-        <Amount
-          label={$t('frameleaf_dupes_matching')}
-          unit={$t('frameleaf_dupes_unit_moments')}
-          min={1}
-          max={dupes.enhancedVideo.frameCount}
-          value={dupes.enhancedVideo.minMatchingFrames}
+          label={$t('frameleaf_dupes_video_match')}
+          unit={$t('frameleaf_dupes_unit_percent')}
+          min={50}
+          max={100}
+          value={Math.round((dupes.enhancedVideo.minMatchFraction ?? 0.7) * 100)}
           disabled={disabled || !looking || !dupes.enhancedVideo.enabled}
           onChange={(value) =>
-            (settingsDraft.draft.machineLearning.duplicateDetection.enhancedVideo.minMatchingFrames = value)}
+            (settingsDraft.draft.machineLearning.duplicateDetection.enhancedVideo.minMatchFraction = value / 100)}
         />
       </Row>
-      <Row label={$t('frameleaf_dupes_video_distance')} help={$t('frameleaf_dupes_video_distance_help')}>
-        <Figure
-          label={$t('frameleaf_dupes_video_distance')}
-          unit={$t('frameleaf_dupes_unit_distance')}
-          min={0.001}
-          max={0.1}
-          step={0.0005}
-          value={dupes.enhancedVideo.maxDistance}
+      <Row label={$t('frameleaf_dupes_video_difference')} help={$t('frameleaf_dupes_video_difference_help')}>
+        <Amount
+          label={$t('frameleaf_dupes_video_difference')}
+          unit={$t('frameleaf_dupes_unit_of_64')}
+          min={0}
+          max={16}
+          value={dupes.enhancedVideo.maxHashDistance ?? 8}
           disabled={disabled || !looking || !dupes.enhancedVideo.enabled}
           onChange={(value) =>
-            (settingsDraft.draft.machineLearning.duplicateDetection.enhancedVideo.maxDistance = value)}
+            (settingsDraft.draft.machineLearning.duplicateDetection.enhancedVideo.maxHashDistance = value)}
         />
       </Row>
     </Advanced>

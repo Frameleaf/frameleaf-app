@@ -267,15 +267,6 @@ export class IntegrityRepository {
       nextCursor: items.at(pagination.limit)?.id,
     };
   }
-  @GenerateSql({ params: [DummyValue.STRING] })
-  async getVideoDuplicateFramePathsByPaths(paths: string[]) {
-    return this.db
-      .withSchema('public')
-      .selectFrom('asset_video_duplicate_frame')
-      .select('path')
-      .where('path', 'in', paths)
-      .execute();
-  }
   /**
    * Edited masters, previews and developed files brought back (FL-113, FL-64) live beside the
    * asset's thumbnails but are tracked by their develop version, not `asset_file`. Retained video
@@ -379,7 +370,6 @@ export class IntegrityRepository {
     const found = new Set(
       [
         ...tracked,
-        ...(await this.getVideoDuplicateFramePathsByPaths(paths)),
         ...(await this.getDevelopRevisionPathsByPaths(paths)),
         ...(await this.getRegisteredFilePathsByPaths(paths)),
         ...(await this.getInFlightPathsByPaths(paths)),

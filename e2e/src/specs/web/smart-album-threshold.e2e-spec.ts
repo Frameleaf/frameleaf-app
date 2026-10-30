@@ -46,7 +46,7 @@ test.describe('Smart album visual threshold (FL-144)', () => {
               SELECT att.atttypmod AS dimension FROM pg_attribute att
               JOIN pg_class cls ON cls.oid = att.attrelid
               WHERE cls.relnamespace = 'public'::regnamespace
-                AND cls.relname IN ('smart_search', 'asset_video_duplicate_frame')
+                AND cls.relname IN ('smart_search', 'video_moment_frame_embedding')
                 AND att.attname = 'embedding'
               ORDER BY cls.relname
             `);

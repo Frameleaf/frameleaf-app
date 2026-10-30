@@ -13,9 +13,12 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf, VideoStreamInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { CacheControl, JobName, JobStatus, Permission, QueueName, StorageFolder } from 'src/enum.js';
+import { AssetVisibility, CacheControl, JobName, JobStatus, Permission, QueueName, StorageFolder } from 'src/enum.js';
+import { publishJobResult } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
 import {
   FILMSTRIP_COUNT,
   FILMSTRIP_HEIGHT,
@@ -37,6 +40,7 @@ import {
   studioMediaFingerprint,
   waveformChannelCount,
 } from 'src/utils/studio-media.js';
+import { frameHash } from 'src/utils/video-fingerprint.js';
 
 /** Filmstrip variants (count x height x format) kept per video; older ones are removed. */
 const MAX_FILMSTRIP_VARIANTS = 8;
@@ -130,6 +134,54 @@ export class StudioMediaService extends BaseService {
         return JobStatus.Skipped; // not a video, file missing or nothing decodable
       }
       throw error;
+    }
+    return JobStatus.Success;
+  }
+
+  /**
+   * FL-651: the timeline hashes video look-alikes are confirmed with, one per frame of the seek-bar
+   * filmstrip (made here if the warm-up has not run yet). Duplicate detection runs again after it.
+   */
+  @OnJob({ name: JobName.AssetVideoFingerprint, queue: QueueName.VideoDuplicateDetection })
+  async handleVideoFingerprint({ id }: JobOf<JobName.AssetVideoFingerprint>): Promise<JobStatus> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    if (!isDuplicateDetectionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
+      return JobStatus.Skipped;
+    }
+    const video = await this.assetJobRepository.getForVideoDuplicateFrameJob(id);
+    if (!video || video.visibility === AssetVisibility.Hidden || video.visibility === AssetVisibility.Locked) {
+      return JobStatus.Skipped;
+    }
+
+    let filmstrip: Awaited<ReturnType<StudioMediaService['ensureFilmstrip']>>;
+    try {
+      filmstrip = await this.ensureFilmstrip(await this.getSource(id), PLAYER_FILMSTRIP);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return JobStatus.Skipped; // file missing or nothing decodable
+      }
+      throw error;
+    }
+    const { index, spritePath } = filmstrip;
+    const grids = await this.mediaRepository.filmstripFrameGrids(
+      spritePath,
+      index.frames.map(({ x, y }) => ({ left: x, top: y, width: index.frameWidth, height: index.frameHeight })),
+    );
+    await publishJobResult(() =>
+      this.duplicateRepository.upsertVideoFingerprint({
+        assetId: id,
+        durationMs: index.durationMs,
+        hashes: grids.map((grid) => frameHash(grid)),
+      }),
+    );
+
+    // the CLIP frames the retired video duplicate check kept
+    const legacy = StorageCore.getLegacyVideoDuplicateFramePaths(video.ownerId, id);
+    const exists = await Promise.all(legacy.map((path) => this.storageRepository.checkFileExists(path)));
+    const files = legacy.filter((_, index) => exists[index]);
+    if (files.length > 0) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
     }
     return JobStatus.Success;
   }

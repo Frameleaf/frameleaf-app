@@ -48,14 +48,6 @@ order by
 limit
   $3
 
--- IntegrityRepository.getVideoDuplicateFramePathsByPaths
-select
-  "path"
-from
-  "public"."asset_video_duplicate_frame"
-where
-  "path" in $1
-
 -- IntegrityRepository.getTrackedPaths
 select
   "asset"."originalPath" as "path"
