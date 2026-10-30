@@ -74,16 +74,16 @@ The extension sends data only to the Frameleaf server the user connects. There a
 
 ## Images to prepare
 
-| Asset                   | Size       | What to show                                                  |
-| ----------------------- | ---------- | ------------------------------------------------------------- |
-| Store icon              | 128 × 128  | Shipped as `icons/icon128.png` (the Frameleaf mark)           |
-| Screenshot 1 (required) | 1280 × 800 | Choosing images to save on a page, with the collection picker |
-| Screenshot 2            | 1280 × 800 | Signing in: Connect, then Allow Save to Frameleaf             |
-| Screenshot 3            | 1280 × 800 | Whole-page screenshot preview                                 |
-| Screenshot 4            | 1280 × 800 | The save list, with items saving and saved                    |
-| Screenshot 5            | 1280 × 800 | What you saved, in Boards in the web app                      |
-| Small promo tile        | 440 × 280  | The Frameleaf mark with "Save to Frameleaf"                   |
-| Marquee promo tile      | 1400 × 560 | The name and tagline beside the image picker, no transparency |
+| Asset                   | Size       | What to show                                                       |
+| ----------------------- | ---------- | ------------------------------------------------------------------ |
+| Store icon              | 128 × 128  | `icons/icon128.png`: the mark at 96 × 96, 16 px clear on each side |
+| Screenshot 1 (required) | 1280 × 800 | Choosing images to save on a page, with the collection picker      |
+| Screenshot 2            | 1280 × 800 | Signing in: Connect, then Allow Save to Frameleaf                  |
+| Screenshot 3            | 1280 × 800 | Whole-page screenshot preview                                      |
+| Screenshot 4            | 1280 × 800 | The save list, with items saving and saved                         |
+| Screenshot 5            | 1280 × 800 | What you saved, in Boards in the web app                           |
+| Small promo tile        | 440 × 280  | The Frameleaf mark with "Save to Frameleaf"                        |
+| Marquee promo tile      | 1400 × 560 | The name and tagline beside the image picker, no transparency      |
 
 Capture the screenshots from the real extension against a test server, not the prototype, and with no personal photos in view.
 

@@ -41,10 +41,13 @@ export default defineConfig({
           this.emitFile({
             type: 'asset',
             fileName: `icons/icon${size}.png`,
+            // the store's 128 icon is 96 px artwork with 16 px of transparent padding
             source: readFileSync(
               resolve(
                 import.meta.dirname,
-                `../../web/static/favicon-${size}.png`,
+                size === 128
+                  ? 'icons/icon128.png'
+                  : `../../web/static/favicon-${size}.png`,
               ),
             ),
           });
