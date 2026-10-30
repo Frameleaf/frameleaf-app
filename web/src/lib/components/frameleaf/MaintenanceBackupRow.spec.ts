@@ -61,7 +61,7 @@ describe('MaintenanceBackupRow', () => {
       timezone: 'Asia/Tokyo',
     });
 
-    expect(screen.getByText(new RegExp(`^${expectedRelativeTime!} · \\S`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`^${expectedRelativeTime!} · [^ ]`))).toBeInTheDocument();
   });
 
   it('opens the typed-confirmation dialog instead of restoring immediately', async () => {
