@@ -646,18 +646,38 @@ export class TagRepository {
       return 0;
     }
 
-    const result = await this.db
-      .deleteFrom('tag')
-      .where('tag.userId', '=', userId)
-      .where('tag.value', 'in', values)
-      .where(({ not, exists, selectFrom }) =>
-        not(exists(selectFrom('tag_asset').select('tag_asset.tagId').whereRef('tag_asset.tagId', '=', 'tag.id'))),
-      )
-      .where(({ not, exists, selectFrom }) =>
-        not(exists(selectFrom('tag as child').select('child.id').whereRef('child.parentId', '=', 'tag.id'))),
-      )
-      .executeTakeFirst();
-    return Number(result.numDeletedRows);
+    return this.db.transaction().execute(async (tx) => {
+      // Lock the candidates first: a membership being added meanwhile holds a key-share lock on its tag,
+      // so this waits for it, and the check below (a new statement) then sees it and keeps the tag.
+      // Checking before the lock would let the delete cascade away a membership committed meanwhile.
+      const candidates = await tx
+        .selectFrom('tag')
+        .select('tag.id')
+        .where('tag.userId', '=', userId)
+        .where('tag.value', 'in', values)
+        .orderBy('tag.id')
+        .forUpdate()
+        .execute();
+      if (candidates.length === 0) {
+        return 0;
+      }
+
+      const result = await tx
+        .deleteFrom('tag')
+        .where(
+          'tag.id',
+          'in',
+          candidates.map(({ id }) => id),
+        )
+        .where(({ not, exists, selectFrom }) =>
+          not(exists(selectFrom('tag_asset').select('tag_asset.tagId').whereRef('tag_asset.tagId', '=', 'tag.id'))),
+        )
+        .where(({ not, exists, selectFrom }) =>
+          not(exists(selectFrom('tag as child').select('child.id').whereRef('child.parentId', '=', 'tag.id'))),
+        )
+        .executeTakeFirst();
+      return Number(result.numDeletedRows);
+    });
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })

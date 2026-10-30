@@ -180,6 +180,32 @@ describe(DescriptionTagCleanupService.name, () => {
     expect(await assetTags(ctx, asset.id)).toEqual(['dog']);
   });
 
+  it('keeps a tag a person puts on a photo while the clean-up deletes it', async () => {
+    const { ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const [her] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['her'] });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let added!: () => void;
+    const adding = new Promise<void>((resolve) => (added = resolve));
+
+    // the person's tagging is written but not yet committed when the clean-up starts deleting
+    const tagging = defaultDatabase.transaction().execute(async (tx) => {
+      await tx.insertInto('tag_asset').values({ tagId: her.id, assetId: asset.id }).execute();
+      added();
+      await gate;
+    });
+    await adding;
+    const deleting = ctx.get(TagRepository).deleteUnusedTagValues(user.id, ['her']);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    release();
+    await tagging;
+
+    await expect(deleting).resolves.toBe(0);
+    expect(await assetTags(ctx, asset.id)).toEqual(['her']);
+  });
+
   it('runs once: the bootstrap queues it until it has finished, and a second run changes nothing', async () => {
     const { sut, ctx } = setup();
     const metadata = ctx.get(SystemMetadataRepository);
