@@ -26,7 +26,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from frameleaf_ml import allocator
 from frameleaf_ml.models import get_model_deps
-from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
 from frameleaf_ml.models.subject_matte import SubjectMatteModel
@@ -157,6 +157,10 @@ async def preload_models(preload: PreloadModelData) -> None:
         for model_name in model_string.split(","):
             model_name = model_name.strip()
             model = await model_cache.get(model_name, model_type, model_task)
+            if isinstance(model, InferenceModel) and (reason := model.missing_runtime()) is not None:
+                # Startup must not fail on a model this container can't run; requests for it are refused.
+                log.warning(f"Not preloading '{model_name}': {reason}.")
+                continue
             await load(model)
 
     if preload.clip.textual is not None:
@@ -429,6 +433,26 @@ def _torch_cuda_info() -> tuple[bool, int]:
 @app.exception_handler(InferenceBusy)
 async def inference_busy(_: Request, __: Exception) -> JSONResponse:
     return JSONResponse({"detail": "ml_worker_busy"}, status_code=503, headers={"Retry-After": "30"})
+
+
+# Models this container was asked for but can never run, logged once each instead of a traceback per photo.
+_missing_runtime_logged: set[str] = set()
+_missing_runtime_lock = threading.Lock()
+
+
+def _refuse_missing_runtime(model_name: str, reason: str) -> None:
+    with _missing_runtime_lock:
+        first = model_name not in _missing_runtime_logged
+        _missing_runtime_logged.add(model_name)
+    if first:
+        log.warning(f"Model '{model_name}' can't run in this container ({reason}); refusing requests for it.")
+    raise ModelRuntimeUnavailable(reason)
+
+
+@app.exception_handler(ModelRuntimeUnavailable)
+async def model_runtime_unavailable(_: Request, error: Exception) -> JSONResponse:
+    # FL-676: a stable code the server recognises, so it moves to its fallback model and stops asking.
+    return JSONResponse({"detail": "model_runtime_unavailable", "reason": str(error)}, status_code=422)
 
 
 @app.post("/predict-bound", dependencies=[Depends(update_state)])
@@ -859,6 +883,8 @@ async def run_inference(
         model = await model_cache.get(
             entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **entry["options"]
         )
+        if isinstance(model, InferenceModel) and (reason := model.missing_runtime()) is not None:
+            _refuse_missing_runtime(entry["name"], reason)
         inputs: list[Any] = [payload]
         if entry["task"] == ModelTask.INPAINT:
             if mask is None:

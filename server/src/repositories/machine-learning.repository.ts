@@ -36,7 +36,7 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { JobDependencyUnavailable, deferJobUntilDependency } from 'src/queue/dependency.js';
+import { JobDependencyUnavailable, deferJobOnTransientFailure, deferJobUntilDependency } from 'src/queue/dependency.js';
 import { fetchJobText } from 'src/queue/http.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
@@ -602,6 +602,25 @@ export class RestorationWorkerError extends Error {
   }
 }
 
+/** The worker answered that it lacks the library this model needs (FL-676); it will never run the model. */
+export class MachineLearningModelRuntimeUnavailableError extends Error {}
+
+/** No answer from the worker at all (refused, reset or dropped connection), as opposed to an error it returned. */
+export class MachineLearningTransportError extends Error {}
+
+/** How long a worker's "can't run this model" answer is trusted before the model is asked for again. */
+export const MODEL_RUNTIME_UNAVAILABLE_TTL_MS = 10 * 60 * 1000;
+/** Up to this many claims, a description job whose worker dropped the connection waits instead of failing. */
+const TRANSPORT_DEFERRAL_ATTEMPTS = 4;
+
+const readDetail = (body: string): unknown => {
+  try {
+    return (JSON.parse(body) as { detail?: unknown } | null)?.detail;
+  } catch {
+    return undefined;
+  }
+};
+
 /** The same URL and credentials; endpoints are compared by value, never by object identity. */
 export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
   !!a && !!b && a.url === b.url && (a.authToken ?? null) === (b.authToken ?? null);
@@ -617,6 +636,8 @@ export class MachineLearningRepository implements RestorationInference {
     { authToken?: string; authorityIdentity?: string; hardwareChecked: boolean; probe: MlEndpointProbe }
   >();
   private probesInFlight = new Map<string, Promise<MlEndpointProbe>>();
+  /** `${endpoint url}\n${model}` -> when the worker's "this container can't run it" answer expires. */
+  private modelsWithoutRuntime = new Map<string, number>();
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -1702,14 +1723,21 @@ export class MachineLearningRepository implements RestorationInference {
     } catch (error: Error | unknown) {
       this.probeCache.delete(selection.endpoint.url);
       selection.record(usage('failure', 0));
-      throw new Error(
-        `Machine learning request '${this.redact(config)}' to ${target} failed: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
+      const message = `Machine learning request '${this.redact(config)}' to ${target} failed: ${error instanceof Error ? error.message : String(error)}`;
+      // An aborted job is not a transport failure: its own deadline or cancellation ended it.
+      const aborted = error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+      throw aborted
+        ? new Error(message, { cause: error })
+        : new MachineLearningTransportError(message, { cause: error });
     }
 
     if (!response.ok) {
       selection.record(usage('failure', body.length));
+      if (response.status === 422 && readDetail(body) === 'model_runtime_unavailable') {
+        throw new MachineLearningModelRuntimeUnavailableError(
+          `Machine learning request '${this.redact(config)}' to ${target} names a model this worker can't run`,
+        );
+      }
       if (response.status === 503) {
         let detail: unknown;
         try {
@@ -2089,6 +2117,14 @@ export class MachineLearningRepository implements RestorationInference {
     if (fallbackModelName && fallbackModelName !== modelName && !florenceUnavailable) {
       candidateModels.push(fallbackModelName);
     }
+    // FL-676: a worker that said it can't run the configured model (the CPU image has no OpenVINO
+    // GenAI for Qwen) is not asked again for a while; its photos go straight to the fallback.
+    const runtimeKey = (model: string) => `${selection.endpoint.url}\n${model}`;
+    const lacksRuntime = (model: string) => (this.modelsWithoutRuntime.get(runtimeKey(model)) ?? 0) > Date.now();
+    const skipped = candidateModels.length > 1 && lacksRuntime(modelName);
+    if (skipped) {
+      candidateModels.shift();
+    }
 
     let lastError: unknown;
     for (const candidateModel of candidateModels) {
@@ -2098,7 +2134,7 @@ export class MachineLearningRepository implements RestorationInference {
           { imagePath },
           buildRequest(candidateModel),
         );
-        if (candidateModel !== modelName) {
+        if (candidateModel !== modelName && !skipped) {
           this.logger.warn(
             `Image description model '${modelName}' failed on destination ${selection.destinationId}; succeeded with fallback model '${candidateModel}'`,
           );
@@ -2107,12 +2143,27 @@ export class MachineLearningRepository implements RestorationInference {
       } catch (error) {
         if (error instanceof JobDependencyUnavailable || error instanceof ServiceUnavailableException) throw error;
         lastError = error;
+        if (error instanceof MachineLearningModelRuntimeUnavailableError) {
+          this.modelsWithoutRuntime.set(runtimeKey(candidateModel), Date.now() + MODEL_RUNTIME_UNAVAILABLE_TTL_MS);
+          this.logger.warn(
+            `Image description model '${candidateModel}' can't run on destination ${selection.destinationId} (its runtime isn't installed there)` +
+              (candidateModel === modelName && candidateModels.length > 1
+                ? `; using '${candidateModels.at(-1)}' there instead`
+                : ''),
+          );
+          continue;
+        }
         this.logger.warn(
           `Image description request to destination ${selection.destinationId} (model='${candidateModel}') failed: ${error instanceof Error ? error.message : error}`,
         );
       }
     }
 
+    if (lastError instanceof MachineLearningTransportError) {
+      // The worker dropped or refused the connection (it was restarting or overloaded). The job
+      // waits and tries again a few times before it counts as a failure (FL-676).
+      deferJobOnTransientFailure('destination-unavailable', TRANSPORT_DEFERRAL_ATTEMPTS);
+    }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 

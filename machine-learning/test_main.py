@@ -415,6 +415,18 @@ class TestImageDescriptionModel:
             model._download()
         download.assert_not_called()
 
+    def test_reports_missing_openvino_genai_only_for_models_that_need_it(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: None)
+
+        assert "openvino-genai" in (
+            ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino").missing_runtime() or ""
+        )
+        assert ImageDescriptionModel("microsoft/Florence-2-base-ft", acceleration="openvino").missing_runtime() is None
+        assert ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda").missing_runtime() is None
+
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: object())
+        assert ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino").missing_runtime() is None
+
     def test_auto_uses_cuda_backend_when_available(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setattr(ImageDescriptionModel, "_cuda_available", lambda _: True)
 
@@ -2935,6 +2947,38 @@ def test_bearer_auth_open_when_no_token() -> None:
     # Inference path is open — no auth required, with or without a header.
     assert client.post("/predict").status_code == 200
     assert client.post("/predict", headers={"Authorization": "Bearer anything"}).status_code == 200
+
+
+def test_refuses_a_model_this_container_cannot_run_without_loading_it(
+    deployed_app: TestClient, monkeypatch: MonkeyPatch
+) -> None:
+    # FL-676: the CPU image has no OpenVINO GenAI. A Qwen request is refused at once with a code the
+    # server recognises (no download, no load, no traceback), and the warning is logged once.
+    monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: None)
+    download = mock.Mock()
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", download)
+    warning = mock.Mock()
+    monkeypatch.setattr("frameleaf_ml.main.log.warning", warning)
+    monkeypatch.setattr("frameleaf_ml.main._missing_runtime_logged", set())
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8)).save(buffer, format="PNG")
+    entries = {
+        "image-description-tagging": {
+            "visual": {"modelName": "Qwen/Qwen2.5-VL-3B-Instruct", "options": {"acceleration": "openvino"}}
+        }
+    }
+
+    for _ in range(2):
+        response = deployed_app.post(
+            "http://localhost:3003/predict",
+            data={"entries": json.dumps(entries)},
+            files={"image": buffer.getvalue()},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "model_runtime_unavailable"
+
+    download.assert_not_called()
+    assert warning.call_count == 1
 
 
 def test_options_validation_rejects_unknown_keys(deployed_app: TestClient) -> None:

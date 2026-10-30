@@ -486,6 +486,80 @@ describe(MachineLearningRepository.name, () => {
       expect(result).not.toHaveProperty('device');
     });
 
+    it('skips a model the worker cannot run and goes straight to the fallback (FL-676)', async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ detail: 'model_runtime_unavailable', reason: 'openvino-genai' }, 422))
+        .mockImplementation(() => Promise.resolve(jsonResponse(description)));
+      vi.stubGlobal('fetch', fetch);
+      const options = {
+        modelName: qwenModelName,
+        fallbackModelName: florenceModelName,
+        acceleration: MachineLearningHardwareAcceleration.Auto,
+        device: 'AUTO',
+      };
+      const models = () =>
+        fetch.mock.calls.map(
+          ([, init]) =>
+            JSON.parse(String((init.body as FormData).get('entries')))[ModelTask.IMAGE_DESCRIPTION][ModelType.VISUAL]
+              .modelName,
+        );
+
+      for (let photo = 0; photo < 3; photo++) {
+        const run = await sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, options);
+        expect(run.model).toBe(florenceModelName);
+      }
+      expect(models()).toEqual([qwenModelName, florenceModelName, florenceModelName, florenceModelName]);
+
+      // Another worker has not said so, and the answer expires.
+      await sut.describeImageRun(selection(MlDestinationKind.Local, 'http://other-ml:3003'), imagePath, options);
+      expect(models().at(-1)).toBe(qwenModelName);
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60 * 1000);
+      await sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, options);
+      expect(models().at(-1)).toBe(qwenModelName);
+    });
+
+    it.each([
+      [1, 'destination-unavailable'],
+      [4, undefined],
+    ])('waits instead of failing when the worker drops the connection (claim %s)', async (attempt, expected) => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+      const context = {
+        claim: { data: {}, safeToRetry: true, attempt },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+            modelName: florenceModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Auto,
+            device: 'AUTO',
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(context.dependencyReason).toBe(expected);
+    });
+
+    it('does not wait on an ordinary error the worker returned', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('error', { status: 500 })));
+      const context = {
+        claim: { data: {}, safeToRetry: true, attempt: 1 },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+            modelName: florenceModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Auto,
+            device: 'AUTO',
+          }),
+        ),
+      ).rejects.toThrow('failed with status 500');
+      expect(context.dependencyReason).toBeUndefined();
+    });
+
     it('never retries the fallback model on a cloud destination', async () => {
       const fetch = vi.fn().mockResolvedValue(new Response('error', { status: 500, statusText: 'Internal Error' }));
       vi.stubGlobal('fetch', fetch);
