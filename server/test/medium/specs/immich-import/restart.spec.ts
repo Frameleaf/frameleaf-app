@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { clusterId } from 'src/immich-import/adapters.js';
+import { clusterId, withForkContent } from 'src/immich-import/adapters.js';
 import { connectImportDatabase } from 'src/immich-import/database.js';
 import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { ImmichImportService } from 'src/immich-import/importer.js';
@@ -309,10 +309,16 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
         await connection.db.query(
           'SELECT "ownerId","originalPath",visibility,"deletedAt" IS NOT NULL AS deleted FROM public.asset',
         ),
-      ).toEqual([{ ownerId: owner1, originalPath: targetPath, visibility: 'locked', deleted: true }]);
+      ).toEqual([{ ownerId: owner1, originalPath: targetPath, visibility: 'timeline', deleted: true }]);
+      expect(await connection.db.query('SELECT "assetId",reason,"previousVisibility" FROM public.asset_lock')).toEqual([
+        { assetId, reason: 'frameleaf-locked-folder', previousVisibility: 'locked' },
+      ]);
+      // The only face is on locked media, so the person loses its cover and gets a new thumbnail.
       expect(
-        await connection.db.query('SELECT "ownerId","personGroupId","isHidden","faceAssetId" FROM public.person'),
-      ).toEqual([{ ownerId: owner1, personGroupId: personId, isHidden: true, faceAssetId: faceId }]);
+        await connection.db.query(
+          'SELECT "ownerId","personGroupId","isHidden","faceAssetId","thumbnailPath" FROM public.person',
+        ),
+      ).toEqual([{ ownerId: owner1, personGroupId: personId, isHidden: true, faceAssetId: null, thumbnailPath: '' }]);
       expect(
         await connection.db.query('SELECT "personGroupId","sourceType","isVisible" FROM public.asset_face'),
       ).toEqual([{ personGroupId: personId, sourceType: 'manual', isVisible: false }]);
@@ -339,6 +345,122 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
     30_000,
   );
 
+  it('carries a pre-Frameleaf fork library: nested albums, smart albums and the Locked folder', async () => {
+    configure('3.0.0');
+    addLibrary();
+    const parentId = '0b6f3c56-3a0e-4c0e-9a51-2b1f7f0f3a01';
+    const childId = 'f7c1e9d2-5b8a-4c3d-8e6f-1a2b3c4d5e6f';
+    const smartId = '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a';
+    // Fork rows read through the shape preflight derives from the fork's extra columns and tables.
+    const type = (value: string) => ({ type: value, not_null: false, default: null, identity: '', generated: '' });
+    importer.source.fixture = withForkContent(importer.source.fixture, {
+      tables: {
+        album: { parentId: type('uuid'), icon: type('character varying'), sortOrder: type('double precision') },
+        smart_album: Object.fromEntries(
+          Object.entries({
+            id: 'uuid',
+            kind: 'text',
+            ownerId: 'uuid',
+            albumId: 'uuid',
+            createdAt: 'timestamp with time zone',
+          }).map(([column, value]) => [column, type(value)]),
+        ),
+        smart_album_asset: Object.fromEntries(
+          Object.entries({
+            smartAlbumId: 'uuid',
+            assetId: 'uuid',
+            addedAt: 'timestamp with time zone',
+            matchReason: 'text',
+          }).map(([column, value]) => [column, type(value)]),
+        ),
+      },
+      constraints: [],
+      uniqueIndexes: [],
+      enums: [],
+    });
+    // The child sorts before its parent, so its parent link is only restored after both exist.
+    content.album = [
+      { ...content.album[0], albumThumbnailAssetId: assetId, parentId: childId, icon: 'lock', sortOrder: 2 },
+      { id: childId, albumName: 'Trips', parentId, icon: 'plane', sortOrder: 1 },
+      { id: parentId, albumName: 'Family', parentId: null, icon: null, sortOrder: 0 },
+    ];
+    content.album_user.push(
+      { albumId: childId, userId: owner1, role: 'owner' },
+      { albumId: parentId, userId: owner1, role: 'owner' },
+    );
+    content.smart_album = [{ id: smartId, kind: 'pets', ownerId: owner1, albumId: childId, createdAt: date }];
+    content.smart_album_asset = [{ smartAlbumId: smartId, assetId, addedAt: date, matchReason: 'tag' }];
+    await importer.run();
+    await importer.verify(acknowledgeWork);
+    expect((await importer.status()).status).toBe('activated');
+    expect(
+      await connection.db.query(
+        'SELECT id,"parentId",icon,"sortOrder",kind,"albumThumbnailAssetId" FROM public.album ORDER BY "sortOrder"',
+      ),
+    ).toEqual([
+      { id: parentId, parentId: null, icon: null, sortOrder: 0, kind: 'collection', albumThumbnailAssetId: null },
+      // Smart album targets stay albums, as the in-place upgrade left them.
+      { id: childId, parentId, icon: 'plane', sortOrder: 1, kind: 'album', albumThumbnailAssetId: null },
+      // A locked cover is released; the album's only photo is locked.
+      { id: albumId, parentId: childId, icon: 'lock', sortOrder: 2, kind: 'album', albumThumbnailAssetId: null },
+    ]);
+    const closure = await connection.db.query(
+      'SELECT id_ancestor,id_descendant FROM public.album_closure ORDER BY id_ancestor,id_descendant',
+    );
+    expect(closure.map((row) => `${row.id_ancestor}>${row.id_descendant}`).sort()).toEqual(
+      [
+        [parentId, parentId],
+        [childId, childId],
+        [albumId, albumId],
+        [parentId, childId],
+        [parentId, albumId],
+        [childId, albumId],
+      ]
+        .map(([ancestor, descendant]) => `${ancestor}>${descendant}`)
+        .sort(),
+    );
+    expect(await connection.db.query('SELECT id,kind,"albumId" FROM public.smart_album')).toEqual([
+      { id: smartId, kind: 'pets', albumId: childId },
+    ]);
+    expect(await connection.db.query('SELECT "assetId","matchReason" FROM public.smart_album_asset')).toEqual([
+      { assetId, matchReason: 'tag' },
+    ]);
+    expect(await connection.db.query('SELECT "assetId",reason FROM public.asset_lock')).toEqual([
+      { assetId, reason: 'frameleaf-locked-folder' },
+    ]);
+  }, 30_000);
+
+  it('locks a live photo still when only its video part was in the Locked folder', async () => {
+    configure('3.0.0');
+    addLibrary();
+    const stillId = '6a1d2c3b-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+    const still = Buffer.from('live-photo-still');
+    await writeFile(join(directory, 'source', 'still.jpg'), still);
+    await writeFile(join(directory, 'destination', 'still.jpg'), still);
+    content.asset.push({
+      ...content.asset[0],
+      id: stillId,
+      originalPath: join(directory, 'source', 'still.jpg'),
+      originalFileName: 'still.jpg',
+      checksum: String.raw`\x${createHash('sha256').update(still).digest('hex')}`,
+      visibility: 'timeline',
+      deletedAt: null,
+      livePhotoVideoId: assetId,
+    });
+    await importer.run();
+    await importer.verify(acknowledgeWork);
+    expect(await connection.db.query('SELECT "assetId",reason FROM public.asset_lock ORDER BY "assetId"')).toEqual(
+      [assetId, stillId].sort().map((id) => ({ assetId: id, reason: 'frameleaf-locked-folder' })),
+    );
+    // The video part of a live photo never shows on its own.
+    expect(await connection.db.query('SELECT id,visibility FROM public.asset ORDER BY id')).toEqual(
+      [
+        { id: assetId, visibility: 'hidden' },
+        { id: stillId, visibility: 'timeline' },
+      ].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+  }, 30_000);
+
   it('activates a 3.1.0 Manager import with unchanged media locations and access associations', async () => {
     configure('3.1.0', {
       mode: 'manager-in-place',
@@ -358,7 +480,7 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
     await expect(assertImmichImportActivated(connection.db)).resolves.toBeUndefined();
     await expect(assertCanonicalDestination(connection.db)).resolves.toBeUndefined();
     expect(await connection.db.query('SELECT id,"ownerId","originalPath",visibility FROM public.asset')).toEqual([
-      { id: assetId, ownerId: owner1, originalPath: sourcePath, visibility: 'locked' },
+      { id: assetId, ownerId: owner1, originalPath: sourcePath, visibility: 'timeline' },
     ]);
     expect(await connection.db.query('SELECT id,password,"pinCode","isAdmin" FROM public."user" ORDER BY id')).toEqual([
       { id: owner1, password: 'password-hash-one', pinCode: 'pin-hash-one', isAdmin: true },
