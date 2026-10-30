@@ -5,6 +5,7 @@
   import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { DiscoveryQuery, DiscoveryFilterSection } from '$lib/components/discovery/query';
+  import type { IdsFilter } from '@frameleaf/sdk';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
   import LibraryLayoutSwitch from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
@@ -182,7 +183,14 @@
    * Filters the page itself states (the workspace, the collection) are not the person's own narrowing:
    * they get no chip and no count in the toolbar either (FL-670).
    */
-  const scopeFields = $derived(album ? ['libraryScope', 'albumIds'] : ['libraryScope']);
+  /** The collection's own condition, with no other album rule beside it (those keep their chip). */
+  const isOnly = (condition: IdsFilter | undefined, id: string) =>
+    !condition?.none?.length &&
+    ((condition?.any?.length === 1 && condition.any[0] === id && !condition.all?.length) ||
+      (condition?.all?.length === 1 && condition.all[0] === id && !condition.any?.length));
+  const scopeFields = $derived(
+    album && isOnly(session.query.filter.albumIds, album.id) ? ['libraryScope', 'albumIds'] : ['libraryScope'],
+  );
   const narrowingFields = $derived(activeFilterFields(session.query).filter((field) => !scopeFields.includes(field)));
   const narrowed = $derived(narrowingFields.length > 0 || session.query.text.trim() !== '');
   const emptyKind = $derived.by(() => {
@@ -1110,12 +1118,15 @@
     .fl-items-panes {
       position: relative;
     }
+    /* Over the visible screen, wherever the page is scrolled. */
     .fl-items-panel {
-      position: absolute;
-      inset: 0;
+      position: fixed;
+      inset: var(--fl-topbar-height-phone, var(--fl-topbar-height)) 0 0;
+      max-height: none;
       width: 100%;
+      padding-block-end: var(--fl-tabbar-height, 0px);
       background: var(--fl-panel);
-      z-index: 2;
+      z-index: 30;
     }
   }
 </style>

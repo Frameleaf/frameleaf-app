@@ -1,4 +1,4 @@
-import { AlbumKind, AlbumUserRole, getAlbumInfo, type AlbumResponseDto } from '@frameleaf/sdk';
+import { AlbumKind, AlbumUserRole, getAlbumInfo, LibraryScope, type AlbumResponseDto } from '@frameleaf/sdk';
 import { render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
@@ -88,7 +88,8 @@ beforeEach(() => {
   slideshowStore.slideshowState.set(SlideshowState.None);
 });
 
-const data = (value: AlbumResponseDto) => ({ album: value, tree: { collections: [], albums: [], spaces: [] } });
+const emptyTree = () => ({ collections: [], albums: [], spaces: [] });
+const data = (value: AlbumResponseDto, libraryTree = emptyTree()) => ({ album: value, tree: emptyTree(), libraryTree });
 
 it('restores a collection selection after remounting its flat results view (FL-40)', async () => {
   const collection = albumFactory.build({
@@ -332,6 +333,14 @@ describe('leaving an empty, unnamed album', () => {
     render(AlbumPage, { data: data(album) as never });
     await leaveTo('/(user)/photos');
     expect(handleDeleteAlbum).toHaveBeenCalledWith(album, { notify: false });
+  });
+
+  it('keeps a Boards album holding an album of the other workspace (FL-670)', async () => {
+    const album = owned({ id: 'boards-draft', libraryScope: LibraryScope.Design });
+    const child = albumFactory.build({ id: 'personal-child', parentId: 'boards-draft' });
+    render(AlbumPage, { data: data(album, { ...emptyTree(), albums: [child] as never[] }) as never });
+    await leaveTo('/(user)/photos');
+    expect(handleDeleteAlbum).not.toHaveBeenCalled();
   });
 
   it('keeps it when you open another album', async () => {

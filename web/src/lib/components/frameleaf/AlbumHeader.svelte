@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCoverDialog from '$lib/components/frameleaf/AlbumCoverDialog.svelte';
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
@@ -34,6 +35,7 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
+  import { workspaceHref } from '$lib/frameleaf/search-context';
   import {
     handleCreateAlbumEntry,
     handleDeleteAlbum,
@@ -212,6 +214,9 @@
    */
   const boards = $derived(uploadScope === LibraryScope.Design);
   const folded = $derived(compact || boards);
+  /** Another collection, opened in Boards whatever its own scope (a "both" collection would open in Library). */
+  const albumHref = (id: string) =>
+    workspaceHref(Route.viewAlbum({ id }), boards ? LibraryViewScope.Design : undefined, page.url.origin);
 
   /** "Icon and colour…" (README point 22): the header's icon tile and the "…" menu open it. */
   let iconOpen = $state(false);
@@ -492,7 +497,7 @@
     {/if}
     {#each breadcrumbAlbums as ancestor (ancestor.id)}
       <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
-      <a href={Route.viewAlbum({ id: ancestor.id })}>{ancestor.albumName || $t('unnamed_album')}</a>
+      <a href={albumHref(ancestor.id)}>{ancestor.albumName || $t('unnamed_album')}</a>
     {/each}
     <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
     <span aria-current="page">{name}</span>
@@ -550,7 +555,7 @@
         {/if}
       </div>
 
-      {#if !boards || album.description}<AlbumInlineEdit
+      {#if !boards || album.description || album.isSmart}<AlbumInlineEdit
           as="p"
           label={$t('frameleaf_album_edit_description')}
           value={album.description}
@@ -826,7 +831,7 @@
           {@const inside = insideCount(child.id)}
           {@const childName = child.albumName || $t('unnamed_album')}
           <!-- The collections inside, as cards (prototype `pro-subcollections`): cover, own mark, counts. -->
-          <a class="sub-card" href={Route.viewAlbum({ id: child.id })} data-testid="sub-collection-card">
+          <a class="sub-card" href={albumHref(child.id)} data-testid="sub-collection-card">
             <span class="sub-cover" aria-hidden="true">
               {#if cover}
                 <img src={cover} alt="" loading="lazy" draggable="false" />

@@ -18,6 +18,8 @@ export const load = (async ({ params, url, depends }) => {
     // only for Boards collections; read the album's scope from the URL first if the wait shows.
     tree:
       album.libraryScope === LibraryScope.Design ? await getAlbumTree({ libraryScope: LibraryViewScope.Design }) : tree,
+    // Unfiltered by workspace, so an album holding albums of the other workspace is never "empty".
+    libraryTree: tree,
     meta: {
       title: album.albumName,
     },
