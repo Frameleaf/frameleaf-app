@@ -62,14 +62,14 @@
 <Dialog title={$t('frameleaf_pets_merge_into')} closeLabel={$t('close')} bind:open>
   <div class="preview" aria-live="polite">
     <div class="side">
-      <PetThumbnail assetId={pet.featuredAssetId} cacheKey={pet.updatedAt} size={72} />
+      <PetThumbnail assetId={pet.featuredAssetId} cacheKey={pet.updatedAt} species={pet.species} size={72} />
       <strong>{nameOf(pet)}</strong>
       <span>{countOf(pet)}</span>
     </div>
     <span class="arrow" aria-hidden="true"><Icon icon={mdiArrowRight} size={ICON_SIZE.xl} /></span>
     <div class="side" class:empty={!target}>
       {#if target}
-        <PetThumbnail assetId={target.featuredAssetId} cacheKey={target.updatedAt} size={72} />
+        <PetThumbnail assetId={target.featuredAssetId} cacheKey={target.updatedAt} species={target.species} size={72} />
         <strong>{nameOf(target)}</strong>
         <span>{countOf(target)}</span>
       {:else}
@@ -92,7 +92,12 @@
     {#each rows as candidate (candidate.id)}
       <li>
         <button type="button" aria-pressed={candidate.id === choice} onclick={() => (choice = candidate.id)}>
-          <PetThumbnail assetId={candidate.featuredAssetId} cacheKey={candidate.updatedAt} size={40} />
+          <PetThumbnail
+            assetId={candidate.featuredAssetId}
+            cacheKey={candidate.updatedAt}
+            species={candidate.species}
+            size={40}
+          />
           <span class="name" class:unnamed={!candidate.name}>{nameOf(candidate)}</span>
           <span class="count">{countOf(candidate)}</span>
           {#if candidate.id === choice}

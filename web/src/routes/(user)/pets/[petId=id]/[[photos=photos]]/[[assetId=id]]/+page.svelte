@@ -160,6 +160,7 @@
             <PetThumbnail
               assetId={pet.featuredAssetId}
               cacheKey={pet.updatedAt}
+              species={pet.species}
               size={72}
               heroKey="pet:{pet.id}"
               heroPage

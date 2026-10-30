@@ -95,7 +95,13 @@
       aria-label={$t('frameleaf_pets_open_pet', { values: { name } })}
       onclick={onOpen}
     >
-      <PetThumbnail assetId={pet.featuredAssetId} cacheKey={pet.updatedAt} {size} heroKey="pet:{pet.id}" />
+      <PetThumbnail
+        assetId={pet.featuredAssetId}
+        cacheKey={pet.updatedAt}
+        species={pet.species}
+        {size}
+        heroKey="pet:{pet.id}"
+      />
     </button>
     {#if pet.isFavorite}
       <span class="badge favorite" title={$t('to_favorite')}>
