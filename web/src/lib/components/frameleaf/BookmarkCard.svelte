@@ -5,7 +5,7 @@
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, type BookmarkResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiLinkVariant } from '@mdi/js';
+  import { mdiCheck, mdiLinkVariant } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let {
@@ -81,7 +81,9 @@
       checked={selected}
       aria-label={$t('frameleaf_bookmark_select', { values: { title: name } })}
       onclick={toggle}
-    /></label
+    /><span aria-hidden="true"
+      >{#if selected}<Icon icon={mdiCheck} size="15" />{/if}</span
+    ></label
   >
 </div>
 
@@ -158,10 +160,34 @@
   .fl-bookmark.is-selected .fl-bookmark-select {
     opacity: 1;
   }
+  /* The image tile's round ring and tick (AssetTile `.fl-tile-select`), over the same hidden checkbox. */
   .fl-bookmark-select input {
-    width: 20px;
-    height: 20px;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     margin: 0;
-    accent-color: var(--fl-accent);
+    opacity: 0;
+    cursor: pointer;
+  }
+  .fl-bookmark-select > span {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 2px solid rgb(255 255 255 / 92%);
+    border-radius: 50%;
+    background: rgb(0 0 0 / 28%);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 45%);
+    color: var(--fl-accent-text);
+    pointer-events: none;
+  }
+  .fl-bookmark.is-selected .fl-bookmark-select > span {
+    border-color: var(--fl-accent);
+    background: var(--fl-accent);
+  }
+  .fl-bookmark-select:has(input:focus-visible) > span {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
 </style>

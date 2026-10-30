@@ -537,7 +537,10 @@
   <header class="fl-items-heading">
     {#if header}{@render header()}{:else}<div>
         <h1>{title}</h1>
-        <p class="fl-items-description">{$t('frameleaf_pro_description')}</p>
+        <!-- Prototype screen 01: the count is the title's subtitle (FL-670). -->
+        <p class="fl-items-description" aria-live="polite" data-testid="frameleaf-items-count">
+          {results.count === null ? '' : $t('items_count', { values: { count: results.count } })}
+        </p>
       </div>{/if}
     <div class="fl-items-heading-actions">
       {#if workspace === 'design'}
@@ -568,103 +571,114 @@
     </div>
   </header>
   {#if workspace === 'design'}<BoardsEaglePausedBanner />{/if}
-  <ResultsToolbar
-    {session}
-    count={results.count}
-    onOpenFilterPanel={(section) => (filterSection = section)}
-    filterPanelOpen={filterSection !== null}
-    onCloseFilterPanel={() => (filterSection = null)}
-    {inspectorOpen}
-    onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
-    unappliedFields={scopeFields}
-  />
-  <div class="fl-items-controls" role="toolbar" aria-label={$t('frameleaf_boards_filters')}>
-    <div class="fl-items-popover-host">
-      <button
-        type="button"
-        class="fl-items-chip"
-        class:is-on={!!colorText}
-        bind:this={colorTrigger}
-        aria-expanded={popover === 'color'}
-        aria-haspopup="dialog"
-        onclick={() => (popover = popover === 'color' ? null : 'color')}
-      >
-        {#if session.query.filter.color && colorText}
-          <span class="fl-items-chip-swatch" style:background={session.query.filter.color.hex} aria-hidden="true"
-          ></span>
-          {$t(colorText.key, { values: colorText.values })}
-        {:else}
-          <Icon icon={mdiPaletteOutline} size="16" aria-hidden />
-          {$t('frameleaf_boards_colour')}
-        {/if}
-        <Icon icon={mdiChevronDown} size="14" aria-hidden />
-      </button>
-      {#if popover === 'color'}
-        <div class="fl-items-popover" role="dialog" aria-label={$t('frameleaf_boards_colour_find')} use:dismissable>
-          <ColorFilter
-            color={session.query.filter.color}
-            onChange={(color) => {
-              applyColor(color);
-              closePopover();
-            }}
-            onCancel={closePopover}
-          />
-        </div>
-      {/if}
-    </div>
-    <div class="fl-items-popover-host">
-      <button
-        type="button"
-        class="fl-items-chip"
-        class:is-on={shapeActive}
-        bind:this={shapeTrigger}
-        aria-expanded={popover === 'shape'}
-        aria-haspopup="dialog"
-        onclick={() => (popover = popover === 'shape' ? null : 'shape')}
-      >
-        <Icon icon={mdiAspectRatio} size="16" aria-hidden />
-        {shapeLabel ?? $t('frameleaf_boards_size_and_shape')}
-        <Icon icon={mdiChevronDown} size="14" aria-hidden />
-      </button>
-      {#if popover === 'shape'}
-        <div class="fl-items-popover" role="dialog" aria-label={$t('frameleaf_boards_size_and_shape')} use:dismissable>
-          <DimensionFilters filter={session.query.filter} onChange={setFilter} onDone={closePopover} />
-        </div>
-      {/if}
-    </div>
-    <Button
-      pressed={session.query.filter.hasAlbums?.eq === false}
-      onclick={() => setFilter('hasAlbums', session.query.filter.hasAlbums?.eq === false ? undefined : { eq: false })}
-      >{$t('frameleaf_pro_unfiled')}</Button
-    >
-    {#if narrowed}<Button variant="quiet" onclick={() => (dialog = 'save')}
-        ><Icon icon={mdiContentSaveOutline} size="16" aria-hidden />{$t('frameleaf_boards_save_smart')}</Button
-      >{/if}
-    <span class="fl-items-spacer"></span>
-    <label class="fl-items-sort">
-      <Icon icon={mdiSort} size="16" aria-hidden />
-      <select
-        aria-label={$t('frameleaf_library_sort')}
-        value={sortChoice}
-        disabled={session.query.mode === 'smart'}
-        onchange={(event) => {
-          const chosen = event.currentTarget.value;
-          const next = LIBRARY_ITEM_SORTS.find((value) => value === chosen);
-          if (next) {
-            sort = next;
-          }
-        }}
-      >
-        <option value="added">{$t('frameleaf_boards_sort_added')}</option>
-        <option value="name">{$t('frameleaf_boards_sort_name')}</option>
-        <option value="rating">{$t('frameleaf_boards_sort_rating')}</option>
-        {#if session.query.filter.color}<option value="color">{$t('frameleaf_pro_color_order')}</option>{/if}
-      </select>
-    </label>
-    <Button onclick={() => refresh()}>{$t('refresh')}</Button>
-    {#if session.layout === 'work'}<WorkFileNamesToggle {preferences} />{/if}
-    {#if results.countCapped}<span role="status">{$t('frameleaf_pro_count_capped')}</span>{/if}
+  <!--
+    One row under the heading, in the page's gutter (prototype screens 01 and 02): the filters and sort,
+    then Filter and the details toggle. The count is in the heading, or the collection header's summary.
+  -->
+  <div class="fl-items-toolbar">
+    <ResultsToolbar
+      {session}
+      leading={controls}
+      onOpenFilterPanel={(section) => (filterSection = section)}
+      filterPanelOpen={filterSection !== null}
+      onCloseFilterPanel={() => (filterSection = null)}
+      {inspectorOpen}
+      onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
+      unappliedFields={scopeFields}
+    />
   </div>
+  {#snippet controls()}<div class="fl-items-controls" role="toolbar" aria-label={$t('frameleaf_boards_filters')}>
+      <div class="fl-items-popover-host">
+        <button
+          type="button"
+          class="fl-items-chip"
+          class:is-on={!!colorText}
+          bind:this={colorTrigger}
+          aria-expanded={popover === 'color'}
+          aria-haspopup="dialog"
+          onclick={() => (popover = popover === 'color' ? null : 'color')}
+        >
+          {#if session.query.filter.color && colorText}
+            <span class="fl-items-chip-swatch" style:background={session.query.filter.color.hex} aria-hidden="true"
+            ></span>
+            {$t(colorText.key, { values: colorText.values })}
+          {:else}
+            <Icon icon={mdiPaletteOutline} size="16" aria-hidden />
+            {$t('frameleaf_boards_colour')}
+          {/if}
+          <Icon icon={mdiChevronDown} size="14" aria-hidden />
+        </button>
+        {#if popover === 'color'}
+          <div class="fl-items-popover" role="dialog" aria-label={$t('frameleaf_boards_colour_find')} use:dismissable>
+            <ColorFilter
+              color={session.query.filter.color}
+              onChange={(color) => {
+                applyColor(color);
+                closePopover();
+              }}
+              onCancel={closePopover}
+            />
+          </div>
+        {/if}
+      </div>
+      <div class="fl-items-popover-host">
+        <button
+          type="button"
+          class="fl-items-chip"
+          class:is-on={shapeActive}
+          bind:this={shapeTrigger}
+          aria-expanded={popover === 'shape'}
+          aria-haspopup="dialog"
+          onclick={() => (popover = popover === 'shape' ? null : 'shape')}
+        >
+          <Icon icon={mdiAspectRatio} size="16" aria-hidden />
+          {shapeLabel ?? $t('frameleaf_boards_size_and_shape')}
+          <Icon icon={mdiChevronDown} size="14" aria-hidden />
+        </button>
+        {#if popover === 'shape'}
+          <div
+            class="fl-items-popover"
+            role="dialog"
+            aria-label={$t('frameleaf_boards_size_and_shape')}
+            use:dismissable
+          >
+            <DimensionFilters filter={session.query.filter} onChange={setFilter} onDone={closePopover} />
+          </div>
+        {/if}
+      </div>
+      <Button
+        pressed={session.query.filter.hasAlbums?.eq === false}
+        onclick={() => setFilter('hasAlbums', session.query.filter.hasAlbums?.eq === false ? undefined : { eq: false })}
+        >{$t('frameleaf_pro_unfiled')}</Button
+      >
+      {#if narrowed}<Button variant="quiet" onclick={() => (dialog = 'save')}
+          ><Icon icon={mdiContentSaveOutline} size="16" aria-hidden />{$t('frameleaf_boards_save_smart')}</Button
+        >{/if}
+      <span class="fl-items-spacer"></span>
+      <label class="fl-items-sort">
+        <Icon icon={mdiSort} size="16" aria-hidden />
+        <select
+          aria-label={$t('frameleaf_library_sort')}
+          value={sortChoice}
+          disabled={session.query.mode === 'smart'}
+          onchange={(event) => {
+            const chosen = event.currentTarget.value;
+            const next = LIBRARY_ITEM_SORTS.find((value) => value === chosen);
+            if (next) {
+              sort = next;
+            }
+          }}
+        >
+          <option value="added">{$t('frameleaf_boards_sort_added')}</option>
+          <option value="name">{$t('frameleaf_boards_sort_name')}</option>
+          <option value="rating">{$t('frameleaf_boards_sort_rating')}</option>
+          {#if session.query.filter.color}<option value="color">{$t('frameleaf_pro_color_order')}</option>{/if}
+        </select>
+      </label>
+      <Button onclick={() => refresh()}>{$t('refresh')}</Button>
+      {#if session.layout === 'work'}<WorkFileNamesToggle {preferences} />{/if}
+      {#if results.countCapped}<span role="status">{$t('frameleaf_pro_count_capped')}</span>{/if}
+    </div>{/snippet}
   {#if organizationFailed}<InlineError
       compact
       message={$t('frameleaf_pro_organization_failed')}
@@ -971,7 +985,15 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
-  .fl-items-controls,
+  .fl-items-toolbar {
+    padding-inline: var(--fl-space-4);
+  }
+  .fl-items-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+  }
   .fl-items-selection,
   .fl-items-footer {
     display: flex;
