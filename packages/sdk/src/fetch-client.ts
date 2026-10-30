@@ -429,6 +429,8 @@ export type CloudBackupCoverageStatusDto = {
 export type CloudBackupEscrowStatusDto = {
     /** Server key mode and a linked server: escrow can be turned on */
     available: boolean;
+    /** The stored copy predates the current backup key: store it again */
+    outdated: boolean;
     stored: boolean;
     storedAt: string | null;
 };

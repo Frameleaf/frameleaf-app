@@ -13,6 +13,7 @@ import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/u
 import {
   clientBackupContext,
   clientBackupPlainSize,
+  clientBackupStoredSize,
   decryptClientBackup,
   encryptClientBackup,
 } from 'src/utils/cloud-backup-crypto.js';
@@ -26,6 +27,7 @@ import {
   sseCustomerHeaders,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import { getDiskUsage } from 'src/utils/disk-usage.js';
 import {
   advanceExecutionProgress,
   assertExecutionActive,
@@ -42,8 +44,9 @@ import { type BackupCredentials, ManagedBackupAuthorizationError } from 'src/uti
  * needs the S3 API directly, and every provider the agent supports (Wasabi, and any SSE-C-capable S3
  * store for your own bucket) speaks it.
  *
- * - Legacy objects retain SSE-C customer-key headers. Versioned client objects carry locally encrypted
- *   bodies and never those headers. Requests log method and object name, never keys or payloads.
+ * - Backups are written as client objects: locally encrypted bodies that never carry SSE-C headers. The
+ *   claim marker and probes still use SSE-C, and older SSE-C objects remain readable. Requests log method
+ *   and object name, never keys or payloads. A bucket must keep object versions (`versioning-off` otherwise).
  * - **Integrity.** Every body is signed with its SHA-256 (`x-amz-content-sha256`) and sent with
  *   `Content-MD5`, so the provider refuses a body that changed in flight. A file is read once while it
  *   uploads and hashed as it goes: an object named `o/<sha256>` is completed only when what was sent
@@ -82,7 +85,7 @@ export type CloudBackupConnection = {
 export type CloudBackupObjectInfo = { key: string; size: number; etag: string | null };
 
 export type CloudBackupClaimRefusal =
-  'claimed-by-another-server' | 'other-key' | 'not-empty' | 'sse-c-unsupported' | 'claim-missing';
+  'claimed-by-another-server' | 'other-key' | 'not-empty' | 'sse-c-unsupported' | 'versioning-off' | 'claim-missing';
 
 /** A provider answered with an error, or could not be reached. The message never holds a secret. */
 export class CloudBackupStoreError extends Error {
@@ -119,6 +122,10 @@ export class CloudBackupFileChangedError extends Error {
 /** What an administrator reads when the provider refuses customer-provided keys on a bucket it lists. */
 export const SSE_C_REFUSED_MESSAGE =
   'The storage provider refused an encrypted test write: the bucket may block customer-provided encryption keys (SSE-C), or these credentials can’t write to it. Amazon S3 turns SSE-C off by default on new buckets: allow it in the bucket’s default encryption settings (remove SSE-C from the blocked encryption types), check that the access key may write to the bucket, then check the bucket again.';
+
+/** Each backup's signed record names its manifest's exact version, so the bucket must keep versions. */
+export const VERSIONING_OFF_MESSAGE =
+  'This bucket does not keep object versions. Turn on versioning for the bucket (and a lifecycle rule that removes old versions after a few days), then check the bucket again.';
 
 const EMPTY_SHA256 = createHash('sha256').update('').digest('hex');
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -860,17 +867,17 @@ export class CloudBackupStoreRepository {
     return { size, sha256: digest.digest('hex') };
   }
 
-  /** One object in one request. Answers the provider's ETag and whether it confirmed SSE-C. */
+  /** One object in one request. Answers the provider's ETag, whether it confirmed SSE-C and kept a version. */
   async put(
     connection: CloudBackupConnection,
     key: string,
     body: Buffer,
     bucketKey: Buffer,
     contentType = 'application/octet-stream',
-  ): Promise<{ etag: string; encrypted: boolean }> {
+  ): Promise<{ etag: string; encrypted: boolean; versioned: boolean }> {
     if (clientBackupContext(connection.bucket, key, connection.vaultId)) {
       const result = await this.uploadClientStream(connection, key, Readable.from([body]), bucketKey);
-      return { etag: result.etag, encrypted: true };
+      return { etag: result.etag, encrypted: true, versioned: !!result.versionId && result.versionId !== 'null' };
     }
     const response = await this.send(connection, {
       method: 'PUT',
@@ -886,9 +893,11 @@ export class CloudBackupStoreRepository {
     if (!etag) {
       throw new CloudBackupStoreError(`The storage provider did not confirm ${key}`, response.status, 'MissingETag');
     }
+    const versionId = response.headers.get('x-amz-version-id');
     return {
       etag,
       encrypted: response.headers.get('x-amz-server-side-encryption-customer-algorithm') === 'AES256',
+      versioned: !!versionId && versionId !== 'null',
     };
   }
 
@@ -1259,6 +1268,10 @@ export class CloudBackupStoreRepository {
       const temporary = `${stage}.${randomUUID()}.tmp`;
       try {
         const before = await input.stat();
+        // Like Buddy, never stage a whole encrypted copy into the last 10 GiB or 10% of this disk.
+        const disk = await getDiskUsage(connection.stagingDirectory!);
+        if (disk.available - clientBackupStoredSize(before.size) < Math.max(10 * 1024 ** 3, disk.total * 0.1))
+          throw new Error('Cloud backup staging needs more free disk space');
         const digest = createHash('sha256');
         const source = async function* (store: CloudBackupStoreRepository) {
           for (let offset = 0; offset < before.size; offset += CLOUD_BACKUP_PART_BYTES) {
@@ -1526,13 +1539,14 @@ export class CloudBackupStoreRepository {
     const testKey = randomBytes(32);
     const content = randomBytes(64);
     try {
-      const { encrypted } = await this.putWithCustomerKey(connection, probeKey, content, testKey);
+      const { encrypted, versioned } = await this.putWithCustomerKey(connection, probeKey, content, testKey);
       if (!encrypted) {
         throw new CloudBackupClaimError(
           'sse-c-unsupported',
           'This storage provider did not encrypt the test file with a customer-provided key (SSE-C). Frameleaf backups need a provider that supports SSE-C.',
         );
       }
+      if (!versioned) throw new CloudBackupClaimError('versioning-off', VERSIONING_OFF_MESSAGE);
       const back = await this.get(connection, probeKey, testKey);
       if (!back.equals(content)) {
         throw new CloudBackupClaimError(
@@ -1593,7 +1607,7 @@ export class CloudBackupStoreRepository {
       keyFingerprint: options.keyFingerprint,
       claimedAt: options.now.toISOString(),
     };
-    const { encrypted } = await this.putWithCustomerKey(
+    const { encrypted, versioned } = await this.putWithCustomerKey(
       connection,
       CLOUD_BACKUP_MARKER,
       Buffer.from(JSON.stringify(marker)),
@@ -1607,6 +1621,10 @@ export class CloudBackupStoreRepository {
         'sse-c-unsupported',
         'This storage provider does not support customer-provided encryption keys (SSE-C), which Frameleaf backups need.',
       );
+    }
+    if (!versioned) {
+      await this.delete(connection, CLOUD_BACKUP_MARKER).catch(() => false);
+      throw new CloudBackupClaimError('versioning-off', VERSIONING_OFF_MESSAGE);
     }
 
     const written = await this.readMarker(connection, bucketKey);

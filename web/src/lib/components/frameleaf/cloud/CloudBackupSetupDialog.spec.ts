@@ -74,6 +74,38 @@ describe('managed backup recovery authority', () => {
     expect(await activate()).toEqual(file);
   });
 
+  it('sends your own bucket the complete recovery file with client roots', async () => {
+    sdkMock.checkCloudBackupBucket.mockResolvedValue({ ok: true, state: CloudBackupBucketState.Empty, message: 'Ok' });
+    sdkMock.setupCloudBackup.mockResolvedValue({} as never);
+    render(CloudBackupSetupDialog, {
+      open: true,
+      instanceId: 'f0000000-0000-4000-8000-000000000001',
+      managedAvailable: true,
+      onDone: vi.fn(),
+    });
+    await fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.frameleaf_cloud_backup_byo) }));
+    for (const [label, value] of [
+      [en.frameleaf_cloud_backup_endpoint, 'https://storage.example.test'],
+      [en.frameleaf_cloud_backup_bucket, 'own-backup'],
+      [en.frameleaf_cloud_backup_access_key, 'synthetic-access'],
+      [en.frameleaf_cloud_backup_secret, 'synthetic-secret'],
+    ]) {
+      await fireEvent.input(screen.getByLabelText(new RegExp(`^${label}`)), { target: { value } });
+    }
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_check }));
+    await waitFor(() => expect(screen.getByRole('button', { name: en.frameleaf_cloud_backup_continue })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_continue }));
+    await fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.frameleaf_cloud_backup_key_own) }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_key_download }));
+    const file = JSON.parse(await (downloadBlob.mock.calls[0][0] as Blob).text());
+    checkRoots(file);
+    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_cloud_backup_key_saved_elsewhere }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_continue }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_backup_claim }));
+    await waitFor(() => expect(sdkMock.setupCloudBackup).toHaveBeenCalledOnce());
+    expect(JSON.parse(sdkMock.setupCloudBackup.mock.calls[0][0].cloudBackupSetupDto.key)).toEqual(file);
+  });
+
   it.each(['generated', 'own'] as const)(
     'requires saving the new managed %s authority after changing destinations',
     async (choice) => {

@@ -1112,7 +1112,8 @@ export type FrameleafCloudBackup = {
    */
   managed?: FrameleafCloudBackupManaged;
   /** FL-164: a passphrase-wrapped copy of the bucket key is stored with Frameleaf Cloud (server key mode). */
-  escrow?: { storedAt: string };
+  /** `keyVersion`: the client root that was current when the copy was stored (absent: version 1). */
+  escrow?: { storedAt: string; keyVersion?: number };
   /** FL-164: how the last restore from this bucket ended. */
   lastRestore?: FrameleafCloudBackupRestore;
   /** FL-164: a scheduled run found the bucket busy; it starts when the operation holding it ends. */

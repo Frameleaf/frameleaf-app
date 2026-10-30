@@ -78931,6 +78931,10 @@
             "description": "Server key mode and a linked server: escrow can be turned on",
             "type": "boolean"
           },
+          "outdated": {
+            "description": "The stored copy predates the current backup key: store it again",
+            "type": "boolean"
+          },
           "stored": {
             "type": "boolean"
           },
@@ -78941,6 +78945,7 @@
         },
         "required": [
           "available",
+          "outdated",
           "stored",
           "storedAt"
         ],

@@ -152,7 +152,6 @@ import {
   clientBackupContext,
   clientBackupManifestKey,
   clientBackupObjectKey,
-  clientBackupWritesEnabled,
   parseClientBackupKeys,
 } from 'src/utils/cloud-backup-crypto.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
@@ -190,7 +189,6 @@ import {
   CLOUD_BACKUP_KEY_FILE_FORMAT,
   CLOUD_BACKUP_MANIFEST_FORMAT,
   CLOUD_BACKUP_MANIFEST_PREFIX,
-  CLOUD_BACKUP_MANIFEST_VERSION,
   CLOUD_BACKUP_OBJECT_PREFIX,
   CLOUD_BACKUP_OWN_MEMORY_ACKNOWLEDGEMENT,
   CloudBackupAssetDetails,
@@ -206,7 +204,6 @@ import {
   keyFingerprint,
   manifestFileObjectKey,
   manifestKey,
-  objectKey,
   parseBackupKey,
   parseRunResult,
   recoveryCode,
@@ -381,8 +378,9 @@ type FileToBackUp = {
 type HashedFile = FileToBackUp & { sha256: string; size: number; mtime: Date };
 
 /**
- * Cloud backup (FL-160, CLD-301): claim one bucket per server, keep its SSE-C key in one of three key
- * modes, and back up content-addressed runs as durable jobs.
+ * Cloud backup (FL-160, CLD-301): claim one bucket per server, keep its recovery key file in one of three key
+ * modes, and back up runs encrypted on this server (`frameleaf-client-backup` v1) as durable jobs. The bucket
+ * key only protects the claim marker and probes with SSE-C; every file, manifest and dump is client-encrypted.
  *
  * - **One bucket per server.** Setup claims an empty bucket by writing `frameleaf-backup.json` with this
  *   server's instance id; a bucket claimed by another server, claimed with another key, or holding
@@ -392,9 +390,9 @@ type HashedFile = FileToBackUp & { sha256: string; size: number; mtime: Date };
  *   with a copy in that file. `own-memory`: never saved; `POST admin/cloud/backup/key/unlock` loads it
  *   after each restart, handed to the other workers in memory, and runs wait until it is loaded. The
  *   key never goes into the configuration, a database dump, a log or a response.
- * - **Runs.** A run is a `media_operation` of kind `cloud_backup`: the database dump first (`db/`), then
- *   every original, sidecar and profile image by SHA-256 (`o/<sha256>`, uploaded once, never twice),
- *   then the manifest (`m/<ISO>.json.gz`). The cursor is written every 25 assets, a pause or cancel is
+ * - **Runs.** A run is a `media_operation` of kind `cloud_backup`: the database dump first (`db/v1/`), then
+ *   every original, sidecar and profile image under a keyed name (`o/v1/…`, uploaded once, never twice),
+ *   then the manifest (`m/v1/…json.gz`). The cursor is written every 25 assets, a pause or cancel is
  *   honoured there, and a claim after a restart finishes the same manifest. Nothing on this server is
  *   ever deleted or changed by a run except its own temporary database dump; Locked media is backed up
  *   like any other (backend work reaches it), and nothing a run reads is shown to anybody.
@@ -553,6 +551,9 @@ export class CloudBackupService {
         available: metadata?.keyMode === 'server' && link.linked,
         stored: !!metadata?.escrow,
         storedAt: metadata?.escrow?.storedAt ?? null,
+        outdated:
+          !!metadata?.escrow &&
+          (metadata.escrow.keyVersion ?? 1) < (this.clientKeys.get(metadata.keyFingerprint)?.current ?? 1),
       },
     };
   }
@@ -789,35 +790,15 @@ export class CloudBackupService {
     let recovery: Buffer | null = null;
     try {
       const fingerprint = keyFingerprint(key);
+      const identity = await loadInstanceIdentity(this.gatewayDeps());
+      // Every backup is encrypted on this server, so setup needs the recovery key file's client roots.
+      if (!this.readClientKeys(dto.key, key, identity.instanceId, false))
+        throw new BadRequestException('Use a complete backup recovery key file.');
       if (dto.target === 'managed') {
         // FL-228: the plan is active and the server has it; storage is being prepared (step 3 of 4)
         await this.announceActivation({ preparing: true });
       }
-      const identity = await loadInstanceIdentity(this.gatewayDeps());
-      const clientKeys = this.readClientKeys(dto.key, key, identity.instanceId, false);
-      let legacyBinding: FrameleafCloudBackup | undefined;
-      if (dto.target === 'managed' && !clientKeys && process.env.FRAMELEAF_BACKUP_CLIENT_ENCRYPTION !== '0') {
-        const existing = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-        if (
-          existing?.target !== 'managed' ||
-          existing.instanceId !== identity.instanceId ||
-          existing.keyFingerprint !== fingerprint
-        )
-          throw new BadRequestException('Use a complete client backup recovery key file for new managed backups.');
-        const stored =
-          existing.keyMode !== 'own-memory'
-            ? await this.keys.read(identityDirectory(this.configRepository), fingerprint)
-            : null;
-        if (
-          this.clientKeys.has(fingerprint) ||
-          existing.lastManifestKey?.startsWith('m/v1/') ||
-          (stored &&
-            (!this.parseKey(stored).equals(key) || this.readClientKeys(stored, key, identity.instanceId, false)))
-        )
-          throw new BadRequestException('Use the complete existing client backup recovery key file.');
-        legacyBinding = existing;
-      }
-      const managed = dto.target === 'managed' ? await this.managedGrantForSetup(legacyBinding) : null;
+      const managed = dto.target === 'managed' ? await this.managedGrantForSetup() : null;
       const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
       recovery = dto.keyMode === 'own-memory' ? this.memoryRecovery(dto.key, key, identity.instanceId) : null;
 
@@ -1041,7 +1022,7 @@ export class CloudBackupService {
    * FL-164: this server's managed bucket and a key for the claim. A first grant answers with a key; a repeated
    * one does not, and is followed by a rotation. Refusals are answered with what they mean.
    */
-  private async managedGrantForSetup(metadata?: FrameleafCloudBackup): Promise<{
+  private async managedGrantForSetup(): Promise<{
     connection: CloudBackupConnection;
     state: NonNullable<FrameleafCloudBackup['managed']> & {
       storageId: string;
@@ -1089,7 +1070,7 @@ export class CloudBackupService {
       );
     }
     return {
-      connection: this.managedConnection(issued, metadata, 'upload'),
+      connection: this.managedConnection(issued, undefined, 'upload'),
       state: {
         storageId: issued.storageId,
         location: issued.location,
@@ -1779,20 +1760,11 @@ export class CloudBackupService {
       return;
     }
 
-    if (
-      run.metadata.target === 'managed' &&
-      !run.progress.result.manifestKey &&
-      !run.clientKeys &&
-      run.metadata.lastManifestKey?.startsWith('m/v1/') &&
-      process.env.FRAMELEAF_BACKUP_CLIENT_ENCRYPTION !== '0'
-    )
-      throw new Error('Load the complete client backup recovery key file before starting a new backup.');
-    if (
-      (run.progress.result.manifestKey?.startsWith('m/v1/') ??
-        clientBackupWritesEnabled(run.metadata.target, !!run.clientKeys)) &&
-      run.metadata.target === 'managed' &&
-      !run.connection.clientFormatSupported
-    )
+    // Every write is encrypted on this server: never upload without the client roots or resume a non-v1 run.
+    if (!run.clientKeys) throw new Error('Load the complete backup recovery key file before starting a new backup.');
+    if (run.progress.result.manifestKey && !run.progress.result.manifestKey.startsWith('m/v1/'))
+      throw new Error('This unfinished backup is not encrypted on this server. Cancel it and start a new backup.');
+    if (run.metadata.target === 'managed' && !run.connection.clientFormatSupported)
       throw new Error(
         'Client-encrypted managed writes require a qualified opaque-storage grant. Update the server and retry.',
       );
@@ -2308,9 +2280,7 @@ export class CloudBackupService {
     }
     const manifest = await this.index.createManifest({
       bucket: run.metadata.bucketRef,
-      key: clientBackupWritesEnabled(run.metadata.target, !!run.clientKeys)
-        ? clientBackupManifestKey(run.metadata.instanceId, this.clientWriteVersion(run), manifestKey(new Date()))
-        : manifestKey(new Date()),
+      key: clientBackupManifestKey(run.metadata.instanceId, this.clientWriteVersion(run), manifestKey(new Date())),
       operationId: run.id,
     });
     run.progress.result = { ...result, manifestId: manifest.id, manifestKey: manifest.key };
@@ -2324,23 +2294,8 @@ export class CloudBackupService {
     const folder = StorageCore.getBaseFolder(StorageFolder.Backups);
     let database = run.progress.result.database;
     const saved = run.connection.transfer?.current;
-    if (!database && saved?.kind === 'upload' && saved.key.startsWith(CLOUD_BACKUP_DB_PREFIX)) {
-      if (saved.key.startsWith('db/v1/')) throw new Error('The encrypted database upload has no pinned dump identity.');
-      if (
-        !saved.source ||
-        dirname(saved.source) !== folder ||
-        basename(saved.source) !== basename(saved.key) ||
-        !isCloudBackupDumpName(basename(saved.source)) ||
-        !saved.expectedSha256
-      )
-        throw new Error('The resumable database backup source is invalid.');
-      database = {
-        key: saved.key,
-        sha256: saved.expectedSha256,
-        size: (await this.storageRepository.stat(saved.source)).size,
-      };
-      run.progress.result = { ...run.progress.result, database };
-    }
+    if (!database && saved?.kind === 'upload' && saved.key.startsWith(CLOUD_BACKUP_DB_PREFIX))
+      throw new Error('The encrypted database upload has no pinned dump identity.');
     if (!database) {
       await this.removeLeftoverDumps();
       const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX, {
@@ -2348,15 +2303,13 @@ export class CloudBackupService {
         progress: advanceExecutionProgress,
       });
       const sha256 = (await this.cryptoRepository.hashFile(path, 'sha256')).toString('hex');
-      const key = run.progress.result.manifestKey!.startsWith('m/v1/')
-        ? clientBackupObjectKey(
-            this.clientWriteRoot(run),
-            run.metadata.instanceId,
-            this.clientWriteVersion(run),
-            sha256,
-            basename(path),
-          )
-        : `${CLOUD_BACKUP_DB_PREFIX}${basename(path)}`;
+      const key = clientBackupObjectKey(
+        this.clientWriteRoot(run),
+        run.metadata.instanceId,
+        this.clientWriteVersion(run),
+        sha256,
+        basename(path),
+      );
       database = { key, sha256, size: (await this.storageRepository.stat(path)).size };
       run.progress.result = { ...run.progress.result, database };
     }
@@ -2606,64 +2559,48 @@ export class CloudBackupService {
       }
     }
 
-    const client = run.progress.result.manifestKey!.startsWith('m/v1/');
-    const existing = await this.index.getExisting(
-      run.metadata.bucketRef,
+    // A same-size HEAD cannot authenticate an opaque copy. This server's own upload receipt can: the object is
+    // still the one it wrote while a HEAD answers with the same ETag. Anything else is read and checked in full
+    // once, then gets a receipt (the full verify still reads it).
+    const existing = new Set<string>();
+    const receipts = await this.index.getRecorded(
+      this.clientReceipts(run),
       hashed.map(({ sha256 }) => sha256),
     );
-    if (client) {
-      // Presence in the legacy index or a same-size HEAD cannot authenticate an opaque copy. This server's own
-      // upload receipt can: the object is still the one it wrote while a HEAD answers with the same ETag.
-      // Anything else is read and checked in full once, then gets a receipt (the full verify still reads it).
-      existing.clear();
-      const receipts = await this.index.getRecorded(
-        this.clientReceipts(run),
-        hashed.map(({ sha256 }) => sha256),
+    const fresh: CloudBackupIndexedObject[] = [];
+    for (const file of hashed) {
+      if (existing.has(file.sha256) || run.uploadedNow.has(file.sha256)) continue;
+      const key = clientBackupObjectKey(
+        this.clientWriteRoot(run),
+        run.metadata.instanceId,
+        this.clientWriteVersion(run),
+        file.sha256,
       );
-      const fresh: CloudBackupIndexedObject[] = [];
-      for (const file of hashed) {
-        if (existing.has(file.sha256) || run.uploadedNow.has(file.sha256)) continue;
-        const key = clientBackupObjectKey(
-          this.clientWriteRoot(run),
-          run.metadata.instanceId,
-          this.clientWriteVersion(run),
-          file.sha256,
-        );
-        try {
-          const receipt = receipts.get(file.sha256);
-          const head =
-            receipt?.etag && receipt.size === file.size
-              ? await this.store.head(run.connection, key, run.bucketKey)
-              : null;
-          if (head && head.size === file.size && bareEtag(head.etag) === bareEtag(receipt!.etag)) {
-            existing.add(file.sha256);
-            continue;
-          }
-          const stored = await this.store.hashObject(run.connection, key, run.bucketKey);
-          if (stored.size === file.size && stored.sha256 === file.sha256) {
-            existing.add(file.sha256);
-            const found = await this.store.head(run.connection, key, run.bucketKey);
-            if (found?.etag) fresh.push({ sha256: file.sha256, size: file.size, etag: found.etag });
-          }
-        } catch (error) {
-          if (!(error instanceof CloudBackupStoreError) || (error.status !== 404 && error.code !== 'ChecksumMismatch'))
-            throw error;
+      try {
+        const receipt = receipts.get(file.sha256);
+        const head =
+          receipt?.etag && receipt.size === file.size
+            ? await this.store.head(run.connection, key, run.bucketKey)
+            : null;
+        if (head && head.size === file.size && bareEtag(head.etag) === bareEtag(receipt!.etag)) {
+          existing.add(file.sha256);
+          continue;
         }
-      }
-      await this.index.record(this.clientReceipts(run), fresh);
-    } else if (run.clientKeys) {
-      // Old client-format runs could populate the shared index without a legacy copy.
-      for (const file of hashed) {
-        if (!existing.has(file.sha256)) continue;
-        const stored = await this.store.head(run.connection, objectKey(file.sha256), run.bucketKey);
-        if (stored?.size !== file.size) existing.delete(file.sha256);
+        const stored = await this.store.hashObject(run.connection, key, run.bucketKey);
+        if (stored.size === file.size && stored.sha256 === file.sha256) {
+          existing.add(file.sha256);
+          const found = await this.store.head(run.connection, key, run.bucketKey);
+          if (found?.etag) fresh.push({ sha256: file.sha256, size: file.size, etag: found.etag });
+        }
+      } catch (error) {
+        if (!(error instanceof CloudBackupStoreError) || (error.status !== 404 && error.code !== 'ChecksumMismatch'))
+          throw error;
       }
     }
+    await this.index.record(this.clientReceipts(run), fresh);
     const recorded: CloudBackupEntry[] = [];
-    const skipped: string[] = [];
     for (const file of hashed) {
       if (existing.has(file.sha256) || run.uploadedNow.has(file.sha256)) {
-        skipped.push(file.sha256);
         run.progress.result = { ...run.progress.result, skipped: run.progress.result.skipped + 1 };
         recorded.push(this.entryOf(file));
         continue;
@@ -2675,7 +2612,6 @@ export class CloudBackupService {
       }
     }
 
-    if (!client) await this.index.touch(run.metadata.bucketRef, skipped);
     await this.index.upsertEntries(run.progress.result.manifestId!, recorded);
   }
 
@@ -2715,22 +2651,17 @@ export class CloudBackupService {
       try {
         const { etag, size } = await this.store.uploadFile(
           run.connection,
-          run.progress.result.manifestKey!.startsWith('m/v1/')
-            ? clientBackupObjectKey(
-                this.clientWriteRoot(run),
-                run.metadata.instanceId,
-                this.clientWriteVersion(run),
-                current.sha256,
-              )
-            : objectKey(current.sha256),
+          clientBackupObjectKey(
+            this.clientWriteRoot(run),
+            run.metadata.instanceId,
+            this.clientWriteVersion(run),
+            current.sha256,
+          ),
           current.path,
           run.bucketKey,
           current.sha256,
         );
-        await this.index.record(
-          run.progress.result.manifestKey!.startsWith('m/v1/') ? this.clientReceipts(run) : run.metadata.bucketRef,
-          [{ sha256: current.sha256, size, etag }],
-        );
+        await this.index.record(this.clientReceipts(run), [{ sha256: current.sha256, size, etag }]);
         run.uploadedNow.add(current.sha256);
         run.progress.result = {
           ...run.progress.result,
@@ -2803,7 +2734,7 @@ export class CloudBackupService {
         },
         { signal: executionSignal() },
       );
-      if (result.manifestKey!.startsWith('m/v1/')) await this.recordClientSnapshot(run, uploaded!);
+      await this.recordClientSnapshot(run, uploaded!);
       await this.index.finishManifest(manifestId, {
         status: 'complete',
         assetCount: counts.assets,
@@ -2811,8 +2742,7 @@ export class CloudBackupService {
         bytes: counts.bytes,
       });
     }
-    if (result.manifestKey!.startsWith('m/v1/'))
-      await this.store.finishClientUpload(run.connection, result.manifestKey!);
+    await this.store.finishClientUpload(run.connection, result.manifestKey!);
 
     run.progress.result = { ...run.progress.result, phase: 'done' };
     // Written whatever a pause or cancel asks: the backup is complete, and `finish` settles either.
@@ -2841,7 +2771,7 @@ export class CloudBackupService {
   ): AsyncGenerator<string> {
     const header = {
       format: CLOUD_BACKUP_MANIFEST_FORMAT,
-      version: run.progress.result.manifestKey!.startsWith('m/v1/') ? 3 : CLOUD_BACKUP_MANIFEST_VERSION,
+      version: 3,
       instanceId: run.metadata.instanceId,
       createdAt: asIso(run.operation.createdAt) ?? manifestTime(run.progress.result.manifestKey!)!.toISOString(),
       database: run.progress.result.database,
@@ -2897,14 +2827,12 @@ export class CloudBackupService {
           role: entry.role,
           path: entry.path,
           sha256: entry.sha256,
-          ...(run.progress.result.manifestKey!.startsWith('m/v1/') && {
-            objectKey: clientBackupObjectKey(
-              this.clientWriteRoot(run),
-              run.metadata.instanceId,
-              this.clientWriteVersion(run),
-              entry.sha256,
-            ),
-          }),
+          objectKey: clientBackupObjectKey(
+            this.clientWriteRoot(run),
+            run.metadata.instanceId,
+            this.clientWriteVersion(run),
+            entry.sha256,
+          ),
           size: entry.size,
           mtime: asIso(entry.mtime),
         };
@@ -4620,7 +4548,10 @@ export class CloudBackupService {
       throw new ConflictException(this.refusalOf(error).message);
     }
     await this.setEscrowConfig(true);
-    await this.updateMetadata((current) => ({ ...current, escrow: { storedAt: new Date().toISOString() } }));
+    await this.updateMetadata((current) => ({
+      ...current,
+      escrow: { storedAt: new Date().toISOString(), ...(ring && { keyVersion: ring.current }) },
+    }));
     this.logger.log(`Cloud backup key escrow stored with Frameleaf Cloud by ${auth.user.id}`);
     return this.getStatus();
   }

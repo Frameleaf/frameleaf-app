@@ -117,7 +117,7 @@
           instanceId,
           bucket: bucketName,
           mode: keyMode,
-          ...(managed && clientRoot && { clientRoot: clientRoot.key }),
+          ...(clientRoot && { clientRoot: clientRoot.key }),
         })
       : '',
   );
@@ -229,9 +229,8 @@
       savedKey = false;
       kitSaved = false;
       ownKey ??= createBackupKey();
-      if (managed) {
-        clientRoot ??= createBackupKey();
-      }
+      // Every backup is encrypted on this server with this client root, whichever storage holds it.
+      clientRoot ??= createBackupKey();
     }
     if (current === 'key' && serverKey && !generated) {
       busy = true;
@@ -255,7 +254,7 @@
   };
 
   const claimBucket = async () => {
-    const key = managed ? recoveryFile : selectedKey?.key;
+    const key = recoveryFile;
     if (!key) {
       return;
     }

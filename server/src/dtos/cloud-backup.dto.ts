@@ -326,6 +326,7 @@ const CloudBackupEscrowStatusSchema = z
     available: z.boolean().describe('Server key mode and a linked server: escrow can be turned on'),
     stored: z.boolean(),
     storedAt: z.string().nullable(),
+    outdated: z.boolean().describe('The stored copy predates the current backup key: store it again'),
   })
   .meta({ id: 'CloudBackupEscrowStatusDto' });
 

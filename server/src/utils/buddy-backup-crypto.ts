@@ -41,9 +41,19 @@ export const encryptBuddyBlock = (
   plaintext: Buffer,
   nonce = randomBytes(12),
 ): Buffer => {
+  if (buddyObjectId(root, context.vaultId, plaintext) !== context.id) throw new Error('Buddy object identity mismatch');
+  return sealBuddyBlock(root, context, plaintext, nonce);
+};
+
+/** `encryptBuddyBlock` for a caller that has just computed `context.id` from this plaintext itself. */
+export const sealBuddyBlock = (
+  root: Buffer,
+  context: BuddyBlockContext,
+  plaintext: Buffer,
+  nonce = randomBytes(12),
+): Buffer => {
   if (plaintext.length > BUDDY_BLOCK_BYTES) throw new Error('Buddy block exceeds 8 MiB');
   const aad = contextBytes(context);
-  if (buddyObjectId(root, context.vaultId, plaintext) !== context.id) throw new Error('Buddy object identity mismatch');
   if (nonce.length !== 12) throw new Error('Invalid Buddy encryption nonce');
   const cipher = createCipheriv(
     'aes-256-gcm',

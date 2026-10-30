@@ -14,6 +14,11 @@ import { readManifest } from 'src/utils/cloud-backup-retention.js';
 import { CLOUD_BACKUP_PART_BYTES, CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
+const disk = vi.hoisted(() => ({ available: 4096 * 1_000_000_000 }));
+vi.mock('src/utils/disk-usage.js', () => ({
+  getDiskUsage: () => Promise.resolve({ total: 4096 * 1_000_000_000, free: disk.available, available: disk.available }),
+}));
+
 vi.mock('undici', () => ({ fetch: (...args: Parameters<typeof fetch>) => fetch(...args) }));
 
 const vaultId = 'f0000000-0000-4000-8000-000000000001';
@@ -141,6 +146,21 @@ describe('client-encrypted storage and independent recovery', () => {
   });
   const keyFor = (bytes: Buffer, dump?: string) => clientBackupObjectKey(root, vaultId, 1, sha(bytes), dump);
   const manifestKey = `m/v1/${vaultId}/1/20261011T000001Z.json.gz`;
+
+  it('refuses to stage an encrypted copy into the last free space on this disk', async () => {
+    const bytes = Buffer.alloc(64, 7);
+    const path = join(directory, 'source');
+    await writeFile(path, bytes);
+    disk.available = 10 * 1024 ** 3;
+    try {
+      await expect(store.uploadFile(connection, keyFor(bytes), path, legacy, sha(bytes))).rejects.toThrow(
+        'Cloud backup staging needs more free disk space',
+      );
+      expect(s3.current.size).toBe(0);
+    } finally {
+      disk.available = 4096 * 1_000_000_000;
+    }
+  });
 
   it.each(['InternalError', 'PrivateProviderFailure'])(
     'refuses an HTTP-200 encrypted completion error (%s), retaining staged bytes for retry',

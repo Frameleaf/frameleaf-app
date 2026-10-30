@@ -28,7 +28,12 @@
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen, cloudPlaceState } from '$lib/frameleaf/backup-overview';
-  import { RETENTION_FIELDS, endpointHost, readBackupKeyFile } from '$lib/frameleaf/cloud-backup';
+  import {
+    RETENTION_FIELDS,
+    endpointHost,
+    isEscrowPassphraseValid,
+    readBackupKeyFile,
+  } from '$lib/frameleaf/cloud-backup';
   import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -47,6 +52,7 @@
     CloudBackupVerifyStatus,
     getCloudBackupStatus,
     startCloudBackupRun,
+    storeCloudBackupEscrow,
     turnOffCloudBackup,
     unlockCloudBackupKey,
     verifyCloudBackup,
@@ -80,6 +86,9 @@
   let setupOpen = $state(false);
   let unlockOpen = $state(false);
   let turnOffOpen = $state(false);
+  let escrowOpen = $state(false);
+  let escrowPassphrase = $state({ first: '', second: '' });
+  let escrowFailure = $state('');
   let unlockValue = $state('');
   let unlockError = $state<Translations | null>(null);
   let unlockFailure = $state('');
@@ -309,6 +318,21 @@
     }
     unlockValue = read.key;
     unlockError = null;
+  };
+
+  const updateEscrow = async () => {
+    busy = true;
+    escrowFailure = '';
+    try {
+      status = await storeCloudBackupEscrow({ cloudBackupEscrowDto: { passphrase: escrowPassphrase.first } });
+      notice = $t('frameleaf_cloud_backup_escrow_updated');
+      escrowOpen = false;
+      escrowPassphrase = { first: '', second: '' };
+    } catch (error) {
+      escrowFailure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
+    } finally {
+      busy = false;
+    }
   };
 
   const unlock = async () => {
@@ -607,6 +631,17 @@
           : $t('frameleaf_cloud_backup_verify')}
       </Button>
     </Row>
+    {#if status.escrow.outdated}
+      <Row
+        label={$t('frameleaf_cloud_backup_escrow_outdated')}
+        help={$t('frameleaf_cloud_backup_escrow_outdated_help')}
+      >
+        <Button disabled={busy} onclick={() => (escrowOpen = true)}>
+          <Icon icon={mdiKeyOutline} size="18" />
+          {$t('frameleaf_cloud_backup_escrow_update')}
+        </Button>
+      </Row>
+    {/if}
     <Row label={$t('frameleaf_backup_restore_row')} help={$t('frameleaf_backup_restore_row_help')}>
       <a class="button" href={backupPageUrl('restore') + '#restore-cloud'}>
         <Icon icon={mdiRestore} size="18" />
@@ -704,6 +739,46 @@
     <Button onclick={() => (unlockOpen = false)}>{$t('frameleaf_cloud_cancel')}</Button>
     <Button variant="primary" disabled={!unlockValue.trim() || busy} onclick={() => void unlock()}>
       {$t('frameleaf_cloud_backup_unlock')}
+    </Button>
+  {/snippet}
+</Dialog>
+
+<Dialog bind:open={escrowOpen} title={$t('frameleaf_cloud_backup_escrow_update')} closeLabel={$t('close')}>
+  <p>{$t('frameleaf_cloud_backup_escrow_outdated_help')}</p>
+  <div class="fc-form">
+    <label class="fc-stack">
+      {$t('frameleaf_cloud_backup_escrow_passphrase')}
+      <input
+        type="password"
+        autocomplete="new-password"
+        value={escrowPassphrase.first}
+        oninput={(event) => (escrowPassphrase = { ...escrowPassphrase, first: event.currentTarget.value })}
+      />
+    </label>
+    <label class="fc-stack">
+      {$t('frameleaf_cloud_backup_escrow_passphrase_repeat')}
+      <input
+        type="password"
+        autocomplete="new-password"
+        value={escrowPassphrase.second}
+        oninput={(event) => (escrowPassphrase = { ...escrowPassphrase, second: event.currentTarget.value })}
+      />
+    </label>
+    {#if escrowPassphrase.second && !isEscrowPassphraseValid(escrowPassphrase.first, escrowPassphrase.second)}
+      <small class="cc-error">{$t('frameleaf_cloud_backup_escrow_passphrase_invalid')}</small>
+    {/if}
+  </div>
+  {#if escrowFailure}
+    <p class="cc-error" role="alert">{escrowFailure}</p>
+  {/if}
+  {#snippet actions()}
+    <Button onclick={() => (escrowOpen = false)}>{$t('frameleaf_cloud_cancel')}</Button>
+    <Button
+      variant="primary"
+      disabled={busy || !isEscrowPassphraseValid(escrowPassphrase.first, escrowPassphrase.second)}
+      onclick={() => void updateEscrow()}
+    >
+      {$t('frameleaf_cloud_backup_escrow_update')}
     </Button>
   {/snippet}
 </Dialog>
