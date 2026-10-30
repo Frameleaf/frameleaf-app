@@ -611,14 +611,14 @@
     // Start in the collection last saved into on this server, while it still exists.
     if (albumId || connection?.status !== "connected") return;
     const origin = connection.binding.origin;
-    const ids = collections.map((collection) => collection.id);
     void lastCollection(origin).then((id) => {
+      // checked against the catalog as it is now: a refresh may have replaced it meanwhile
       if (
         !albumId &&
         id &&
-        ids.includes(id) &&
         connection?.status === "connected" &&
-        connection.binding.origin === origin
+        connection.binding.origin === origin &&
+        connection.catalog?.albums.some((album) => album.id === id)
       )
         albumId = id;
     });
