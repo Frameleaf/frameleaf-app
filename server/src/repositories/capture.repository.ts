@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
+import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { CaptureCommitDto } from 'src/dtos/capture.dto.js';
@@ -11,6 +12,10 @@ import { captureActor, captureRequestHash } from 'src/utils/capture.js';
 import { hiddenFromOthers, tagIsSuppressed } from 'src/utils/database.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
+
+/** The UTC offset a capture time was written in, as a zone name ("UTC-6"); a time ending in Z says nothing about it. */
+export const captureTimeZone = (capturedAt: string) =>
+  /z$/i.test(capturedAt) ? null : DateTime.fromISO(capturedAt, { setZone: true }).zoneName;
 
 export type CaptureReceipt = Selectable<CaptureReceiptTable>;
 type PublishedCapture = Pick<CaptureReceipt, 'kind' | 'itemId'> & { status: 'created' | 'duplicate' };
@@ -194,6 +199,17 @@ export class CaptureRepository {
       const published = await publish();
       const asset = await this.getCapturedAsset(auth, published.id, tx);
       if (!asset) throw new NotFoundException('Capture unavailable');
+      const timeZone = captureTimeZone(dto.source.capturedAt);
+      if (published.status === 'created' && timeZone) {
+        // FL-698: metadata extraction reads a file with no EXIF date in this zone (the extension's file date is
+        // the capture time), so Captured shows the time where it was saved rather than UTC.
+        await tx
+          .updateTable('asset_exif')
+          .set({ timeZone })
+          .where('assetId', '=', asset.id)
+          .where('timeZone', 'is', null)
+          .execute();
+      }
       await new AssetSourceRepository(tx).upsertCapture(tx, {
         ...dto.source,
         captureId: dto.captureId,

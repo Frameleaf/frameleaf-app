@@ -697,6 +697,36 @@ describe(MetadataService.name, () => {
       });
     });
 
+    it('reads a file date with no EXIF date in the zone stored for the item (FL-698)', async () => {
+      // Saved at 11:08 p.m. on Oct 29 in Edmonton (UTC-6): the local date is Oct 29, not 5:08 a.m. on Oct 30.
+      const savedAt = new Date('2026-10-30T05:08:00.000Z');
+      const asset = AssetFactory.create({ fileCreatedAt: savedAt });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        tags: [],
+        timeZone: 'UTC-6',
+        updateId: '00000000-0000-0000-0000-000000000001',
+      });
+      mocks.storage.stat.mockResolvedValue({
+        size: 123_456,
+        mtime: savedAt,
+        mtimeMs: savedAt.valueOf(),
+        birthtimeMs: savedAt.valueOf(),
+      } as Stats);
+      mockReadTags();
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ dateTimeOriginal: savedAt, timeZone: 'UTC-6' }),
+        }),
+      );
+      expect(mocks.asset.update).toHaveBeenCalledWith(
+        expect.objectContaining({ localDateTime: new Date('2026-10-29T23:08:00.000Z') }),
+      );
+    });
+
     it('should determine dateTimeOriginal regardless of the server time zone', async () => {
       process.env.TZ = 'America/Los_Angeles';
       const asset = AssetFactory.create();

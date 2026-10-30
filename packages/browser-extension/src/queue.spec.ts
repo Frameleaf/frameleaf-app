@@ -438,6 +438,20 @@ describe('durable capture queue', () => {
     expect(task.bookmark?.url).toBe('https://page.example/watch?v=123#part');
     expect(await queue.captureBlob(task.id)).toBeNull();
   });
+  it('keeps the capture time as written, with its UTC offset, and refuses one that is not ISO (FL-698)', async () => {
+    const capturedAt = '2026-10-29T23:08:00.000-06:00';
+    const task = await queue.enqueueCapture({
+      ...file(),
+      source: { ...source, capturedAt },
+    });
+    expect(task.source.capturedAt).toBe(capturedAt);
+    await expect(
+      queue.enqueueCapture({
+        ...file(),
+        source: { ...source, capturedAt: 'Oct 29 2026 23:08' },
+      }),
+    ).rejects.toThrow();
+  });
   it('rejects invalid metadata and insufficient actual quota without acknowledging or retaining a task', async () => {
     for (const change of [
       { albumId: 'bad' },

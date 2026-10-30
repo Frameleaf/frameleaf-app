@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureInput, bookmarkInput } from './capture-input';
+import { captureInput, bookmarkInput, localIsoTime } from './capture-input';
 const binding = {
   serverId: 'one',
   userId: '11111111-1111-4111-8111-111111111111',
@@ -14,6 +14,25 @@ const candidate = {
   title: 'x'.repeat(4096),
 };
 describe('capture form input', () => {
+  it('writes the capture time with the browser offset, not Z (FL-698)', () => {
+    const zone = process.env.TZ;
+    process.env.TZ = 'America/Edmonton';
+    try {
+      expect(localIsoTime(new Date('2026-10-30T05:08:09.123Z'))).toBe(
+        '2026-10-29T23:08:09.123-06:00',
+      );
+      process.env.TZ = 'America/Toronto';
+      expect(localIsoTime(new Date('2026-12-01T05:08:00.000Z'))).toBe(
+        '2026-12-01T00:08:00.000-05:00',
+      );
+      process.env.TZ = 'Asia/Kolkata';
+      expect(localIsoTime(new Date('2026-10-30T05:08:00.000Z'))).toBe(
+        '2026-10-30T10:38:00.000+05:30',
+      );
+    } finally {
+      process.env.TZ = zone;
+    }
+  });
   it('keeps an explicitly confirmed bookmark target separate from sanitized attribution', () => {
     const value = bookmarkInput(
       { binding, albumId: 'album', tagIds: ['tag'], note: 'Reference' },

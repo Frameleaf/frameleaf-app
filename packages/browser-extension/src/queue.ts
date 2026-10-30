@@ -205,6 +205,9 @@ function sourceCopy(
     typeof source.title !== 'string' ||
     source.title.length > 2000 ||
     typeof source.capturedAt !== 'string' ||
+    !/^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)$/.test(
+      source.capturedAt,
+    ) ||
     !Number.isFinite(Date.parse(source.capturedAt))
   )
     throw invalid();
@@ -218,7 +221,8 @@ function sourceCopy(
   return {
     pageUrl: cleanUrl(source.pageUrl),
     title: source.title,
-    capturedAt: new Date(source.capturedAt).toISOString(),
+    // Kept as written: its UTC offset is the zone the item was saved in (FL-698).
+    capturedAt: source.capturedAt,
     ...(source.mediaUrl != null && { mediaUrl: cleanUrl(source.mediaUrl) }),
     ...(source.licenseUrl != null && {
       licenseUrl: cleanUrl(source.licenseUrl),
