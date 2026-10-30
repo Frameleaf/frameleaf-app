@@ -197,6 +197,17 @@ function targetUrl(raw: string): string {
     throw invalid();
   }
 }
+/** ISO with an offset and a real calendar date, as the server accepts: Date.parse rolls Feb 30 over to March. */
+function isIsoTime(value: string) {
+  const match =
+    /^(\d{4})-(\d\d)-(\d\d)T\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)$/.exec(
+      value,
+    );
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const [year, month, day] = match.slice(1, 4).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
 function sourceCopy(
   source: CaptureCommitDto['source'],
 ): CaptureCommitDto['source'] {
@@ -205,10 +216,7 @@ function sourceCopy(
     typeof source.title !== 'string' ||
     source.title.length > 2000 ||
     typeof source.capturedAt !== 'string' ||
-    !/^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d:\d\d)$/.test(
-      source.capturedAt,
-    ) ||
-    !Number.isFinite(Date.parse(source.capturedAt))
+    !isIsoTime(source.capturedAt)
   )
     throw invalid();
   for (const value of [source.creator])
