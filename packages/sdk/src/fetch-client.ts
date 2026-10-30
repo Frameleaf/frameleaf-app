@@ -11634,46 +11634,108 @@ export type PhotographyRatingDto = {
     rating: number | null;
 };
 export type PhotographySiteDto = {
+    /** Newest first */
+    inquiries: {
+        createdAt: string;
+        date: string;
+        email: string;
+        id: string;
+        kind: Kind10;
+        message: string;
+        name: string;
+        "type": string;
+    }[];
     revision: string | null;
     site: {
         about: string;
-        contact: string;
-        enabled: boolean;
-        portfolio: {
-            captureId: string;
-            consent: true;
-            shootId: string;
+        collections: {
+            id: string;
+            items: {
+                captureId: string;
+                shootId: string;
+            }[];
+            name: string;
         }[];
-        presentation?: {
-            font: Font11;
-            layout: Layout;
-            palette: Palette;
-            spacing: Spacing;
-        };
-        services: string;
+        colours: Colours;
+        contact: string;
+        cover: {
+            captureId: string;
+            shootId: string;
+        } | null;
+        coverFocal: number;
+        domain: "" | string;
+        enabled: boolean;
+        faq: {
+            a: string;
+            q: string;
+        }[];
+        packages: {
+            detail: string;
+            name: string;
+            price: string;
+        }[];
+        sections: {
+            id: Id;
+            on: boolean;
+        }[];
+        seoDescription: string;
+        seoTitle: string;
+        slug: string;
+        template: Template2;
+        testimonials: {
+            name: string;
+            quote: string;
+        }[];
         title: string;
+        trustedBy: string[];
     };
-    url?: string;
+    /** Path of the public site: /studio/<slug> */
+    url: string;
 };
 export type PhotographySiteSaveDto = {
     expectedRevision: string | null;
     site: {
         about: string;
-        contact: string;
-        enabled: boolean;
-        portfolio: {
-            captureId: string;
-            consent: true;
-            shootId: string;
+        collections: {
+            id: string;
+            items: {
+                captureId: string;
+                shootId: string;
+            }[];
+            name: string;
         }[];
-        presentation?: {
-            font: Font11;
-            layout: Layout;
-            palette: Palette;
-            spacing: Spacing;
-        };
-        services: string;
+        colours: Colours;
+        contact: string;
+        cover: {
+            captureId: string;
+            shootId: string;
+        } | null;
+        coverFocal: number;
+        domain: "" | string;
+        enabled: boolean;
+        faq: {
+            a: string;
+            q: string;
+        }[];
+        packages: {
+            detail: string;
+            name: string;
+            price: string;
+        }[];
+        sections: {
+            id: Id;
+            on: boolean;
+        }[];
+        seoDescription: string;
+        seoTitle: string;
+        slug: string;
+        template: Template2;
+        testimonials: {
+            name: string;
+            quote: string;
+        }[];
         title: string;
+        trustedBy: string[];
     };
 };
 export type PhotographyPublicSiteDto = {
@@ -11689,21 +11751,61 @@ export type PhotographyPublicSiteDto = {
         tagline: string;
         textColor: string;
     };
-    contact: string;
-    enabled: boolean;
-    portfolio: {
-        captureId: string;
-        shootId: string;
-        url: string;
+    collections: {
+        id: string;
+        name: string;
+        photos: {
+            alt: string;
+            height: number;
+            key: string;
+            srcset: string;
+            /** Largest copy; versioned, so it can be cached for a year */
+            url: string;
+            width: number;
+        }[];
     }[];
-    presentation?: {
-        font: Font11;
-        layout: Layout;
-        palette: Palette;
-        spacing: Spacing;
-    };
-    services: string;
+    colours: Colours;
+    contact: string;
+    cover: {
+        alt: string;
+        height: number;
+        key: string;
+        srcset: string;
+        /** Largest copy; versioned, so it can be cached for a year */
+        url: string;
+        width: number;
+    } | null;
+    coverFocal: number;
+    faq: {
+        a: string;
+        q: string;
+    }[];
+    ownerId: string;
+    packages: {
+        detail: string;
+        name: string;
+        price: string;
+    }[];
+    sections: {
+        id: Id;
+        on: boolean;
+    }[];
+    template: Template2;
+    testimonials: {
+        name: string;
+        quote: string;
+    }[];
     title: string;
+    trustedBy: string[];
+};
+export type PhotographyInquiryCreateDto = {
+    date: "" | string;
+    email: string;
+    kind: Kind10;
+    message: string;
+    name: string;
+    "type": string;
+    website?: string;
 };
 export type PhotographyWorkflowListDto = {
     galleries: {
@@ -11780,14 +11882,14 @@ export type PhotographyWorkflowDto = {
         currency: string;
         downloadOutputs?: {
             key: string;
-            kind: Kind9;
+            kind: Kind11;
             label: string;
             maxEdge: number;
             watermark: {
                 alignment?: Alignment;
                 backing?: boolean;
                 color?: string;
-                font?: Font12;
+                font?: Font10;
                 logoAssetId?: string | null;
                 logoPosition?: LogoPosition;
                 logoScale?: number;
@@ -11809,7 +11911,7 @@ export type PhotographyWorkflowDto = {
             alignment?: Alignment;
             backing?: boolean;
             color?: string;
-            font?: Font12;
+            font?: Font10;
             logoAssetId?: string | null;
             logoPosition?: LogoPosition;
             logoScale?: number;
@@ -11842,19 +11944,19 @@ export type PhotographyWorkflowDto = {
             coverCaptureId: string | null;
             coverFocal: number;
             coverTreatment: CoverTreatment;
-            font: Font13;
+            font: Font11;
             introduction: string;
             palette: Palette;
             showChapters: boolean;
             showNumbers: boolean;
             spacing: Spacing;
-            template: Template;
+            template: Template3;
         };
         proofWatermark: {
             alignment?: Alignment;
             backing?: boolean;
             color?: string;
-            font?: Font14;
+            font?: Font12;
             logoAssetId?: string | null;
             logoPosition?: LogoPosition;
             logoScale?: number;
@@ -11879,7 +11981,7 @@ export type PhotographyWorkflowDto = {
             alignment?: Alignment;
             backing?: boolean;
             color?: string;
-            font?: Font14;
+            font?: Font12;
             logoAssetId?: string | null;
             logoPosition?: LogoPosition;
             logoScale?: number;
@@ -11927,7 +12029,7 @@ export type PhotographyWorkflowDto = {
                     quality: Quality;
                 };
                 id: string;
-                kind: Kind9;
+                kind: Kind11;
                 label: string;
                 ready: boolean;
                 renderStatus: RenderStatus;
@@ -11967,14 +12069,14 @@ export type PhotographyWorkflowDto = {
             currency: string;
             downloadOutputs?: {
                 key: string;
-                kind: Kind9;
+                kind: Kind11;
                 label: string;
                 maxEdge: number;
                 watermark: {
                     alignment?: Alignment;
                     backing?: boolean;
                     color?: string;
-                    font?: Font14;
+                    font?: Font12;
                     logoAssetId?: string | null;
                     logoPosition?: LogoPosition;
                     logoScale?: number;
@@ -11996,7 +12098,7 @@ export type PhotographyWorkflowDto = {
                 alignment?: Alignment;
                 backing?: boolean;
                 color?: string;
-                font?: Font14;
+                font?: Font12;
                 logoAssetId?: string | null;
                 logoPosition?: LogoPosition;
                 logoScale?: number;
@@ -12029,19 +12131,19 @@ export type PhotographyWorkflowDto = {
                 coverCaptureId: string | null;
                 coverFocal: number;
                 coverTreatment: CoverTreatment;
-                font: Font15;
+                font: Font13;
                 introduction: string;
                 palette: Palette;
                 showChapters: boolean;
                 showNumbers: boolean;
                 spacing: Spacing;
-                template: Template;
+                template: Template3;
             };
             proofWatermark: {
                 alignment?: Alignment;
                 backing?: boolean;
                 color?: string;
-                font?: Font16;
+                font?: Font14;
                 logoAssetId?: string | null;
                 logoPosition?: LogoPosition;
                 logoScale?: number;
@@ -12066,7 +12168,7 @@ export type PhotographyWorkflowDto = {
                 alignment?: Alignment;
                 backing?: boolean;
                 color?: string;
-                font?: Font16;
+                font?: Font14;
                 logoAssetId?: string | null;
                 logoPosition?: LogoPosition;
                 logoScale?: number;
@@ -12157,14 +12259,14 @@ export type PhotographyWorkflowDto = {
                 currency: string;
                 downloadOutputs?: {
                     key: string;
-                    kind: Kind9;
+                    kind: Kind11;
                     label: string;
                     maxEdge: number;
                     watermark: {
                         alignment?: Alignment;
                         backing?: boolean;
                         color?: string;
-                        font?: Font16;
+                        font?: Font14;
                         logoAssetId?: string | null;
                         logoPosition?: LogoPosition;
                         logoScale?: number;
@@ -12186,7 +12288,7 @@ export type PhotographyWorkflowDto = {
                     alignment?: Alignment;
                     backing?: boolean;
                     color?: string;
-                    font?: Font16;
+                    font?: Font14;
                     logoAssetId?: string | null;
                     logoPosition?: LogoPosition;
                     logoScale?: number;
@@ -12219,19 +12321,19 @@ export type PhotographyWorkflowDto = {
                     coverCaptureId: string | null;
                     coverFocal: number;
                     coverTreatment: CoverTreatment;
-                    font: Font17;
+                    font: Font15;
                     introduction: string;
                     palette: Palette;
                     showChapters: boolean;
                     showNumbers: boolean;
                     spacing: Spacing;
-                    template: Template;
+                    template: Template3;
                 };
                 proofWatermark: {
                     alignment?: Alignment;
                     backing?: boolean;
                     color?: string;
-                    font?: Font18;
+                    font?: Font16;
                     logoAssetId?: string | null;
                     logoPosition?: LogoPosition;
                     logoScale?: number;
@@ -12256,7 +12358,7 @@ export type PhotographyWorkflowDto = {
                     alignment?: Alignment;
                     backing?: boolean;
                     color?: string;
-                    font?: Font18;
+                    font?: Font16;
                     logoAssetId?: string | null;
                     logoPosition?: LogoPosition;
                     logoScale?: number;
@@ -12316,14 +12418,14 @@ export type PhotographyWorkflowConfigDto = {
         currency: string;
         downloadOutputs?: {
             key: string;
-            kind: Kind9;
+            kind: Kind11;
             label: string;
             maxEdge: number;
             watermark: {
                 alignment?: Alignment;
                 backing?: boolean;
                 color?: string;
-                font?: Font18;
+                font?: Font16;
                 logoAssetId?: string | null;
                 logoPosition?: LogoPosition;
                 logoScale?: number;
@@ -12345,7 +12447,7 @@ export type PhotographyWorkflowConfigDto = {
             alignment?: Alignment;
             backing?: boolean;
             color?: string;
-            font?: Font18;
+            font?: Font16;
             logoAssetId?: string | null;
             logoPosition?: LogoPosition;
             logoScale?: number;
@@ -12378,19 +12480,19 @@ export type PhotographyWorkflowConfigDto = {
             coverCaptureId: string | null;
             coverFocal: number;
             coverTreatment: CoverTreatment;
-            font: Font19;
+            font: Font17;
             introduction: string;
             palette: Palette;
             showChapters: boolean;
             showNumbers: boolean;
             spacing: Spacing;
-            template: Template;
+            template: Template3;
         };
         proofWatermark: {
             alignment?: Alignment;
             backing?: boolean;
             color?: string;
-            font?: Font20;
+            font?: Font18;
             logoAssetId?: string | null;
             logoPosition?: LogoPosition;
             logoScale?: number;
@@ -12415,7 +12517,7 @@ export type PhotographyWorkflowConfigDto = {
             alignment?: Alignment;
             backing?: boolean;
             color?: string;
-            font?: Font20;
+            font?: Font18;
             logoAssetId?: string | null;
             logoPosition?: LogoPosition;
             logoScale?: number;
@@ -12445,7 +12547,7 @@ export type PhotographyOrderCreateDto = {
     expectedRevision: string | null;
     outputs?: {
         key: string;
-        kind: Kind9;
+        kind: Kind11;
         label: string;
         maxEdge: number;
         revisions?: {
@@ -12456,7 +12558,7 @@ export type PhotographyOrderCreateDto = {
             alignment?: Alignment;
             backing?: boolean;
             color?: string;
-            font?: Font20;
+            font?: Font18;
             logoAssetId?: string | null;
             logoPosition?: LogoPosition;
             logoScale?: number;
@@ -12561,14 +12663,14 @@ export type PhotographyInvitationDto = {
             currency: string;
             downloadOutputs?: {
                 key: string;
-                kind: Kind9;
+                kind: Kind11;
                 label: string;
                 maxEdge: number;
                 watermark: {
                     alignment?: Alignment;
                     backing?: boolean;
                     color?: string;
-                    font?: Font20;
+                    font?: Font18;
                     logoAssetId?: string | null;
                     logoPosition?: LogoPosition;
                     logoScale?: number;
@@ -12590,7 +12692,7 @@ export type PhotographyInvitationDto = {
                 alignment?: Alignment;
                 backing?: boolean;
                 color?: string;
-                font?: Font20;
+                font?: Font18;
                 logoAssetId?: string | null;
                 logoPosition?: LogoPosition;
                 logoScale?: number;
@@ -12623,19 +12725,19 @@ export type PhotographyInvitationDto = {
                 coverCaptureId: string | null;
                 coverFocal: number;
                 coverTreatment: CoverTreatment;
-                font: Font21;
+                font: Font19;
                 introduction: string;
                 palette: Palette;
                 showChapters: boolean;
                 showNumbers: boolean;
                 spacing: Spacing;
-                template: Template;
+                template: Template3;
             };
             proofWatermark: {
                 alignment?: Alignment;
                 backing?: boolean;
                 color?: string;
-                font?: Font22;
+                font?: Font20;
                 logoAssetId?: string | null;
                 logoPosition?: LogoPosition;
                 logoScale?: number;
@@ -12660,7 +12762,7 @@ export type PhotographyInvitationDto = {
                 alignment?: Alignment;
                 backing?: boolean;
                 color?: string;
-                font?: Font22;
+                font?: Font20;
                 logoAssetId?: string | null;
                 logoPosition?: LogoPosition;
                 logoScale?: number;
@@ -12708,7 +12810,7 @@ export type PhotographyInvitationDto = {
                         quality: Quality;
                     };
                     id: string;
-                    kind: Kind9;
+                    kind: Kind11;
                     label: string;
                     ready: boolean;
                     renderStatus: RenderStatus;
@@ -12748,14 +12850,14 @@ export type PhotographyInvitationDto = {
                 currency: string;
                 downloadOutputs?: {
                     key: string;
-                    kind: Kind9;
+                    kind: Kind11;
                     label: string;
                     maxEdge: number;
                     watermark: {
                         alignment?: Alignment;
                         backing?: boolean;
                         color?: string;
-                        font?: Font22;
+                        font?: Font20;
                         logoAssetId?: string | null;
                         logoPosition?: LogoPosition;
                         logoScale?: number;
@@ -12777,7 +12879,7 @@ export type PhotographyInvitationDto = {
                     alignment?: Alignment;
                     backing?: boolean;
                     color?: string;
-                    font?: Font22;
+                    font?: Font20;
                     logoAssetId?: string | null;
                     logoPosition?: LogoPosition;
                     logoScale?: number;
@@ -12810,19 +12912,19 @@ export type PhotographyInvitationDto = {
                     coverCaptureId: string | null;
                     coverFocal: number;
                     coverTreatment: CoverTreatment;
-                    font: Font23;
+                    font: Font21;
                     introduction: string;
                     palette: Palette;
                     showChapters: boolean;
                     showNumbers: boolean;
                     spacing: Spacing;
-                    template: Template;
+                    template: Template3;
                 };
                 proofWatermark: {
                     alignment?: Alignment;
                     backing?: boolean;
                     color?: string;
-                    font?: Font24;
+                    font?: Font22;
                     logoAssetId?: string | null;
                     logoPosition?: LogoPosition;
                     logoScale?: number;
@@ -12847,7 +12949,7 @@ export type PhotographyInvitationDto = {
                     alignment?: Alignment;
                     backing?: boolean;
                     color?: string;
-                    font?: Font24;
+                    font?: Font22;
                     logoAssetId?: string | null;
                     logoPosition?: LogoPosition;
                     logoScale?: number;
@@ -12938,14 +13040,14 @@ export type PhotographyInvitationDto = {
                     currency: string;
                     downloadOutputs?: {
                         key: string;
-                        kind: Kind9;
+                        kind: Kind11;
                         label: string;
                         maxEdge: number;
                         watermark: {
                             alignment?: Alignment;
                             backing?: boolean;
                             color?: string;
-                            font?: Font24;
+                            font?: Font22;
                             logoAssetId?: string | null;
                             logoPosition?: LogoPosition;
                             logoScale?: number;
@@ -12967,7 +13069,7 @@ export type PhotographyInvitationDto = {
                         alignment?: Alignment;
                         backing?: boolean;
                         color?: string;
-                        font?: Font24;
+                        font?: Font22;
                         logoAssetId?: string | null;
                         logoPosition?: LogoPosition;
                         logoScale?: number;
@@ -13000,19 +13102,19 @@ export type PhotographyInvitationDto = {
                         coverCaptureId: string | null;
                         coverFocal: number;
                         coverTreatment: CoverTreatment;
-                        font: Font25;
+                        font: Font23;
                         introduction: string;
                         palette: Palette;
                         showChapters: boolean;
                         showNumbers: boolean;
                         spacing: Spacing;
-                        template: Template;
+                        template: Template3;
                     };
                     proofWatermark: {
                         alignment?: Alignment;
                         backing?: boolean;
                         color?: string;
-                        font?: Font26;
+                        font?: Font24;
                         logoAssetId?: string | null;
                         logoPosition?: LogoPosition;
                         logoScale?: number;
@@ -13037,7 +13139,7 @@ export type PhotographyInvitationDto = {
                         alignment?: Alignment;
                         backing?: boolean;
                         color?: string;
-                        font?: Font26;
+                        font?: Font24;
                         logoAssetId?: string | null;
                         logoPosition?: LogoPosition;
                         logoScale?: number;
@@ -13490,7 +13592,7 @@ export type PushDeviceRegisterDto = {
 };
 export type PushActivityTokenDto = {
     /** The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes) */
-    kind: Kind10;
+    kind: Kind12;
     /** Required for studio-render: the owned Studio render media operation this activity follows */
     operationId?: string;
     /** The ActivityKit push token of this activity */
@@ -16302,7 +16404,7 @@ export type StudioProjectSaveResponseDto = {
 export type StudioReverseConformEnqueueDto = {
     clientId: string;
     command: {
-        id: Id;
+        id: Id2;
         idempotencyKey: string;
         issuedAt: number;
         payload: {
@@ -17511,7 +17613,7 @@ export type PinnedCollection = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind11;
+    kind: Kind13;
     /** Null when unavailable; the inaccessible target identity is not disclosed */
     targetId: string | null;
     /** Current access-filtered title; null when unavailable */
@@ -17526,7 +17628,7 @@ export type PinnedCollectionsResponseDto = {
 export type PinnedCollectionRef = {
     /** Opaque pin ID chosen by the client and retained across reorders */
     id: string;
-    kind: Kind11;
+    kind: Kind13;
     /** Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID */
     targetId: string | null;
 };
@@ -19414,7 +19516,7 @@ export type SyncPinnedCollectionV1 = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind11;
+    kind: Kind13;
     position: number;
     targetId: string;
     /** Current access-filtered title; null when unavailable */
@@ -19472,7 +19574,7 @@ export type SyncSharedSpaceV1 = {
     description: string | null;
     icon: string | null;
     id: string;
-    kind: Kind12;
+    kind: Kind14;
     name: string;
     updatedAt: string;
 };
@@ -29300,16 +29402,6 @@ export function photographySaveSite({ photographySiteSaveDto }: {
         body: photographySiteSaveDto
     })));
 }
-export function photographyPublicSite({ ownerId }: {
-    ownerId: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: PhotographyPublicSiteDto;
-    }>(`/photography/studios/${encodeURIComponent(ownerId)}`, {
-        ...opts
-    }));
-}
 export function photographyPublicLogo({ ownerId }: {
     ownerId: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -29320,17 +29412,47 @@ export function photographyPublicLogo({ ownerId }: {
         ...opts
     }));
 }
-export function photographyPublicPhoto({ captureId, ownerId, shootId }: {
+/**
+ * A website photograph at one of its widths (640, 1280, 2048). URLs carry ?v=, so it is cached for a year.
+ */
+export function photographyPublicPhoto({ captureId, ownerId, shootId, width }: {
     captureId: string;
     ownerId: string;
     shootId: string;
+    width: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
         data: Blob;
-    }>(`/photography/studios/${encodeURIComponent(ownerId)}/photos/${encodeURIComponent(shootId)}/${encodeURIComponent(captureId)}`, {
+    }>(`/photography/studios/${encodeURIComponent(ownerId)}/photos/${encodeURIComponent(shootId)}/${encodeURIComponent(captureId)}/${encodeURIComponent(width)}`, {
         ...opts
     }));
+}
+/**
+ * A studio website by its address (/studio/<slug>) or, for links made before FL-702, its owner id.
+ */
+export function photographyPublicSite({ site }: {
+    site: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPublicSiteDto;
+    }>(`/photography/studios/${encodeURIComponent(site)}`, {
+        ...opts
+    }));
+}
+/**
+ * Sends the studio an inquiry from its website, or asks for a gallery link. Always answers 204 for a working site, whatever the email address.
+ */
+export function photographySiteInquiry({ site, photographyInquiryCreateDto }: {
+    site: string;
+    photographyInquiryCreateDto: PhotographyInquiryCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/studios/${encodeURIComponent(site)}/inquiries`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyInquiryCreateDto
+    })));
 }
 export function photographyList(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -37898,15 +38020,31 @@ export enum Processing {
     Pending = "pending",
     Failed = "failed"
 }
-export enum Font11 {
-    Editorial = "editorial",
-    Modern = "modern",
-    Script = "script"
+export enum Kind10 {
+    Inquiry = "inquiry",
+    GalleryLink = "gallery-link"
 }
-export enum Layout {
+export enum Colours {
+    Template = "template",
+    Brand = "brand"
+}
+export enum Id {
+    Cover = "cover",
+    Portfolio = "portfolio",
+    About = "about",
+    Services = "services",
+    Testimonials = "testimonials",
+    Faq = "faq",
+    Inquiry = "inquiry",
+    Clients = "clients"
+}
+export enum Template2 {
     Editorial = "editorial",
-    Grid = "grid",
-    Slideshow = "slideshow"
+    Minimal = "minimal",
+    Gallery = "gallery",
+    Cinematic = "cinematic",
+    Noir = "noir",
+    Commercial = "commercial"
 }
 export enum State6 {
     Imported = "imported",
@@ -37915,10 +38053,10 @@ export enum State6 {
     Approved = "approved",
     Delivered = "delivered"
 }
-export enum Font12 {
-    Script = "script",
-    Serif = "serif",
-    Sans = "sans"
+export enum Kind11 {
+    Print = "print",
+    Web = "web",
+    Social = "social"
 }
 export enum Type9 {
     Chapter = "chapter",
@@ -37928,12 +38066,18 @@ export enum Type9 {
     Caption = "caption",
     Slideshow = "slideshow"
 }
-export enum Font13 {
+export enum Font11 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
 }
-export enum Font14 {
+export enum Template3 {
+    Wedding = "wedding",
+    Portrait = "portrait",
+    FineArt = "fine-art",
+    Proofing = "proofing"
+}
+export enum Font12 {
     Script = "script",
     Serif = "serif",
     Sans = "sans"
@@ -37965,12 +38109,12 @@ export enum Type11 {
     Caption = "caption",
     Slideshow = "slideshow"
 }
-export enum Font15 {
+export enum Font13 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
 }
-export enum Font16 {
+export enum Font14 {
     Script = "script",
     Serif = "serif",
     Sans = "sans"
@@ -37994,12 +38138,12 @@ export enum Type13 {
     Caption = "caption",
     Slideshow = "slideshow"
 }
-export enum Font17 {
+export enum Font15 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
 }
-export enum Font18 {
+export enum Font16 {
     Script = "script",
     Serif = "serif",
     Sans = "sans"
@@ -38017,12 +38161,12 @@ export enum Type15 {
     Caption = "caption",
     Slideshow = "slideshow"
 }
-export enum Font19 {
+export enum Font17 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
 }
-export enum Font20 {
+export enum Font18 {
     Script = "script",
     Serif = "serif",
     Sans = "sans"
@@ -38054,12 +38198,12 @@ export enum Type17 {
     Caption = "caption",
     Slideshow = "slideshow"
 }
-export enum Font21 {
+export enum Font19 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
 }
-export enum Font22 {
+export enum Font20 {
     Script = "script",
     Serif = "serif",
     Sans = "sans"
@@ -38085,12 +38229,12 @@ export enum Type19 {
     Caption = "caption",
     Slideshow = "slideshow"
 }
-export enum Font23 {
+export enum Font21 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
 }
-export enum Font24 {
+export enum Font22 {
     Script = "script",
     Serif = "serif",
     Sans = "sans"
@@ -38114,12 +38258,12 @@ export enum Type21 {
     Caption = "caption",
     Slideshow = "slideshow"
 }
-export enum Font25 {
+export enum Font23 {
     Editorial = "editorial",
     Modern = "modern",
     Script = "script"
 }
-export enum Font26 {
+export enum Font24 {
     Script = "script",
     Serif = "serif",
     Sans = "sans"
@@ -38260,7 +38404,7 @@ export enum PushPlatform {
     Ios = "ios",
     Android = "android"
 }
-export enum Kind10 {
+export enum Kind12 {
     CloudBackupActivation = "cloud-backup-activation",
     StudioRender = "studio-render"
 }
@@ -38726,7 +38870,7 @@ export enum StudioProjectResourceKind {
     Lut = "lut",
     Model = "model"
 }
-export enum Id {
+export enum Id2 {
     JobEnqueueReverseConform = "job.enqueueReverseConform"
 }
 export enum DestinationId {
@@ -39194,7 +39338,7 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
-export enum Kind11 {
+export enum Kind13 {
     Album = "album",
     SmartAlbum = "smart-album",
     SavedSearch = "saved-search",
@@ -39344,7 +39488,7 @@ export enum Status12 {
     Trashed = "trashed",
     Deleted = "deleted"
 }
-export enum Kind12 {
+export enum Kind14 {
     Space = "space"
 }
 export enum UserMetadataKey {

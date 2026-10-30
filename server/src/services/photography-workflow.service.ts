@@ -38,7 +38,6 @@ import {
   PhotographyPublicationDto,
   PhotographyRecipientCreateDto,
   PhotographyRecipientUpdateDto,
-  PhotographySiteSaveDto,
   PhotographyStudioPresetApplyDto,
   PhotographyWorkflowConfigDto,
   PhotographyWorkflowMutationDto,
@@ -2422,31 +2421,11 @@ export class PhotographyWorkflowService {
     if (!auth.session || auth.apiKey || auth.sharedLink) throw new ForbiddenException('Studio session required');
     return auth.user.id;
   }
-  async site(auth: AuthDto) {
-    const ownerId = this.studioSession(auth);
-    const stored = await this.repository.site(ownerId);
-    return {
-      revision: stored?.revision ?? null,
-      site: stored?.value ?? {
-        presentation: { layout: 'editorial', spacing: 'comfortable', font: 'editorial', palette: 'studio' },
-        enabled: false,
-        title: auth.user.name,
-        about: '',
-        services: '',
-        contact: '',
-        portfolio: [],
-      },
-      url: `/studio/${ownerId}`,
-    };
+  studioOwner(auth: AuthDto) {
+    return this.studioSession(auth);
   }
-  private async portfolio(
-    ownerId: string,
-    shootId: string,
-    captureId: string,
-    shoots?: Map<string, Promise<WorkflowRow>>,
-  ) {
-    // a portfolio usually holds several photographs of one gallery: read and check it once per request
-    let gallery = shoots?.get(shootId);
+  private async liveGallery(ownerId: string, shootId: string, shoots: Map<string, Promise<WorkflowRow>>) {
+    let gallery = shoots.get(shootId);
     if (!gallery) {
       gallery = (async () => {
         const found = await this.repository.get(shootId);
@@ -2454,9 +2433,21 @@ export class PhotographyWorkflowService {
         await this.repository.live(found);
         return found;
       })();
-      shoots?.set(shootId, gallery);
+      shoots.set(shootId, gallery);
     }
-    const row = await gallery;
+    return gallery;
+  }
+  /**
+   * FL-702: the published web rendition the website copies when a photograph is added to it. It must be
+   * the approved edit, published, in a gallery that has not expired.
+   */
+  async portfolioSource(
+    ownerId: string,
+    shootId: string,
+    captureId: string,
+    shoots = new Map<string, Promise<WorkflowRow>>(),
+  ) {
+    const row = await this.liveGallery(ownerId, shootId, shoots);
     if (expired(row.value.config.expiresAt) || !(await this.eligible(row, [captureId], true)).has(captureId))
       throw new NotFoundException();
     const photo = row.value.published?.photos.find((p) => p.captureId === captureId);
@@ -2464,79 +2455,40 @@ export class PhotographyWorkflowService {
     if (!photo?.revisionId || !capture?.approvedRevisionId || photo.revisionId !== capture.approvedRevisionId)
       throw new NotFoundException('Publish an approved web photograph first');
     await this.requireRevision(row, capture, photo.revisionId);
-    return { row, photo };
+    return { path: photo.previewPath, revisionId: photo.revisionId, assetId: capture.assetId };
   }
-  async saveSite(auth: AuthDto, input: PhotographySiteSaveDto) {
-    const ownerId = this.studioSession(auth);
-    const dto = PhotographySiteSaveDto.schema.parse(input);
-    if (new Set(dto.site.portfolio.map((p) => `${p.shootId}:${p.captureId}`)).size !== dto.site.portfolio.length)
-      throw new BadRequestException('Duplicate portfolio photographs');
+  /**
+   * FL-702: which portfolio photographs the website may still show. The site keeps its own copies, so a
+   * gallery that expired or was republished no longer hides them (FL-701 item 15); a photograph that was
+   * withheld, rejected, locked (FL-446), taken offline or whose gallery is gone still disappears.
+   */
+  async portfolioAllowed(ownerId: string, items: { shootId: string; captureId: string; revisionId?: string | null }[]) {
+    const allowed = new Set<string>();
+    const byShoot = Map.groupBy(items, (item) => item.shootId);
     const shoots = new Map<string, Promise<WorkflowRow>>();
-    for (const item of dto.site.portfolio) await this.portfolio(ownerId, item.shootId, item.captureId, shoots);
-    return this.repository.saveSite(ownerId, dto.expectedRevision, dto.site);
-  }
-  async publicSite(ownerId: string) {
-    await this.repository.studioLive(ownerId);
-    const site = await this.repository.site(ownerId);
-    if (!site?.value?.enabled) throw new NotFoundException();
-    const portfolio: { shootId: string; captureId: string; url: string }[] = [];
-    const shoots = new Map<string, Promise<WorkflowRow>>();
-    for (const item of site.value.portfolio) {
+    for (const [shootId, group] of byShoot) {
+      let row: WorkflowRow;
       try {
-        await this.portfolio(ownerId, item.shootId, item.captureId, shoots);
+        row = await this.liveGallery(ownerId, shootId, shoots);
       } catch (error) {
         if (error instanceof NotFoundException || error instanceof ForbiddenException) continue;
         throw error;
       }
-      portfolio.push({
-        shootId: item.shootId,
-        captureId: item.captureId,
-        url: `/api/photography/studios/${ownerId}/photos/${item.shootId}/${item.captureId}`,
-      });
+      const captures = await this.eligible(
+        row,
+        group.map((item) => item.captureId),
+        true,
+      );
+      // A copy made from an edit also needs that edit's sources, for example a RAW that is locked now.
+      const revisions = await this.repository.eligibleRevisions(
+        row,
+        group.flatMap((item) => (item.revisionId ? [item.revisionId] : [])),
+      );
+      for (const item of group)
+        if (captures.has(item.captureId) && (!item.revisionId || revisions.has(item.revisionId)))
+          allowed.add(`${shootId}:${item.captureId}`);
     }
-    const brand = (await this.workspace.get(ownerId))?.value.brand;
-    const eligibleLogo = brand?.logoAssetId && (await this.repository.logo(ownerId, brand.logoAssetId))[0];
-    return {
-      ...site.value,
-      portfolio,
-      brand: brand
-        ? {
-            name: brand.name,
-            tagline: brand.tagline,
-            email: brand.email,
-            phone: brand.phone,
-            color: brand.color,
-            background: brand.background,
-            textColor: brand.textColor,
-            font: brand.font,
-            logoUrl: eligibleLogo ? `/api/photography/studios/${ownerId}/logo` : null,
-          }
-        : {
-            name: site.value.title,
-            tagline: '',
-            email: '',
-            phone: '',
-            color: '#577059',
-            background: '#f5f3ed',
-            textColor: '#263329',
-            font: 'editorial',
-            logoUrl: null,
-          },
-    };
-  }
-  async publicPhoto(ownerId: string, shootId: string, captureId: string) {
-    const site = await this.repository.site(ownerId);
-    if (
-      !site?.value?.enabled ||
-      site.value.portfolio.every((p) => !(p.shootId === shootId && p.captureId === captureId && p.consent))
-    )
-      throw new NotFoundException();
-    const { photo } = await this.portfolio(ownerId, shootId, captureId);
-    return new FileDownloadResponse({
-      path: photo.previewPath,
-      contentType: 'image/jpeg',
-      cacheControl: CacheControl.None,
-    });
+    return allowed;
   }
   async publicLogo(ownerId: string) {
     await this.repository.studioLive(ownerId);

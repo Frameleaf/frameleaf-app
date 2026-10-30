@@ -3,8 +3,11 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Next,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -27,6 +30,7 @@ import {
   PhotographyGallerySessionDto,
   PhotographyGallerySessionResponseDto,
   PhotographyGuestApprovalDto,
+  PhotographyInquiryCreateDto,
   PhotographyIntakeDto,
   PhotographyInvitationDto,
   PhotographyOrderAcceptDto,
@@ -52,8 +56,9 @@ import {
 } from 'src/dtos/photography-workflow.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
-import { RateLimited, RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
+import { RATE_LIMITS, RateLimited, RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { asStreamableFile, sendFile } from 'src/utils/file.js';
 
@@ -63,6 +68,7 @@ const uuid = new ParseUUIDPipe({ version: '4' });
 export class PhotographyWorkflowController {
   constructor(
     private service: PhotographyWorkflowService,
+    private siteService: PhotographySiteService,
     private logger: LoggingRepository,
   ) {}
   @Get('presets')
@@ -96,22 +102,37 @@ export class PhotographyWorkflowController {
   @Authenticated()
   @ApiResponse({ status: 200, type: PhotographySiteDto })
   site(@Auth() auth: AuthDto) {
-    return this.service.site(auth);
+    return this.siteService.site(auth);
   }
   @Put('site')
   @ApiOperation({ operationId: 'photographySaveSite' })
   @Authenticated()
   @ApiResponse({ status: 200, type: PhotographySiteDto })
   saveSite(@Auth() auth: AuthDto, @Body() dto: PhotographySiteSaveDto) {
-    return this.service.saveSite(auth, dto);
+    return this.siteService.saveSite(auth, dto);
   }
-  @Get('studios/:ownerId')
-  @ApiOperation({ operationId: 'photographyPublicSite' })
+  @Get('studios/:site')
+  @ApiOperation({
+    operationId: 'photographyPublicSite',
+    description: 'A studio website by its address (/studio/<slug>) or, for links made before FL-702, its owner id.',
+  })
   @Authenticated({ public: true })
   @ApiResponse({ status: 200, type: PhotographyPublicSiteDto })
-  publicSite(@Param('ownerId', uuid) ownerId: string, @Res({ passthrough: true }) res: Response) {
+  publicSite(@Param('site') site: string, @Res({ passthrough: true }) res: Response) {
     res.header('Cache-Control', 'no-store');
-    return this.service.publicSite(ownerId);
+    return this.siteService.publicSite(site);
+  }
+  @Post('studios/:site/inquiries')
+  @ApiOperation({
+    operationId: 'photographySiteInquiry',
+    description:
+      'Sends the studio an inquiry from its website, or asks for a gallery link. Always answers 204 for a working site, whatever the email address.',
+  })
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.studioInquiry)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async inquire(@Param('site') site: string, @Body() dto: PhotographyInquiryCreateDto) {
+    await this.siteService.inquire(site, dto);
   }
   @RemoteMediaCeiling()
   @Get('studios/:ownerId/logo')
@@ -123,19 +144,25 @@ export class PhotographyWorkflowController {
     return new StreamableFile(await this.service.publicLogo(ownerId), { type: 'image/png' });
   }
   @RemoteMediaCeiling()
-  @Get('studios/:ownerId/photos/:shootId/:captureId')
-  @ApiOperation({ operationId: 'photographyPublicPhoto' })
+  @Get('studios/:ownerId/photos/:shootId/:captureId/:width')
+  @ApiOperation({
+    operationId: 'photographyPublicPhoto',
+    description:
+      'A website photograph at one of its widths (640, 1280, 2048). URLs carry ?v=, so it is cached for a year.',
+  })
   @Authenticated({ public: true })
   @FileResponse()
   async publicPhoto(
     @Param('ownerId', uuid) ownerId: string,
     @Param('shootId', uuid) shootId: string,
     @Param('captureId', uuid) captureId: string,
+    @Param('width', ParseIntPipe) width: number,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    res.header('Cache-Control', 'no-store');
-    await sendFile(res, next, () => this.service.publicPhoto(ownerId, shootId, captureId), this.logger);
+    // Each copy's URL carries its version, and a removed photograph is refused, so a long cache is safe.
+    res.header('Cache-Control', 'public, max-age=31536000, immutable');
+    await sendFile(res, next, () => this.siteService.publicPhoto(ownerId, shootId, captureId, width), this.logger);
   }
   @RemoteMediaCeiling()
   @Get('galleries/:id/logo')
