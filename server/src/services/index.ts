@@ -44,6 +44,7 @@ import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { DescriptionTagCleanupService } from 'src/services/description-tag-cleanup.service.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
@@ -276,6 +277,7 @@ export const services = [
   CliService,
   DatabaseBackupService,
   DatabaseService,
+  DescriptionTagCleanupService,
   DocumentService,
   DownloadService,
   DuplicateDecisionService,

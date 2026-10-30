@@ -107,6 +107,8 @@ QWEN_OPENVINO_IMAGE_TAG = "<|vision_start|><|image_pad|><|vision_end|>"
 # prose, so splitting them into words yields pronouns, prepositions, numbers,
 # colours, positions and describing verbs ("her", "behind", "four", "white",
 # "front", "wearing", "image"). Keep nouns: "dog", "beach", "table", "car".
+# Mirrored in server/src/utils/description-tag-stop-words.ts, which removes filler tags made
+# before this list (FL-667); a server test fails when the two copies differ.
 TAG_STOP_WORDS = frozenset(
     {
         # articles, conjunctions, determiners, quantifiers
