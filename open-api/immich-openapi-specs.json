@@ -139302,6 +139302,24 @@
             },
             "type": "array"
           },
+          "hlgSources": {
+            "description": "The hdrSources with the HLG (ARIB STD-B67) transfer",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pqSources": {
+            "description": "The hdrSources with the PQ (SMPTE 2084) transfer. An export that keeps the source colour keeps an HDR picture only when every placed video shares one transfer",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "refusedCount": {
             "description": "References that were refused for the acting account",
             "maximum": 9007199254740991,
@@ -139322,6 +139340,8 @@
           "hdrProxySources",
           "hdrSources",
           "hiddenSources",
+          "hlgSources",
+          "pqSources",
           "refusedCount",
           "unsupportedSources"
         ],

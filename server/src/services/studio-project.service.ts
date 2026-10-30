@@ -1152,7 +1152,11 @@ export class StudioProjectService {
    * considered, so nothing is said about a source the account cannot read.
    */
   private async hdrResources(project: StudioProject, entries: readonly StudioAuthorizedEntry[]) {
-    const hdrSources = await this.resources.hdrLibraryAssets(
+    const {
+      hdr: hdrSources,
+      pq: pqSources,
+      hlg: hlgSources,
+    } = await this.resources.hdrLibrarySources(
       entries.filter((entry) => entry.kind === StudioResourceKind.LibraryAsset).map((entry) => entry.id),
     );
     // Owner decision (2026-09-29): a shared-space project counts only while its space is live, shared
@@ -1163,6 +1167,8 @@ export class StudioProjectService {
         : false;
     return {
       hdrSources,
+      pqSources,
+      hlgSources,
       hdrProxySources: await this.resources.studioHdrProxies(hdrSources, { ownerId: project.ownerId, sharedSpace }),
     };
   }

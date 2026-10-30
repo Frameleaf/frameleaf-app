@@ -649,14 +649,16 @@ describe(StudioResourceService.name, () => {
         stream(dolby, { dvProfile: 8 }),
       ] as never);
 
-      await expect(sut.hdrLibraryAssets([sdr, pq, hlg, dolby, pq, 'not-a-uuid'])).resolves.toEqual(
-        [pq, hlg, dolby].toSorted(),
-      );
+      await expect(sut.hdrLibrarySources([sdr, pq, hlg, dolby, pq, 'not-a-uuid'])).resolves.toEqual({
+        hdr: [pq, hlg, dolby].toSorted(),
+        pq: [pq],
+        hlg: [hlg],
+      });
       expect(mocks.asset.getVideoStreamsForDecode).toHaveBeenCalledWith([sdr, pq, hlg, dolby]);
     });
 
     it('asks nothing when no library asset is placed', async () => {
-      await expect(sut.hdrLibraryAssets([])).resolves.toEqual([]);
+      await expect(sut.hdrLibrarySources([])).resolves.toEqual({ hdr: [], pq: [], hlg: [] });
       expect(mocks.asset.getVideoStreamsForDecode).not.toHaveBeenCalled();
     });
 
