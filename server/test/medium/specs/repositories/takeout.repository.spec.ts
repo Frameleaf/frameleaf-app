@@ -441,10 +441,30 @@ describe(TakeoutRepository.name, () => {
     const finished = await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_3.jpg' });
     await sut.itemDone(finished, 'imported');
 
-    await expect(sut.countPendingPhotos(row.id)).resolves.toBe(2);
+    await expect(sut.pendingPhotos(row.id)).resolves.toEqual({ total: 2, alreadyIn: [] });
     // the photos still to import are the ones the check step counts
     const summary = await sut.matchSummary(user.id, row.id);
     expect(summary.matchedOriginals + summary.newAssets).toBe(2);
+  });
+
+  it('leaves a photo already brought in out of a retry’s total (FL-668)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    // the year-folder copy came in; the album copy failed and is back to ready for the retry
+    const done = randomBytes(32);
+    const imported = await seedItem(sut, row.id, source.id, {
+      folder: 'Photos from 2024',
+      name: 'IMG_1.jpg',
+      checksum: done,
+    });
+    await sut.itemDone(imported, 'imported');
+    await seedItem(sut, row.id, source.id, { folder: 'Beach', name: 'IMG_1.jpg', checksum: done });
+    await seedItem(sut, row.id, source.id, { folder: 'Photos from 2024', name: 'IMG_2.jpg' });
+
+    const { total, alreadyIn } = await sut.pendingPhotos(row.id);
+    expect(total).toBe(1);
+    expect(alreadyIn.map((checksum) => checksum.toString('hex'))).toEqual([done.toString('hex')]);
   });
 
   it('reuses the album a folder became only while the owner still has it', async () => {

@@ -643,11 +643,13 @@ export class TakeoutWorkerService {
     const options = parseTakeoutOptions(row.options);
     // Progress counts unique photos, as the check step does (FL-668): an album's copy of a photo is
     // the same photo, so it moves the count once, and linking Live Photos adds nothing to it.
-    run.total = await this.repository.countPendingPhotos(row.id);
+    const pending = await this.repository.pendingPhotos(row.id);
+    run.total = pending.total;
     await this.checkpoint(run, true);
 
     const seen = new Set<string>();
-    const photos = new Set<string>();
+    // A photo an earlier run already brought in is not counted again when another copy of it retries.
+    const photos = new Set(pending.alreadyIn.map((checksum) => checksum.toString('hex')));
     let sinceRefresh = 0;
     while (true) {
       this.throwIfStopped(run);

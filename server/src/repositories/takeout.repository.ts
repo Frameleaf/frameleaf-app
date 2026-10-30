@@ -715,19 +715,27 @@ export class TakeoutRepository {
     return rows.map((row) => mapItem(row));
   }
   /**
-   * The unique photos among the items a run still imports, by checksum: the importer adds an album's
-   * copy of a photo once, so the import's progress counts photos as the check step does (FL-668).
+   * The photos a run still imports, by checksum: the importer adds an album's copy of a photo once,
+   * so the import's progress counts photos as the check step does (FL-668). `total` leaves out a photo
+   * one of whose copies is already in (an earlier run imported or matched it and another copy is being
+   * retried); `alreadyIn` lists those photos' checksums, so their remaining copies do not count again.
    */
-  async countPendingPhotos(importId: string): Promise<number> {
+  async pendingPhotos(importId: string): Promise<{ total: number; alreadyIn: Buffer[] }> {
     const { rows } = await sql<{
-      total: string;
+      checksum: Buffer;
+      done: boolean;
     }>`
-      select count(distinct file.checksum) as total
+      select file.checksum, bool_or(item.state in ('imported', 'matched')) as done
       from takeout_item item
       inner join takeout_file file on file.id = item.id
-      where item."importId" = ${importId}::uuid and item.state in ('ready', 'importing')
+      where item."importId" = ${importId}::uuid
+      group by file.checksum
+      having bool_or(item.state in ('ready', 'importing'))
     `.execute(this.db);
-    return toNumber(rows[0]?.total);
+    return {
+      total: rows.filter(({ done }) => !done).length,
+      alreadyIn: rows.filter(({ done }) => done).map(({ checksum }) => checksum),
+    };
   }
   /** Items that failed get their one automatic retry: back to ready, error kept until they run. */
   async retryFailed(importId: string): Promise<number> {
