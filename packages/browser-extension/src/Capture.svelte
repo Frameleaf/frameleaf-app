@@ -45,13 +45,19 @@
   let bookmarkQueued = $state(false);
   let bookmarkTaskId = $state("");
   let queueItems = $state<QueueItem[]>([]);
-  const bookmarkSaved = $derived(
-    queueItems.some(
-      (item) =>
-        item.id === bookmarkTaskId &&
-        (item.state === "saved" || item.state === "duplicate"),
-    ),
-  );
+  // Latched: a failed queue read empties the list, but a saved link stays saved.
+  let bookmarkSaved = $state(false);
+  $effect(() => {
+    if (
+      !bookmarkSaved &&
+      queueItems.some(
+        (item) =>
+          item.id === bookmarkTaskId &&
+          (item.state === "saved" || item.state === "duplicate"),
+      )
+    )
+      bookmarkSaved = true;
+  });
   $effect(() => {
     if (bookmarkSaved && notice === "Saving the link.") notice = "Link saved.";
   });
@@ -175,6 +181,7 @@
         bookmarkTarget = nextPreview?.discovery.bookmarkUrl ?? sourcePage;
         bookmarkQueued = false;
         bookmarkTaskId = "";
+        bookmarkSaved = false;
         screenshotDone = false;
         screenshotDimensions = "";
         creationNeedsRefresh = false;

@@ -69,7 +69,7 @@ export class CaptureService {
     if (existing) return this.response(auth, dto, existing);
     if (dto.bookmark) await this.captures.commitBookmark(auth, dto);
     else if (dto.uploadResourceId && dto.sha256) {
-      await this.restoreTrashed(auth, dto.sha256);
+      await this.restoreTrashed(auth, dto.uploadResourceId, dto.sha256);
       await this.uploads.commitCapture(auth, dto.uploadResourceId, dto.sha256, (tx, publish) =>
         this.captures.commitFile(tx, auth, dto, publish),
       );
@@ -79,8 +79,14 @@ export class CaptureService {
     return this.response(auth, dto, receipt);
   }
 
-  /** Saving bytes that are in the Trash brings that copy back, so it reaches the chosen collection as a duplicate. */
-  private async restoreTrashed(auth: AuthDto, sha256: string) {
+  /**
+   * Saving bytes that are in the Trash brings that copy back, so it reaches the chosen collection as a duplicate.
+   * Only once this session's own capture upload holds those exact bytes, verified: a checksum alone proves nothing.
+   */
+  private async restoreTrashed(auth: AuthDto, uploadResourceId: string, sha256: string) {
+    await this.uploads.captureResource(auth, uploadResourceId);
+    const { resource } = await this.uploads.result(auth, uploadResourceId);
+    if (resource.state !== 'verified' || resource.verifiedChecksum?.toString('hex') !== sha256) return;
     const id = await this.captures.getTrashedCapture(auth, sha256);
     if (!id) return;
     let sequenced: string[] = [];

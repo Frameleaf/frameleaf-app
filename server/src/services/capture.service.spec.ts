@@ -61,6 +61,8 @@ describe('capture application boundary', () => {
     captures.getCompleted.mockResolvedValueOnce(undefined).mockResolvedValue(receipt);
     captures.commitBookmark.mockResolvedValue(receipt);
     captures.getTrashedCapture.mockResolvedValue(undefined);
+    uploads.captureResource.mockResolvedValue({} as never);
+    uploads.result.mockResolvedValue({ resource: { state: 'published', verifiedChecksum: null } } as never);
     bookmarks.get.mockResolvedValue({
       id: receipt.itemId,
       ownerId: auth.user.id,
@@ -166,6 +168,10 @@ describe('capture application boundary', () => {
         status: 'duplicate',
       });
     captures.getTrashedCapture.mockResolvedValue(asset.id);
+    uploads.captureResource.mockResolvedValue({} as never);
+    uploads.result.mockResolvedValue({
+      resource: { state: 'verified', verifiedChecksum: Buffer.from('a'.repeat(64), 'hex') },
+    } as never);
     trash.restoreAll.mockResolvedValue([asset.id]);
     uploads.commitCapture.mockResolvedValue(undefined as never);
     captures.getCapturedAsset.mockResolvedValue(asset);
@@ -177,6 +183,25 @@ describe('capture application boundary', () => {
       uploads.commitCapture.mock.invocationCallOrder[0],
     );
     expect(result.status).toBe('duplicate');
+  });
+
+  it('leaves the Trash alone until the capture upload holds the verified bytes', async () => {
+    const file = { ...dto, bookmark: undefined, uploadResourceId: dto.captureId, sha256: 'a'.repeat(64) };
+    captures.getTrashedCapture.mockResolvedValue(randomUUID());
+    uploads.commitCapture.mockRejectedValue(new NotFoundException('Capture unavailable'));
+    uploads.captureResource.mockRejectedValueOnce(new NotFoundException('Capture unavailable'));
+    await expect(service.commit(auth, file)).rejects.toThrow(NotFoundException);
+    for (const resource of [
+      { state: 'uploading', verifiedChecksum: null },
+      { state: 'verified', verifiedChecksum: Buffer.from('b'.repeat(64), 'hex') },
+    ]) {
+      captures.getCompleted.mockReset().mockResolvedValue(undefined);
+      uploads.captureResource.mockResolvedValue({} as never);
+      uploads.result.mockResolvedValue({ resource } as never);
+      await expect(service.commit(auth, file)).rejects.toThrow(NotFoundException);
+    }
+    expect(captures.getTrashedCapture).not.toHaveBeenCalled();
+    expect(trash.restoreAll).not.toHaveBeenCalled();
   });
 
   it('does not return an asset receipt whose media became protected', async () => {
