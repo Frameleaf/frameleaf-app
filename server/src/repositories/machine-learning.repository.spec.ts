@@ -511,8 +511,13 @@ describe(MachineLearningRepository.name, () => {
       }
       expect(models()).toEqual([qwenModelName, florenceModelName, florenceModelName, florenceModelName]);
 
-      // Another worker has not said so, and the answer expires.
+      // Another worker or another acceleration has not said so, and the answer expires.
       await sut.describeImageRun(selection(MlDestinationKind.Local, 'http://other-ml:3003'), imagePath, options);
+      expect(models().at(-1)).toBe(qwenModelName);
+      await sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, {
+        ...options,
+        acceleration: MachineLearningHardwareAcceleration.Cuda,
+      });
       expect(models().at(-1)).toBe(qwenModelName);
       vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 11 * 60 * 1000);
       await sut.describeImageRun(selection(MlDestinationKind.Local, localUrl), imagePath, options);
@@ -521,7 +526,8 @@ describe(MachineLearningRepository.name, () => {
 
     it.each([
       [1, 'destination-unavailable'],
-      [4, undefined],
+      [4, 'destination-unavailable'],
+      [5, undefined],
     ])('waits instead of failing when the worker drops the connection (claim %s)', async (attempt, expected) => {
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
       const context = {
@@ -539,6 +545,53 @@ describe(MachineLearningRepository.name, () => {
         ),
       ).rejects.toThrow();
       expect(context.dependencyReason).toBe(expected);
+    });
+
+    it('does not wait when the worker answered with a response it could not use', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response('{}', { headers: { 'content-length': String(64 * 1024 * 1024) } })),
+      );
+      const context = {
+        claim: { data: {}, safeToRetry: true, attempt: 1 },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+            modelName: florenceModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Auto,
+            device: 'AUTO',
+          }),
+        ),
+      ).rejects.toThrow('too large');
+      expect(context.dependencyReason).toBeUndefined();
+    });
+
+    it('still waits when the configured model lost the connection and the fallback cannot run', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockRejectedValueOnce(new TypeError('fetch failed'))
+          .mockResolvedValueOnce(jsonResponse({ detail: 'model_runtime_unavailable' }, 422)),
+      );
+      const context = {
+        claim: { data: {}, safeToRetry: true, attempt: 1 },
+        signal: new AbortController().signal,
+      } as unknown as QueueExecution;
+      await expect(
+        queueExecution.run(context, () =>
+          sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+            modelName: qwenModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Auto,
+            device: 'AUTO',
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(context.dependencyReason).toBe('destination-unavailable');
     });
 
     it('does not wait on an ordinary error the worker returned', async () => {

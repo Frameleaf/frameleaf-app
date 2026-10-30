@@ -613,6 +613,10 @@ export const MODEL_RUNTIME_UNAVAILABLE_TTL_MS = 10 * 60 * 1000;
 /** Up to this many claims, a description job whose worker dropped the connection waits instead of failing. */
 const TRANSPORT_DEFERRAL_ATTEMPTS = 4;
 
+/** undici's errors for a refused, reset or dropped connection (before or while the answer arrives). */
+const isConnectionFailure = (error: unknown) =>
+  error instanceof TypeError && (error.message === 'fetch failed' || error.message === 'terminated');
+
 const readDetail = (body: string): unknown => {
   try {
     return (JSON.parse(body) as { detail?: unknown } | null)?.detail;
@@ -1724,11 +1728,11 @@ export class MachineLearningRepository implements RestorationInference {
       this.probeCache.delete(selection.endpoint.url);
       selection.record(usage('failure', 0));
       const message = `Machine learning request '${this.redact(config)}' to ${target} failed: ${error instanceof Error ? error.message : String(error)}`;
-      // An aborted job is not a transport failure: its own deadline or cancellation ended it.
-      const aborted = error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
-      throw aborted
-        ? new Error(message, { cause: error })
-        : new MachineLearningTransportError(message, { cause: error });
+      // Only a lost connection is a transport failure. An aborted job (its own deadline or cancellation),
+      // an oversized or unreadable answer, or a revoked authority stays an ordinary failure.
+      throw isConnectionFailure(error)
+        ? new MachineLearningTransportError(message, { cause: error })
+        : new Error(message, { cause: error });
     }
 
     if (!response.ok) {
@@ -2119,7 +2123,8 @@ export class MachineLearningRepository implements RestorationInference {
     }
     // FL-676: a worker that said it can't run the configured model (the CPU image has no OpenVINO
     // GenAI for Qwen) is not asked again for a while; its photos go straight to the fallback.
-    const runtimeKey = (model: string) => `${selection.endpoint.url}\n${model}`;
+    // The answer holds for one worker, model and acceleration: switching to CUDA must ask again.
+    const runtimeKey = (model: string) => `${selection.endpoint.url}\n${acceleration}\n${model}`;
     const lacksRuntime = (model: string) => (this.modelsWithoutRuntime.get(runtimeKey(model)) ?? 0) > Date.now();
     const skipped = candidateModels.length > 1 && lacksRuntime(modelName);
     if (skipped) {
@@ -2127,6 +2132,9 @@ export class MachineLearningRepository implements RestorationInference {
     }
 
     let lastError: unknown;
+    // The latest lost connection, unless a later candidate got a real answer (a runtime refusal does not
+    // count: it says nothing about the model that could not be reached).
+    let transportError: MachineLearningTransportError | undefined;
     for (const candidateModel of candidateModels) {
       try {
         const body = await this.predict<ImageDescriptionResponse>(
@@ -2143,6 +2151,11 @@ export class MachineLearningRepository implements RestorationInference {
       } catch (error) {
         if (error instanceof JobDependencyUnavailable || error instanceof ServiceUnavailableException) throw error;
         lastError = error;
+        if (error instanceof MachineLearningTransportError) {
+          transportError = error;
+        } else if (!(error instanceof MachineLearningModelRuntimeUnavailableError)) {
+          transportError = undefined;
+        }
         if (error instanceof MachineLearningModelRuntimeUnavailableError) {
           this.modelsWithoutRuntime.set(runtimeKey(candidateModel), Date.now() + MODEL_RUNTIME_UNAVAILABLE_TTL_MS);
           this.logger.warn(
@@ -2159,10 +2172,11 @@ export class MachineLearningRepository implements RestorationInference {
       }
     }
 
-    if (lastError instanceof MachineLearningTransportError) {
+    if (transportError) {
       // The worker dropped or refused the connection (it was restarting or overloaded). The job
       // waits and tries again a few times before it counts as a failure (FL-676).
       deferJobOnTransientFailure('destination-unavailable', TRANSPORT_DEFERRAL_ATTEMPTS);
+      throw transportError;
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }

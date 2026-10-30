@@ -19,12 +19,12 @@ export function deferJobUntilDependency(reason: JobDependencyReason) {
 
 /**
  * A transient outage of a dependency (the worker dropped the connection) waits like a refusal, but
- * only for a job's first `maxAttempts` claims: a request that keeps breaking its worker still ends
- * as an ordinary failure. Only audited repeatable work waits this way.
+ * only for a job's first `maxAttempts` claims (claim attempts count from 1): a request that keeps
+ * breaking its worker still ends as an ordinary failure. Only audited repeatable work waits this way.
  */
 export function deferJobOnTransientFailure(reason: JobDependencyReason, maxAttempts: number) {
   const context = queueExecution.getStore();
-  if (!context?.claim.safeToRetry || context.claim.attempt >= maxAttempts) return;
+  if (!context?.claim.safeToRetry || context.claim.attempt > maxAttempts) return;
   deferJobUntilDependency(reason);
 }
 
