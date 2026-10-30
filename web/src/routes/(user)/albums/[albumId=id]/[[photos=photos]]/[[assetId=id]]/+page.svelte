@@ -89,7 +89,12 @@
   let { slideshowState, slideshowNavigation } = slideshowStore;
 
   let album = $state(data.album);
-  const tree = $derived(data.tree);
+  /** The tree of the workspace shown (FL-670), chosen here so a filter change never reloads the trees. */
+  const tree = $derived(
+    albumSearchContext(new URL(page.url.href), album).filter.libraryScope === LibraryViewScope.Design
+      ? data.workspaceTrees[1]
+      : data.workspaceTrees[0],
+  );
   let timelineManager = $state<TimelineManager>() as TimelineManager;
   let viewerInvisible = $state(false);
   let activityOpen = $state(false);

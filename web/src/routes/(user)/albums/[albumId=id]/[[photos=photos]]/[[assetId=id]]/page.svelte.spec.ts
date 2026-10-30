@@ -91,7 +91,6 @@ beforeEach(() => {
 const emptyTree = () => ({ collections: [], albums: [], spaces: [] });
 const data = (value: AlbumResponseDto, otherTree = emptyTree()) => ({
   album: value,
-  tree: emptyTree(),
   workspaceTrees: [emptyTree(), otherTree],
 });
 
