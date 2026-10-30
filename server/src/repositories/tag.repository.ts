@@ -576,14 +576,15 @@ export class TagRepository {
    * it reads `description.appliedTagValues`, lets `choose` pick the values to remove, removes the
    * owner's tags with those values from the asset, and drops them from `description.appliedTagValues`
    * and `description.result.tags` in place, leaving the rest of the record as it is. Returns the values
-   * removed.
+   * removed. Runs in `kysely` when given, else in its own transaction.
    */
   removeDescriptionTagValues(
     assetId: string,
     userId: string,
     choose: (applied: string[]) => string[],
+    kysely?: Kysely<DB>,
   ): Promise<string[]> {
-    return this.db.transaction().execute(async (tx) => {
+    const execute = async (tx: Kysely<DB>) => {
       const row = await tx
         .selectFrom('asset_metadata')
         .select(sql<unknown>`"value"->'description'`.as('description'))
@@ -634,7 +635,9 @@ export class TagRepository {
         .where('key', '=', AssetMetadataKey.MlEnrichment)
         .execute();
       return removed;
-    });
+    };
+    // a caller holding the asset's metadata lock passes its transaction (see `withAssetMetadataLock`)
+    return kysely ? execute(kysely) : this.db.transaction().execute(execute);
   }
 
   /**

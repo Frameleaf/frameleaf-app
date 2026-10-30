@@ -95,14 +95,19 @@ export class DescriptionTagCleanupService extends BaseService {
 
   /**
    * Removes the filler tags the description step applied to one asset and drops them from its
-   * enrichment record, so a later re-apply of the stored description does not add them back. The
-   * repository reads the record under its row lock and edits only those two lists in place, so an
-   * enrichment written meanwhile is neither lost nor acted on from a stale copy. Returns the tag
-   * values removed.
+   * enrichment record, so a later re-apply of the stored description does not add them back. It holds
+   * the asset's metadata lock, the one every enrichment read-modify-write of the record takes, so an
+   * enrichment can neither write back a copy it read before the clean-up nor be overwritten by it; the
+   * repository then edits only those two lists in place. Returns the tag values removed.
    */
   private cleanAsset(assetId: string, ownerId: string): Promise<string[]> {
-    return this.tagRepository.removeDescriptionTagValues(assetId, ownerId, (applied) =>
-      applied.filter((tag) => DESCRIPTION_TAG_STOP_WORDS.has(tag)),
+    return this.databaseRepository.withAssetMetadataLock(assetId, (trx) =>
+      this.tagRepository.removeDescriptionTagValues(
+        assetId,
+        ownerId,
+        (applied) => applied.filter((tag) => DESCRIPTION_TAG_STOP_WORDS.has(tag)),
+        trx,
+      ),
     );
   }
 }

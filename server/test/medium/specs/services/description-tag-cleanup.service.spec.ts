@@ -1,6 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { AssetMetadataKey, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -17,7 +18,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   const service = newMediumService(DescriptionTagCleanupService, {
     database: db || defaultDatabase,
-    real: [AssetRepository, TagRepository, SystemMetadataRepository],
+    real: [AssetRepository, DatabaseRepository, TagRepository, SystemMetadataRepository],
     mock: [EventRepository, JobRepository, LoggingRepository],
   });
   service.ctx.getMock(EventRepository).emit.mockResolvedValue();
@@ -87,6 +88,22 @@ const waitForLockedTagSelect = async (ctx: Context) => {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error('The clean-up never waited on the tag lock');
+};
+
+/** Waits until a session in this database is waiting for an advisory lock (the asset metadata lock). */
+const waitForAdvisoryLock = async (ctx: Context) => {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const { rows } = await sql<{ waiting: number }>`
+      select count(*)::int as waiting from pg_stat_activity
+      where datname = current_database() and wait_event_type = 'Lock' and wait_event = 'advisory'
+    `.execute(ctx.database);
+    if (rows[0]?.waiting > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('The clean-up never waited on the asset metadata lock');
 };
 
 beforeAll(async () => {
@@ -222,6 +239,52 @@ describe(DescriptionTagCleanupService.name, () => {
 
     await expect(deleting).resolves.toBe(0);
     expect(await assetTags(ctx, asset.id)).toEqual(['her']);
+  }, 30_000);
+
+  // the 30 s timeout outlasts the lock-wait poll's 10 s deadline, so the poll reports first
+  it('waits for an enrichment holding the asset metadata lock, then cleans what it wrote', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await tag(ctx, user.id, asset.id, ['dog', 'her']);
+    await recordDescription(ctx, asset.id, ['dog', 'her']);
+    const nsfwDetection = {
+      status: 'success',
+      modelName: 'nsfw',
+      updatedAt: new Date().toISOString(),
+      result: { isNsfw: false, score: 0.01, labels: {} },
+    };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const holding = new Promise<void>((resolve) => (locked = resolve));
+
+    // an enrichment run holds the lock while it rewrites the whole record from the copy it read
+    const enrichment = ctx.get(DatabaseRepository).withAssetMetadataLock(asset.id, async (trx) => {
+      const row = await ctx.get(AssetRepository).getMetadataByKey(asset.id, AssetMetadataKey.MlEnrichment, trx);
+      locked();
+      await gate;
+      await ctx
+        .get(AssetRepository)
+        .upsertMetadata(
+          asset.id,
+          [{ key: AssetMetadataKey.MlEnrichment, value: { ...row!.value, nsfwDetection } }],
+          trx,
+        );
+    });
+    await holding;
+    const cleaning = sut.handleDescriptionFillerTagCleanup();
+    await waitForAdvisoryLock(ctx);
+    release();
+    await enrichment;
+    await expect(cleaning).resolves.toBe(JobStatus.Success);
+
+    const row = await ctx.get(AssetRepository).getMetadataByKey(asset.id, AssetMetadataKey.MlEnrichment);
+    expect(row?.value).toMatchObject({
+      nsfwDetection,
+      description: { appliedTagValues: ['dog'], result: { tags: ['dog'] } },
+    });
+    expect(await assetTags(ctx, asset.id)).toEqual(['dog']);
   }, 30_000);
 
   it('runs once: the bootstrap queues it until it has finished, and a second run changes nothing', async () => {
