@@ -32,7 +32,7 @@ Built for designers, makers and anyone who collects references: mood boards, bra
 
 WHAT YOU CAN SAVE
 • Images from any page. Previews load by themselves as you scroll the list. Pick the ones you want, or select all, and filter by size and format.
-• Whole pages as links, with their title, and their picture when the page has one, so your board shows more than a bare address.
+• Whole pages as links, with their title, so your board shows more than a bare address.
 • Screenshots: what you can see, an area you select, or the whole page in one picture (a very tall page is cut short, and you're told where).
 • Right-click any image or page and save it to Frameleaf.
 
