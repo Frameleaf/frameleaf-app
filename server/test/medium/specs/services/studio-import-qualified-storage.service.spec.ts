@@ -79,16 +79,19 @@ describe.runIf(platform() === 'linux')('Studio import on qualified exports stora
     ).toEqual([]);
   });
 
-  it('refuses with a retail message when the exports root is writable by other users', async () => {
+  it('refuses with a retail message when the exports root is writable by other users, then retries once fixed', async () => {
     const exports = StorageCore.getBaseFolder(StorageFolder.Exports);
-    const { journal, upload: retention } = await upload(Buffer.from('shared'));
+    const { key, journal, upload: retention } = await upload(Buffer.from('shared'));
+    const files = new StudioImportFileRepository();
     await chmod(exports, 0o777);
     try {
-      const refusal = retainImport(journal, new StudioImportFileRepository(), retention);
+      const refusal = retainImport(journal, files, retention);
       await expect(refusal).rejects.toBeInstanceOf(StudioStorageRefusal);
       await expect(refusal).rejects.toThrow("Studio can't safely keep files in this storage location");
     } finally {
       await chmod(exports, 0o755);
     }
+    // A refusal is not cached: the same repository qualifies again once the storage is fixed.
+    await expect(retainImport(journal, files, retention)).resolves.toMatchObject({ id: key.importId });
   });
 });
