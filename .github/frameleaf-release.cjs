@@ -830,12 +830,10 @@ async function planReuse(env = process.env, registry = new Registry(env)) {
     }
   }
   let manifest;
-  if (env.GITHUB_EVENT_NAME === "push") {
-    try {
-      manifest = await releaseEvidence();
-    } catch (error) {
-      console.log(`Build required: ${error.message}`);
-    }
+  try {
+    manifest = await releaseEvidence();
+  } catch (error) {
+    console.log(`Build required: ${error.message}`);
   }
   for (const image of Object.keys(BUILD_INPUTS)) {
     let reuse = false;
@@ -877,7 +875,7 @@ function reuseAnnotations(spec, image, env) {
 async function reuseCandidate(env = process.env) {
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
-  assert.equal(env.GITHUB_EVENT_NAME, "push");
+  assert(["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME));
   const spec = variant(env.IMAGE, env.SUFFIX);
   assert(/^frameleaf-v/.test(env.REUSE_RELEASE || ""), "Missing reuse release");
   const registry = new Registry(env);
@@ -1136,7 +1134,10 @@ async function resolveCandidate(
     `actions/workflows/docker.yml/runs?head_sha=${sha}&status=success&per_page=100`,
   );
   const run = (Array.isArray(runs) ? runs : []).find((r) => trustedRun(r, sha));
-  assert(run, "No successful same-SHA build run exists for this commit");
+  assert(
+    run,
+    "No successful same-SHA build run exists for this commit; run the Deploy workflow on main first",
+  );
   const testQualification = await requireTestQualification(sha);
   const images = [];
   for (const spec of VARIANTS)
