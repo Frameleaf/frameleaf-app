@@ -5,7 +5,9 @@ import re
 import threading
 import unicodedata
 from collections.abc import Callable, Iterable
+from functools import cache
 from hashlib import sha256
+from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, cast
@@ -17,7 +19,7 @@ from huggingface_hub import snapshot_download
 from PIL import Image
 
 from frameleaf_ml.config import HUGGING_FACE_HOST, log, model_repository_url, model_source, model_source_token, settings
-from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.florence_manifest import florence_manifest, verify_florence_snapshot
 from frameleaf_ml.schemas import ImageDescriptionAcceleration, ModelTask, ModelType
 
@@ -99,6 +101,19 @@ OPENVINO_MODEL_ALIASES = {
     "Qwen/Qwen2.5-VL-3B-Instruct": "llmware/qwen2.5-vl-3b-ov",
     "Qwen/Qwen2.5-VL-7B-Instruct": "llmware/qwen2.5-vl-7b-ov",
 }
+OPENVINO_GENAI_MISSING = "openvino-genai is required for image description models"
+
+
+@cache
+def openvino_genai_importable() -> bool:
+    """Whether OpenVINO GenAI really imports here (it can be found yet fail to load), probed once."""
+    try:
+        import_module("openvino_genai")
+    except ImportError:
+        return False
+    return True
+
+
 DEFAULT_OPENVINO_MAX_IMAGE_EDGE = 512
 PHI_OPENVINO_IMAGE_TAG = "<|image_1|>"
 QWEN_OPENVINO_IMAGE_TAG = "<|vision_start|><|image_pad|><|vision_end|>"
@@ -107,6 +122,8 @@ QWEN_OPENVINO_IMAGE_TAG = "<|vision_start|><|image_pad|><|vision_end|>"
 # prose, so splitting them into words yields pronouns, prepositions, numbers,
 # colours, positions and describing verbs ("her", "behind", "four", "white",
 # "front", "wearing", "image"). Keep nouns: "dog", "beach", "table", "car".
+# Mirrored in server/src/utils/description-tag-stop-words.ts, which removes filler tags made
+# before this list (FL-667); a server test fails when the two copies differ.
 TAG_STOP_WORDS = frozenset(
     {
         # articles, conjunctions, determiners, quantifiers
@@ -327,6 +344,15 @@ class ImageDescriptionModel(InferenceModel):
         session = getattr(self, "session", None)
         return str(session["device"]) if isinstance(session, dict) else self.device
 
+    def missing_runtime(self) -> str | None:
+        # Florence runs on torch, which the CPU and CUDA images ship. Every other family runs through
+        # OpenVINO GenAI unless CUDA was chosen, and only the OpenVINO image installs it (FL-676).
+        if florence_manifest(self.hf_model_name) or self.acceleration != ImageDescriptionAcceleration.OPENVINO:
+            return None
+        if find_spec("openvino_genai") is None or not openvino_genai_importable():
+            return OPENVINO_GENAI_MISSING
+        return None
+
     def configure(self, **kwargs: Any) -> None:
         if "acceleration" in kwargs:
             acceleration = self._resolve_acceleration(self._acceleration(kwargs["acceleration"]))
@@ -361,8 +387,8 @@ class ImageDescriptionModel(InferenceModel):
             return
         # The CPU image has no OpenVINO GenAI: fail before downloading gigabytes it can't load, so the
         # server moves straight on to its Florence fallback, which runs on the CPU image's torch.
-        if self.acceleration == ImageDescriptionAcceleration.OPENVINO and find_spec("openvino_genai") is None:
-            raise ImportError("openvino-genai is required for image description models")
+        if reason := self.missing_runtime():
+            raise ModelRuntimeUnavailable(reason)
         self._check_custom_florence_trust()
         endpoint = model_repository_url()
         snapshot_download(
@@ -383,7 +409,7 @@ class ImageDescriptionModel(InferenceModel):
         try:
             import openvino_genai
         except ImportError as error:
-            raise ImportError("openvino-genai is required for image description models") from error
+            raise ModelRuntimeUnavailable(OPENVINO_GENAI_MISSING) from error
 
         return openvino_genai.VLMPipeline(str(self.cache_dir), device)
 

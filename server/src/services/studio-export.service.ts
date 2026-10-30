@@ -133,7 +133,7 @@ import {
 } from 'src/utils/studio-export.js';
 import { syncAncestors } from 'src/utils/studio-import-durability.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
-import { canonicalJson } from 'src/utils/studio-project.js';
+import { canonicalJson, hasNoMainTimelineItems, isEmptyStudioTimeline } from 'src/utils/studio-project.js';
 import { StudioReframeError, StudioReframeSeal, isReframeShape, sealStudioReframe } from 'src/utils/studio-reframe.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
 import {
@@ -366,6 +366,14 @@ export class StudioExportService {
         refusedCount: authorized.manifest.refusedCount,
       });
     }
+    // FL-677: nothing on the main timeline renders nothing (a nested sequence placed nowhere is not
+    // output); refused before a job is queued for a worker to fail with empty_timeline.
+    if (isEmptyStudioTimeline(authorized.envelope.graph) || hasNoMainTimelineItems(authorized.envelope.graph)) {
+      throw new BadRequestException({
+        message: 'There is nothing on the timeline to export yet',
+        code: 'studio_export_empty',
+      });
+    }
 
     const reframe = this.sealReframe(dto, authorized.envelope.graph);
     const settings = {
@@ -416,9 +424,15 @@ export class StudioExportService {
     if (audioProblem) {
       throw new ConflictException({ code: 'studio_export_audio_unsupported', message: audioProblem });
     }
-    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8) || contract.video.transfer) {
+    const formatSpec = studioExportFormatSpec(dto.format);
+    if (
+      contract.video.minBitDepth > (formatSpec?.bitDepth ?? 8) ||
+      contract.video.transfer ||
+      (formatSpec?.kind === 'video' && formatSpec.bitDepth > 8)
+    ) {
       // The sources keep (or the colour asks for) an HDR picture: only a worker that verified that
-      // precision, and for HLG that exact HLG master (FL-107), can take it.
+      // precision, and for HLG that exact HLG master (FL-107), can take it. An SDR picture in a 10-bit
+      // format needs a worker that writes one, not only HDR masters (FL-674).
       await this.requireRenderableOutput(dto.destination, {
         ...settings,
         minBitDepth: contract.video.minBitDepth,

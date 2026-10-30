@@ -912,6 +912,8 @@ describe('durable selected-job descendant lineage', () => {
       (${'frameleaf-attempt-evidence:' + randomUUID()}, ${JSON.stringify({ jobId: f.prior.id, stoppedAt: Date.now() })}::text::jsonb)`.execute(
       db,
     );
+    // FL-675: repeatable work retries after an unconfirmed stop; this covers work that is not safe to repeat.
+    await sql`update job set "safeToRetry" = false where id = ${f.prior.id}::uuid`.execute(db);
     await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second' where id = ${f.prior.id}::uuid`.execute(
       db,
     );

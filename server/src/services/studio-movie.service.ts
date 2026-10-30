@@ -32,7 +32,11 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioMovieRepository } from 'src/repositories/studio-movie.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
-import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
+import {
+  StudioProjectImportService,
+  studioImportIncomingFolder,
+  studioImportStagePath,
+} from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
@@ -419,8 +423,8 @@ export class StudioMovieService {
         throw new BadRequestException('None of these photos or videos can be placed in a movie');
       }
 
-      // 4. The title, and the project.
-      await step(MediaOperationStatus.Validating, PROGRESS.title);
+      // 4. The title, and the project. Still rendering: validation begins only once the project is saved.
+      await step(MediaOperationStatus.Rendering, PROGRESS.title);
       const graph = buildStudioMovieGraph({
         name,
         title: snapshot.title || snapshot.sourceName,
@@ -467,7 +471,7 @@ export class StudioMovieService {
         musicImportId: music.importId,
         musicSeconds: music.seconds,
       });
-      if (!(await this.operations.beginValidation(operation.id, claimToken))) {
+      if (!(await this.operations.beginValidation(operation.id, claimToken, true))) {
         throw new Error('Claim lost');
       }
       const outcome = await this.operations.publishValidated(operation.id, claimToken, async (tx) => {
@@ -563,7 +567,7 @@ export class StudioMovieService {
     }
 
     // Kept with the project as an audio import, like music someone adds in Studio.
-    const incoming = join(studioImportIncomingFolder(operation.ownerId), `movie-${operation.id}-${randomUUID()}.m4a`);
+    const incoming = studioImportStagePath(operation.ownerId);
     this.storage.mkdirSync(studioImportIncomingFolder(operation.ownerId));
     await this.movies.encodeMusic(source, incoming, seconds, signal);
     const { size } = await this.storage.stat(incoming);

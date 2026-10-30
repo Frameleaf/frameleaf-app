@@ -65652,6 +65652,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "bookmarkCount": {
+            "description": "Number of links (Boards). Populated by GET /albums/tree and GET /albums/hierarchy.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "color": {
             "description": "Colour name (grey, green, teal, blue, purple, pink, amber, red) or null",
             "nullable": true,
@@ -139816,6 +139822,10 @@
           },
           "reframe": {
             "description": "This session renders vertical and square exports of its SDR video formats (FL-563)",
+            "type": "boolean"
+          },
+          "sdrTenBit": {
+            "description": "This session writes its 10-bit video formats for an SDR picture; without it they are HDR masters only (FL-674)",
             "type": "boolean"
           },
           "sidecarOutputFormats": {

@@ -4127,6 +4127,8 @@ export type AlbumResponseDto = {
     albumUsers: AlbumUserResponseDto[];
     /** Number of assets */
     assetCount: number;
+    /** Number of links (Boards). Populated by GET /albums/tree and GET /albums/hierarchy. */
+    bookmarkCount?: number;
     /** Colour name (grey, green, teal, blue, purple, pink, amber, red) or null */
     color: string | null;
     contributorCounts?: ContributorCountResponseDto[];
@@ -10008,6 +10010,8 @@ export type StudioRenderCandidateDto = {
     outputFormats: StudioExportFormat[];
     /** This session renders vertical and square exports of its SDR video formats (FL-563) */
     reframe?: boolean;
+    /** This session writes its 10-bit video formats for an SDR picture; without it they are HDR masters only (FL-674) */
+    sdrTenBit?: boolean;
     /** Output formats whose versioned paired SRT profile this same session verified */
     sidecarOutputFormats?: StudioExportFormat[];
 };

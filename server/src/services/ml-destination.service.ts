@@ -73,7 +73,7 @@ import {
   processingSourceStatuses,
   sourcesFor,
 } from 'src/utils/ml-processing-order.js';
-import { SDR_ONLY, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
+import { SDR_ONLY, SDR_TEN_BIT_PROFILE, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
 import { STUDIO_EXPORT_FORMATS } from 'src/utils/studio-export.js';
 import { supportsLocalRenderKind } from 'src/utils/studio-preview-worker.js';
 import { REFRAME_PROFILE } from 'src/utils/studio-reframe.js';
@@ -908,6 +908,8 @@ export class MlDestinationService extends BaseService {
               ...(embedded.length > 0 && { embeddedOutputFormats: embedded }),
               // FL-563: the session derives and renders vertical and square exports.
               ...(capabilities?.formats.includes(REFRAME_PROFILE) && { reframe: true }),
+              // FL-674: its 10-bit formats are offered for an SDR picture only when it writes one.
+              ...(capabilities?.formats.includes(SDR_TEN_BIT_PROFILE) && { sdrTenBit: true }),
               ...(session.colorPrecision ?? SDR_ONLY),
             };
           }),

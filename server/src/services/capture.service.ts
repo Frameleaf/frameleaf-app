@@ -13,8 +13,10 @@ import {
 import { mapTag } from 'src/dtos/tag.dto.js';
 import { LibraryScope, Permission } from 'src/enum.js';
 import { CaptureReceipt, CaptureRepository } from 'src/repositories/capture.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { BookmarkService } from 'src/services/bookmark.service.js';
@@ -29,6 +31,8 @@ export class CaptureService {
     private albums: AlbumService,
     private tags: TagRepository,
     private system: SystemMetadataRepository,
+    private trash: TrashRepository,
+    private events: EventRepository,
   ) {}
 
   async capabilities(auth: AuthDto): Promise<CaptureCapabilitiesDto> {
@@ -65,6 +69,7 @@ export class CaptureService {
     if (existing) return this.response(auth, dto, existing);
     if (dto.bookmark) await this.captures.commitBookmark(auth, dto);
     else if (dto.uploadResourceId && dto.sha256) {
+      await this.restoreTrashed(auth, dto.uploadResourceId, dto.sha256);
       await this.uploads.commitCapture(auth, dto.uploadResourceId, dto.sha256, (tx, publish) =>
         this.captures.commitFile(tx, auth, dto, publish),
       );
@@ -72,6 +77,26 @@ export class CaptureService {
     const receipt = await this.captures.getCompleted(auth, dto);
     if (!receipt) throw new NotFoundException('Capture unavailable');
     return this.response(auth, dto, receipt);
+  }
+
+  /**
+   * Saving bytes that are in the Trash brings that copy back, so it reaches the chosen collection as a duplicate.
+   * Only once this session's own capture upload holds those exact bytes, verified: a checksum alone proves nothing.
+   */
+  private async restoreTrashed(auth: AuthDto, uploadResourceId: string, sha256: string) {
+    await this.uploads.captureResource(auth, uploadResourceId);
+    const { resource } = await this.uploads.result(auth, uploadResourceId);
+    if (resource.state !== 'verified' || resource.verifiedChecksum?.toString('hex') !== sha256) return;
+    const id = await this.captures.getTrashedCapture(auth, sha256);
+    if (!id) return;
+    let sequenced: string[] = [];
+    const [restored] = await this.trash.restoreAll([id], auth, (ids) => {
+      sequenced = ids;
+    });
+    if (!restored) return;
+    // As the Trash's own restore announces it (TrashService.afterChange).
+    if (sequenced.length > 0) await this.trash.enqueueLocalEffects();
+    else await this.events.emit('AssetRestoreAll', { assetIds: [restored], userId: auth.user.id });
   }
 
   async cancel(auth: AuthDto, dto: CaptureCommitDto): Promise<CaptureCancelResponseDto> {

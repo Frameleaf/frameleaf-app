@@ -418,7 +418,7 @@ export class StorageTemplateService extends BaseService {
     }
     // ponytail: an upload that picks this same xx/yy between its mkdir and its write fails once and is retried;
     // a per-folder lock with the upload path if that ever shows up
-    while (folder !== userFolder && (await this.storageRepository.removeEmptyDir(folder))) {
+    while (folder !== userFolder && (await this.storageRepository.removeDirIfEmpty(folder))) {
       folder = path.dirname(folder);
     }
   }

@@ -441,6 +441,12 @@ export const LEGACY_EMBEDDED_PROFILE = 'mp4-h264+mov-text-v1';
  */
 export const SIDECAR_PROFILE = 'srt-sidecar-v2';
 export const EMBEDDED_PROFILE = 'embedded-text-v2';
+/**
+ * FL-674: a worker that names this writes its 10-bit video formats (Main10, 10-bit AV1, ProRes 422 HQ)
+ * for an SDR picture. Without it, a session's 10-bit precision proves only its HDR masters: the bundled
+ * worker writes `mp4-hevc-main10` solely as an HDR10 or HLG master and refuses it for an SDR project.
+ */
+export const SDR_TEN_BIT_PROFILE = 'sdr-10bit-v1';
 
 export type RequiredOutput = {
   format: string;
@@ -705,7 +711,10 @@ export type RenderOutputRequest = {
   resolution: string;
   /** The precision the export's contract needs when its sources raise it (an HDR picture kept as is). */
   minBitDepth?: number;
-  /** FL-107: the HDR transfer the export's contract promises, when it keeps or makes an HDR picture. */
+  /**
+   * FL-107: the HDR transfer the export's contract promises, when it keeps or makes an HDR picture.
+   * `null` is a sealed SDR picture (FL-674); absent means the contract is not known yet.
+   */
   transfer?: 'smpte2084' | 'arib-std-b67' | null;
   subtitleMode?: string;
   quality?: string;
@@ -743,6 +752,15 @@ const colorSupported = (
   if (precision.maxBitDepth < depth) {
     return false;
   }
+  // FL-674: an SDR picture in a 10-bit video format needs a session that verified writing one.
+  if (
+    transfer === null &&
+    formatBitDepth(format) > 8 &&
+    studioExportFormatSpec(format)?.kind === 'video' &&
+    !(candidate.formats ?? []).includes(SDR_TEN_BIT_PROFILE)
+  ) {
+    return false;
+  }
   // An HLG picture (kept from HLG sources) needs a session that wrote and decoded back this format as HLG.
   if (transfer === 'arib-std-b67' && !(candidate.formats ?? []).includes(hdrMasterEvidence(format, transfer))) {
     return false;
@@ -769,6 +787,9 @@ export const operationOutputRequest = (settings: Record<string, unknown>, snapsh
     ...(settings as { format: string; color: string; resolution: string }),
     ...(typeof video?.minBitDepth === 'number' && { minBitDepth: video.minBitDepth }),
     ...(transfer && { transfer }),
+    // FL-674: a sealed SDR picture stays SDR at claim time, so a 10-bit format goes only to a session
+    // that writes 10-bit SDR, never to one whose 10-bit output is only an HDR master.
+    ...(video?.transfer === null && { transfer: null }),
   };
 };
 

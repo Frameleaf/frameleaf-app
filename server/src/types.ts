@@ -650,6 +650,7 @@ export type JobItem =
 
   // Tags
   | { name: JobName.TagCleanup; data?: IBaseJob }
+  | { name: JobName.DescriptionFillerTagCleanup; data?: IBaseJob }
 
   // Asset Deletion
   | { name: JobName.PersonCleanup; data?: IBaseJob }
@@ -1539,6 +1540,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
   [SystemMetadataKey.FrameleafMailConnection]: FrameleafMailConnection;
   [SystemMetadataKey.FrameleafMailSignIn]: FrameleafMailSignIn;
+  /** FL-667: the finished clean-up; once it is set the clean-up never runs again. */
+  [SystemMetadataKey.DescriptionFillerTagCleanup]: { completedAt: string; assets: number; deletedTags: number };
 }
 
 /** FL-176: which first-run setup flow an administrator sees. */

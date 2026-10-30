@@ -27,7 +27,7 @@
     type CaptureCandidate,
   } from "./candidates";
   import { sanitizeSourceUrl } from "./source-url";
-  import { sendRequest, watchConnection } from "./platform";
+  import { sendRequest, watchConnection, type QueueItem } from "./platform";
   import type { CapturePreview } from "./preview";
   import {
     lastCollection,
@@ -47,6 +47,24 @@
   let sourcePage = $state("");
   let bookmarkTarget = $state("");
   let bookmarkQueued = $state(false);
+  let bookmarkTaskId = $state("");
+  let queueItems = $state<QueueItem[]>([]);
+  // Latched: a failed queue read empties the list, but a saved link stays saved.
+  let bookmarkSaved = $state(false);
+  $effect(() => {
+    if (
+      !bookmarkSaved &&
+      queueItems.some(
+        (item) =>
+          item.id === bookmarkTaskId &&
+          (item.state === "saved" || item.state === "duplicate"),
+      )
+    )
+      bookmarkSaved = true;
+  });
+  $effect(() => {
+    if (bookmarkSaved && notice === "Saving the link.") notice = "Link saved.";
+  });
   let sourceTitle = $state("");
   let saving = $state(false);
   let creating = $state(false);
@@ -205,6 +223,8 @@
         sourcePage = nextPreview?.discovery.pageUrl ?? "";
         bookmarkTarget = nextPreview?.discovery.bookmarkUrl ?? sourcePage;
         bookmarkQueued = false;
+        bookmarkTaskId = "";
+        bookmarkSaved = false;
         screenshotDone = false;
         screenshotDimensions = "";
         creationNeedsRefresh = false;
@@ -489,9 +509,10 @@
         sourcePage,
         sourceTitle,
       );
-      await enqueueCapture(input);
+      const task = await enqueueCapture(input);
       if (preview?.id === previewId) {
         bookmarkQueued = true;
+        bookmarkTaskId = task.id;
         notice = "Saving the link.";
         queuedAny = true;
         void rememberCollection(input.binding.origin, input.albumId);
@@ -757,7 +778,7 @@
       </p>
       <details class="progress">
         <summary>See progress</summary>
-        <QueuePanel {collections} />
+        <QueuePanel {collections} bind:items={queueItems} />
       </details>{/if}
     {#if preview}
       {#if preview.screenshot}
@@ -1009,7 +1030,11 @@
           class="primary"
           disabled={busy || !albumId || bookmarkQueued}
           onclick={() => void saveBookmark()}
-          >{bookmarkQueued ? "Link is saving" : "Save link"}</button
+          >{bookmarkSaved
+            ? "Link saved"
+            : bookmarkQueued
+              ? "Link is saving"
+              : "Save link"}</button
         >
       {:else}
         <button

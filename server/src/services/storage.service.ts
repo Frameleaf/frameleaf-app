@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -16,6 +16,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { closeAttemptSweep } from 'src/utils/attempt-sweep.js';
+import { attemptIdentity } from 'src/utils/attempt-tree.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { discoverMediaLocation } from 'src/utils/media-location.js';
 import { FrameleafStartupError } from 'src/utils/misc.js';
@@ -213,7 +214,52 @@ export class StorageService extends BaseService {
       }
     }
 
+    // tidying folders is best effort; it never fails the deletion
+    await this.removeEmptyFolders(files).catch((error) =>
+      this.logger.warn(`Unable to remove the folders the deleted files left empty: ${error}`),
+    );
     return JobStatus.Success;
+  }
+
+  /**
+   * The generated-file folders a removal left empty, up to the owner's folder. A job's staging folder
+   * (`.attempts/<job>/<token>`) goes once that attempt is proven stopped; any other is left to the attempt sweep.
+   */
+  private async removeEmptyFolders(files: (string | null | undefined)[]) {
+    const roots = [StorageFolder.Thumbnails, StorageFolder.EncodedVideo].map((folder) =>
+      StorageCore.getBaseFolder(folder),
+    );
+    for (const folder of new Set(files.filter((file): file is string => !!file).map((file) => dirname(file)))) {
+      const root = roots.find((root) => folder.startsWith(root + sep));
+      const [owner, ...rest] = root ? relative(root, folder).split(sep) : [];
+      if (!root || !owner || rest.length === 0) {
+        continue;
+      }
+      try {
+        const attempts = join(folder, '.attempts');
+        const claims = [];
+        for (const job of await this.storageRepository.readdir(attempts).catch(() => [])) {
+          for (const token of await this.storageRepository.readdir(join(attempts, job)).catch(() => [])) {
+            const identity = attemptIdentity(join(attempts, job, token, '_'));
+            if (identity) claims.push(identity);
+          }
+        }
+        const stopped = await this.jobRepository.getStoppedClaims(claims);
+        for (const { jobId, token } of claims) {
+          if (stopped.has(`${jobId}/${token}`)) {
+            await this.storageRepository.removeEmptyDirs(join(attempts, jobId, token), true);
+            await this.storageRepository.removeDirIfEmpty(join(attempts, jobId));
+          }
+        }
+        await this.storageRepository.removeDirIfEmpty(attempts);
+        const ownerFolder = join(root, owner);
+        for (let dir = folder; dir !== ownerFolder; dir = dirname(dir)) {
+          if (!(await this.storageRepository.removeDirIfEmpty(dir))) break;
+        }
+      } catch (error) {
+        this.logger.warn(`Unable to remove empty folders in ${folder}: ${error}`);
+      }
+    }
   }
 
   private async verifyReadAccess(folder: StorageFolder) {

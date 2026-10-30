@@ -12,7 +12,13 @@
   let {
     collections = [],
     unfinished = $bindable(0),
-  }: { collections?: CollectionChoice[]; unfinished?: number } = $props();
+    items = $bindable([]),
+  }: {
+    collections?: CollectionChoice[];
+    unfinished?: number;
+    /** The listed items, so the sheet can show how its own capture went. */
+    items?: QueueItem[];
+  } = $props();
   const empty: QueueProgress = { items: [], unfinished: 0, hasMore: false };
   let queue = $state<QueueProgress>(empty);
   let origin = $state("");
@@ -25,6 +31,7 @@
   let refreshAgain = false;
   $effect(() => {
     unfinished = queue.unfinished;
+    items = queue.items;
   });
   async function refresh() {
     if (disposed) return;

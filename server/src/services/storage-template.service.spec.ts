@@ -863,20 +863,20 @@ describe(StorageTemplateService.name, () => {
       };
 
       it('removes the xx/yy folders a moved upload leaves empty, never the user folder', async () => {
-        mocks.storage.removeEmptyDir.mockResolvedValue(true);
+        mocks.storage.removeDirIfEmpty.mockResolvedValue(true);
         const asset = uploaded((owner) => `/data/upload/${owner}/ab/cd`);
 
         await run(asset);
 
         expect(await movedOriginals()).toHaveLength(1);
-        expect(mocks.storage.removeEmptyDir.mock.calls).toEqual([
+        expect(mocks.storage.removeDirIfEmpty.mock.calls).toEqual([
           [`/data/upload/${asset.ownerId}/ab/cd`],
           [`/data/upload/${asset.ownerId}/ab`],
         ]);
       });
 
       it('also removes the folders an uploaded sidecar leaves empty', async () => {
-        mocks.storage.removeEmptyDir.mockResolvedValue(true);
+        mocks.storage.removeDirIfEmpty.mockResolvedValue(true);
         const asset = uploaded(
           (owner) => `/data/upload/${owner}/ab/cd`,
           (owner) => `/data/upload/${owner}/ef/gh`,
@@ -884,7 +884,7 @@ describe(StorageTemplateService.name, () => {
 
         await run(asset);
 
-        expect(mocks.storage.removeEmptyDir.mock.calls).toEqual([
+        expect(mocks.storage.removeDirIfEmpty.mock.calls).toEqual([
           [`/data/upload/${asset.ownerId}/ef/gh`],
           [`/data/upload/${asset.ownerId}/ef`],
           [`/data/upload/${asset.ownerId}/ab/cd`],
@@ -893,12 +893,12 @@ describe(StorageTemplateService.name, () => {
       });
 
       it('stops at a folder that still holds files', async () => {
-        mocks.storage.removeEmptyDir.mockResolvedValue(false);
+        mocks.storage.removeDirIfEmpty.mockResolvedValue(false);
         const asset = uploaded((owner) => `/data/upload/${owner}/ab/cd`);
 
         await run(asset);
 
-        expect(mocks.storage.removeEmptyDir.mock.calls).toEqual([[`/data/upload/${asset.ownerId}/ab/cd`]]);
+        expect(mocks.storage.removeDirIfEmpty.mock.calls).toEqual([[`/data/upload/${asset.ownerId}/ab/cd`]]);
       });
 
       it('leaves folders alone when the move fails or the file is outside upload/<user>/xx/yy', async () => {
@@ -908,7 +908,7 @@ describe(StorageTemplateService.name, () => {
         mocks.storage.copyFile.mockRejectedValue(new Error('Read only system'));
         await run(uploaded((owner) => `/data/upload/${owner}/ab/cd`));
 
-        expect(mocks.storage.removeEmptyDir).not.toHaveBeenCalled();
+        expect(mocks.storage.removeDirIfEmpty).not.toHaveBeenCalled();
       });
     });
 

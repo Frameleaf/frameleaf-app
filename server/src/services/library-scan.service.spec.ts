@@ -32,7 +32,7 @@ import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
 const directory = { isDirectory: () => true } as Stats;
-const file = (mtime = new Date('2024-01-01')) => ({ isDirectory: () => false, mtime }) as Stats;
+const file = (mtime = new Date('2024-01-01')) => ({ isDirectory: () => false, mtime, size: 2048 }) as Stats;
 const enoent = () => Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' }));
 
 async function* walkOf(...batches: string[][]) {
@@ -552,6 +552,10 @@ describe(LibraryScanService.name, () => {
 
       expect(mocks.asset.createAll).toHaveBeenCalledWith([
         expect.objectContaining({ originalPath: '/mnt/photos/new.jpg', libraryId: library.id, isExternal: true }),
+      ]);
+      // the library's size counts the new item before its metadata is read
+      expect(mocks.asset.setExternalFileSizes).toHaveBeenCalledWith(library.id, [
+        { path: '/mnt/photos/new.jpg', size: 2048 },
       ]);
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mocks.job.commitLibraryScanBatch).toHaveBeenCalledWith(

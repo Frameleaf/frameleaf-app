@@ -70,6 +70,7 @@ const capable = {
             maxBitDepth: 10,
             hdr10: true,
             dolbyVision: false,
+            sdrTenBit: true,
           },
         ],
       },

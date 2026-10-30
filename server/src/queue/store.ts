@@ -555,8 +555,10 @@ export class SqlQueueStore {
           graceElapsed: boolean;
           stopRequested: boolean;
           cancelled: boolean;
+          safeToRetry: boolean;
+          retryAvailable: boolean;
           operationId: string | null;
-        }>`select data->>'operationId' "operationId",
+        }>`select data->>'operationId' "operationId", "safeToRetry", attempt < "retryBaseAttempt" + 2 "retryAvailable",
           "leaseExpiresAt" <= clock_timestamp() - interval '30 seconds' "graceElapsed",
           "cancelRequestedAt" is not null "stopRequested",
           ("cancelRequestedAt" is not null and "cancelReason" is distinct from 'deadline') cancelled,
@@ -587,7 +589,19 @@ export class SqlQueueStore {
             return false;
           }
           unconfirmedStop = !job.stopped;
-          if (unconfirmedStop) reason = 'Executor stop could not be confirmed; review the worker before retrying';
+        }
+        // Audited repeatable work (thumbnails, ML, metadata) publishes only under its claim token, which this
+        // update revokes, so a second run is safe even if the old executor never confirmed its stop (e.g. the
+        // container was replaced mid-job). It keeps its normal retry budget. Cancelled, operation-owned and
+        // unclassified work still waits for a person: its effects may not be repeatable.
+        const unconfirmedAttention = unconfirmedStop && (job.cancelled || !job.safeToRetry || !!job.operationId);
+        if (unconfirmedAttention) {
+          reason = 'Executor stop could not be confirmed; review the worker before retrying';
+        } else if (unconfirmedStop) {
+          // Same budget as the state chosen below: another attempt is scheduled, or the job fails and waits for retry.
+          reason = job.retryAvailable
+            ? 'Interrupted before it finished (for example by a restart); it is retried automatically'
+            : 'Interrupted before it finished (for example by a restart) and out of automatic retries; retry failed jobs to run it again';
         }
         const operationId =
           options.expiredRecovery || (options.queuedCancellation && unconfirmedStop) ? job.operationId : null;
@@ -605,10 +619,10 @@ export class SqlQueueStore {
           if (valid.length === 0) throw new Error('Diagnostic publication lost its claim');
         }
         const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
-        state = case when ${unconfirmedStop} then 'needs_attention' when ${job.cancelled} then 'cancelled'
+        state = case when ${unconfirmedAttention} then 'needs_attention' when ${job.cancelled} then 'cancelled'
           when not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
-        "finishedAt" = case when ${unconfirmedStop} or ${job.cancelled} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
+        "finishedAt" = case when ${unconfirmedAttention} or ${job.cancelled} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and ${owned}
@@ -642,7 +656,12 @@ export class SqlQueueStore {
           await finishSelections(tx, claim.id, false);
           await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
           const latest = rows[0].latestPending;
-          if (unconfirmedStop && latest) {
+          // Work held for attention never replays its deferred request. Repeatable work that ran out of retries
+          // on an unconfirmed stop schedules it like any other failure: a second executor of repeatable work is
+          // already accepted above (publication is fenced by the revoked claim token), the request keeps its
+          // place in the deduplication sequence and its run stays open, and scheduleLatest still holds an
+          // unsafe request for attention.
+          if (unconfirmedAttention && latest) {
             // Discard the one deferred intent only after every positively identified obligation
             // is terminal. A later history copy may not appear in its original membership list.
             const identities = [{ runId: latest.runId, itemKey: latest.itemKey }, ...(latest.memberships ?? [])];
@@ -881,21 +900,25 @@ export class SqlQueueStore {
     return observeQueueRun(this.db, name);
   }
 
-  async clear(queue: string, states: QueueState[]) {
+  /** `entityIds` narrows the clear to the jobs about those items (their `data.id`), e.g. removed assets. */
+  async clear(queue: string, states: QueueState[], entityIds?: string[]) {
+    if (entityIds?.length === 0) return;
+    const about = entityIds ? sql`and j.data ->> 'id' = any(${entityIds}::text[])` : sql``;
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
     await withSelectionSharing(this.db, async (tx) => {
       await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
       const { rows: cancelledLatest } = await sql<LineageItemIdentity & { rootItemKey: string | null }>`
         update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
-        and j."latestPending" ->> 'name' = i.stage and (
+        ${about} and j."latestPending" ->> 'name' = i.stage and (
           (j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey")
           or exists (select 1 from jsonb_to_recordset(coalesce(j."latestPending" -> 'memberships', '[]'::jsonb))
             as member("runId" uuid, "itemKey" text) where member."runId" = i."runId" and member."itemKey" = i."itemKey")))
           returning i."runId", i."rootItemKey", i."itemKey", i.stage`.execute(tx);
       cancelledLatest.push(...(await mirrorSelectionLineage(tx, { items: cancelledLatest })));
       const affectedRuns = cancelledLatest.map((item) => item.runId);
-      if (states.includes('pending') || states.includes('waiting')) {
+      // a selection still being enumerated is the whole queue's, never one item's
+      if (!entityIds && (states.includes('pending') || states.includes('waiting'))) {
         const { rows: cancelled } = await sql<{
           runId: string;
         }>`with cancelled as (
@@ -904,9 +927,9 @@ export class SqlQueueStore {
         ) select distinct m."runId" from cancelled c join job_selection_run m on m."selectionId" = c.id`.execute(tx);
         affectedRuns.push(...cancelled.map((item) => item.runId));
       }
-      const { rows } = await sql<{ id: string }>`update job set state = 'cancelled', data = '{}'::jsonb,
-        "latestPending" = null, "finishedAt" = now() where queue = ${queue} and state = any(${states}::text[])
-        and state != 'active' returning id`.execute(tx);
+      const { rows } = await sql<{ id: string }>`update job j set state = 'cancelled', data = '{}'::jsonb,
+        "latestPending" = null, "finishedAt" = now() where j.queue = ${queue} and j.state = any(${states}::text[])
+        and j.state != 'active' ${about} returning id`.execute(tx);
       for (const { id } of rows) {
         affectedRuns.push(...(await this.syncItem(id, tx)));
         await finishSelections(tx, id, false);
@@ -918,7 +941,7 @@ export class SqlQueueStore {
         )),
       );
       await this.finishSupersededProducers(cancelledLatest, tx);
-      await redactLibrarySourcePage(tx, queue);
+      if (!entityIds) await redactLibrarySourcePage(tx, queue);
       await this.settleRuns(tx, affectedRuns);
     });
   }

@@ -218,16 +218,16 @@ export class StorageRepository {
     await fs.rm(folder, { ...options, maxRetries: 5, retryDelay: 100 });
   }
 
-  /** Removes one folder if it is empty; `false` when it is not empty, gone or not a folder. Never follows a link. */
-  async removeEmptyDir(directory: string): Promise<boolean> {
+  /** Remove the folder when it is empty; false when it is not, or is gone already. */
+  async removeDirIfEmpty(directory: string): Promise<boolean> {
     try {
       await fs.rmdir(directory);
       return true;
-    } catch (error: any) {
-      if (!['ENOTEMPTY', 'EEXIST', 'ENOENT', 'ENOTDIR'].includes(error?.code)) {
-        this.logger.warn(`Attempted to remove directory, but failed: ${error}`);
+    } catch (error) {
+      if (['ENOENT', 'ENOTEMPTY', 'EEXIST', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+        return false;
       }
-      return false;
+      throw error;
     }
   }
 

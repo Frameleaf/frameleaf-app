@@ -33,6 +33,15 @@ class ModelUnavailableError(RuntimeError):
     """The configured model source does not serve the requested model."""
 
 
+class ModelRuntimeUnavailable(ImportError):
+    """This container lacks a library the model needs, so it can never run the model here.
+
+    The CPU image ships no OpenVINO GenAI, for example. Unlike a load failure it is not retried:
+    the request is refused at once with ``model_runtime_unavailable`` so the server moves on to its
+    fallback model without anything being downloaded or loaded.
+    """
+
+
 def _is_missing_model(error: BaseException) -> bool:
     current: BaseException | None = error
     while current is not None:
@@ -104,6 +113,10 @@ class InferenceModel(ABC):
                 self.loaded = False
                 self.load_attempts = 0
                 self.load_retry_at = None
+
+    def missing_runtime(self) -> str | None:
+        """Why this container can never run the model (a library it needs is not installed), else None."""
+        return None
 
     def predict(self, *inputs: Any, **model_kwargs: Any) -> Any:
         self.load()

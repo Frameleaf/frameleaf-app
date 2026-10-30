@@ -24,6 +24,7 @@
   import { DEFAULT_EXCLUSION_PATTERNS, libraryKey } from '$lib/frameleaf/libraries';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getAllLibraries, MediaOperationStatus, scanLibrary, type LibraryResponseDto } from '@frameleaf/sdk';
@@ -40,14 +41,25 @@
   let folders = $state<LibraryResponseDto[] | null>(null);
   let said = $state('');
   let checking = $state(false);
+  // Loads can overlap (on arrival and on each change above); only the latest may show.
+  let loads = 0;
   const load = async () => {
+    const current = ++loads;
+    let next: LibraryResponseDto[];
     try {
-      folders = (await getAllLibraries({})).filter((library) => !library.deletedAt);
+      next = (await getAllLibraries({})).filter((library) => !library.deletedAt);
     } catch {
-      folders = [];
+      next = [];
+    }
+    if (current === loads) {
+      folders = next;
     }
   };
-  onMount(() => void load());
+  // The Libraries manager above this section adds and removes folders; follow it without a reload.
+  onMount(() => {
+    void load();
+    return eventManager.on({ LibrariesChange: () => void load() });
+  });
 
   const ago = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '';
   const failed = (library: LibraryResponseDto) =>

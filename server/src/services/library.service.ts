@@ -294,12 +294,14 @@ export class LibraryService extends BaseService {
 
   async get(id: string): Promise<LibraryResponseDto> {
     const library = await this.findOrFail(id);
-    return mapLibrary(library);
+    const counts = await this.libraryRepository.getAssetCounts([library.id]);
+    return mapLibrary({ ...library, assetCount: counts.get(library.id) ?? 0 });
   }
 
   async getAll(dto: LibrarySearchDto = {}): Promise<LibraryResponseDto[]> {
     const libraries = await this.libraryRepository.getAll(dto.withDeleted ?? false);
-    return libraries.map((library) => mapLibrary(library));
+    const counts = await this.libraryRepository.getAssetCounts(libraries.map((library) => library.id));
+    return libraries.map((library) => mapLibrary({ ...library, assetCount: counts.get(library.id) ?? 0 }));
   }
 
   @OnJob({ name: JobName.LibraryDeleteCheck, queue: QueueName.Library })
@@ -535,7 +537,8 @@ export class LibraryService extends BaseService {
       await this.notifyWatchers(id);
     }
 
-    return mapLibrary(library);
+    const counts = await this.libraryRepository.getAssetCounts([library.id]);
+    return mapLibrary({ ...library, assetCount: counts.get(library.id) ?? 0 });
   }
 
   /**
@@ -677,6 +680,8 @@ export class LibraryService extends BaseService {
       JOBS_LIBRARY_PAGINATION_SIZE,
     )) {
       this.logger.debug(`Queueing deletion of ${assets.length} asset(s) in library ${libraryId}`);
+      // their thumbnails, faces, search and text jobs would only wait in the queues for items that are gone
+      await this.jobRepository.cancelAssetJobs(assets.map((asset) => asset.id));
       await this.jobRepository.queueAll(
         assets.map((asset) => ({ name: JobName.AssetDelete, data: { id: asset.id, deleteOnDisk: false } })),
       );
