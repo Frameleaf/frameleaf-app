@@ -224,7 +224,10 @@ export const extendBackupHistory = (history: BackupRecoveryHistory, remote: unkn
       break;
     }
     if (record.descriptor.sequence <= history.anchor.sequence) continue;
-    if (record.descriptor.sequence !== head.descriptor.sequence + 1 || record.descriptor.previousDigest !== head.digest) {
+    if (
+      record.descriptor.sequence !== head.descriptor.sequence + 1 ||
+      record.descriptor.previousDigest !== head.digest
+    ) {
       refused = true;
       break;
     }

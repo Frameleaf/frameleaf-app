@@ -4863,12 +4863,7 @@ export class CloudBackupService {
     }
   }
 
-  private async recoveryHistory(
-    connection: CloudBackupConnection,
-    key: Buffer,
-    imported: unknown,
-    managed = false,
-  ) {
+  private async recoveryHistory(connection: CloudBackupConnection, key: Buffer, imported: unknown, managed = false) {
     const physical = bucketRef(connection.endpoint, connection.bucket);
     let local = await readBackupHistory(this.clientHistoryPath(physical));
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);

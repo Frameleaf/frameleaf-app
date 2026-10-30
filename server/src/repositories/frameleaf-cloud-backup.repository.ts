@@ -186,7 +186,9 @@ export class FrameleafCloudBackupRepository {
   /** FL-697: every signed record Cloud holds for the vault after `afterSequence`, oldest first. Unverified. */
   async listSnapshots(target: ManagedBackupApi, vaultId: string, afterSequence: number): Promise<unknown[]> {
     const records: unknown[] = [];
-    for (let after: number | null = afterSequence; after !== null; ) {
+    // A trusted history holds at most 100,000 snapshots (100 per page).
+    for (let after: number | null = afterSequence, pages = 0; after !== null; pages++) {
+      if (pages >= 1000) throw new Error('Frameleaf Cloud returned more snapshot pages than a history can hold');
       const url = new URL(`${target.api.replace(/\/+$/, '')}/v2/backup/snapshots`);
       url.search = new URLSearchParams({ vaultId, afterSequence: String(after), limit: '100' }).toString();
       const page = await this.cloud.requestJson(backupSnapshotListSchema, { url: url.href, dpop: target.token });
