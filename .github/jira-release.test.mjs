@@ -94,7 +94,9 @@ function fixture({
     }
     if (path.startsWith("/rest/api/3/version/")) {
       const v = state.versions.find((x) => x.id === path.split("/").at(-1));
-      if (method === "PUT") Object.assign(v, body);
+      // Jira trims trailing whitespace from version descriptions.
+      if (method === "PUT")
+        Object.assign(v, body, { description: body.description?.trimEnd() });
       return structuredClone(v);
     }
     if (path.startsWith("/rest/api/3/issue/")) {

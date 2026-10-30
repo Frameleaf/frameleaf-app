@@ -358,7 +358,9 @@ export async function syncRelease(receipt, { product, request }) {
         });
         const saved = await request(`/rest/api/3/version/${version.id}`);
         assert(
-          saved.released && saved.description === description,
+          // Jira trims the trailing newline on save.
+          saved.released &&
+            saved.description?.trimEnd() === description.trimEnd(),
           "Release read-back failed",
         );
       }
