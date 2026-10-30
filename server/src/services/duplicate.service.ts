@@ -599,6 +599,11 @@ export class DuplicateService extends BaseService {
           return JobStatus.Skipped;
         }
 
+        if (asset.deletedAt) {
+          this.logger.debug(`Asset ${id} is in the trash, skipping`);
+          return JobStatus.Skipped;
+        }
+
         if (asset.visibility === AssetVisibility.Hidden) {
           this.logger.debug(`Asset ${id} is not visible, skipping`);
           return JobStatus.Skipped;

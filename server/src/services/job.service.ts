@@ -478,8 +478,14 @@ export class JobService extends BaseService {
 
       case JobName.AssetVideoFingerprint: {
         // FL-651: its group mates too, whose check may have waited on this fingerprint
-        const ids = [item.data.id, ...(await this.duplicateRepository.getGroupMateIds(item.data.id))];
-        await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.AssetDetectDuplicates, data: { id } })));
+        const mates = await this.duplicateRepository.getGroupMateIds(item.data.id);
+        await this.jobRepository.queueAll([
+          { name: JobName.AssetDetectDuplicates, data: { id: item.data.id } },
+          ...mates.map((id) => ({
+            name: JobName.AssetDetectDuplicates as const,
+            data: { id, recheckAfter: item.data.id },
+          })),
+        ]);
         break;
       }
 

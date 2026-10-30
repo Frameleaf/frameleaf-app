@@ -7,6 +7,7 @@ select
   "ownerId",
   "duplicateId",
   "stackId",
+  "deletedAt",
   (
     case
       when "asset"."visibility" = 'hidden' then "asset"."visibility"

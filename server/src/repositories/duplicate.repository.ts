@@ -449,6 +449,7 @@ export class DuplicateRepository {
         eb.selectFrom('asset as member').select('member.duplicateId').where('member.id', '=', asUuid(assetId)),
       )
       .where('asset.id', '!=', asUuid(assetId))
+      .where('asset.deletedAt', 'is', null)
       .execute();
     return rows.map(({ id }) => id);
   }

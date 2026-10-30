@@ -25,6 +25,7 @@ const hasEmbedding = {
   id: 'asset-1',
   ownerId: 'user-id',
   stackId: null,
+  deletedAt: null,
   type: AssetType.Image,
   duplicateId: null,
   embedding: '[1, 2, 3, 4]',
@@ -850,6 +851,15 @@ describe(DuplicateService.name, () => {
         assetId: asset.id,
         duplicatesDetectedAt: expect.any(Date),
       });
+    });
+
+    it('should skip an asset in the trash', async () => {
+      mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue({ ...hasEmbedding, deletedAt: new Date() });
+
+      await expect(sut.handleSearchDuplicates({ id: hasEmbedding.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.duplicateRepository.search).not.toHaveBeenCalled();
+      expect(mocks.duplicateRepository.merge).not.toHaveBeenCalled();
     });
 
     it('should fingerprint the video first and defer grouping when it has none', async () => {

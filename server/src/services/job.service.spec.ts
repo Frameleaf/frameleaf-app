@@ -157,7 +157,7 @@ describe(JobService.name, () => {
       expect(mocks.duplicateRepository.getGroupMateIds).toHaveBeenCalledWith('asset-1');
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.AssetDetectDuplicates, data: { id: 'asset-1' } },
-        { name: JobName.AssetDetectDuplicates, data: { id: 'asset-2' } },
+        { name: JobName.AssetDetectDuplicates, data: { id: 'asset-2', recheckAfter: 'asset-1' } },
       ]);
     });
 

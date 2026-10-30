@@ -96,6 +96,24 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('keys a duplicate recheck after each group mate fingerprint as its own run item (FL-651)', async () => {
+    const execution = context();
+    await queueExecution.run(execution, () =>
+      sut.collectFollowups(() =>
+        sut.queueAll([
+          { name: JobName.AssetDetectDuplicates, data: { id: 'video' } },
+          { name: JobName.AssetDetectDuplicates, data: { id: 'video', recheckAfter: 'mate-1' } },
+          { name: JobName.AssetDetectDuplicates, data: { id: 'video', recheckAfter: 'mate-2' } },
+        ]),
+      ),
+    );
+    expect(execution.followups.map(({ itemKey }) => itemKey)).toEqual([
+      'video',
+      'video/video/after/mate-1',
+      'video/video/after/mate-2',
+    ]);
+  });
+
   it('does not silently turn an explicit Failed result into success', async () => {
     sut['handlers'][JobName.AssetGenerateThumbnails]!.handler = vi.fn().mockResolvedValue(JobStatus.Failed);
     const execution = context();

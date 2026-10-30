@@ -631,7 +631,7 @@ export type JobItem =
 
   // Duplicate Detection
   | { name: JobName.AssetDetectDuplicatesQueueAll; data: IBaseJob }
-  | { name: JobName.AssetDetectDuplicates; data: IEntityJob }
+  | { name: JobName.AssetDetectDuplicates; data: IEntityJob & { recheckAfter?: string } }
   | { name: JobName.AssetGenerateVideoDuplicateFramesQueueAll; data: IBaseJob }
   | { name: JobName.AssetGenerateVideoDuplicateFrames; data: IEntityJob }
   | { name: JobName.AssetVideoFingerprintQueueAll; data: IBaseJob }

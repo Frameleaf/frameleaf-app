@@ -45,6 +45,7 @@ export class AssetJobRepository {
           'ownerId',
           'duplicateId',
           'stackId',
+          'deletedAt',
           effectiveVisibility('asset').as('visibility'),
           'smart_search.embedding',
         ])

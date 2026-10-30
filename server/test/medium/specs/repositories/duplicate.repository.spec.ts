@@ -90,13 +90,19 @@ describe(DuplicateRepository.name, () => {
     it("lists the other members of an asset's group", async () => {
       const { assetRepository, database, sut, userRepository } = setup();
       const user = await createUser(userRepository);
-      const [a, b, c, alone] = [
+      const [a, b, c, trashed, alone] = [
+        await createAsset(assetRepository, user.id),
         await createAsset(assetRepository, user.id),
         await createAsset(assetRepository, user.id),
         await createAsset(assetRepository, user.id),
         await createAsset(assetRepository, user.id),
       ];
-      await database.updateTable('asset').set({ duplicateId: a.id }).where('id', 'in', [a.id, b.id, c.id]).execute();
+      await database
+        .updateTable('asset')
+        .set({ duplicateId: a.id })
+        .where('id', 'in', [a.id, b.id, c.id, trashed.id])
+        .execute();
+      await database.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', trashed.id).execute();
 
       await expect(sut.getGroupMateIds(a.id).then((ids) => ids.toSorted())).resolves.toEqual([b.id, c.id].toSorted());
       await expect(sut.getGroupMateIds(alone.id)).resolves.toEqual([]);
