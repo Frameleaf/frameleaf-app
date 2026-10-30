@@ -3166,4 +3166,15 @@ describe(MetadataService.name, () => {
       expect(result?.dateTime?.toDate()?.toISOString()).toBe('2025-05-24T16:26:20.000Z');
     });
   });
+  describe('handleMetadataPostprocess', () => {
+    it('starts no further work for an item of a library being removed (FL-683)', async () => {
+      mocks.asset.getById.mockResolvedValue({ id: 'asset-id', ownerId: 'owner-id', libraryId: 'library-id' } as never);
+      mocks.library.get.mockResolvedValue({ id: 'library-id', deletedAt: new Date() } as never);
+
+      await expect(sut.handleMetadataPostprocess({ id: 'asset-id' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.library.get).toHaveBeenCalledWith('library-id', true);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetMetadataExtracted', expect.anything());
+    });
+  });
 });

@@ -519,9 +519,20 @@ export class JobRepository {
   }
   /** Removed items' waiting work in the queues that process one item at a time: none of it can run any more. */
   async cancelAssetJobs(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return;
+    }
     for (const queue of ASSET_WORK_QUEUES) {
       await this.store.clear(queue, ['pending', 'waiting'], assetIds);
     }
+    // facial recognition names a face, and the items' faces go with them
+    const { rows: faces } = await sql<{ id: string }>`select id from asset_face
+      where "assetId" = any(${assetIds}::uuid[])`.execute(this.store.db);
+    await this.store.clear(
+      QueueName.FacialRecognition,
+      ['pending', 'waiting'],
+      faces.map((face) => face.id),
+    );
   }
   clear(name: QueueName, _type: QueueCleanType) {
     return this.store.clear(name, ['failed', 'needs_attention', 'blocked']);
@@ -923,15 +934,23 @@ export class JobRepository {
     return rows;
   }
 
-  /** The `job/token` pairs among `claims` that are still running; any other claim's staging folder is spent. */
-  async getLiveClaims(claims: { jobId: string; token: string }[]): Promise<Set<string>> {
+  /**
+   * The `job/token` pairs among `claims` whose attempt is proven stopped, by the same evidence the queue
+   * uses: it completed, or its attempt or worker recorded a stop. A cleared token alone is not proof.
+   */
+  async getStoppedClaims(claims: { jobId: string; token: string }[]): Promise<Set<string>> {
     if (claims.length === 0) {
       return new Set();
     }
-    const { rows } = await sql<{ id: string; token: string }>`select j.id, j.token from job j
+    const { rows } = await sql<{ jobId: string; token: string }>`select a."jobId", a.token from job_attempt a
       join unnest(${claims.map((claim) => claim.jobId)}::uuid[], ${claims.map((claim) => claim.token)}::uuid[])
-        as c("jobId", token) on j.id = c."jobId" and j.token = c.token`.execute(this.store.db);
-    return new Set(rows.map((row) => `${row.id}/${row.token}`));
+        as c("jobId", token) on a."jobId" = c."jobId" and a.token = c.token
+      where (a.outcome = 'completed' and a."finishedAt" is not null)
+        or exists (select 1 from system_metadata m where m.key = 'frameleaf-attempt-evidence:' || a.token::text
+          and m.value->>'jobId' = a."jobId"::text and m.value ? 'stoppedAt')
+        or exists (select 1 from system_metadata m where m.key = 'frameleaf-worker-stopped:' || a."workerId"::text
+          and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt')`.execute(this.store.db);
+    return new Set(rows.map((row) => `${row.jobId}/${row.token}`));
   }
 
   async removeJob(name: JobName, jobID: string): Promise<void> {

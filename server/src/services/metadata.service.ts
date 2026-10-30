@@ -530,6 +530,10 @@ export class MetadataService extends BaseService {
     if (!asset) {
       return JobStatus.Skipped;
     }
+    // FL-683: an item of a library being removed is going; the work this would start could only wait in the queues
+    if (asset.libraryId && (await this.libraryRepository.get(asset.libraryId, true))?.deletedAt) {
+      return JobStatus.Skipped;
+    }
     await this.eventRepository.emit('AssetMetadataExtracted', { assetId: id, userId: asset.ownerId, source });
     return JobStatus.Success;
   }

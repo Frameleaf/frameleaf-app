@@ -294,8 +294,8 @@ export class LibraryService extends BaseService {
 
   async get(id: string): Promise<LibraryResponseDto> {
     const library = await this.findOrFail(id);
-    const counts = await this.libraryRepository.getAssetCounts([id]);
-    return mapLibrary({ ...library, assetCount: counts.get(id) ?? 0 });
+    const counts = await this.libraryRepository.getAssetCounts([library.id]);
+    return mapLibrary({ ...library, assetCount: counts.get(library.id) ?? 0 });
   }
 
   async getAll(dto: LibrarySearchDto = {}): Promise<LibraryResponseDto[]> {
@@ -537,8 +537,8 @@ export class LibraryService extends BaseService {
       await this.notifyWatchers(id);
     }
 
-    const counts = await this.libraryRepository.getAssetCounts([id]);
-    return mapLibrary({ ...library, assetCount: counts.get(id) ?? 0 });
+    const counts = await this.libraryRepository.getAssetCounts([library.id]);
+    return mapLibrary({ ...library, assetCount: counts.get(library.id) ?? 0 });
   }
 
   /**

@@ -220,7 +220,7 @@ export class StorageService extends BaseService {
 
   /**
    * The generated-file folders a removal left empty, up to the owner's folder. A job's staging folder
-   * (`.attempts/<job>/<token>`) goes once its claim has ended; a running job's is left for it to write in.
+   * (`.attempts/<job>/<token>`) goes once that attempt is proven stopped; any other is left to the attempt sweep.
    */
   private async removeEmptyFolders(files: (string | null | undefined)[]) {
     const roots = [StorageFolder.Thumbnails, StorageFolder.EncodedVideo].map((folder) =>
@@ -241,9 +241,9 @@ export class StorageService extends BaseService {
             if (identity) claims.push(identity);
           }
         }
-        const live = await this.jobRepository.getLiveClaims(claims);
+        const stopped = await this.jobRepository.getStoppedClaims(claims);
         for (const { jobId, token } of claims) {
-          if (!live.has(`${jobId}/${token}`)) {
+          if (stopped.has(`${jobId}/${token}`)) {
             await this.storageRepository.removeEmptyDirs(join(attempts, jobId, token), true);
             await this.storageRepository.removeDirIfEmpty(join(attempts, jobId));
           }

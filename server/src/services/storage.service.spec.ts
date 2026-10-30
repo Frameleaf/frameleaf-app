@@ -323,7 +323,7 @@ describe(StorageService.name, () => {
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
-    it('removes the folders a removal left empty, keeping a running job its staging folder', async () => {
+    it('removes the folders a removal left empty, keeping a staging folder whose attempt may still run', async () => {
       StorageCore.setMediaLocation('/data');
       const folder = '/data/thumbs/user-id/ab/cd';
       const done = { job: '11111111-1111-4111-8111-111111111111', token: '22222222-2222-4222-8222-222222222222' };
@@ -337,12 +337,12 @@ describe(StorageService.name, () => {
               : [running.token],
         ),
       );
-      mocks.job.getLiveClaims.mockResolvedValue(new Set([`${running.job}/${running.token}`]));
+      mocks.job.getStoppedClaims.mockResolvedValue(new Set([`${done.job}/${done.token}`]));
       mocks.storage.removeDirIfEmpty.mockResolvedValue(true);
 
       await sut.handleDeleteFiles({ files: [`${folder}/asset-thumbnail.webp`, `${folder}/asset-preview.jpeg`] });
 
-      expect(mocks.job.getLiveClaims).toHaveBeenCalledWith([
+      expect(mocks.job.getStoppedClaims).toHaveBeenCalledWith([
         { jobId: done.job, token: done.token },
         { jobId: running.job, token: running.token },
       ]);

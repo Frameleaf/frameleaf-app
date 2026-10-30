@@ -41,11 +41,18 @@
   let folders = $state<LibraryResponseDto[] | null>(null);
   let said = $state('');
   let checking = $state(false);
+  // Loads can overlap (on arrival and on each change above); only the latest may show.
+  let loads = 0;
   const load = async () => {
+    const current = ++loads;
+    let next: LibraryResponseDto[];
     try {
-      folders = (await getAllLibraries({})).filter((library) => !library.deletedAt);
+      next = (await getAllLibraries({})).filter((library) => !library.deletedAt);
     } catch {
-      folders = [];
+      next = [];
+    }
+    if (current === loads) {
+      folders = next;
     }
   };
   // The Libraries manager above this section adds and removes folders; follow it without a reload.
