@@ -415,6 +415,37 @@ class TestImageDescriptionModel:
             model._download()
         download.assert_not_called()
 
+    def test_reports_missing_openvino_genai_only_for_models_that_need_it(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: None)
+
+        assert "openvino-genai" in (
+            ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino").missing_runtime() or ""
+        )
+        assert ImageDescriptionModel("microsoft/Florence-2-base-ft", acceleration="openvino").missing_runtime() is None
+        assert ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda").missing_runtime() is None
+
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: object())
+        monkeypatch.setattr("frameleaf_ml.models.image_description.openvino_genai_importable", lambda: True)
+        assert ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino").missing_runtime() is None
+
+    def test_reports_openvino_genai_that_is_found_but_fails_to_import(self, monkeypatch: MonkeyPatch) -> None:
+        from frameleaf_ml.models.image_description import openvino_genai_importable
+
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: object())
+        # A None entry in sys.modules makes `import openvino_genai` raise ImportError.
+        monkeypatch.setitem(sys.modules, "openvino_genai", None)
+        download = mock.Mock()
+        monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", download)
+        openvino_genai_importable.cache_clear()
+        try:
+            model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+            assert "openvino-genai" in (model.missing_runtime() or "")
+            with pytest.raises(ImportError, match="openvino-genai"):
+                model._download()
+            download.assert_not_called()
+        finally:
+            openvino_genai_importable.cache_clear()
+
     def test_auto_uses_cuda_backend_when_available(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setattr(ImageDescriptionModel, "_cuda_available", lambda _: True)
 
@@ -2935,6 +2966,43 @@ def test_bearer_auth_open_when_no_token() -> None:
     # Inference path is open — no auth required, with or without a header.
     assert client.post("/predict").status_code == 200
     assert client.post("/predict", headers={"Authorization": "Bearer anything"}).status_code == 200
+
+
+def test_refuses_a_model_this_container_cannot_run_without_loading_it(
+    deployed_app: TestClient, monkeypatch: MonkeyPatch
+) -> None:
+    # FL-676: the CPU image has no OpenVINO GenAI. A Qwen request is refused at once with a code the
+    # server recognises (no download, no load, no traceback), and the warning is logged once.
+    monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: None)
+    download = mock.Mock()
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", download)
+    warning = mock.Mock()
+    monkeypatch.setattr("frameleaf_ml.main.log.warning", warning)
+    monkeypatch.setattr("frameleaf_ml.main._missing_runtime_logged", set())
+    # The runtime probe may import a native library, so it runs off the event loop.
+    to_thread = mock.AsyncMock(side_effect=asyncio.to_thread)
+    monkeypatch.setattr("frameleaf_ml.main.asyncio.to_thread", to_thread)
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8)).save(buffer, format="PNG")
+    entries = {
+        "image-description-tagging": {
+            "visual": {"modelName": "Qwen/Qwen2.5-VL-3B-Instruct", "options": {"acceleration": "openvino"}}
+        }
+    }
+
+    for _ in range(2):
+        response = deployed_app.post(
+            "http://localhost:3003/predict",
+            data={"entries": json.dumps(entries)},
+            files={"image": buffer.getvalue()},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "model_runtime_unavailable"
+
+    download.assert_not_called()
+    assert warning.call_count == 1
+    assert to_thread.await_count == 2
+    assert all(call.args[0].__name__ == "missing_runtime" for call in to_thread.await_args_list)
 
 
 def test_options_validation_rejects_unknown_keys(deployed_app: TestClient) -> None:
