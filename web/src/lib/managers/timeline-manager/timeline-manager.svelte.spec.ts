@@ -316,6 +316,27 @@ describe('TimelineManager', () => {
       expect(sdkMock.getTimeBucket).toHaveBeenCalledTimes(2);
     });
 
+    it('loads a month in view again after live changes kept overtaking its load', async () => {
+      const manager = new TimelineManager();
+      try {
+        sdkMock.getTimeBuckets.mockResolvedValue([{ count: 1, timeBucket: '2024-03-01' }]);
+        sdkMock.getTimeBucket.mockReset();
+        let overtaken = 3;
+        sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) => {
+          if (overtaken > 0) {
+            overtaken--;
+            manager.invalidateLiveProjection();
+          }
+          return Promise.resolve(bucketAssetsResponse[timeBucket]);
+        });
+        await manager.updateViewport({ width: 1588, height: 1000 });
+        await vi.waitFor(() => expect(manager.months[0].isLoaded).toBe(true));
+        expect(sdkMock.getTimeBucket).toHaveBeenCalledTimes(4);
+      } finally {
+        manager.destroy();
+      }
+    });
+
     it('lays the timeline out once per viewport change', async () => {
       const layout = vi.spyOn(
         timelineManager as unknown as { updateViewportGeometry: (w: boolean) => void },

@@ -62,6 +62,9 @@ type ViewportTopMonthIntersection = {
   // Where month bottom is in viewport (0 = viewport top, 1 = viewport bottom)
   monthBottomViewportRatio: number;
 };
+/** How long a month in view waits before loading again after live changes overtook its load. */
+const SUPERSEDED_RELOAD_MS = 250;
+
 export class TimelineManager extends VirtualScrollManager {
   override bottomSectionHeight = $state(60);
 
@@ -560,6 +563,19 @@ export class TimelineManager extends VirtualScrollManager {
     if (executionStatus === 'LOADED' && this.months.includes(timelineMonth)) {
       updateGeometry(this, timelineMonth, { invalidateHeight: false });
       this.updateViewportProximities();
+    } else if (executionStatus === 'CANCELED') {
+      // A load that live changes kept overtaking gives way; a month still in view asks again shortly,
+      // since nothing else will (its proximity has not changed).
+      setTimeout(() => {
+        if (
+          this.months.includes(timelineMonth) &&
+          timelineMonth.isInOrNearViewport &&
+          !timelineMonth.loader?.executed &&
+          !timelineMonth.loader?.cancelToken
+        ) {
+          void this.loadTimelineMonth(yearMonth, options);
+        }
+      }, SUPERSEDED_RELOAD_MS);
     }
   }
 
