@@ -284,6 +284,7 @@ export class ServerClient {
 
   createStack = (assetIds: string[]) => this.json<StackResponseDto>('POST', '/stacks', { assetIds });
 
+  getPerson = (id: string) => this.json<PersonResponseDto>('GET', `/people/${id}`);
   searchPerson = (name: string) =>
     this.json<PersonResponseDto[]>('GET', `/search/person${buildQuery({ name, withHidden: true })}`);
   /** Faces detected on an asset, each with the person it currently belongs to (if any). */

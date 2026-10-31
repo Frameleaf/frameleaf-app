@@ -144,7 +144,7 @@ node packages/cli/dist/index.js migrate --ledger ./library-move.sqlite --rescan
 
 It scans the source library again and copies only what the ledger has not seen.
 Photos already copied are not uploaded again, and no album or person is created
-twice. New photos join their existing albums and tags on the destination.
+twice. New photos join their existing albums, tags and stacks on the destination.
 
 ## 6. Retry failed items
 

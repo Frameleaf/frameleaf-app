@@ -31,10 +31,8 @@ const toRecord = (a: AssetResponseDto): AssetRecord => ({
  */
 export async function enumerate(from: ServerClient, ledger: Ledger, options: MigrateOptions, controller: Controller) {
   controller.setPhase('enumerate');
-  if (options.rescan) {
-    ledger.reopenForRescan();
-  }
-  let count = options.rescan ? 0 : ledger.counts().assetsTotal;
+  const restarted = options.rescan && ledger.reopenForRescan(VISIBILITIES);
+  let count = restarted ? 0 : ledger.counts().assetsTotal;
 
   for (const visibility of VISIBILITIES) {
     if (ledger.getCursor(`enum:${visibility}:done`)) {

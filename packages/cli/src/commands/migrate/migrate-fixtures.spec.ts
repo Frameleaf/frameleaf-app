@@ -305,8 +305,16 @@ class DestinationFixture {
       return send(res, 200, { count: 0 });
     }
     if (route === 'POST /stacks') {
-      this.stacks.push(json().assetIds as string[]);
+      // Like the server: a stack listing another stack's primary absorbs that stack.
+      const assetIds = json().assetIds as string[];
+      this.stacks = this.stacks.filter((stack) => !assetIds.includes(stack[0]));
+      this.stacks.push(assetIds);
       return send(res, 201, { id: randomUUID() });
+    }
+    const personMatch = /^GET \/people\/([^/]+)$/.exec(route);
+    if (personMatch) {
+      const person = this.people.find((item) => item.id === personMatch[1]);
+      return person ? send(res, 200, person) : send(res, 400, { message: 'Not found or no person.read access' });
     }
     if (route === 'GET /search/person') {
       return send(res, 200, this.people);
@@ -538,10 +546,16 @@ describe('migrate against disposable source/destination fixtures', { timeout: 15
     expect(first!.ok).toBe(true);
     expect(destination.uploads).toBe(5);
 
-    // A new photo lands on the source, in an existing album and tag.
+    // A new photo lands on the source, in an existing album, tag and stack.
     source.assets.push(asset('a6', 'IMG_0006.jpg'));
     source.albumMembers.get('al-banff')!.push('a6');
     source.tagMembers.get('t-canada')!.push('a6');
+    source.stacks = [{ id: 's1', primaryAssetId: 'a1', assets: [{ id: 'a1' }, { id: 'a2' }, { id: 'a6' }] }];
+    // An existing photo gains its Live Photo motion clip.
+    source.assets.push(asset('a7', 'Lake morning.MOV', { type: 'VIDEO', visibility: 'hidden' }));
+    source.assets[2].livePhotoVideoId = 'a7';
+    // The owner renamed the copied person on the destination.
+    (destination.people[0] as { name: string }).name = 'Alice Smith';
 
     // A plain rerun resumes fast from the ledger and never sees it.
     const { report: resumed } = await run(options());
@@ -549,21 +563,28 @@ describe('migrate against disposable source/destination fixtures', { timeout: 15
     expect(resumed!.assets.total).toBe(5);
     expect(resumed!.ok).toBe(true);
 
-    // --rescan walks the source again and copies only the new photo.
+    // --rescan walks the source again and copies only the new files.
     const { report: rescanned } = await run(options({ rescan: true }));
-    expect(destination.uploads).toBe(6);
+    expect(destination.uploads).toBe(7);
+    const bIdOf = (item: FixtureAsset) => destination.assets.get(sha256(item.bytes))!.id;
     expect(destination.assets.has(sha256(source.assets[5].bytes))).toBe(true);
-    expect(rescanned!.assets).toEqual({ total: 6, transferred: 6, checked: 6, verified: 6, missing: 0, failed: 0 });
+    expect(rescanned!.assets).toEqual({ total: 7, transferred: 7, checked: 7, verified: 7, missing: 0, failed: 0 });
     expect(rescanned!.ok).toBe(true);
-    // Same albums, same people, same stack; the new photo joins its existing album.
+    // Same albums, same person, one stack; the new photo joins its existing album and stack.
     expect(destination.albums.map((album) => album.albumName).toSorted()).toEqual(['Banff', 'Trips']);
     expect(destination.albums.find((album) => album.albumName === 'Banff')!.assetIds.size).toBe(4);
-    expect(destination.people).toHaveLength(1);
-    expect(destination.stacks).toHaveLength(1);
+    expect(destination.people).toEqual([expect.objectContaining({ name: 'Alice Smith' })]);
+    expect(destination.stacks).toEqual([[bIdOf(source.assets[0]), bIdOf(source.assets[1]), bIdOf(source.assets[5])]]);
+    // The changed Live Photo pairing is linked on the destination.
+    expect(destination.assetUpdates.get(bIdOf(source.assets[2]))).toMatchObject({
+      livePhotoVideoId: bIdOf(source.assets[6]),
+    });
 
     // Rescanning again with nothing new copies nothing.
     await run(options({ rescan: true }));
-    expect(destination.uploads).toBe(6);
+    expect(destination.uploads).toBe(7);
+    expect(destination.stacks).toHaveLength(1);
+    expect(destination.people).toHaveLength(1);
     expect(destination.albums).toHaveLength(2);
     expect(source.writes()).toEqual([]);
   });
