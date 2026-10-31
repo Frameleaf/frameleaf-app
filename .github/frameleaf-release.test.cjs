@@ -1702,6 +1702,7 @@ test("a withdrawal without a restore tag or reason is refused before any release
     [{ RESTORE_TAG: tag }, /Restore another release than the one withdrawn/],
     [{ REASON: undefined }, /A withdrawal needs a reason/],
     [{ REASON: " " }, /A withdrawal needs a reason/],
+    [{ REASON: "x".repeat(301) }, /at most 300 characters/],
   ])
     await assert.rejects(
       releaseFlags({ ...base, ...change }, {}, () =>

@@ -1320,6 +1320,10 @@ async function releaseFlags(
       typeof env.REASON === "string" && env.REASON.trim(),
       "A withdrawal needs a reason",
     );
+    assert(
+      env.REASON.replace(/\s+/g, " ").trim().length <= 300,
+      "A withdrawal needs a reason of at most 300 characters",
+    );
     assert.notEqual(
       restoreTag,
       tag,
