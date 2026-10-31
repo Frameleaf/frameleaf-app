@@ -44,6 +44,7 @@ import {
 } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
 import { toApproximateNumber } from 'src/utils/rational-time.js';
 import { StudioDestination, isStudioUuid } from 'src/utils/studio-resources.js';
@@ -507,7 +508,12 @@ export class StudioVoiceCleanupService {
     const twins: MediaOperation[] = [];
     for (const row of open) {
       const operation = row.id === excludeId ? undefined : await this.operations.getForWorker(row.id);
-      if (!operation || (operation.snapshot as { kind?: unknown } | null)?.kind !== VOICE_CLEANUP_SNAPSHOT_KIND) {
+      // Re-read: a job that settled since the list is no longer a twin.
+      if (
+        !operation ||
+        TERMINAL_MEDIA_OPERATION_STATUSES.includes(operation.status as MediaOperationStatus) ||
+        (operation.snapshot as { kind?: unknown } | null)?.kind !== VOICE_CLEANUP_SNAPSHOT_KIND
+      ) {
         continue;
       }
       try {
