@@ -171,6 +171,9 @@
       /* Keep last explicit state; reconnect and retry refresh authority. */
     }
   };
+  // Once loaded, a reconnect refreshes progress and keeps the user's unsaved draft; a newer
+  // revision shows as a conflict instead of overwriting it.
+  const resync = () => void (status ? refreshProgress(true) : load());
   const stop = onLibraryAccessChange(
     (change) => {
       clear();
@@ -193,8 +196,8 @@
 
 <OnEvents
   onSpeechIndexChange={() => void refreshProgress(true)}
-  onWebsocketConnect={() => void load()}
-  onUserPreferencesRemoteUpdate={() => void load()}
+  onWebsocketConnect={resync}
+  onUserPreferencesRemoteUpdate={resync}
 />
 {#if supported || failed}
   <Section id="spoken-words" title={$t('frameleaf_speech_title')} description={$t('frameleaf_speech_description')}>

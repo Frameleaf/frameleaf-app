@@ -1,10 +1,35 @@
 import { TYPE, type MessageFormatElement } from '@formatjs/icu-messageformat-parser';
+import { printAST } from '@formatjs/icu-messageformat-parser/printer.js';
 import { IntlMessageFormat, type FormatXMLElementFn, type PrimitiveType } from 'intl-messageformat';
 
 export type InterpolationValues = Record<string, PrimitiveType | FormatXMLElementFn<unknown>>;
 
 type MessagePart = { message: string; tag?: string };
 type FormattingStep = (values: InterpolationValues) => MessagePart | MessagePart[];
+
+/**
+ * A plural or select option with its arguments kept as ICU source text, so picking the branch
+ * never puts caller-provided values into the string that is parsed again.
+ */
+const keepArguments = (elements: MessageFormatElement[]): MessageFormatElement[] =>
+  elements.map((element) => {
+    switch (element.type) {
+      case TYPE.argument:
+      case TYPE.number:
+      case TYPE.date:
+      case TYPE.time:
+      case TYPE.select:
+      case TYPE.plural: {
+        return { type: TYPE.literal, value: printAST([element]) };
+      }
+      case TYPE.tag: {
+        return { ...element, children: keepArguments(element.children) };
+      }
+      default: {
+        return element;
+      }
+    }
+  });
 
 export const createMessageFormatter = (message: string, locale: string) => {
   const compilePart = (element: MessageFormatElement) => {
@@ -34,7 +59,16 @@ export const createMessageFormatter = (message: string, locale: string) => {
         }
       }
     }
-    const formatter = new IntlMessageFormat([element], locale, undefined, { ignoreTag: true });
+    const selector = {
+      ...element,
+      options: Object.fromEntries(
+        Object.entries(element.options).map(([key, option]) => [
+          key,
+          { ...option, value: keepArguments(option.value) },
+        ]),
+      ),
+    };
+    const formatter = new IntlMessageFormat([selector], locale, undefined, { ignoreTag: true });
     return (values) => {
       const selected = formatter.format({ ...values, ...replacements }) as string;
       const elements = new IntlMessageFormat(selected, locale, undefined, { ignoreTag: false }).getAst();

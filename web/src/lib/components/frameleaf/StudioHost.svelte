@@ -593,7 +593,13 @@
       return mounting.done;
     }
     const token = ++mountToken;
-    const done = startMount(token).finally(() => {
+    // Mounts run one at a time: an abandoned mount finishes its own teardown before the next
+    // engine starts on the same stage.
+    const previous = mounting?.done;
+    const done = (async () => {
+      await previous?.catch(() => {});
+      await startMount(token);
+    })().finally(() => {
       if (mounting?.token === token) {
         mounting = null;
       }
