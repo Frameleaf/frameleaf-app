@@ -751,8 +751,8 @@ describe('ResultsToolbar', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'slideshow' }));
     expect(onSlideshow).toHaveBeenCalled();
     // FL-707 item 10: the Information panel switch is in the View menu.
-      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
-      await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_view' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'frameleaf_work_inspector_show' }));
     expect(onToggleInspector).toHaveBeenCalled();
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_more_actions' }));
     expect(onMoreActions).toHaveBeenCalled();

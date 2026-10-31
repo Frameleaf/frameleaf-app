@@ -33,7 +33,13 @@
     type RailSectionId,
   } from '$lib/frameleaf/navigation';
   import { canAnimate, prefersReducedMotion } from '$lib/frameleaf/motion';
-  import { railMoreStep, railSectionsBelow } from '$lib/frameleaf/rail-more';
+  import {
+    isBelowRoot,
+    RAIL_END_SLACK,
+    RAIL_HEADING_SLACK,
+    railMoreStep,
+    railSectionsBelow,
+  } from '$lib/frameleaf/rail-more';
   import { DURATION } from '$lib/frameleaf/tokens';
   import '$lib/frameleaf/tokens.css';
   import { searchContextFor, workspaceHref } from '$lib/frameleaf/search-context';
@@ -288,32 +294,76 @@
    * pressed, and goes away at the end. The list (Sidebar's `.fl-sidebar-list`) is the scroller.
    */
   let railScroller = $state<HTMLElement | null>(null);
+  let railEnd = $state<HTMLElement>();
   let sectionsBelow = $state<string[]>([]);
   $effect(() => {
     const scroller = railElement?.parentElement;
-    if (!scroller || !railElement) {
+    const rail = railElement;
+    const end = railEnd;
+    if (
+      !scroller ||
+      !rail ||
+      !end ||
+      typeof IntersectionObserver === 'undefined' ||
+      typeof MutationObserver === 'undefined'
+    ) {
       return;
     }
     railScroller = scroller;
-    const measure = () => {
-      const top = scroller.getBoundingClientRect().top - scroller.scrollTop;
-      const headings = [...scroller.querySelectorAll<HTMLElement>('.fl-heading')]
-        .filter((heading) => heading.textContent?.trim())
-        .map((heading) => ({ top: heading.getBoundingClientRect().top - top, label: heading.textContent!.trim() }));
-      const next = railSectionsBelow(scroller, headings);
+    let atEnd = true;
+    const below = new Map<Element, boolean>();
+    const update = () => {
+      const headings = [...below].map(([heading, isBelow]) => ({
+        label: heading.textContent?.trim() ?? '',
+        below: isBelow,
+      }));
+      const next = railSectionsBelow(atEnd, headings);
       const current = untrack(() => sectionsBelow);
       if (next.length !== current.length || next.some((label, index) => label !== current[index])) {
         sectionsBelow = next;
       }
     };
-    measure();
-    scroller.addEventListener('scroll', measure, { passive: true });
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
-    observer?.observe(scroller);
-    observer?.observe(railElement);
+    // The end marker is "in sight" within a few px of the end; a heading counts as hidden a little early.
+    const endObserver = new IntersectionObserver(
+      ([entry]) => {
+        atEnd = entry.isIntersecting;
+        update();
+      },
+      { root: scroller, rootMargin: `0px 0px ${RAIL_END_SLACK}px 0px` },
+    );
+    const headingObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          below.set(entry.target, isBelowRoot(entry));
+        }
+        update();
+      },
+      { root: scroller, rootMargin: `0px 0px -${RAIL_HEADING_SLACK}px 0px` },
+    );
+    endObserver.observe(end);
+    // Sections fold, load and switch to the icon-only rail: keep the observed headings in step.
+    const observeHeadings = () => {
+      const headings = new Set(rail.querySelectorAll('.fl-heading'));
+      for (const heading of below.keys()) {
+        if (!headings.has(heading)) {
+          headingObserver.unobserve(heading);
+          below.delete(heading);
+        }
+      }
+      for (const heading of headings) {
+        if (!below.has(heading)) {
+          below.set(heading, false);
+          headingObserver.observe(heading);
+        }
+      }
+    };
+    observeHeadings();
+    const mutations = new MutationObserver(observeHeadings);
+    mutations.observe(rail, { childList: true, subtree: true });
     return () => {
-      scroller.removeEventListener('scroll', measure);
-      observer?.disconnect();
+      endObserver.disconnect();
+      headingObserver.disconnect();
+      mutations.disconnect();
     };
   });
   const sectionsBelowLabel = $derived(sectionsBelow.filter(Boolean).join(', '));
@@ -740,7 +790,6 @@
   <div
     class="frameleaf fl-rail-footer"
     class:fl-icon-only={iconOnly}
-    class:has-more={sectionsBelow.length > 0}
     class:is-collapsing={collapsing}
     data-theme={appTheme}
   >
@@ -913,6 +962,8 @@
     {/if}
 
     {@render children?.()}
+    <!-- FL-707 B2: marks the end of the list for the "More below" row. -->
+    <div bind:this={railEnd} class="fl-rail-end" aria-hidden="true"></div>
   </div>
 </Sidebar>
 
@@ -947,19 +998,20 @@
   .fl-rail-footer.fl-icon-only {
     padding-top: 8px;
   }
-  /* FL-707 B2: "More below" sits on the footer's hairline, a rail row with its own rule under it. */
+  /*
+   * FL-707 B2: "More below" is a rail row standing on the footer's hairline, with a hairline of its
+   * own above it. It overlays the end of the list instead of taking space from it, so the list keeps
+   * its height (and scroll position) when the row comes and goes at the end.
+   */
   .fl-rail-footer {
     position: relative;
   }
-  .fl-rail-footer.has-more {
-    padding-top: 0;
-  }
   .fl-rail-more-wrap {
-    margin-bottom: 10px;
-    border-bottom: 1px solid var(--fl-border);
-  }
-  .fl-icon-only .fl-rail-more-wrap {
-    margin-bottom: 8px;
+    position: absolute;
+    inset-inline: 0;
+    bottom: calc(100% + 1px);
+    border-top: 1px solid var(--fl-border);
+    background: var(--fl-panel);
   }
   /* A soft edge over the end of the list, so the last row reads as cut off rather than as the end. */
   .fl-rail-more-wrap::before {
@@ -972,6 +1024,7 @@
     pointer-events: none;
   }
   .fl-rail-footer button.fl-rail-more {
+    width: 100%;
     min-height: 40px;
     color: var(--fl-muted);
   }

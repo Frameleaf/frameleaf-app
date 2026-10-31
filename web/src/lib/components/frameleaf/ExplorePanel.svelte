@@ -614,9 +614,17 @@
     margin: 72px 24px 22px;
     text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
   }
-  /* The "Best Photos" label stands clear of the title. */
+  /*
+   * The "Best Photos" label stands clear of the title. It sits high on the card where the scrim is
+   * still light, so it carries its own dark backing: white on it stays at least 4.5:1 on a white photo.
+   */
   .el-best-copy > .el-overline {
+    align-self: flex-start;
     margin-bottom: 4px;
+    margin-inline-start: -8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 60%);
     font-weight: 600;
     letter-spacing: 0.02em;
   }

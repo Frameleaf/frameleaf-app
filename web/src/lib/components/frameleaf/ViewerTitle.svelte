@@ -73,5 +73,4 @@
   .fl-title-position + .fl-title-kind::before {
     content: '· ';
   }
-
 </style>

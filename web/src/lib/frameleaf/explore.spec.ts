@@ -8,6 +8,10 @@ import {
   buildExploreThings,
   isThingKeyword,
   isThingTag,
+  EXPLORE_FACET_LIMIT,
+  EXPLORE_THING_LIMIT,
+  exploreThingsFacetsBody,
+  exploreThingsNeedMoreTags,
   peopleNameSet,
   captureDay,
   emptyExploreShortcutCounts,
@@ -146,7 +150,11 @@ describe('explore', () => {
     });
 
     it('limits things to ten and places to eight', () => {
-      const counts = Array.from({ length: 20 }, (_, index) => ({ value: `v${index}`, count: 1 }));
+      const counts = Array.from({ length: 20 }, (_, index) => ({
+        value: `v${index}`,
+        label: `thing ${index}`,
+        count: 1,
+      }));
       expect(buildExploreThings(counts)).toHaveLength(10);
       expect(buildExplorePlaces(counts)).toHaveLength(8);
     });
@@ -176,7 +184,18 @@ describe('explore', () => {
       { id: 'p1', name: 'Jamie' },
       { id: 'p2', name: '' },
     ]);
-    it.each(['beach', 'Mountains', 'dog', '2024', 'Lake Louise'])('keeps the thing %s', (label) => {
+    it.each([
+      'beach',
+      'Mountains',
+      'dog',
+      'DOG',
+      'TV',
+      '2024',
+      'Lake Louise',
+      'Apple pie',
+      'Sony headphones',
+      'Canon Rock',
+    ])('keeps the thing %s', (label) => {
       expect(isThingKeyword(label, people)).toBe(true);
     });
     it.each([
@@ -187,7 +206,12 @@ describe('explore', () => {
       'PINN',
       'SFAN',
       'IMG_4021',
+      'DSC0001',
       'Canon EOS R5',
+      'Sony A7 III',
+      'Apple iPhone 15 Pro',
+      'Google Pixel 8',
+      'Fujifilm X-T4',
       'Lightroom',
       'People|Jamie',
       '',
@@ -199,6 +223,13 @@ describe('explore', () => {
       expect(isThingTag('People/Jamie', people)).toBe(false);
       expect(isThingTag('Other Keywords/beach', people)).toBe(false);
       expect(isThingTag('Travel/SFAN', people)).toBe(false);
+    });
+    it('asks for a fuller tag list only when a full facet page left the row short', () => {
+      const full = Array.from({ length: EXPLORE_FACET_LIMIT }, (_, index) => ({ value: `t${index}`, count: 1 }));
+      expect(exploreThingsNeedMoreTags(full, [])).toBe(true);
+      expect(exploreThingsNeedMoreTags(full.slice(0, 5), [])).toBe(false);
+      expect(exploreThingsNeedMoreTags(full, Array.from({ length: EXPLORE_THING_LIMIT }))).toBe(false);
+      expect(exploreThingsFacetsBody).toMatchObject({ facets: ['tags'], facetLimit: 100 });
     });
     it('drops non-things before taking the limit', () => {
       const counts = [

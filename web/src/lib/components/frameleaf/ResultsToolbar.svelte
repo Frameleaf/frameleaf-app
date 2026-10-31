@@ -233,17 +233,32 @@
   /** FL-707 item 10: the View menu (Information panel). */
   let viewMenuOpen = $state(false);
   let viewControl = $state<HTMLElement>();
+  let viewButton = $state<HTMLButtonElement>();
+  let viewSwitch = $state<HTMLInputElement>();
   const closeViewMenu = (focus = true) => {
     viewMenuOpen = false;
     if (focus) {
-      viewControl?.querySelector<HTMLButtonElement>('.fl-view-button')?.focus();
+      viewButton?.focus();
+    }
+  };
+  /* Escape belongs to the open menu (not the library's clear-selection); Tab out of it closes it. */
+  const onViewKeydown = (event: KeyboardEvent) => {
+    if (viewMenuOpen && event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeViewMenu();
+    }
+  };
+  const onViewFocusOut = (event: FocusEvent) => {
+    if (viewMenuOpen && !viewControl?.contains(event.relatedTarget as Node | null)) {
+      closeViewMenu(false);
     }
   };
   $effect(() => {
     if (!viewMenuOpen) {
       return;
     }
-    viewControl?.querySelector<HTMLInputElement>('.fl-view-menu input')?.focus();
+    viewSwitch?.focus();
     const onPointerDown = (event: PointerEvent) => {
       if (!viewControl?.contains(event.target as Node)) {
         closeViewMenu(false);
@@ -473,8 +488,10 @@
         Information panel switch. Thumbnail size stays in the floating bar (owner, 2026-10-30).
       -->
       <span class="fl-slot fl-slot-info">
-        <span class="fl-view" bind:this={viewControl}>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <span class="fl-view" bind:this={viewControl} onkeydown={onViewKeydown} onfocusout={onViewFocusOut}>
           <button
+            bind:this={viewButton}
             type="button"
             class="fl-tool fl-view-button"
             class:is-open={viewMenuOpen}
@@ -489,22 +506,11 @@
           </button>
           {#if viewMenuOpen}
             <!-- Escape closes the menu and returns to View, as the filter menu does. -->
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div
-              class="fl-view-menu fl-pop"
-              role="group"
-              aria-label={$t('frameleaf_library_view_menu')}
-              out:pop
-              onkeydown={(event) => {
-                if (event.key === 'Escape') {
-                  event.stopPropagation();
-                  closeViewMenu();
-                }
-              }}
-            >
+            <div class="fl-view-menu fl-pop" role="group" aria-label={$t('frameleaf_library_view_menu')} out:pop>
               <label class="fl-view-row">
                 <span>{$t('frameleaf_library_information_panel')}</span>
                 <input
+                  bind:this={viewSwitch}
                   type="checkbox"
                   role="switch"
                   aria-label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}

@@ -154,10 +154,14 @@ test.describe('Asset Viewer Navbar', () => {
       );
       await utils.setAuthCookies(context, admin.accessToken);
       await page.goto(`/photos/${asset.id}`);
+      // The keys-only RatingAction renders nothing, so wait for the top row it mounts in.
+      await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', asset.id);
+      await expect(page.getByTestId('asset-viewer-navbar-actions')).toBeVisible();
       await expect(page.getByTestId('viewer-rating-button')).toHaveCount(0);
-      await page.keyboard.press('4');
+      // Pressing 4 again is harmless, so a press that lands before the shortcut is bound is retried.
       await expect
         .poll(async () => {
+          await page.keyboard.press('4');
           const info = await getAssetInfo({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
           return info.exifInfo?.rating;
         })
