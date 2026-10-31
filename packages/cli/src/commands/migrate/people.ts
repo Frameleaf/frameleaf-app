@@ -60,14 +60,15 @@ export async function migratePeople(
       let undetected = 0;
       const resolve = new Queue<string, void>(
         async (bAssetId: string) => {
-          const allFaces = await to.getFaces(bAssetId);
-          const faces = allFaces.filter((f) => f.person);
-          if (faces.length === 0) {
-            undetected++; // B hasn't detected a face here (yet)
-          } else if (faces.length > 1) {
+          // Count every detected face, clustered or not: with two faces on the photo the one
+          // clustered face may not be this person.
+          const faces = await to.getFaces(bAssetId);
+          if (faces.length > 1) {
             ambiguous++; // can't tell which face is this person — skip rather than mislabel
-          } else if (faces[0].person!.id !== bPersonId) {
-            items.push({ assetId: bAssetId, personId: faces[0].person!.id });
+          } else if (!faces[0]?.person) {
+            undetected++; // B hasn't detected (or clustered) a face here (yet)
+          } else if (faces[0].person.id !== bPersonId) {
+            items.push({ assetId: bAssetId, personId: faces[0].person.id });
           }
         },
         { concurrency: options.concurrency, retry: 2 },

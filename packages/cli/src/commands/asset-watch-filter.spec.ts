@@ -48,7 +48,7 @@ it('admits the same filenames synchronously without changing watcher timing', as
         ignoreInitial: true,
         alwaysStat: true,
         awaitWriteFinish: true,
-        depth: 1,
+        depth: 0,
         persistent: true,
       }),
     );
