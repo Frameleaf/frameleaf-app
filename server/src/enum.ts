@@ -2272,7 +2272,6 @@ export enum QueueName {
   MediaHealth = 'mediaHealth',
   Workflow = 'workflow',
   IntegrityCheck = 'integrityCheck',
-  LockedEncryption = 'lockedEncryption',
   Editor = 'editor',
   PetRecognition = 'petRecognition',
 }

@@ -516,8 +516,6 @@ export class QueueService extends BaseService {
       QueueName.StorageTemplateMigration,
       QueueName.DuplicateDetection,
       QueueName.BackupDatabase,
-      // Locked encryption is a per-person setting: no administrator concurrency control.
-      QueueName.LockedEncryption,
     ].includes(name);
   }
 

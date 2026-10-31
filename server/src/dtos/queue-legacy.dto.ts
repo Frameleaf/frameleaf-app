@@ -65,7 +65,6 @@ export const mapQueuesLegacy = (responses: QueueResponseDto[]): QueuesResponseLe
   const legacy = new QueuesResponseLegacyDto();
 
   for (const response of responses) {
-    if (response.name === QueueName.LockedEncryption) continue;
     legacy[response.name] = mapQueueLegacy(response);
   }
 
