@@ -30,16 +30,34 @@
   const count = $derived(cards.length + cloudRows.length);
   const headingId = $props.id();
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
+  const DAY_MS = 86_400_000;
 
   const titleOf = (card: BackgroundWorkCard) => {
     const queue = jobQueue(card.queueName);
     return queue ? $t(`frameleaf_jobs_queue_${queue.key}` as Translations) : $t('frameleaf_activity_background_work');
   };
 
+  /**
+   * FL-711: work quiet hours saved for the overnight window starts again by itself, so it says when,
+   * never "Paused". Tonight's start reads as a time; a start further off names its day as well.
+   */
+  const tonightOf = ({ startsAt }: NonNullable<BackgroundWorkCard['tonight']>) => {
+    const at = startsAt ? new Date(startsAt) : null;
+    if (!at || Number.isNaN(at.getTime())) {
+      return $t('frameleaf_activity_bg_tonight_unscheduled');
+    }
+    const time = new Intl.DateTimeFormat($locale ?? undefined, { hour: 'numeric', minute: '2-digit' }).format(at);
+    if (at.getTime() - Date.now() <= DAY_MS) {
+      return $t('frameleaf_activity_bg_tonight', { values: { time } });
+    }
+    const day = new Intl.DateTimeFormat($locale ?? undefined, { weekday: 'long' }).format(at);
+    return $t('frameleaf_activity_bg_tonight_day', { values: { day, time } });
+  };
+
   /** The prototype's line: the state, what is waiting and running, how far, and where. */
   const detailOf = (card: BackgroundWorkCard) =>
     [
-      $t(ACTIVITY_STAGE_KEYS[card.stage]),
+      card.tonight ? tonightOf(card.tonight) : $t(ACTIVITY_STAGE_KEYS[card.stage]),
       card.waiting > 0 ? $t('frameleaf_activity_bg_waiting', { values: { count: number(card.waiting) } }) : null,
       card.running > 0 ? $t('frameleaf_activity_bg_running', { values: { count: number(card.running) } }) : null,
       card.progress === null ? null : `${card.progress}%`,

@@ -101,6 +101,35 @@ describe('buildBackgroundWorkCards (SHARING-P1)', () => {
     ]);
   });
 
+  it('says work quiet hours saved for tonight as waiting, with when it starts, not as paused (FL-711)', () => {
+    const cards = buildBackgroundWorkCards(
+      summary({
+        queues: [
+          queue(QueueName.VideoConversion, {
+            isPaused: true,
+            heldForNight: true,
+            resumesAt: '2026-10-31T06:00:00.000Z',
+            state: 'paused',
+            waiting: 3,
+            total: 3,
+          }),
+          queue(QueueName.SmartSearch, { isPaused: true, waiting: 52, total: 52 }),
+        ],
+      }),
+    );
+
+    expect(cards).toEqual([
+      expect.objectContaining({
+        queueName: QueueName.VideoConversion,
+        stage: 'queued',
+        waiting: 3,
+        tonight: { startsAt: '2026-10-31T06:00:00.000Z' },
+      }),
+      expect.objectContaining({ queueName: QueueName.SmartSearch, stage: 'paused' }),
+    ]);
+    expect(cards[1]).not.toHaveProperty('tonight');
+  });
+
   it('counts an unfinished run once, only for a kind whose queue is idle, without its stages', () => {
     const cards = buildBackgroundWorkCards(
       summary({
