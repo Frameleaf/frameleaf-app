@@ -489,9 +489,22 @@
     finishPhase = 'saving';
     try {
       const current = await getConfig();
-      // Finish can run before the server data loaded: settle a defaulted tier against the model the
-      // server has now, so an unlisted model is kept rather than replaced by the stale default.
-      setup = withDefaultTier(setup, { hardware, currentModel: current.machineLearning.clip.modelName });
+      // The server data may have failed to load: settle a defaulted tier against the model the server
+      // has now. If that changes the choice shown on this screen, go back to the tier step to confirm it.
+      const settled = withDefaultTier(setup, { hardware, currentModel: current.machineLearning.clip.modelName });
+      if (settled.choices.model !== setup.choices.model) {
+        direction = -1;
+        config = current;
+        setup = {
+          ...settled,
+          step: Math.max(
+            0,
+            steps.findIndex((entry) => entry.id === 'processing'),
+          ),
+        };
+        finishPhase = '';
+        return;
+      }
       // Saved here, not through the settings service: a failed save must stop setup on this step
       // with the error in view (the service only toasts), and no "Settings saved" toast belongs in
       // the hand-off. Credentials are emptied for the save exactly as the service does.
@@ -1632,7 +1645,7 @@
                 type="button"
                 class="button primary frs-open"
                 onclick={() => void finish()}
-                disabled={busy}
+                disabled={busy || serverLoading}
                 aria-busy={busy || undefined}
               >
                 {#if finishPhase}

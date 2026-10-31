@@ -154,7 +154,7 @@ describe('first-run progress save ownership', () => {
     expect(sdkMock.updateFrameleafSetup).not.toHaveBeenCalled();
   });
 
-  it('keeps an unlisted search model when finishing before the server data has loaded', async () => {
+  describe('finishing on a library with an unlisted search model', () => {
     const config = {
       storageTemplate: { enabled: false, template: '{{y}}/{{MM}}/{{filename}}' },
       machineLearning: {
@@ -165,25 +165,39 @@ describe('first-run progress save ownership', () => {
       newVersionCheck: { enabled: true },
       map: { enabled: true },
     };
-    // the mount-time load never answers; only the finish-time read does
-    sdkMock.getConfig
-      .mockReturnValueOnce(new Promise(() => {}) as never)
-      .mockResolvedValueOnce(structuredClone(config) as never);
-    sdkMock.updateConfig.mockImplementation(({ adminConfigDto }) => Promise.resolve(adminConfigDto) as never);
-    sdkMock.finishFrameleafSetup.mockResolvedValue({ completed: true, completedAt: null, flow: 'existing' } as never);
-    sdkMock.setUserOnboarding.mockResolvedValue({ isOnboarded: true });
-    const initial = createSetup('existing');
     // saved progress from before the keep option: the default tier, never chosen
-    render(FirstRunSetup, {
-      initial: { ...initial, step: 9, reached: 9, choices: { ...initial.choices, signedIn: true } },
-      authenticated: true,
+    const renderReady = () => {
+      const initial = createSetup('existing');
+      render(FirstRunSetup, {
+        initial: { ...initial, step: 9, reached: 9, choices: { ...initial.choices, signedIn: true } },
+        authenticated: true,
+      });
+    };
+
+    it('cannot finish before the server data has loaded', async () => {
+      sdkMock.getConfig.mockReturnValueOnce(new Promise(() => {}) as never);
+      renderReady();
+      await tick();
+      const open = screen.getByRole('button', { name: 'Open Frameleaf' });
+      expect(open).toBeDisabled();
+      await fireEvent.click(open);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.updateConfig).not.toHaveBeenCalled();
     });
-    await tick();
-    await fireEvent.click(screen.getByRole('button', { name: 'Open Frameleaf' }));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(sdkMock.updateConfig).toHaveBeenCalledOnce();
-    expect(sdkMock.updateConfig.mock.calls[0][0].adminConfigDto.machineLearning).toMatchObject(config.machineLearning);
-    expect(sdkMock.runQueueCommandLegacy).not.toHaveBeenCalled();
+
+    it('goes back to the tier step when the finish-time read changes the choice', async () => {
+      // the mount-time read fails; only the finish-time read answers
+      sdkMock.getConfig
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce(structuredClone(config) as never);
+      renderReady();
+      await vi.advanceTimersByTimeAsync(0);
+      await fireEvent.click(screen.getByRole('button', { name: 'Open Frameleaf' }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.updateConfig).not.toHaveBeenCalled();
+      expect(sdkMock.runQueueCommandLegacy).not.toHaveBeenCalled();
+      expect(screen.getAllByText('Keep current model (custom-model)').length).toBeGreaterThan(0);
+    });
   });
 
   it.each([
