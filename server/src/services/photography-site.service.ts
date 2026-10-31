@@ -34,6 +34,7 @@ import {
   PhotographySite,
   SITE_PHOTO_WIDTHS,
   SITE_SLUG,
+  STUDIO_APP_PAGES,
   normalisePhotographySite,
   portfolioItems,
   portfolioKey,
@@ -79,6 +80,13 @@ export class PhotographySiteService {
   async saveSite(auth: AuthDto, input: PhotographySiteSaveDto) {
     const ownerId = this.workflow.studioOwner(auth);
     const { expectedRevision, site } = PhotographySiteSaveDto.schema.parse(input);
+    if (STUDIO_APP_PAGES.has(site.slug)) {
+      // FL-711: a site saved with such an address before it was reserved stays editable where it is.
+      const { record: stored } = await this.repository.studioRecord(ownerId);
+      if (stored.site?.slug !== site.slug) {
+        throw new BadRequestException('That website address is used by Frameleaf; choose another');
+      }
+    }
     const owner = await this.repository.siteOwnerBySlug(site.slug);
     if (owner && owner !== ownerId) throw new ConflictException('That website address is taken; choose another');
     // ponytail: two studios saving the same new address in the same instant can both win; a unique index on

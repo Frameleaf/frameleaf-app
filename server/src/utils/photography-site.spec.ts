@@ -16,6 +16,8 @@ describe('photography site', () => {
     expect(siteSlug('Cedar & Light Studio')).toBe('cedar-and-light-studio');
     expect(siteSlug('Café Élan')).toBe('cafe-elan');
     expect(siteSlug('!!!')).toBe('studio');
+    // FL-711: the app's own Studio project library is never a website address.
+    expect(siteSlug('Projects')).toBe('studio');
     expect(siteSlug('x'.repeat(60))).toHaveLength(48);
   });
 

@@ -30,6 +30,8 @@ import {
 import { effectiveBackupSchedule } from 'src/utils/backup-sequence.js';
 import { getConfig } from 'src/utils/config.js';
 import { isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
+import { quietHoursHolds } from 'src/utils/overnight.js';
+import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 /** Queues are read a few at a time, as the queue list does, so a read never fills the database pool. */
 const QUEUE_BATCH = 4;
@@ -67,7 +69,7 @@ export class AttentionService {
     const [backup, storage, work, version] = await Promise.all([
       this.check('backup', () => this.backup(config, now)),
       this.check('storage', () => this.storage(config)),
-      this.check('work', () => this.work()),
+      this.check('work', () => this.work(config)),
       this.check('version', () => this.version(config)),
     ]);
     const results: Record<AttentionKind, SignalResult> = { backup, storage, work, version };
@@ -197,9 +199,11 @@ export class AttentionService {
     return times.length > 0 ? new Date(Math.max(...times)).toISOString() : null;
   }
 
-  private async work(): Promise<SignalResult> {
+  private async work(config: SystemConfig): Promise<SignalResult> {
     const pause = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLibraryMovePause);
     const held = new Set(pause?.queues);
+    const overnight = await this.systemMetadataRepository.get(SystemMetadataKey.OvernightSequence);
+    const quiet = quietHoursHolds(overnight, config.nightlyTasks, serverTimeZone(config.server));
     const names = Object.values(QueueName);
     const queues: QueueFacts[] = [];
     for (let offset = 0; offset < names.length; offset += QUEUE_BATCH) {
@@ -209,7 +213,7 @@ export class AttentionService {
             this.jobRepository.getJobCounts(name),
             this.jobRepository.isPaused(name),
           ]);
-          return { name, counts, paused, heldByMove: held.has(name) };
+          return { name, counts, paused, heldByMove: held.has(name), heldByQuietHours: quiet.has(name) };
         }),
       );
       queues.push(...batch);

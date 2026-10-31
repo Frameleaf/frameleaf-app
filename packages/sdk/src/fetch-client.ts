@@ -9004,6 +9004,8 @@ export type QueueRunDto = {
     active: number;
     /** Whether this queue can be paused; background tasks cannot */
     canPause: boolean;
+    /** Paused by quiet hours: the heavy work waits for the overnight window and starts again by itself */
+    heldForNight?: boolean;
     /** Whether the queue is paused */
     isPaused: boolean;
     lastProgressAt?: string | null;
@@ -9011,6 +9013,8 @@ export type QueueRunDto = {
     noDispatchBacklog?: boolean;
     /** Jobs finished, completed or failed, since this run started */
     processed: number;
+    /** When quiet hours start this queue again; null when the overnight schedule never starts */
+    resumesAt?: string | null;
     /** When this run was first seen with work */
     startedAt: string | null;
     state?: State4;

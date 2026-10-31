@@ -9,8 +9,10 @@ import {
   QueueJobStatus,
   QueueJobWorkerKind,
   QueueName,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { QueueService } from 'src/services/queue.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory } from 'test/small.factory.js';
@@ -256,6 +258,33 @@ describe(QueueService.name, () => {
       await sut.runCommandLegacy(QueueName.MetadataExtraction, { command: QueueCommand.Resume, force: false });
 
       expect(mocks.job.resume).toHaveBeenCalledWith(QueueName.MetadataExtraction);
+    });
+
+    it('stops quiet hours holding a queue the administrator resumes (FL-711)', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics());
+      mocks.systemMetadata.get.mockResolvedValue({
+        run: null,
+        nights: [],
+        quiet: { holding: [QueueName.VideoConversion, QueueName.SmartSearch] },
+      });
+
+      await sut.update(authStub.admin, QueueName.VideoConversion, { isPaused: false });
+
+      expect(mocks.job.resume).toHaveBeenCalledWith(QueueName.VideoConversion);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.OvernightSequence, {
+        run: null,
+        nights: [],
+        quiet: { holding: [QueueName.SmartSearch] },
+      });
+    });
+
+    it('leaves the quiet hours record alone when the resumed queue is not held', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics());
+      mocks.systemMetadata.get.mockResolvedValue({ run: null, nights: [], quiet: { holding: null } });
+
+      await sut.runCommandLegacy(QueueName.VideoConversion, { command: QueueCommand.Resume, force: false });
+
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 
     it('should handle an empty command', async () => {
