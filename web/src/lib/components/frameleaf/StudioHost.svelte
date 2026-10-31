@@ -635,6 +635,10 @@
       const instance = await resolution.module.mount(stage, context(), {
         ...services,
         reportFatal: (error) => {
+          // A superseded mount must not fail the mount that replaced it.
+          if (token !== mountToken) {
+            return;
+          }
           services.reportFatal(error);
           dispatch({ type: 'fatal', detail: error instanceof Error ? error.message : String(error) });
         },
