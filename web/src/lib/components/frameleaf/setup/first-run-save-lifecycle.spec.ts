@@ -198,6 +198,27 @@ describe('first-run progress save ownership', () => {
       expect(sdkMock.runQueueCommandLegacy).not.toHaveBeenCalled();
       expect(screen.getAllByText('Keep current model (custom-model)').length).toBeGreaterThan(0);
     });
+
+    it('asks again when "keep" would now keep a different model than the one it named', async () => {
+      const moved = structuredClone(config);
+      moved.machineLearning.clip.modelName = 'other-model';
+      sdkMock.getConfig.mockResolvedValueOnce(structuredClone(config) as never).mockResolvedValueOnce(moved as never);
+      const initial = createSetup('existing');
+      render(FirstRunSetup, {
+        initial: {
+          ...initial,
+          step: 9,
+          reached: 9,
+          choices: { ...initial.choices, signedIn: true, model: 'keep', modelChosen: true },
+        },
+        authenticated: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await fireEvent.click(screen.getByRole('button', { name: 'Open Frameleaf' }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.updateConfig).not.toHaveBeenCalled();
+      expect(screen.getAllByText('Keep current model (other-model)').length).toBeGreaterThan(0);
+    });
   });
 
   it.each([

@@ -490,9 +490,12 @@
     try {
       const current = await getConfig();
       // The server data may have failed to load: settle a defaulted tier against the model the server
-      // has now. If that changes the choice shown on this screen, go back to the tier step to confirm it.
-      const settled = withDefaultTier(setup, { hardware, currentModel: current.machineLearning.clip.modelName });
-      if (settled.choices.model !== setup.choices.model) {
+      // has now. If that changes the choice shown on this screen, or "keep" would now keep a model other
+      // than the one it named, go back to the tier step to confirm it.
+      const serverModel = current.machineLearning.clip.modelName;
+      const settled = withDefaultTier(setup, { hardware, currentModel: serverModel });
+      const keptOther = settled.choices.model === KEEP_MODEL && config?.machineLearning.clip.modelName !== serverModel;
+      if (settled.choices.model !== setup.choices.model || keptOther) {
         direction = -1;
         config = current;
         setup = {
