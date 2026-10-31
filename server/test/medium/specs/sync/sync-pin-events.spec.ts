@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { onTestFinished } from 'vitest';
 import type { StoredPinnedCollection } from 'src/dtos/pinned-collection.dto.js';
 import type { MemoryService } from 'src/services/memory.service.js';
 import type { PersonService } from 'src/services/person.service.js';
@@ -31,6 +32,8 @@ import { getActiveForkKyselyDB } from 'test/utils.js';
 
 const setup = async () => {
   const database = await getActiveForkKyselyDB();
+  // Each test clones its own database; close it when the test ends, pass or fail.
+  onTestFinished(() => database.destroy());
   const ctx = new SyncTestContext(database);
   const { auth, user } = await ctx.newSyncAuthUser();
   const albums = newMediumService(AlbumService, {

@@ -14672,6 +14672,7 @@
   "frameleaf_studio_bin_library_any_time": "Any time",
   "frameleaf_studio_bin_library_anywhere": "Anywhere",
   "frameleaf_studio_bin_library_clear_filters": "Clear filters",
+  "frameleaf_studio_bin_library_clear_search": "Clear search",
   "frameleaf_studio_bin_library_empty": "Nothing in your library matches. Try other words or clear the filters.",
   "frameleaf_studio_bin_library_facet_count": "{label} ({count})",
   "frameleaf_studio_bin_library_media": "Library media",
