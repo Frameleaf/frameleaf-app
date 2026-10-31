@@ -386,6 +386,19 @@ describe(PetService.name, () => {
 
       expect(petRepository.delete).toHaveBeenCalledWith(ownerId, petId);
     });
+
+    it('looks again at the photos it was confirmed in once it is deleted (FL-712)', async () => {
+      (petRepository.getObservations as AnyMock).mockResolvedValue([
+        { assetId: 'confirmed-asset', state: PetObservationState.Confirmed },
+        { assetId: 'rejected-asset', state: PetObservationState.Rejected },
+      ]);
+
+      await sut.remove(unlockedAuth(), petId);
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PetRecognition, data: { id: 'confirmed-asset' } },
+      ]);
+    });
   });
 
   describe('addObservation', () => {
