@@ -107,7 +107,7 @@ jobs:
           key="${PLATFORM//\//-}-${DEVICE}-${TARGET}${SUFFIX}"
           ref="ghcr.io/frameleaf/${IMAGE}-build-cache:${key}"
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
-          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+          if [[ ( "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ) && "$GITHUB_REF" == refs/heads/main ]]; then
             echo "destination=type=registry,ref=${ref},mode=max,compression=zstd" >> "$GITHUB_OUTPUT"
           else
             echo "destination=type=local,dest=${RUNNER_TEMP}/discard-cache,ignore-error=true" >> "$GITHUB_OUTPUT"

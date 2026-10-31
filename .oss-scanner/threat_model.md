@@ -51,7 +51,7 @@ The image has the checkout at `/src`, with all Node and Python dependencies inst
   Most service and controller files have a sibling `*.spec.ts` that is the quickest place to write a reproducer.
 - Web unit tests: `cd /src/web && pnpm exec vitest run <path>`.
 - Machine-learning tests: `cd /src/machine-learning && uv run --offline pytest -q <file>`.
-- The built server is at `/src/server/dist`. Running it end to end needs PostgreSQL with VectorChord,
+- The built server is at `/src/server/dist`. Running it end to end needs PostgreSQL 19 with pgvector (`docker/postgres`),
   which the image does not include; medium tests (`test:medium`) need Docker. Prefer unit-level reproducers and
   reason from source for flows that need a live database.
 - The production image builds libvips, libheif, libraw, ImageMagick and darktable from source (`server/Dockerfile`);

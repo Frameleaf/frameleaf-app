@@ -38,8 +38,8 @@
   and third-party licenses; privacy does not relicense dependency code.
 - Preserve unrelated uncommitted work and use isolated checkouts for changes.
   Use author and committer `AJ Taylor <aj@ajtaylor.net>` without coauthor trailers.
-- Open pull requests against `main`. PR #140 merged `master/frameleaf-implementation`
-  into `main`; publication and deployment still need separate user authorization.
+- Open pull requests against `main`. Publication and deployment need separate
+  user authorization.
 - Do not restore the removed Flutter/mobile applications. Server APIs consumed
   by native clients remain in scope. Preserve media, ownership, privacy,
   database integrity, compatibility, accessibility, and required tests.
