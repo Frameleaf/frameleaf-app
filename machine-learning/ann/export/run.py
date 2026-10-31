@@ -47,7 +47,7 @@ class ArcFace(ExportBase):
         embedding: torch.FloatTensor = self.model(
             input_tensor.half() if self.device.type == "cuda" else input_tensor
         ).float()
-        assert isinstance(embedding, torch.FloatTensor)
+        assert embedding.dtype == torch.float32 and embedding.shape[0] == self.input_shape[0]
         return embedding
 
     def dummy_input(self) -> torch.FloatTensor:

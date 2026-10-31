@@ -35,6 +35,7 @@ services:
       # This worker's own bearer. The worker reads the variable name the predict image uses, but
       # the value is separate; store the same value on the restoration destination as its token.
       FRAMELEAF_ML_AUTH_TOKEN: ${FRAMELEAF_RESTORATION_TOKEN:-}
+    # The worker runs as UID/GID 10001: these host paths must be readable by that user.
     volumes:
       - ${FRAMELEAF_RESTORATION_CONFIG:-./restoration/config}:/restoration/config:ro
       - ${FRAMELEAF_RESTORATION_WEIGHTS:-./restoration/weights}:/restoration/weights:ro
