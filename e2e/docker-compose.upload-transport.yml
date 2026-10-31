@@ -1,0 +1,7 @@
+services:
+  frameleaf-server:
+    environment:
+      FRAMELEAF_CLOUD_URL: http://host.docker.internal:30185
+      FRAMELEAF_EDGE_SECRET: fl225-local-transport-only-secret
+    extra_hosts:
+      - host.docker.internal:host-gateway
