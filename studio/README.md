@@ -1,0 +1,906 @@
+# Studio preservation contracts
+
+This directory contains preservation metadata and an explicit isolated engine build. The source archive is recovered only by the preparation command below; the vendor snapshot and generated workspace are not committed. The production Studio host is present, but this build does not supply its engine adapter, deploy a rendering worker, qualify hardware or provide licensed Dolby tools. Locked npm packages may contain model, font and asset payloads; no separate weight acquisition is authorized by this build.
+
+- `freecut-provenance.json` records the immutable upstream Freecut revision, exact archive URL and digest, MIT license, and 2,646 ordered source-file hashes.
+- `freecut-feature-manifest.json` preserves 210 source-derived feature rows and a pinned contract for all 2,204 family-source references across ten categories. Its upstream axes (`status`: native, test, render, command) stay a fixed preservation record of the Freecut source: every row reads not implemented, not run and unqualified there. Each row's `frameleaf` object records Frameleaf delivery (FL-405): `status` is `shipped` (in the prepared engine or the Frameleaf adapter and host, and reachable in Studio; upstream behaviour carried over unchanged counts and its note says so), `descoped-v1` (withheld from v1 by owner direction; no row since FL-560 restored MusicGen) or `not-started` (not reachable), with `evidence` naming patches under `patches/`, commits or PRs. Web Studio rows require an admitted GPU and render worker, which the bundled local ML server provides by default. `node studio/tools/feature-manifest.mjs --check` requires a valid status on every row and evidence on every shipped row. `conformance.json` remains the authority for measured qualification.
+- `dependency-attribution.json` records preliminary dependency and asset review obligations plus a pinned 51-row package name/version/license projection from the provenance-bound Freecut lockfile. It is not a completed legal or redistribution approval.
+
+The provenance ledger was cross-checked against a temporary clean checkout of `walterlow/freecut@4d62e8082c5eb387a96275bcbd323d28f6e41a62`. The clean tree contained 2,646 files and matched every recorded path and SHA-256 digest. SHA-256 of the UTF-8 bytes of `JSON.stringify(files)` in recorded order is `a56d57c4bcd2c996c389bb7470216b185caa28de389def109bf4d86fd95e3adb`, covering every row whether or not a feature references it. The exact codeload URL is pinned, and its archive matched SHA-256 `b4224e5c219a6302586cbe2242e9e6d299dfd1878f1fcd0f2d77ea3db12a5d32`. This is source-identity evidence only, not execution or qualification evidence.
+
+The engine tooling rejects duplicate keys in its contract JSON and verifies the pinned source identity.
+
+## Browser evidence records (FL-112)
+
+`scripts/frameleaf-studio-evidence.mjs --meta <run-meta.json>` requires the measured run's
+`startedAt` and `finishedAt`, in order. Command evidence also supplies `operation`;
+preview, export and timing/color evidence supply `frameTimeIdentity`, `inputProfiles`,
+`outputProfiles`, `alpha`, `audio` and `temporalRecovery`. The generator retains these
+measurements without substituting its own clock or a default media policy. The Test workflow
+checks generated records against `tools/conformance.mjs` with synthetic schema fixtures.
+
+This repairs the record contract only. Full-manifest control/reopen/preview/export evidence,
+pointer/keyboard/touch coverage, measured performance budgets and long-timeline reconnection
+remain required on each browser against an admitted worker. Real Safari/iPad evidence remains
+separate from Playwright WebKit; the committed conformance statuses are unchanged.
+
+The admitted-host `STUDIO_HOST_SCENARIO=track`, `auto-key` and `ease-out` save/reopen scenarios accept
+`BROWSER=chromium`, `firefox` or `safari`. Firefox and Safari use the supplied
+`WEBDRIVER_ENDPOINT` for real geckodriver or safaridriver; Safari receives no Firefox
+binary or preferences. The same GPU admission, visible-canvas and pixel oracle gates apply.
+Track/auto-key use real native iframe input and undo/save controls, observed stage drafts,
+real backend revisions and project-only reopening. Their pixel comparison crops the actual
+browser screenshot using iframe/preview bounds and measured device scale; no render is substituted.
+Project-only evidence requires an HTTP `HOST_ORIGIN`, a proxied browser GET for that exact
+project within the reopen window, and no asset listing/search or opaque CONNECT tunnel in that window.
+Empty observations, HTTPS origins and tunneled traffic cannot produce a passing project-only result.
+This dispatch support does not qualify Safari/iPad hardware, touch, every manifest row or exported-media parity.
+
+`tools/resource-admission.browser.mjs` accepts the same three `BROWSER` values and an HTTP
+`STUDIO_TEST_ORIGIN`. Firefox/Safari require `WEBDRIVER_ENDPOINT`; classic runs do not load
+Playwright. The report records the observed browser user agent, and a mismatched browser fails.
+All startup, blocked-resource, worker, local-import and byte-tamper checks run through the
+same deny-all proxy. Chromium retains its service-worker context policy; classic drivers use
+fresh sessions without a service-worker blocking API. This source support is separate from
+actual Firefox/Safari device qualification.
+An empty proxy log, any opaque tunnel or a substituted entry cannot qualify startup absence;
+each entry must have its own transparent proxied GET and no proxy errors.
+
+The `editor-controls`, `auto-key-control` and `easing-control` probes also use that shared
+three-browser session opener and retain its observed browser provenance. Their native component,
+history and independent pixel checks remain separate from API persistence and worker qualification.
+
+`boundary-hit` and `linked-edit-axis` use the same opener for their native geometry and selection
+checks. Source dispatch still requires the deny-all proxy: Safari 26.5.2 rejects its manual-proxy
+capability before session creation. There is no unproxied fallback or existing classic network
+interception lane; Safari execution needs a supported transport that preserves admission first.
+
+## Studio graph protocol (native apps)
+
+`docs/docs/developer/studio-graph-protocol-v1.md` specifies the project graph for the native apps, which may not read engine source. Its machine-readable files are `graph-schema-v1.json` (JSON Schema of a graph in normal form) and `graph-conformance-v1.json` (fixtures whose answers come from the real engine). `adapters/web/test/graph-conformance.test.ts` replays every fixture through the engine and fails on drift; `GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test` regenerates the answers. `tools/graph-protocol.test.mjs` re-derives digests, id draws and rounding from the prose without the engine, and validates every fixture graph against the schema.
+
+Part 2 of the protocol (FL-307, section 12 of the page) gives the mutation rules of the 28 clip, timeline-edit, track and marker commands, each with applied and rejected fixtures named `<command>/<case>`. A case marked `outsideNormalForm` records an edit the engine accepts but a native client must refuse. To add a case, append its inputs to `cases` in `graph-conformance-v1.json` with `"expect": null` and regenerate; envelopes name clips by the ids the base graph or earlier envelopes of the batch minted. The engine-free check also replays every part 2 case through `tools/graph-reference.mjs`, an implementation of section 12 written from the page without the engine, and requires the engine's graph, digest and refusal for each. When a part 2 rule changes, change the page, the reference and the fixtures together.
+
+Part 3 (FL-308, section 13) gives the rules of the 12 effect, transition, keyframe, expression, modifier, text motion and Ken Burns commands, and of the graph fields that no engine command writes. `graph-parameters-v1.json` is its parameter catalogue: every effect, transition and blend mode a graph may name, with parameter names, types, ranges, options and defaults, and no engine text. It is generated from the engine's registries by `adapters/web/test/graph-parameters.test.ts`, which fails when a registry and the committed file differ; `GRAPH_PARAMETERS_WRITE=1 node studio/tools/adapter.mjs test` regenerates it, and the engine-free check re-derives its content digest, so a hand edit fails too. A case marked `engineArithmetic` holds values from sines, arctangents or keyframe interpolation that the page does not fix to the last bit; the reference skips those six by name.
+
+Part 4 (FL-309, section 14) gives the rules of the 8 composition, group, published control, title, sequence setting and template commands, including the `keep-time` and `keep-frames` retime policies, and adds title styles, title animations, templates and project rates to the parameter catalogue. A case marked `settlesOnLoad` records a graph that is one load short of normal form; its answer also holds the `settled` digest a native client must match. Section 8.3 of the page has one row for each of the 73 graph-changing commands, and `commandStatus` in the fixtures names each command's status, story and section. The engine-free check is the coverage gate: it fails when a `mutatesGraph` command of `frameleaf-studio-commands.json` has no row in section 8.3, when the row and `commandStatus` disagree, when an engine command lacks applied or rejected fixtures, or when a command the engine does not apply lacks a `not-implemented/<command>` fixture and a native rule. To add a graph-changing command, add its rule to the page, its row to section 8.3, its `commandStatus` entry and its fixtures in the same change.
+
+FL-348 (section 17 of the page) makes `clip.setMask` an engine command and adds `clip.relink`, both with engine-generated `clip.setMask/<case>` and `clip.relink/<case>` fixtures that the reference replays. The web editor's own mask controls write the same fields, and its drafts report each changed mask as `clip.setMask` in the revision summary. The catalogue now has 74 graph-changing commands, 16 of them not implemented.
+
+The same story adds `shape.add` and `shape.setStyle` (sections 17.4 and 17.5) and `title.setStyle` (14.3.4), each an engine command with engine-generated `<command>/<case>` fixtures on the `styles` base that the reference replays, and declares the shape and title fields in `graph-schema-v1.json`. The parameter catalogue gains `fonts` (the engine's font catalogue: the families `fontFamily` may name). The seven title families are bundled with the server from pinned `@fontsource/*` packages and served by `GET /studio/fonts` (section 14.3.5); `node scripts/frameleaf-studio-fonts.mjs --write` regenerates `server/src/utils/studio-fonts.generated.ts` from the installed packages, and the decoded TrueType twin of every WOFF2 file in `server/resources/studio-fonts/` (decompression only, checked table by table against its source). The catalogue now has 77 graph-changing commands, 59 of them engine commands.
+
+`clip.setCrop` (section 17.6) is an engine command that writes the engine's own `crop` and `cornerPin`; `clip.setTransform` also writes `flipHorizontal` and `flipVertical`; `clip.setAudio` takes `ducking`, the engine's sidechain on a duck-source clip (13.9). A colour grade is the colour effects of 13.8.6, and an effect inside a shape is a group of a mask and the affected copy (17.7); neither needed a new field. The catalogue has 77 graph-changing commands, 60 of them engine commands and 14 not implemented.
+
+## Studio render spec (native apps)
+
+`spec/` is the clean-room render contract for the native apps (section 18 of the graph protocol page). It has one page per effect (54) and per transition (44), written as mathematics and prose from reading the engine and holding no engine source text, and shared rules in `spec/README.md`. Its goldens (`spec/goldens/*.json`) are small deterministic inputs rendered through the real engine, with tolerances measured between the canonical SwiftShader backend and a hardware backend, plus the transition progress-curve table. `tools/render-goldens.test.mjs` checks coverage, the inputs, the progress curve and the clean-room rule without the engine. `tools/render-goldens.browser.mjs` is the drift gate against the engine (in the engine workflow's browser step), and `--write` regenerates the goldens and `spec/index.json`. Font-atlas ASCII cases additionally verify the platform atlas input and compare against an independent prose-derived CPU reference, within the unchanged tolerance; stored Mac frames remain platform snapshots. When an effect or transition changes, change its page and regenerate the goldens in the same change. `spec/hdr.md` specifies HDR and colour management the same way (the `metadata.colorManagement` record, the automatic HDR rule, the working space, PQ/HLG/SDR ingest, the BT.2390 SDR display and HDR delivery); its goldens are `spec/goldens/hdr.json`, defined and checked by `tools/hdr-goldens.mjs` and `tools/hdr-goldens.test.mjs` and generated by `tools/hdr-goldens.browser.mjs`, which the two render-goldens tools also run.
+
+`spec/keyframes.md` specifies keyframe interpolation (rules K1 to K16: each easing, the spring, the value before the first and after the last keyframe, velocity handles and path tangents), with `spec/goldens/keyframes.json` holding 728 engine values, 586 of them bit-exact. `tools/keyframe-goldens.mjs` holds the cases and a reference written from the page; the render-goldens test and drift gate run its engine-free check and its engine run. `tools/clip-reference.mjs` is README T6 written out (the fixed-point scan conversion of Canvas 2D clips, and stroke coverage); the engine-free test requires it to reproduce every straight-edged clip golden exactly. `spec/goldens/ascii-atlases.json` publishes the glyph strips the font-atlas ASCII goldens were rendered with.
+
+`spec/layers.md` (layer compositing, masks and shapes) and `spec/text.md` (titles, text layout, text motion and the bundled title fonts) follow the same rules, with `spec/goldens/layers.json` and `spec/goldens/text.json` rendered by the engine. `tools/layer-goldens.*` and `tools/text-goldens.*` hold their cases, prose references, engine runs and engine-free checks; the render-goldens test and drift gate run them.
+
+## Local source preflight
+
+The local source preflight (`node scripts/frameleaf-studio-preflight.mjs /absolute/path/to/local-plan.json`)
+records decoded source presentation timestamps as ordered integer `timeline.pts` with their exact
+`timeline.timeBase`; array position is the zero-based frame index. It refuses missing, duplicate,
+backward or unsafe integer timestamps, invalid time bases and source decode/demux error diagnostics
+(even with a successful process exit), preserving fractional and variable
+cadence without rounding to seconds or guessing from frame rate. The existing 30-second and 1 MiB
+probe limits bound this check to small specimens; exceeding either fails closed. These source
+timestamps do not prove edited-output/XML/RPU correspondence. The overall Dolby `goNoGo` remains false.
+Dolby configuration or RPU/metadata side data reported on the stream or any decoded frame is refused:
+the generic HDR probe has no qualified Dolby decode/reshape path or explicit base-layer-only policy.
+All video streams are inspected and the input must contain exactly one video stream; a separate
+Dolby enhancement stream cannot be ignored by selecting only its HDR-compatible base.
+Every decoded frame must also report 10-bit 4:2:0, the requested HDR transfer and BT.2020
+primaries/matrix; missing or changed frame metadata is refused even when stream headers match.
+Plain single-stream HDR10/HLG sources remain eligible; these refusals do not strip metadata or create an output.
+
+`node --test scripts/frameleaf-studio-preflight.test.mjs` requires administrator-installed FFmpeg
+and FFprobe with `libx265`. It checks two probes of tiny generated HEVC Main10 fractional/VFR
+fixtures in CI; their HDR signalling only exercises preflight metadata checks and does not qualify
+HDR pictures, Dolby decoding, float edits, licensed tools or device playback.
+
+## Reproducible engine workspace
+
+Use Node 22.23.4 and npm 12.2.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. This npm workspace is intentionally outside the application's pnpm workspace.
+
+The October 13, 2026 dependency overlay uses npm 12.2.0, React 19.3.0, Vite+ 1.1.0, Transformers.js 4.3.1 and stable ONNX Runtime Web 1.30.0. Vite+ bundles Vitest 5.0.3; its [official migration guide](https://viteplus.dev/guide/vitest-v5#entry-points-and-packages) requires the coverage provider at that exact version (registry latest is 5.0.4). Transformers.js constrains its own ONNX Runtime Web 1.31.0 development build; its matching JS/WASM pair is separate from the stable root runtime. `node --test studio/tools/runtime-pairs.test.mjs` checks installed payload identities and rejects mixed pairs.
+
+The Whisper worker retains its recorded Transformers.js 3.8.1 runtime through latest Kokoro.js 1.2.1. The September 29 timestamp decision compared 4.1.0; it does not qualify current 4.3.1. The approved fixture's real timing test requires a fresh model download, which was outside this library upgrade. Browser/WebGPU hardware, fresh model timing and hosted provenance remain unqualified. New ONNX byte inventory invalidates the existing runtime row approval; it stays blocked until the rights owner approves those exact bytes. Historical vendor, patches, notices and approval records remain preserved.
+
+```sh
+# Explicit network step; alternatively provide --archive /path/to/freecut.tar.gz.
+node studio/tools/engine.mjs prepare
+npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+npm --prefix studio/engine run test:run
+npm --prefix studio/engine run headless:test:node
+npm --prefix studio/engine run build
+node studio/tools/engine.mjs attest
+node studio/tools/feature-manifest.mjs --check
+```
+
+Preparation rejects an existing `studio/engine`; preserve any work before explicitly removing that generated directory. It never installs into `studio/vendor/freecut`, applies patches there, or rewrites an existing snapshot. The recovered archive must match its pinned digest and all 2,646 paths and hashes, with no extra files or symlinks. Vendored assistant instructions remain upstream data and are not Frameleaf authority.
+
+Patch 0010 propagates expression dependency failures through scalar and vector references, so
+cycles, invalid arithmetic and incompatible result types retain the referring property's authored
+value and expose the original error in the inspector. The MIT notice in `notices/freecut.txt`
+continues to cover the adapted source. Its regression fixtures exercise render and inspector
+evaluation plus valid references; hosted execution remains required. This does not qualify the
+full expression sandbox, graph-review admission, nested Compose or the other expression
+conformance axes, which remain unqualified in `conformance.json`.
+
+Patch 0017 preserves `embeddedAudioMuted` when expanding nested composition audio, so unlinking a video from its audio does not restore the original sound during export. Its regression checks the retained audio samples in both full and windowed mixes. Hosted execution and wider audio, recording and caption conformance remain unqualified.
+
+Patch 0051 includes explicitly extracted embedded-caption segments and legacy caption text in
+the shared export collector and visual-copy filter. Burn retains authored styling; off removes
+these captions, sidecar emits SRT, and supported embedded WebM/MKV emits WebVTT. Ordinary
+titles and unclassified text remain visual items. SRT/VTT preserve cue text and timing, including
+bounded overlaps, rather than arbitrary typography. The existing MP4/MOV admission rejection
+and the shared helper's internal burn fallback remain unchanged. Authored regressions use the
+real source-window/speed-aware caption builder and shared serializers/parsers, with owned inline
+text, and preserve source provenance and the input graph. Hosted execution, real-container
+subtitle extraction and mux round trips remain unqualified; this is one FL-103 slice.
+
+Patch 0052 binds a microphone take to its original project, workspace handle and
+workspace revision through acquisition, stopping, probe/decode and persistence.
+Cancellation, project or workspace replacement (including A→B→A) and toolbar
+unmount permanently retire that take. Current takes alone publish timeline,
+selection, media-list, error and reset state. Admitted source, thumbnail, metadata
+and association writes finish on the captured workspace; retirement preserves
+successful origin artifacts without placing them in the current editor. Scoped
+recordings avoid the global file-handle registry and the optional eager preview
+warm/conform jobs whose deferred persistence is unbound; ordinary imports retain
+those jobs and normal on-demand preview remains available.
+
+Scoped recording import refuses a known existing generated media namespace or
+source. File System Access provides no exclusive cross-tab namespace allocation:
+failed admitted writes retain possible partial origin artifacts and propagate the
+real failure instead of recursively deleting files with unproven ownership. This
+is not a cross-tab collision guarantee or automated orphan recovery. Stale origin
+permission failures still fail, but do not notify a replacement workspace gate.
+Controller/history, real in-memory filesystem and service probe/decode barriers
+have authored regression coverage. Qualification results must identify the exact
+source digest, tested paths and execution environment; authored coverage alone
+does not establish an executed pass. Patch ordering and raw provenance remain
+pinned. The adapted source digest identifies the prepared patched source, not a
+hosted qualification result. Local preparation and focused regression results do
+not qualify a new source for hosted execution, browser behavior or activation.
+Microphone device/permission/hotplug/latency, browser and native recording,
+sample/channel/pitch/EQ/transition rendering, silence/filler undo and full caption
+styling/export acceptance remain open FL-103 gates.
+
+Patch 0108 permanently retires a disposed microphone recorder. A permission
+request that resolves after cancellation releases its stream before metering or
+capture starts; disposal also settles a pending native start wait, and a queued
+start event cannot revive the recorder. Synchronous
+recorder setup failures release acquired resources. Deferred-acquisition tests
+exercise the production recorder, alongside existing terminal-event and
+origin-owned finalization controls. This source change does not qualify actual
+browser/native microphone, hotplug or latency behavior.
+
+
+Patch 0109 retires pre-record monitor permission requests before allocating a
+meter, and guards level callbacks against closed/replaced picker ownership or a
+recording taking over. The toolbar subscribes to device changes and releases the
+subscription on unmount. Shared device refresh generation discards older
+enumerations that complete after a newer refresh; removing the selected input resets selection and retires
+its idle monitor while leaving an active recording under recorder authority.
+CPU fake-device regressions exercise production monitor/meter, controller and
+mount/teardown callbacks. They qualify these ownership controls only; real
+Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
+open. The adapted source digest still requires the artifact owner's binding.
+
+Patch 0164 (FL-638) adds Stabilise. The Motion tab of one video clip has a Stabilise card: an
+Original / Stabilised preview, Smoothness (Gentle, Smooth, Locked off, cropping in 4, 7 and 12 percent),
+Stabilise clip, progress while the camera movement is analysed, then the level and crop with Turn off.
+The analysis is a job on the Frameleaf server, in Activity (`POST /studio/projects/{id}/stabilisations`;
+the card module is substituted by the adapter's `shims/stabilise-service.ts`). It decodes the clip's
+source window at up to 30 frames a second into 160-pixel grey pictures and measures each frame's shift
+and turn by block matching and a robust fit (`block-similarity-v1`), on the CPU, never on Frameleaf
+Cloud. The cumulative camera path is written into the clip as `stabilisation.motion` (protocol 2.4,
+schema `item.stabilisation`). The engine smooths it for the level (Gaussian, 0.33 s and 1 s; Locked off
+holds the mean) and draws the clip through the smoothed-minus-measured shift and turn, scaled by the
+crop and clipped to where the picture shows; a correction that would uncover an edge is reduced just
+enough that none shows (no edge fill). The canvas item renderer draws it in export and the canvas
+preview, and the live preview applies the same correction as a CSS transform; stabilised clips leave
+the GPU-direct paths for the canvas renderer. Changing the level applies at once with no new analysis,
+and each of apply, level and Turn off is one undo step. HDR clips are not offered Stabilise. Tests
+cover path smoothing, the crop coverage maths, the renderer transform at the clip's source time and
+the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
+path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
+parity and speed-ramp spans in the live preview remain open.
+Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
+the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
+embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the
+FFT cross-correlation (`onset-xcorr-1ms-v1`), reported only when it clearly beats every other lag. Silent,
+unrelated and ambiguous recordings are flagged, never matched, and stay manually alignable in frames. The
+first and last thirds are aligned separately, so clock drift beyond one frame is reported instead of
+being hidden by one offset. Each window needs more than 10 s of sound, so recordings of 30 s or less are not checked for drift (one frame over 30 s would need a clock error above about 1,100 ppm). Create moves each angle (with its audio) so one frame shows the same moment
+everywhere, hides the angle tracks, mutes every camera's audio except the master's, and adds a Multicam
+program track on top with a video-only copy of the reference, all in one undo step. Selecting a program
+clip shows angle buttons (number keys 1–4 while focused). A cut replaces the program from the playhead to
+the next cut with that angle's matching source range, and is refused where the angle has no picture, with
+the missing range shown. Cuts are ordinary clips that can be trimmed. The group, offsets, reference and
+master audio are stored in `multicam` records on the tracks and program clips (protocol 12.9). Angles must
+play forward at normal speed and own their tracks. 
+Patch 0153 (FL-628) adds the follow-ups. Sync fits each drifting angle's clock (ratio and offset from the
+two windows), and Correct drift plays that angle and its audio at the fitted speed (within ±1%), so it stays
+within a frame across the recording. A selected audio clip that is not a camera's own can be the master
+audio: it is synced like an angle and every camera's sound is muted. The angle buttons show each angle's
+picture at the playhead from the cached filmstrip. Auditioning angles with sound and decoded export
+checks at cuts remain open.
+
+Patch 0168 (FL-640) adds word-by-word captions. Caption cues made from a transcript keep the
+transcript's word times (`words`, each linked to its stored word as `segmentIndex:wordIndex`), so a
+word corrected in the transcript is corrected in clip captions and placed caption segments, and trims
+and splits move the words with their cue. The Caption style card at the top of the captions section
+(`word-caption-style-card.tsx`) previews Vertical 9:16 or Original and stores a `wordLook` (Lines,
+Highlight, Word by word or One big word; highlight colour; Small, Medium or Large; Bottom, Middle or
+Top), writing size and position as the captions' own font size and height. The preview and export
+renderers draw the chosen style through the same pure model (`src/shared/typography/word-captions.ts`),
+in the captions' own title fonts. A cue without word times spreads its words by length. Subtitle files
+and embedded text tracks keep whole lines. A Vertical 9:16 export without a chosen look uses Highlight,
+Large, Middle (`tools/bundled-worker-word-captions.mjs`, called by the reframe). Tests cover word
+timing, the active word, each style through export paint and preview, the card, transcript
+correction and the vertical default. Browser journeys and pixel comparisons remain open.
+
+Patch 0152 (FL-627) extends motion tracking. The tracking box can be a separate clip, typically a
+rectangle drawn on the preview with the shape tool, while the target (a title, overlay or mask shape,
+which moves a blur region) keeps its own offset from that box. Parented targets are refused, because
+tracking writes canvas positions. During tracking the source clip's timeline bar shows progress; the
+result marks the tracked range, or the lost range in red, until it is applied or discarded. Each applied
+track is recorded on the target as `motionTracks: [{ applicationId, algorithm, sourceId, keyFrames,
+lostFrames }]` (protocol 12.6 note), so Remove still works after save and reopen, when keyframes have
+lost their tags: it deletes x, y, width and height keys at the recorded frames, leaving other keys
+alone. Tests cover the separate box, parented and invalid boxes, the lost-range overlay and
+remove-after-reopen. Preview/export pixel comparisons and browser journeys remain open.
+
+Patch 0148 (FL-596) adds motion tracking. The clip panel's Track motion section (one selected visual
+clip: title, shape, image or video overlay) uses that clip's own box at the playhead as the tracking box:
+the editor places it over the subject first. It is mapped into the chosen video's source pixels through
+the video's resolved transform. Videos that are rotated, cropped, corner-pinned, flipped, reversed or
+have animated transforms are refused, and so are targets with vector position/scale keys. Frames are
+decoded at 480 px wide from each timeline frame's mapped source time (VFR-safe) and tracked forward or
+backward, up to 900 frames, by normalised cross-correlation with a small-scale search
+(`ncc-scale-search-v1`). The first frame below 0.6 confidence and every later frame are marked lost,
+never bridged; low-texture or out-of-frame seeds are refused. Apply writes linear x, y, width and height
+keyframes that keep the target's offset from the tracked box. Lost frames block Apply until the editor
+keeps the tracked part (or reseeds there and tracks a second segment), and existing position/size keys
+in the range block it until replacement is confirmed. Each application is one undo step, and in this
+patch Remove reads the keys' source tag, which saved graphs drop (protocol 13.2.4); patch 0152 adds
+item `motionTracks` records so Remove also works after saving and reopening. The synthetic 1080p path
+holds the centre within 5 px and size within 5% on at least 95% of frames, and an occlusion produces a
+lost interval. Rotation and perspective, mask-path tracking, preview/export pixel checks and browser
+journeys remain open.
+
+Patch 0151 (FL-626) matches colour through existing grades and in HDR. Instead of decoding source
+frames, each clip is rendered alone through the export renderer at a small size of its own aspect
+(`renderWorkingFrame`). The reference keeps all of its effects, and the target leaves out only its own
+match, so the match lands after the grade and approximates the graded reference. SDR projects read the
+sRGB-encoded working values. HDR projects read the GPU float route's PQ BT.2020 signal, decoded to linear
+BT.709 in reference-white units; there exposure and temperature/tint are still linear, so the same
+solve applies, with values above reference white kept. HDR analysis without WebGPU is refused with an
+explanation. Results are now bound to the reference's source, timing and full grade and to the
+project's colour management as well as the target's, so changing any of them makes a proposal stale.
+The panel shows reference, before and after swatches (with values) at the chosen strength. Tests cover
+graded staleness and an HDR linear chart whose error falls by at least half. Browser rendering of the
+sampled frames and preview/export pixel comparisons remain open.
+
+Patch 0147 (FL-599) adds colour matching between shots. The video panel's Match colour section takes a
+reference clip and samples the frame at the playhead (or each clip's middle) from the source, downscaled,
+in the SDR working space. A match is an editable `gpu-exposure` then `gpu-temperature` pair after the
+clip's effects: because both act linearly on SDR working values, the exposure, temperature and tint that
+move the target's unclipped channel means onto the reference's solve three linear equations exactly
+(`mean-gain-wb-v1`). Clipped, flat and extreme proposals are flagged and not applied. Strength scales the
+three values from identity; zero removes the effects. The effects carry `colour-match:` ids and undeclared
+`matchStrength`/`matchSource` parameters (protocol 13.3.3), so a new match replaces the old one in place and
+reopens with its provenance. Results are bound to the clip's source, timing, sampled time and non-match
+effects, so stale results are skipped; apply, strength and remove are each one undo step. HDR projects,
+graded clips (enabled colour effects other than the match), a reference that is itself matched and reverse
+playback are refused. Synthetic 24-patch chart tests of the solve (not the renderer) require mean CIEDE2000 error to fall by at least half (sRGB to CIELAB D65). Matching through an
+existing grade, HDR working space, scope before/after review and browser/worker export parity remain open.
+
+Patch 0150 (FL-623) saves the loudness target and ceiling in the project (`timeline.masterLoudness`,
+protocol 3.2 table and schema) and adds an optional true-peak limiter at the ceiling as the last stage of
+the export mix, after master gain and automation. The limiter (`tp-lookahead-1.5ms-v1`) knows the whole
+mix, so it looks ahead without latency: each sample's required gain from its 4x-oversampled peak takes a
+±1.5 ms running minimum and a box average, which never exceeds what a peak needs, and release recovers
+over 50 ms; channels share one gain. While it is on, export mixes the whole range at once (no 30 s
+windows) and never copies audio packets. Preview routes the master through a Web Audio compressor set
+as a limiter at the ceiling only while the limiter is on (sample-peak, about 6 ms lookahead), so it
+approximates the export and adds no latency otherwise. The Match loudness section edits the target,
+ceiling and limiter as undoable project settings, and the export report checks against them. Tests
+hold the limited true peak within 0.2 dB of the ceiling at -0.3, -1 and -2 dBTP, keep quiet audio
+untouched and channels in step, and cover save, undo and serialization. Native clients must refuse to
+export a graph with the limiter on unless they apply it. Browser, worker and codec-overshoot checks
+remain open.
+
+Patch 0162 (FL-637) adds Clean up voice at the end of the Audio tab: one audio clip at a time, "Found
+in this clip" (wind, hum and buzz, background noise, room echo) from a quick look by the server, Light,
+Standard or Strong, a Before / After listen, and "Use the original sound". The work runs on the
+project's server: the ML server's `voice-cleanup` task (DeepFilterNet3 for wind, noise and echo; notches
+for mains hum) on this server or a computer at home, never Frameleaf Cloud. The cleaned window (with a
+second of handle each side) is kept with the project as an audio import, and the clip plays it by its
+media id, so preview and export need nothing new. What the clip played before is kept on the item as
+`voiceCleanup.original` (its `mediaId` stays a graph reference the resolver checks), so cleaning again
+always starts from the original. Apply and restore are one undo step each. The card's host lives in
+`studio/adapters/web/src/shims/voice-cleanup-service.ts`, substituted like the export dialogs; it calls
+the project's own Studio routes with the session cookie, so the frame protocol is unchanged.
+
+Patch 0145 (FL-598) adds dialogue loudness matching and an export loudness report. One BS.1770-4
+meter (K-weighting derived for any sample rate, 400 ms blocks with EBU R128 absolute and relative
+gates, true peak by 4x polyphase oversampling; `bs1770-4/r128-gating/tp-4x-v1`) runs in a worker for
+both. The audio panel's Match loudness section measures the selected clips' source ranges (a video's
+linked audio when it has one), shows loudness and true peak as the clip plays now, and suggests a
+change to the clip's static volume toward an editable -16 LUFS target and -1 dBTP ceiling. Gain
+envelopes, fades and ducking stay relative to that volume, so they keep their shape. Boost is capped at
++12 dB and the clip volume range at -60..+12 dB, both flagged; muted, silent, shorter-than-0.4 s and
+undecodable clips get no suggestion. Every result is bound to the clip's audible state, so an edit since
+measuring, or applying the same result twice, is refused as stale; approved changes apply in one undo
+step. The export dialog measures the decoded deliverable and reports LUFS and dBTP against the Studio
+defaults with a warning, never blocking; a failed measurement reads unknown. The calibrated tests cover
+EBU 3341 levels at 44.1, 48 and 96 kHz, gating, silence and inter-sample peaks. There is no master
+limiter: the export path keeps its existing soft clip above 0 dBFS, so a ceiling overshoot is reported,
+not prevented. The target is not saved in the project, and browser decode, worker export and
+codec-overshoot qualification remain open.
+
+Patch 0145 (FL-597) adds speed ramps and fixes freeze-frame sync. The clip panel's Speed ramp section
+takes points (a position in the clip's source and a speed from 0.25x to 4x) with linear or eased
+boundaries, shows the resulting duration and caption count, and applies in one undo step. The curve
+is integrated over source time and written as constant-speed segments every six output frames, with
+boundaries rounded independently from the exact integral, so there is no cumulative drift, and the last
+segment ends on the clip's own source end. Linked video and audio share every cut, attached source
+captions move with the source they describe, and timeline-authored text stays put. Neighbours keep
+their positions: a longer result that needs their room, a locked participant, a transition, keyframes,
+reverse playback or partly linked companions refuse without changing the project. Dialogue keeps its
+pitch through SoundTouch, with an option to mute it; frames are repeated or skipped and none are
+generated. Freeze frames now split the synchronised linked audio too, leaving silence for the hold
+instead of letting the audio run ahead, take their length in project frames, move later clips only on
+the tracks they touch, and refuse HDR sources (the held frame is an 8-bit PNG) and locked tracks.
+Engine unit tests cover integrated positions, fractional rates, linked cuts, captions, refusals and
+the freeze audio gap. Browser, worker export and preview/export parity remain unqualified.
+
+
+Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
+away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.
+Scopes label their current display-referred sRGB/Rec.709 full-range preview input. Deferred-capture regressions run in the hosted engine suite;
+worker-authoritative scope samples, graph revision correspondence, seeks during playback, HDR
+scope ramps and browser qualification remain unqualified.
+
+Patch 0019 binds in-flight scope captures to their renderer registrations and immutable visual
+graph inputs. Same-frame source edits, keyframes, transitions and nested composition changes
+invalidate old samples without treating playback ticks as graph changes. Hosted regressions cover
+provider replacement and image-source edits while paused and during GPU playback, plus paused
+CPU redraw after a nested composition edit and live transform edits with stable providers.
+Captures wait for updated renderer registration when the renderer rebuilds its graph snapshot,
+using its existing transform-change predicate to preserve direct transform sampling. This does not
+qualify worker revision/frame provenance, live seeks, HDR scope ramps or browser conformance.
+
+Patch 0021 makes zero-softness chroma keying a defined hard edge: pixels at or below
+the tolerance are transparent. The shared effect shader serves preview and export.
+The MIT notice in `notices/freecut.txt` covers this adaptation. The hosted
+`tools/chroma-key.browser.mjs` regression reads canvas and float-texture output for
+green/blue keys, hard/soft edges, source alpha, and animated spill suppression at
+0, 0.5 and 1. It targets `effect.gpu-chroma-key` and
+`readme.effects-masks-compositing.5`; exact-candidate hosted execution is required.
+Full project preview/export, masks, effect-stack ordering, other browsers and
+native application conformance remain unqualified in `conformance.json`.
+
+Patch 0026 gives that hard edge a 2^-16 CbCr width. Metal contracted the pixel and
+key conversions differently and measured an exact blue key about 1e-8 away, so the
+key stayed opaque. One 10-bit code value moves CbCr by more than 3e-4, so real colors
+next to the key stay opaque. `tools/chroma-key.browser.mjs` checks both cases for
+green and blue keys; it passes on SwiftShader and Apple Metal.
+
+Patch 0027 gives temporal effects a frame clock. Grain, scanlines, color and block
+glitch, VHS, trigger wave and hue flow used to read `performance.now()`, so each
+render of the same frame differed, and export never matched preview. Render paths
+now stamp the item-relative time of the frame (frame / fps) into those effects'
+params. Only callers with no timeline frame, such as panel thumbnails, fall back
+to wall time. Transition participants and nested Compose items used to ignore
+keyframed effect params and adjustment-layer keyframes. They now resolve both on
+their own timelines, as top-level items already did. Unit tests cover the clock,
+the resolver and the transition and nested render paths.
+
+Patch 0065 establishes the current HDR working boundary (FL-97), specified in
+`src/shared/graphics/color/managed-color.ts`.
+
+- **Working ranges.** SDR keeps Freecut's sRGB-encoded BT.709 parameters, clamps,
+  endpoints and directions. HDR uses **linear display-referred BT.709**, straight
+  alpha, with **1.0 = 203 cd/m²** by default (`linear-display-bt709-v1`). Signed RGB
+  carries wide gamut and values above 1 carry highlights until explicit output.
+- **Ingress and output.** Decoded PQ/HLG BT.2020 planes enter this linear domain.
+  SDR media decode each texel before premultiplied filtering; authored shape,
+  gradient, stroke and background colors decode before interpolation/compositing.
+  Text and Lottie Canvas snapshots decode into float textures. Output explicitly
+  converts to PQ/HLG BT.2020 or the selected SDR monitoring policy.
+- **Admitted HDR graph.** Effect-free items, normal straight-alpha source-over,
+  masks, nested viewports, cuts and explicit output have bounded regression
+  witnesses. Brightness adds its amount in linear reference-white units before
+  straight-alpha compositing; its [-1, 1] parameter bounds and SDR encoded
+  addition stay pinned. Contrast uses dimensionless gain [0, 3] around a fixed
+  linear pivot 0.5 (101.5 cd/m² at reference white 203), with straight alpha
+  unchanged and signed RGB kept until explicit output. SDR retains its encoded
+  0.5 pivot and clamp. Exposure multiplies linear RGB by 2^EV ([-3, 3]), adds
+  offset [-0.5, 0.5] reference-white units (±101.5 cd/m²), then applies artistic
+  sign-preserving power 1/gamma (gamma [0.2, 3]) about unit reference white;
+  alpha stays unchanged. SDR keeps encoded gain/offset, unsigned gamma and clamp.
+  Saturation mixes toward artistic gray (RGB weights 0.299/0.587/0.114),
+  amount [0, 3], on linear BT.709 with unchanged straight alpha; the weights
+  retain the existing look and do not measure physical BT.709 luminance. SDR
+  keeps the same encoded equation and clamp. Gaussian, box and motion blur
+  preserve the pinned kernels and parameter bounds, accumulating premultiplied
+  linear light and coverage before returning straight alpha. SDR keeps encoded
+  hardware sampling. The other 47 enabled effects, 21 transitions and 24
+  non-normal blends throw the shared `HdrRenderUnavailableError` until individually migrated and
+  measured in this domain. Nested compositions containing a transition refuse
+  as a whole. A declined HDR float item also refuses Canvas fallback.
+- **Historical contracts.** Patch 0031's extended sRGB-encoded HDR classifications
+  and prior receipts belong to that historical domain. The effect/transition
+  semantics retain their original contracts, commit and file hashes under
+  `historicalEncodedHdr`; they cannot qualify current linear HDR.
+
+The effects, blend and transition matrices retain production SDR measurements:
+parameter extremes and meanings, animation, stack order, blend equations,
+transition endpoints/directions and rgba8/float parity. They also observe each
+unmigrated HDR operator's typed refusal. Brightness, contrast, exposure, saturation,
+Gaussian/box/motion blur and normal HDR blend have positive linear-domain
+measurements, including signed/highlight and alpha checks. Spatial blur accumulates
+premultiplied light and coverage, then returns straight alpha; hidden colors cannot
+bleed into visible highlights. `tools/hdr-blur.browser.mjs` checks independent
+spatial equations and full composition PQ exports against the prepared source.
+The independent photometric equations and signed/gamma/
+highlight discriminators remain historical checks, with a separate current SDR
+oracle and reviewed source hash guard. `tools/linear-hdr-subtree.browser.mjs`
+provides separate physical PQ/HLG/SDR equations for admitted linear HDR paths,
+including brightness on authored snapshots, shapes, decoded HDR video, and nested
+children/instances. Canvas/video effect fallbacks remain typed-refused in HDR.
+`tools/graphics-float.browser.mjs` measures admitted effect-free graphics.
+
+Browser reports bind actual prepared input and patch hashes, the tested commit,
+runner/oracle/harness hashes, working-domain conventions and observed fixture
+outcomes. The evidence updater consumes per-feature/per-case observations. A
+passing refusal cannot cover a rendered fixture, and SDR measurements cannot
+cover HDR extremes. Passing regressions do not establish hardware, native,
+other-browser, human or release acceptance.
+
+Patch 0048 gives a transition's invalid inputs that meaning (FL-99), by the rule patch
+0039 set for effect parameters: a finite number outside its declared range is clamped to
+the range, and a value that is not a finite number falls back to the declared default.
+A duration that is not a finite number draws as the transition type's default 30 frames
+(it used to leave the outgoing clip on screen for the whole incoming clip); an alignment
+that is not a finite number draws centred on the cut. A declared numeric parameter is
+clamped to its range or drawn as its default, a declared colour that is not three finite
+numbers as its default, and a property the transition does not declare is dropped unless
+it is a finite number. The check lives in the transition planner
+(`shared/timeline/transitions/transition-inputs.ts`), which every preview and export
+renderer and the audio crossfade read their windows and transitions from, so no
+transition carries its own. Finite durations keep their whole frames and are not held to
+a transition's editing minimum and maximum, and finite colour components are not clamped.
+
+The compositor, transition and nested regressions retain SDR transport and alpha
+witnesses; HDR operator refusals are isolated from admitted HDR subtree checks.
+
+Still missing:
+
+- HDR source decode in the browser graph;
+- the GPU output pass and native PQ/HLG frame export;
+- a project-level control or source-derived default.
+
+The engine's runtime resource policy is generated at `prepare` by `tools/resource-policy.mjs`
+from `dependency-attribution.json` and the owner's approval in `rights-approval.json` (FL-146,
+September 25, 2026; the server mirror is `scripts/frameleaf-studio-rights.mjs`). A resource is
+admitted for local runtime only when the owner approved its exact reviewed row for that use and
+did not withhold it; the admission carries the row digest, so a row changed after approval is
+blocked again, and any id or URL outside the approved rows stays blocked. A reviewed row cannot
+admit itself: `decisions` stay as the packager recorded them. Licensed model rows are recorded as
+`allowed` (personal use by the user, legal review 2026-10-17, FL-451); every other row stays
+`blocked`, and an `allowed` model row is still admitted only through the owner's approval. A URL is admitted only inside an
+approved locator, and a Hugging Face model only from the approved commit
+(`/resolve/<revision>/`); when several rows cover a URL the most specific decides and any
+blocked one blocks it, and encoded path separators are refused. Patch 0028 makes the engine
+request every approved model, tokenizer and processor from that revision instead of `main`
+(transformers.js loaders, Parakeet, RIFE and the MOSS model store), admits each Kokoro and
+Supertonic voice as its own row before use, and admits the Whisper worker's transformers runtime
+as well as its model. Loaders inside third-party bundles that take no revision (kokoro-js and
+transformers.js pre-flight metadata) are covered by the admission module itself: in every window
+and worker that imports it, a request for an approved repository at any other ref is sent to the
+approved commit; the Kokoro voice files, whose rows name `main`, are therefore read from the
+Kokoro model's approved commit. Patch 0030 loads the Supertonic
+Space from its pinned commit; the Supertonic model row and all 64 Kokoro and Supertonic voice rows
+now name an exact Hugging Face commit and a byte digest per file; the owner approved those 65
+rows on 2026-09-29, so Supertonic and Kokoro speech load only from the pinned commits. Browser caches keyed by the original `main` URLs
+(kokoro-js voices, transformers.js pre-flight) are not cleared if a pinned commit later changes;
+approving a new revision should clear them. Patch 0029 (owner decisions, 2026-09-29) removes every runtime CDN. The Whisper worker imports
+transformers.js 3.8.1, the version Freecut pinned, from the lockfile-pinned install instead of
+esm.sh: on 4.1.0 real whisper-tiny output places every word about a word late
+(`tools/fixtures/whisper-timing.json`). `tools/whisper-timing.test.mjs` fails when the worker's
+transformers.js version differs from the recorded evidence, and with `STUDIO_WHISPER_TIMING=1` it
+downloads the approved model revision and checks every word time and the clip's measured pauses.
+Each ONNX Runtime WebAssembly the engine loads (onnxruntime-web, transformers.js 4.x, and the
+transformers.js 3.8.1 runtime kokoro-js and Whisper share) is emitted into the build from the
+pinned packages and served from the engine's origin (`src/shared/utils/local-ort-assets.ts`). The
+`runtime:onnx-cdn` and `runtime:whisper-transformers` rows name those bundled packages, with byte
+digests of the files served. The owner approved the `runtime:onnx-cdn` row again on 2026-09-29
+(recorded per row in `rights-approval.json`, which may carry its own `approvedOn` and `source` for
+a re-approval), and the Whisper row again on 2026-09-29 at transformers.js 3.8.1, so Whisper,
+Parakeet, RIFE and Supertonic use those bundled runtimes. File-byte admission is a separate gate:
+`tools/resource-policy.mjs` validates the existing schema-1 resource `files` inventory as exact
+`{path, sha256}` records. Paths are literal relative identities without traversal, URL syntax,
+queries, fragments or percent escapes; hashes are lowercase SHA256 hex or null. Duplicate paths
+are rejected. A repository locator plus its exact lowercase commit revision and file path defines
+one Hugging Face resolve URL. A reviewed full-file URL can bind only itself when its literal
+suffix matches the file path and its revision matches. No directory prefixes are guessed:
+Supertonic repository paths need their actual `assets/` prefix reviewed and re-approved before
+those transport URLs can match. Bundled npm paths do not become network identities.
+
+The generator emits URL-specific hashes only when the owner approved that exact row for local
+runtime and did not withhold the use. `approvalRowDigest` already includes `files`, locator and
+revision: adding or changing a file invalidates the existing approval until the owner re-approves
+the changed row. Root `sha256` remains null. `verifyResourceBytes` first resolves the URL through
+the existing overlapping-row admission rule, then checks that file's URL, row digest, revision and
+byte hash; a model ID, unknown filename, branch, URL alias or blocked voice cannot borrow a hash.
+It copies bytes before awaiting the digest and returns that verified copy. The Whisper model row now names the exact seven observed path/SHA256 pairs in their original
+inventory order. The owner approved that changed row on 2026-10-03 ("Approve this exact seven-file
+inventory"); its renewed canonical row digest in `rights-approval.json` is
+`80e61764717ea2f274fa12ab2e9a9b0bb4fc0e8cb1f41ba9a32ef67279cfc3f5`. This permits
+URL-specific byte admission after genuine policy generation; it does not activate loader transport
+or establish production inference. The manifest change requires fresh hosted engine source recovery;
+the expected canonical engine source digest remains unchanged.
+
+`qualification-evidence/whisper-37164769288-diagnostic.json` retains the genuine hosted isolated
+fixture-inference report from commit `1b8a544824d533f3a5eef5105c1f1c21bf194114`, run
+`37164769288`, SHA256 `63cc58638218ec4c4cb9807a015cd44e0537fa0c190899457ded0ccb67277153`.
+The accompanying `whisper-37164769288-candidates.json` records seven distinct payloads from eight
+observations, with exact origin/revision/size and observed hashes. Both remain byte-identical unsigned **UNAPPROVED observation snapshots**, including their historical
+acceptance fields. Neither file is consumed as policy or owner authority. Current authority is the
+renewed manifest-bound row in `rights-approval.json`, recording the actual 2026-10-03 owner approval
+and this run/revision/report provenance. Future timing diagnostics say production transport remains
+unqualified rather than repeating the now-resolved missing-inventory gate. Transport
+integration with approved bytes, real browser-worker inference, all other pinned/supplemental
+models, progress/cancellation, artifact/relink/bundle and privacy workflows remain separate gates.
+
+`tools/engine.test.mjs` exercises the actual generator and runtime with explicitly synthetic
+approval fixtures for file hashes, malformed inventories, withheld uses, equal-locator overlap,
+revision/row mutations and byte-mutation races. These are contracts, not inference evidence.
+It also covers approval, withheld uses,
+changed rows, URL lookalikes, voice precedence and revision pinning;
+`tools/resource-admission.browser.mjs` checks every entrypoint's refusal path under an
+all-blocked substitute policy.
+
+Patch 0032 adds the float route and the explicit output conversion (FL-97, FL-107).
+
+- **Float route.** HDR projects, and any delivery request, render each item through
+  the participant path into rgba16float. Admitted HDR items cover transform and
+  opacity keyframes, with masks left to the compositor; unmigrated operators refuse. Every frame is then composited on the GPU
+  compositor with the background as the bottom layer. The Canvas2D direct path is not
+  used.
+- **Output conversion.** `ColorOutputPipeline` (`src/infrastructure/gpu-color`) is a
+  WGSL mirror of the managed-colour reference. It converts the float composite to
+  BT.2020 PQ or HLG signal, or to SDR display values. SDR display values clip, or
+  tone map with BT.2390 when the project names that policy.
+- **Renderer API.** `renderFrameSignal(frame, target)` returns straight RGBA signal.
+  If a frame cannot be composited in float, it throws rather than delivering an 8-bit
+  canvas.
+- **Native master.** `tools/hdr-master.mjs` measures CTA-861.3 MaxCLL/MaxFALL from the
+  edited frames themselves and never copies them from a source. It refuses content
+  above the declared mastering display. It encodes HEVC Main10 BT.2020 with the FL-102
+  explicit matrix/range/dither convention and HDR10 SEI (PQ) or HLG signalling, then
+  probes and decodes the result back. Matrix/range conversion uses FFmpeg's libzimg
+  `zscale` filter in both directions; an RGB round trip through `scale` alone can
+  hide shifted native ten-bit Y/Cb/Cr codes.
+- **Bundled worker (FL-107).** The machine-learning container's Studio worker writes
+  `mp4-hevc-main10` as an HDR10 master (`hdr10` colour, or PQ sources kept) or an HLG
+  master (HLG sources kept). `tools/bundled-worker-hdr.mjs` streams the engine's
+  `renderFrameSignal` frames into the `hdr-master.mjs` encoder one at a time. A PQ master
+  renders twice: the first pass measures MaxCLL/MaxFALL, and the encoding pass must
+  measure the same light. Before upload the file is decoded back. Every frame must be
+  ten-bit 4:2:0 BT.2020 NCL limited range with the promised transfer, and the sampled
+  frames' luma must match the render. At admission the worker proves each transfer on its
+  own ffmpeg: a lossless patch fixture within the two-code limit, then a ten-bit ramp
+  through the production path. It advertises `mp4-hevc-main10+pq` / `+hlg` and its
+  colour precision only for the transfers that passed. The server offers an HLG export
+  only to a session naming `+hlg`, and a kept PQ picture only to one that verified HDR10.
+  HDR masters are written at the project size, with captions burned in. The sound comes
+  from the engine's ordinary render.
+
+Tests:
+
+- `tools/color-output.browser.mjs` checks the GPU conversion against the reference.
+- `tools/hdr-signal.browser.mjs` checks the old edited HDR graph as a typed refusal
+  and admitted effect-free HDR/SDR graphics through the production renderer.
+- Patch 0071 admits owned linear Float32 RGBA reconstructed from HDR images, with
+  explicit sRGB/P3/BT.2020 gamut and source reference white. The existing float
+  compositor preserves alpha and headroom; it never routes these pixels through
+  an SDR canvas. `tools/hdr-source.browser.mjs` measures six gamut/white cases
+  through that compositor against an independent color conversion reference.
+  This is renderer coverage, not HEIC/gain-map resource-adapter or HDR still-export
+  qualification; those delivery paths remain gated until their checks pass.
+- `tools/hdr-master.browser.mjs` checks the old effect/blend graph as a typed refusal,
+  then renders admitted HDR raster cuts, SDR graphics and opacity keyframes. It
+  encodes PQ/HLG Main10 diagnostic masters and decodes them within two 10-bit codes.
+  `HDR_MASTER_4K=1` runs the same four edited frames at 3840×2160 with proportional
+  graph geometry, exact 24 fps presentation timestamps and the same decoded RGB
+  and native Y/Cb/Cr tolerances. Frames cross the browser boundary one at a time
+  as binary float RGBA; reports retain their individual digests and `.rgba-f32le`
+  files alongside output masters, exact commands and encoder/probe binary digests.
+  Failed RGB QC retains only an explicitly named `.failed-candidate.mp4` diagnostic
+  with raw RGB/plane measurements and its digest; it still throws and the helper
+  removes the unpublished partial file without promoting it to a master.
+  This short graph check does not qualify 4K throughput, device loss, every effect
+  family, masks/transitions/titles, physical monitor review or admitted deployments.
+- `tools/hdr-master.test.mjs` covers the metadata maths, refusals and a lossless round
+  trip.
+
+- `tools/hdr-master-timing.test.mjs` checks diagnostic PQ/HLG masters against an
+  independently specified ffmpeg `setpts` VFR fixture. The helper accepts exact
+  integer PTS and rational time base validated by `sourceTimeline`; it preserves
+  those PTS with passthrough timing. The test checks decoded frame identity, 5.1
+  and 7.1(wide) layouts, compressed audio packet hashes, and independently decoded
+  channel order. Audio uses explicit stream copy, without a downmix or resample;
+  the selected codec must be supported by the MP4 muxer.
+- The timing test kills a real ffmpeg attempt after its unpublished output opens,
+  verifies the previous complete master remains untouched, and restarts from the
+  supplied immutable rendered sequence. Each attempt writes a unique sibling
+  partial MP4 and only publishes it with a rename after successful encoding.
+  An `AbortSignal` cleans up the interrupted attempt.
+
+The helper validates the private candidate's Main10 picture count/size, BT.2020
+signalling, measured content-light and declared mastering metadata, and complete
+decode before atomic publication. The browser and timing diagnostics run their
+independent numerical/PTS/audio QC before that rename too. A rejected candidate
+cannot replace a previous complete master.
+
+The diagnostics also decode native `yuv420p10le` planes without an RGB conversion
+and compare Y/Cb/Cr with analytical BT.2020 non-constant-luminance, limited-range
+ten-bit reference codes. Flat interior samples allow two codes of conversion/dither
+error. Reports retain the expected codes, decoded codes, absolute errors and decode
+arguments. This check covers the diagnostic flat regions; chroma edges and arbitrary
+edited pictures require their own reference comparison.
+
+The engine workflow requires FFmpeg with libx265 and libzimg/zscale for these tests and retains
+`hdr-master-timing-report.json` with tool versions, commands, input/output SHA-256
+and raw PTS/audio probe results. Run the focused packet with
+`HDR_TIMING_REPORT=/absolute/path/report.json node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs`.
+When `HDR_TIMING_REPORT` or `HDR_MASTER_REPORT` is set, the corresponding diagnostic
+retains its exact media in a unique sibling `.artifacts-*` directory. Reports bind
+relative output paths to SHA-256; the timing report also retains source video/audio,
+and the browser report binds its rendered input signals and encoder commands/tool
+versions. The engine workflow uploads both reports and their media for later QC.
+Retaining diagnostic media does not establish monitor or deployment qualification.
+
+This is diagnostic helper evidence only. The timestamp expression is deliberately
+limited to 256 frames and is not a streaming production export implementation.
+These cases do not clear conformance `timingColor` rows. The production render
+worker must map edited timeline frames to source sample PTS, preserve edited
+multichannel audio, and use the existing `media_operation_checkpoint` identities,
+checksums and restart planning. No checkpoint adapter is implemented here;
+helper abort/restart does not prove durable operation recovery.
+
+Production publication independently probes HDR exports and refuses incorrect or
+unknown BT.2020 primaries/matrix before moving or publishing the output
+(`server/src/utils/studio-export-contract.ts`). This signalling check does not
+qualify the encoded pictures or static mastering/content-light metadata.
+
+Remaining acceptance:
+
+- complete HDR source/edit coverage and physical-backend qualification; existing
+  decoded PQ/HLG browser fixtures are listed in the HDR checks above;
+- 4K throughput and device loss;
+- reference monitor review;
+- a render worker that streams frames to the encoder and maps edited/source PTS;
+- production edited-audio/layout preservation and checkpoint-backed restart;
+- qualification on each admitted deployment, including all effect families,
+  titles, masks and transitions, independent luma/chroma/error checks and
+  versioned evidence. FL-107 remains open until its full acceptance passes.
+
+Patch 0033 applies the owner's FL-97 decision: a project is HDR if and only if it
+contains HDR media.
+
+- **Detecting HDR media.** Imported video records the transfer from the track's colour
+  description (`MediaMetadata.colorTransfer`: `sdr`, `pq` or `hlg`). The engine's
+  playback stream of a library original is not the original, so the server reports
+  placed library originals that are HDR (PQ, HLG or Dolby Vision) in
+  `resources.hdrSources`. The host marks those assets `hdr`, and the adapter records
+  `colorTransfer: 'hdr'` on them.
+- **Deriving the range.** The renderer derives the working range from the placed
+  media every frame, nested compositions included. Media placed or probed later
+  switches every node pipeline without a remount. There is no project colour control,
+  and the export Colour choice does not decide it. SDR projects keep exact Freecut
+  parity.
+- **SDR preview.** An HDR project previews on SDR displays through the explicit BT.2390
+  conversion, never clipped. One stop of headroom puts reference white near BT.2408's
+  75% level. Highlights that are still out of range are scaled as a whole, keeping
+  their chromaticity.
+
+`tools/allocation-audit.mjs` and `graph-allocation-audit.json` inventory literal 8-bit
+formats, pooled texture calls and direct literal Canvas2D context calls in the graph
+source. The audit fails on any undeclared detected site, or on a declared site that
+no longer exists. A `canvas2d-context` declaration identifies an 8-bit surface; it
+does not establish whether an HDR render can reach it. Indirect allocations and
+complete float-route reachability still require graph and runtime qualification.
+
+`frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval, including for external models, fonts and assets.
+
+The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.
+
+No library startup script, web/server entry point or Docker image invokes this build or imports its output. Ordinary Frameleaf library startup therefore does not fetch the Freecut archive or any engine model/font/asset. Launching the standalone upstream editor is outside this isolation guarantee; its resource refusals are tested independently, while complete project-resource admission and offline lifecycle still require qualification before production integration. This slice does not mount or ship that editor.
+
+Patch `0058-preview-layout-keyboard-accessibility.patch` adds keyboard and pointer resizing,
+Bento reorder alternatives and control hit targets while retaining Freecut's MIT terms.
+The playback shortcut yields to buttons and dialog controls so Space can activate them.
+The mask toolbar selects points or incoming/outgoing handles and nudges them one project
+pixel in the displayed direction, including mirrored and rotated paths. Independent
+handle movement follows the existing tangent behavior. Static edits and playhead path
+keyframes use the existing mask edit commands and undo history. Native buttons insert
+a point on the selected segment or delete selected points, respecting open endpoints,
+minimum path sizes and inherited track locks. Paths with geometry keyframes retain
+their point count; point and handle nudges remain available on unlocked tracks.
+Corner-pin numeric fields name each corner and axis, preserve the displayed offsets
+when editing resized or cropped targets, and respect inherited track locks for edits
+and reset through the existing item history commands.
+
+## Web integration boundary
+
+The Svelte host for the editor is already in the production application. The isolated build
+above remains separate from that host until its adapter is implemented:
+
+- `web/src/lib/frameleaf/studio/host-contract.ts` is the typed `mount` / `update` /
+  `dispose` contract an adapter must satisfy, plus the data the host passes (project handle,
+  authorized media URLs, identity, theme tokens, capabilities, online state) and the services
+  it exposes back. The engine receives no token, no API base URL and no SDK.
+- `web/src/lib/frameleaf/studio/commands.ts` is the canonical command vocabulary and
+  registry; `bridge.ts` validates and routes it.
+- `web/src/lib/frameleaf/studio/engine-loader.ts` resolves the engine. The adapter package
+  (`studio/adapters/web`, not present) calls `registerStudioEngine` once from its entry
+  point. The loader refuses any module whose `engineRevision` is not the pinned commit in
+  `freecut-provenance.json`, and the route renders an honest unavailable state until an
+  engine registers.
+
+Adapters live outside `vendor/freecut`; nothing in the vendored snapshot is edited, and any
+unavoidable patch is recorded as a versioned patch with its licensing note.
+
+## Graph resource inventory
+
+`resource-inventory.json` is the inventory of every resource class a Studio project graph can
+reference or a Studio job can produce: library assets, edited masters, project imports, fonts,
+LUTs, models, presets, captions, audio, vector graphics, generated intermediates, nested
+sequences and remote preview frames. For each class it records the owner, the access check the
+server applies, whether the bytes may leave the machine (local, LAN worker, RunPod) and the
+retention rule. It is generated from `server/src/utils/studio-resources.ts`, which is the
+registry as code; `server/src/utils/studio-resources.spec.ts` fails when the two drift, and
+
+```sh
+pnpm --dir server exec tsx src/bin/studio-resource-inventory.ts > studio/resource-inventory.json
+```
+
+regenerates it.
+
+`server/src/services/studio-resource.service.ts` is the resolver. Given a project graph and the
+acting user it enumerates every reference, applies the library's own access checks (owner,
+shared album, partner, Locked exclusion, sensitive and suppressed content), refuses URLs, blob
+strings, host paths, traversal, remote fonts and subresources, undeclared imports, cyclic or
+over-deep nesting and oversized graphs, and returns an authorized manifest plus the refused
+references with reasons. The render and preview paths accept only a complete
+manifest the service issued and read source bytes only through its short-lived, revision-bound,
+worker-bound grants, which are re-checked against live access on every use. A cloud
+destination without recorded consent fails before anything is enumerated. Nothing in this
+directory or in the resolver claims that a graph renders; that remains the engine conformance
+work.
+
+## Canonical command catalogue
+
+`frameleaf-studio-commands.json` is the published Studio command vocabulary: 93 commands,
+each with its payload fields, scope, whether it changes the stored graph, whether it is
+undoable, the worker capability it needs, and the pinned Freecut manifest rows it reaches.
+
+Payload fields typed `time`, `duration` and `rate` are exact rationals, never floats:
+an instant on the timeline, a length, and a cadence or speed
+multiplier. They travel as a reduced `{ num, den }` pair of integers — `StudioTime`,
+`StudioDuration` and `StudioRate` on the web side and `isRational` on the server.
+`object` and `object[]` fields are opaque and travel unread.
+
+The catalogue is the single source for two checked-in contracts:
+
+- `web/src/lib/frameleaf/studio/commands.ts` — the typed web vocabulary the bridge routes.
+- `server/src/utils/studio-commands.generated.ts` — the server mirror used by
+  `server/src/utils/studio-commands.ts` to validate an envelope without trusting a client.
+
+`scripts/frameleaf-studio-commands.mjs` writes the catalogue and the server mirror and,
+with no arguments, verifies them. It fails when a checked-in file is stale, when the web vocabulary drifts from the
+catalogue, or when a row of `freecut-feature-manifest.json` is neither mapped to a command
+nor listed in `nonCommandRows` with a reason. 182 rows are reachable through a command and
+28 are declared non-command rows (module inventories, playback and storage behaviour,
+read-only surfaces, host lifecycle). A non-command row still names what proves it: 16 list
+the `commands` whose graph edits are the row's behaviour (`module.effects` is `effect.add`,
+`effect.remove`, `effect.reorder` and `effect.update`), which is where
+`scripts/frameleaf-studio-evidence.mjs` takes a row's command-axis evidence from, and the
+other 12 say in `withoutCommand` what covers them instead. The check fails on a row with
+neither, a row with both, or a link to a command the catalogue does not have.
+
+```sh
+node scripts/frameleaf-studio-commands.mjs            # verify, the CI default
+node scripts/frameleaf-studio-commands.mjs --write    # regenerate after editing the catalogue
+node --test scripts/frameleaf-studio-commands.test.mjs
+```
+
+Publishing the vocabulary does not implement command semantics, rendering or worker
+admission. The bridge answers `not-implemented` for commands without an implementation.
+
+Patch `0111-multichannel-shared-retiming.patch` retains every decoded PCM plane
+through speed and independent pitch edits. The existing SoundTouch implementation
+uses one overlap choice, interpolation phase and output frame count for all planes;
+its mono/stereo controls retain exact original stereo PCM bytes. Export gain, EQ,
+fades, track/master automation and untouched sibling contributions retain their
+existing ownership. Preview serialization, queued source and worklet transport keep
+the supplied AudioBuffer plane count/order instead of truncating it to L/R.
+
+Encoder admission reads actual source plane counts. The current graph has no
+semantic surround speaker-layout authority, so PCM encoding with more than two
+planes refuses explicitly; original encoded packet-copy behavior is unchanged.
+This refusal is a temporary export boundary, not multichannel layout qualification.
+The persisted decoded-preview cache still stores downmixed stereo Int16 bins and
+cannot recover original surround planes; this patch does not change that durable
+cache contract. Hardware monitor limits, semantic source/output layouts, real
+decoder/encoder/mux round trips, latency and per-browser acceptance remain open.
+Focused synthetic PCM/source tests, typechecking and builds do not close those gates.
+
+## Retained Anime4K completion source (FL-111)
+
+Patch `0132-anime4k-retained-provenance.patch` passes the admitted Anime4K worker result through
+its service and the shared generated-media persistence helper. The adapter holds the generated ID
+and writes an ephemeral `retention.json` before source bytes; completion submission follows source,
+thumbnail, metadata and project association on the captured workspace and editor scope. The generic
+observer and retry path never submit held IDs, even when a suppression record is malformed.
+Other generated-media callers retain their existing behavior and omit lineage.
+
+The processing record is historical client-reported evidence. Its FPS, dimensions, frame count,
+codec and variant come from the actual completion result; no weight digest or `modelBinding` is
+inferred. The server alone hashes retained output bytes. This source change adds no model, rights
+approval or license grant; existing Freecut MIT attribution and resource-rights gates still apply.
+Source composition does not qualify inference, WebGPU, HDR, browser hardware, durable storage or
+release delivery. The publication writer remains unexposed and storage remains UNQUALIFIED until
+the complete coupled acceptance and deployment gates pass.
+
+Patch `0136-project-colour-policy-disclosure.patch` shows the fixed colour policy
+beside project templates, canvas settings and first-media matching. Canvas/FPS
+changes retain stored colour settings; placing PQ/HLG media, including nested
+compositions, makes the project HDR. Import alone does not, and export colour is
+chosen separately. The existing MIT notice covers the adapted UI and tests.
+
+## Microphone capture ending (FL-103)
+
+Patch `0139-microphone-terminal-notification.patch` finalizes a current voiceover
+when the browser or device stops capture, including a paused take. The existing
+recording controller retains the final audio, stops playback, and applies its
+project/workspace ownership, save-error and single-undo rules. A cancelled take's
+late stop cannot finalize a replacement recording. The existing Freecut MIT
+notice covers these adapted sources and regression tests. Synthetic terminal-event
+and ownership tests do not qualify physical device replacement or browser latency;
+full audio and STU-305 acceptance remain open.
+
+## Whisper without a GPU adapter
+
+Patch `0140-whisper-no-adapter-fallback.patch` checks for an available WebGPU adapter before the first Whisper model session. When none is available, it selects WASM directly: the pinned Transformers runtime retains a failed first-session promise, so trying an unavailable GPU first prevents the later WASM retry. The existing model, artifact verification, word timing and worker lifecycle remain in use. The real-worker browser check can require either backend with `STUDIO_WHISPER_BROWSER_EXPECT_BACKEND=wasm` or `webgpu`; both its initial and offline runs must execute that backend. Broader model and browser qualification remains separate.
+
+## Edit a clip by editing its transcript (FL-562)
+
+Patch `0144-transcript-editing.patch` replaces the engine's Transcript tab with the approved panel. It opens on the selected clip when it has speech, otherwise on the first clip in the timeline that has a transcript, and shows the clip's words (on-device Parakeet, Whisper fallback, word timings as stored per media) in speaker paragraphs with silence chips between them. Hovering a word shows its time in the movie. Selecting words and pressing Delete (or Cut) runs the engine's own transcript range removal, the split and ripple delete that silence and filler removal use, so the cut is one undo step and a graph edit like any other: a native client makes the same edit with `clip.split` at both ends and a ripple `clip.delete` (`adapters/web/test/transcript-editing.test.ts` checks the two graphs agree, picture and linked sound). Cut words stay in the text, crossed out; whether a word is cut is read from the timeline (the middle of its source span is covered by no piece of the clip), so undo, redo, reopen and other edits keep it right. Clicking a crossed-out word brings its cut back on its own with a ripple trim of the piece before it and a join (`clip.trimEnd` with ripple, then `clip.join`), folded into one undo step. "Remove silences" and "Remove filler words" run the shipped silence analysis and filler detection with their default settings and cut what is still in the clip. Speakers start as "Speaker 1" and are set and renamed by hand (no automatic People match, and no speaker detection model); speakers and corrected words are saved on the media's transcript, and a corrected word also updates the clip captions made from that transcript and the matching cues of placed transcript captions. The panel's words are host-translated through `context.strings` (`web/src/lib/frameleaf/studio/transcript-strings.ts`). The existing Freecut MIT notice covers the adapted sources and tests.
+
+## Locked tracks refuse drags and adds (FL-450)
+
+Patch `0141-locked-track-drop-refusal.patch` makes a lock binding for a person's drags in the editor. Dragging library media, files, a compound clip or a timeline clip over a locked track (or one inside a locked layer group) shows a not-allowed cursor and no drop marker; releasing it adds, moves and duplicates nothing. A drag that would put any dragged clip, or a video's linked sound, on a locked track is refused the same way. Insert and overwrite edits that target a locked track give the same short message, `timeline.track.lockedTrackRefused`. A drag hovering a locked track is announced through a polite status region, and the refusal toast is announced by the editor's toaster. The host translates the message (`lockedTrackRefused` in the host strings, `frameleaf_studio_locked_track_refused`) and the adapter writes it over the engine's English after each language change. The graph command `clip.add` refuses the same inputs in the command layer (protocol 12.3.1). The existing Freecut MIT notice covers the adapted sources and tests.
+
+## Cut out the subject (FL-639)
+
+The Edit inspector's **Cut out the subject** card (patch `0166-subject-cutout.patch`) follows one subject through a video clip: a person face recognition found in the clip, or the main subject. The server (`StudioCutoutService`, `/studio/projects/{id}/cutouts`) reads the part of the source the clip plays a few frames a second (at most 300 frames, clips up to five minutes) and sends the frames only to this server's machine learning or a computer at home, where the `subject-matte` task runs SAM2.1 video from the pinned photo-mask snapshots. The mattes come back as one grayscale PNG kept with the project through the ordinary import admission; the clip's `subjectCutout` names it, and the export worker receives it like any project file. The engine draws the clip through it in `features/export/utils/subject-cutout.ts`, which preview and export share; `studio/tools/subject-cutout.browser.mjs` reads the pixels back in Chromium. Add to subject / Take away paint points on the viewer and make the matte again from that frame on. Not yet: several subjects at once, cut-outs of stills on the timeline, and HDR projects (refused on the linear HDR route rather than drawn uncut).
+
+## Captions in other languages (FL-641)
+
+Patch `0170-caption-languages.patch` adds the approved Languages card below the Subtitle section of the clip inspector, shown whenever captions are selected. It lists the original captions (their language is chosen in the card, and fixed once a language is added) with their line count, and each translated language with its own line count. Translate sends the original lines, as text only, through the host (`translateCaptions`, frame protocol 9) to `POST /studio/projects/{id}/caption-translations`, which translates them with M2M100 418M on the first place in the processing order that can: this server, then a computer at home. Frameleaf Cloud has no translation workload yet, so it is never sent the text. Each language becomes its own caption track: one subtitle segment, on its own hidden track, holding the translated lines on the original lines' timing, with the original's look; its `source.translation` records the language, the language it came from and whether it goes with the export. Fixing an original line later does not change a translation; Translate again replaces it in place and keeps its settings. In the picture shows one language and hides the others: a translation's track is shown, original caption tracks that hold only captions are hidden, and transcript captions riding on a clip are switched off with their own `enabled`, so the clip stays visible. Review lines shows the original line beside each editable translated line. Make a voice-over speaks every translated line with the voices Studio already has (Kokoro in English, Supertonic for the other languages it speaks; Norwegian has captions only), puts the lines together at their captions' times without one talking over the next, imports the sound into the project's media and places it on its own voice track with everything else ducking 12 dB under it. Remove takes the language's track and its voice-over away. Every edit is one undo step. On a video export with captions, the language in the picture is burned in or carried as the subtitle track the export settings ask for, and every language ticked "Subtitle track in the export" is saved as its own SRT next to it (`web/src/lib/frameleaf/studio/caption-languages.ts`). The card's words are host-translated (`caption-language-strings.ts`). `adapters/web/test/caption-languages.test.ts` covers line collection, track building, the language in the picture, the timeline edits with undo, the voice-over mix and the strings. The existing Freecut MIT notice covers the adapted sources and tests.
+
+## Add from your library inside Studio (FL-636)
+
+Patch `0160-library-view-in-media-bin.patch` gives the bin's Media / Scenes toggle a third view, Library, when the host registers one (`src/features/media-library/library-panel-registry.ts`); with nothing registered the bin is unchanged. The view itself is the adapter's (`adapters/web/src/library-finder.tsx`): a smart-search box with suggestions, All / Photos / Videos, named people as avatars, Place, When by month, Clear filters, a result count and the privacy note. The editor has no SDK, so it searches through three host services (`searchLibrary`, `libraryFacets`, `addLibraryAssets` in `host-contract.ts`, checked for shape in `frame-service-schema.ts`); the host runs the library Search's own smart and metadata searches, facets and month histogram (`web/src/lib/frameleaf/studio/library-search.ts`), scoped by the server to the person's library and partners' shared items, asks for Locked items only while the session is unlocked, and projects results with `toStudioAsset` after `isStudioEligibleAsset`. Pressing, dragging or adding a result adopts it: the host adds it to `StudioHostContext.assets`, the seeder puts it in the bin, Freecut's own media drop places a drag, and "Add at playhead" uses the canvas-drop placement. The server's resource resolver (FL-90) grants each placed item when the project is saved. Moments inside videos (phase 2) are not built. The view's words are host-translated through `context.strings` (`library-strings.ts`). The existing Freecut MIT notice covers the adapted sources and tests.

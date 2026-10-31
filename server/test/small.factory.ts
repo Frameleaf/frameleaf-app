@@ -1,0 +1,235 @@
+import { v4, v7 } from 'uuid';
+import { expect } from 'vitest';
+import { AuthApiKey, AuthSharedLink, AuthUser, Library, UserAdmin } from 'src/database.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { QueueStatisticsDto } from 'src/dtos/queue.dto.js';
+import { Permission, UserStatus } from 'src/enum.js';
+
+export const newUuid = () => v4();
+export const newUuids = () => Array.from({ length: 100 }, () => 0).map(() => newUuid());
+export const newDate = () => new Date();
+export const newUuidV7 = () => v7();
+export const newSha1 = () => Buffer.from('this is a fake hash');
+export const newEmbedding = (dimensions = 512) => {
+  const embedding = Array.from({ length: dimensions }, () => 0).map(() => Math.random());
+  return '[' + embedding + ']';
+};
+
+const authFactory = ({
+  apiKey,
+  session,
+  sharedLink,
+  user,
+}: {
+  apiKey?: Partial<AuthApiKey>;
+  session?: { id?: string; hasElevatedPermission?: boolean; oauthBearerToken?: string | null };
+  user?: Omit<
+    Partial<UserAdmin>,
+    'createdAt' | 'updatedAt' | 'deletedAt' | 'fileCreatedAt' | 'fileModifiedAt' | 'localDateTime' | 'profileChangedAt'
+  >;
+  sharedLink?: Partial<AuthSharedLink>;
+} = {}) => {
+  const auth: AuthDto = {
+    user: authUserFactory(userAdminFactory(user ?? {})),
+  };
+
+  const userId = auth.user.id;
+
+  if (apiKey) {
+    auth.apiKey = authApiKeyFactory(apiKey);
+  }
+
+  if (session) {
+    auth.session = {
+      id: session.id ?? newUuid(),
+      hasElevatedPermission: session.hasElevatedPermission ?? false,
+    };
+  }
+
+  if (sharedLink) {
+    auth.sharedLink = authSharedLinkFactory({ ...sharedLink, userId });
+  }
+
+  return auth;
+};
+
+const authSharedLinkFactory = (sharedLink: Partial<AuthSharedLink> = {}) => {
+  const {
+    id = newUuid(),
+    expiresAt = null,
+    userId = newUuid(),
+    showExif = true,
+    albumId = null,
+    allowUpload = false,
+    allowDownload = true,
+    password = null,
+  } = sharedLink;
+
+  return {
+    id,
+    albumId,
+    expiresAt,
+    userId,
+    showExif,
+    allowUpload,
+    allowDownload,
+    password,
+  };
+};
+
+const authApiKeyFactory = (apiKey: Partial<AuthApiKey> = {}) => ({
+  id: newUuid(),
+  permissions: [Permission.All],
+  ...apiKey,
+});
+
+const authUserFactory = (authUser: Partial<AuthUser> = {}) => {
+  const {
+    id = newUuid(),
+    isAdmin = false,
+    name = 'Test User',
+    email = 'test@example.com',
+    quotaUsageInBytes = 0,
+    quotaSizeInBytes = null,
+  } = authUser;
+
+  return { id, isAdmin, name, email, quotaUsageInBytes, quotaSizeInBytes };
+};
+
+const queueStatisticsFactory = (dto?: Partial<QueueStatisticsDto>) => ({
+  active: 0,
+  completed: 0,
+  failed: 0,
+  delayed: 0,
+  waiting: 0,
+  paused: 0,
+  ...dto,
+});
+
+const userAdminFactory = (user: Partial<UserAdmin> = {}) => {
+  const {
+    id = newUuid(),
+    name = 'Test User',
+    email = 'test@example.com',
+    profileImagePath = '',
+    profileChangedAt = newDate(),
+    storageLabel = null,
+    shouldChangePassword = false,
+    isAdmin = false,
+    avatarColor = null,
+    createdAt = newDate(),
+    updatedAt = newDate(),
+    deletedAt = null,
+    oauthId = null,
+    quotaSizeInBytes = null,
+    quotaUsageInBytes = 0,
+    status = UserStatus.Active,
+    metadata = [],
+  } = user;
+  return {
+    id,
+    name,
+    email,
+    profileImagePath,
+    profileChangedAt,
+    storageLabel,
+    shouldChangePassword,
+    isAdmin,
+    avatarColor,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    oauthId,
+    quotaSizeInBytes,
+    quotaUsageInBytes,
+    status,
+    metadata,
+  };
+};
+
+const libraryFactory = (library: Partial<Library> = {}) => ({
+  id: newUuid(),
+  createdAt: newDate(),
+  updatedAt: newDate(),
+  updateId: newUuidV7(),
+  deletedAt: null,
+  refreshedAt: null,
+  name: 'Library',
+  readOnly: false,
+  assets: [],
+  ownerId: newUuid(),
+  importPaths: [],
+  exclusionPatterns: [],
+  ...library,
+});
+
+const versionHistoryFactory = () => ({
+  id: newUuid(),
+  createdAt: newDate(),
+  version: '1.123.45',
+});
+
+const assetOcrFactory = (
+  ocr: {
+    id?: string;
+    updateId?: string;
+    assetId?: string;
+    x1?: number;
+    y1?: number;
+    x2?: number;
+    y2?: number;
+    x3?: number;
+    y3?: number;
+    x4?: number;
+    y4?: number;
+    boxScore?: number;
+    textScore?: number;
+    text?: string;
+    isVisible?: boolean;
+    updatedAt?: Date;
+  } = {},
+) => ({
+  id: newUuid(),
+  updateId: newUuidV7(),
+  updatedAt: newDate(),
+  assetId: newUuid(),
+  x1: 0.1,
+  y1: 0.2,
+  x2: 0.3,
+  y2: 0.2,
+  x3: 0.3,
+  y3: 0.4,
+  x4: 0.1,
+  y4: 0.4,
+  boxScore: 0.95,
+  textScore: 0.92,
+  text: 'Sample Text',
+  isVisible: true,
+  ...ocr,
+});
+
+export const factory = {
+  assetOcr: assetOcrFactory,
+  auth: authFactory,
+  library: libraryFactory,
+  queueStatistics: queueStatisticsFactory,
+  versionHistory: versionHistoryFactory,
+  uuid: newUuid,
+  buffer: () => Buffer.from('this is a fake buffer'),
+  date: newDate,
+  responses: {
+    badRequest: (message: any = null) => ({
+      message: message ?? expect.anything(),
+    }),
+    validationError: (errors?: ReadonlyArray<{ path: ReadonlyArray<string | number>; message: string }>) => ({
+      message: 'Validation failed',
+      errors: errors ? expect.arrayContaining(errors.map((e) => expect.objectContaining(e))) : expect.any(Array),
+      displayError: {
+        version: 1,
+        code: 'request_validation_failed',
+        args: {},
+        fallback: { locale: 'en', message: 'This request could not be accepted.' },
+      },
+    }),
+  },
+};

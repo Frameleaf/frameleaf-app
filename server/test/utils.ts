@@ -1,0 +1,790 @@
+/* eslint-disable unicorn/no-this-outside-of-class */
+import { DatabaseConnectionParams, createPostgres } from '@frameleaf/sql-tools';
+import { CallHandler, ExecutionContext, Provider } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { transformException } from '@nestjs/platform-express/multer/multer/multer.utils';
+import { Test } from '@nestjs/testing';
+import { NextFunction, RequestHandler } from 'express';
+import { Kysely, type KyselyConfig } from 'kysely';
+import multer, { memoryStorage } from 'multer';
+import { ClsService } from 'nestjs-cls';
+import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
+import { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { Duplex, Readable, Writable } from 'node:stream';
+import { PNG } from 'pngjs';
+import { Mock, Mocked, assert, expect, vitest } from 'vitest';
+import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
+import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
+import { AuthGuard } from 'src/middleware/auth.guard.js';
+import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
+import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
+import { AppRepository } from 'src/repositories/app.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
+import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
+import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
+import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CronRepository } from 'src/repositories/cron.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DownloadRepository } from 'src/repositories/download.repository.js';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { EmailRepository } from 'src/repositories/email.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
+import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
+import { MemoryRepository } from 'src/repositories/memory.repository.js';
+import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { MoveRepository } from 'src/repositories/move.repository.js';
+import { NotificationRepository } from 'src/repositories/notification.repository.js';
+import { OAuthRepository } from 'src/repositories/oauth.repository.js';
+import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { PluginRepository } from 'src/repositories/plugin.repository.js';
+import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
+import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
+import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
+import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { StackRepository } from 'src/repositories/stack.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
+import { SyncRepository } from 'src/repositories/sync.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
+import { VideoStreamRepository } from 'src/repositories/video-stream.repository.js';
+import { ViewRepository } from 'src/repositories/view-repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AuthService } from 'src/services/auth.service.js';
+import { BaseService } from 'src/services/base.service.js';
+import { RepositoryInterface } from 'src/types.js';
+import { getKyselyConfig } from 'src/utils/database.js';
+import { renderSystemNotification } from 'src/utils/notification-locale.js';
+import { ClusterGroupFactory } from 'test/factories/cluster-group.factory.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
+import { IAccessRepositoryMock, newAccessRepositoryMock } from 'test/repositories/access.repository.mock.js';
+import { newAssetRepositoryMock } from 'test/repositories/asset.repository.mock.js';
+import { newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
+import { newCryptoRepositoryMock } from 'test/repositories/crypto.repository.mock.js';
+import { newForkSchemaRepositoryMock } from 'test/repositories/fork-schema.repository.mock.js';
+import { newJobRepositoryMock } from 'test/repositories/job.repository.mock.js';
+import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.js';
+import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
+import { newStorageRepositoryMock } from 'test/repositories/storage.repository.mock.js';
+import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
+
+export type ControllerContext = {
+  authenticate: Mock;
+  requireSetupAvailable: Mock;
+  getHttpServer: () => any;
+  reset: () => void;
+  close: () => Promise<void>;
+};
+
+type ControllerClass = new (...args: any[]) => unknown;
+
+export const controllerSetup = async (
+  controller: ControllerClass | ControllerClass[],
+  providers: Provider[],
+  /** App-level Express middleware to install ahead of the routes, as `app.common.ts` does. */
+  middleware: RequestHandler[] = [],
+) => {
+  const noopInterceptor = { intercept: (ctx: never, next: CallHandler<unknown>) => next.handle() };
+  const upload = multer({ storage: memoryStorage() });
+  const memoryFileInterceptor = {
+    intercept: async (ctx: ExecutionContext, next: CallHandler<unknown>) => {
+      const context = ctx.switchToHttp();
+      const handler = upload.fields([
+        { name: UploadFieldName.ASSET_DATA, maxCount: 1 },
+        { name: UploadFieldName.SIDECAR_DATA, maxCount: 1 },
+      ]);
+
+      await new Promise<void>((resolve, reject) => {
+        const next: NextFunction = (error) => (error ? reject(transformException(error)) : resolve());
+        const maybePromise = handler(context.getRequest(), context.getResponse(), next);
+
+        Promise.resolve(maybePromise).catch((error) => reject(error));
+      });
+
+      return next.handle();
+    },
+  };
+  const moduleRef = await Test.createTestingModule({
+    controllers: Array.isArray(controller) ? controller : [controller],
+    providers: [
+      { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+      { provide: APP_PIPE, useClass: ZodValidationPipe },
+      { provide: APP_INTERCEPTOR, useClass: ZodSerializerInterceptor },
+      { provide: APP_GUARD, useClass: AuthGuard },
+      { provide: LoggingRepository, useValue: LoggingRepository.create() },
+      { provide: ClsService, useValue: { getId: vi.fn() } },
+      {
+        provide: AuthService,
+        useValue: { authenticate: vi.fn(), requireSetupAvailable: vi.fn(), requireOriginalTransfer: vi.fn() },
+      },
+      ...providers,
+    ],
+  })
+    .overrideInterceptor(FileUploadInterceptor)
+    .useValue(memoryFileInterceptor)
+    .overrideInterceptor(AssetUploadInterceptor)
+    .useValue(noopInterceptor)
+    .compile();
+  const app = moduleRef.createNestApplication();
+  for (const handler of middleware) {
+    app.use(handler);
+  }
+  await app.init();
+
+  // allow the AuthController to override the AuthService itself
+  const resolvedAuthService = app.get<Mocked<AuthService>>(AuthService);
+  const authenticate = resolvedAuthService.authenticate as Mock;
+  const requireSetupAvailable = resolvedAuthService.requireSetupAvailable as Mock;
+
+  return {
+    authenticate,
+    requireSetupAvailable,
+    getHttpServer: () => app.getHttpServer(),
+    reset: () => {
+      authenticate.mockReset();
+      requireSetupAvailable.mockReset();
+    },
+    close: async () => {
+      await app.close();
+    },
+  };
+};
+
+export type AutoMocked<T> = Mocked<T> & { resetAllMocks: () => void };
+
+const mockFn = (label: string, { strict }: { strict: boolean }) => {
+  const message = `Called a mock function without a mock implementation (${label})`;
+  return vitest.fn(() => {
+    {
+      if (strict) {
+        assert.fail(message);
+      } else {
+        // console.warn(message);
+      }
+    }
+  });
+};
+
+export const mockBaseService = <T extends BaseService>(service: new (...args: any[]) => T) => {
+  return automock(service, { args: [{ setContext: () => {} }], strict: false });
+};
+
+export const automock = <T>(
+  Dependency: new (...args: any[]) => T,
+  options?: {
+    args?: ConstructorParameters<new (...args: any[]) => T>;
+    strict?: boolean;
+  },
+): AutoMocked<T> => {
+  const mock: Record<string, unknown> = {};
+  const isStrict = options?.strict ?? true;
+  const args = options?.args ?? [];
+
+  const mocks: Mock[] = [];
+
+  const instance = new Dependency(...args);
+  const propertyNames = new Set(Object.getOwnPropertyNames(instance));
+  for (let proto = Dependency.prototype; proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
+    for (const property of Object.getOwnPropertyNames(proto)) {
+      propertyNames.add(property);
+    }
+  }
+  for (const property of propertyNames) {
+    if (property === 'constructor') {
+      continue;
+    }
+
+    try {
+      const label = `${Dependency.name}.${property}`;
+      // console.log(`Automocking ${label}`);
+
+      const target = instance[property as keyof T];
+      if (typeof target === 'function') {
+        const mockImplementation = mockFn(label, { strict: isStrict });
+        mock[property] = mockImplementation;
+        mocks.push(mockImplementation);
+        continue;
+      }
+    } catch {
+      // noop
+    }
+  }
+
+  const result = mock as AutoMocked<T>;
+  result.resetAllMocks = () => {
+    for (const mock of mocks) {
+      mock.mockReset();
+    }
+  };
+
+  return result;
+};
+
+export type ServiceOverrides = {
+  access: AccessRepository;
+  activity: ActivityRepository;
+  adminAudit: AdminAuditRepository;
+  album: AlbumRepository;
+  albumUser: AlbumUserRepository;
+  apiKey: ApiKeyRepository;
+  app: AppRepository;
+  asset: AssetRepository;
+  assetDevelop: AssetDevelopRepository;
+  assetEdit: AssetEditRepository;
+  assetFile: AssetFileRepository;
+  assetJob: AssetJobRepository;
+  assetRestoration: AssetRestorationRepository;
+  classification: ClassificationRepository;
+  clusterGroup: ClusterGroupRepository;
+  config: ConfigRepository;
+  cron: CronRepository;
+  crypto: CryptoRepository;
+  database: DatabaseRepository;
+  downloadRepository: DownloadRepository;
+  duplicateRepository: DuplicateRepository;
+  email: EmailRepository;
+  event: EventRepository;
+  forkSchema: AssetChecksumRepository;
+  integrityReport: IntegrityRepository;
+  job: JobRepository;
+  library: LibraryRepository;
+  logger: LoggingRepository;
+  machineLearning: MachineLearningRepository;
+  map: MapRepository;
+  media: MediaRepository;
+  mediaOperation: MediaOperationRepository;
+  memory: MemoryRepository;
+  metadata: MetadataRepository;
+  mlDestination: MlDestinationRepository;
+  move: MoveRepository;
+  notification: NotificationRepository;
+  ocr: OcrRepository;
+  oauth: OAuthRepository;
+  partner: PartnerRepository;
+  partnerOrigin: PartnerOriginRepository;
+  person: PersonRepository;
+  physicalFile: PhysicalFileRepository;
+  physicalFileTrash: PhysicalFileTrashRepository;
+  plugin: PluginRepository;
+  process: ProcessRepository;
+  renderWorker: RenderWorkerRepository;
+  frameleafCloud: FrameleafCloudRepository;
+  frameleafCloudMl: FrameleafCloudMlRepository;
+  frameleafConsent: FrameleafConsentRepository;
+  frameleafUserLicense: FrameleafUserLicenseRepository;
+  frameleafAccount: FrameleafAccountRepository;
+  hardwareProbe: HardwareProbeRepository;
+  instanceIdentity: InstanceIdentityRepository;
+  search: SearchRepository;
+  serverInfo: ServerInfoRepository;
+  smartAlbum: SmartAlbumRepository;
+  session: SessionRepository;
+  sharedLink: SharedLinkRepository;
+  sharedLinkAsset: SharedLinkAssetRepository;
+  itemShare: ItemShareRepository;
+  albumSource: AlbumSourceRepository;
+  stack: StackRepository;
+  storage: StorageRepository;
+  sync: SyncRepository;
+  syncCheckpoint: SyncCheckpointRepository;
+  systemMetadata: SystemMetadataRepository;
+  tag: TagRepository;
+  trash: TrashRepository;
+  user: UserRepository;
+  versionHistory: VersionHistoryRepository;
+  videoStream: VideoStreamRepository;
+  view: ViewRepository;
+  websocket: WebsocketRepository;
+  workflow: WorkflowRepository;
+};
+
+type As<T> = T extends RepositoryInterface<infer U> ? U : never;
+type IAccessRepository = { [K in keyof AccessRepository]: RepositoryInterface<AccessRepository[K]> };
+
+export type ServiceMocks = {
+  [K in keyof Omit<ServiceOverrides, 'access'>]: Mocked<RepositoryInterface<ServiceOverrides[K]>>;
+} & { access: IAccessRepositoryMock };
+
+type BaseServiceArgs = ConstructorParameters<typeof BaseService>;
+type Constructor<Type, Args extends Array<any>> = {
+  new (...deps: Args): Type;
+};
+
+export const getMocks = () => {
+  const loggerMock = { setContext: () => {} };
+  const configMock = { getEnv: () => ({}) };
+
+  // Constructors may wrap the connection, but mocked methods must never execute database work.
+  const database = {};
+  const databaseMock = automock(DatabaseRepository, { args: [database, loggerMock, configMock], strict: false });
+
+  databaseMock.withLock.mockImplementation((_type, fn) => fn());
+  databaseMock.isSchemaReady.mockResolvedValue(true);
+  databaseMock.withAssetMetadataLock.mockImplementation((_assetId, fn) => fn(undefined as never));
+  databaseMock.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(undefined as never));
+  databaseMock.withAssetSidecarLock.mockImplementation((_assetId, fn) => fn(undefined as never));
+  databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
+  databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('19beta4 (Debian 19~beta4-1.pgdg12+1)');
+  databaseMock.getPostgresVersionRange = vitest.fn().mockReturnValue('>=19.0.0 <20.0.0');
+  databaseMock.createExtension = vitest.fn().mockResolvedValue(void 0);
+
+  const mocks: ServiceMocks = {
+    access: newAccessRepositoryMock(),
+    // eslint-disable-next-line no-sparse-arrays
+    logger: automock(LoggingRepository, { args: [, configMock], strict: false }),
+    // eslint-disable-next-line no-sparse-arrays
+    cron: automock(CronRepository, { args: [, loggerMock] }),
+    crypto: newCryptoRepositoryMock(),
+    activity: automock(ActivityRepository),
+    // recording an administrator's change is incidental to most tests (FL-76)
+    adminAudit: automock(AdminAuditRepository, { strict: false }),
+    album: automock(AlbumRepository, { args: [database], strict: false }),
+    albumUser: automock(AlbumUserRepository),
+    asset: newAssetRepositoryMock(),
+    assetDevelop: automock(AssetDevelopRepository, { args: [database], strict: false }),
+    assetEdit: automock(AssetEditRepository, { args: [database] }),
+    assetFile: automock(AssetFileRepository),
+    assetJob: automock(AssetJobRepository, { args: [database] }),
+    assetRestoration: automock(AssetRestorationRepository),
+    classification: automock(ClassificationRepository, { args: [database], strict: false }),
+    clusterGroup: automock(ClusterGroupRepository, { args: [database] }),
+    app: automock(AppRepository, { strict: false }),
+    config: newConfigRepositoryMock(),
+    database: databaseMock,
+    downloadRepository: automock(DownloadRepository, { strict: false }),
+    duplicateRepository: automock(DuplicateRepository, { args: [database] }),
+    email: automock(EmailRepository, { args: [loggerMock] }),
+    // eslint-disable-next-line no-sparse-arrays
+    event: automock(EventRepository, { args: [, , loggerMock], strict: false }),
+    forkSchema: newForkSchemaRepositoryMock(),
+    integrityReport: automock(IntegrityRepository, { strict: false }),
+    job: newJobRepositoryMock(),
+    apiKey: automock(ApiKeyRepository),
+    library: automock(LibraryRepository, { strict: false }),
+    machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
+    map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
+    media: newMediaRepositoryMock(),
+    mediaOperation: automock(MediaOperationRepository, { strict: false }),
+    memory: automock(MemoryRepository),
+    metadata: newMetadataRepositoryMock(),
+    mlDestination: automock(MlDestinationRepository),
+    move: automock(MoveRepository, { strict: false }),
+    notification: automock(NotificationRepository),
+    ocr: automock(OcrRepository, { args: [database], strict: false }),
+    oauth: automock(OAuthRepository, { args: [loggerMock] }),
+    partner: automock(PartnerRepository, { strict: false }),
+    partnerOrigin: automock(PartnerOriginRepository, { args: [database], strict: false }),
+    person: automock(PersonRepository, { args: [database], strict: false }),
+    physicalFile: automock(PhysicalFileRepository, { strict: false }),
+    physicalFileTrash: automock(PhysicalFileTrashRepository, { strict: false }),
+    plugin: automock(PluginRepository, { strict: true, args: [databaseMock, loggerMock] }),
+    process: automock(ProcessRepository),
+    renderWorker: automock(RenderWorkerRepository, { strict: false }),
+    frameleafCloud: automock(FrameleafCloudRepository, { args: [loggerMock], strict: false }),
+    frameleafCloudMl: automock(FrameleafCloudMlRepository, { strict: false }),
+    frameleafConsent: automock(FrameleafConsentRepository, { strict: false }),
+    frameleafUserLicense: automock(FrameleafUserLicenseRepository, { strict: false }),
+    frameleafAccount: automock(FrameleafAccountRepository, { strict: false }),
+    hardwareProbe: automock(HardwareProbeRepository, { strict: false }),
+    instanceIdentity: automock(InstanceIdentityRepository, { strict: false }),
+    search: automock(SearchRepository, { args: [database], strict: false }),
+    // eslint-disable-next-line no-sparse-arrays
+    serverInfo: automock(ServerInfoRepository, { args: [, loggerMock], strict: false }),
+    smartAlbum: automock(SmartAlbumRepository, { args: [database], strict: false }),
+    session: automock(SessionRepository),
+    sharedLink: automock(SharedLinkRepository),
+    sharedLinkAsset: automock(SharedLinkAssetRepository),
+    itemShare: automock(ItemShareRepository, { strict: false }),
+    albumSource: automock(AlbumSourceRepository, { strict: false }),
+    stack: automock(StackRepository),
+    storage: newStorageRepositoryMock(),
+    sync: automock(SyncRepository),
+    syncCheckpoint: automock(SyncCheckpointRepository),
+    systemMetadata: newSystemMetadataRepositoryMock(),
+    // systemMetadata: automock(SystemMetadataRepository, { strict: false }),
+    tag: automock(TagRepository, { args: [database, loggerMock], strict: false }),
+    trash: automock(TrashRepository),
+    user: automock(UserRepository, { args: [database], strict: false }),
+    versionHistory: automock(VersionHistoryRepository),
+    videoStream: automock(VideoStreamRepository, { strict: false }),
+    view: automock(ViewRepository),
+    // eslint-disable-next-line no-sparse-arrays
+    websocket: automock(WebsocketRepository, { args: [, loggerMock], strict: false }),
+    workflow: automock(WorkflowRepository, { strict: true }),
+  };
+
+  mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
+  mocks.machineLearning.captureClipRead.mockResolvedValue({
+    assertCurrent: () => Promise.resolve(),
+    publish: (write) => write(),
+  });
+
+  // every new user gets a cluster group, which is incidental to most tests
+  mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
+
+  // no album is filled by smart album rules, and no classification rule exists, unless a test says so (FL-60)
+  mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
+  mocks.smartAlbum.getHiddenAlbumIds.mockResolvedValue(new Set());
+  mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
+  mocks.classification.getRules.mockResolvedValue([]);
+  mocks.classification.getEnabledRules.mockResolvedValue([]);
+  // FL-326: no partner copies follow anything, and nobody shares a library, unless a test says so
+  mocks.partner.getAll.mockResolvedValue([]);
+  mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
+  mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
+  mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
+  mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
+  // Write wrappers run their callback by default so a test cannot pass while silently skipping the write.
+  mocks.partnerOrigin.withOwnerTagEdit.mockImplementation(async (_owner, write) => write());
+  mocks.person.withMergeWrite.mockImplementation(async (write) => write());
+  mocks.album.withMembershipWrite.mockImplementation(async (_ids, write) =>
+    write(undefined as never, mocks.album as never),
+  );
+  mocks.asset.withMetadataUpdate.mockImplementation(async (_id, write) =>
+    write(mocks.asset as never, mocks.access as never, undefined as never),
+  );
+  mocks.asset.withLivePhotoUpdate.mockImplementation(async (_id, _motion, write) =>
+    write(mocks.asset as never, mocks.access as never),
+  );
+  mocks.itemShare.withTransaction.mockImplementation(async (callback) =>
+    callback(mocks.itemShare as never, mocks.user as never, mocks.asset as never, mocks.access as never),
+  );
+  mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
+  mocks.classification.recordAlbumRemovals.mockResolvedValue({
+    added: 0,
+    suggested: 0,
+    removed: 0,
+    unchanged: 0,
+    tagged: [],
+    untagged: [],
+    locked: [],
+    missing: [],
+  });
+  mocks.classification.recordAlbumAdditions.mockResolvedValue();
+
+  // moving photos into the Locked folder finds no released face thumbnails or profile pictures
+  // unless a test says otherwise (FL-53)
+  mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+  mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+
+  // library workloads are routed to a healthy local destination unless a test says otherwise
+  mocks.mlDestination.getRoute.mockImplementation((workload) =>
+    Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
+  );
+  mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+  // FL-456: no processing-order plan unless a test gives one, so admission falls back to `getRoute` above
+  mocks.mlDestination.resolveRoute.mockResolvedValue([]);
+  // no route names a restoration endpoint for library work unless a test says otherwise (FL-72)
+  mocks.mlDestination.getRoutes.mockResolvedValue([]);
+  mocks.mlDestination.getSpend.mockResolvedValue(0);
+  mocks.mlDestination.recordProbe.mockResolvedValue();
+  mocks.mlDestination.recordAccounting.mockResolvedValue();
+  mocks.mlDestination.assertRecoveryAuthority.mockResolvedValue();
+  mocks.mlDestination.assertEndpointAuthority.mockResolvedValue('test-authority');
+  mocks.mlDestination.recoveryRegistry.mockResolvedValue(null);
+  mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
+
+  return mocks;
+};
+
+export const newTestService = <T extends BaseService>(
+  Service: Constructor<T, BaseServiceArgs>,
+  overrides: Partial<ServiceOverrides> = {},
+) => {
+  const mocks = getMocks();
+
+  const sut = new Service(
+    overrides.logger || (mocks.logger as As<LoggingRepository>),
+    overrides.access || (mocks.access as IAccessRepository as AccessRepository),
+    overrides.activity || (mocks.activity as As<ActivityRepository>),
+    overrides.adminAudit || (mocks.adminAudit as As<AdminAuditRepository>),
+    overrides.album || (mocks.album as As<AlbumRepository>),
+    overrides.albumUser || (mocks.albumUser as As<AlbumUserRepository>),
+    overrides.apiKey || (mocks.apiKey as As<ApiKeyRepository>),
+    overrides.app || (mocks.app as As<AppRepository>),
+    overrides.asset || (mocks.asset as As<AssetRepository>),
+    overrides.assetDevelop || (mocks.assetDevelop as As<AssetDevelopRepository>),
+    overrides.assetEdit || (mocks.assetEdit as As<AssetEditRepository>),
+    overrides.assetFile || (mocks.assetFile as As<AssetFileRepository>),
+    overrides.assetJob || (mocks.assetJob as As<AssetJobRepository>),
+    overrides.assetRestoration || (mocks.assetRestoration as As<AssetRestorationRepository>),
+    overrides.classification || (mocks.classification as As<ClassificationRepository>),
+    overrides.clusterGroup || (mocks.clusterGroup as As<ClusterGroupRepository>),
+    overrides.config || (mocks.config as As<ConfigRepository> as ConfigRepository),
+    overrides.cron || (mocks.cron as As<CronRepository>),
+    overrides.crypto || (mocks.crypto as As<CryptoRepository>),
+    overrides.database || (mocks.database as As<DatabaseRepository>),
+    overrides.downloadRepository || (mocks.downloadRepository as As<DownloadRepository>),
+    overrides.duplicateRepository || (mocks.duplicateRepository as As<DuplicateRepository>),
+    overrides.email || (mocks.email as As<EmailRepository>),
+    overrides.event || (mocks.event as As<EventRepository>),
+    overrides.forkSchema || (mocks.forkSchema as As<AssetChecksumRepository>),
+    overrides.integrityReport || (mocks.integrityReport as As<IntegrityRepository>),
+    overrides.job || (mocks.job as As<JobRepository>),
+    overrides.library || (mocks.library as As<LibraryRepository>),
+    overrides.machineLearning || (mocks.machineLearning as As<MachineLearningRepository>),
+    overrides.map || (mocks.map as As<MapRepository>),
+    overrides.media || (mocks.media as As<MediaRepository>),
+    overrides.mediaOperation || (mocks.mediaOperation as As<MediaOperationRepository>),
+    overrides.memory || (mocks.memory as As<MemoryRepository>),
+    overrides.metadata || (mocks.metadata as As<MetadataRepository>),
+    overrides.mlDestination || (mocks.mlDestination as As<MlDestinationRepository>),
+    overrides.move || (mocks.move as As<MoveRepository>),
+    overrides.notification || (mocks.notification as As<NotificationRepository>),
+    overrides.oauth || (mocks.oauth as As<OAuthRepository>),
+    overrides.ocr || (mocks.ocr as As<OcrRepository>),
+    overrides.partner || (mocks.partner as As<PartnerRepository>),
+    overrides.partnerOrigin || (mocks.partnerOrigin as As<PartnerOriginRepository>),
+    overrides.person || (mocks.person as As<PersonRepository>),
+    overrides.physicalFile || (mocks.physicalFile as As<PhysicalFileRepository>),
+    overrides.physicalFileTrash || (mocks.physicalFileTrash as As<PhysicalFileTrashRepository>),
+    overrides.plugin || (mocks.plugin as As<PluginRepository>),
+    overrides.process || (mocks.process as As<ProcessRepository>),
+    overrides.renderWorker || (mocks.renderWorker as As<RenderWorkerRepository>),
+    overrides.frameleafCloud || (mocks.frameleafCloud as As<FrameleafCloudRepository>),
+    overrides.frameleafCloudMl || (mocks.frameleafCloudMl as As<FrameleafCloudMlRepository>),
+    overrides.frameleafConsent || (mocks.frameleafConsent as As<FrameleafConsentRepository>),
+    overrides.frameleafUserLicense || (mocks.frameleafUserLicense as As<FrameleafUserLicenseRepository>),
+    overrides.frameleafAccount || (mocks.frameleafAccount as As<FrameleafAccountRepository>),
+    overrides.hardwareProbe || (mocks.hardwareProbe as As<HardwareProbeRepository>),
+    overrides.instanceIdentity || (mocks.instanceIdentity as As<InstanceIdentityRepository>),
+    overrides.search || (mocks.search as As<SearchRepository>),
+    overrides.serverInfo || (mocks.serverInfo as As<ServerInfoRepository>),
+    overrides.smartAlbum || (mocks.smartAlbum as As<SmartAlbumRepository>),
+    overrides.session || (mocks.session as As<SessionRepository>),
+    overrides.sharedLink || (mocks.sharedLink as As<SharedLinkRepository>),
+    overrides.sharedLinkAsset || (mocks.sharedLinkAsset as As<SharedLinkAssetRepository>),
+    overrides.itemShare || (mocks.itemShare as As<ItemShareRepository>),
+    overrides.albumSource || (mocks.albumSource as As<AlbumSourceRepository>),
+    overrides.stack || (mocks.stack as As<StackRepository>),
+    overrides.storage || (mocks.storage as As<StorageRepository>),
+    overrides.sync || (mocks.sync as As<SyncRepository>),
+    overrides.syncCheckpoint || (mocks.syncCheckpoint as As<SyncCheckpointRepository>),
+    overrides.systemMetadata || (mocks.systemMetadata as As<SystemMetadataRepository>),
+    overrides.tag || (mocks.tag as As<TagRepository>),
+    overrides.trash || (mocks.trash as As<TrashRepository>),
+    overrides.user || (mocks.user as As<UserRepository>),
+    overrides.versionHistory || (mocks.versionHistory as As<VersionHistoryRepository>),
+    overrides.videoStream || (mocks.videoStream as As<VideoStreamRepository>),
+    overrides.view || (mocks.view as As<ViewRepository>),
+    overrides.websocket || (mocks.websocket as As<WebsocketRepository>),
+    overrides.workflow || (mocks.workflow as As<WorkflowRepository>),
+  );
+
+  return {
+    sut,
+    mocks,
+  };
+};
+
+const createPNG = (r: number, g: number, b: number) => {
+  const image = new PNG({ width: 1, height: 1 });
+  image.data[0] = r;
+  image.data[1] = g;
+  image.data[2] = b;
+  image.data[3] = 255;
+  return PNG.sync.write(image);
+};
+
+function* newPngFactory() {
+  for (let r = 0; r < 255; r++) {
+    for (let g = 0; g < 255; g++) {
+      for (let b = 0; b < 255; b++) {
+        yield createPNG(r, g, b);
+      }
+    }
+  }
+}
+
+const pngFactory = newPngFactory();
+
+const templateName = 'frameleaf';
+
+const withDatabase = (url: string, name: string) => {
+  const target = new URL(url);
+  target.pathname = `/${name}`;
+  return target.href;
+};
+
+export const getKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): Promise<Kysely<DB>> => {
+  const testUrl = process.env.IMMICH_TEST_POSTGRES_URL!;
+  const connection = { connectionType: 'url', url: withDatabase(testUrl, 'postgres') } as DatabaseConnectionParams;
+  const sql = createPostgres({ maxConnections: 1, connection });
+
+  // 5 random base36 chars collided across the ~1,400 clones of a medium run ("already exists").
+  const randomSuffix = randomUUID().replaceAll('-', '');
+  const dbName = `frameleaf_${suffix ?? randomSuffix}`;
+  try {
+    await sql.unsafe(`CREATE DATABASE ${dbName} WITH TEMPLATE ${templateName} OWNER postgres;`);
+  } finally {
+    // The admin connection is only needed to clone the template. Left open, every call leaked one
+    // connection for the rest of the test file, and the shared medium database ran out of clients.
+    await sql.end();
+  }
+
+  return new Kysely<DB>({
+    ...getKyselyConfig({ connectionType: 'url', url: withDatabase(testUrl, dbName) }),
+    ...(log !== undefined && { log }),
+  });
+};
+
+export const getActiveForkKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): Promise<Kysely<DB>> => {
+  const db = await getKyselyDB(suffix, log);
+  return db;
+};
+
+export const newRandomImage = () => {
+  const { value } = pngFactory.next();
+  if (!value) {
+    throw new Error('Ran out of random asset data');
+  }
+
+  return value;
+};
+
+export const mockSpawn = vitest.fn((exitCode: number, stdout: string, stderr: string, error?: unknown) => {
+  return {
+    stdout: new Readable({
+      read() {
+        this.push(stdout); // write mock data to stdout
+        this.push(null); // end stream
+      },
+    }),
+    stderr: new Readable({
+      read() {
+        this.push(stderr); // write mock data to stderr
+        this.push(null); // end stream
+      },
+    }),
+    stdin: new Writable({
+      write(chunk, encoding, callback) {
+        callback();
+      },
+    }),
+    exitCode,
+    on: vitest.fn((event, callback: any) => {
+      if (event === 'close') {
+        callback(0);
+      }
+      if (event === 'error' && error) {
+        callback(error);
+      }
+      if (event === 'exit') {
+        callback(exitCode);
+      }
+    }),
+    kill: vitest.fn(),
+  } as unknown as ChildProcessWithoutNullStreams;
+});
+
+export const mockDuplex =
+  (chunkCb?: (chunk: Buffer) => void) =>
+  (command: string, exitCode: number, stdout: string, stderr: string, error?: unknown) => {
+    const duplex = new Duplex({
+      write(chunk, _encoding, callback) {
+        chunkCb?.(chunk);
+        callback();
+      },
+
+      read() {},
+
+      final(callback) {
+        callback();
+      },
+    });
+
+    setImmediate(() => {
+      if (error) {
+        duplex.destroy(error as Error);
+      } else if (exitCode === 0) {
+        duplex.push(stdout);
+        duplex.push(null);
+      } else {
+        duplex.destroy(new Error(`${command} non-zero exit code (${exitCode})\n${stderr}`));
+      }
+    });
+
+    return duplex;
+  };
+
+export async function* makeStream<T>(items: T[] = []): AsyncGenerator<T> {
+  for (const item of items) {
+    await Promise.resolve();
+    yield item;
+  }
+}
+
+export const wait = (ms: number): Promise<void> => {
+  return new Promise((resolve) => {
+    const target = performance.now() + ms;
+    const checkDone = () => {
+      if (performance.now() >= target) {
+        resolve();
+      } else {
+        setTimeout(checkDone, 1); // Check again after 1ms
+      }
+    };
+    setTimeout(checkDone, ms);
+  });
+};
+
+/**
+ * FL-329/FL-406: every administrator notice and push a producer emitted carries a system template whose
+ * English catalog text is exactly the producer's supplied text, so English recipients see no change.
+ */
+export const expectLocalisedSystemNotices = (emit: { mock: { calls: unknown[][] } }) => {
+  for (const [event, value] of emit.mock.calls) {
+    if (event !== 'AdminNotify' && event !== 'PushNotify') {
+      continue;
+    }
+    const notice = value as { title: string; description?: string; body?: string; systemTemplate?: unknown };
+    const supplied = { title: notice.title, body: event === 'AdminNotify' ? notice.description : notice.body };
+    expect(notice.systemTemplate, `${event}: ${notice.title}`).toBeDefined();
+    expect(renderSystemNotification(notice.systemTemplate, 'en', { title: '', body: '' })).toEqual(supplied);
+  }
+};

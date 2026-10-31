@@ -1,0 +1,94 @@
+import { Kysely } from 'kysely';
+import { SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
+import { DB } from 'src/schema/index.js';
+import { SyncTestContext } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
+
+let defaultDatabase: Kysely<DB>;
+
+const setup = async (db?: Kysely<DB>) => {
+  const ctx = new SyncTestContext(db || defaultDatabase);
+  const { auth, user, session } = await ctx.newSyncAuthUser();
+  return { auth, user, session, ctx };
+};
+
+beforeAll(async () => {
+  defaultDatabase = await getKyselyDB();
+});
+
+describe(SyncEntityType.SyncResetV1, () => {
+  it('should work', async () => {
+    const { auth, ctx } = await setup();
+
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2]);
+  });
+
+  it('should detect a pending sync reset', async () => {
+    const { auth, ctx } = await setup();
+
+    await ctx.get(SessionRepository).update(auth.session!.id, {
+      isPendingSyncReset: true,
+    });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    expect(response).toEqual([{ type: SyncEntityType.SyncResetV1, data: {}, ack: 'SyncResetV1|reset' }]);
+  });
+
+  it('should not send other dtos when a reset is pending', async () => {
+    const { auth, user, ctx } = await setup();
+
+    await ctx.newAsset({ ownerId: user.id });
+
+    await expect(ctx.syncStream(auth, [SyncRequestType.AssetsV2])).resolves.toEqual([
+      expect.objectContaining({ type: SyncEntityType.AssetV2 }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+
+    await ctx.get(SessionRepository).update(auth.session!.id, {
+      isPendingSyncReset: true,
+    });
+
+    await expect(ctx.syncStream(auth, [SyncRequestType.AssetsV2])).resolves.toEqual([
+      { type: SyncEntityType.SyncResetV1, data: {}, ack: 'SyncResetV1|reset' },
+    ]);
+  });
+
+  it('should allow resetting a pending reset when requesting changes ', async () => {
+    const { auth, user, ctx } = await setup();
+
+    await ctx.newAsset({ ownerId: user.id });
+
+    await ctx.get(SessionRepository).update(auth.session!.id, {
+      isPendingSyncReset: true,
+    });
+
+    await expect(ctx.syncStream(auth, [SyncRequestType.AssetsV2], true)).resolves.toEqual([
+      expect.objectContaining({ type: SyncEntityType.AssetV2 }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+  });
+
+  it('should reset the sync progress', async () => {
+    const { auth, user, ctx } = await setup();
+
+    await ctx.newAsset({ ownerId: user.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    await ctx.syncAckAll(auth, response);
+
+    await ctx.get(SessionRepository).update(auth.session!.id, {
+      isPendingSyncReset: true,
+    });
+
+    const resetResponse = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+
+    await ctx.syncAckAll(auth, resetResponse);
+
+    const postResetResponse = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
+    expect(postResetResponse).toEqual([
+      expect.objectContaining({ type: SyncEntityType.AssetV2 }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+  });
+});
