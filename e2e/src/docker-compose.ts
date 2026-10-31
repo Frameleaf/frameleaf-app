@@ -14,7 +14,14 @@ const stopChild = (child: ChildProcess) =>
       resolve();
       return;
     }
-    child.once('close', () => resolve());
+    // If compose up ignores SIGTERM, escalate to SIGKILL and stop waiting so teardown still runs.
+    const escalate = setTimeout(() => child.kill('SIGKILL'), 10_000);
+    const giveUp = setTimeout(() => resolve(), 15_000);
+    child.once('close', () => {
+      clearTimeout(escalate);
+      clearTimeout(giveUp);
+      resolve();
+    });
     child.kill();
   });
 
