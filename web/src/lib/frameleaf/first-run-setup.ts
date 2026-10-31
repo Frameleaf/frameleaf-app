@@ -24,8 +24,8 @@ export type SetupFlow = 'new' | 'existing';
 export type SetupChapterId = 'welcome' | 'account' | 'library' | 'protection' | 'ready';
 export type SetupStepId =
   | 'welcome'
-  | 'sign-in-choice'
   | 'account'
+  | 'frameleaf-account'
   | 'admin-sign-in'
   | 'library'
   | 'library-check'
@@ -52,8 +52,11 @@ const step = (id: SetupStepId, chapter: SetupChapterId, title: Translations, req
 export const setupFlows: Record<SetupFlow, readonly SetupStep[]> = {
   new: [
     step('welcome', 'welcome', 'frameleaf_setup_welcome_title'),
-    step('sign-in-choice', 'account', 'frameleaf_setup_sign_in_choice_title'),
-    step('account', 'account', 'frameleaf_setup_account_title', true),
+    // FL-708 (UI review item 20): the administrator is always a local account, so the owner can sign in
+    // to their own server even when Frameleaf Cloud can't be reached. A Frameleaf account comes next
+    // and can be skipped.
+    step('account', 'account', 'frameleaf_setup_admin_account_title', true),
+    step('frameleaf-account', 'account', 'frameleaf_setup_frameleaf_account_title'),
     step('library', 'library', 'frameleaf_setup_library_title', true),
     step('processing', 'library', 'frameleaf_setup_processing_title'),
     step('protection', 'protection', 'frameleaf_setup_protection_title'),
@@ -81,6 +84,24 @@ export const chapterIndex = (chapterId: SetupChapterId) =>
     0,
     setupChapters.findIndex((chapter) => chapter.id === chapterId),
   );
+
+/**
+ * FL-708 (item 2): the step counter counts the chapters the rail shows ("Account · 2 of 5"), not the
+ * steps inside them.
+ */
+export const chapterCount = (chapterId: SetupChapterId) => ({
+  chapter: setupChapters[chapterIndex(chapterId)].label,
+  position: chapterIndex(chapterId) + 1,
+  count: setupChapters.length,
+});
+
+/**
+ * FL-708 (item 4): the "Required" badge shows only where there is something to fill in: the new
+ * server's administrator form. The library location is required to be writable, but it can't be
+ * edited in setup, so it carries no badge.
+ */
+export const showsRequired = (state: SetupState, stepId: SetupStepId) =>
+  stepId === 'account' && state.flow === 'new' && !state.choices.accountCreated;
 
 // --------------------------------------------------------------- choices
 
@@ -185,22 +206,46 @@ export const withDefaultTier = (
 };
 
 export const KEEP_LAYOUT = 'keep';
-export const layoutPresets: readonly { id: string; label: Translations; pattern: string; recommended?: boolean }[] = [
+/** `short` names the layout in Ready's summary (item 5): "Year / Month", not a sample file path. */
+export const layoutPresets: readonly {
+  id: string;
+  label: Translations;
+  short: Translations;
+  pattern: string;
+  recommended?: boolean;
+}[] = [
   {
     id: 'year-month',
     label: 'frameleaf_setup_layout_year_month',
+    short: 'frameleaf_setup_layout_year_month_short',
     pattern: '{{y}}/{{MM}}/{{filename}}',
     recommended: true,
   },
-  { id: 'date', label: 'frameleaf_setup_layout_date', pattern: '{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}' },
-  { id: 'album', label: 'frameleaf_setup_layout_album', pattern: '{{album}}/{{y}}/{{filename}}' },
-  { id: 'camera', label: 'frameleaf_setup_layout_camera', pattern: '{{make}} {{model}}/{{y}}/{{filename}}' },
+  {
+    id: 'date',
+    label: 'frameleaf_setup_layout_date',
+    short: 'frameleaf_setup_layout_date_short',
+    pattern: '{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}',
+  },
+  {
+    id: 'album',
+    label: 'frameleaf_setup_layout_album',
+    short: 'frameleaf_setup_layout_album_short',
+    pattern: '{{album}}/{{y}}/{{filename}}',
+  },
+  {
+    id: 'camera',
+    label: 'frameleaf_setup_layout_camera',
+    short: 'frameleaf_setup_layout_camera_short',
+    pattern: '{{make}} {{model}}/{{y}}/{{filename}}',
+  },
 ];
 export const layoutPattern = (layout: string, current: string) =>
   layout === KEEP_LAYOUT ? current : (layoutPresets.find((entry) => entry.id === layout) ?? layoutPresets[0]).pattern;
 
 export type SetupChoices = {
   language: string;
+  /** FL-708: always `local` on a new server; an existing library's choice to link a Frameleaf account. */
   signIn: 'frameleaf' | 'local';
   linked: boolean;
   /** Set once the local administrator exists; never the password. */
@@ -233,8 +278,6 @@ export type SetupState = {
 export type SetupContext = {
   secrets?: { password?: string; confirm?: string };
   storageWritable?: boolean | null;
-  /** FL-168: the server is already linked with Sign in with Frameleaf, so the Frameleaf path signs in. */
-  frameleafSignIn?: boolean;
 };
 
 export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
@@ -247,8 +290,8 @@ export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
     completed: false,
     choices: {
       language: 'en',
-      // New servers recommend a Frameleaf account; existing ones keep the local admin.
-      signIn: existing ? 'local' : 'frameleaf',
+      // FL-708: every administrator is local first; a Frameleaf account is linked on top, or skipped.
+      signIn: 'local',
       linked: false,
       accountCreated: false,
       signedIn: false,
@@ -281,28 +324,22 @@ export const validEmail = (value: string) => EMAIL.test(value.trim());
  * are required; every other step has a recommended choice.
  */
 export const validateStep = (state: SetupState, stepId: SetupStepId, context: SetupContext = {}) => {
-  const errors: Partial<Record<'link' | 'name' | 'email' | 'password' | 'confirm' | 'storage', Translations>> = {};
+  const errors: Partial<Record<'name' | 'email' | 'password' | 'confirm' | 'storage', Translations>> = {};
   const { choices } = state;
   const secrets = context.secrets ?? {};
-  if (stepId === 'account' && state.flow === 'new') {
-    // FL-168: the Frameleaf path signs in with Frameleaf on an already linked server; anywhere else it
-    // creates the administrator first and then needs the link
-    if (choices.signIn === 'frameleaf' && (context.frameleafSignIn || choices.accountCreated)) {
-      if (!choices.linked) {
-        errors.link = 'frameleaf_setup_error_link';
-      }
-    } else if (!choices.accountCreated) {
-      if (!choices.adminName.trim()) {
-        errors.name = 'frameleaf_setup_error_name';
-      }
-      if (!validEmail(choices.adminEmail)) {
-        errors.email = 'frameleaf_setup_error_email';
-      }
-      if (!passwordStrength(secrets.password ?? '').recommended) {
-        errors.password = 'frameleaf_setup_error_password';
-      } else if (secrets.password !== secrets.confirm) {
-        errors.confirm = 'frameleaf_setup_error_confirm';
-      }
+  // FL-708: a new server always gets its local administrator here (name, email and a password of at
+  // least 12 characters); nothing else stands in for it.
+  if (stepId === 'account' && state.flow === 'new' && !choices.accountCreated) {
+    if (!choices.adminName.trim()) {
+      errors.name = 'frameleaf_setup_error_name';
+    }
+    if (!validEmail(choices.adminEmail)) {
+      errors.email = 'frameleaf_setup_error_email';
+    }
+    if (!passwordStrength(secrets.password ?? '').acceptable) {
+      errors.password = 'frameleaf_setup_error_password';
+    } else if (secrets.password !== secrets.confirm) {
+      errors.confirm = 'frameleaf_setup_error_confirm';
     }
   }
   if (stepId === 'library' && context.storageWritable === false) {
@@ -336,7 +373,7 @@ export const goToStep = (state: SetupState, target: number, context: SetupContex
   }
   const passed = new Set(steps.slice(0, next).map((entry) => entry.id));
   const choices = { ...state.choices };
-  if (passed.has('account') && state.flow === 'new' && choices.signIn === 'local') {
+  if (passed.has('account') && state.flow === 'new') {
     choices.accountCreated = true;
   }
   if (passed.has('admin-sign-in')) {
@@ -463,10 +500,10 @@ export const resumeSetup = (
   if (!signedIn) {
     return state;
   }
-  // FL-168: a signed-in administrator on the Frameleaf path who has not linked yet carries on linking
-  const choices = { ...state.choices };
-  const step = flow === 'existing' ? Math.max(1, state.step) : state.step;
-  return { ...state, choices, step, reached: Math.max(state.reached, step) };
+  // A signed-in administrator is past the sign-in gate (existing) or the administrator form (new).
+  const past = flowSteps(flow).findIndex((entry) => entry.id === (flow === 'existing' ? 'admin-sign-in' : 'account'));
+  const step = Math.max(past + 1, state.step);
+  return { ...state, step, reached: Math.max(state.reached, step) };
 };
 
 type KeyValueStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -497,6 +534,46 @@ export const clearLocalSetup = (storage = browserStorage()) => {
     // private windows can refuse storage; the server copy still resumes
   }
 };
+
+// ------------------------------------------------------ Frameleaf account
+
+export type FrameleafAccountMode = 'create' | 'sign-in';
+export type FrameleafAccountForm = { mode: FrameleafAccountMode; name: string; email: string; password: string };
+
+/** Where "Create account and link" sends people to read the Terms of Use (owner decision 2026-10-06). */
+export const FRAMELEAF_TERMS_URL = 'https://frameleaf.app/legal';
+
+/**
+ * FL-708 (item 20): the optional Frameleaf account step, after the local administrator exists.
+ * `create` makes a new account (name, email, a password of at least 12 characters); `sign-in` uses one
+ * the administrator already has (email and password). The password never enters saved state.
+ */
+export const validateFrameleafAccount = ({ mode, name, email, password }: FrameleafAccountForm) => {
+  const errors: Partial<Record<'name' | 'email' | 'password', Translations>> = {};
+  if (mode === 'create' && !name.trim()) {
+    errors.name = 'frameleaf_setup_error_name';
+  }
+  if (!validEmail(email)) {
+    errors.email = 'frameleaf_setup_error_email';
+  }
+  if (mode === 'create' && !passwordStrength(password).acceptable) {
+    errors.password = 'frameleaf_setup_error_password';
+  } else if (mode === 'sign-in' && !password) {
+    errors.password = 'frameleaf_setup_error_frameleaf_password';
+  }
+  return { ok: Object.keys(errors).length === 0, errors };
+};
+
+/** The account form starts from the administrator's own name and email. */
+export const frameleafAccountForm = (
+  state: SetupState,
+  mode: FrameleafAccountMode = 'create',
+): FrameleafAccountForm => ({
+  mode,
+  name: state.choices.adminName,
+  email: state.choices.adminEmail,
+  password: '',
+});
 
 // ----------------------------------------------------------- estimates
 

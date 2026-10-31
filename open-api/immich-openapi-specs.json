@@ -77795,9 +77795,9 @@
             "type": "boolean"
           },
           "newPassword": {
-            "description": "New password (min 8 characters)",
-            "example": "password",
-            "minLength": 8,
+            "description": "New password (min 12 characters)",
+            "example": "a-new-password",
+            "minLength": 12,
             "type": "string"
           },
           "password": {
@@ -88629,8 +88629,8 @@
             "type": "string"
           },
           "password": {
-            "description": "The administrator’s password (min 8 characters)",
-            "minLength": 8,
+            "description": "The administrator’s password (min 12 characters)",
+            "minLength": 12,
             "type": "string"
           }
         },
@@ -105028,9 +105028,9 @@
       "PasswordLinkRedeemDto": {
         "properties": {
           "newPassword": {
-            "description": "The password they chose (min 8 characters)",
-            "example": "password",
-            "minLength": 8,
+            "description": "The password they chose (min 12 characters)",
+            "example": "a-new-password",
+            "minLength": 12,
             "type": "string"
           },
           "token": {
@@ -134035,8 +134035,9 @@
             "type": "string"
           },
           "password": {
-            "description": "User password",
-            "example": "password",
+            "description": "User password (min 12 characters)",
+            "example": "a-long-password",
+            "minLength": 12,
             "type": "string"
           }
         },
@@ -149501,7 +149502,8 @@
           },
           "password": {
             "deprecated": true,
-            "description": "User password (deprecated, use change password endpoint)",
+            "description": "User password (deprecated, use change password endpoint; min 12 characters)",
+            "minLength": 12,
             "type": "string"
           }
         },

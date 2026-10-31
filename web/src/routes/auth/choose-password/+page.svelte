@@ -12,6 +12,7 @@
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import AuthPasswordQuality from '$lib/components/frameleaf/AuthPasswordQuality.svelte';
+  import { passwordStrength } from '$lib/frameleaf/auth-password';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { checkPasswordLink, redeemPasswordLink } from '@frameleaf/sdk';
@@ -27,8 +28,8 @@
   let loading = $state(false);
   let errorMessage = $state('');
   const mismatch = $derived(passwordConfirm.length > 0 && password !== passwordConfirm);
-  // The strength meter is advisory only: the server decides which passwords it accepts.
-  const ready = $derived(password.length > 0 && password === passwordConfirm);
+  // FL-708: the one rule is length (the server enforces the same minimum); the meter only advises.
+  const ready = $derived(passwordStrength(password).acceptable && password === passwordConfirm);
 
   onMount(() => {
     token = decodeURIComponent(location.hash.replace(/^#/, ''));

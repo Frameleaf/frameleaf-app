@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   accountToolProgress,
   applySetupChoices,
+  chapterCount,
   createSetup,
   defaultTier,
   firstInvalidStep,
   flowSteps,
+  frameleafAccountForm,
+  FRAMELEAF_TERMS_URL,
   goToStep,
   KEEP_LAYOUT,
   loadAccountTool,
@@ -22,8 +25,10 @@ import {
   setLinked,
   setupRedirect,
   setupStageTheme,
+  showsRequired,
   themeAfterSetup,
   toProgress,
+  validateFrameleafAccount,
   validateStep,
   withDefaultTier,
   type TierHardware,
@@ -39,15 +44,15 @@ const memory = () => {
   };
 };
 
-const strong = { password: 'Correct-Horse-9', confirm: 'Correct-Horse-9' };
+const strong = { password: 'correct horse battery', confirm: 'correct horse battery' };
 const indexOf = (flow: 'new' | 'existing', id: string) => flowSteps(flow).findIndex((entry) => entry.id === id);
 
 describe('first-run setup state (FL-176)', () => {
   it('has the prototype step order for both flows', () => {
     expect(flowSteps('new').map((entry) => entry.id)).toEqual([
       'welcome',
-      'sign-in-choice',
       'account',
+      'frameleaf-account',
       'library',
       'processing',
       'protection',
@@ -69,15 +74,28 @@ describe('first-run setup state (FL-176)', () => {
     ]);
   });
 
-  it('recommends a Frameleaf account on a new server and keeps the layout on an existing library', () => {
-    expect(createSetup('new').choices).toMatchObject({ signIn: 'frameleaf', layout: 'year-month' });
+  it('makes every administrator local first and keeps the layout on an existing library (FL-708)', () => {
+    expect(createSetup('new').choices).toMatchObject({ signIn: 'local', linked: false, layout: 'year-month' });
     expect(createSetup('existing').choices).toMatchObject({ signIn: 'local', layout: KEEP_LAYOUT });
+  });
+
+  it('counts the chapters the rail shows, not the inner steps (item 2)', () => {
+    expect(chapterCount('account')).toEqual({ chapter: 'frameleaf_setup_chapter_account', position: 2, count: 5 });
+    expect(chapterCount('ready')).toMatchObject({ position: 5, count: 5 });
+  });
+
+  it('shows "Required" only on the administrator form (item 4)', () => {
+    const state = createSetup('new');
+    expect(showsRequired(state, 'account')).toBe(true);
+    expect(showsRequired(state, 'library')).toBe(false);
+    expect(showsRequired(state, 'frameleaf-account')).toBe(false);
+    expect(showsRequired({ ...state, choices: { ...state.choices, accountCreated: true } }, 'account')).toBe(false);
+    expect(showsRequired(createSetup('existing'), 'account')).toBe(false);
   });
 
   describe('required steps', () => {
     it('requires a complete local admin before leaving the account step', () => {
       let state = createSetup('new');
-      state = { ...state, choices: { ...state.choices, signIn: 'local' } };
       expect(validateStep(state, 'account').errors).toMatchObject({
         name: 'frameleaf_setup_error_name',
         email: 'frameleaf_setup_error_email',
@@ -85,31 +103,28 @@ describe('first-run setup state (FL-176)', () => {
       });
       state = { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
       expect(validateStep(state, 'account', { secrets: { password: 'weak', confirm: 'weak' } }).ok).toBe(false);
+      // FL-708 item 19: twelve characters is the only rule; no character classes
+      const eleven = { password: 'elevenchars', confirm: 'elevenchars' };
+      expect(validateStep(state, 'account', { secrets: eleven }).errors).toEqual({
+        password: 'frameleaf_setup_error_password',
+      });
+      const plain = { password: 'aaaaaaaaaaaa', confirm: 'aaaaaaaaaaaa' };
+      expect(validateStep(state, 'account', { secrets: plain }).ok).toBe(true);
       expect(validateStep(state, 'account', { secrets: { ...strong, confirm: 'other' } }).errors).toEqual({
         confirm: 'frameleaf_setup_error_confirm',
       });
       expect(validateStep(state, 'account', { secrets: strong }).ok).toBe(true);
     });
 
-    it('on a server not linked yet, the Frameleaf path creates the admin first and then needs the link (FL-168)', () => {
-      const state = createSetup('new');
-      expect(state.choices.signIn).toBe('frameleaf');
-      // the administrator's own details first
+    it('never lets a Frameleaf link stand in for the local administrator (FL-708 item 20)', () => {
+      // linked (say, by a headless link token) but no administrator yet: the form is still required
+      const state = setLinked(createSetup('new'), true);
       expect(validateStep(state, 'account').errors).toMatchObject({ name: 'frameleaf_setup_error_name' });
-      const filled = { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
-      expect(validateStep(filled, 'account', { secrets: strong }).ok).toBe(true);
-      // then the link
-      const created = { ...filled, choices: { ...filled.choices, accountCreated: true } };
-      expect(validateStep(created, 'account').errors).toEqual({ link: 'frameleaf_setup_error_link' });
-      expect(validateStep(setLinked(created, true), 'account').ok).toBe(true);
-    });
-
-    it('on a server already linked, the Frameleaf path is Sign in with Frameleaf', () => {
-      const state = createSetup('new');
-      expect(validateStep(state, 'account', { frameleafSignIn: true }).errors).toEqual({
-        link: 'frameleaf_setup_error_link',
-      });
-      expect(validateStep(setLinked(state, true), 'account', { frameleafSignIn: true }).ok).toBe(true);
+      // the administrator exists: the account step is done whether or not the server is linked
+      const created = { ...createSetup('new'), choices: { ...createSetup('new').choices, accountCreated: true } };
+      expect(validateStep(created, 'account').ok).toBe(true);
+      // and the Frameleaf account step never blocks: it can be skipped
+      expect(validateStep(created, 'frameleaf-account').ok).toBe(true);
     });
 
     it('requires a writable library location', () => {
@@ -126,11 +141,10 @@ describe('first-run setup state (FL-176)', () => {
 
     it('does not move forward past an invalid step, and marks the account created once passed', () => {
       let state = { ...createSetup('new'), step: indexOf('new', 'account') };
-      state = { ...state, choices: { ...state.choices, signIn: 'local' } };
       expect(goToStep(state, state.step + 1)).toBe(state);
       state = { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
       const next = goToStep(state, state.step + 1, { secrets: strong });
-      expect(next.step).toBe(indexOf('new', 'library'));
+      expect(next.step).toBe(indexOf('new', 'frameleaf-account'));
       expect(next.choices.accountCreated).toBe(true);
       expect(next.reached).toBe(next.step);
       // back is always allowed
@@ -177,17 +191,14 @@ describe('first-run setup state (FL-176)', () => {
       expect(resumeSetup('existing', { server }, true)).toMatchObject({ step: 3, choices: { signedIn: true } });
       expect(resumeSetup('existing', {}, true).step).toBe(1);
       expect(resumeSetup('existing', {}, false).step).toBe(0);
-      // FL-168: an administrator created on the Frameleaf path carries on to link
+      // FL-708: a signed-in administrator on a new server resumes at the optional Frameleaf account
       const created = resumeSetup('new', {}, true);
-      expect(created.choices).toMatchObject({ accountCreated: true, signIn: 'frameleaf', linked: false });
-      expect(firstInvalidStep(created)).toBe(indexOf('new', 'account'));
-      const local = resumeSetup(
-        'new',
-        { local: { ...createSetup('new'), choices: { ...createSetup('new').choices, signIn: 'local' } } },
-        true,
-      );
-      expect(local.choices).toMatchObject({ accountCreated: true, signIn: 'local' });
-      expect(firstInvalidStep(local)).toBe(-1);
+      expect(created.choices).toMatchObject({ accountCreated: true, signIn: 'local', linked: false });
+      expect(created.step).toBe(indexOf('new', 'frameleaf-account'));
+      expect(firstInvalidStep(created)).toBe(-1);
+      // progress saved by an older build on the removed "How you'll sign in" step starts again
+      const old = parseSetup({ version: 1, flow: 'new', step: 'sign-in-choice', reached: 1, choices: {} }, 'new');
+      expect(old?.step).toBe(0);
     });
   });
 
@@ -366,5 +377,43 @@ describe('first-run setup state (FL-176)', () => {
     saveAccountTool('u1', state, store);
     expect(loadAccountTool('u1', store).done).toEqual(['profile']);
     expect(loadAccountTool('u2', store).done).toEqual([]);
+  });
+});
+
+describe('Frameleaf account step (FL-708 item 20)', () => {
+  const admin = (() => {
+    const state = createSetup('new');
+    return { ...state, choices: { ...state.choices, adminName: 'Ada', adminEmail: 'ada@example.com' } };
+  })();
+
+  it("starts from the administrator's name and email, never a password", () => {
+    expect(frameleafAccountForm(admin)).toEqual({
+      mode: 'create',
+      name: 'Ada',
+      email: 'ada@example.com',
+      password: '',
+    });
+    expect(frameleafAccountForm(admin, 'sign-in').mode).toBe('sign-in');
+  });
+
+  it('creates an account with a name, an email and a password of at least 12 characters', () => {
+    const form = frameleafAccountForm(admin);
+    expect(validateFrameleafAccount(form).errors).toEqual({ password: 'frameleaf_setup_error_password' });
+    expect(validateFrameleafAccount({ ...form, password: 'elevenchars' }).ok).toBe(false);
+    expect(validateFrameleafAccount({ ...form, password: 'aaaaaaaaaaaa' }).ok).toBe(true);
+    expect(validateFrameleafAccount({ ...form, name: ' ', email: 'nope', password: 'aaaaaaaaaaaa' }).errors).toEqual({
+      name: 'frameleaf_setup_error_name',
+      email: 'frameleaf_setup_error_email',
+    });
+  });
+
+  it('signs in to an existing account with an email and any password', () => {
+    const form = { ...frameleafAccountForm(admin, 'sign-in'), name: '' };
+    expect(validateFrameleafAccount(form).errors).toEqual({ password: 'frameleaf_setup_error_frameleaf_password' });
+    expect(validateFrameleafAccount({ ...form, password: 'short' }).ok).toBe(true);
+  });
+
+  it('links to the Terms of Use on frameleaf.app', () => {
+    expect(FRAMELEAF_TERMS_URL).toBe('https://frameleaf.app/legal');
   });
 });

@@ -3,7 +3,7 @@ import z from 'zod';
 import type { MaybeDehydrated, UserMetadataItem } from 'src/types.js';
 import { User, UserAdmin } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
-import { pinCodeRegex } from 'src/dtos/auth.dto.js';
+import { MIN_PASSWORD_LENGTH, pinCodeRegex } from 'src/dtos/auth.dto.js';
 import {
   AdminAuditActionSchema,
   ServerRole,
@@ -20,8 +20,9 @@ export const UserUpdateMeSchema = z
     email: toEmail.optional().describe('User email'),
     password: z
       .string()
+      .min(MIN_PASSWORD_LENGTH, `Use at least ${MIN_PASSWORD_LENGTH} characters`)
       .optional()
-      .describe('User password (deprecated, use change password endpoint)')
+      .describe(`User password (deprecated, use change password endpoint; min ${MIN_PASSWORD_LENGTH} characters)`)
       .meta({ deprecated: true }),
     name: z.string().optional().describe('User name'),
     avatarColor: UserAvatarColorSchema.nullish(),

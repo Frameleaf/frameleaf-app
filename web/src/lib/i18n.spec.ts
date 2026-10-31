@@ -1,7 +1,41 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { getClosestAvailableLocale, langs } from '$lib/utils/i18n';
+import { getClosestAvailableLocale, languageChoices, langs, SHIPPED_LANGUAGES } from '$lib/utils/i18n';
 
 describe('i18n', () => {
+  describe('language choices (FL-708 B4)', () => {
+    it('lists only the shipped languages, each in its own name', () => {
+      expect(languageChoices().map((entry) => entry.name)).toEqual([
+        'English',
+        'Français',
+        'Español',
+        'Deutsch',
+        'Italiano',
+        'Português',
+        'Nederlands',
+        'Polski',
+        'Svenska',
+        'Dansk',
+        'Norsk bokmål',
+      ]);
+      expect(languageChoices().some((entry) => entry.code === 'dev')).toBe(false);
+    });
+
+    it('has a file for every shipped language', () => {
+      for (const { code } of SHIPPED_LANGUAGES) {
+        expect(
+          langs.some((entry) => entry.code === code),
+          code,
+        ).toBe(true);
+      }
+    });
+
+    it('keeps a language already in use that is not listed, but never the development keys', () => {
+      expect(languageChoices('ja').at(-1)).toMatchObject({ code: 'ja' });
+      expect(languageChoices('fr')).toHaveLength(SHIPPED_LANGUAGES.length);
+      expect(languageChoices('dev')).toHaveLength(SHIPPED_LANGUAGES.length);
+    });
+  });
+
   describe('loaders', () => {
     const languageFiles = readdirSync('../i18n').sort();
     for (const filename of languageFiles) {

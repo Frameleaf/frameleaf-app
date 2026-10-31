@@ -1,21 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { passwordStrength } from './auth-password';
+import { MIN_PASSWORD_LENGTH, passwordRequirements, passwordStrength } from './auth-password';
 
-describe('prototype password feedback', () => {
-  it('shows each rule independently and recommends the prototype minimum without enforcing it', () => {
+describe('password rule (FL-708 item 19)', () => {
+  it('has one rule: at least 12 characters', () => {
+    expect(MIN_PASSWORD_LENGTH).toBe(12);
+    expect(passwordRequirements.map((rule) => rule.id)).toEqual(['length']);
+  });
+
+  it('accepts any password of 12 characters or more, whatever it is made of', () => {
+    expect(passwordStrength('aaaaaaaaaaaa')).toMatchObject({ acceptable: true, checks: { length: true } });
+    expect(passwordStrength('correct horse battery')).toMatchObject({ acceptable: true });
+    expect(passwordStrength('Ab1!Ab1!Ab1')).toMatchObject({ acceptable: false, checks: { length: false } });
     expect(passwordStrength('')).toMatchObject({
       score: 0,
       label: 'frameleaf_auth_password_strength_empty',
-      recommended: false,
+      acceptable: false,
     });
-    expect(passwordStrength('Abcdefg8')).toMatchObject({
-      recommended: true,
-      checks: { length: true, lower: true, upper: true, number: true, symbol: false },
+  });
+
+  it('lets length and variety lift the meter without blocking anything', () => {
+    expect(passwordStrength('short').score).toBe(1);
+    expect(passwordStrength('aaaaaaaaaaaa').score).toBe(2);
+    expect(passwordStrength('Abcdefghij1x').score).toBe(3);
+    expect(passwordStrength('aaaaaaaaaaaaaaaa').score).toBe(3);
+    expect(passwordStrength('Aaaaaaaaaaaaaaaa').score).toBe(4);
+    expect(passwordStrength('aaaaaaaaaaaaaaaaaaaa')).toMatchObject({
+      score: 4,
+      label: 'frameleaf_auth_password_strength_strong',
     });
-    expect(passwordStrength('abcdefgh')).toMatchObject({
-      recommended: false,
-      checks: { upper: false, number: false },
-    });
-    expect(passwordStrength('Ab1!')).toMatchObject({ recommended: false, checks: { length: false } });
   });
 });

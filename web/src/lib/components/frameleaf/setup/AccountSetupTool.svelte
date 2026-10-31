@@ -31,7 +31,7 @@
   import { Route } from '$lib/route';
   import { lang } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { convertBCP47, langs } from '$lib/utils/i18n';
+  import { convertBCP47, languageChoices, langs } from '$lib/utils/i18n';
   import { getFrameleafAccountLink, setUserOnboarding, updateMyPreferences, updateMyUser } from '@frameleaf/sdk';
   import { Icon, modalManager, themeManager, ThemePreference } from '@frameleaf/ui';
   import {
@@ -192,7 +192,7 @@
   <div class="auth-field">
     <label for="frs-tool-language">{$t('language')}</label>
     <select id="frs-tool-language" bind:value={language}>
-      {#each langs as entry (entry.code)}
+      {#each languageChoices(language) as entry (entry.code)}
         <option value={convertBCP47(entry.code)}>{entry.name}</option>
       {/each}
     </select>

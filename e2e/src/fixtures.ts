@@ -6,7 +6,8 @@ export const uuidDto = {
 
 const adminLoginDto = {
   email: 'admin@example.com',
-  password: 'password',
+  // FL-708: a chosen password needs at least 12 characters.
+  password: 'admin-password',
 };
 const adminSignupDto = { ...adminLoginDto, name: 'Immich Admin' };
 

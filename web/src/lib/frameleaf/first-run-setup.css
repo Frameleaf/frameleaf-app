@@ -1673,11 +1673,133 @@
   }
 }
 
-/* FL-176: Sign in with Frameleaf isn't available on this server yet. */
-.frs-choice .frs-unavailable {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--fl-warning);
+
+/* ------------------------------------------------ UI review 2026-10-30 (FL-708)
+   The prototype's review-1030-setup.css: items 4 and 20, P5, P6 and P7. */
+
+/* P6: the buttons follow the content instead of sitting at the bottom of the window, and a form
+   step narrows the whole column so the fields, buttons and note line up. */
+.frs-main {
+  --frs-column: 820px;
+}
+.frs-main[data-width='form'] {
+  --frs-column: 520px;
+}
+.frs-main .frs-step,
+.frs-nav,
+.frs-main .frs-foot {
+  max-width: var(--frs-column);
+}
+.frs-nav {
+  margin-top: 8px;
+}
+/* Controls in a row share one height: Continue matches Back. */
+.frs-nav .button.primary,
+.frs-open,
+.frs-cloud-actions .button.primary {
+  min-height: 44px;
+}
+/* One 16px phone gutter. */
+@media (max-width: 560px) {
+  .frs-main {
+    padding-inline: 16px;
+  }
+}
+.frs-main[data-width='form'] .frs-form {
+  max-width: none;
+}
+
+/* P5: explanatory copy in setup is at least 12px; section eyebrows and badges stay small. */
+.frs .auth-note,
+.frs .frs-later,
+.frs .frs-radio small,
+.frs .frs-required,
+.frs .frs-choice-body small {
+  font-size: var(--fl-font-small);
+}
+
+/* P7: steps still to come keep a readable number. Upcoming steps are disabled buttons, which
+   dimmed the whole row. */
+.frs-rail li[data-status='todo'] .frs-rail-dot {
+  color: var(--fl-text);
+  border-color: rgb(255 255 255 / 0.3);
+}
+.frs-rail li > button:disabled {
+  opacity: 1;
+  color: var(--fl-muted);
+}
+
+/* Item 4: the library location is read-only text, not a field. */
+.frs-location {
+  display: grid;
+  gap: 8px;
+}
+.frs-location-label {
+  color: var(--fl-muted);
   font-size: var(--fl-font-small);
   font-weight: 600;
+}
+.frs-location-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--fl-text);
+}
+.frs-location-path svg {
+  flex-shrink: 0;
+  color: var(--fl-muted);
+}
+.frs-location-path code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.frs-location .frs-check {
+  margin: 0;
+}
+.frs-location-note {
+  margin: 4px 0 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+
+/* Item 19: one length rule, then a hint; the form's own gap spaces it. */
+.frs-form .auth-checks-hint {
+  margin-top: -6px;
+}
+
+/* Item 20: the optional Frameleaf account form has its own button row, then the switch to signing in. */
+.frs-cloud-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 8px;
+}
+.frs-cloud-actions .button.primary {
+  padding: 0 20px;
+  gap: 8px;
+}
+.frs-cloud-form .auth-note .auth-link {
+  color: var(--fl-accent);
+  font-size: inherit;
+}
+/* The body's own gap spaces the lead; its margin doubled it. */
+.frs-body > .frs-lead {
+  margin: 0;
+}
+
+/* Item 1: the one welcome also offers "Restore from a backup", quietly, under Continue setup. */
+.frs-welcome-more {
+  display: flex;
+  justify-content: center;
+}
+.frs-restore {
+  min-height: 36px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.frs-restore:hover {
+  color: var(--fl-text);
 }

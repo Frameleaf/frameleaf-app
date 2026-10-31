@@ -171,10 +171,10 @@ describe('the Command Center (FL-71)', () => {
     expect(screen.getByText('Administrator')).toBeInTheDocument();
     const names = areaNames();
     // The template's catalogue order, grouped: Your library keeps care, libraries, utilities (N1).
-    expect(names.slice(names.indexOf('Library care'), names.indexOf('Utilities') + 1)).toEqual([
+    expect(names.slice(names.indexOf('Library care'), names.indexOf('Tools') + 1)).toEqual([
       'Library care',
       'Libraries',
-      'Utilities',
+      'Tools',
     ]);
     expect(names.at(-3)).toBe('Your preferences');
     // FL-367
@@ -396,7 +396,7 @@ describe('the Command Center (FL-71)', () => {
       'People & sharing',
       // Library care always lists the repair tools the account may run.
       'Library care',
-      'Utilities',
+      'Tools',
       'Trash',
       'Notifications',
       'Your preferences',
@@ -605,7 +605,7 @@ describe('the Command Center (FL-71)', () => {
     open('/user-settings?area=utilities&section=duplicates&from=care');
     render(SettingsHost, { sections });
     expect(screen.getByRole('button', { name: 'Library care' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: 'Utilities' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: 'Tools' })).not.toHaveAttribute('aria-current');
   });
 
   it('walks search results with the arrow keys and opens the first with Enter', async () => {

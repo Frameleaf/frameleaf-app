@@ -6115,13 +6115,13 @@ export type SignUpDto = {
     email: string;
     /** User name */
     name: string;
-    /** User password */
+    /** User password (min 12 characters) */
     password: string;
 };
 export type ChangePasswordDto = {
     /** Invalidate all other sessions */
     invalidateSessions?: boolean;
-    /** New password (min 8 characters) */
+    /** New password (min 12 characters) */
     newPassword: string;
     /** Current password */
     password: string;
@@ -6159,7 +6159,7 @@ export type LogoutResponseDto = {
     successful: boolean;
 };
 export type PasswordLinkRedeemDto = {
-    /** The password they chose (min 8 characters) */
+    /** The password they chose (min 12 characters) */
     newPassword: string;
     /** The token from the emailed link */
     token: string;
@@ -14953,7 +14953,7 @@ export type FrameleafSetupAdminDto = {
     email: string;
     /** The administrator’s name */
     name: string;
-    /** The administrator’s password (min 8 characters) */
+    /** The administrator’s password (min 12 characters) */
     password: string;
 };
 export type FrameleafSetupErrorDto = {
@@ -17444,7 +17444,7 @@ export type UserUpdateMeDto = {
     email?: string;
     /** User name */
     name?: string;
-    /** User password (deprecated, use change password endpoint) */
+    /** User password (deprecated, use change password endpoint; min 12 characters) */
     password?: string;
 };
 export type BackupDeviceWriteDto = {

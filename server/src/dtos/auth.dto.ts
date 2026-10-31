@@ -14,6 +14,18 @@ export type CookieResponse = {
 
 export const pinCodeRegex = /^\d{6}$/;
 
+/**
+ * FL-708: the one password rule, length. Wherever a person chooses their own password (the first
+ * administrator, a changed password, a password chosen from an emailed link) it needs at least this
+ * many characters and nothing else; the web's meter (`web/src/lib/frameleaf/auth-password.ts`) agrees.
+ */
+export const MIN_PASSWORD_LENGTH = 12;
+const chosenPassword = (description: string) =>
+  z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `Use at least ${MIN_PASSWORD_LENGTH} characters`)
+    .describe(`${description} (min ${MIN_PASSWORD_LENGTH} characters)`);
+
 export type AuthDto = {
   user: AuthUser;
   /** Internal durable worker authority; never populated from a request. */
@@ -76,6 +88,7 @@ const LogoutResponseSchema = z
 
 const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
   .extend({
+    password: chosenPassword('User password').meta({ example: 'a-long-password' }),
     name: z.string().describe('User name').meta({ example: 'Admin' }),
   })
   .meta({ id: 'SignUpDto' });
@@ -83,7 +96,7 @@ const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
 const ChangePasswordSchema = z
   .object({
     password: z.string().describe('Current password').meta({ example: 'password' }),
-    newPassword: z.string().min(8).describe('New password (min 8 characters)').meta({ example: 'password' }),
+    newPassword: chosenPassword('New password').meta({ example: 'a-new-password' }),
     invalidateSessions: z.boolean().default(false).optional().describe('Invalidate all other sessions'),
   })
   .meta({ id: 'ChangePasswordDto' });
@@ -103,7 +116,7 @@ const PasswordLinkCheckResponseSchema = z
   .meta({ id: 'PasswordLinkCheckResponseDto' });
 
 const PasswordLinkRedeemSchema = PasswordLinkCheckSchema.extend({
-  newPassword: z.string().min(8).describe('The password they chose (min 8 characters)').meta({ example: 'password' }),
+  newPassword: chosenPassword('The password they chose').meta({ example: 'a-new-password' }),
 }).meta({ id: 'PasswordLinkRedeemDto' });
 
 export class PasswordLinkCheckDto extends createZodDto(PasswordLinkCheckSchema) {}
