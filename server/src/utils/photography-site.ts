@@ -30,7 +30,8 @@ export const SiteInquiryKindSchema = z.enum(['inquiry', 'gallery-link']).meta({ 
 export const SITE_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/;
 /**
  * FL-711: the app's own pages under /studio/. The web app serves them before any website address,
- * so a website can never take one of these names, and the server never looks one up as a website.
+ * so a website cannot move to one of these names (`saveSite`), and the server never looks one up as
+ * a website.
  */
 export const STUDIO_APP_PAGES: ReadonlySet<string> = new Set(['projects']);
 const DOMAIN = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -73,10 +74,7 @@ export const PhotographySiteFields = z.strictObject({
   faq: z.array(z.strictObject({ q: z.string().max(200), a: z.string().max(2000) })).max(20),
   /** "Trusted by" on the Commercial template: typed by the photographer, never read from client records. */
   trustedBy: z.array(z.string().trim().min(1).max(60)).max(12),
-  slug: z
-    .string()
-    .regex(SITE_SLUG)
-    .refine((slug) => !STUDIO_APP_PAGES.has(slug), 'This address is used by Frameleaf'),
+  slug: z.string().regex(SITE_SLUG),
   /** FL-701 decision A: served through the Frameleaf Cloud relay for subscribers. */
   domain: z
     .string()

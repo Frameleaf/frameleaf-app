@@ -35,6 +35,28 @@ export type BackgroundWorkCard = {
   tonight?: { startsAt: string | null };
 };
 
+/** Starts before this hour of the morning after still belong to tonight. */
+const OVERNIGHT_CUTOFF_HOUR = 12;
+
+/**
+ * FL-711: how to say when quiet hours start saved work again, judged by the viewer's local calendar
+ * days (never a fixed 24 hours, which a daylight-saving day is not): `tonight` for a start later
+ * today or before noon tomorrow, `day` for a start further off, `unscheduled` when there is none.
+ */
+export const tonightStart = (startsAt: string | null, now: Date = new Date()): 'tonight' | 'day' | 'unscheduled' => {
+  const at = startsAt ? new Date(startsAt) : null;
+  if (!at || Number.isNaN(at.getTime())) {
+    return 'unscheduled';
+  }
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const day = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+  if (day.getTime() === today.getTime()) {
+    return 'tonight';
+  }
+  return day.getTime() === tomorrow.getTime() && at.getHours() < OVERNIGHT_CUTOFF_HOUR ? 'tonight' : 'day';
+};
+
 const percent = (done: number, total: number) =>
   total > 0 ? Math.min(100, Math.max(0, Math.floor((done / total) * 100))) : null;
 

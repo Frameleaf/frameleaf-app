@@ -10,7 +10,7 @@
    * Activity indicator do.
    */
   import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
-  import type { BackgroundWorkCard } from '$lib/frameleaf/background-work';
+  import { tonightStart, type BackgroundWorkCard } from '$lib/frameleaf/background-work';
   import { cloudWorkRows, type CloudWorkRow } from '$lib/frameleaf/cloud-backup';
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -30,7 +30,6 @@
   const count = $derived(cards.length + cloudRows.length);
   const headingId = $props.id();
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
-  const DAY_MS = 86_400_000;
 
   const titleOf = (card: BackgroundWorkCard) => {
     const queue = jobQueue(card.queueName);
@@ -42,12 +41,13 @@
    * never "Paused". Tonight's start reads as a time; a start further off names its day as well.
    */
   const tonightOf = ({ startsAt }: NonNullable<BackgroundWorkCard['tonight']>) => {
-    const at = startsAt ? new Date(startsAt) : null;
-    if (!at || Number.isNaN(at.getTime())) {
+    const when = tonightStart(startsAt);
+    if (when === 'unscheduled' || !startsAt) {
       return $t('frameleaf_activity_bg_tonight_unscheduled');
     }
+    const at = new Date(startsAt);
     const time = new Intl.DateTimeFormat($locale ?? undefined, { hour: 'numeric', minute: '2-digit' }).format(at);
-    if (at.getTime() - Date.now() <= DAY_MS) {
+    if (when === 'tonight') {
       return $t('frameleaf_activity_bg_tonight', { values: { time } });
     }
     const day = new Intl.DateTimeFormat($locale ?? undefined, { weekday: 'long' }).format(at);
