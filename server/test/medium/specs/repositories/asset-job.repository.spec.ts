@@ -23,6 +23,13 @@ const consume = async <T>(generator: AsyncIterableIterator<T>) => {
 
 let defaultDatabase: Kysely<DB>;
 
+// Tests that assert over whole tables use their own database; destroy its pool when the test ends.
+const isolatedDatabase = async () => {
+  const db = await getKyselyDB();
+  onTestFinished(() => db.destroy());
+  return db;
+};
+
 const setup = (db?: Kysely<DB>) => {
   const { ctx } = newMediumService(BaseService, {
     database: db || defaultDatabase,
@@ -38,7 +45,7 @@ beforeAll(async () => {
 
 describe(AssetJobRepository.name, () => {
   it('counts what each reading feature has read and the copies beside the originals (FL-521)', async () => {
-    const { ctx, sut } = setup(await getKyselyDB());
+    const { ctx, sut } = setup(await isolatedDatabase());
     const { user } = await ctx.newUser();
     const { asset: read } = await ctx.newAsset({ ownerId: user.id });
     const { asset: unread } = await ctx.newAsset({ ownerId: user.id });
@@ -102,7 +109,7 @@ describe(AssetJobRepository.name, () => {
   });
 
   it('backfills only uninspected non-RAW images through the existing metadata selection', async () => {
-    const { ctx, sut } = setup(await getKyselyDB());
+    const { ctx, sut } = setup(await isolatedDatabase());
     const { user } = await ctx.newUser();
     const assets = [];
     for (const options of [
@@ -140,7 +147,7 @@ describe(AssetJobRepository.name, () => {
   });
 
   it('backfills missing original HDR renditions without selecting edited, hidden, SDR or complete sources', async () => {
-    const { ctx, sut } = setup(await getKyselyDB());
+    const { ctx, sut } = setup(await isolatedDatabase());
     const { user } = await ctx.newUser();
     const assets = [];
     for (const options of [{}, {}, { isEdited: true }, { visibility: AssetVisibility.Hidden }, {}]) {

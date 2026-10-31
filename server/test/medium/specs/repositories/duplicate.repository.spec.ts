@@ -36,6 +36,10 @@ describe(DuplicateRepository.name, () => {
     defaultDatabase = await getKyselyDB();
   });
 
+  afterEach(async () => {
+    await defaultDatabase?.destroy();
+  });
+
   describe('look-alike estimate (FL-520)', () => {
     it('reads the nearest photo in the same library and counts what can be compared', async () => {
       const { assetRepository, database, sut, userRepository } = setup();
