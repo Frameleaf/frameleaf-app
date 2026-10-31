@@ -1,0 +1,4 @@
+packages/sdk/fetch-client.ts -diff -merge
+packages/sdk/fetch-client.ts linguist-generated=true
+
+*.sh text eol=lf

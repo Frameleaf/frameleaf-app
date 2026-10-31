@@ -1,0 +1,75 @@
+import RegisterAdminUser from '/docs/partials/_register-admin.md';
+import UserCreate from '/docs/partials/_user-create.md';
+
+# User Management
+
+Frameleaf supports multiple users, each with their own library.
+
+## Register the Admin User
+
+<RegisterAdminUser />
+
+## Create a New User
+
+<UserCreate />
+
+## Send new user email notification
+
+:::note
+This option is only available if an SMTP server has been configured in the administrator settings.
+:::
+
+Admin can send a welcome email once email is set up; see [Email notifications](/administration/email-notification) for setting up the SMTP server in Frameleaf.
+
+When you create the user, turn on **Send welcome email** in the new user dialog.
+
+## Set Storage Quota For User
+
+Admin can specify the storage quota for the user as the instance's admin; once the limit is reached, the user won't be able to upload to the instance anymore.
+
+In order to set a storage quota, open the account in **Settings → Users**, choose **Edit account** and enter the **Storage limit (GB)**. You can choose an unlimited quota by leaving it empty (default).
+
+:::tip
+The system administrator can see each account's usage against its quota in **Settings → Users**, and storage across the server in [Library analytics](/administration/server-stats).
+:::
+
+:::info
+External libraries don't take up space from the storage quota.
+:::
+
+## People invited through Frameleaf
+
+When the server is linked to Frameleaf Cloud, you can invite people from your Frameleaf account. An invited person gets **their own account and library** on this server the first time they use Sign in with Frameleaf, whether from the web or the Frameleaf app. Being invited does not show them your library. To let them see your photos, share items, albums or spaces with them; what you share appears under Spaces in their account.
+
+New invited accounts start with the **Storage quota for invited accounts** set under **Settings → Access & security → Sign in with Frameleaf**. Leave it empty for an unlimited quota, which is the default, so their phone can back up right away. The setting applies only to accounts created after you change it; you can change any account's quota later as described above. The server's owner is never given this quota.
+
+When you or Frameleaf Cloud remove someone's access, their Frameleaf sign-ins on this server end and they can't sign in with Frameleaf again. Their account and library stay on the server until you delete the user as described below.
+
+## Set Storage Label For User
+
+The admin can add a custom label for each user, so instead of `upload/{userId}/your-template` it will be `upload/{custom_user_label}/your-template`.  
+To set it, open the account in **Settings → Users**, choose **Edit account** and enter the **Storage label**.
+:::note
+To apply the Storage Label to previously uploaded assets, run the Storage Migration Job.
+:::
+
+## Password Reset
+
+To reset a user's password, open the account in **Settings → Users**, then choose **Reset password**. The user's password will be reset to a random password and they have to change it next time they sign in.
+
+## Delete a User
+
+If you need to remove a user from Frameleaf, open the account in **Settings → Users**, then choose **Delete**. The user account will immediately become disabled and their library and all associated data will be removed after 7 days by default.
+
+### Delete Delay
+
+You can customize the time of the deletion of the users in **Settings → Storage & originals → Deleted accounts**.
+:::info user deletion job
+The user deletion job runs at midnight to check for users that are ready for deletion. Changes to this setting will be evaluated at the next execution.
+:::
+
+### Immediately Remove User
+
+You can choose to delete a user immediately by checking the box
+`Queue user and assets for immediate deletion` in the deletion process, this will immediately remove the user and all assets.
+This cannot be undone and the files cannot be recovered.

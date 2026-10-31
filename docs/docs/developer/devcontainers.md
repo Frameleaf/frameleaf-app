@@ -1,0 +1,439 @@
+---
+title: Devcontainers
+sidebar_position: 3
+---
+
+# Development with Dev Containers
+
+Dev Containers provide a consistent, reproducible development environment using Docker containers. With a single click, you can get started with a Frameleaf development environment on Mac, Linux, Windows, or in the cloud using GitHub Codespaces.
+
+Get started fast!
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Frameleaf/frameleaf-app/)
+
+[Learn more about Dev Containers](https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/introduction-to-dev-containers)
+
+## Prerequisites
+
+Before getting started, ensure you have:
+
+- **Docker Desktop** (latest version)
+  - [Mac](https://docs.docker.com/desktop/install/mac-install/)
+  - [Windows](https://docs.docker.com/desktop/install/windows-install/) (with WSL2 backend recommended)
+  - [Linux](https://docs.docker.com/desktop/install/linux-install/)
+- **Visual Studio Code** with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+- **Git** for cloning the repository
+- At least **8GB of RAM** (16GB recommended)
+- **20GB of free disk space**
+
+:::tip Alternative Development Environments
+While this guide focuses on VS Code, you have many options for Dev Container development:
+
+**Local Editors:**
+
+- [IntelliJ IDEA](https://www.jetbrains.com/help/idea/connect-to-devcontainer.html) - Full JetBrains IDE support
+- [neovim](https://github.com/jamestthompson3/nvim-remote-containers) - Lightweight terminal-based editor
+- [Emacs](https://github.com/emacs-lsp/lsp-docker) - Extensible text editor
+- [DevContainer CLI](https://github.com/devcontainers/cli) - Command-line interface
+
+**Cloud-Based Solutions:**
+
+- [GitHub Codespaces](https://github.com/features/codespaces) - Fully integrated with GitHub, excellent devcontainer.json support
+- [GitPod](https://www.gitpod.io) - SaaS platform with recent Dev Container support (historically used gitpod.yml)
+
+**Self-Hostable Options:**
+
+- [Coder](https://coder.com) - Enterprise-focused, requires Terraform knowledge, self-managed
+- [DevPod](https://devpod.sh) - Client-only tool with excellent devcontainer.json support, works with any provider (local, cloud, or on-premise). Check [quick-start guide](#quick-start-guide-for-devpod-with-docker)
+  :::
+
+## Dev Container Services
+
+The Dev Container environment consists of the following services:
+
+| Service          | Container Name               | Description                                               | Ports                                                                   |
+| ---------------- | ---------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Server & Web     | `frameleaf-server`           | Runs both API server and web frontend in development mode | 2283 (API)<br/>3000 (Web)<br/>9230 (Workers Debug)<br/>9231 (API Debug) |
+| Database         | `database`                   | PostgreSQL database                                       | 5432                                                                    |
+| Machine Learning | `frameleaf-machine-learning` | Frameleaf ML model inference server                       | 3003                                                                    |
+
+## Getting Started
+
+### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/Frameleaf/frameleaf-app.git
+cd frameleaf-app
+```
+
+### Step 2: Configure Environment Variables
+
+The dev containers read environment variables from your shell environment, not from `.env` files. This allows them to work in cloud environments without pre-configuration.
+
+:::important Configuration
+When running locally, and if you want to create (or use an existing) DB and/or photo storage folder, you must set the `UPLOAD_LOCATION` variable in your shell environment before launching the Dev Container. This determines where uploaded files are stored and also where the DB stores it data.
+
+```bash
+# Set temporarily for current session
+export UPLOAD_LOCATION=/opt/dev_upload_folder
+
+# Or add to your shell profile for persistence
+# (~/.bashrc, ~/.zshrc, ~/.bash_profile, etc.)
+echo 'export UPLOAD_LOCATION=/opt/dev_upload_folder' >> ~/.bashrc
+source ~/.bashrc
+```
+
+:::
+
+### Step 3: Launch the Dev Container
+
+:::tip
+Frameleaf development builds its own server base, including the media libraries, from `server/Dockerfile.dev` and the sources in `server/base-image` for its docker-compose based development. For this reason, you won't be able to use VSCode's **_Clone Repository in a Container Volume_** command.
+:::
+
+#### Using VS Code UI:
+
+1. Open the cloned repository in VS Code
+2. Press `F1` or `Ctrl/Cmd+Shift+P` to open the command palette
+3. Type and select "Dev Containers: Rebuild and Reopen in Container"
+4. Select the "Backend, Frontend and ML" dev container from the list
+5. Wait for the container to build and start (this may take several minutes on first run)
+
+#### Using VS Code Quick Actions:
+
+1. Open the repository in VS Code
+2. You should see a popup asking if you want to reopen in a container
+3. Click "Reopen in Container"
+
+#### Using Command Line:
+
+```bash
+# Using the DevContainer CLI
+devcontainer up --workspace-folder .
+```
+
+## Environment Variable Details
+
+### How Dev Containers Handle Environment Variables
+
+Unlike the Frameleaf developer setup based on Docker Compose which uses `.env` files, Frameleaf Dev Containers read environment variables from your shell environment. This is configured in `.devcontainer/devcontainer.json`:
+
+```json
+"remoteEnv": {
+    "UPLOAD_LOCATION": "${localEnv:UPLOAD_LOCATION:./library}",
+    "DB_PASSWORD": "${localEnv:DB_PASSWORD:postgres}",
+    "DB_USERNAME": "${localEnv:DB_USERNAME:postgres}",
+    "DB_DATABASE_NAME": "${localEnv:DB_DATABASE_NAME:frameleaf}"
+}
+```
+
+The `${localEnv:VARIABLE:default}` syntax reads from your shell environment with optional defaults.
+
+### Upload Location Path Resolution
+
+The `UPLOAD_LOCATION` environment variable controls where files are stored:
+
+**Not set:** uploads and the database use the named Docker volumes `upload-devcontainer-volume` and `postgres19-devcontainer-volume`
+**Set:** relative paths resolve from the `docker` directory (for example `./library` becomes `<repo-root>/docker/library`)
+
+**Bind Mounts Created when set:**
+
+```yaml
+# From .devcontainer/server/container-compose-overrides.yml
+- ${UPLOAD_LOCATION}/photos:/data
+- ${UPLOAD_LOCATION}/postgres19:/var/lib/postgresql
+```
+
+### Database Configuration
+
+These variables have sensible defaults (for development) but can be customized:
+
+| Variable           | Default     | Description         |
+| ------------------ | ----------- | ------------------- |
+| `DB_PASSWORD`      | `postgres`  | PostgreSQL password |
+| `DB_USERNAME`      | `postgres`  | PostgreSQL username |
+| `DB_DATABASE_NAME` | `frameleaf` | Database name       |
+
+### Setting Environment Variables
+
+Add these to your shell profile (`~/.bashrc`, `~/.zshrc`, `~/.bash_profile`, etc.):
+
+```bash
+# Optional (named Docker volumes are used when unset)
+export UPLOAD_LOCATION=./library  # or absolute path
+
+# Optional (only if using non-default values)
+export DB_PASSWORD=your_password
+export DB_USERNAME=your_username
+export DB_DATABASE_NAME=your_database
+```
+
+Remember to reload your shell configuration:
+
+```bash
+source ~/.bashrc  # or ~/.zshrc, etc.
+```
+
+## Git Configuration
+
+### SSH Keys and Authentication
+
+To use your SSH keys for GitHub access inside the Dev Container:
+
+1. **Start SSH Agent** on your host machine:
+
+   ```bash
+   eval "$(ssh-agent -s)"
+   ssh-add ~/.ssh/id_rsa  # or your key path
+   ```
+
+2. **VS Code automatically forwards your SSH agent** to the container
+
+For detailed instructions, see the [VS Code guide on sharing Git credentials](https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials).
+
+### Commit Signing
+
+To use your SSH key for commit signing, see the [GitHub guide on SSH commit signing](https://docs.github.com/en/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key#telling-git-about-your-ssh-key).
+
+## Development Workflow
+
+### Automatic Setup
+
+When the Dev Container starts, it automatically:
+
+1. **Starts development servers** via VS Code tasks that run the scripts in `.devcontainer/server/`:
+   - The API server task (`container-start-backend.sh`) installs the server dependencies and starts the API server with hot-reloading on port 2283
+   - The web server task (`container-start-frontend.sh`) installs and builds `@frameleaf/sdk` and `@frameleaf/plugin-sdk`, installs the web dependencies, waits for the API server and starts the web frontend with hot-reloading on port 3000
+   - Both servers watch for file changes and recompile automatically
+
+2. **Configures port forwarding**:
+   - Web UI: http://localhost:3000 (opens automatically)
+   - API: http://localhost:2283
+   - Debug ports: 9230 (workers), 9231 (API)
+
+:::info
+The Dev Container setup replaces the `mise dev` command from the traditional setup. All services start automatically when you open the container.
+:::
+
+### Accessing Services
+
+Once running, you can access:
+
+| Service  | URL                   | Description                                                                                    |
+| -------- | --------------------- | ---------------------------------------------------------------------------------------------- |
+| Web UI   | http://localhost:3000 | Main web interface                                                                             |
+| API      | http://localhost:2283 | REST API endpoints (Not used directly, web UI will expose this over http://localhost:3000/api) |
+| Database | localhost:5432        | PostgreSQL (username: `postgres`) (Not used directly)                                          |
+
+### Connecting the Frameleaf App
+
+To connect a development build of the Frameleaf app to your Dev Container:
+
+1. Find your machine's IP address
+2. In the app, use the server address `http://YOUR_IP:2283`
+3. Ensure your firewall allows connections on port 2283
+
+### Making Code Changes
+
+- **Server code** (`/server`): Changes trigger automatic restart
+- **Web code** (`/web`): Changes trigger hot module replacement
+- **Database migrations**: Run `mise //:sql`
+- **API changes**: Regenerate TypeScript SDK with `mise //:open-api`
+
+## Testing
+
+### Running Tests
+
+The Dev Container supports multiple ways to run tests:
+
+```bash
+# Server
+mise //server:test          # unit tests
+mise //server:test-medium   # medium / integration tests
+
+# Web
+mise //web:test             # unit tests
+
+# E2E
+mise //e2e:test             # API tests
+mise //e2e:test-web         # web UI tests (Playwright)
+
+# Run all checks for a component
+mise //server:checklist
+mise //web:checklist
+```
+
+### Additional Commands
+
+```bash
+# API generation
+mise //:open-api             # Generate OpenAPI specs
+mise //:open-api-typescript  # Generate TypeScript SDK
+
+# Database
+mise //server:sql            # Sync database schema
+```
+
+### Debugging
+
+The Dev Container is pre-configured for debugging:
+
+1. **API Server Debugging**:
+   - Set breakpoints in VS Code
+   - Press `F5` or use "Run and Debug" panel
+   - Select the API server attach configuration
+   - Debug port: 9231
+
+2. **Worker Debugging**:
+   - Use the workers attach configuration
+   - Debug port: 9230
+
+3. **Web Debugging**:
+   - Use browser DevTools
+   - VS Code debugger for Chrome/Edge extensions supported
+
+## Troubleshooting
+
+### Common Issues
+
+#### Permission Errors
+
+**Problem**: `EACCES` or permission denied errors  
+**Solution**:
+
+- The Dev Container runs as `root` (`remoteUser` in `.devcontainer/devcontainer.json`)
+- Files it creates in a bind-mounted `UPLOAD_LOCATION` may be owned by `root` on the host
+- Try rebuilding the container: "Dev Containers: Rebuild Container"
+
+#### Container Won't Start
+
+**Problem**: Dev Container fails to start or build  
+**Solution**:
+
+1. Check Docker is running: `docker ps`
+2. Clean Docker resources: `docker system prune -a`
+3. Check available disk space
+4. Review Docker Desktop resource limits
+
+#### Port Already in Use
+
+**Problem**: "Port 3000/2283 is already in use"  
+**Solution**:
+
+1. Check for conflicting services: `lsof -i :3000` (macOS/Linux)
+2. Stop conflicting services or change port mappings
+3. Restart Docker Desktop
+
+#### Upload Location Not Set
+
+**Problem**: Errors about missing UPLOAD_LOCATION  
+**Solution**:
+
+1. Set the environment variable: `export UPLOAD_LOCATION=./library`
+2. Add to your shell profile for persistence
+3. Restart your terminal and VS Code
+
+#### Database Connection Failed
+
+**Problem**: Cannot connect to PostgreSQL  
+**Solution**:
+
+1. Ensure all containers are running: `docker ps`
+2. Check logs: "Dev Containers: Show Container Log"
+3. Verify database credentials match environment variables
+
+### Getting Help
+
+If you encounter issues:
+
+1. Check container logs: View → Output → Select "Dev Containers"
+2. Rebuild without cache: "Dev Containers: Rebuild Container Without Cache"
+3. Review [common Docker issues](https://docs.docker.com/desktop/troubleshoot/)
+4. Ask in [GitHub Discussions](https://github.com/Frameleaf/frameleaf-app/discussions)
+
+### Quick-start guide for DevPod with docker
+
+You will need DevPod CLI (check [DevPod CLI installation guide](https://devpod.sh/docs/getting-started/install)) and Docker Desktop.
+
+```sh
+# Step 1: Clone the Repository
+git clone https://github.com/Frameleaf/frameleaf-app.git
+cd frameleaf-app
+
+# Step 2: Prepare DevPod (if you haven't already)
+devpod provider add docker
+devpod provider use docker
+
+# Step 3: Build 'frameleaf-server-dev:local' docker image first manually
+docker build -f server/Dockerfile.dev -t frameleaf-server-dev:local .
+
+# Step 4: Now you can start devcontainer
+devpod up .
+```
+
+## Mobile Development
+
+While the Dev Container focuses on server and web development, you can connect the Frameleaf app for testing:
+
+### Connecting iOS/Android Apps
+
+1. **Ensure API is accessible**:
+
+   ```bash
+   # Find your machine's IP
+   # macOS
+   ipconfig getifaddr en0
+   # Linux
+   hostname -I
+   # Windows (in WSL2)
+   ip addr show eth0
+   ```
+
+2. **Configure mobile app**:
+   - Server address: `http://YOUR_IP:2283`
+   - Ensure firewall allows port 2283
+
+3. **Native app development**: Frameleaf's native iOS and Android apps are developed in their own repositories, so there is no mobile app to build in the Dev Container. See the [native app API guide](./native-app-api.md).
+
+## Advanced Configuration
+
+### Custom VS Code Extensions
+
+Add extensions to `.devcontainer/devcontainer.json`:
+
+```json
+"customizations": {
+  "vscode": {
+    "extensions": [
+      "your.extension-id"
+    ]
+  }
+}
+```
+
+### Additional Services
+
+To add optional development services, modify:
+
+1. `/docker/docker-compose.dev.yml` - Add service definition
+2. `/.devcontainer/server/container-compose-overrides.yml` - Add overrides if needed
+
+### Resource Limits
+
+Adjust Docker Desktop resources:
+
+- **macOS/Windows**: Docker Desktop → Settings → Resources
+- **Linux**: Modify Docker daemon configuration
+
+Recommended minimums:
+
+- CPU: 4 cores
+- Memory: 8GB
+- Disk: 20GB
+
+## Next Steps
+
+- Read the [architecture overview](/developer/architecture)
+- Learn about [database migrations](/developer/database-migrations)
+- Explore the [API documentation](/api.md)
+- Ask questions in [GitHub Discussions](https://github.com/Frameleaf/frameleaf-app/discussions)

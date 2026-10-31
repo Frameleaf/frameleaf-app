@@ -1,0 +1,67 @@
+# Apply after the matching release Compose file. See the model-staging guide.
+services:
+  frameleaf-server:
+    networks:
+      - default
+      - ml-inference
+
+  frameleaf-machine-learning:
+    networks: !override
+      ml-inference:
+        aliases: [immich-machine-learning]
+    ports: !reset []
+    # Do not pass the server .env (backup/provisioning credentials) to inference.
+    env_file: !override
+      - path: .env.ml
+        required: false
+    environment:
+      MACHINE_LEARNING_MODEL_DOWNLOADS: 'false'
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      HF_HOME: /tmp/hf-home
+    volumes:
+      - ${FRAMELEAF_ML_CACHE:-model-cache}:/cache:ro
+    cap_drop:
+      - ALL
+    security_opt: !override
+      - no-new-privileges:true
+
+  frameleaf-model-staging:
+    profiles:
+      - model-staging
+    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}
+    entrypoint: ['tini', '--', 'python', '-m', 'frameleaf_ml.staging']
+    env_file:
+      - path: .env.ml
+        required: false
+      - path: ./model-staging.env
+        required: false
+    environment:
+      MACHINE_LEARNING_MODEL_DOWNLOADS: 'true'
+      HF_HOME: /tmp/hf-home
+    volumes:
+      - ${FRAMELEAF_ML_CACHE:-model-cache}:/cache
+    networks:
+      - ml-downloads
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      disable: true
+
+volumes:
+  # The default for FRAMELEAF_ML_CACHE. docker-compose.yml declares the same volume; the rootless
+  # file bind-mounts ./ml-model-cache instead, so rootless installs set FRAMELEAF_ML_CACHE to it.
+  model-cache:
+
+networks:
+  ml-inference:
+    internal: true
+    driver: bridge
+    driver_opts:
+      # Internal alone still exposes the host's bridge address.
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+      com.docker.network.bridge.gateway_mode_ipv6: isolated
+  ml-downloads:
+    driver: bridge

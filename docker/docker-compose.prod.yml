@@ -1,0 +1,99 @@
+#
+# WARNING: To install Frameleaf, follow the guide in this release: docker/README.md
+#
+# Make sure to use the docker-compose.yml of the current release:
+#
+# https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml
+#
+# The compose file on main may not be compatible with the latest release.
+
+name: immich-prod
+
+services:
+  frameleaf-server:
+    container_name: frameleaf_server
+    image: frameleaf-server:local
+    # extends:
+    #   file: hwaccel.transcoding.yml
+    #   service: cpu # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
+    build:
+      context: ../
+      dockerfile: server/Dockerfile
+      target: prod
+    volumes:
+      - ${UPLOAD_LOCATION}/photos:/data
+      - /etc/localtime:/etc/localtime:ro
+      # FL-408: the bundled Studio worker's enrolment, shared read-only with machine learning
+      - studio-worker:/run/frameleaf/studio-worker
+    env_file:
+      - .env
+    ports:
+      - 2283:2283
+      # Frameleaf Cloud remote access: the direct HTTPS listener (LAN names and direct connections)
+      - 2443:2443
+    depends_on:
+      - database
+    restart: always
+    # must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default): running jobs finish or go back to waiting first
+    stop_grace_period: 10s
+    healthcheck:
+      disable: false
+
+  frameleaf-machine-learning:
+    networks:
+      default:
+        aliases: [immich-machine-learning]
+    container_name: frameleaf_machine_learning
+    image: frameleaf-machine-learning:local
+    # extends:
+    #   file: hwaccel.ml.yml
+    #   service: cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference
+    build:
+      context: ../machine-learning
+      dockerfile: Dockerfile
+      target: prod
+      # FL-408: the Studio worker stage builds from the repository
+      additional_contexts:
+        frameleaf: ..
+      args:
+        - DEVICE=cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference
+    ports:
+      - 3003:3003
+    volumes:
+      - model-cache:/cache
+      # FL-408: the Studio render worker enrols from here (FRAMELEAF_STUDIO_WORKER=false turns it off)
+      - studio-worker:/run/frameleaf/studio-worker:ro
+    # Keep server credentials out of the inference worker.
+    env_file:
+      - path: .env.ml
+        required: false
+    restart: always
+    healthcheck:
+      disable: false
+
+  database:
+    container_name: frameleaf_postgres
+    image: frameleaf-postgres:local
+    # Built from Frameleaf's own Postgres image source (docker/postgres).
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - ${UPLOAD_LOCATION}/postgres19:/var/lib/postgresql
+    ports:
+      - 5432:5432
+    shm_size: 128mb
+    restart: always
+    healthcheck:
+      disable: false
+
+volumes:
+  model-cache:
+  studio-worker:

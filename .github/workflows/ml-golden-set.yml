@@ -1,0 +1,53 @@
+name: ML Golden Set
+# FL-455: records the smart search and face golden set that Frameleaf Cloud's release parity gate
+# compares against, by running this repository's ML service code on the fixture images.
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - machine-learning/scripts/golden_set.py
+      - machine-learning/test-fixtures/golden-set/**
+      - .github/workflows/ml-golden-set.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  golden-set:
+    name: Record the ML golden set
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ./machine-learning
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          # The recorded git SHA is the commit under review, not the PR merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
+        with:
+          persist_github_token: true
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.10.8
+      - name: Install the ML service (CPU)
+        run: mise run install --extra cpu
+      - name: Record the golden set
+        run: uv run --no-sync python scripts/golden_set.py --output "$RUNNER_TEMP/golden-set" --cache-dir "$RUNNER_TEMP/model-cache"
+      - name: Upload the golden set
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: fl455-golden-set
+          path: ${{ runner.temp }}/golden-set
+          if-no-files-found: error
+          retention-days: 90

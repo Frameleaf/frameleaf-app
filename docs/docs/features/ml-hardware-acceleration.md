@@ -1,0 +1,231 @@
+# Hardware-Accelerated Machine Learning
+
+import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
+
+This feature allows you to use a GPU to accelerate machine learning tasks, such as Smart Search and Facial Recognition, while reducing CPU load.
+As this is a new feature, it is still experimental and may not work on all systems.
+
+:::info
+You do not need to redo any machine learning jobs after enabling hardware acceleration. The acceleration device will be used for any jobs that run after enabling it.
+:::
+
+## Supported Backends
+
+- ARM NN (Mali)
+- CUDA (NVIDIA GPUs with [compute capability](https://developer.nvidia.com/cuda-gpus) 5.2 or higher)
+- ROCm (AMD GPUs)
+- OpenVINO (Intel GPUs such as Iris Xe and Arc)
+- RKNN (Rockchip)
+
+## Limitations
+
+- The instructions and configurations here are specific to Docker Compose. Other container engines may require different configuration.
+- Only Linux and Windows (through WSL2) servers are supported.
+- ARM NN is only supported on devices with Mali GPUs. Other Arm devices are not supported.
+- Some models may not be compatible with certain backends. CUDA is the most reliable.
+- Search latency isn't improved by ARM NN due to model compatibility issues preventing its use. However, smart search jobs do make use of ARM NN.
+
+### Image Enrichment Model Support
+
+Image enrichment has two independent model paths:
+
+| Task                        | CUDA support                                                                   | OpenVINO support                        |
+| --------------------------- | ------------------------------------------------------------------------------ | --------------------------------------- |
+| NSFW detection              | Supported through ONNX Runtime with `onnx-community/nsfw_image_detection-ONNX` | Supported through ONNX Runtime OpenVINO |
+| Image descriptions and tags | Supported through Transformers/PyTorch in the CUDA image                       | Supported through OpenVINO GenAI        |
+
+Existing ONNX tasks keep NVIDIA acceleration when the CUDA machine-learning image is used. OpenVINO support does not disable CUDA; the machine-learning service still prefers `CUDAExecutionProvider` when the CUDA runtime is installed.
+
+The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. The Intel iGPU profile maps it internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The NVIDIA CUDA profile runs the admin-facing model directly through Transformers/PyTorch via `AutoModelForVision2Seq`, which auto-dispatches the correct conditional-generation class based on the model's `config.json` — this is how the same code path handles Qwen2.5-VL (3B/7B/32B/72B) and Qwen3-VL (e.g. 30B-A3B MoE).
+
+The full curated dropdown of description models, with VRAM hints, lives in [Image Enrichment](/features/image-enrichment#hardware-and-model-notes).
+
+The default fallback setting is `microsoft/Florence-2-base-ft`. See [Image Enrichment → Fallback model behavior](/features/image-enrichment#fallback-model-behavior) for when it is used.
+
+#### Model licences
+
+Some models have licences that limit commercial use. They run for your personal use, on your own server or in a Frameleaf Cloud container rented for you (legal review 2026-10-17), so every one of them is available on this server, a home-network worker and Frameleaf Cloud. Check the licence before using a model outside your own installation.
+
+| Model                                                          | Licence                                         |
+| -------------------------------------------------------------- | ----------------------------------------------- |
+| `Qwen/Qwen2.5-VL-3B-Instruct` (and `llmware/qwen2.5-vl-3b-ov`) | Qwen Research License Agreement (Alibaba Cloud) |
+| `nllb-clip` search models (base and large, every variant)      | CC-BY-NC-4.0                                    |
+| MusicGen-small (`Xenova/musicgen-small`)                       | CC-BY-NC-4.0                                    |
+
+Choose models for each kind of work in **Where each job runs** (**Settings → Computers & background work → Where work runs**). Each kind of work has one slider, from lighter to heavier models:
+
+- **White** stops run on this server's processor and **green** stops fit its GPU, as the last graphics card check found it. Without a check every stop is white; run the check to see which fit. A model that needs more GPU memory than you have, or CUDA on a GPU that does not use it, is crossed out with the reason.
+
+Choosing a white or green stop changes the description model setting, saved with the settings bar like any other setting. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback (**Backup model**) and any model typed by its Hugging Face name stay in **Settings → Search & intelligence → Descriptions & tags**, under **Advanced: caption model and hardware**. Restoration workers bring their own models. Smooth motion runs RIFE on a restoration worker on this server or your network when an administrator has added one with a qualified RIFE model (see `machine-learning/video-restoration/README.md`).
+
+## Graphics card check
+
+**Settings → Computers & background work → Graphics card check** checks each part of Frameleaf on its own, because each needs its own access to the GPU. For the server container (video and Studio export) and the machine-learning container (AI features) it reports three separate facts:
+
+- **GPU on the host**: the host's PCI list, read from inside the container, shows a GPU. Under WSL2 or Docker Desktop the host's GPUs are hidden, so this shows **Not reported** unless the container sees one.
+- **Visible to the container**: an NVIDIA device, a `/dev/dri` render node, `/dev/kfd` or `/dev/dxg` was passed in.
+- **Used by the runtime**: the test transcode ran on the GPU's video engine, or the analysis runtime (CUDA, ROCm or OpenVINO) is using the GPU.
+
+Enrolled Studio render workers and restoration workers are listed below the two containers, from the evidence they reported. A fact a worker does not report shows **Not reported**; it is never guessed.
+
+The check names the set-up problems it finds, each with the fix and, where docker compose can fix it, a copy-ready snippet with the values it found (such as the render group's number or the graphics card's PCI path). It detects, among others: the NVIDIA Container Toolkit missing, an old driver, the `video` capability missing for NVENC, `/dev/dri` not passed in, a render node owned by a group the container does not have, the integrated GPU used instead of the graphics card on a host with both, an RX 6000 or 7600 card that needs `HSA_OVERRIDE_GFX_VERSION` for ROCm, WSL2, Unraid, the processor image on a GPU host, and Docker Desktop on a Mac. A Turing card (compute capability 7.5, such as the GTX 16 series) is shown as a note: it has no bf16 or FlashAttention, so models that use them run slower.
+
+**Run a short benchmark** times search embeddings and a test transcode, then records the throughput of each kind of work the model sliders estimate:
+
+- **Descriptions and tags**: a few generated test photos are described with your description model on this server's machine-learning container.
+- **Restoration**: the speed the restoration worker measured on its current GPU when it was qualified.
+- **Upscale** has no local runner, and a transcription worker and a Smooth motion (RIFE) restoration worker report no speed to this check; the benchmark says so rather than estimating.
+
+## Prerequisites
+
+#### ARM NN
+
+- Make sure you have the appropriate linux kernel driver installed
+  - This is usually pre-installed on the device vendor's Linux images
+- `/dev/mali0` must be available in the host server
+  - You may confirm this by running `ls /dev` to check that it exists
+- You must have the closed-source `libmali.so` firmware (possibly with an additional firmware file)
+  - Where and how you can get this file depends on device and vendor, but typically, the device vendor also supplies these
+  - The `hwaccel.ml.yml` file assumes the path to it is `/usr/lib/libmali.so`, so update accordingly if it is elsewhere
+  - The `hwaccel.ml.yml` file assumes an additional file `/lib/firmware/mali_csffw.bin`, so update accordingly if your device's driver does not require this file
+- Optional: Configure your `.env` file, see [environment variables](/install/environment-variables) for ARM NN specific settings
+  - In particular, the `MACHINE_LEARNING_ANN_FP16_TURBO` can significantly improve performance at the cost of very slightly lower accuracy
+
+#### CUDA
+
+- The GPU must have compute capability 5.2 or greater.
+- The server must have the official NVIDIA driver installed.
+- The installed driver must be >= 545 (it must support CUDA 12.3).
+- On Linux (except for WSL2), you also need to have [NVIDIA Container Toolkit][nvct] installed.
+
+#### ROCm
+
+- On Linux, The [AMDGPU driver module](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/how-to/docker.html) needs to be installed on the server and, if secure boot is used, the signing key of DKMS [needs to be enrolled in UEFI BIOS](https://wiki.debian.org/SecureBoot)
+- The GPU must be supported by ROCm. If it isn't officially supported, you can attempt to use the `HSA_OVERRIDE_GFX_VERSION` environmental variable: `HSA_OVERRIDE_GFX_VERSION=<a supported version, e.g. 10.3.0>`. If this doesn't work, you might need to also set `HSA_USE_SVM=0`.
+- The ROCm image is quite large and requires at least 35GiB of free disk space. However, pulling later updates to the service through Docker will generally only amount to a few hundred megabytes as the rest will be cached.
+- This backend is new and may experience some issues. For example, GPU power consumption can be higher than usual after running inference, even if the machine learning service is idle. In this case, it will only go back to normal after being idle for 5 minutes (configurable with the [MACHINE_LEARNING_MODEL_TTL](/install/environment-variables) setting).
+- MIGraphX is a new backend for AMD cards, which compiles models at runtime. As such, the first few inferences will be slow.
+
+#### OpenVINO
+
+- Integrated GPUs are more likely to experience issues than discrete GPUs, especially for older processors or servers with low RAM.
+- Ensure the server's kernel version is new enough to use the device for hardware acceleration.
+- Expect higher RAM usage when using OpenVINO compared to CPU processing.
+
+#### OpenVINO-WSL
+
+- Ensure your container can access the /dev/dri directory, you can verify this by doing `docker compose exec -T frameleaf-machine-learning ls -la /dev/dri` from your Compose directory. If this is not the case execute `getent group render` and `getent group video` on the WSL host, then add those groups to hwaccel.ml.yaml
+  ```yaml
+  openvino-wsl:
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/dxg:/dev/dxg
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - /usr/lib/wsl:/usr/lib/wsl
+    group_add:
+      - 44 # Replace this number with the number you found with getent group video
+      - 992 # Replace this number with the number you found with getent group render
+  ```
+
+#### RKNN
+
+- You must have a supported Rockchip SoC: only RK3566, RK3568, RK3576 and RK3588 are supported at this moment.
+- Make sure you have the appropriate linux kernel driver installed
+  - This is usually pre-installed on the device vendor's Linux images
+- RKNPU driver V0.9.8 or later must be available in the host server
+  - You may confirm this by running `cat /sys/kernel/debug/rknpu/version` to check the version
+- Optional: Configure your `.env` file, see [environment variables](/install/environment-variables) for RKNN specific settings
+  - In particular, setting `MACHINE_LEARNING_RKNN_THREADS` to 2 or 3 can _dramatically_ improve performance for RK3576 and RK3588 compared to the default of 1, at the expense of multiplying the amount of RAM each model uses by that amount.
+
+## Setup
+
+<ComposeBuilder />
+
+1. If you do not already have it, download the latest [`hwaccel.ml.yml`][hw-file] file and ensure it's in the same folder as the `docker-compose.yml`.
+2. In `frameleaf-machine-learning`, add one of -[armnn, cuda, rocm, openvino, rknn] to the `image` section's tag at the end of the line.
+3. Still in the `docker-compose.yml` under `frameleaf-machine-learning`, uncomment the `extends` section and change `cpu` to the appropriate backend.
+4. Redeploy the `frameleaf-machine-learning` container with these updated settings.
+
+### Confirming Device Usage
+
+You can confirm the device is being recognized and used by checking its utilization. There are many tools to display this, such as `nvtop` for NVIDIA or Intel, `intel_gpu_top` for Intel, and `radeontop` for AMD.
+
+You can also check the logs of the `frameleaf-machine-learning` container. When a Smart Search or Face Detection job begins, or when you search with text in Frameleaf, you should either see a log for `Available ORT providers` containing the relevant provider (e.g. `CUDAExecutionProvider` in the case of CUDA), or a `Loaded ANN model` log entry without errors in the case of ARM NN.
+
+#### Single Compose File
+
+Some platforms, including Unraid and Portainer, do not support multiple Compose files as of writing. As an alternative, you can "inline" the relevant contents of the [`hwaccel.ml.yml`][hw-file] file into the `frameleaf-machine-learning` service directly.
+
+For example, the `cuda` section in this file is:
+
+```yaml
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: 1
+          capabilities:
+            - gpu
+```
+
+You can add this to the `frameleaf-machine-learning` service instead of extending from `hwaccel.ml.yml`:
+
+```yaml
+frameleaf-machine-learning:
+  container_name: frameleaf_machine_learning
+  # Note the `-cuda` at the end
+  image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-latest}}-cuda
+  # Note the lack of an `extends` section
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities:
+              - gpu
+  volumes:
+    - model-cache:/cache
+  env_file:
+    - .env
+  restart: always
+```
+
+Once this is done, you can redeploy the `frameleaf-machine-learning` container.
+
+#### Multi-GPU
+
+If you want to utilize multiple NVIDIA or Intel GPUs, you can set the `MACHINE_LEARNING_DEVICE_IDS` environmental variable to a comma-separated list of device IDs and set `MACHINE_LEARNING_WORKERS` to the number of listed devices. You can run a command such as `nvidia-smi -L` or `glxinfo -B` to see the currently available devices and their corresponding IDs.
+
+For example, if you have devices 0 and 1, set the values as follows:
+
+```
+MACHINE_LEARNING_DEVICE_IDS=0,1
+MACHINE_LEARNING_WORKERS=2
+```
+
+In this example, the machine learning service will spawn two workers, one of which will allocate models to device 0 and the other to device 1. Different requests will be processed by one worker or the other.
+
+This approach can be used to simply specify a particular device as well. For example, setting `MACHINE_LEARNING_DEVICE_IDS=1` will ensure device 1 is always used instead of device 0.
+
+Note that you should increase job concurrencies to increase overall utilization and more effectively distribute work across multiple GPUs. Additionally, each GPU must be able to load all models. It is not possible to distribute a single model to multiple GPUs that individually have insufficient VRAM, or to delegate a specific model to one GPU.
+
+[hw-file]: https://github.com/Frameleaf/frameleaf-app/releases/latest/download/hwaccel.ml.yml
+[nvct]: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+
+## Tips
+
+- If you encounter an error when a model is running, try a different model to see if the issue is model-specific.
+- You may want to increase concurrency past the default for higher utilization. However, keep in mind that this will also increase VRAM consumption.
+- Larger models benefit more from hardware acceleration, if you have the VRAM for them.
+- Compared to ARM NN, RKNPU has:
+  - Wider model support (including for search, which ARM NN does not accelerate)
+  - Less heat generation
+  - Very slightly lower accuracy (RKNPU always uses FP16, while ARM NN by default uses higher precision FP32 unless `MACHINE_LEARNING_ANN_FP16_TURBO` is enabled)
+  - Varying speed (tested on RK3588):
+    - If `MACHINE_LEARNING_RKNN_THREADS` is at the default of 1, RKNPU will have substantially lower throughput for ML jobs than ARM NN in most cases, but similar latency (such as when searching)
+    - If `MACHINE_LEARNING_RKNN_THREADS` is set to 3, it will be somewhat faster than ARM NN at FP32, but somewhat slower than ARM NN if `MACHINE_LEARNING_ANN_FP16_TURBO` is enabled
+    - When other tasks also use the GPU (like transcoding), RKNPU has a significant advantage over ARM NN as it uses the otherwise idle NPU instead of competing for GPU usage
+  - Lower RAM usage if `MACHINE_LEARNING_RKNN_THREADS` is at the default of 1, but significantly higher if greater than 1 (which is necessary for it to fully utilize the NPU and hence be comparable in speed to ARM NN)

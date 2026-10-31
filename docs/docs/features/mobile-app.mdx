@@ -1,0 +1,76 @@
+# iPhone and Android Apps
+
+Frameleaf has its own apps for iPhone and iPad, and for Android phones and tablets. They back up the photos and videos on your phone to your Frameleaf server, and let you browse your whole library, at home, away from home or with no connection at all.
+
+## What the apps do
+
+- **Back up your phone.** New photos and videos go to your server automatically, following the choices you make. See [Mobile Backup](./mobile-backup.md).
+- **Browse your library.** Your timeline, albums, people, places and search, together with everything you and your household added from other devices.
+- **Keep a copy offline.** Choose how much of the library stays on the phone for when there's no connection: just the catalog (dates, places and search), small pictures of everything plus the last few months full screen, or everything up to the space you allow. Offline pictures download over Wi-Fi, never over mobile data.
+- **Sync your albums.** Albums on an iPhone, and folders on an Android phone, can become albums on your server.
+- **Free up space.** Remove photos and videos from the phone once your server holds an identical copy.
+- **Keep private photos Locked.** Locked photos open only with your PIN.
+- **Edit videos in Studio** on an iPad or an Android tablet.
+
+## Get the app
+
+The iPhone and iPad app needs iOS or iPadOS 26 or later. The Android app needs Android 11 or later.
+
+- [Frameleaf on the App Store](https://apps.apple.com/us/app/frameleaf/id6821111014) for iPhone and iPad
+- [Frameleaf on Google Play](https://play.google.com/store/apps/details?id=app.frameleaf.android) for Android phones and tablets
+
+## Connect to your server
+
+When you first open the app you can:
+
+- **Find your server on this Wi-Fi.** With your permission, the app looks on the network you're connected to for Frameleaf servers, so you can sign in, or set up a brand new server, without typing an address. It only looks for Frameleaf servers and doesn't read your Wi-Fi name or other devices' data.
+- **Sign in with Frameleaf.** If your server is linked to Frameleaf Cloud, sign in with your Frameleaf account and the app lists the servers that account can use.
+- **Enter a server address**, for example `http://192.168.1.20:2283`, then sign in with your email and password.
+
+If your server uses your own sign-in provider, the sign-in screen shows its button. The provider sends you back to the app at `frameleaf-auth:///oauth-callback`, so your administrator must allow that address with the provider (see [OAuth](/administration/oauth.md#mobile-redirect-uri)).
+
+You can add more than one server and switch between them. Signing out of a server removes the phone's copy of its library, caches and backup queue. Nothing is deleted from the server.
+
+### At home and away from home
+
+At home, the app connects straight to your server over your own network. That is the fastest way to back up, and it needs no subscription.
+
+Away from home, the app reaches your server only when the server is linked to Frameleaf Cloud with a plan that includes remote access. It then connects straight to the server when your network allows, and through Frameleaf's relay when it can't. Without a plan, the app shows "Available on your home network. Remote access needs Frameleaf Cloud", and your phone backs up the next time you're home. See [Remote access](/guides/remote-access).
+
+## Backup
+
+Open **Backup** in the app to choose what to back up and when, to see what is waiting, and to start a backup with **Back Up Now**. A photo only counts as backed up once the server's copy matches the one on your phone. See [Mobile Backup](./mobile-backup.md) for every option.
+
+Deleting a photo on your phone never deletes it from your server, and never removes it from an album there.
+
+## Album sync
+
+In the app's backup settings, under **Albums**, choose **Off**, all of your albums, or only the ones you pick. On iPhone and iPad these are the albums you made in Photos; on Android they are the phone's folders (all folders except Camera and Screenshots, or the ones you choose).
+
+Each one becomes an album of the same name on your server, holding every photo in it, including photos that were already on the server. If the server already has an album with that name, the app adds to it instead of making a copy. Taking a photo out of an album on the phone takes it out of the server album only if the app put it there. Deleting a photo or an album on the phone never deletes anything on the server.
+
+## Free Up Space
+
+**Free Up Space** removes photos and videos from your phone once your server holds an identical copy, checked byte for byte. You see what would go before anything is removed, and you can choose to remove only items that are also in Frameleaf Cloud Backup. On Android you can also keep your favourites and the last 30 days on the phone.
+
+Removed items go to the phone's own trash (Recently Deleted on iPhone and iPad), so you can still get them back from there. Your server keeps the originals.
+
+:::warning iCloud Photos
+If iCloud Photos is on, deleting a photo on your iPhone also deletes it from iCloud and every Apple device signed in to it. After Free Up Space, the photo is then only on your Frameleaf server (and in Recently Deleted for 30 days). If you want to keep iCloud as a second copy, use **Optimize iPhone Storage** in the Settings app, under Photos, instead.
+:::
+
+:::warning Chat apps on Android
+Chat apps such as WhatsApp show media from folders on the phone. If you back those folders up and then free up space, the pictures disappear from your chats and can only be seen in Frameleaf. Leave those folders out, or check the list before removing anything.
+:::
+
+## Locked photos and your PIN
+
+Locked keeps private photos and videos out of your library. Move a photo to Locked from its menu; it is then hidden everywhere else and opens only in **Locked**, after you enter your six-digit PIN. Locked items stay on the server and are never kept on the phone for offline use.
+
+Set or change your PIN in the app's settings, under your account. The same PIN works on every device you use with that server. The people, pets and tags you choose to keep in Locked stay out of your library until you unlock it. See [Locked](./locked.md).
+
+You can also lock the whole app: turn on the app lock in settings, and the app asks for Face ID, your fingerprint or your screen lock when you open it. Locked items still ask for your PIN.
+
+## Studio on tablets
+
+Studio, the video editor, is available on iPad and Android tablets. On an iPhone or Android phone, Studio isn't available, but videos you export from Studio on a tablet or the web appear in your library on the phone.

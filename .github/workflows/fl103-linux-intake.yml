@@ -1,0 +1,71 @@
+name: FL103 Linux intake (no audio)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  intake:
+    if: github.repository == 'Frameleaf/frameleaf-qualification' && github.ref == 'refs/heads/aj/fl103-linux-intake-execute'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require exact reviewed head
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor 76ca660c20b1ca4861636fe03c20d28d584f9ccb HEAD
+          test -z "$(git status --porcelain)"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Fresh VM intake and real kernel controls
+        run: |
+          FL103_NODE=$(command -v node)
+          FL103_NPM=$(readlink -f "$(command -v npm)")
+          sudo /usr/bin/timeout --signal=TERM --kill-after=20s 900s /usr/bin/python3 studio/tools/qualification/fl103-linux-intake/intake.py --run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$GITHUB_WORKSPACE" "$FL103_NODE" "$FL103_NPM"
+      - name: Collect bounded private intake receipt
+        if: always()
+        run: |
+          FL103_BASE="/opt/fl103-intake-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$RUNNER_TEMP/fl103-receipt"
+          if sudo test -d "$FL103_BASE/evidence"; then
+            sudo cp -a "$FL103_BASE/evidence" "$FL103_BASE/control" "$RUNNER_TEMP/fl103-receipt/"
+            sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/fl103-receipt"
+          fi
+          if sudo test -f "$FL103_BASE/evidence/COMPLETE.json"; then
+            sudo /usr/bin/prlimit --fsize=2147483648 -- /usr/bin/timeout 180s tar -czf "$RUNNER_TEMP/fl103-receipt/acquired.tar.gz" -C "$FL103_BASE/storage/acquire" node_modules browsers package.json package-lock.json freecut-4d62e8082c5eb387a96275bcbd323d28f6e41a62.tar.gz acquired.json dependencies.json browser-resources.json runtime-libraries.json node.ldd.txt python3.ldd.txt chrome-headless-shell.ldd.txt
+            sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/fl103-receipt/acquired.tar.gz"
+            test "$(stat -c %s "$RUNNER_TEMP/fl103-receipt/acquired.tar.gz")" -le 2147483648
+            sudo /usr/bin/prlimit --fsize=2147483648 -- /usr/bin/timeout 180s tar -czf "$RUNNER_TEMP/fl103-receipt/runtime-root.tar.gz" -C "$FL103_BASE/storage/runtime-root" .
+            sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/fl103-receipt/runtime-root.tar.gz"
+            test "$(stat -c %s "$RUNNER_TEMP/fl103-receipt/runtime-root.tar.gz")" -le 2147483648
+            sudo cp -a "$FL103_BASE/evidence/runtime-root.json" "$FL103_BASE/evidence/runtime-root-files.json" "$RUNNER_TEMP/fl103-receipt/evidence/"
+            sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/fl103-receipt/evidence"
+            sha256sum "$RUNNER_TEMP/fl103-receipt/runtime-root.tar.gz" > "$RUNNER_TEMP/fl103-receipt/runtime-root.tar.gz.sha256"
+            sha256sum "$RUNNER_TEMP/fl103-receipt/acquired.tar.gz" > "$RUNNER_TEMP/fl103-receipt/acquired.tar.gz.sha256"
+          fi
+      - name: Close only registered owned groups and exact scratch mount
+        if: always()
+        run: |
+          FL103_BASE="/opt/fl103-intake-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          FL103_CLEANUP_STATUS=0
+          sudo /usr/bin/timeout 45s /usr/bin/python3 studio/tools/qualification/fl103-linux-intake/intake.py --cleanup "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" "$GITHUB_WORKSPACE" /usr/bin/false /usr/bin/false || FL103_CLEANUP_STATUS=$?
+          if sudo test -f "$FL103_BASE/evidence/workflow-cleanup.json"; then
+            sudo cp -a "$FL103_BASE/evidence/." "$RUNNER_TEMP/fl103-receipt/evidence/"
+            sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/fl103-receipt/evidence"
+          fi
+          exit "$FL103_CLEANUP_STATUS"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fl103-linux-intake-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fl103-receipt
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
