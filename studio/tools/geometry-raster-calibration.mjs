@@ -231,7 +231,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '4e403256d5f1722d890776b9d374d9b6e8f28aad82c02deef110b5fe1d45a9ad' ||
           // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
           binding.sourceSha256 ===
-            'fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2')),
+            'fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2' ||
+          // FL-685 Parakeet loads from the Frameleaf model mirror; raster unchanged.
+          binding.sourceSha256 ===
+            '6616439af729e6175b697ee55a182e3c472418e058cd5d7a4bc3e5d21227286f')),
     'SOURCE_BROWSER',
   )
   check(
