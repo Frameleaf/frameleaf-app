@@ -1,0 +1,61 @@
+{
+  "name": "documentation",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "docusaurus": "docusaurus",
+    "format": "prettier --cache --check .",
+    "format:fix": "prettier --cache --write --list-different .",
+    "start": "docusaurus start --port 3005",
+    "copy:openapi": "jq -c < ../open-api/immich-openapi-specs.json > ./static/openapi.json || exit 0",
+    "build": "pnpm run copy:openapi && docusaurus build",
+    "swizzle": "docusaurus swizzle",
+    "deploy": "docusaurus deploy",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "write-translations": "docusaurus write-translations",
+    "write-heading-ids": "docusaurus write-heading-ids"
+  },
+  "dependencies": {
+    "@docusaurus/core": "~3.10.2",
+    "@docusaurus/preset-classic": "~3.10.2",
+    "@docusaurus/theme-common": "~3.10.2",
+    "@docusaurus/theme-mermaid": "~3.10.2",
+    "@mdi/js": "^7.4.47",
+    "@mdi/react": "^1.6.1",
+    "@mdx-js/react": "^3.1.1",
+    "docusaurus-lunr-search": "^3.6.0",
+    "lunr": "^2.3.9",
+    "postcss": "^8.5.30",
+    "prism-react-renderer": "^2.4.1",
+    "raw-loader": "^4.0.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "url": "^0.11.4",
+    "@tailwindcss/postcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "~3.10.2",
+    "@docusaurus/tsconfig": "^3.10.2",
+    "@docusaurus/types": "^3.10.2",
+    "prettier": "^3.9.10",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  },
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

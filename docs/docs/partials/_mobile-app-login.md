@@ -1,0 +1,1 @@
+Open the app and choose **Sign in with Frameleaf**, pick your server from the ones the app finds on your Wi-Fi, or enter the server address (for example `http://<machine-ip-address>:2283`) and sign in with your email and password.

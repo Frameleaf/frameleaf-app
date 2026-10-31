@@ -1,0 +1,825 @@
+import {
+  AssetMediaResponseDto,
+  AssetResponseDto,
+  AssetVisibility,
+  deleteAssets,
+  getAssetInfo,
+  login,
+  LoginResponseDto,
+  SharedLinkType,
+  signUpAdmin,
+  updateAdminOnboarding,
+  updateAsset,
+} from '@frameleaf/sdk';
+import { DateTime } from 'luxon';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { withApiAssetReadiness } from 'src/api-asset-readiness.js';
+import { loginDto, signupDto } from 'src/fixtures.js';
+import { errorDto } from 'src/responses.js';
+import { app, asBearerAuth, TEN_TIMES, testAssetDir, utils } from 'src/utils.js';
+import request from 'supertest';
+import { beforeAll, describe, expect, it } from 'vitest';
+const today = DateTime.now();
+const SEARCH_SETUP_TIMEOUT = process.env.CI ? 240_000 : 90_000;
+
+describe('/search', () => {
+  let admin: LoginResponseDto;
+
+  let assetFalcon: AssetMediaResponseDto;
+  let assetDenali: AssetMediaResponseDto;
+  let assetCyclamen: AssetMediaResponseDto;
+  let assetNotocactus: AssetMediaResponseDto;
+  let assetSilver: AssetMediaResponseDto;
+  let assetDensity: AssetMediaResponseDto;
+  // let assetPhiladelphia: AssetMediaResponseDto;
+  // let assetOrychophragmus: AssetMediaResponseDto;
+  // let assetRidge: AssetMediaResponseDto;
+  // let assetPolemonium: AssetMediaResponseDto;
+  // let assetWood: AssetMediaResponseDto;
+  // let assetGlarus: AssetMediaResponseDto;
+  let assetHeic: AssetMediaResponseDto;
+  let assetRocks: AssetMediaResponseDto;
+  let assetOneJpg6: AssetMediaResponseDto;
+  let assetOneHeic6: AssetMediaResponseDto;
+  let assetOneJpg5: AssetMediaResponseDto;
+  let assetSprings: AssetMediaResponseDto;
+  let assetLast: AssetMediaResponseDto;
+
+  beforeAll(
+    withApiAssetReadiness(SEARCH_SETUP_TIMEOUT, async (signal) => {
+      await utils.resetDatabase(undefined, signal);
+      await signUpAdmin({ signUpDto: signupDto.admin }, { signal });
+      admin = await login({ loginCredentialDto: loginDto.admin }, { signal });
+      await updateAdminOnboarding(
+        { adminOnboardingUpdateDto: { isOnboarded: true } },
+        { headers: asBearerAuth(admin.accessToken), signal },
+      );
+
+      const files = [
+        { filename: '/albums/nature/prairie_falcon.jpg' },
+        { filename: '/formats/webp/denali.webp' },
+        { filename: '/albums/nature/cyclamen_persicum.jpg', dto: { isFavorite: true } },
+        { filename: '/albums/nature/notocactus_minimus.jpg' },
+        { filename: '/albums/nature/silver_fir.jpg' },
+        { filename: '/formats/heic/IMG_2682.heic' },
+        { filename: '/formats/jpg/el_torcal_rocks.jpg' },
+        { filename: '/formats/motionphoto/samsung-one-ui-6.jpg' },
+        { filename: '/formats/motionphoto/samsung-one-ui-6.heic' },
+        { filename: '/formats/motionphoto/samsung-one-ui-5.jpg' },
+
+        { filename: '/metadata/gps-position/thompson-springs.jpg', dto: { visibility: AssetVisibility.Archive } },
+
+        // used for search suggestions
+        { filename: '/formats/png/density_plot.png' },
+        { filename: '/formats/raw/Nikon/D80/glarus.nef' },
+        { filename: '/formats/raw/Nikon/D700/philadelphia.nef' },
+        { filename: '/albums/nature/orychophragmus_violaceus.jpg' },
+        { filename: '/albums/nature/tanners_ridge.jpg' },
+        { filename: '/albums/nature/polemonium_reptans.jpg' },
+
+        // last asset
+        { filename: '/albums/nature/wood_anemones.jpg' },
+      ];
+      const assets: AssetMediaResponseDto[] = [];
+      for (const { filename, dto } of files) {
+        const bytes = await readFile(join(testAssetDir, filename), { signal });
+        assets.push(await utils.createAsset(admin.accessToken, { assetData: { bytes, filename }, ...dto }, { signal }));
+      }
+
+      for (const asset of assets) {
+        await utils.waitForAssetReady(admin.accessToken, asset.id, { signal });
+      }
+
+      // Synthetic coordinates use six decimal places for exact EXIF round-trip assertions.
+      const coordinates = [
+        { latitude: 48.85341, longitude: 2.3488 }, // paris
+        { latitude: 35.6895, longitude: 139.69171 }, // tokyo
+        { latitude: 52.52437, longitude: 13.41053 }, // berlin
+        { latitude: 1.314663, longitude: 103.845409 }, // singapore
+        { latitude: 41.01384, longitude: 28.94966 }, // istanbul
+        { latitude: 5.55602, longitude: -0.1969 }, // accra
+        { latitude: 37.544271, longitude: -4.727753 }, // andalusia
+        { latitude: 23.13302, longitude: -82.38304 }, // havana
+        { latitude: 41.69411, longitude: 44.83368 }, // tbilisi
+        { latitude: 31.22222, longitude: 121.45806 }, // shanghai
+        { latitude: 38.9711, longitude: -109.7137 }, // thompson springs
+        { latitude: 40.71427, longitude: -74.00597 }, // new york
+        { latitude: 47.04057, longitude: 9.06804 }, // glarus
+        { latitude: 32.77152, longitude: -89.11673 }, // philadelphia
+        { latitude: 31.63416, longitude: -7.99994 }, // marrakesh
+        { latitude: 38.523735, longitude: -78.488619 }, // tanners ridge
+        { latitude: 59.93863, longitude: 30.31413 }, // st. petersburg
+        { latitude: 0, longitude: 0 }, // null island
+      ];
+
+      const updates = coordinates.map((dto, i) =>
+        updateAsset({ id: assets[i].id, updateAssetDto: dto }, { headers: asBearerAuth(admin.accessToken), signal }),
+      );
+
+      // Drain every owned update, including the other requests if one rejects.
+      const results = await Promise.allSettled(updates);
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          throw result.reason;
+        }
+      }
+      // Coordinate changes are written through a sidecar, then metadata reverse-geocodes their place names.
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar', undefined, signal);
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', undefined, signal);
+      for (const i of coordinates.keys()) {
+        const current = await getAssetInfo({ id: assets[i].id }, { headers: asBearerAuth(admin.accessToken), signal });
+        // Metadata intentionally discards Null Island coordinates.
+        const expected =
+          coordinates[i].latitude === 0 && coordinates[i].longitude === 0
+            ? { latitude: null, longitude: null }
+            : coordinates[i];
+        expect(current.exifInfo).toMatchObject(expected);
+      }
+
+      [
+        assetFalcon,
+        assetDenali,
+        assetCyclamen,
+        assetNotocactus,
+        assetSilver,
+        assetHeic,
+        assetRocks,
+        assetOneJpg6,
+        assetOneHeic6,
+        assetOneJpg5,
+        assetSprings,
+        assetDensity,
+        // assetGlarus,
+        // assetPhiladelphia,
+        // assetOrychophragmus,
+        // assetRidge,
+        // assetPolemonium,
+        // assetWood,
+      ] = assets;
+
+      assetLast = assets.at(-1) as AssetMediaResponseDto;
+
+      await deleteAssets(
+        { assetBulkDeleteDto: { ids: [assetSilver.id] } },
+        { headers: asBearerAuth(admin.accessToken), signal },
+      );
+    }),
+    SEARCH_SETUP_TIMEOUT + 5000,
+  );
+
+  describe('POST /search/metadata', () => {
+    const searchTests = [
+      {
+        should: 'should get my assets',
+        deferred: () => ({ dto: { size: 1 }, assets: [assetLast] }),
+      },
+      {
+        should: 'should sort my assets in reverse',
+        deferred: () => ({ dto: { order: 'asc', size: 2 }, assets: [assetCyclamen, assetNotocactus] }),
+      },
+      {
+        should: 'should support pagination',
+        deferred: () => ({ dto: { order: 'asc', size: 1, page: 2 }, assets: [assetNotocactus] }),
+      },
+      {
+        // Fork stores asset checksums as SHA-256 (see asset-media.service `checksumAlgorithm: sha256File`),
+        // so search must use cyclamen's SHA-256 digest, not the upstream SHA-1.
+        should: 'should search by checksum (base64)',
+        deferred: () => ({
+          dto: { checksum: '05qUBABumDZTCXxP31s+m+S8jYRtD1XAFyYeXl1WByQ=' },
+          assets: [assetCyclamen],
+        }),
+      },
+      {
+        should: 'should search by checksum (hex)',
+        deferred: () => ({
+          dto: { checksum: 'd39a9404006e983653097c4fdf5b3e9be4bc8d846d0f55c017261e5e5d560724' },
+          assets: [assetCyclamen],
+        }),
+      },
+      { should: 'should search by id', deferred: () => ({ dto: { id: assetCyclamen.id }, assets: [assetCyclamen] }) },
+      {
+        should: 'should search by isFavorite (true)',
+        deferred: () => ({ dto: { isFavorite: true }, assets: [assetCyclamen] }),
+      },
+      {
+        should: 'should search by isFavorite (false)',
+        deferred: () => ({ dto: { size: 1, isFavorite: false }, assets: [assetLast] }),
+      },
+      {
+        should: 'should search by visibility (AssetVisibility.Archive)',
+        deferred: () => ({ dto: { visibility: AssetVisibility.Archive }, assets: [assetSprings] }),
+      },
+      {
+        should: 'should search by visibility (AssetVisibility.Timeline)',
+        deferred: () => ({ dto: { size: 1, visibility: AssetVisibility.Timeline }, assets: [assetLast] }),
+      },
+      {
+        should: 'should search by type (image)',
+        deferred: () => ({ dto: { size: 1, type: 'IMAGE' }, assets: [assetLast] }),
+      },
+      {
+        should: 'should search by type (video)',
+        deferred: () => ({
+          dto: { type: 'VIDEO', visibility: AssetVisibility.Hidden },
+          assets: [
+            // the three live motion photos
+            { id: expect.any(String) },
+            { id: expect.any(String) },
+            { id: expect.any(String) },
+          ],
+        }),
+      },
+      {
+        should: 'should search by trashedBefore',
+        deferred: () => ({ dto: { trashedBefore: today.plus({ hour: 1 }).toJSDate() }, assets: [assetSilver] }),
+      },
+      {
+        should: 'should search by trashedBefore (no results)',
+        deferred: () => ({ dto: { trashedBefore: today.minus({ days: 1 }).toJSDate() }, assets: [] }),
+      },
+      {
+        should: 'should search by trashedAfter',
+        deferred: () => ({ dto: { trashedAfter: today.minus({ hour: 1 }).toJSDate() }, assets: [assetSilver] }),
+      },
+      {
+        should: 'should search by trashedAfter (no results)',
+        deferred: () => ({ dto: { trashedAfter: today.plus({ hour: 1 }).toJSDate() }, assets: [] }),
+      },
+      {
+        should: 'should search by takenBefore',
+        deferred: () => ({ dto: { size: 1, takenBefore: today.plus({ hour: 1 }).toJSDate() }, assets: [assetLast] }),
+      },
+      {
+        should: 'should search by takenBefore (no results)',
+        deferred: () => ({ dto: { takenBefore: DateTime.fromObject({ year: 1234 }).toJSDate() }, assets: [] }),
+      },
+      {
+        should: 'should search by takenAfter',
+        deferred: () => ({
+          dto: { size: 1, takenAfter: DateTime.fromObject({ year: 1234 }).toJSDate() },
+          assets: [assetLast],
+        }),
+      },
+      {
+        should: 'should search by takenAfter (no results)',
+        deferred: () => ({ dto: { takenAfter: today.plus({ hour: 1 }).toJSDate() }, assets: [] }),
+      },
+      {
+        should: 'should search by originalFilename',
+        deferred: () => ({
+          dto: { originalFileName: 'rocks' },
+          assets: [assetRocks],
+        }),
+      },
+      {
+        should: 'should search by originalFilename with spaces',
+        deferred: () => ({
+          dto: { originalFileName: 'samsung-one', type: 'IMAGE' },
+          assets: [assetOneJpg5, assetOneJpg6, assetOneHeic6],
+        }),
+      },
+      {
+        should: 'should search by city',
+        deferred: () => ({
+          dto: {
+            city: 'Accra',
+            includeNull: true,
+          },
+          assets: [assetHeic],
+        }),
+      },
+      {
+        should: 'should search city (null)',
+        deferred: () => ({
+          dto: {
+            city: null,
+            visibility: AssetVisibility.Timeline,
+            includeNull: true,
+          },
+          assets: [assetLast],
+        }),
+      },
+      {
+        should: 'should search by state',
+        deferred: () => ({
+          dto: {
+            state: 'New York',
+            includeNull: true,
+          },
+          assets: [assetDensity],
+        }),
+      },
+      {
+        should: 'should search state (null)',
+        deferred: () => ({
+          dto: {
+            state: null,
+            visibility: AssetVisibility.Timeline,
+            includeNull: true,
+          },
+          assets: [assetLast, assetNotocactus],
+        }),
+      },
+      {
+        should: 'should search by country',
+        deferred: () => ({
+          dto: {
+            country: 'France',
+            includeNull: true,
+          },
+          assets: [assetFalcon],
+        }),
+      },
+      {
+        should: 'should search country (null)',
+        deferred: () => ({
+          dto: {
+            country: null,
+            visibility: AssetVisibility.Timeline,
+            includeNull: true,
+          },
+          assets: [assetLast],
+        }),
+      },
+      {
+        should: 'should search by make',
+        deferred: () => ({
+          dto: {
+            make: 'Canon',
+            includeNull: true,
+          },
+          assets: [assetFalcon, assetDenali],
+        }),
+      },
+      {
+        should: 'should search by model',
+        deferred: () => ({
+          dto: {
+            model: 'Canon EOS 7D',
+            includeNull: true,
+          },
+          assets: [assetDenali],
+        }),
+      },
+      {
+        should: 'should allow searching the upload library (libraryId: null)',
+        deferred: () => ({
+          dto: { libraryId: null, size: 1 },
+          assets: [assetLast],
+        }),
+      },
+    ];
+
+    for (const { should, deferred } of searchTests) {
+      it(should, async () => {
+        const { assets, dto } = deferred();
+        const { status, body } = await request(app)
+          .post('/search/metadata')
+          .send(dto)
+          .set('Authorization', `Bearer ${admin.accessToken}`);
+        expect(status).toBe(200);
+        expect(body.assets).toBeDefined();
+        expect(Array.isArray(body.assets.items)).toBe(true);
+        for (const [i, asset] of assets.entries()) {
+          expect(body.assets.items[i]).toEqual(expect.objectContaining({ id: asset.id }));
+        }
+        expect(body.assets.items).toHaveLength(assets.length);
+      });
+    }
+
+    it('should reject shared link access without an album filter', async () => {
+      const album = await utils.createAlbum(admin.accessToken, { albumName: 'foo' });
+      const sharedLink = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+      });
+      const { status, body } = await request(app).post(`/search/metadata?key=${sharedLink.key}`).send({});
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.badRequest('Shared link access is only allowed in combination with an albumIds filter'),
+      );
+    });
+
+    it('should allow shared link access for albums', async () => {
+      const asset = await utils.createAsset(admin.accessToken);
+      const album = await utils.createAlbum(admin.accessToken, { albumName: 'foo', assetIds: [asset.id] });
+      const sharedLink = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+      });
+
+      const { status, body } = await request(app)
+        .post(`/search/metadata?key=${sharedLink.key}`)
+        .send({ albumIds: [album.id] });
+      expect(status).toBe(200);
+      expect(body.assets.items).toEqual([expect.objectContaining({ id: asset.id })]);
+    });
+  });
+
+  describe('POST /search/facets (FL-49)', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).post('/search/facets').send({});
+      expect(status).toBe(401);
+    });
+
+    it('should count facets that reconcile to the statistics total', async () => {
+      const [facets, statistics] = await Promise.all([
+        request(app).post('/search/facets').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+        request(app).post('/search/statistics').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+      ]);
+      expect(facets.status).toBe(200);
+      expect(facets.body.total).toBe(statistics.body.total);
+      const sum = (field: string) =>
+        facets.body.facets
+          .find(({ fieldName }: any) => fieldName === field)
+          .counts.reduce((total: number, { count }: any) => total + count, 0);
+      expect(sum('type')).toBe(statistics.body.total);
+      expect(sum('rating')).toBe(statistics.body.total);
+      expect(sum('isFavorite')).toBe(statistics.body.total);
+    });
+
+    it('should narrow by a structured filter', async () => {
+      const { status, body } = await request(app)
+        .post('/search/facets')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ filter: { make: { eq: 'Canon' } }, facets: ['make'], facetLimit: 3 });
+      expect(status).toBe(200);
+      expect(body.facets).toEqual([
+        { fieldName: 'make', counts: body.total > 0 ? [{ value: 'Canon', count: body.total }] : [] },
+      ]);
+    });
+  });
+
+  describe('POST /search/histogram (FL-49)', () => {
+    it('should add up to the statistics total', async () => {
+      const [histogram, statistics] = await Promise.all([
+        request(app)
+          .post('/search/histogram')
+          .set('Authorization', `Bearer ${admin.accessToken}`)
+          .send({ granularity: 'year' }),
+        request(app).post('/search/statistics').set('Authorization', `Bearer ${admin.accessToken}`).send({}),
+      ]);
+      expect(histogram.status).toBe(200);
+      expect(histogram.body.granularity).toBe('year');
+      expect(histogram.body.total).toBe(statistics.body.total);
+    });
+
+    it('should reject an unknown granularity', async () => {
+      const { status } = await request(app)
+        .post('/search/histogram')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ granularity: 'week' });
+      expect(status).toBe(400);
+    });
+  });
+
+  describe('POST /search/smart/statistics (FL-49)', () => {
+    it('should require a query', async () => {
+      const { status } = await request(app)
+        .post('/search/smart/statistics')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({});
+      expect(status).toBe(400);
+    });
+  });
+
+  describe('POST /search/random', () => {
+    beforeAll(async () => {
+      await Promise.all([
+        utils.createAsset(admin.accessToken),
+        utils.createAsset(admin.accessToken),
+        utils.createAsset(admin.accessToken),
+        utils.createAsset(admin.accessToken),
+        utils.createAsset(admin.accessToken),
+        utils.createAsset(admin.accessToken),
+      ]);
+
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+    });
+
+    it.each(TEN_TIMES)('should return 1 random assets', async () => {
+      const { status, body } = await request(app)
+        .post('/search/random')
+        .send({ size: 1 })
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+
+      const assets: AssetResponseDto[] = body;
+      expect(assets.length).toBe(1);
+      expect(assets[0].ownerId).toBe(admin.userId);
+    });
+
+    it.each(TEN_TIMES)('should return 2 random assets', async () => {
+      const { status, body } = await request(app)
+        .post('/search/random')
+        .send({ size: 2 })
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+
+      const assets: AssetResponseDto[] = body;
+      expect(assets.length).toBe(2);
+      expect(assets[0].ownerId).toBe(admin.userId);
+      expect(assets[1].ownerId).toBe(admin.userId);
+    });
+  });
+
+  describe('GET /search/explore', () => {
+    it('should get explore data', async () => {
+      const { status, body } = await request(app)
+        .get('/search/explore')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(status).toBe(200);
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toEqual(expect.arrayContaining([{ fieldName: 'exifInfo.city', items: [] }]));
+      expect(body).toEqual(
+        expect.arrayContaining([
+          {
+            fieldName: 'createdAt',
+            items: expect.arrayContaining([
+              expect.objectContaining({ data: expect.objectContaining({ id: assetLast.id }) }),
+            ]),
+          },
+        ]),
+      );
+    });
+  });
+
+  describe('GET /search/places', () => {
+    it('should get relevant places', async () => {
+      const name = 'Paris';
+
+      const { status, body } = await request(app)
+        .get(`/search/places?name=${name}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(Array.isArray(body)).toBe(true);
+      if (Array.isArray(body)) {
+        expect(body.length).toBeGreaterThan(10);
+        expect(body[0].name).toEqual(expect.stringContaining(name));
+        expect(body[0].admin2name).toEqual(name);
+      }
+    });
+  });
+
+  describe('GET /search/cities', () => {
+    it('should get all cities', async () => {
+      const { status, body } = await request(app)
+        .get('/search/cities')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(Array.isArray(body)).toBe(true);
+      if (Array.isArray(body)) {
+        expect(body.length).toBeGreaterThan(10);
+        const assetsWithCity = body.filter((asset) => !!asset.exifInfo?.city);
+        expect(assetsWithCity.length).toEqual(body.length);
+        const cities = new Set(assetsWithCity.map((asset) => asset.exifInfo.city));
+        expect(cities.size).toEqual(body.length);
+      }
+    });
+  });
+
+  describe('GET /search/cities/counts', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).get('/search/cities/counts');
+      expect(status).toBe(401);
+    });
+
+    it('should count the media in every city listed by GET /search/cities', async () => {
+      const [cities, counts] = await Promise.all([
+        request(app).get('/search/cities').set('Authorization', `Bearer ${admin.accessToken}`),
+        request(app).get('/search/cities/counts').set('Authorization', `Bearer ${admin.accessToken}`),
+      ]);
+
+      expect(counts.status).toBe(200);
+      const countByCity = new Map(counts.body.map(({ city, count }: { city: string; count: number }) => [city, count]));
+      for (const asset of cities.body) {
+        expect(countByCity.get(asset.exifInfo.city)).toBeGreaterThanOrEqual(1);
+      }
+    });
+  });
+
+  describe('GET /search/suggestions', () => {
+    it('should get suggestions for country (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=country&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Cuba',
+        'France',
+        'Georgia',
+        'Germany',
+        'Ghana',
+        'Japan',
+        'Morocco',
+        "People's Republic of China",
+        'Russian Federation',
+        'Singapore',
+        'Spain',
+        'Switzerland',
+        'United States of America',
+        null,
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for country', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=country')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Cuba',
+        'France',
+        'Georgia',
+        'Germany',
+        'Ghana',
+        'Japan',
+        'Morocco',
+        "People's Republic of China",
+        'Russian Federation',
+        'Singapore',
+        'Spain',
+        'Switzerland',
+        'United States of America',
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for state (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=state&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Andalusia',
+        'Glarus',
+        'Greater Accra',
+        'Havana',
+        'Île-de-France',
+        'Marrakesh-Safi',
+        'Mississippi',
+        'New York',
+        'Shanghai',
+        'State of Berlin',
+        'St.-Petersburg',
+        'Tbilisi',
+        'Tokyo',
+        'Virginia',
+        null,
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for state', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=state')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Andalusia',
+        'Glarus',
+        'Greater Accra',
+        'Havana',
+        'Île-de-France',
+        'Marrakesh-Safi',
+        'Mississippi',
+        'New York',
+        'Shanghai',
+        'State of Berlin',
+        'St.-Petersburg',
+        'Tbilisi',
+        'Tokyo',
+        'Virginia',
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for city (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=city&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Accra',
+        'Berlin',
+        'Glarus',
+        'Havana',
+        'Marrakesh',
+        'Montalbán de Córdoba',
+        'New York City',
+        'Novena',
+        'Paris',
+        'Philadelphia',
+        'Saint Petersburg',
+        'Shanghai',
+        'Stanley',
+        'Tbilisi',
+        'Tokyo',
+        null,
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for city', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=city')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Accra',
+        'Berlin',
+        'Glarus',
+        'Havana',
+        'Marrakesh',
+        'Montalbán de Córdoba',
+        'New York City',
+        'Novena',
+        'Paris',
+        'Philadelphia',
+        'Saint Petersburg',
+        'Shanghai',
+        'Stanley',
+        'Tbilisi',
+        'Tokyo',
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for camera make (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=camera-make&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Apple',
+        'Canon',
+        'FUJIFILM',
+        'NIKON CORPORATION',
+        'PENTAX Corporation',
+        'samsung',
+        'SONY',
+        null,
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for camera make', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=camera-make')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Apple',
+        'Canon',
+        'FUJIFILM',
+        'NIKON CORPORATION',
+        'PENTAX Corporation',
+        'samsung',
+        'SONY',
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for camera model (including null)', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=camera-model&includeNull=true')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Canon EOS 7D',
+        'Canon EOS R5',
+        'DSLR-A550',
+        'FinePix S3Pro',
+        'iPhone 7',
+        'NIKON D700',
+        'NIKON D750',
+        'NIKON D80',
+        'PENTAX K10D',
+        'SM-F711N',
+        'SM-S906U',
+        'SM-T970',
+        null,
+      ]);
+      expect(status).toBe(200);
+    });
+
+    it('should get suggestions for camera model', async () => {
+      const { status, body } = await request(app)
+        .get('/search/suggestions?type=camera-model')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toEqual([
+        'Canon EOS 7D',
+        'Canon EOS R5',
+        'DSLR-A550',
+        'FinePix S3Pro',
+        'iPhone 7',
+        'NIKON D700',
+        'NIKON D750',
+        'NIKON D80',
+        'PENTAX K10D',
+        'SM-F711N',
+        'SM-S906U',
+        'SM-T970',
+      ]);
+      expect(status).toBe(200);
+    });
+  });
+});
