@@ -104,12 +104,12 @@
       if (asked !== generation) {
         return;
       }
-      if (isHttpError(error) && error.status === 404) {
-        // the run is gone with its memory, so there is nothing left to follow
+      // A 4xx will not change on its own (404: the run is gone with its memory; 401/403: no access), so stop
+      // following; offline, timeouts, rate limits and server errors keep the run, and the next poll tries again.
+      if (isHttpError(error) && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status)) {
         handleError(error, $t('frameleaf_memories_highlight_failed'));
         run = undefined;
       }
-      // anything else (offline, a busy server) keeps the run, and the next poll tries again
     }
     follow();
   };

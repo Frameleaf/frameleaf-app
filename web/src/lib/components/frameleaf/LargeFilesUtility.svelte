@@ -41,8 +41,10 @@
       const info = await getAssetInfo({ ...authManager.params, id: asset.id });
       assetViewerManager.setAsset(info);
       await navigate({ targetRoute: 'current', assetId: asset.id });
+      return true;
     } catch (error) {
       handleError(error, $t('errors.failed_to_load_asset'));
+      return false;
     }
   };
 
@@ -51,8 +53,7 @@
       return undefined;
     }
     const asset = inLibrary[Math.floor(Math.random() * inLibrary.length)];
-    await onOpen(asset);
-    return asset;
+    return (await onOpen(asset)) ? asset : undefined;
   };
 
   const assetCursor = $derived({
