@@ -10,6 +10,13 @@ import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
+// Tests that assert over whole tables use their own database; destroy its pool when the test ends.
+const isolatedDatabase = async () => {
+  const db = await getKyselyDB();
+  onTestFinished(() => db.destroy());
+  return db;
+};
+
 const setup = (db?: Kysely<DB>) => {
   const { ctx } = newMediumService(BaseService, {
     database: db || defaultDatabase,
@@ -21,6 +28,10 @@ const setup = (db?: Kysely<DB>) => {
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
+});
+
+afterAll(async () => {
+  await defaultDatabase?.destroy();
 });
 
 describe(PersonRepository.name, () => {
@@ -94,7 +105,7 @@ describe(PersonRepository.name, () => {
   });
 
   it('splits a shared person group even when neither owner has faces', async () => {
-    const { ctx, sut } = setup(await getKyselyDB());
+    const { ctx, sut } = setup(await isolatedDatabase());
     const { user: remaining } = await ctx.newUser();
     const { user: moving } = await ctx.newUser();
     await ctx.database
@@ -177,7 +188,7 @@ describe(PersonRepository.name, () => {
     });
 
     it('should put people created with the same group into that group', async () => {
-      const { ctx, sut } = setup(await getKyselyDB());
+      const { ctx, sut } = setup(await isolatedDatabase());
       const [{ user: user1 }, { user: user2 }] = [await ctx.newUser(), await ctx.newUser()];
 
       const group = await sut.createGroup(user1.id);
@@ -228,7 +239,7 @@ describe(PersonRepository.name, () => {
 
   describe('deleteEmptyGroups', () => {
     it('should delete groups that no longer have any people', async () => {
-      const { ctx, sut } = setup(await getKyselyDB());
+      const { ctx, sut } = setup(await isolatedDatabase());
       const { user } = await ctx.newUser();
       const [keptGroup, emptiedGroup] = await sut.createGroups([
         { clusterGroupId: user.clusterGroupId },
@@ -252,7 +263,7 @@ describe(PersonRepository.name, () => {
 
   describe('deleteOrphanedClusterGroups', () => {
     it('should delete cluster groups that no longer belong to a user, along with their people', async () => {
-      const { ctx, sut } = setup(await getKyselyDB());
+      const { ctx, sut } = setup(await isolatedDatabase());
       const [{ user: kept }, { user: removed }] = [await ctx.newUser(), await ctx.newUser()];
       const keptGroup = await sut.createGroup(kept.id);
       const removedGroup = await sut.createGroup(removed.id);

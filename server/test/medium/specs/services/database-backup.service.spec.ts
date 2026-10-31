@@ -1,10 +1,12 @@
 import { Kysely, sql } from 'kysely';
+import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { promisify } from 'node:util';
 import { createGunzip } from 'node:zlib';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { JobStatus, StorageFolder } from 'src/enum.js';
@@ -47,6 +49,21 @@ const gunzipText = async (file: string) => {
   return text;
 };
 
+/** Fails setup when PATH has no `pg_dump`, or one older than the test server (it refuses to dump a newer major). */
+const assertHostPgDump = async (db: Kysely<DB>) => {
+  const { stdout } = await promisify(execFile)('pg_dump', ['--version']).catch((error: unknown) => {
+    throw new Error(`These tests need pg_dump on PATH: ${error}`);
+  });
+  const client = Number(/\(PostgreSQL\)\s+(\d+)/.exec(stdout)?.[1]);
+  const server = Math.floor(
+    (await sql<{ version: number }>`SELECT current_setting('server_version_num')::int AS version`.execute(db)).rows[0]!
+      .version / 10_000,
+  );
+  if (!(client >= server)) {
+    throw new Error(`pg_dump on PATH ("${stdout.trim()}") cannot dump the PostgreSQL ${server} test server`);
+  }
+};
+
 type Substitute = (command: string, args: readonly string[]) => { command: string; args: readonly string[] };
 
 describe('routine database backup with a real dump (FL-298)', { timeout: 120_000 }, () => {
@@ -71,6 +88,7 @@ describe('routine database backup with a real dump (FL-298)', { timeout: 120_000
   beforeAll(async () => {
     db = await getKyselyDB('fl298_backup');
     database = await currentDatabase(db);
+    await assertHostPgDump(db);
     await sql`CREATE TABLE fl298_sentinel (note text)`.execute(db);
 
     await sql`INSERT INTO fl298_sentinel VALUES ('kept by the backup')`.execute(db);
