@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
+import { locale } from '$lib/stores/preferences.store';
 import en from '../../../../../../../i18n/en.json';
 import Overview from './Overview.svelte';
 import { byUrgency, growthPerDay, overviewLevel, roomLeft, sentence, statusPhrases } from './overview';
@@ -40,8 +42,12 @@ const healthy = {
 };
 
 describe('Overview (FL-363)', () => {
+  // The status sentence is joined with Intl.ListFormat in the saved locale, so pin it to English.
+  const originalLocale = get(locale);
   beforeAll(() => addMessages('dev', en));
+  afterEach(() => locale.set(originalLocale));
   beforeEach(() => {
+    locale.set('en');
     sdk.getAttention.mockReset().mockResolvedValue(healthy);
     sdk.setAttentionDismissed.mockReset();
     sdk.getAnalyticsReport.mockReset().mockResolvedValue(analyticsReportFixture());
