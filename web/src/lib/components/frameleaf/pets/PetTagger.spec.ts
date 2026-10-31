@@ -79,7 +79,7 @@ describe('PetTagger', () => {
         petObservationCreateDto: { assetId: 'asset-1', expectedChecksum: 'c3Vt' },
       }),
     );
-    expect(onSaved).toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalledWith(expect.anything(), biscuit, { id: 'asset-1', checksum: 'c3Vt' });
   });
 
   it('places a region, moves it with the keyboard and types its width', async () => {

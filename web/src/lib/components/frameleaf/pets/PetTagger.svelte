@@ -42,7 +42,12 @@
     /** The pet to preselect, when the caller knows it. */
     petId?: string;
     onClose: () => void;
-    onSaved: (observation: PetObservationResponseDto, pet: PetResponseDto) => void;
+    /** `source` is the photo the observation was written on: its id and checksum when Save was pressed. */
+    onSaved: (
+      observation: PetObservationResponseDto,
+      pet: PetResponseDto,
+      source: { id: string; checksum: string },
+    ) => void;
   }
 
   let { asset, pets, petId = '', onClose, onSaved }: Props = $props();
@@ -168,18 +173,19 @@
     if (!pet || !canSave) {
       return;
     }
+    const source = { id: asset.id, checksum: asset.checksum };
     saving = true;
     error = '';
     try {
       const observation = await createPetObservation({
         id: pet.id,
         petObservationCreateDto: {
-          assetId: asset.id,
-          expectedChecksum: asset.checksum,
+          assetId: source.id,
+          expectedChecksum: source.checksum,
           ...(!wholePhoto && box && natural && regionFromBox(box, natural)),
         },
       });
-      onSaved(observation, pet);
+      onSaved(observation, pet, source);
       open = false;
     } catch (error_) {
       error = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');

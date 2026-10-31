@@ -129,7 +129,7 @@
     }
   };
 
-  const added = (observation: PetObservationResponseDto, pet: PetResponseDto, source: Source = currentSource()) => {
+  const added = (observation: PetObservationResponseDto, pet: PetResponseDto, source: Source) => {
     if (onScreen(source)) {
       upsertLocal(observation);
     }

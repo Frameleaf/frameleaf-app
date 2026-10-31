@@ -153,6 +153,7 @@ describe('DetailPanelPets', () => {
         petObservationCreateDto: { assetId: 'asset-1', expectedChecksum: 'c3VtCg==' },
       }),
     );
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('Biscuit')).not.toBeInTheDocument();
   });
 
