@@ -401,6 +401,9 @@ describe('overnight rules', () => {
     const edmonton = { startTime: '00:00', stopTime: '06:00', days: [0, 1, 2, 3, 4, 5, 6] };
     expect(isHeavyWorkWindow(at('2026-10-20T07:00:00Z'), edmonton, 'America/Edmonton')).toBe(true);
     expect(isHeavyWorkWindow(at('2026-10-20T13:00:00Z'), edmonton, 'America/Edmonton')).toBe(false);
+    // no chosen day means every day, as the schedule runs
+    const everyDay = { startTime: '23:00', stopTime: '06:00', days: [] };
+    expect(isHeavyWorkWindow(at('2026-10-20T23:30:00Z'), everyDay, 'UTC')).toBe(true);
   });
 
   it('keeps the most recent nights', () => {

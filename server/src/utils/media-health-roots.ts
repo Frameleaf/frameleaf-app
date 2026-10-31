@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
+import { constants, createReadStream } from 'node:fs';
 import { copyFile, link, lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -214,34 +214,71 @@ export const publishVerifiedCopy = async (input: {
 const errorCode = (error: unknown) =>
   error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
 
+const sha256Of = async (filePath: string) => {
+  const digest = createHash('sha256');
+  for await (const chunk of createReadStream(filePath)) {
+    digest.update(chunk as Buffer);
+  }
+  return digest.digest();
+};
+
+/** Whether two names hold the same bytes: the same file, or an identical complete copy. */
+const holdsSameBytes = async (source: string, destination: string) => {
+  const [from, to] = await Promise.all([lstat(source), lstat(destination)]);
+  if (from.ino === to.ino && from.dev === to.dev) {
+    return true;
+  }
+  if (from.size !== to.size) {
+    return false;
+  }
+  const [a, b] = await Promise.all([sha256Of(source), sha256Of(destination)]);
+  return a.equals(b);
+};
+
 /**
  * Move a file to a new name without ever replacing anything (FL-69).
  *
  * The new name is hard-linked first, which fails rather than overwrites, and the old name is only
- * removed once the new one holds the same file. Across filesystems the bytes are copied to the new
- * name exclusively and flushed before the old name is removed. A repeat after an interruption finds
- * both names on the same file and just removes the old one; a different file already at the new name
- * is an error and nothing is changed.
+ * removed once the new one holds the same bytes. Across filesystems the bytes are copied to a private
+ * temporary name beside the new one, flushed, and then hard-linked into place, so the new name is
+ * either complete or absent. A repeat after an interruption finds the same bytes at both names and
+ * just removes the old one; different bytes already at the new name are an error and nothing is
+ * changed.
  */
 export const retainFile = async (source: string, destination: string): Promise<void> => {
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+  const refuseDifferent = async (error: unknown) => {
+    if (!(await holdsSameBytes(source, destination))) {
+      throw new Error(`${destination} already holds a different file`, { cause: error });
+    }
+  };
   try {
     await link(source, destination);
   } catch (error) {
     const code = errorCode(error);
     if (code === 'EXDEV') {
-      await copyFile(source, destination, constants.COPYFILE_EXCL);
-      const file = await open(destination, 'r');
+      const temporary = `${destination}.${randomUUID()}.partial`;
       try {
-        await file.sync();
+        await copyFile(source, temporary, constants.COPYFILE_EXCL);
+        const file = await open(temporary, 'r');
+        try {
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        try {
+          await link(temporary, destination);
+        } catch (linkError) {
+          if (errorCode(linkError) !== 'EEXIST') {
+            throw linkError;
+          }
+          await refuseDifferent(linkError);
+        }
       } finally {
-        await file.close();
+        await unlink(temporary).catch(() => {});
       }
     } else if (code === 'EEXIST') {
-      const [from, to] = await Promise.all([lstat(source), lstat(destination)]);
-      if (from.ino !== to.ino || from.dev !== to.dev) {
-        throw new Error(`${destination} already holds a different file`, { cause: error });
-      }
+      await refuseDifferent(error);
     } else {
       throw error;
     }

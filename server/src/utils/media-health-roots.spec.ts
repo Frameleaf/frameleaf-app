@@ -164,6 +164,19 @@ describe('media-health-roots (FL-69)', () => {
       await expect(readFile(source)).rejects.toThrow();
     });
 
+    it('finishes a cross-filesystem move whose complete copy is already at the new name', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      // A separate file with the same bytes, as an interrupted copy across filesystems leaves it.
+      await writeFile(destination, 'damaged');
+
+      await retainFile(source, destination);
+
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
+    });
+
     it('refuses a source whose content is not the expected original', async () => {
       const source = join(backup, 'nested', 'a.jpg');
       await writeFile(source, 'similar name, different bytes');

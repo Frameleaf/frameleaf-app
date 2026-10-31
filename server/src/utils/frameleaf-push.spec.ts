@@ -162,6 +162,17 @@ describe('push payloads (FL-228)', () => {
     expect(payload.assetIds).toEqual([safe]);
     expect(payload.preview).toEqual({ assetId: safe });
   });
+
+  it('never splits a surrogate pair when shortening text', () => {
+    const payload = buildPushPayload(
+      { type: PushEventType.Memories, title: '🌲'.repeat(200), body: '🌲'.repeat(600) },
+      { ...base, safeAssetIds: new Set() },
+    );
+    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    expect(payload.title).toBe(`${'🌲'.repeat(119)}…`);
+    expect(payload.body).not.toMatch(loneSurrogate);
+    expect(payload.title).not.toMatch(loneSurrogate);
+  });
 });
 
 describe('Cloud Backup activation progress (FL-228)', () => {
