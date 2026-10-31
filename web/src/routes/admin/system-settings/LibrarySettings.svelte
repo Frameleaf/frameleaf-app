@@ -11,6 +11,7 @@
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
@@ -39,6 +40,7 @@
   const nightly = $derived(settingsDraft.baseline.library.scan.enabled);
 
   let folders = $state<LibraryResponseDto[] | null>(null);
+  let loadFailed = $state(false);
   let said = $state('');
   let checking = $state(false);
   // Loads can overlap (on arrival and on each change above); only the latest may show.
@@ -49,9 +51,13 @@
       const next = (await getAllLibraries({})).filter((library) => !library.deletedAt);
       if (current === loads) {
         folders = next;
+        loadFailed = false;
       }
     } catch {
       // keep what is shown: a failed load must not tell an administrator with folders to add one
+      if (current === loads) {
+        loadFailed = true;
+      }
     }
   };
   // The Libraries manager above this section adds and removes folders; follow it without a reload.
@@ -130,6 +136,9 @@
 
 <KitPage>
   <Said message={said} onDismiss={() => (said = '')} />
+  {#if loadFailed}
+    <InlineError message={$t('errors.something_went_wrong')} onRetry={() => void load()} />
+  {/if}
   {#if folders !== null}
     {#if folders.length === 0}
       <Hero

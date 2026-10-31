@@ -95,6 +95,10 @@
   // the draft is the only copy, so discard and reload reset this field too
   const getTimeoutSeconds = () => Math.max(1, Math.round(configToEdit.oauth.timeout / 1000));
   const setTimeoutSeconds = (seconds: unknown) => {
+    // a cleared field stays empty while typing; the field clamps it when the edit is committed
+    if (seconds === null || seconds === '') {
+      return;
+    }
     configToEdit.oauth.timeout = Math.max(1, Math.round(Number(seconds) || 1)) * 1000;
   };
 
