@@ -1,0 +1,134 @@
+import { sql } from 'kysely';
+import { DateTime } from 'luxon';
+import { InjectKysely } from 'nestjs-kysely';
+import type { Insertable, Kysely, Updateable } from 'kysely';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { NotificationSearchDto } from 'src/dtos/notification.dto.js';
+import { DB } from 'src/schema/index.js';
+import { NotificationTable } from 'src/schema/tables/notification.table.js';
+
+export class NotificationRepository {
+  constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  cleanup() {
+    return this.db
+      .deleteFrom('notification')
+      .where((eb) =>
+        eb.or([
+          // remove soft-deleted notifications
+          eb.and([eb('deletedAt', 'is not', null), eb('deletedAt', '<', DateTime.now().minus({ days: 3 }).toJSDate())]),
+
+          // Compatibility policy: old notifications read within the last two days.
+          eb.and([
+            eb('readAt', '>', DateTime.now().minus({ days: 2 }).toJSDate()),
+            eb('createdAt', '<', DateTime.now().minus({ days: 15 }).toJSDate()),
+          ]),
+
+          eb.and([
+            // Retained compatibility predicate: SQL '= NULL' does not match unread rows.
+            eb('readAt', '=', null),
+            eb('createdAt', '<', DateTime.now().minus({ days: 30 }).toJSDate()),
+          ]),
+        ]),
+      )
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, {}] }, { name: 'unread', params: [DummyValue.UUID, { unread: true }] })
+  search(userId: string, dto: NotificationSearchDto) {
+    return this.db
+      .selectFrom('notification')
+      .select(columns.notification)
+      .where((qb) =>
+        qb.and({
+          userId,
+          id: dto.id,
+          level: dto.level,
+          type: dto.type,
+          readAt: dto.unread ? null : undefined,
+        }),
+      )
+      .where('deletedAt', 'is', null)
+      .orderBy('createdAt', 'desc')
+      .execute();
+  }
+
+  /**
+   * FL-155: whether `userId` already has a notification carrying `dedupeKey` (in `data`) created
+   * after `since`, read or not, so a repeating condition notifies once per window.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, DummyValue.DATE] })
+  async findRecentByDedupeKey(userId: string, dedupeKey: string, since: Date) {
+    const row = await this.db
+      .selectFrom('notification')
+      .select('id')
+      .where('userId', '=', userId)
+      .where(sql<string>`"data"->>'dedupeKey'`, '=', dedupeKey)
+      .where('createdAt', '>', since)
+      .executeTakeFirst();
+    return row ?? null;
+  }
+
+  /**
+   * Soft-deletes `userId`'s notifications carrying `dedupeKey` (in `data`), so a condition keeps one
+   * current notice. Returns the notifications it removed.
+   */
+  deleteByDedupeKey(userId: string, dedupeKey: string) {
+    return this.db
+      .updateTable('notification')
+      .set({ deletedAt: DateTime.now().toJSDate() })
+      .where('userId', '=', userId)
+      .where(sql<string>`"data"->>'dedupeKey'`, '=', dedupeKey)
+      .where('deletedAt', 'is', null)
+      .returning(columns.notification)
+      .execute();
+  }
+
+  create(notification: Insertable<NotificationTable>) {
+    return this.db
+      .insertInto('notification')
+      .values(notification)
+      .returning(columns.notification)
+      .executeTakeFirstOrThrow();
+  }
+
+  get(id: string) {
+    return this.db
+      .selectFrom('notification')
+      .select(columns.notification)
+      .where('id', '=', id)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirst();
+  }
+
+  update(id: string, notification: Updateable<NotificationTable>) {
+    return this.db
+      .updateTable('notification')
+      .set(notification)
+      .where('deletedAt', 'is', null)
+      .where('id', '=', id)
+      .returning(columns.notification)
+      .executeTakeFirstOrThrow();
+  }
+
+  async updateAll(ids: string[], notification: Updateable<NotificationTable>) {
+    await this.db.updateTable('notification').set(notification).where('id', 'in', ids).execute();
+  }
+
+  async delete(id: string) {
+    await this.db
+      .updateTable('notification')
+      .set({ deletedAt: DateTime.now().toJSDate() })
+      .where('id', '=', id)
+      .execute();
+  }
+
+  async deleteAll(ids: string[]) {
+    await this.db
+      .updateTable('notification')
+      .set({ deletedAt: DateTime.now().toJSDate() })
+      .where('id', 'in', ids)
+      .execute();
+  }
+}

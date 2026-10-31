@@ -1,0 +1,72 @@
+import {
+  AfterDeleteTrigger,
+  AfterInsertTrigger,
+  Column,
+  CreateDateColumn,
+  ForeignKeyColumn,
+  Index,
+  Table,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { CreateIdColumn, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AlbumUserRole } from 'src/enum.js';
+import { album_user_role_enum } from 'src/schema/enums.js';
+import { album_user_after_insert, album_user_delete, album_user_delete_audit } from 'src/schema/functions.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+
+@Table({ name: 'album_user' })
+@Index({
+  name: 'album_user_unique_owner',
+  columns: ['albumId'],
+  unique: true,
+  where: `role = 'owner'`,
+})
+// Pre-existing indices from original album <--> user ManyToMany mapping
+@UpdatedAtTrigger('album_user_updatedAt')
+@AfterInsertTrigger({
+  name: 'album_user_after_insert',
+  scope: 'statement',
+  referencingNewTableAs: 'inserted_rows',
+  function: album_user_after_insert,
+})
+@AfterDeleteTrigger({
+  scope: 'statement',
+  function: album_user_delete_audit,
+  referencingOldTableAs: 'old',
+  when: 'pg_trigger_depth() <= 1',
+})
+@AfterDeleteTrigger({ scope: 'row', function: album_user_delete, referencingOldTableAs: 'old' })
+export class AlbumUserTable {
+  @ForeignKeyColumn(() => AlbumTable, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+    nullable: false,
+    primary: true,
+  })
+  albumId!: string;
+
+  @ForeignKeyColumn(() => UserTable, {
+    onDelete: 'CASCADE',
+    onUpdate: 'CASCADE',
+    nullable: false,
+    primary: true,
+  })
+  userId!: string;
+
+  @Column({ enum: album_user_role_enum, default: AlbumUserRole.Editor })
+  role!: Generated<AlbumUserRole>;
+
+  @CreateIdColumn({ index: true })
+  createId!: Generated<string>;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateIdColumn({ index: true })
+  updateId!: Generated<string>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+}
