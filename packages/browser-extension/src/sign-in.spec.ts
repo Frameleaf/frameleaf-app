@@ -59,7 +59,7 @@ describe('signing in with your Frameleaf account (FL-655)', () => {
     });
   });
 
-  it('takes the code only from our own return address and state', () => {
+  it('takes the code only from our own return address and state', async () => {
     expect(readReturn(`${REDIRECT}?code=abc&state=s1`, REDIRECT, 's1')).toBe(
       'abc',
     );
@@ -73,16 +73,19 @@ describe('signing in with your Frameleaf account (FL-655)', () => {
         's1',
       ),
     ).toThrow(SignInFailure);
-    try {
-      readReturn(`${REDIRECT}?error=access_denied&state=s1`, REDIRECT, 's1');
-    } catch (error) {
-      expect((error as SignInFailure).problem).toBe('cancelled');
-    }
-    try {
-      readReturn(undefined, REDIRECT, 's1');
-    } catch (error) {
-      expect((error as SignInFailure).problem).toBe('cancelled');
-    }
+    await expect(
+      problem(
+        (async () =>
+          readReturn(
+            `${REDIRECT}?error=access_denied&state=s1`,
+            REDIRECT,
+            's1',
+          ))(),
+      ),
+    ).resolves.toBe('cancelled');
+    await expect(
+      problem((async () => readReturn(undefined, REDIRECT, 's1'))()),
+    ).resolves.toBe('cancelled');
   });
 
   it('tells a wrong address, an unreachable server and an older server apart', async () => {

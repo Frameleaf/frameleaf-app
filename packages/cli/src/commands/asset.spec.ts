@@ -317,11 +317,20 @@ describe('checkForDuplicates', () => {
 
   it('returns results when check duplicates retry is failed', async () => {
     vi.mocked(checkBulkUpload).mockRejectedValue(new Error('Network error'));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await expect(checkForDuplicates([testFilePath], { concurrency: 1 })).resolves.toEqual({
-      duplicates: [],
-      newFiles: [],
-    });
+    try {
+      await expect(checkForDuplicates([testFilePath], { concurrency: 1 })).resolves.toEqual({
+        duplicates: [],
+        newFiles: [],
+      });
+      expect(log).toHaveBeenCalledWith('Failed to check 1 file for duplicates:');
+      expect(log).toHaveBeenCalledWith(`- ${testFilePath} - Error: Network error`);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = undefined;
+      log.mockRestore();
+    }
   });
 });
 
@@ -553,6 +562,15 @@ describe('deleteFiles', () => {
       { delete: true, concurrency: 2 },
     );
     expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, false, false]);
+  });
+
+  it('keeps a shared sidecar while another original with the same stem stays on disk', async () => {
+    const raw = path.join(testDir, 'test.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, true, true]);
   });
 
   it('keeps originals and shared sidecars during dry runs', async () => {

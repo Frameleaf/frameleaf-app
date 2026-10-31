@@ -18,7 +18,7 @@ import { Matcher, watch as watchFs } from 'chokidar';
 import { MultiBar, Presets, SingleBar } from 'cli-progress';
 import { chunk } from 'lodash-es';
 import micromatch from 'micromatch';
-import { Stats, createReadStream, statSync } from 'node:fs';
+import { Stats, createReadStream, readdirSync, statSync } from 'node:fs';
 import { stat, unlink } from 'node:fs/promises';
 import path, { basename } from 'node:path';
 import { Queue } from 'src/queue.js';
@@ -121,7 +121,7 @@ export const startWatch = async (
     ignored: watcherIgnored,
     alwaysStat: true,
     awaitWriteFinish: true,
-    depth: options.recursive ? undefined : 1,
+    depth: options.recursive ? undefined : 0,
     persistent: true,
   })
     .on('add', onFile)
@@ -324,6 +324,20 @@ export const checkForDuplicates = async (files: string[], { concurrency, skipHas
         console.log(`- ${task.data} - ${task.error}`);
       }
     }
+    // A failed duplicate-check batch leaves its files neither new nor duplicate, so they are skipped.
+    const failedChecks = checkBulkUploadQueue.tasks.filter((task) => task.status === 'failed');
+    if (failedChecks.length > 0) {
+      const failedFiles = new Set(failedChecks.flatMap((task) => task.data.map(({ id }) => id)));
+      console.log(`Failed to check ${failedFiles.size} file${s(failedFiles.size)} for duplicates:`);
+      for (const task of failedChecks) {
+        for (const filepath of new Set(task.data.map(({ id }) => id))) {
+          console.log(`- ${filepath} - ${task.error}`);
+        }
+      }
+    }
+    if (failedTasks.length > 0 || failedChecks.length > 0) {
+      process.exitCode = 1;
+    }
 
     return { newFiles, duplicates };
   } finally {
@@ -489,6 +503,19 @@ export const findSidecar = (filepath: string): string | undefined => {
   }
 };
 
+// A sidecar named photo.xmp is shared by every original with the stem `photo`; keep it while one stays on disk.
+const isSidecarStillUsed = (sidecar: string, selected: Set<string>): boolean => {
+  const sidecarPath = path.resolve(sidecar);
+  const dir = path.dirname(sidecarPath);
+  return readdirSync(dir).some((entry) => {
+    const filepath = path.join(dir, entry);
+    if (filepath === sidecarPath || selected.has(filepath) || path.extname(entry).toLowerCase() === '.xmp') {
+      return false;
+    }
+    return path.join(dir, `${path.parse(entry).name}.xmp`) === sidecarPath || `${filepath}.xmp` === sidecarPath;
+  });
+};
+
 export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], options: UploadOptionsDto): Promise<void> => {
   const files = new Set(
     [...(options.delete ? uploaded : []), ...(options.deleteDuplicates ? duplicates : [])].map(
@@ -515,9 +542,10 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
 
   try {
     const sidecars = new Set<string>();
+    const selected = new Set(files.values().map((filepath) => path.resolve(filepath)));
     for (const filepath of files) {
       const sidecar = findSidecar(filepath);
-      if (sidecar && !files.has(sidecar)) {
+      if (sidecar && !files.has(sidecar) && !isSidecarStillUsed(sidecar, selected)) {
         sidecars.add(sidecar);
       }
     }
