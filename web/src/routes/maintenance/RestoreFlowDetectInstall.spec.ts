@@ -56,3 +56,15 @@ it('keeps refresh usable after a session change drops a pending check', async ()
   await waitFor(() => expect(refresh).toBeEnabled());
   expect(handleError).not.toHaveBeenCalled();
 });
+
+it('offers a retry when a session change drops the first check', async () => {
+  const pending = deferredPromise<typeof install>();
+  sdkMock.detectPriorInstall.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(install);
+  render(RestoreFlowDetectInstall, { next: vi.fn(), end: vi.fn() });
+  await waitFor(() => expect(sdkMock.detectPriorInstall).toHaveBeenCalledOnce());
+  authManager.reset();
+  pending.resolve(install);
+  await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_error_retry' }));
+  await screen.findByText(/upload \(maintenance_restore_library_folder_pass\)/);
+  expect(handleError).not.toHaveBeenCalled();
+});

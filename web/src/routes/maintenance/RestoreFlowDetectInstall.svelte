@@ -50,6 +50,10 @@
       // a session change drops the result, not the flag, or reload and retry stay disabled
       if (alive) {
         loading = false;
+        // a first check dropped by a session change has nothing to show: offer the retry
+        if (!isCurrentSession() && !detectedInstall) {
+          failed = true;
+        }
       }
     }
   };
