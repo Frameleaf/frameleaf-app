@@ -83,6 +83,13 @@ export const buildPrimaryDestinations = ({ clients = false }: PrimaryDestination
 ];
 
 /**
+ * The sections that head the phone ☰ menu (UI review 2026-10-30 #8): phones have no top tabs, so
+ * every section but Library (which the tab bar and the rail below already cover) opens from here.
+ */
+export const buildPhoneMenuDestinations = (options: PrimaryDestinationOptions = {}): PrimaryDestination[] =>
+  buildPrimaryDestinations(options).filter(({ id }) => id !== 'library');
+
+/**
  * Whether the account has started using Clients. Missing from preferences written before Clients
  * existed (and from servers that predate it), which reads as off, the default.
  */

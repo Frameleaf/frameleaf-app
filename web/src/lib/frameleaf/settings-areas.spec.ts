@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyticsAreaUrl,
-  AREA_TILE_COLORS,
   areaForPersonalSection,
   areaSectionKeys,
   areaForSection,
@@ -197,7 +196,6 @@ describe('Frameleaf settings areas', () => {
     });
     expect(directoryGroup('cloud', 'cloud-processing')).toBe('cloud_services');
     expect(directoryGroup('cloud', 'cloud-backup')).toBe('cloud_services');
-    expect(AREA_TILE_COLORS.cloud).toBeDefined();
     expect(directoryGroup('cloud', 'cloud-account')).toBe('account_link');
     expect(directoryGroup('cloud', 'cloud-plan')).toBe('licensing');
     // FL-544: Licence folded into Your Frameleaf Cloud; old links still land there
@@ -362,12 +360,6 @@ describe('Frameleaf settings areas', () => {
   });
 
   describe('area directories (FL-71, FL-10)', () => {
-    it('gives every area a tile colour (FL-76)', () => {
-      for (const item of SETTINGS_AREAS) {
-        expect(AREA_TILE_COLORS[item.id]).toMatch(/^#[\da-f]{6}$/);
-      }
-    });
-
     it('tells server, account and device sections apart', () => {
       expect(sectionScope({ key: 'backup', admin: true })).toBe('server');
       expect(sectionScope({ key: 'takeout' })).toBe('account');

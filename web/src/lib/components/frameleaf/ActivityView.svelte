@@ -647,12 +647,12 @@
     padding: 32px 36px 48px;
     color: var(--fl-text);
   }
+  /* P4 (review-1030-shell.css): the filters sit on their own row, in line with the content. */
   .fla-head {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
     gap: 16px;
-    flex-wrap: wrap;
     margin-bottom: 20px;
     max-width: 900px;
   }
@@ -673,7 +673,6 @@
   }
   .fla-head-text {
     min-width: 0;
-    flex: 1 1 320px;
   }
   /* activity.css `.fla-intro`: what the page is for, above the counts. */
   .fla-intro {
@@ -693,7 +692,6 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    padding-top: 6px;
   }
   .fla-filters {
     display: inline-flex;

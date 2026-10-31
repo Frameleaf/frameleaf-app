@@ -112,6 +112,18 @@ describe('StudioProjectLibrary states and cards', () => {
     expect(await screen.findByRole('heading', { name: 'Make your first film' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'New project' })).toHaveAttribute('href', '/studio');
     expect(screen.getByRole('link', { name: 'Pick photos from your library' })).toBeInTheDocument();
+    // UI review 2026-10-30 #18: "New project" once, in the empty state, and the page is just "Studio".
+    expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Studio' })).toBeInTheDocument();
+  });
+
+  it('offers New project in the header once there are projects (UI review 2026-10-30 #18)', async () => {
+    sdkMock.searchStudioProjects.mockResolvedValue({ items: [project(null)], total: 1 });
+    render(StudioProjectLibrary);
+
+    expect(await screen.findByRole('link', { name: 'Lake trip' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'New project' })).toHaveLength(1);
+    expect(screen.queryByRole('link', { name: 'New project' })).not.toBeInTheDocument();
   });
 
   it('opens a project from its card and keeps every other action in one menu, trash last', async () => {
