@@ -582,6 +582,22 @@ describe('deleteFiles', () => {
     expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, true, true]);
   });
 
+  it.skipIf(os.platform() === 'win32' || process.getuid?.() === 0)(
+    'keeps the sidecar but deletes the original when the directory cannot be listed',
+    async () => {
+      const sidecar = path.join(testDir, 'test.xmp');
+      fs.writeFileSync(sidecar, 'metadata');
+      fs.chmodSync(testDir, 0o300); // write + search, no read: unlink works, readdir fails with EACCES
+      try {
+        await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+      } finally {
+        fs.chmodSync(testDir, 0o700);
+      }
+      expect(fs.existsSync(testFilePath)).toBe(false);
+      expect(fs.existsSync(sidecar)).toBe(true);
+    },
+  );
+
   it('keeps originals and shared sidecars during dry runs', async () => {
     const sidecar = path.join(testDir, 'test.xmp');
     fs.writeFileSync(sidecar, 'metadata');

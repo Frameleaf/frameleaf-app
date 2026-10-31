@@ -506,9 +506,16 @@ export const findSidecar = (filepath: string): string | undefined => {
 // A sidecar named photo.xmp is shared by every original with the stem `photo`; keep it while one stays on disk.
 // Paths are lower-cased so a case-only difference counts as "in use": on a case-insensitive filesystem it is the
 // same file, and on a case-sensitive one the worst case is keeping a sidecar that could have been removed.
-const sidecarsInUse = (dir: string, selected: Set<string>): Set<string> => {
+// Returns false when the directory cannot be listed: its references are unknown, so its sidecars are kept.
+const sidecarsInUse = (dir: string, selected: Set<string>): Set<string> | false => {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return false;
+  }
   const inUse = new Set<string>();
-  for (const entry of readdirSync(dir)) {
+  for (const entry of entries) {
     const filepath = path.join(dir, entry);
     if (selected.has(filepath) || path.extname(entry).toLowerCase() === '.xmp') {
       continue;
@@ -547,7 +554,7 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
     const sidecars = new Set<string>();
     const selected = new Set(files.values().map((filepath) => path.resolve(filepath)));
     // Each directory is listed once, however many selected files it holds.
-    const inUseByDir = new Map<string, Set<string>>();
+    const inUseByDir = new Map<string, Set<string> | false>();
     for (const filepath of files) {
       const sidecar = findSidecar(filepath);
       if (!sidecar || files.has(sidecar)) {
@@ -556,11 +563,11 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
       const sidecarPath = path.resolve(sidecar);
       const dir = path.dirname(sidecarPath);
       let inUse = inUseByDir.get(dir);
-      if (!inUse) {
+      if (inUse === undefined) {
         inUse = sidecarsInUse(dir, selected);
         inUseByDir.set(dir, inUse);
       }
-      if (!inUse.has(sidecarPath.toLowerCase())) {
+      if (inUse && !inUse.has(sidecarPath.toLowerCase())) {
         sidecars.add(sidecar);
       }
     }
