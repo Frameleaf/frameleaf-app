@@ -1,0 +1,67 @@
+[tasks.install]
+run = "pnpm install --filter 'frameleaf-web...' --frozen-lockfile"
+
+[tasks.build]
+run = "pnpm run build"
+
+[tasks."build-stats"]
+run = "pnpm run build:stats"
+
+[tasks.preview]
+run = "pnpm run preview"
+
+[tasks.start]
+run = [
+  { task = ":install" },
+  { task = "//:sdk:install" },
+  { task = "//:sdk:build" },
+  "pnpm run dev",
+]
+
+[tasks.test]
+run = "pnpm run test"
+
+[tasks.format]
+run = "pnpm run format"
+
+[tasks."format-fix"]
+run = "pnpm run format:fix"
+
+[tasks.lint]
+run = "pnpm run lint"
+
+[tasks."lint-fix"]
+run = "pnpm run lint:fix"
+
+[tasks.check-typescript]
+run = "pnpm run check:typescript"
+
+[tasks."check-svelte"]
+run = "pnpm run check:svelte"
+
+[tasks.check]
+run = { tasks = [":check-typescript", ":check-svelte"] }
+
+# FL-139: the JS and CSS each route loads up front stays within web/bundle-budget.json
+[tasks.bundle-budget]
+run = [
+  { task = ":build" },
+  "node ../scripts/frameleaf-web-bundle-budget.mjs",
+]
+
+[tasks.ci-unit]
+run = [
+  { task = "//:sdk:install" },
+  { task = "//:sdk:build" },
+  { task = ":install" },
+  { task = ":format" },
+  { task = ":check" },
+  { task = ":test --run" },
+  { task = ":bundle-budget" },
+]
+
+[tasks.checklist]
+run = [
+  { task = ":ci-unit" },
+  { task = ":lint" },
+]
