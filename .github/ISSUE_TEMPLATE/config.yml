@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and support
+    url: https://github.com/Frameleaf/frameleaf-app/discussions
+    about: Ask Frameleaf installation and usage questions in the owned project discussions.
+  - name: Feature request
+    url: https://github.com/Frameleaf/frameleaf-app/discussions/new
+    about: Describe the proposed Frameleaf behavior and its use case.

@@ -1,0 +1,17 @@
+# Inherited automatic issue mutation is disabled pending an owned triage policy.
+# No scheduled/event-driven mutations or foreign credentials are retained.
+name: Close likely duplicates
+'on':
+  workflow_dispatch: null
+permissions: {}
+jobs:
+  disabled:
+    name: Legacy automation is disabled
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Explain the retired automation
+        run:
+          printf '%s\n' 'Inherited automatic issue mutation is disabled pending an owned triage policy.' 'No external action
+          was taken. Configure an owned replacement in a reviewed change before enabling automation.'

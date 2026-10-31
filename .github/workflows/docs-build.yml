@@ -1,0 +1,53 @@
+name: Docs build
+'on':
+  workflow_dispatch: null
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Docs Build
+    permissions:
+      contents: read
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ./docs
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Run install
+        run: pnpm install --frozen-lockfile
+      - name: Check formatting
+        run: pnpm format
+      - name: Run build
+        run: pnpm build
+      - name: Capture automatic documentation formatting fixes
+        if: failure()
+        run: |
+          timeout 15m pnpm exec prettier --write . || true
+          git diff --binary -- . > "$RUNNER_TEMP/docs-format.patch"
+      - name: Archive automatic documentation formatting fixes
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: docs-format-autofix
+          path: ${{ runner.temp }}/docs-format.patch
+          retention-days: 7
+    timeout-minutes: 60

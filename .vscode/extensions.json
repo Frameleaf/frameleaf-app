@@ -1,0 +1,16 @@
+{
+  "recommendations": [
+    "esbenp.prettier-vscode",
+    "svelte.svelte-vscode",
+    "dbaeumer.vscode-eslint",
+    "bradlc.vscode-tailwindcss",
+    "ms-playwright.playwright",
+    "vitest.explorer",
+    "editorconfig.editorconfig",
+    "foxundermoon.shell-format",
+    "timonwong.shellcheck",
+    "bluebrown.yamlfmt",
+    // TODO TS 7 while it's still in preview
+    "typescriptteam.native-preview"
+  ]
+}

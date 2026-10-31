@@ -1,0 +1,35 @@
+services:
+  immich-app-base:
+    image: busybox
+  frameleaf-server:
+    extends:
+      service: immich-app-base
+    profiles: !reset []
+    image: frameleaf-server-dev:local
+    build:
+      target: dev-container-server
+    env_file: !reset []
+    hostname: immich-dev
+    environment:
+      - FRAMELEAF_SERVER_URL=http://127.0.0.1:2283/
+    volumes:
+      - ${UPLOAD_LOCATION:-upload-devcontainer-volume}${UPLOAD_LOCATION:+/photos}:/data
+      - /etc/localtime:/etc/localtime:ro
+      - build_cache:/buildcache
+      - ../packages/plugin-core:/build/plugins/immich-plugin-core
+  immich-web:
+    env_file: !reset []
+  frameleaf-machine-learning:
+    env_file: !reset []
+  database:
+    env_file: !reset []
+    environment: !override
+      POSTGRES_PASSWORD: ${DB_PASSWORD-postgres}
+      POSTGRES_USER: ${DB_USERNAME-postgres}
+      POSTGRES_DB: ${DB_DATABASE_NAME-frameleaf}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - ${UPLOAD_LOCATION:-postgres19-devcontainer-volume}${UPLOAD_LOCATION:+/postgres19}:/var/lib/postgresql
+volumes:
+  upload-devcontainer-volume:
+  postgres19-devcontainer-volume:

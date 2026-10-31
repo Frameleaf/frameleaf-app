@@ -1,0 +1,522 @@
+# FAQ
+
+import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
+
+## Commercial Guidelines
+
+Frameleaf is available as open source under the terms of the GNU AGPL v3 License, like the upstream project it is built on. See the [acknowledgements](/overview/acknowledgements) for details.
+
+---
+
+## User
+
+### How can I reset the admin password?
+
+The admin password can be reset by running the [reset-admin-password](/administration/server-commands.md) command on the server.
+
+### How can I see a list of all users in Frameleaf?
+
+You can see the list of all users by running [list-users](/administration/server-commands.md) command on the server.
+
+### How can I change my profile picture?
+
+View a single photo, press the three dots in the top-right to show context menu, and select "Set as profile picture". In the pop-up, use your mouse scroll wheel to zoom in the picture until it completely fills the circle. Click and drag the picture to align it to your liking. Press "Save" to save your changes.
+
+---
+
+## Mobile App
+
+### I cannot log into the application after an update. What can I do?
+
+Verify that the mobile app and server are both running the same version (major and minor).
+
+If you still cannot log in to the app, try the following:
+
+- Check the mobile logs
+- Make sure login credentials are correct by logging in on the web app
+
+### Why does foreground backup stop when I navigate away from the app? Shouldn't it transfer the job to background backup?
+
+Foreground backup and background backup are two separate mechanisms. They don't communicate or interact with each other.
+
+Foreground backup is controlled by the user's action, while background backup is controlled by your device's operating system. When the app is put in the background, the invocation of background tasks is delegated to the device's operating system scheduler. It decides when the background task can run and how long it can run.
+
+The behaviors differ based on your device manufacturer and operating system, but most are related to battery-saving policies.
+
+### Why is background backup on iOS not working?
+
+On iOS (iPhone and iPad), the operating system determines if a particular app can invoke background tasks based on multiple factors, most of which the mobile app has no control over. To increase the likelihood that the background backup task is run, follow the steps below:
+
+- Enable Background App Refresh for the mobile app in the iOS settings at `Settings > General > Background App Refresh`.
+- Disable **Low Power Mode** when not needed, as this can prevent apps from running in the background.
+- Disable Background App Refresh for apps that don't need background tasks to run. This will reduce the competition for background task invocation for the mobile app.
+- Use the mobile app more often.
+
+### Why are features in the mobile app not working with a self-signed certificate, Basic Auth, custom headers, or mutual TLS?
+
+These network features are experimental. They often do not work with video playback, asset upload or download, and other features.
+Instead of these experimental features, we recommend using the URL switching feature, a VPN, or a [free trusted SSL certificate](https://letsencrypt.org/) for your domain.
+
+We are not actively developing these features and will not be able to provide support, but welcome contributions to improve them.
+Please discuss any large PRs with our dev team to ensure your time is not wasted.
+
+### Where do I get the mobile app?
+
+Install [Frameleaf from the App Store](https://apps.apple.com/us/app/frameleaf/id6821111014) on iPhone or iPad, or [Frameleaf from Google Play](https://play.google.com/store/apps/details?id=app.frameleaf.android) on Android. Keep the app up to date along with your server.
+
+---
+
+## Assets
+
+### Does Frameleaf change the file?
+
+No, Frameleaf does not modify the original files.
+All edited metadata is saved in companion `.xmp` sidecar files and the database.
+However, Frameleaf will delete original files that have been trashed when the trash is emptied in the Frameleaf UI.
+
+### Why do my file names appear as a random string in the file manager?
+
+When Storage Template is off (default) Frameleaf saves the file names in a random string (also known as random UUIDs) to prevent duplicate file names.
+To retrieve the original file names, you must enable the Storage Template and then run the **Storage organization** job under **Settings → Computers & background work → Background work**.
+It is recommended to read about [Storage Template](/administration/storage-template) before activation.
+
+### Can I add my existing photo library?
+
+Yes, with an [External Library](/features/libraries.md).
+
+### What happens to existing files after I choose a new [Storage Template](/administration/storage-template.mdx)?
+
+Template changes will only apply to _new_ assets. To retroactively apply the template to previously uploaded assets, run the **Storage organization** job (see [Jobs](/administration/jobs-workers/#jobs)) under **Settings → Computers & background work → Background work**.
+
+### Why are only photos and not videos being uploaded to Frameleaf?
+
+This often happens when using a reverse proxy in front of Frameleaf.
+Make sure to [set your reverse proxy](/administration/reverse-proxy/) to allow large requests.
+Also, check the disk space of your reverse proxy.
+In some cases, proxies cache requests to disk before passing them on, and if disk space runs out, the request fails.
+
+If you are using Cloudflare Tunnel, please know that they set a maximum filesize of 100 MB that cannot be changed.
+At times, files larger than this may work, potentially up to 1 GB. However, the official limit is 100 MB.
+If you are having issues, we recommend switching to a different network deployment.
+
+### Why are some photos stored in the file system with the wrong date?
+
+There are a few different scenarios that can lead to this situation. The solution is to rerun the storage migration job.
+The job is only automatically run once per asset after upload. If metadata extraction originally failed, the jobs were cleared/canceled, etc.,
+the job may not have run automatically the first time.
+
+### How can I hide a photo or video from the timeline?
+
+You can _archive_ them. This will hide the asset from the main timeline and folder view, but it will still show up in searches. All archived assets can be found in the _Archive_ view
+
+### How can I backup data from Frameleaf?
+
+See [Backup and Restore](/administration/backup-and-restore.md).
+
+### Does Frameleaf support reading existing face tag metadata?
+
+Yes, it creates new faces and persons from the imported asset metadata.
+
+### Does Frameleaf support the filtering of NSFW images?
+
+Frameleaf can optionally detect NSFW images and hide privately flagged NSFW assets from library views until the current session is unlocked with the locked-folder PIN. Hiding uses the private NSFW flag, not the visible `nsfw` tag, and album membership is preserved.
+
+### Why are there so many thumbnail generation jobs?
+
+There are three thumbnail jobs for each asset:
+
+- Blurred (thumbhash)
+- Preview (Webp)
+- Thumbnail (Jpeg)
+
+Also, there are additional jobs for person (face) thumbnails.
+
+### Why do files from WhatsApp not appear with the correct date?
+
+Files sent on WhatsApp are saved without metadata on the file. Therefore, Frameleaf has no way of knowing the original date of the file when files are uploaded from WhatsApp,
+not the order of arrival on the device.
+
+### What happens if an asset exists in more than one account?
+
+There are no requirements for assets to be unique across users. If multiple users upload the same image, it is processed as if it were a distinct asset, and jobs run and thumbnails are generated accordingly.
+
+### Why do HDR videos appear pale in the Frameleaf player but look normal after download?
+
+Frameleaf uses a player with known HDR color display issues. We are experimenting with a different player that provides better color profiles for HDR content for future improvements.
+
+### Why does Frameleaf transcode my videos to a lower quality?
+
+Frameleaf always keeps your original files. Alongside that, it generates a transcoded version for compatibility and performance reasons.
+
+### How can I delete transcoded videos without deleting the original?
+
+The transcoded version of an asset can be deleted by choosing a rule that makes it unnecessary and then remaking the playback copy for that asset. This can be done for a single asset with **Refresh encoded video** in the asset viewer's menu, or for all assets with **Remake every playback copy**.
+
+To change the rule, open **Settings → Editing & playback → Video playback copies** and choose **Which videos get a copy**. When a copy is remade, a video that still needs a copy under the new rule gets its copy overwritten; otherwise the existing copy is deleted.
+
+:::note
+For example, if you narrow the rule so that videos are no longer copied because of their resolution, remaking the copy of a video that was only copied for its resolution deletes that copy. Turning playback copies off and remaking every copy deletes all existing copies.
+:::
+
+### Is it possible to compress images during backup?
+
+No. Our design principle is that the original assets should always be untouched.
+
+### How can I mount a CIFS/Samba volume within Docker?
+
+If you aren't able to or prefer not to mount Samba on the host (such as Windows environment), you can mount the volume within Docker.
+Below is an example in the `docker-compose.yml`.
+
+Change your username, password, local IP, and share name, and see below where the line `- originals:/usr/src/app/originals`,
+correlates to the section where the volume `originals` was created. You can call this whatever you like, and map it to the docker container as you like.
+For example you could change `originals:` to `Photos:`, and change `- originals:/usr/src/app/originals` to `Photos:/usr/src/app/photos`.
+
+```diff
+...
+services:
+  frameleaf-server:
+...
+    volumes:
+      # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
+      - ${UPLOAD_LOCATION}:/data
+      - /etc/localtime:/etc/localtime:ro
++     - originals:/usr/src/app/originals
+...
+volumes:
+  model-cache:
++ originals:
++   driver_opts:
++     type: cifs
++     o: 'iocharset=utf8,username=USERNAMEHERE,password=PASSWORDHERE,rw' # change to `ro` if read only desired
++     device: '//localipaddress/sharename'
+```
+
+---
+
+## Albums
+
+### Can I keep my existing album structure while importing assets into Frameleaf?
+
+Yes, by using the [command-line interface](/features/command-line-interface) along with the `--album` flag.
+
+### Is there a way to reorder photos within an album?
+
+No, not yet.
+
+---
+
+## External Library
+
+### Can I add an external library while keeping the existing album structure?
+
+We haven't implemented an official mechanism for creating albums from external libraries, but there are some workarounds from the community to help you achieve that.
+
+### What happens to duplicates in external libraries?
+
+Duplicate checking only exists for upload libraries, using the file hash. Furthermore, duplicate checking is not global, but _per library_. Therefore, a situation where the same file appears twice in the timeline is possible, especially for external libraries.
+
+### Why are my edits to files not being saved in read-only external libraries?
+
+Images in read-write external libraries (the default) can be edited as normal.
+In read-only libraries (`:ro` in the `docker-compose.yml`), Frameleaf is unable to create the `.xmp` sidecar files to store edited file metadata.
+For this reason, the metadata (timestamp, location, description, star rating, etc.) cannot be edited for files in read-only external libraries.
+
+### How are deletions of files handled in external libraries?
+
+Frameleaf will attempt to delete original files that have been trashed when the trash is emptied.
+In read-write external libraries (the default), Frameleaf will delete the original file.
+In read-only libraries (`:ro` in the `docker-compose.yml`), files can still be trashed in the UI.
+However, when the trash is emptied, the files will re-appear in the main timeline since Frameleaf is unable to delete the original file.
+
+---
+
+## Machine Learning
+
+### How does smart search work?
+
+Frameleaf uses CLIP models. An ML model converts each image to an "embedding", which is essentially a string of numbers that semantically encodes what is in the image. The same is done for the text that you enter when you do a search, and that text embedding is then compared with those of the images to find similar ones. Smart Search itself does not generate visible tags, labels, or descriptions. If image enrichment is enabled, Frameleaf can run separate ML jobs to generate searchable descriptions and tags. For more information about CLIP and its capabilities, read about it [here](https://openai.com/research/clip).
+
+### How does facial recognition work?
+
+See [How Facial Recognition Works](/features/facial-recognition#how-facial-recognition-works) for details.
+
+### How can I disable machine learning?
+
+:::info
+Disabling machine learning will result in a poor experience for searching and the 'Explore' page, as these are reliant on it to work as intended.
+:::
+
+Machine learning can be disabled under **Settings → Search & intelligence**, either entirely with the **Search and recognition** switch or per feature. For instance, you can turn off **Visual search** but keep **Faces & identity** on. This means that the machine learning service will only process the enabled jobs.
+
+However, disabling all jobs will not disable the machine learning service itself. To prevent it from starting up at all in this case, you can comment out the `frameleaf-machine-learning` section of the docker-compose.yml.
+
+### I'm getting errors about models being corrupt or failing to download. What do I do?
+
+You can delete the model cache volume, where models are downloaded. This will give the service a clean environment to download the model again. If models are failing to download entirely, you can manually download them from the model source (by default the Frameleaf model mirror at [models.frameleaf.cloud][model-source], or the host set in `MACHINE_LEARNING_MODEL_SOURCE_URL`) and place them in the cache folder.
+
+### Can I use a custom CLIP model?
+
+No, this is not supported. Only models listed in [Searching](/features/searching#clip-models) are compatible. Feel free to make a feature request if there's a model not listed here that you think should be added.
+
+### I want to be able to search in other languages besides English. How can I do that?
+
+You can change to a multilingual CLIP model. See [here](/features/searching#clip-models) for instructions.
+
+### Does Frameleaf support Facial Recognition for videos?
+
+Frameleaf's machine learning feature operates on the generated thumbnail. If a face is visible in the video's thumbnail it will be picked up by facial recognition.
+Scanning the entire video for faces may be implemented in the future.
+
+### Does Frameleaf have animal recognition?
+
+No.
+:::tip
+You can use [Smart Search](/features/searching.md) for this to some extent. For example, if you have a Golden Retriever and a Chihuahua, type these words in the smart search and watch the results.
+:::
+
+### I'm getting a lot of "faces" that aren't faces, what can I do?
+
+In **Settings → Search & intelligence → Faces & identity**, under **Advanced: face model and numbers**, you can increase **Face clarity needed** to 0.8 to help prevent bad thumbnails. Setting it too high (above 0.9) might filter out too many real faces depending on the library used. If you just want to hide specific faces, you can raise **Photos needed before someone appears**
+to increase the bar for what the algorithm considers a "core face" for that person, reducing the chance of bad thumbnails being chosen.
+
+### The frameleaf_model-cache volume takes up a lot of space, what could be the problem?
+
+If you installed several models and chose not to use some of them, it might be worth deleting the old models that are in frameleaf_model-cache (`immich_model-cache` on a stack that kept the `immich` project name). To do this you can mount the model cache and remove the undesired models.
+
+<details>
+<summary>Steps</summary>
+
+```bash
+docker run -it --rm -v frameleaf_model-cache:/mnt-models alpine sh
+cd /mnt-models
+ls clip/ facial-recognition/
+# rm -r clip/ABC facial-recognition/DEF # delete unused models
+```
+
+</details>
+
+---
+
+## Performance
+
+### Why is Frameleaf slow on low-memory systems like the Raspberry Pi?
+
+Frameleaf optionally uses transcoding and machine learning for several features. However, it can be too heavy to run on a Raspberry Pi. You can [mitigate](/FAQ#can-i-lower-cpu-and-ram-usage) this or host Frameleaf's machine-learning container on a [more powerful system](/guides/remote-machine-learning), or [disable](/FAQ#how-can-i-disable-machine-learning) machine learning entirely.
+
+### Can I lower CPU and RAM usage?
+
+The initial backup is the most intensive due to the number of jobs running. The most CPU-intensive ones are transcoding and machine learning jobs (Smart Search, Face Detection), and to a lesser extent thumbnail generation. Here are some ways to lower their CPU usage:
+
+- Lower the concurrency for these jobs to 1 under **Settings → Computers & background work → Background work**.
+- Under **Settings → Editing & playback → Video playback copies**, set **Processor cores for video** to a low number like 1 or 2.
+- Under **Settings → Search & intelligence → Faces & identity → Advanced: face model and numbers**, you can change the **Face model** to `buffalo_s` instead of `buffalo_l`. The former is a smaller and faster model, albeit not as good.
+  - For facial recognition on new images to work properly, you must re-run the Face detection job for all images after this.
+- At the container level, you can [set resource constraints](/FAQ#can-i-limit-cpu-and-ram-usage) to lower usage further.
+  - It's recommended to only apply these constraints _after_ taking some of the measures here for best performance.
+- If these changes are not enough, see [above](/FAQ#how-can-i-disable-machine-learning) for instructions on how to disable machine learning.
+
+### Can I limit CPU and RAM usage?
+
+By default, a container has no resource constraints and can use as much of a given resource as the host's kernel scheduler allows. To limit this, you can add the following to the `docker-compose.yml` block of any containers that you want to have limited resources.
+
+<details>
+<summary>docker-compose.yml</summary>
+
+```yaml
+deploy:
+  resources:
+    limits:
+      # Number of CPU threads
+      cpus: '1.00'
+      # Gigabytes of memory
+      memory: '1G'
+```
+
+</details>
+For more details, you can look at the [original docker docs](https://docs.docker.com/config/containers/resource_constraints/) or use this [guide](https://www.baeldung.com/ops/docker-memory-limit).
+
+Note that memory constraints work by terminating the container, so this can introduce instability if set too low.
+
+### How can I boost machine learning speed?
+
+:::note
+This advice improves throughput, not latency. This is to say that it will make Smart Search jobs process more quickly, but it won't make searching faster.
+:::
+
+You can increase throughput by increasing the job concurrency for machine learning jobs (Smart Search, Face Detection). With higher concurrency, the host will work on more assets in parallel. You can do this under **Settings → Computers & background work → Background work** by increasing **Concurrency** as needed.
+
+:::danger
+On a normal machine, 2 or 3 concurrent jobs can probably max the CPU. Storage speed and latency can quickly become the limiting factor beyond this, particularly when using HDDs.
+
+The concurrency can be increased more comfortably with a GPU, but should still not be above 16 in most cases.
+
+Do not exaggerate with the job concurrency because you're probably thoroughly overloading the server.
+:::
+
+### My server shows Server Status Offline | Version Unknown. What can I do?
+
+You need to [enable WebSockets](/administration/reverse-proxy/) on your reverse proxy.
+
+---
+
+## Docker
+
+### How can I see Frameleaf logs?
+
+Frameleaf components are typically deployed using docker. To see logs for deployed docker containers, you can use the [Docker CLI](https://docs.docker.com/engine/reference/commandline/cli/), specifically the `docker logs` command. For examples, see [Docker Help](/guides/docker-help.md).
+
+### How can I run Frameleaf as a non-root user?
+
+You can change the user in the container by setting the `user` argument in `docker-compose.yml` for each service.
+
+[Example docker-compose.rootless.yml file](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.rootless.yml)
+
+<ComposeBuilder query="rootless.enabled=true" />
+
+The non-root user/group needs read/write access to the volume mounts, including `UPLOAD_LOCATION` and `/cache` for machine-learning.
+
+:::note Docker Compose Volumes
+The Docker Compose top level volume element does not support non-root access, all of the above volumes must be local volume mounts.
+:::
+
+For a further hardened system, you can add the following block to every container.
+
+<details>
+<summary>docker-compose.yml</summary>
+
+```yaml
+security_opt:
+  # Prevent escalation of privileges after the container is started
+  - no-new-privileges:true
+cap_drop:
+  # Prevent access to raw network traffic
+  - NET_RAW
+```
+
+</details>
+
+### How can I purge data from Frameleaf?
+
+Data for Frameleaf comes in two forms:
+
+1. **Metadata** stored in a Postgres database, stored in the `DB_DATA_LOCATION` folder (previously `pg_data` Docker volume).
+2. **Files** (originals, thumbs, profile, etc.), stored in the `UPLOAD_LOCATION` folder. Include external-library media roots in your backup as well; see [what to preserve](/administration/backup-and-restore#what-to-preserve).
+
+:::warning
+This will destroy your database and reset your instance, meaning that you start from scratch.
+:::
+
+```bash title="Remove Frameleaf (containers and volumes)"
+docker compose down -v
+```
+
+After removing the containers and volumes, there are a few directories that need to be deleted to reset Frameleaf to a new installation. Once they are deleted, Frameleaf can be started back up and will be a fresh installation.
+
+- `DB_DATA_LOCATION` contains the database, media info, and settings.
+- `UPLOAD_LOCATION` contains all the media uploaded to Frameleaf.
+
+:::note Portainer
+If you use portainer, bring down the stack in portainer. Go into the volumes section  
+and remove all the volumes related to Frameleaf, then restart the stack.
+:::
+
+### Why does the machine learning service report workers crashing?
+
+:::note
+If the error says the worker is exiting, then this is normal. This is a feature intended to reduce RAM consumption when the service isn't being used.
+:::
+
+There are a few reasons why this can happen.
+
+If the error mentions SIGKILL or error code 137, it most likely means the service is running out of memory.
+Consider either increasing the server's RAM or moving the service to a server with more RAM.
+
+If it mentions SIGILL (note the lack of a K) or error code 132, it most likely means your server's CPU is incompatible with Frameleaf.
+
+## Database
+
+### Why am I getting database ownership errors?
+
+If you get database errors such as `FATAL:  data directory "/var/lib/postgresql/19/docker" has wrong ownership` upon database startup, this is likely due to an issue with your filesystem.
+NTFS and ex/FAT/32 filesystems are not supported. See [here](/install/requirements#special-requirements-for-windows-users) for more details.
+
+### How can I verify the integrity of my database?
+
+Database checksums are enabled by default for new installations. You can check if they are enabled by running the following command.
+A result of `on` means that checksums are enabled.
+
+<details>
+<summary>Check if checksums are enabled</summary>
+
+```bash
+docker exec -it frameleaf_postgres psql --dbname=postgres --username=<DB_USERNAME> --command="show data_checksums"
+ data_checksums
+----------------
+ on
+(1 row)
+```
+
+</details>
+
+If checksums are enabled, you can check the status of the database with the following command. A normal result is all `0`s.
+
+<details>
+<summary>Check for database corruption</summary>
+
+```bash
+docker exec -it frameleaf_postgres psql --dbname=postgres --username=<DB_USERNAME> --command="SELECT datname, checksum_failures, checksum_last_failure FROM pg_stat_database WHERE datname IS NOT NULL"
+  datname  | checksum_failures | checksum_last_failure
+-----------+-------------------+-----------------------
+ postgres  |                 0 |
+ frameleaf |                 0 |
+ template1 |                 0 |
+ template0 |                 0 |
+(4 rows)
+```
+
+</details>
+
+You can also scan the Postgres database file structure for errors:
+
+<details>
+<summary>Scan for file structure errors</summary>
+```bash
+docker exec -it frameleaf_postgres pg_amcheck --username=<DB_USERNAME> --heapallindexed --parent-check --rootdescend --progress --all --install-missing
+```
+
+A normal result will end something like this and return with an exit code of `0`:
+
+```bash
+7470/8832 relations (84%), 730829/734735 pages (99%)
+8425/8832 relations (95%), 734367/734735 pages (99%)
+8832/8832 relations (100%), 734735/734735 pages (100%)
+```
+
+</details>
+
+If corruption is detected, you should immediately make a backup before performing any other work in the database.
+To do so, you may need to set the `zero_damaged_pages=on` flag for the database server to allow `pg_dumpall` to succeed.
+After taking a backup, the recommended next step is to restore the database from a healthy backup before corruption was detected.
+The damaged database dump can be used to manually recover any changes made since the last backup, if needed.
+
+The causes of possible corruption are many, but can include unexpected poweroffs or unmounts, use of a network share for Postgres data, or a poor storage medium such an SD card or failing HDD/SSD.
+
+### Should I upgrade the database to a newer major version?
+
+We recommend using the same version of PostgreSQL as in our default docker-compose.yml, however newer versions are also supported. Do note that the major upgrade process is not as simple as just changing the version of the container image. See [the PostgreSQL documentation](https://www.postgresql.org/docs/current/upgrading.html) for more detail.
+
+## Other
+
+### Will Frameleaf save me money?
+
+Probably not. At first glance, it seems like it might: compared to cloud-hosted commercial services, there are no monthly fees to run Frameleaf on your own server, and a supporter key is optional. However, there are many other costs like hardware, storage for backups, and your own time. There are many good reasons for self-hosting, but saving money is rarely one of them.
+
+### I really want a particular feature. Can I sponsor development of it?
+
+No, we have no feature sponsorship scheme. Frameleaf is funded by the people who use it: you can [support Frameleaf](/overview/support-the-project#supporter-key) with a supporter key. We do not sell development priorities.
+
+A common alternative suggestion is to offer bounties that can be collected by anyone who submits a pull request, but we don't want those either; the Zig project has [explained the reason well](https://ziglang.org/news/bounties-damage-open-source-projects/).
+
+If you really want to pay someone to build a feature you like, you're welcome to hire somebody directly and pay them for their time, but please note that we provide no guarantee that we'll merge the resulting work so we recommend that you check in with us first.
+
+[model-source]: https://models.frameleaf.cloud

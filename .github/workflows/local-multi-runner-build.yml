@@ -1,0 +1,263 @@
+name: Local multi-runner container image build
+
+# Adapted from the pinned immich-app/devtools native builder. Keep hosted
+# architecture routing, digest assembly and BuildKit token-secret transport.
+#
+# FL-142 (owner decision 2026-09-27: a deployment test before any image is pushed). `mode`:
+#   archive - build each platform to an OCI archive artifact on its native runner and push nothing;
+#             the caller runs the deployment test on those archives.
+#   publish - push the tested archives by digest, unchanged (same bytes, same digests), then assemble
+#             the commit-<sha> candidate. The caller runs this only after the deployment test passed.
+#   push    - build and push by digest, then assemble; for hardware variants hosted runners cannot run,
+#             which the caller starts only after the deployment test of the CPU stack passed.
+on:
+  workflow_call:
+    inputs:
+      image:
+        type: string
+        required: true
+      context:
+        type: string
+        required: true
+      dockerfile:
+        type: string
+        required: true
+      source-sha:
+        type: string
+        required: true
+      suffix:
+        type: string
+        default: ''
+      device:
+        type: string
+        required: true
+      platforms:
+        type: string
+        required: true
+      target:
+        type: string
+        required: true
+      mode:
+        type: string
+        default: push
+      # FL-408: named build contexts (`name=path`, one per line), e.g. the repository for the ML image
+      build-contexts:
+        type: string
+        default: ''
+
+jobs:
+  matrix:
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && inputs.source-sha == github.sha && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-sha }}
+          persist-credentials: false
+      - name: Validate image contract and native platform routing
+        id: matrix
+        env:
+          IMAGE: ${{ inputs.image }}
+          SUFFIX: ${{ inputs.suffix }}
+          DEVICE: ${{ inputs.device }}
+          PLATFORMS: ${{ inputs.platforms }}
+          TARGET: ${{ inputs.target }}
+          CONTEXT: ${{ inputs.context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          SOURCE_SHA: ${{ inputs.source-sha }}
+        run: node .github/frameleaf-release.cjs build-matrix
+
+  build:
+    needs: matrix
+    if: inputs.mode == 'push' || inputs.mode == 'archive'
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Configure isolated build cache
+        id: cache
+        env:
+          IMAGE: ${{ inputs.image }}
+          SUFFIX: ${{ inputs.suffix }}
+          PLATFORM: ${{ matrix.platform }}
+          DEVICE: ${{ inputs.device }}
+          TARGET: ${{ inputs.target }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          key="${PLATFORM//\//-}-${DEVICE}-${TARGET}${SUFFIX}"
+          ref="ghcr.io/frameleaf/${IMAGE}-build-cache:${key}"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            echo "destination=type=registry,ref=${ref},mode=max,compression=zstd" >> "$GITHUB_OUTPUT"
+          else
+            echo "destination=type=local,dest=${RUNNER_TEMP}/discard-cache,ignore-error=true" >> "$GITHUB_OUTPUT"
+          fi
+          # archive: an OCI archive on this runner only; push: by digest to the candidate repository
+          case "$MODE" in
+            archive) echo "output=type=oci,dest=${RUNNER_TEMP}/archive/image.tar,name=frameleaf-deploy-test/${IMAGE}${SUFFIX}:${PLATFORM//\//-}" >> "$GITHUB_OUTPUT" ;;
+            push) echo "output=type=image,name=ghcr.io/frameleaf/${IMAGE},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Unknown build mode $MODE"; exit 1 ;;
+          esac
+      - name: Build verified source by digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          build-contexts: ${{ inputs.build-contexts }}
+          target: ${{ inputs.target }}
+          platforms: ${{ matrix.platform }}
+          outputs: ${{ steps.cache.outputs.output }}
+          provenance: mode=min
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/Frameleaf/frameleaf-app
+            org.opencontainers.image.revision=${{ inputs.source-sha }}
+            org.frameleaf.build.variant=${{ inputs.device }}${{ inputs.suffix }}
+          cache-from: type=registry,ref=${{ steps.cache.outputs.ref }}
+          cache-to: ${{ steps.cache.outputs.destination }}
+          secrets: |
+            mise_github_token=${{ github.token }}
+          build-args: |
+            DEVICE=${{ inputs.device }}
+            BUILD_ID=${{ github.run_id }}
+            BUILD_IMAGE=commit-${{ inputs.source-sha }}${{ inputs.suffix }}
+            BUILD_SOURCE_REF=${{ github.ref_name }}
+            BUILD_SOURCE_COMMIT=${{ inputs.source-sha }}
+            BUILD_SOURCE_REPOSITORY=${{ github.repository }}
+            BUILD_IMAGE_NAME=${{ inputs.image }}
+      - name: Record exact platform digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          node -e 'const fs=require("node:fs");const {DIGEST,PLATFORM,RUNNER_TEMP}=process.env;if(!/^sha256:[a-f0-9]{64}$/.test(DIGEST))throw Error("Invalid digest");fs.mkdirSync(`${RUNNER_TEMP}/digests`,{recursive:true});fs.writeFileSync(`${RUNNER_TEMP}/digests/${PLATFORM.replace("/","-")}.json`,JSON.stringify({platform:PLATFORM,digest:DIGEST}));'
+      - name: Prove the archive holds exactly the built index
+        if: inputs.mode == 'archive'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          tar -xOf "$RUNNER_TEMP/archive/image.tar" index.json | jq -e --arg d "$DIGEST" '[.manifests[].digest] == [$d]' > /dev/null
+          cp "$RUNNER_TEMP"/digests/*.json "$RUNNER_TEMP/archive/"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: inputs.mode == 'archive'
+        with:
+          name: ${{ inputs.image }}${{ inputs.suffix }}-archive-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/archive/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 3
+          compression-level: 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: inputs.mode == 'push'
+        with:
+          name: ${{ inputs.image }}${{ inputs.suffix }}-digests-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/digests/*.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  publish:
+    needs: matrix
+    if: inputs.mode == 'publish'
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.image }}${{ inputs.suffix }}-archive-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/archive
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-sha }}
+          persist-credentials: false
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - name: Push the tested archive by digest, byte for byte
+        env:
+          IMAGE: ${{ inputs.image }}
+          PLATFORM: ${{ matrix.platform }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          record="$RUNNER_TEMP/archive/${PLATFORM//\//-}.json"
+          digest="$(jq -r --arg p "$PLATFORM" 'select(.platform == $p) | .digest' "$record")"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Invalid archive digest"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/layout"
+          tar -xf "$RUNNER_TEMP/archive/image.tar" -C "$RUNNER_TEMP/layout"
+          jq -e --arg d "$digest" '[.manifests[].digest] == [$d]' "$RUNNER_TEMP/layout/index.json" > /dev/null
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$ACTOR" --password-stdin
+          oras cp --from-oci-layout "$RUNNER_TEMP/layout@${digest}" "ghcr.io/frameleaf/${IMAGE}@${digest}"
+          pushed="$(oras resolve "ghcr.io/frameleaf/${IMAGE}@${digest}")"
+          [[ "$pushed" == "$digest" ]] || { echo "::error::Pushed digest differs from the tested archive"; exit 1; }
+          oras logout ghcr.io
+          mkdir -p "$RUNNER_TEMP/digests"
+          cp "$record" "$RUNNER_TEMP/digests/"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.image }}${{ inputs.suffix }}-digests-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/digests/*.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  merge:
+    needs: [matrix, build, publish]
+    if: ${{ !cancelled() && inputs.mode != 'archive' && needs.matrix.result == 'success' && ((needs.build.result == 'success' && needs.publish.result == 'skipped') || (needs.build.result == 'skipped' && needs.publish.result == 'success')) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: ${{ inputs.image }}${{ inputs.suffix }}-digests-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Validate and publish the complete variant manifest
+        env:
+          IMAGE: ${{ inputs.image }}
+          SUFFIX: ${{ inputs.suffix }}
+          SOURCE_SHA: ${{ inputs.source-sha }}
+          DIGEST_DIR: ${{ runner.temp }}/digests
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/frameleaf-release.cjs merge-candidate

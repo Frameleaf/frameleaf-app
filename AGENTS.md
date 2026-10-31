@@ -1,0 +1,53 @@
+# Repository instructions
+
+## Commit hygiene
+
+- Commit application source, tests, reviewed product documentation, and required
+  license/provenance records only. Keep agent skills, plugins, caches, session
+  state, prompts, plans, audit/review reports, screenshots, and handoffs private
+  outside the repository or in ignored local directories.
+- Never use `git add -f` or an ignore exception to commit private work products.
+  `.gitignore` does not remove files already tracked: untrack them before committing.
+- `AGENTS.md` and `design/AGENTS.md` are the reviewed repository instruction files.
+  Do not append generated indexes, local machine state, task reports, or private
+  infrastructure details. Keep other tool-generated instructions local.
+- Never commit credentials, tokens, secret values, customer media, production
+  logs, or private Jira/Confluence exports. Use sanitized test fixtures only.
+- Before committing, inspect `git diff --cached --name-status` and run
+  `bash .github/check-repository-hygiene.sh`. CI runs the same check and rejects
+  tracked files covered by ignore rules, including force-added files.
+- If private material entered commit history, deleting it in a later commit is
+  insufficient. Sanitize the affected branch history with an exact-head push
+  lease; preserve unrelated branches and worktrees. Rotate exposed credentials
+  through the authorized secret manager if any are found. Rebase or cherry-pick
+  existing branches onto the sanitized head; never merge the removed history back.
+
+## Scope and delivery
+
+- General Frameleaf application, Manager, Unraid and TrueNAS work belongs in
+  `Frameleaf/frameleaf-app`. Verify the `frameleaf` remote before pushing; never
+  write to upstream Immich. Its default branch is `main`.
+- **Synology product boundary:** the approved interactive prototype, native DSM
+  UI, DSM integration, Synology package source, SPK builders, tests and all
+  DSM/Synology package releases belong in the **private** repository
+  `Frameleaf/frameleaf-synology`. Build and publish DSM packages only there.
+  The original native Synology app is Frameleaf's commercial product; do not
+  put its source or packages in this public repository or public CI artifacts.
+  Verify the Synology repository is private before pushing or publishing.
+  Changing this rule requires explicit user instruction. Preserve all inherited
+  and third-party licenses; privacy does not relicense dependency code.
+- Preserve unrelated uncommitted work and use isolated checkouts for changes.
+  Use author and committer `AJ Taylor <aj@ajtaylor.net>` without coauthor trailers.
+- Open pull requests against `main`. PR #140 merged `master/frameleaf-implementation`
+  into `main`; publication and deployment still need separate user authorization.
+- Do not restore the removed Flutter/mobile applications. Server APIs consumed
+  by native clients remain in scope. Preserve media, ownership, privacy,
+  database integrity, compatibility, accessibility, and required tests.
+- Local tests, lint, typechecks, builds, and CI validation are allowed. Hosted
+  checks must pass for the exact candidate before an authorized merge; source
+  review, CI, deployment, and acceptance are separate claims.
+- Before changing existing functions/classes/methods, use GitNexus upstream impact
+  analysis and report HIGH/CRITICAL risk. Run `detect_changes` before committing
+  when the index is available; report missing or stale coverage honestly.
+- Assign one owner per external operation. Reconcile live PR state, exact code ancestry,
+  exact-head checks, and linked issue status at shipping boundaries.

@@ -1,0 +1,202 @@
+#
+# WARNING: To install Frameleaf, follow the guide in this release: docker/README.md
+#
+# Make sure to use the docker-compose.yml of the current release:
+#
+# https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml
+#
+# The compose file on main may not be compatible with the latest release.
+
+# For development see:
+# - https://help.frameleaf.app/developer/setup
+# - https://help.frameleaf.app/developer/troubleshooting
+
+name: immich-dev
+
+services:
+  immich-app-base:
+    profiles: ["_base"]
+    tmpfs:
+      - /tmp
+    volumes:
+      - ..:/usr/src/app
+      # - ../../ui:/usr/src/ui
+      - build_cache:/buildcache
+      - server_node_modules:/usr/src/app/server/node_modules
+      - web_node_modules:/usr/src/app/web/node_modules
+      - github_node_modules:/usr/src/app/.github/node_modules
+      - cli_node_modules:/usr/src/app/packages/cli/node_modules
+      - docs_node_modules:/usr/src/app/docs/node_modules
+      - e2e_node_modules:/usr/src/app/e2e/node_modules
+      - sdk_node_modules:/usr/src/app/packages/sdk/node_modules
+      - app_node_modules:/usr/src/app/node_modules
+      - sveltekit:/usr/src/app/web/.svelte-kit
+      - coverage:/usr/src/app/web/coverage
+      # FL-408: the bundled Studio worker's enrolment, shared read-only with machine learning
+      - studio_worker:/run/frameleaf/studio-worker
+
+  immich-init:
+    extends:
+      service: immich-app-base
+    profiles: !reset []
+    container_name: frameleaf_init
+    image: frameleaf-server-dev:local
+    build:
+      context: ../
+      dockerfile: server/Dockerfile.dev
+      target: dev
+    command:
+      - |
+        mise install
+        touch /tmp/init-complete
+        exec tail -f /dev/null
+    volumes:
+      - build_cache:/buildcache
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/init-complete"]
+      interval: 2s
+      timeout: 3s
+      retries: 300
+      start_period: 300s
+
+  frameleaf-server:
+    extends:
+      service: immich-app-base
+    profiles: !reset []
+    container_name: frameleaf_server
+    command: ["immich-dev"]
+    image: frameleaf-server-dev:local
+    build:
+      context: ../
+      dockerfile: server/Dockerfile.dev
+      target: dev
+    restart: unless-stopped
+    # must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default): running jobs finish or go back to waiting first
+    stop_grace_period: 10s
+    volumes:
+      - ${UPLOAD_LOCATION}/photos:/data
+      - /etc/localtime:/etc/localtime:ro
+      - ../packages/plugin-core:/build/plugins/immich-plugin-core
+    env_file:
+      - .env
+    environment:
+      FRAMELEAF_REPOSITORY: Frameleaf/frameleaf-app
+      FRAMELEAF_REPOSITORY_URL: https://github.com/Frameleaf/frameleaf-app
+      FRAMELEAF_SOURCE_REF: local
+      FRAMELEAF_SOURCE_COMMIT: ""
+      FRAMELEAF_SOURCE_COMMIT_URL: https://github.com/Frameleaf/frameleaf-app
+      FRAMELEAF_BUILD: ""
+      FRAMELEAF_BUILD_URL: https://github.com/Frameleaf/frameleaf-app/actions
+      FRAMELEAF_BUILD_IMAGE: development
+      FRAMELEAF_BUILD_IMAGE_URL: https://github.com/Frameleaf/frameleaf-app/pkgs/container/frameleaf-server
+      FRAMELEAF_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app/
+      FRAMELEAF_BUG_FEATURE_URL: https://github.com/Frameleaf/frameleaf-app/issues
+      FRAMELEAF_DOCS_URL: https://github.com/Frameleaf/frameleaf-app/tree/main/docs
+      FRAMELEAF_SUPPORT_URL: https://github.com/Frameleaf/frameleaf-app/issues
+      FRAMELEAF_HELMET_FILE: "true"
+    ports:
+      - 9230:9230
+      - 9231:9231
+      - 2283:2283
+    depends_on:
+      immich-init:
+        condition: service_healthy
+      database:
+        condition: service_started
+    healthcheck:
+      disable: false
+
+  immich-web:
+    extends:
+      service: immich-app-base
+    profiles: !reset []
+    container_name: frameleaf_web
+    image: frameleaf-web-dev:local
+    build:
+      context: ../
+      dockerfile: server/Dockerfile.dev
+      target: dev
+    command: ["immich-web"]
+    env_file:
+      - .env
+    ports:
+      - 3000:3000
+      - 24678:24678
+    restart: unless-stopped
+    depends_on:
+      immich-init:
+        condition: service_healthy
+      frameleaf-server:
+        condition: service_started
+
+  frameleaf-machine-learning:
+    networks:
+      default:
+        aliases: [immich-machine-learning]
+    container_name: frameleaf_machine_learning
+    image: frameleaf-machine-learning-dev:local
+    # extends:
+    #   file: hwaccel.ml.yml
+    #   service: cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference
+    build:
+      context: ../machine-learning
+      dockerfile: Dockerfile
+      target: prod
+      # FL-408: the Studio worker stage builds from the repository
+      additional_contexts:
+        frameleaf: ..
+      args:
+        - DEVICE=cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference
+    ports:
+      - 3003:3003
+    volumes:
+      - ../machine-learning/frameleaf_ml:/usr/src/frameleaf_ml
+      - model_cache:/cache
+      - studio_worker:/run/frameleaf/studio-worker:ro
+    # Keep server credentials out of the inference worker.
+    env_file:
+      - path: .env.ml
+        required: false
+    depends_on:
+      - database
+    restart: unless-stopped
+    healthcheck:
+      disable: false
+
+  database:
+    container_name: frameleaf_postgres
+    image: frameleaf-postgres:local
+    # Built from Frameleaf's own Postgres image source (docker/postgres).
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - ${UPLOAD_LOCATION}/postgres19:/var/lib/postgresql
+    ports:
+      - 5432:5432
+    shm_size: 128mb
+    healthcheck:
+      disable: false
+
+volumes:
+  model_cache:
+  build_cache:
+  server_node_modules:
+  web_node_modules:
+  github_node_modules:
+  cli_node_modules:
+  docs_node_modules:
+  e2e_node_modules:
+  sdk_node_modules:
+  app_node_modules:
+  sveltekit:
+  coverage:
+  studio_worker:

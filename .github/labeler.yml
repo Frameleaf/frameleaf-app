@@ -1,0 +1,31 @@
+cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - packages/cli/src/**
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/docs/**
+          - docs/src/**
+          - docs/static/**
+
+🖥️web:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/src/**
+          - web/static/**
+
+🗄️server:
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/src/**
+          - server/test/**
+
+🧠machine-learning:
+  - changed-files:
+      - any-glob-to-any-file:
+          - machine-learning/**
+
+changelog:translation:
+  - head-branch: ['^chore/translations$']
