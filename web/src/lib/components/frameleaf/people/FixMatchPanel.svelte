@@ -80,6 +80,8 @@
   let others: PeopleListItemDto[] = $state([]);
   let hasMore = $state(false);
   let loading = $state(false);
+  // the last read failed; with nothing listed yet the panel offers a retry instead of the empty note
+  let loadFailed = $state(false);
   const resolved = new SvelteMap<string, string>();
   const selected = new SvelteSet<string>();
   let naming: string | null = $state(null);
@@ -100,27 +102,40 @@
   const seen = new Set<string>();
 
   /**
+   * Each photo's faces, in order, reading at most FACE_READS at a time. After a failed read no
+   * worker starts another, and every read in flight settles before the failure is thrown, so a
+   * retry never overlaps the reads of the attempt that failed.
+   */
+  const readFaces = async (photos: AssetResponseDto[]) => {
+    const faces: AssetFaceResponseDto[][] = Array.from({ length: photos.length });
+    let next = 0;
+    let failure: { error: unknown } | undefined;
+    const worker = async () => {
+      for (let index = next++; index < photos.length && !failure; index = next++) {
+        try {
+          faces[index] = await getFaces({ id: photos[index].id });
+        } catch (error) {
+          failure ??= { error };
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: FACE_READS }, worker));
+    if (failure) {
+      throw failure.error;
+    }
+    return faces;
+  };
+
+  /**
    * Reads the next photos of this person. Moving a face away can drop a photo out of the
    * person's results and shift every later page, so paging by number alone would skip photos.
    * Each "Show more" instead starts at a page that cannot be past the first unseen photo (the
    * number of photos seen, less one per face resolved here, which is the most that can have
    * left the results) and skips any photo it has already listed.
    */
-  /** Each photo's faces, in order, reading at most FACE_READS at a time. */
-  const readFaces = async (photos: AssetResponseDto[]) => {
-    const faces: AssetFaceResponseDto[][] = Array.from({ length: photos.length });
-    let next = 0;
-    const worker = async () => {
-      for (let index = next++; index < photos.length; index = next++) {
-        faces[index] = await getFaces({ id: photos[index].id });
-      }
-    };
-    await Promise.all(Array.from({ length: FACE_READS }, worker));
-    return faces;
-  };
-
   const loadPage = async () => {
     loading = true;
+    loadFailed = false;
     try {
       let page = Math.floor(Math.max(0, seen.size - resolved.size) / PAGE_SIZE) + 1;
       const photos: AssetResponseDto[] = [];
@@ -153,6 +168,7 @@
       rows = [...rows, ...next];
       hasMore = more;
     } catch (error) {
+      loadFailed = true;
       handleError(error, $t('errors.cant_get_faces'));
     } finally {
       loading = false;
@@ -465,6 +481,10 @@
   </ul>
   {#if loading}
     <p class="note"><Spinner /></p>
+  {:else if rows.length === 0 && loadFailed}
+    <div class="more">
+      <Button onclick={() => void loadPage()}>{$t('retry')}</Button>
+    </div>
   {:else if rows.length === 0}
     <p class="note">{$t('frameleaf_people_fix_empty')}</p>
   {:else if hasMore}
