@@ -70,7 +70,7 @@ Adding a new URL to the settings is recommended over replacing the existing URL 
 
 <ComposeBuilder query="machineLearning.external=true" />
 
-Do note that when the remote instance is the only destination that can take this work, Smart Search and Face Detection jobs cannot be processed while it is not available. Jobs that start while it is down wait for it and run when it comes back. Jobs that were already running on it when it went down are refused, so tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for those assets. For refused jobs only, select **Catch up** for **Visual search** and **Face detection** under **Settings → Computers & background work → Background work** to retry them.
+Do note that when the remote instance is the only destination that can take this work, Smart Search and Face Detection jobs cannot be processed while it is not available. Jobs that start while it is down wait for it and run when it comes back. Jobs that were already running on it when it went down are refused, so tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for those assets. To retry them, select **Catch up** for **Visual search** and **Face detection** under **Settings → Computers & background work → Background work**; it processes every photo still missing those results, which includes the refused ones, and does not redo finished photos. Waiting jobs do not need it.
 
 ## Load balancing
 
