@@ -1,0 +1,172 @@
+--- a/src/features/timeline/stores/actions/edit/trim-actions.ts
++++ b/src/features/timeline/stores/actions/edit/trim-actions.ts
+@@ -485,14 +485,9 @@
+         ...getSynchronizedLinkedItemsForEdit(itemsBefore, leftId, linkedSelectionEnabled),
+         ...getSynchronizedLinkedItemsForEdit(itemsBefore, rightId, linkedSelectionEnabled),
+       ]
+-      // Refuse the entire roll before writing either side of a locked linked cut.
+-      if (
+-        synchronizedItems.some((item) => {
+-          const track = itemsStore.tracks.find((candidate) => candidate.id === item.trackId)
+-          return track?.locked === true
+-        })
+-      )
+-        return
++      // Refuse the entire roll before writing either side of a locked linked cut, including a
++      // lane locked through its Layer Group.
++      if (hasLockedEditParticipants(synchronizedItems)) return
+       const counterpartPair = getSynchronizedLinkedCounterpartPairForEdit(
+         itemsBefore,
+         leftId,
+--- a/src/features/timeline/stores/actions/item-actions.linked-edit-tools.test.ts
++++ b/src/features/timeline/stores/actions/item-actions.linked-edit-tools.test.ts
+@@ -862,6 +862,47 @@
+     },
+   )
+ 
++  it('refuses rolling when a synchronized track inherits a lock from its Layer Group', () => {
++    useItemsStore.getState().setTracks([
++      ...useItemsStore
++        .getState()
++        .tracks.map((track) =>
++          track.id === 'audio-track' ? { ...track, parentTrackId: 'audio-group' } : track,
++        ),
++      makeTrack({
++        id: 'audio-group',
++        name: 'Group',
++        order: 5,
++        kind: 'audio',
++        isGroup: true,
++        locked: true,
++      }),
++    ])
++    useItemsStore.getState().setItems([
++      makeVideoItem(),
++      makeAudioItem(),
++      makeVideoItem({
++        id: 'video-2',
++        from: 60,
++        sourceStart: 30,
++        sourceEnd: 90,
++        linkedGroupId: 'group-2',
++      }),
++      makeAudioItem({
++        id: 'audio-2',
++        from: 60,
++        sourceStart: 30,
++        sourceEnd: 90,
++        linkedGroupId: 'group-2',
++      }),
++    ])
++    const before = structuredClone(useItemsStore.getState().items)
++
++    rollingTrimItems('video-1', 'video-2', 10)
++
++    expect(useItemsStore.getState().items).toEqual(before)
++  })
++
+   it('rolls linked source ranges with a fixed span and full graph undo/redo', () => {
+     useItemsStore.getState().setItems([
+       makeVideoItem(),
+--- a/src/infrastructure/gpu-effects/effects/lut.ts
++++ b/src/infrastructure/gpu-effects/effects/lut.ts
+@@ -1,6 +1,6 @@
+ import type { GpuEffectDefinition } from '../types'
+ import { createIdentityLutData, decodeLutData } from '../lut/cube-lut'
+-import { readFileLut } from '../lut/file-lut'
++import { readFileLut, readFileLutDomain } from '../lut/file-lut'
+ 
+ const IDENTITY_LUT_SIZE = 2
+ 
+@@ -119,8 +119,9 @@
+   return vec4f(mix(color.rgb, mix(z0, z1, f.z), clamp(params.intensity, 0.0, 1.0)), color.a);
+ }`,
+   params: { intensity: lut3d.params.intensity! },
++  // Uniforms read only the table's size and domain: decoding the table belongs to the texture build.
+   packUniforms: (p) => {
+-    const table = readFileLut(p)
++    const table = readFileLutDomain(p)
+     return new Float32Array([
+       typeof p.intensity === 'number' ? p.intensity : 1,
+       table.size,
+@@ -134,7 +135,10 @@
+   },
+   dataTexture: {
+     dimension: '3d',
+-    key: (p) => JSON.stringify(p),
++    // The table payload is the texture's identity. Returning the string itself keeps the per-frame
++    // key comparison a same-reference check; intensity and the other params never rebuild it.
++    // packUniforms checks size and domain against the payload on every frame.
++    key: (p) => (typeof p.fileLutData === 'string' ? p.fileLutData : ''),
+     build: (p) => {
+       const { size, data } = readFileLut(p)
+       return { width: size * 4, height: size, depth: size, data }
+--- a/src/infrastructure/gpu-effects/lut/file-lut.test.ts
++++ b/src/infrastructure/gpu-effects/lut/file-lut.test.ts
+@@ -1,4 +1,5 @@
+-import { describe, expect, it } from 'vitest'
++import { describe, expect, it, vi } from 'vitest'
++import { fileLut3d } from '../effects/lut'
+ import { materializeCubeFileLut, readFileLut } from './file-lut'
+ 
+ const descriptor = { size: 2, domainMin: [-1, 2, 10], domainMax: [1, 4, 14] }
+@@ -35,4 +36,18 @@
+     ]
+     for (const patch of patches) expect(() => readFileLut({ ...params, ...patch })).toThrow()
+   })
++  it('packs per-frame uniforms without decoding the table and keys the texture by the table alone', () => {
++    const params = materializeCubeFileLut(cube, descriptor)
++    const decode = vi.spyOn(globalThis, 'atob')
++    try {
++      const uniforms = fileLut3d.packUniforms({ ...params, intensity: 0.5 }, 1, 1)
++      expect(Array.from(uniforms ?? [])).toEqual([0.5, 2, 0, 0, -1, 2, 10, 0, 1, 4, 14, 0])
++      expect(decode).not.toHaveBeenCalled()
++    } finally {
++      decode.mockRestore()
++    }
++    const key = fileLut3d.dataTexture!.key
++    expect(key({ ...params, intensity: 0.25 })).toBe(key({ ...params, intensity: 1 }))
++    expect(() => fileLut3d.packUniforms({ ...params, fileLutSize: 3 }, 1, 1)).toThrow()
++  })
+ })
+--- a/src/infrastructure/gpu-effects/lut/file-lut.ts
++++ b/src/infrastructure/gpu-effects/lut/file-lut.ts
+@@ -61,8 +61,8 @@
+   }
+ }
+ 
+-/** Validate before uniform packing and texture upload; malformed execution data never becomes identity. */
+-export function readFileLut(params: Params): Domain & { data: Uint8Array } {
++/** The table's size and domain, checked without decoding the table: cheap enough for every frame. */
++export function readFileLutDomain(params: Params): Domain {
+   if (
+     params.fileLutVersion !== 1 ||
+     typeof params.fileLutSize !== 'number' ||
+@@ -79,7 +79,14 @@
+   const length = bounds.size ** 3 * 16
+   if (params.fileLutData.length !== 4 * Math.ceil(length / 3))
+     throw new Error('FILE_LUT_ALLOCATION_LIMIT')
+-  const binary = atob(params.fileLutData)
++  return bounds
++}
++
++/** Validate before texture upload; malformed execution data never becomes identity. */
++export function readFileLut(params: Params): Domain & { data: Uint8Array } {
++  const bounds = readFileLutDomain(params)
++  const length = bounds.size ** 3 * 16
++  const binary = atob(params.fileLutData as string)
+   if (binary.length !== length || btoa(binary) !== params.fileLutData)
+     throw new Error('INVALID_FILE_LUT_ENCODING')
+   const data = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+--- a/src/shared/timeline/transitions/transition-inputs.ts
++++ b/src/shared/timeline/transitions/transition-inputs.ts
+@@ -14,7 +14,8 @@
+  * - a value that is not a finite number falls back to the declared default.
+  *
+  * The duration's range is one frame and up, in whole frames; its default is the
+- * transition type's default duration. A non-finite duration used to give a
++ * crossfade's default duration (callers pass no transition type, and crossfade is
++ * the only TRANSITION_CONFIGS entry). A non-finite duration used to give a
+  * window with no start or end, which kept the outgoing clip on screen for the
+  * whole incoming clip.
+  */
