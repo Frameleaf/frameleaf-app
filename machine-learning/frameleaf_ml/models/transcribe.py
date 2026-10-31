@@ -1,0 +1,253 @@
+"""Studio captions: Whisper speech to text through faster-whisper (CTranslate2), owner decision 2026-10-09.
+
+The server sends one clip's audio as a 16 kHz mono 16-bit PCM WAV and asks for `frameleaf-transcribe`.
+That name stands for the worker's own choice of model: `MACHINE_LEARNING_TRANSCRIPTION_MODEL` when an
+administrator set one, otherwise whisper-large-v3-turbo on a CUDA GPU and whisper-small on a CPU. The
+model files come from the model source (`frameleaf/<model>/audio/*`) and are pinned by SHA-256.
+
+The answer is a stream (`stream()`): the detected language first, then one segment at a time with its
+words, so the server can report progress and stop the work by closing the connection
+(docs/docs/developer/studio-graph-protocol-v1.md, section 15.1).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import struct
+import wave
+from collections.abc import Generator
+from pathlib import Path
+from typing import Any, BinaryIO
+
+import numpy as np
+from numpy.typing import NDArray
+
+from frameleaf_ml.config import log, model_source_url, settings
+from frameleaf_ml.models.base import MODEL_SOURCE_ORG, InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.constants import (
+    TRANSCRIBE_MODEL_ALIAS,
+    default_transcribe_model,
+    get_transcribe_model_file,
+)
+from frameleaf_ml.schemas import ModelFormat, ModelTask, ModelType
+
+SAMPLE_RATE = 16_000
+# Four hours of 16 kHz mono 16-bit audio; the server refuses longer clips before sending them.
+MAX_SECONDS = 4 * 60 * 60
+
+
+class AudioFormatError(ValueError):
+    """The upload is not 16 kHz mono 16-bit PCM WAV, or is empty or too long."""
+
+
+def wav_memory_bytes(file: BinaryIO | bytes) -> int:
+    """Validate without reading PCM; size PCM plus one float buffer and restore the caller's offset."""
+    stream = io.BytesIO(file) if isinstance(file, bytes) else file
+    start = stream.tell()
+    try:
+        with wave.open(stream, "rb") as reader:
+            if reader.getnchannels() != 1 or reader.getsampwidth() != 2 or reader.getframerate() != SAMPLE_RATE:
+                raise AudioFormatError("Audio must be 16 kHz mono 16-bit PCM WAV")
+            frames = reader.getnframes()
+            if frames <= 0:
+                raise AudioFormatError("The audio is empty")
+            if frames > MAX_SECONDS * SAMPLE_RATE:
+                raise AudioFormatError(f"The audio is longer than {MAX_SECONDS // 3600} hours")
+        stream.seek(0, io.SEEK_END)
+        physical_end = stream.tell()
+        stream.seek(start)
+        riff, size, kind = struct.unpack("<4sI4s", stream.read(12))
+        riff_end = start + 8 + size
+        if riff != b"RIFF" or kind != b"WAVE" or riff_end > physical_end:
+            raise AudioFormatError("The WAV is truncated")
+        data_bytes: int | None = None
+        while stream.tell() < riff_end:
+            if riff_end - stream.tell() < 8:
+                raise AudioFormatError("The WAV chunk header is truncated")
+            chunk, length = struct.unpack("<4sI", stream.read(8))
+            chunk_end = stream.tell() + length
+            if chunk_end + (length % 2) > riff_end:
+                raise AudioFormatError("The WAV chunk is truncated")
+            if chunk == b"fmt ":
+                if length < 16:
+                    raise AudioFormatError("The WAV format is truncated")
+                _, _, _, byte_rate, alignment, bits = struct.unpack("<HHIIHH", stream.read(16))
+                if byte_rate != SAMPLE_RATE * 2 or alignment != 2 or bits != 16:
+                    raise AudioFormatError("Audio must be 16 kHz mono 16-bit PCM WAV")
+            elif chunk == b"data":
+                if data_bytes is not None or length != frames * 2:
+                    raise AudioFormatError("The WAV has invalid PCM frames")
+                data_bytes = length
+            stream.seek(chunk_end + (length % 2))
+        if data_bytes is None:
+            raise AudioFormatError("The WAV has no PCM frames")
+        return data_bytes * 3
+    except (wave.Error, EOFError, struct.error, RuntimeError) as error:
+        raise AudioFormatError("Audio must be 16 kHz mono 16-bit PCM WAV") from error
+    finally:
+        stream.seek(start)
+
+
+def read_wav(file: BinaryIO | bytes) -> NDArray[np.float32]:
+    """Samples in -1..1 from validated 16 kHz mono 16-bit PCM WAV, never resampled."""
+    frames = wav_memory_bytes(file) // 6
+    with wave.open(io.BytesIO(file) if isinstance(file, bytes) else file, "rb") as reader:
+        data = reader.readframes(frames)
+    if len(data) != frames * 2:
+        raise AudioFormatError("The WAV is truncated")
+    samples = np.frombuffer(data, dtype="<i2").astype(np.float32)
+    samples /= 32768.0
+    return samples
+
+
+def cuda_device_count() -> int:
+    try:
+        import ctranslate2
+
+        return int(ctranslate2.get_cuda_device_count())
+    except Exception:
+        return 0
+
+
+def resolve_transcribe_model(model_name: str) -> str:
+    """The concrete Whisper model a request names; the alias resolves to this worker's choice."""
+    if model_name != TRANSCRIBE_MODEL_ALIAS:
+        return model_name
+    configured = (settings.transcription_model or "").strip()
+    if configured:
+        return configured
+    return default_transcribe_model(gpu=cuda_device_count() > 0)
+
+
+def transcription_identity(model_name: str = TRANSCRIBE_MODEL_ALIAS) -> dict[str, str]:
+    model = resolve_transcribe_model(model_name)
+    source = get_transcribe_model_file(model)
+    if source is None:
+        raise ModelUnavailableError("No pinned transcription model is configured")
+    digest = hashlib.sha256("\n".join(f"{path}:{sha}" for path, sha in sorted(source.files)).encode()).hexdigest()
+    return {"model": model, "fingerprint": digest}
+
+
+# ponytail: memo keyed by (path, size, mtime) so the multi-GB model.bin is hashed once per change, not per call.
+_verified_digests: dict[tuple[str, int, int], str] = {}
+
+
+def file_sha256(file: Path) -> str:
+    stat = file.stat()
+    key = (str(file), stat.st_size, stat.st_mtime_ns)
+    if key not in _verified_digests:
+        digest = hashlib.sha256()
+        with file.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1 << 20), b""):
+                digest.update(chunk)
+        _verified_digests[key] = digest.hexdigest()
+    return _verified_digests[key]
+
+
+class TranscribeModel(InferenceModel):
+    depends = []
+    identity = (ModelType.AUDIO, ModelTask.TRANSCRIBE)
+
+    def __init__(self, model_name: str, **model_kwargs: Any) -> None:
+        super().__init__(resolve_transcribe_model(model_name), **model_kwargs, model_format=ModelFormat.ONNX)
+
+    @property
+    def model_path(self) -> Path:
+        return self.model_dir / "model.bin"
+
+    @property
+    def cached(self) -> bool:
+        """Every pinned file is present and matches its pin; a stale file from an older pin is removed as a miss,
+        so the reported fingerprint always describes the files that load."""
+        source = get_transcribe_model_file(self.model_name)
+        if source is None:
+            return False
+        for path, expected in source.files:
+            file = self.cache_dir / path
+            if not file.is_file():
+                return False
+            if file_sha256(file) != expected:
+                file.unlink()
+                return False
+        return True
+
+    def _download(self) -> None:
+        source = get_transcribe_model_file(self.model_name)
+        if source is None:
+            # An unknown name is a missing model (503), never a generic download from the source.
+            raise self._unavailable(
+                f"{MODEL_SOURCE_ORG}/{self.model_name}", model_source_url(), "is not a transcription model"
+            )
+        repo_id = f"{MODEL_SOURCE_ORG}/{source.repo}"
+        self._download_from_source(source.repo, allow_patterns=[f"{self.model_type.value}/*"])
+        for path, expected in source.files:
+            file = self.cache_dir / path
+            if not file.is_file():
+                raise self._unavailable(repo_id, model_source_url(), reason=f"has no {path}")
+            if file_sha256(file) != expected:
+                file.unlink()
+                raise self._unavailable(repo_id, model_source_url(), reason=f"failed the checksum of {path}")
+
+    def _load(self) -> Any:
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as error:
+            raise ModelUnavailableError("This worker has no Whisper runtime (faster-whisper)") from error
+        if cuda_device_count() > 0:
+            device, compute_type = "cuda", "float16"
+        else:
+            device, compute_type = "cpu", "int8"
+        log.info(f"Loading Whisper model '{self.model_name}' on {device} ({compute_type})")
+        return WhisperModel(
+            str(self.model_dir),
+            device=device,
+            compute_type=compute_type,
+            cpu_threads=settings.model_intra_op_threads,
+            local_files_only=True,
+        )
+
+    @property
+    def languages(self) -> set[str]:
+        self.load()
+        return set(getattr(self.session, "supported_languages", None) or [])
+
+    def stream(
+        self, audio: NDArray[np.float32], language: str | None = None, wordTimestamps: bool = True, **_: Any
+    ) -> Generator[dict[str, Any], None, None]:
+        """`info` first (language, duration, model), then one `segment` at a time. Lazy: no decoding
+        happens until the first item is taken, and none after the consumer stops taking them."""
+        self.load()
+        whisper: Any = self.session
+        segments, info = whisper.transcribe(
+            audio,
+            language=language,
+            word_timestamps=wordTimestamps,
+            vad_filter=True,
+            condition_on_previous_text=False,
+        )
+        yield {
+            "type": "info",
+            **transcription_identity(self.model_name),
+            "language": info.language,
+            "languageProbability": round(float(info.language_probability), 4),
+            "duration": round(float(info.duration), 3),
+        }
+        for segment in segments:
+            words = [
+                {"start": round(float(w.start), 3), "end": round(float(w.end), 3), "text": w.word}
+                for w in (segment.words or [])
+            ]
+            yield {
+                "type": "segment",
+                "start": round(float(segment.start), 3),
+                "end": round(float(segment.end), 3),
+                "text": segment.text.strip(),
+                "words": words,
+            }
+
+    def _predict(self, audio: NDArray[np.float32], **options: Any) -> dict[str, Any]:
+        """The whole transcript at once (the stream collected)."""
+        items = list(self.stream(audio, **options))
+        info = items[0]
+        return {**{k: v for k, v in info.items() if k != "type"}, "segments": items[1:]}
