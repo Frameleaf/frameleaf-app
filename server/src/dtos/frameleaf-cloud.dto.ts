@@ -212,36 +212,55 @@ export class CloudTourResponseDto extends createZodDto(CloudTourResponseSchema) 
 
 // ------------------------------------------------------------------ FL-708: link with an account during setup
 
-const CloudAccountLinkSchema = z
-  .object({
-    mode: z
-      .enum(['create', 'sign-in'])
-      .describe('create: a new Frameleaf account; sign-in: an account the administrator already has')
-      .meta({ id: 'CloudAccountLinkMode' }),
-    email: z.email().max(320).describe('The Frameleaf account’s email'),
-    password: z
-      .string()
-      .min(1)
-      .max(1024)
-      .describe('The Frameleaf account’s password; sent to Frameleaf Cloud, never kept'),
-    name: z.string().trim().min(1).max(200).optional().describe('The person’s name, for a new account'),
-    consent: z
+const accountLinkCommon = {
+  email: z.email().max(320).describe('The Frameleaf account’s email'),
+  password: z
+    .string()
+    .min(1)
+    .max(1024)
+    .describe('The Frameleaf account’s password; sent to Frameleaf Cloud, never kept'),
+  dataRegion: z
+    .enum(DATA_REGIONS)
+    .optional()
+    .describe(
+      'Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch',
+    ),
+};
+
+/** create needs the person's name and the statement versions shown; sign-in needs neither (FC-222). */
+export const CloudAccountLinkSchema = z
+  .discriminatedUnion('mode', [
+    z
       .object({
-        tos: z.string().min(1).max(64).describe('The Terms of Use version shown'),
-        privacy: z.string().min(1).max(64).describe('The privacy statement version shown'),
+        mode: z.literal('create').describe('A new Frameleaf account').meta({ id: 'CloudAccountLinkCreateMode' }),
+        ...accountLinkCommon,
+        name: z.string().trim().min(1).max(200).describe('The person’s name'),
+        consent: z
+          .object({
+            tos: z.string().min(1).max(64).describe('The Terms of Use version shown'),
+            privacy: z.string().min(1).max(64).describe('The privacy statement version shown'),
+          })
+          .describe('The statement versions shown (from the consents endpoint)'),
       })
-      .optional()
-      .describe('The statement versions shown when creating an account (from the consents endpoint)'),
-    dataRegion: z
-      .enum(DATA_REGIONS)
-      .optional()
-      .describe(
-        'Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch',
-      ),
-  })
+      .meta({ id: 'CloudAccountLinkCreateDto' }),
+    z
+      .object({
+        mode: z
+          .literal('sign-in')
+          .describe('An account the administrator already has')
+          .meta({ id: 'CloudAccountLinkSignInMode' }),
+        ...accountLinkCommon,
+      })
+      .meta({ id: 'CloudAccountLinkSignInDto' }),
+  ])
   .meta({ id: 'CloudAccountLinkDto' });
 
-export class CloudAccountLinkDto extends createZodDto(CloudAccountLinkSchema) {}
+export type CloudAccountLinkRequest = z.infer<typeof CloudAccountLinkSchema>;
+/**
+ * A class for Nest's body metadata (validation and OpenAPI read its static `schema`, a `oneOf` by
+ * `mode`). A class cannot extend a union type, so the instance type is `CloudAccountLinkRequest`.
+ */
+export class CloudAccountLinkDto extends (createZodDto(CloudAccountLinkSchema) as unknown as new () => object) {}
 
 const CloudAccountLinkVerifySchema = z
   .object({

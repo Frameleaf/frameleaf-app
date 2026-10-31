@@ -87,6 +87,8 @@ const PUBLIC_CALLS: Array<[string, FrameleafCloudPublicCall]> = [
   ['repositories/frameleaf-cloud.repository.ts', FrameleafCloudPublicCall.Discovery],
   ['services/frameleaf-cloud.service.ts', FrameleafCloudPublicCall.DeviceAuthorization],
   ['services/frameleaf-cloud.service.ts', FrameleafCloudPublicCall.DeviceToken],
+  // FL-708 (FC-222): the public consent statements; the password link itself carries a proof
+  ['services/frameleaf-cloud.service.ts', FrameleafCloudPublicCall.SignUpConsents],
   ['services/frameleaf-license.service.ts', FrameleafCloudPublicCall.UnlinkedLicense],
   ['services/frameleaf-license.service.ts', FrameleafCloudPublicCall.UnlinkedLicense],
 ];

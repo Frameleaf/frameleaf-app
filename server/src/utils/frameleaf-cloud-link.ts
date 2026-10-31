@@ -374,8 +374,11 @@ export const PASSWORD_LINK_REFUSALS = [
 ] as const;
 export type PasswordLinkRefusal = (typeof PASSWORD_LINK_REFUSALS)[number];
 
-/** FL-708 (FC-222): the refusal a failed password link means; anything unexpected is `unavailable`. */
-export const passwordLinkRefusalOf = (error: unknown): PasswordLinkRefusal => {
+/**
+ * FL-708 (FC-222): the refusal a failed password link means; anything unexpected is `unavailable`. A
+ * 404 means a void challenge only when a code was sent (`verify`); on `start` it is a missing route.
+ */
+export const passwordLinkRefusalOf = (error: unknown, step: 'start' | 'verify' = 'start'): PasswordLinkRefusal => {
   if (!(error instanceof FrameleafCloudError) || error.status === null) {
     return 'unavailable';
   }
@@ -408,7 +411,7 @@ export const passwordLinkRefusalOf = (error: unknown): PasswordLinkRefusal => {
   if (error.status === 400 && code === 'code-invalid') {
     return 'code-invalid';
   }
-  if (error.status === 404) {
+  if (error.status === 404 && step === 'verify') {
     return 'code-expired';
   }
   const refusal = linkRefusalOf(error);

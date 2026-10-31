@@ -78909,10 +78909,10 @@
         ],
         "type": "string"
       },
-      "CloudAccountLinkDto": {
+      "CloudAccountLinkCreateDto": {
         "properties": {
           "consent": {
-            "description": "The statement versions shown when creating an account (from the consents endpoint)",
+            "description": "The statement versions shown (from the consents endpoint)",
             "properties": {
               "privacy": {
                 "description": "The privacy statement version shown",
@@ -78949,10 +78949,10 @@
             "type": "string"
           },
           "mode": {
-            "$ref": "#/components/schemas/CloudAccountLinkMode"
+            "$ref": "#/components/schemas/CloudAccountLinkCreateMode"
           },
           "name": {
-            "description": "The person’s name, for a new account",
+            "description": "The person’s name",
             "maxLength": 200,
             "minLength": 1,
             "type": "string"
@@ -78965,19 +78965,30 @@
           }
         },
         "required": [
+          "consent",
           "email",
           "mode",
+          "name",
           "password"
         ],
         "type": "object"
       },
-      "CloudAccountLinkMode": {
-        "description": "create: a new Frameleaf account; sign-in: an account the administrator already has",
+      "CloudAccountLinkCreateMode": {
+        "description": "A new Frameleaf account",
         "enum": [
-          "create",
-          "sign-in"
+          "create"
         ],
         "type": "string"
+      },
+      "CloudAccountLinkDto": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/CloudAccountLinkCreateDto"
+          },
+          {
+            "$ref": "#/components/schemas/CloudAccountLinkSignInDto"
+          }
+        ]
       },
       "CloudAccountLinkOutcome": {
         "description": "linked: this server is linked; code-needed: enter the code in `challenge`; refused: see `refusal`",
@@ -79081,6 +79092,47 @@
           "status"
         ],
         "type": "object"
+      },
+      "CloudAccountLinkSignInDto": {
+        "properties": {
+          "dataRegion": {
+            "description": "Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch",
+            "enum": [
+              "eu",
+              "na"
+            ],
+            "type": "string"
+          },
+          "email": {
+            "description": "The Frameleaf account’s email",
+            "format": "email",
+            "maxLength": 320,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CloudAccountLinkSignInMode"
+          },
+          "password": {
+            "description": "The Frameleaf account’s password; sent to Frameleaf Cloud, never kept",
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "mode",
+          "password"
+        ],
+        "type": "object"
+      },
+      "CloudAccountLinkSignInMode": {
+        "description": "An account the administrator already has",
+        "enum": [
+          "sign-in"
+        ],
+        "type": "string"
       },
       "CloudAccountLinkVerifyDto": {
         "properties": {

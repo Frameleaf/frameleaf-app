@@ -5,6 +5,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CloudAccountConsentsResponseDto,
   CloudAccountLinkDto,
+  type CloudAccountLinkRequest,
   CloudAccountLinkResponseDto,
   CloudAccountLinkVerifyDto,
   CloudPermissionsUpdateDto,
@@ -134,7 +135,7 @@ export class CloudAdminController {
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   linkWithAccount(@Auth() auth: AuthDto, @Body() dto: CloudAccountLinkDto): Promise<CloudAccountLinkResponseDto> {
-    return this.service.linkWithAccount(auth, dto);
+    return this.service.linkWithAccount(auth, dto as CloudAccountLinkRequest);
   }
 
   @Post('link/account/verify')

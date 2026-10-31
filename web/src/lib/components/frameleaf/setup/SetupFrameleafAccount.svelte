@@ -22,7 +22,8 @@
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
-    CloudAccountLinkMode,
+    CloudAccountLinkCreateMode,
+    CloudAccountLinkSignInMode,
     CloudLinkRefusal,
     DataRegion,
     getCloudAccountLinkConsents,
@@ -97,6 +98,9 @@
     }
   };
 
+  /** The code's own lifetime, from the cloud's `expiresIn` (FC-222), never a fixed number. */
+  const minutesLeft = (expiresAt: string) => Math.max(1, Math.round((Date.parse(expiresAt) - Date.now()) / 60_000));
+
   const restart = () => {
     challenge = null;
     code = '';
@@ -165,17 +169,22 @@
     form.password = '';
     try {
       answered(
-        await cloudManager.linkWithAccount({
-          mode: form.mode === 'create' ? CloudAccountLinkMode.Create : CloudAccountLinkMode.SignIn,
-          email: form.email.trim(),
-          password,
-          ...(form.mode === 'create' &&
-            consents && {
-              name: form.name.trim(),
-              consent: { tos: consents.tos.version, privacy: consents.privacy.version },
-            }),
-          ...(chosenRegion && { dataRegion: chosenRegion }),
-        }),
+        await cloudManager.linkWithAccount(
+          form.mode === 'create' && consents
+            ? {
+                mode: CloudAccountLinkCreateMode.Create,
+                email: form.email.trim(),
+                password,
+                name: form.name.trim(),
+                consent: { tos: consents.tos.version, privacy: consents.privacy.version },
+              }
+            : {
+                mode: CloudAccountLinkSignInMode.SignIn,
+                email: form.email.trim(),
+                password,
+                ...(chosenRegion && { dataRegion: chosenRegion }),
+              },
+        ),
       );
     } catch (error) {
       formError = getServerErrorMessage(error) || $t('frameleaf_setup_cloud_unreachable_body');
@@ -224,7 +233,9 @@
     </h2>
     <p class="auth-note">
       {challenge.kind === 'email-code'
-        ? $t('frameleaf_setup_frameleaf_code_email_body', { values: { email: form.email.trim() } })
+        ? $t('frameleaf_setup_frameleaf_code_email_body', {
+            values: { email: form.email.trim(), minutes: minutesLeft(challenge.expiresAt) },
+          })
         : $t('frameleaf_setup_frameleaf_code_2fa_body')}
     </p>
     <div class="auth-field">

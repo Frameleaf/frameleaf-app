@@ -816,9 +816,9 @@ export type CloudStatusResponseDto = {
     signInShowOnLocalLogin: boolean;
     state: CloudLinkState;
 };
-export type CloudAccountLinkDto = {
-    /** The statement versions shown when creating an account (from the consents endpoint) */
-    consent?: {
+export type CloudAccountLinkCreateDto = {
+    /** The statement versions shown (from the consents endpoint) */
+    consent: {
         /** The privacy statement version shown */
         privacy: string;
         /** The Terms of Use version shown */
@@ -828,12 +828,22 @@ export type CloudAccountLinkDto = {
     dataRegion?: DataRegion;
     /** The Frameleaf account’s email */
     email: string;
-    mode: CloudAccountLinkMode;
-    /** The person’s name, for a new account */
-    name?: string;
+    mode: CloudAccountLinkCreateMode;
+    /** The person’s name */
+    name: string;
     /** The Frameleaf account’s password; sent to Frameleaf Cloud, never kept */
     password: string;
 };
+export type CloudAccountLinkSignInDto = {
+    /** Where this server’s cloud data lives; sent only when the administrator chose the account’s region after region-mismatch */
+    dataRegion?: DataRegion;
+    /** The Frameleaf account’s email */
+    email: string;
+    mode: CloudAccountLinkSignInMode;
+    /** The Frameleaf account’s password; sent to Frameleaf Cloud, never kept */
+    password: string;
+};
+export type CloudAccountLinkDto = CloudAccountLinkCreateDto | CloudAccountLinkSignInDto;
 export type CloudAccountLinkResponseDto = {
     /** For region-mismatch: the region the account keeps its data in, to offer linking there */
     accountRegion: string | null;
@@ -35487,8 +35497,10 @@ export enum DataRegion {
     Eu = "eu",
     Na = "na"
 }
-export enum CloudAccountLinkMode {
-    Create = "create",
+export enum CloudAccountLinkCreateMode {
+    Create = "create"
+}
+export enum CloudAccountLinkSignInMode {
     SignIn = "sign-in"
 }
 export enum CloudAccountLinkChallengeKind {

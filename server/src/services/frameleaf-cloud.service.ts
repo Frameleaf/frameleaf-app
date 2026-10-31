@@ -23,7 +23,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CloudAccountConsentsResponseDto,
-  CloudAccountLinkDto,
+  type CloudAccountLinkRequest,
   CloudAccountLinkResponseDto,
   CloudAccountLinkVerifyDto,
   CloudPermissionsUpdateDto,
@@ -1035,16 +1035,13 @@ export class FrameleafCloudService extends BaseService {
    * enter (`code-needed`). An account that keeps its data in the other region is refused with
    * `region-mismatch` and that region, so the administrator chooses whether to link there (`dataRegion`).
    */
-  async linkWithAccount(auth: AuthDto, dto: CloudAccountLinkDto): Promise<CloudAccountLinkResponseDto> {
+  async linkWithAccount(auth: AuthDto, dto: CloudAccountLinkRequest): Promise<CloudAccountLinkResponseDto> {
     return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
       await this.requireFirstRunSetup();
       const cloudUrl = this.requireCloudUrl();
       const previous = await this.readLink(cloudUrl);
       if (previous?.status === 'linked') {
         throw new ConflictException('This server is already linked to a Frameleaf account. Unlink it first.');
-      }
-      if (dto.mode === 'create' && (!dto.name || !dto.consent)) {
-        throw new BadRequestException('A new Frameleaf account needs a name and the statements shown');
       }
       try {
         const attempt = await this.passwordLinkAttempt(cloudUrl, previous);
@@ -1063,7 +1060,7 @@ export class FrameleafCloudService extends BaseService {
         });
         return await this.passwordLinkAnswered(cloudUrl, attempt, answer, auth.user.id);
       } catch (error) {
-        return this.passwordLinkRefused(error);
+        return this.passwordLinkRefused(error, 'start');
       }
     });
   }
@@ -1088,7 +1085,7 @@ export class FrameleafCloudService extends BaseService {
         });
         return await this.passwordLinkAnswered(cloudUrl, attempt, answer, auth.user.id);
       } catch (error) {
-        return this.passwordLinkRefused(error);
+        return this.passwordLinkRefused(error, 'verify');
       }
     });
   }
@@ -1143,12 +1140,12 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /** A refused password link, in words the setup screen shows; this server's link is unchanged. */
-  private async passwordLinkRefused(error: unknown): Promise<CloudAccountLinkResponseDto> {
+  private async passwordLinkRefused(error: unknown, step: 'start' | 'verify'): Promise<CloudAccountLinkResponseDto> {
     if (!(error instanceof FrameleafCloudError)) {
       // ours, not the cloud's (a link that changed meanwhile): shown as it is
       throw error;
     }
-    const refusal = passwordLinkRefusalOf(error);
+    const refusal = passwordLinkRefusalOf(error, step);
     this.logger.warn(`Frameleaf Cloud did not link with the account (${refusal}): ${error.message}`);
     return {
       outcome: 'refused',

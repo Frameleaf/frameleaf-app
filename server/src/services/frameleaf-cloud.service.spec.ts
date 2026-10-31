@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { type KeyObject, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import { serverVersion } from 'src/constants.js';
+import { CloudAccountLinkSchema } from 'src/dtos/frameleaf-cloud.dto.js';
 import {
   AdminAuditAction,
   DatabaseLock,
@@ -949,11 +950,16 @@ describe(FrameleafCloudService.name, () => {
       expect(linkRequests()).toHaveLength(0);
     });
 
-    it('refuses a new account without the statements shown, before asking the cloud', async () => {
-      await expect(sut.linkWithAccount(authStub.admin, { ...create, consent: undefined })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      expect(linkRequests()).toHaveLength(0);
+    it('needs a name and the statements shown for a new account, in the request contract', () => {
+      expect(CloudAccountLinkSchema.safeParse(create).success).toBe(true);
+      expect(CloudAccountLinkSchema.safeParse({ ...create, consent: undefined }).success).toBe(false);
+      expect(CloudAccountLinkSchema.safeParse({ ...create, name: undefined }).success).toBe(false);
+      expect(CloudAccountLinkSchema.safeParse(signIn).success).toBe(true);
+    });
+
+    it('calls a missing start route unavailable, not an expired code', async () => {
+      cloud.on(`POST ${LINK}`, () => refuse(404, 'not-found'));
+      await expect(sut.linkWithAccount(authStub.admin, signIn)).resolves.toMatchObject({ refusal: 'unavailable' });
     });
 
     it('reads the statements a new account agrees to, without a proof', async () => {

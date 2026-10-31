@@ -13834,7 +13834,7 @@
   "frameleaf_setup_frameleaf_account_yours": "Your Frameleaf account",
   "frameleaf_setup_frameleaf_code_2fa_body": "Enter the 6-digit code from your authenticator app, or one of your recovery codes.",
   "frameleaf_setup_frameleaf_code_2fa_title": "Two-step verification",
-  "frameleaf_setup_frameleaf_code_email_body": "Enter the 6-digit code Frameleaf sent to {email}. It works for 10 minutes.",
+  "frameleaf_setup_frameleaf_code_email_body": "Enter the 6-digit code Frameleaf sent to {email}. It works for {minutes, plural, one {# minute} other {# minutes}}.",
   "frameleaf_setup_frameleaf_code_email_title": "Check your email",
   "frameleaf_setup_frameleaf_code_label": "Code",
   "frameleaf_setup_frameleaf_code_required": "Enter the code.",
