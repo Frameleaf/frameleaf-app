@@ -89126,6 +89126,10 @@
             "$ref": "#/components/schemas/FrameleafSetupModelTier",
             "description": "Model tier"
           },
+          "modelChosen": {
+            "description": "Whether the administrator chose the model on the tier step",
+            "type": "boolean"
+          },
           "nightlyBackup": {
             "description": "Nightly database backups",
             "type": "boolean"

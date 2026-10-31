@@ -107,6 +107,9 @@ export const showsRequired = (state: SetupState, stepId: SetupStepId) =>
 // --------------------------------------------------------------- choices
 
 export type ModelTier = 'light' | 'balanced' | 'best';
+/** An existing library's search model outside the tiers, left as it is (owner decision, FL-722). */
+export const KEEP_MODEL = 'keep' as const;
+export type ModelChoice = ModelTier | typeof KEEP_MODEL;
 export type ProcessingChoice = 'local' | 'cloud' | 'later';
 
 /**
@@ -179,27 +182,45 @@ export const recommendedTier = (check: TierHardware | null | undefined): ModelTi
   return ml.vramGb >= 6 ? 'balanced' : 'light';
 };
 
+/** Whether an existing library's search model is one outside the tiers, offered as "keep current model". */
+export const keepsUnlistedModel = (flow: SetupFlow, currentModel: string | null | undefined) =>
+  flow === 'existing' && !!currentModel && tierForModel(currentModel) === null;
+
 /**
  * The tier setup starts from once the server has answered: on a new server the hardware's recommended
- * tier; on an existing library the tier of the model it already uses (an unlisted model reads as the
- * default), so finishing never switches its models and re-embeds it unless the administrator chose to.
+ * tier; on an existing library the tier of the model it already uses, or "keep current model" for a
+ * model outside the tiers, so finishing never switches its models and re-embeds it unless the
+ * administrator chose to.
  */
 export const defaultTier = (
   flow: SetupFlow,
   { hardware, currentModel }: { hardware?: TierHardware | null; currentModel?: string | null },
-): ModelTier =>
-  flow === 'existing' ? (tierForModel(currentModel ?? undefined) ?? DEFAULT_TIER) : recommendedTier(hardware);
+): ModelChoice => {
+  if (flow !== 'existing') {
+    return recommendedTier(hardware);
+  }
+  if (keepsUnlistedModel(flow, currentModel)) {
+    return KEEP_MODEL;
+  }
+  return tierForModel(currentModel ?? undefined) ?? DEFAULT_TIER;
+};
 
 /**
  * Applies the default tier to a setup the administrator has not taken a tier decision in yet: the
- * tier step (`processing`) is not reached. A tier chosen there, or saved progress past it, stays.
+ * tier step (`processing`) is not reached. A tier chosen there (`modelChosen`), or saved progress
+ * past it, stays; except that progress which never recorded a choice (older saves held the default
+ * tier) offers "keep current model" again for a library on a model outside the tiers.
  */
 export const withDefaultTier = (
   state: SetupState,
   context: { hardware?: TierHardware | null; currentModel?: string | null },
 ): SetupState => {
+  if (state.choices.modelChosen) {
+    return state;
+  }
   const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
-  if (tierStep === -1 || state.reached >= tierStep) {
+  const pastTier = tierStep === -1 || state.reached >= tierStep;
+  if (pastTier && !keepsUnlistedModel(state.flow, context.currentModel)) {
     return state;
   }
   const model = defaultTier(state.flow, context);
@@ -257,7 +278,9 @@ export type SetupChoices = {
   adminName: string;
   adminEmail: string;
   layout: string;
-  model: ModelTier;
+  model: ModelChoice;
+  /** Set once the administrator picks a model on the tier step; a default never sets it. */
+  modelChosen: boolean;
   processing: ProcessingChoice;
   nightlyBackup: boolean;
   updates: boolean;
@@ -301,6 +324,7 @@ export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
       adminEmail: '',
       layout: existing ? KEEP_LAYOUT : 'year-month',
       model: DEFAULT_TIER,
+      modelChosen: false,
       processing: 'local',
       nightlyBackup: true,
       updates: true,
@@ -408,12 +432,17 @@ export const processingOptions = (state: SetupState): ProcessingChoice[] => [
 
 /** The server's password-free progress payload for this state. */
 export const toProgress = (state: SetupState): FrameleafSetupProgressDto => {
-  const { restore, ...choices } = state.choices;
+  const { restore, model, ...choices } = state.choices;
   return {
     version: 1,
     step: flowSteps(state.flow)[state.step].id,
     reached: state.reached,
-    choices: { ...choices, ...(restore && { restore }) } as FrameleafSetupProgressDto['choices'],
+    // "keep current model" is saved as a choice with no tier
+    choices: {
+      ...choices,
+      ...(model !== KEEP_MODEL && { model }),
+      ...(restore && { restore }),
+    } as FrameleafSetupProgressDto['choices'],
   };
 };
 
@@ -462,11 +491,11 @@ export const parseSetup = (raw: unknown, flow: SetupFlow, context: SetupContext 
       adminName: text(choices.adminName),
       adminEmail: text(choices.adminEmail),
       layout: oneOf(choices.layout, [KEEP_LAYOUT, ...layoutPresets.map((entry) => entry.id)], defaults.layout),
-      model: oneOf(
-        choices.model,
-        modelTiers.map((entry) => entry.id),
-        defaults.model,
-      ),
+      model:
+        choices.model === undefined && choices.modelChosen === true
+          ? KEEP_MODEL
+          : oneOf<ModelChoice>(choices.model, [KEEP_MODEL, ...modelTiers.map((entry) => entry.id)], defaults.model),
+      modelChosen: bool(choices.modelChosen, false),
       processing: oneOf(choices.processing, ['local', 'cloud', 'later'] as const, defaults.processing),
       nightlyBackup: bool(choices.nightlyBackup, true),
       updates: bool(choices.updates, true),
@@ -620,7 +649,7 @@ export const itemsPerHour = (gpu: boolean, embeddingMs?: number | null) =>
   embeddingMs && embeddingMs > 0 ? Math.max(300, Math.round(3_600_000 / (embeddingMs * 4))) : gpu ? 5400 : 1200;
 
 /** Hours to re-index a library locally at the chosen model tier. */
-export const reindexHours = (items: number, tierId: ModelTier, perHour: number) => {
+export const reindexHours = (items: number, tierId: ModelChoice, perHour: number) => {
   const tier =
     modelTiers.find((entry) => entry.id === tierId) ?? modelTiers.find((entry) => entry.id === DEFAULT_TIER)!;
   const rate = Math.max(1, perHour * tier.speed);
@@ -634,7 +663,7 @@ export const tierForModel = (modelName: string | undefined): ModelTier | null =>
 
 /**
  * The settings the finished setup writes. Nothing changes for a choice the administrator left at
- * "keep" or "decide later": the existing layout and the current models stay as they are. An existing
+ * "keep" or "decide later": the existing layout and the current models (`KEEP_MODEL`) stay as they are. An existing
  * library keeps its face model unless the administrator moved it from one tier to another
  * (`defaultTier`); a library on a search model outside the tiers keeps it too. Switching the search
  * or face model re-embeds the whole library, so it only ever follows a choice.

@@ -16962,6 +16962,8 @@ export type FrameleafSetupChoicesDto = {
     map?: boolean;
     /** Model tier */
     model?: FrameleafSetupModelTier;
+    /** Whether the administrator chose the model on the tier step */
+    modelChosen?: boolean;
     /** Nightly database backups */
     nightlyBackup?: boolean;
     /** Where processing runs */
