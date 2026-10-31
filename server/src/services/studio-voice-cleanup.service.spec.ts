@@ -108,6 +108,7 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
   const projects = {
     listGeneratedResources: vi.fn().mockResolvedValue([]),
     listImportDeclarations: vi.fn().mockResolvedValue([]),
+    getImport: vi.fn().mockResolvedValue(undefined),
   };
   const studio = {
     requireOwnedProject: vi.fn().mockResolvedValue({}),
@@ -125,6 +126,11 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
   };
   const resources = { resolveProjectResources: vi.fn().mockResolvedValue({ manifest }) };
   const imports = { upload: vi.fn().mockResolvedValue(kept) };
+  const publications = {
+    discover: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    cancel: vi.fn().mockResolvedValue({ status: 'cancelled' }),
+    release: vi.fn().mockResolvedValue(undefined),
+  };
   const users = { get: vi.fn().mockResolvedValue(owner.user) };
   const media = { probe: vi.fn().mockResolvedValue({ audioStreams: [{ index: 1 }], videoStreams: [] }) };
   const storage = {
@@ -165,6 +171,7 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
     studio as never,
     resources as never,
     imports as never,
+    publications as never,
     users as never,
     media as never,
     storage as never,
@@ -173,7 +180,20 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
     machineLearning as never,
     mlDestinations as never,
   );
-  return { sut, operation, operations, resources, imports, storage, audio, movies, machineLearning, query };
+  return {
+    sut,
+    operation,
+    operations,
+    projects,
+    resources,
+    imports,
+    publications,
+    storage,
+    audio,
+    movies,
+    machineLearning,
+    query,
+  };
 };
 
 describe(StudioVoiceCleanupService.name, () => {
@@ -361,6 +381,85 @@ describe(StudioVoiceCleanupService.name, () => {
         expect.stringContaining(`studio-voice-cleanup/${operationId}/${claimToken}`),
         expect.anything(),
       );
+    });
+
+    it('names the same import on every attempt of the same clip and settings, and another for other settings', async () => {
+      const first = setup();
+      await first.sut.run({ operation: first.operation, claimToken });
+      const second = setup();
+      await second.sut.run({ operation: second.operation, claimToken });
+      const other = setup();
+      await other.sut.run({
+        operation: { ...other.operation, snapshot: { ...snapshot, strength: 'strong' } } as MediaOperation,
+        claimToken,
+      });
+      const [stable] = first.imports.upload.mock.calls[0].slice(2);
+      expect(stable).toMatch(/^[\da-f]{8}-[\da-f]{4}-8[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+      expect(second.imports.upload.mock.calls[0][2]).toBe(stable);
+      expect(other.imports.upload.mock.calls[0][2]).not.toBe(stable);
+    });
+
+    it('a retry after a failure supersedes the unfinished import and keeps one cleaned track', async () => {
+      const { sut, operation, imports, publications, query } = setup();
+      await sut.run({ operation, claimToken });
+      const stable = imports.upload.mock.calls[0][2] as string;
+      imports.upload.mockClear();
+      const unfinished = '0195e2a0-0000-4000-8000-000000000031';
+      const aborted = '0195e2a0-0000-4000-8000-000000000032';
+      const unrelated = '0195e2a0-0000-4000-8000-000000000033';
+      publications.discover
+        .mockResolvedValueOnce({
+          items: [
+            { publicationId: unfinished, importId: stable, state: 'preparing', cleanupPending: true },
+            { publicationId: unrelated, importId, state: 'preparing', cleanupPending: true },
+          ],
+          nextCursor: 'next',
+        })
+        .mockResolvedValueOnce({
+          items: [{ publicationId: aborted, importId: stable, state: 'aborted', cleanupPending: true }],
+          nextCursor: null,
+        });
+
+      await sut.run({ operation, claimToken });
+
+      const key = (publicationId: string) => ({ ownerId: owner.user.id, projectId, importId: stable, publicationId });
+      expect(publications.discover).toHaveBeenLastCalledWith(expect.anything(), projectId, 'next');
+      expect(publications.cancel).toHaveBeenCalledTimes(1);
+      expect(publications.cancel).toHaveBeenCalledWith(expect.anything(), key(unfinished));
+      expect(publications.release.mock.calls).toEqual([[key(unfinished)], [key(aborted)]]);
+      expect(imports.upload).toHaveBeenCalledTimes(1);
+      expect(imports.upload).toHaveBeenCalledWith(expect.anything(), projectId, stable, expect.anything());
+      expect(query.set).toHaveBeenLastCalledWith(
+        expect.objectContaining({ result: expect.objectContaining({ import: kept }) }),
+      );
+    });
+
+    it('a retry after a success reuses the finished import instead of keeping a second one', async () => {
+      const { sut, operation, projects, imports, publications, movies, query, operations } = setup();
+      projects.getImport.mockResolvedValue({ ...kept, createdAt: new Date(kept.createdAt), ownerId: owner.user.id });
+      publications.discover.mockResolvedValue({
+        items: [
+          {
+            publicationId: '0195e2a0-0000-4000-8000-000000000031',
+            importId,
+            state: 'published',
+            cleanupPending: false,
+          },
+        ],
+        nextCursor: null,
+      });
+
+      await sut.run({ operation, claimToken });
+
+      expect(projects.getImport).toHaveBeenCalledWith(projectId, expect.any(String));
+      expect(publications.cancel).not.toHaveBeenCalled();
+      expect(publications.release).not.toHaveBeenCalled();
+      expect(movies.encodeMusic).not.toHaveBeenCalled();
+      expect(imports.upload).not.toHaveBeenCalled();
+      expect(query.set).toHaveBeenCalledWith(
+        expect.objectContaining({ result: expect.objectContaining({ import: kept }) }),
+      );
+      expect(operations.fail).not.toHaveBeenCalled();
     });
 
     it('fails without a retry when the clip changed, and keeps nothing', async () => {
