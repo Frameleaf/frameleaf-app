@@ -1,0 +1,3516 @@
+import asyncio
+import hashlib
+import json
+import os
+import re
+import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
+from pathlib import Path
+from random import randint
+from types import SimpleNamespace
+from typing import Any, Callable
+from unittest import mock
+
+import httpx
+import numpy as np
+import onnxruntime as ort
+import orjson
+import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError, RepositoryNotFoundError
+from PIL import Image
+from pytest import MonkeyPatch
+from pytest_mock import MockerFixture
+
+from frameleaf_ml.config import MaxBatchSize, Settings, log, model_source, settings
+from frameleaf_ml.main import load, preload_models
+from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.cache import ModelCache
+from frameleaf_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
+from frameleaf_ml.models.clip.visual import OpenClipVisualEncoder
+from frameleaf_ml.models.constants import _PADDLE_MODELS, get_model_source, get_ocr_model_file
+from frameleaf_ml.models.facial_recognition._ops import ARCFACE_DST, align_face
+from frameleaf_ml.models.facial_recognition.detection import FaceDetector
+from frameleaf_ml.models.facial_recognition.recognition import FaceRecognizer
+from frameleaf_ml.models.image_description import IMAGE_DESCRIPTION_PROMPT, ImageDescriptionModel
+from frameleaf_ml.models.ocr.detection import TextDetector
+from frameleaf_ml.models.ocr.recognition import TextRecognizer
+from frameleaf_ml.schemas import FaceDetectionOutput, ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
+from frameleaf_ml.sessions.ann import AnnSession
+from frameleaf_ml.sessions.ort import OrtSession, flush_denormals
+from frameleaf_ml.sessions.rknn import RknnSession, run_inference
+
+
+class FakeLock:
+    def __init__(self) -> None:
+        self.enter = mock.Mock()
+        self.exit = mock.Mock()
+
+    def __enter__(self) -> None:
+        self.enter()
+
+    def __exit__(self, *args: object) -> None:
+        self.exit(*args)
+
+
+class TestBase:
+    @pytest.fixture(autouse=True)
+    def default_model_source(self, monkeypatch: MonkeyPatch, mocker: MockerFixture) -> None:
+        monkeypatch.delenv("HF_ENDPOINT", raising=False)
+        mocker.patch.object(settings, "model_source_url", None)
+        mocker.patch.object(settings, "model_source_token", None)
+
+    def test_sets_default_worker_timeout(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.delenv("DEVICE", raising=False)
+        monkeypatch.delenv("MACHINE_LEARNING_WORKER_TIMEOUT", raising=False)
+
+        assert Settings().worker_timeout == 300
+
+    def test_sets_rocm_default_worker_timeout(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setenv("DEVICE", "rocm")
+        monkeypatch.delenv("MACHINE_LEARNING_WORKER_TIMEOUT", raising=False)
+
+        assert Settings().worker_timeout == 900
+
+    def test_worker_timeout_env_override(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setenv("DEVICE", "rocm")
+        monkeypatch.setenv("MACHINE_LEARNING_WORKER_TIMEOUT", "1200")
+
+        assert Settings().worker_timeout == 1200
+
+    def test_sets_default_cache_dir(self) -> None:
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai")
+
+        assert encoder.cache_dir == Path(settings.cache_folder) / "clip" / "ViT-B-32__openai"
+
+    def test_sets_cache_dir_kwarg(self) -> None:
+        cache_dir = Path("/test_cache")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=cache_dir)
+
+        assert encoder.cache_dir == cache_dir
+
+    def test_sets_default_model_format(self, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "ann", True)
+        mocker.patch("frameleaf_ml.sessions.ann.loader.is_available", False)
+
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai")
+
+        assert encoder.model_format == ModelFormat.ONNX
+
+    def test_sets_default_model_format_to_armnn_if_available(self, path: mock.Mock, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "ann", True)
+        mocker.patch("frameleaf_ml.sessions.ann.loader.is_available", True)
+        path.suffix = ".armnn"
+
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=path)
+
+        assert encoder.model_format == ModelFormat.ARMNN
+
+    def test_sets_model_format_kwarg(self, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "ann", False)
+        mocker.patch("frameleaf_ml.sessions.ann.loader.is_available", False)
+
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", model_format=ModelFormat.ARMNN)
+
+        assert encoder.model_format == ModelFormat.ARMNN
+
+    def test_sets_default_model_format_to_rknn_if_available(self, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "rknn", True)
+        mocker.patch("frameleaf_ml.sessions.rknn.is_available", True)
+
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai")
+
+        assert encoder.model_format == ModelFormat.RKNN
+
+    def test_casts_cache_dir_string_to_path(self) -> None:
+        cache_dir = "/test_cache"
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=cache_dir)
+
+        assert encoder.cache_dir == Path(cache_dir)
+
+    def test_clear_cache(self, rmtree: mock.Mock, path: mock.Mock, info: mock.Mock) -> None:
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=path)
+        encoder.clear_cache()
+
+        rmtree.assert_called_once_with(encoder.cache_dir)
+        info.assert_called_with(f"Cleared cache directory for model '{encoder.model_name}'.")
+
+    def test_clear_cache_reuses_one_stat_result(self, tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+        cache = tmp_path / "model"
+        cache.mkdir()
+        (cache / "weights").write_bytes(b"fixture")
+        encoder = OpenClipTextualEncoder("fixture", cache_dir=cache)
+        original_stat = Path.stat
+        calls: list[Path] = []
+
+        def inspect(path: Path, *args: Any, **kwargs: Any) -> os.stat_result:
+            if path == cache:
+                calls.append(path)
+            return original_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", inspect)
+        encoder.clear_cache()
+        assert list(cache.iterdir()) == []
+        assert calls == [cache]
+
+    def test_clear_cache_does_not_log_success_before_failed_removal(
+        self, rmtree: mock.Mock, path: mock.Mock, info: mock.Mock
+    ) -> None:
+        rmtree.side_effect = OSError("cannot remove cache")
+        encoder = OpenClipTextualEncoder("fixture", cache_dir=path)
+        with pytest.raises(OSError, match="cannot remove cache"):
+            encoder.clear_cache()
+        assert mock.call("Cleared cache directory for model 'fixture'.") not in info.call_args_list
+
+    def test_clear_cache_warns_if_path_does_not_exist(
+        self, rmtree: mock.Mock, path: mock.Mock, warning: mock.Mock
+    ) -> None:
+        path.return_value.is_dir.return_value = False
+        path.return_value.exists.return_value = False
+
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=path)
+        encoder.clear_cache()
+
+        rmtree.assert_not_called()
+        warning.assert_called_once()
+
+    def test_clear_cache_raises_exception_if_vulnerable_to_symlink_attack(
+        self, rmtree: mock.Mock, path: mock.Mock
+    ) -> None:
+        rmtree.avoids_symlink_attacks = False
+
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=path)
+        with pytest.raises(RuntimeError):
+            encoder.clear_cache()
+
+        rmtree.assert_not_called()
+
+    def test_clear_cache_replaces_file_with_dir_if_path_is_file(
+        self, rmtree: mock.Mock, path: mock.Mock, warning: mock.Mock
+    ) -> None:
+        path.return_value.is_dir.return_value = False
+
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=path)
+        encoder.clear_cache()
+
+        rmtree.assert_not_called()
+        path.return_value.unlink.assert_called_once()
+        path.return_value.mkdir.assert_called_once()
+        warning.assert_called_once()
+
+    def test_download(self, snapshot_download: mock.Mock) -> None:
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        snapshot_download.assert_called_once_with(
+            "frameleaf/ViT-B-32__openai",
+            cache_dir=encoder.cache_dir,
+            local_dir=encoder.cache_dir,
+            ignore_patterns=["*.armnn", "*.rknn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
+        )
+
+    def test_download_downloads_armnn_if_preferred_format(self, snapshot_download: mock.Mock) -> None:
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", model_format=ModelFormat.ARMNN)
+        encoder.download()
+
+        snapshot_download.assert_called_once_with(
+            "frameleaf/ViT-B-32__openai",
+            cache_dir=encoder.cache_dir,
+            local_dir=encoder.cache_dir,
+            ignore_patterns=["*.rknn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
+        )
+
+    def test_download_downloads_rknn_if_preferred_format(self, snapshot_download: mock.Mock) -> None:
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", model_format=ModelFormat.RKNN)
+        encoder.download()
+
+        snapshot_download.assert_called_once_with(
+            "frameleaf/ViT-B-32__openai",
+            cache_dir=encoder.cache_dir,
+            local_dir=encoder.cache_dir,
+            ignore_patterns=["*.armnn"],
+            endpoint="https://models.frameleaf.cloud",
+            token=False,
+        )
+
+    def test_download_uses_configured_model_source(self, snapshot_download: mock.Mock, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com/")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        snapshot_download.assert_called_once_with(
+            "frameleaf/ViT-B-32__openai",
+            cache_dir=encoder.cache_dir,
+            local_dir=encoder.cache_dir,
+            ignore_patterns=["*.armnn", "*.rknn"],
+            endpoint="https://models.example.com",
+            token=False,
+        )
+
+    def test_download_keeps_hf_endpoint_when_model_source_is_unset(
+        self, snapshot_download: mock.Mock, monkeypatch: MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com/")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        assert snapshot_download.call_args.kwargs["endpoint"] == "https://hub-mirror.example.com"
+        assert snapshot_download.call_args.kwargs["token"] is False
+        assert model_source() == ("https://hub-mirror.example.com", "HF_ENDPOINT")
+
+    def test_model_source_url_takes_precedence_over_hf_endpoint(
+        self, snapshot_download: mock.Mock, monkeypatch: MonkeyPatch, mocker: MockerFixture
+    ) -> None:
+        monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com")
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com")
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
+        encoder.download()
+
+        assert snapshot_download.call_args.kwargs["endpoint"] == "https://models.example.com"
+        assert model_source() == ("https://models.example.com", "MACHINE_LEARNING_MODEL_SOURCE_URL")
+
+    def test_model_source_defaults_to_the_frameleaf_mirror(self) -> None:
+        assert model_source() == ("https://models.frameleaf.cloud", "default")
+
+    @pytest.mark.parametrize("status", [401, 404])
+    def test_download_names_missing_model_and_model_source(
+        self, snapshot_download: mock.Mock, mocker: MockerFixture, status: int
+    ) -> None:
+        error = mocker.patch.object(log, "error")
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/buffalo_l/revision/main")
+        snapshot_download.side_effect = RepositoryNotFoundError(
+            "Repository not found", response=httpx.Response(status, request=request)
+        )
+        recognizer = FaceRecognizer("buffalo_l", cache_dir="/path/to/cache")
+
+        with pytest.raises(ModelUnavailableError) as raised:
+            recognizer.download()
+
+        message = str(raised.value)
+        assert "'buffalo_l'" in message
+        assert "https://models.frameleaf.cloud" in message
+        assert "frameleaf/buffalo_l" in message
+        assert "MACHINE_LEARNING_MODEL_SOURCE_URL" in message
+        assert "immich" not in message.lower()
+        error.assert_called_once_with(message)
+        snapshot_download.assert_called_once()
+
+    def test_download_treats_uncached_not_found_as_missing_model(self, snapshot_download: mock.Mock) -> None:
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/antelopev2/revision/main")
+        not_found = HfHubHTTPError("Not found", response=httpx.Response(404, request=request))
+        missing = LocalEntryNotFoundError("Cannot find an appropriate cached snapshot folder")
+        missing.__cause__ = not_found
+        snapshot_download.side_effect = missing
+        detector = FaceDetector("antelopev2", cache_dir="/path/to/cache")
+
+        with pytest.raises(ModelUnavailableError, match="antelopev2"):
+            detector.download()
+
+    def test_download_keeps_other_source_errors(self, snapshot_download: mock.Mock) -> None:
+        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/buffalo_l/revision/main")
+        outage = HfHubHTTPError("Service unavailable", response=httpx.Response(503, request=request))
+        snapshot_download.side_effect = outage
+        recognizer = FaceRecognizer("buffalo_l", cache_dir="/path/to/cache")
+
+        with pytest.raises(HfHubHTTPError) as raised:
+            recognizer.download()
+
+        assert raised.value is outage
+
+    def test_throws_exception_if_model_path_does_not_exist(
+        self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.is_file.return_value = False
+
+        encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=path)
+
+        with pytest.raises(FileNotFoundError):
+            encoder.load()
+
+        snapshot_download.assert_called_once()
+        ort_session.assert_not_called()
+
+    def test_unload_drops_the_session_and_load_takes_it_back(
+        self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        detector = FaceDetector("buffalo_s", cache_dir=path)
+
+        detector.load()
+        detector.unload()
+
+        assert not detector.loaded
+        assert not hasattr(detector, "session")
+
+        detector.load()
+
+        assert detector.loaded
+        assert ort_session.call_count == 2
+
+    def test_load_serializes_requests_for_a_model_neither_has_loaded(
+        self, snapshot_download: mock.Mock, ort_session: mock.Mock, path: mock.Mock
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        detector = FaceDetector("buffalo_s", cache_dir=path)
+        started = threading.Barrier(2)
+
+        def slow_session(*args: Any, **kwargs: Any) -> mock.Mock:
+            time.sleep(0.05)
+            return mock.Mock()
+
+        ort_session.side_effect = slow_session
+
+        def worker() -> None:
+            started.wait()
+            detector.load()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert detector.loaded
+        assert detector.load_attempts == 1
+        ort_session.assert_called_once()
+
+
+class TestImageDescriptionModel:
+    def test_uses_openvino_alias_for_openvino(self) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+
+        assert model.hf_model_name == "llmware/qwen2.5-vl-3b-ov"
+
+    def test_uses_phi_openvino_alias_for_openvino(self) -> None:
+        model = ImageDescriptionModel("microsoft/Phi-3.5-vision-instruct", acceleration="openvino")
+
+        assert model.hf_model_name == "OpenVINO/Phi-3.5-vision-instruct-int4-ov"
+
+    def test_keeps_huggingface_model_for_cuda(self) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+
+        assert model.hf_model_name == "Qwen/Qwen2.5-VL-3B-Instruct"
+
+    def test_keeps_phi_huggingface_model_for_cuda(self) -> None:
+        model = ImageDescriptionModel("microsoft/Phi-3.5-vision-instruct", acceleration="cuda")
+
+        assert model.hf_model_name == "microsoft/Phi-3.5-vision-instruct"
+
+    def test_fails_before_downloading_when_openvino_genai_is_missing(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: None)
+        download = mock.Mock()
+        monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", download)
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+
+        with pytest.raises(ImportError, match="openvino-genai"):
+            model._download()
+        download.assert_not_called()
+
+    def test_reports_missing_openvino_genai_only_for_models_that_need_it(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: None)
+
+        assert "openvino-genai" in (
+            ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino").missing_runtime() or ""
+        )
+        assert ImageDescriptionModel("microsoft/Florence-2-base-ft", acceleration="openvino").missing_runtime() is None
+        assert ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda").missing_runtime() is None
+
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: object())
+        monkeypatch.setattr("frameleaf_ml.models.image_description.openvino_genai_importable", lambda: True)
+        assert ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino").missing_runtime() is None
+
+    def test_reports_openvino_genai_that_is_found_but_fails_to_import(self, monkeypatch: MonkeyPatch) -> None:
+        from frameleaf_ml.models.image_description import openvino_genai_importable
+
+        monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: object())
+        # A None entry in sys.modules makes `import openvino_genai` raise ImportError.
+        monkeypatch.setitem(sys.modules, "openvino_genai", None)
+        download = mock.Mock()
+        monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", download)
+        openvino_genai_importable.cache_clear()
+        try:
+            model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+            assert "openvino-genai" in (model.missing_runtime() or "")
+            with pytest.raises(ImportError, match="openvino-genai"):
+                model._download()
+            download.assert_not_called()
+        finally:
+            openvino_genai_importable.cache_clear()
+
+    def test_auto_uses_cuda_backend_when_available(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr(ImageDescriptionModel, "_cuda_available", lambda _: True)
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="auto")
+
+        assert model.acceleration == "cuda"
+
+    def test_converts_images_to_openvino_nhwc_tensor(self, monkeypatch: MonkeyPatch) -> None:
+        tensors: list[np.ndarray] = []
+
+        class Tensor:
+            def __init__(self, data: np.ndarray) -> None:
+                tensors.append(data)
+
+        monkeypatch.setitem(sys.modules, "openvino", SimpleNamespace(Tensor=Tensor))
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+        model._to_openvino_tensor(Image.new("RGB", (3, 2), (1, 2, 3)))
+
+        assert tensors[0].shape == (1, 2, 3, 3)
+        assert tensors[0].dtype == np.uint8
+
+    def test_resizes_large_openvino_images(self, monkeypatch: MonkeyPatch) -> None:
+        tensors: list[np.ndarray] = []
+
+        class Tensor:
+            def __init__(self, data: np.ndarray) -> None:
+                tensors.append(data)
+
+        monkeypatch.setitem(sys.modules, "openvino", SimpleNamespace(Tensor=Tensor))
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+        model._to_openvino_tensor(Image.new("RGB", (2000, 1000), (1, 2, 3)))
+
+        assert tensors[0].shape == (1, 256, 512, 3)
+
+    def test_uses_openvino_image_edge_env_override(self, monkeypatch: MonkeyPatch) -> None:
+        tensors: list[np.ndarray] = []
+
+        class Tensor:
+            def __init__(self, data: np.ndarray) -> None:
+                tensors.append(data)
+
+        monkeypatch.setenv("MACHINE_LEARNING_IMAGE_DESCRIPTION__OPENVINO_MAX_IMAGE_EDGE", "256")
+        monkeypatch.setitem(sys.modules, "openvino", SimpleNamespace(Tensor=Tensor))
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+        model._to_openvino_tensor(Image.new("RGB", (2000, 1000), (1, 2, 3)))
+
+        assert tensors[0].shape == (1, 128, 256, 3)
+
+    def test_adds_qwen_image_tag_to_openvino_prompt(self) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+
+        assert model._make_openvino_prompt().startswith("<|vision_start|><|image_pad|><|vision_end|>\n")
+
+    def test_adds_phi_image_tag_to_openvino_prompt(self) -> None:
+        model = ImageDescriptionModel("microsoft/Phi-3.5-vision-instruct", acceleration="openvino")
+
+        assert model._make_openvino_prompt().startswith("<|image_1|>\n")
+
+    def test_sets_phi_openvino_eos_token_id(self, monkeypatch: MonkeyPatch) -> None:
+        eos_token_ids: list[int] = []
+
+        class GenerationConfig:
+            max_new_tokens: int
+            temperature: float
+
+            def set_eos_token_id(self, eos_token_id: int) -> None:
+                eos_token_ids.append(eos_token_id)
+
+        session = SimpleNamespace(get_tokenizer=lambda: SimpleNamespace(get_eos_token_id=lambda: 32000))
+
+        monkeypatch.setitem(sys.modules, "openvino_genai", SimpleNamespace(GenerationConfig=GenerationConfig))
+
+        model = ImageDescriptionModel("microsoft/Phi-3.5-vision-instruct", acceleration="openvino", session=session)
+        config = model._generation_config()
+
+        assert config.max_new_tokens == 768
+        assert config.temperature == 0.0
+        assert eos_token_ids == [32000]
+
+    def test_salvages_description_from_invalid_json_without_raw_json(self) -> None:
+        model = ImageDescriptionModel("microsoft/Phi-3.5-vision-instruct", acceleration="openvino")
+
+        result = model._normalize_response(
+            """
+            {
+              "description": "A naked adult man is lying on a bed under a gray blanket.",
+              "people": [
+                {
+                  "count": 1,
+                  "apparent_age_group": "young adult | adult",
+                  "activity": "lying down",
+                  "confidence": "high"
+                }
+            """
+        )
+
+        assert result["description"] == "A naked adult man is lying on a bed under a gray blanket."
+        assert not str(result["description"]).startswith("{")
+        assert "naked" in result["tags"]
+
+    def test_preserves_ambiguous_people_values(self) -> None:
+        model = ImageDescriptionModel("microsoft/Phi-3.5-vision-instruct", acceleration="openvino")
+
+        result = model._normalize_response(
+            json.dumps(
+                {
+                    "description": "A person is lying on a bed.",
+                    "people": [
+                        {
+                            "count": 1,
+                            "apparent_age_group": "young adult | adult",
+                            "activity": "lying down",
+                            "confidence": "high",
+                        }
+                    ],
+                    "tags": ["person"],
+                }
+            )
+        )
+
+        assert result["people"][0]["apparent_age_group"] == "young adult | adult"
+
+    def test_backfills_medical_tags_from_medical_indicators(self) -> None:
+        model = ImageDescriptionModel("microsoft/Phi-3.5-vision-instruct", acceleration="openvino")
+
+        result = model._normalize_response(
+            json.dumps(
+                {
+                    "description": "A person is lying in a hospital bed with an IV line nearby.",
+                    "medical": {
+                        "is_medical_likely": True,
+                        "confidence": "high",
+                        "indicators": ["hospital", "iv line"],
+                        "reason": "A hospital bed and IV line are visible.",
+                    },
+                    "tags": [],
+                }
+            )
+        )
+
+        assert "medical" in result["tags"]
+        assert "hospital" in result["tags"]
+        assert "iv-line" in result["tags"]
+
+    def test_adds_nsfw_tags_from_safety_indicators(self) -> None:
+        model = ImageDescriptionModel("microsoft/Phi-3.5-vision-instruct", acceleration="openvino")
+
+        result = model._normalize_response(
+            json.dumps(
+                {
+                    "description": "A naked adult man is lying on a bed.",
+                    "safety": {
+                        "is_nsfw_likely": True,
+                        "confidence": "high",
+                        "indicators": ["nudity", "naked"],
+                        "reason": "Adult nudity is visible.",
+                    },
+                    "tags": [],
+                }
+            )
+        )
+
+        assert "nsfw" in result["tags"]
+        assert "nudity" in result["tags"]
+        assert "naked" in result["tags"]
+
+    def test_retries_openvino_dimension_errors_on_cpu(self, monkeypatch: MonkeyPatch) -> None:
+        class Tensor:
+            def __init__(self, data: np.ndarray) -> None:
+                self.data = data
+
+        class Session:
+            def __init__(self, result: Any = None) -> None:
+                self.calls = 0
+                self.result = result
+
+            def generate(self, *args: Any, **kwargs: Any) -> Any:
+                self.calls += 1
+                if self.result is None:
+                    raise RuntimeError("Accessing out-of-range dimension")
+                return self.result
+
+        gpu_session = Session()
+        cpu_session = Session(
+            SimpleNamespace(
+                texts=[
+                    json.dumps(
+                        {
+                            "description": "A room.",
+                            "people": [],
+                            "environment": "indoor",
+                            "objects": [],
+                            "visible_text": [],
+                            "context": "",
+                            "tags": ["room"],
+                        }
+                    )
+                ]
+            )
+        )
+
+        monkeypatch.setitem(sys.modules, "openvino", SimpleNamespace(Tensor=Tensor))
+        monkeypatch.setattr(ImageDescriptionModel, "_load_openvino", lambda self, device: cpu_session)
+        monkeypatch.setattr(ImageDescriptionModel, "_generation_config", lambda self: None)
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino", session=gpu_session)
+
+        result = model.predict(Image.new("RGB", (3, 2), (1, 2, 3)))
+        assert result["description"] == "A room."
+        assert gpu_session.calls == 1
+        assert cpu_session.calls == 1
+        assert model.device == "CPU"
+        # FL-427: the response says where it actually ran, so the GPU→CPU retry is visible.
+        assert result["device"] == "CPU"
+
+    def test_reports_the_torch_device_it_ran_on(self, monkeypatch: MonkeyPatch) -> None:
+        model = ImageDescriptionModel(
+            "microsoft/Florence-2-base-ft", acceleration="cuda", session={"device": "cpu", "torch": None}
+        )
+        monkeypatch.setattr(ImageDescriptionModel, "_predict_florence", lambda self, image: {"description": "A cat."})
+
+        assert model.predict(Image.new("RGB", (3, 2))) == {"description": "A cat.", "device": "cpu"}
+
+    def test_make_prompt_uses_external_when_provided(self) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        prompt = model._make_prompt(nsfw=None, external_prompt="CUSTOM PROMPT FROM SERVER")
+        assert prompt == "CUSTOM PROMPT FROM SERVER"
+
+    def test_make_prompt_falls_back_to_constant_when_external_missing(self) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        prompt = model._make_prompt(nsfw=None, external_prompt=None)
+        assert prompt == IMAGE_DESCRIPTION_PROMPT
+
+    def test_make_prompt_external_ignores_nsfw_suffix(self) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        prompt = model._make_prompt(nsfw={"isNsfw": True}, external_prompt="CUSTOM")
+        assert prompt == "CUSTOM"
+
+    def test_make_prompt_empty_external_returns_empty(self) -> None:
+        # Empty string is a valid (if unusual) caller-provided prompt; it must NOT
+        # fall through to the default IMAGE_DESCRIPTION_PROMPT.
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        prompt = model._make_prompt(nsfw=None, external_prompt="")
+        assert prompt == ""
+
+    def test_florence_ignores_external_prompt(self, monkeypatch: MonkeyPatch) -> None:
+        model = ImageDescriptionModel("microsoft/Florence-2-base", acceleration="cuda")
+        monkeypatch.setattr(
+            ImageDescriptionModel,
+            "_predict_florence",
+            lambda self, image: {"description": "florence output", "tags": []},
+        )
+        result = model._predict_cuda(image=None, nsfw=None, external_prompt="THIS SHOULD BE IGNORED")
+        assert result["description"] == "florence output"
+
+    def test_predict_propagates_external_prompt_via_kwargs(self, monkeypatch: MonkeyPatch) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(ImageDescriptionModel, "load", lambda self: None)
+
+        def fake_predict(self: ImageDescriptionModel, *inputs: Any, **kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {"description": "stub"}
+
+        monkeypatch.setattr(ImageDescriptionModel, "_predict", fake_predict)
+        model.predict("image", external_prompt="HELLO FROM SERVER", nsfw=None)
+        assert captured.get("external_prompt") == "HELLO FROM SERVER"
+
+    def test_concurrent_cpu_fallback_does_not_spuriously_raise(self, monkeypatch: MonkeyPatch) -> None:
+        class Tensor:
+            def __init__(self, data: np.ndarray) -> None:
+                self.data = data
+
+        two_threads_have_failed_on_gpu = threading.Event()
+
+        class GpuSession:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def generate(self, *args: Any, **kwargs: Any) -> Any:
+                self.calls += 1
+                if self.calls >= 2:
+                    two_threads_have_failed_on_gpu.set()
+                raise RuntimeError("Accessing out-of-range dimension")
+
+        cpu_result = SimpleNamespace(texts=[json.dumps({"description": "A room.", "tags": ["room"]})])
+
+        class CpuSession:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def generate(self, *args: Any, **kwargs: Any) -> Any:
+                self.calls += 1
+                return cpu_result
+
+        gpu_session = GpuSession()
+        cpu_session = CpuSession()
+
+        # Force the race window open: hold every retry-decision until at least two
+        # threads have failed on the GPU session. Without this gate the first thread
+        # can complete the entire swap before any sibling reaches the retry path,
+        # and the test would pass without exercising the race the fix targets.
+        original_dim_check = ImageDescriptionModel._is_openvino_dimension_error
+
+        def gated_dim_check(self: ImageDescriptionModel, error: RuntimeError) -> bool:
+            assert two_threads_have_failed_on_gpu.wait(timeout=2)
+            return original_dim_check(self, error)
+
+        monkeypatch.setitem(sys.modules, "openvino", SimpleNamespace(Tensor=Tensor))
+        monkeypatch.setattr(ImageDescriptionModel, "_load_openvino", lambda self, device: cpu_session)
+        monkeypatch.setattr(ImageDescriptionModel, "_generation_config", lambda self: None)
+        monkeypatch.setattr(ImageDescriptionModel, "_is_openvino_dimension_error", gated_dim_check)
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino", session=gpu_session)
+        image = Image.new("RGB", (3, 2), (1, 2, 3))
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(model.predict, image) for _ in range(8)]
+            results = [future.result() for future in futures]
+
+        assert all(result["description"] == "A room." for result in results)
+        assert model.device == "CPU"
+        assert gpu_session.calls >= 2
+
+    def test_serializes_concurrent_openvino_generates(self, monkeypatch: MonkeyPatch) -> None:
+        class Tensor:
+            def __init__(self, data: np.ndarray) -> None:
+                self.data = data
+
+        result_text = SimpleNamespace(texts=[json.dumps({"description": "A room.", "tags": ["room"]})])
+
+        in_flight = 0
+        max_in_flight = 0
+        lock = threading.Lock()
+
+        def generate(*args: Any, **kwargs: Any) -> Any:
+            nonlocal in_flight, max_in_flight
+            with lock:
+                in_flight += 1
+                max_in_flight = max(max_in_flight, in_flight)
+            time.sleep(0.05)
+            with lock:
+                in_flight -= 1
+            return result_text
+
+        session = SimpleNamespace(generate=generate)
+        monkeypatch.setitem(sys.modules, "openvino", SimpleNamespace(Tensor=Tensor))
+        monkeypatch.setattr(ImageDescriptionModel, "_generation_config", lambda self: None)
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino", session=session)
+        image = Image.new("RGB", (3, 2), (1, 2, 3))
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(model.predict, image) for _ in range(4)]
+            results = [future.result() for future in futures]
+
+        assert max_in_flight == 1
+        assert all(result["description"] == "A room." for result in results)
+
+    def test_cache_dir_is_scoped_by_acceleration_openvino(self) -> None:
+        # Acceleration is included in the cache path so CUDA and OpenVINO
+        # snapshots never collide on the same directory.
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+        assert model.cache_dir.parts[-1] == "openvino"
+        assert model.cache_dir.parts[-2] == hashlib.sha256(model.hf_model_name.encode()).hexdigest()
+
+    def test_cache_dir_is_scoped_by_acceleration_cuda(self) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        assert model.cache_dir.parts[-1] == "cuda"
+        assert model.cache_dir.parts[-2] == hashlib.sha256(model.hf_model_name.encode()).hexdigest()
+
+    def test_cache_dir_differs_between_cuda_and_openvino(self) -> None:
+        cuda_model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        ov_model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+        assert cuda_model.cache_dir != ov_model.cache_dir
+
+    def test_make_prompt_strips_control_chars_in_external_prompt(self) -> None:
+        # Server-side is the primary defense, but a regression there must
+        # not open the prompt-injection vector. Control chars and format
+        # chars are stripped; tabs/newlines/CR are preserved.
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        payload = "Hello​\x00World\n\tnext line"
+        assert model._make_prompt(external_prompt=payload) == "HelloWorld\n\tnext line"
+
+    def test_make_prompt_preserves_legit_whitespace_in_external_prompt(self) -> None:
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        payload = "Line 1\nLine 2\r\n  indented\ttabbed"
+        assert model._make_prompt(external_prompt=payload) == payload
+
+    def test_cached_requires_config_json(self, tmp_path: Path) -> None:
+        # ml.md Critical #2 — partial/inconsistent caches reported "cached"
+        # if the directory was non-empty. The new check requires config.json
+        # so a half-finished snapshot_download (or operator file dropped in
+        # by accident) does NOT skip re-download.
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda", cache_dir=tmp_path)
+        # Empty directory: not cached
+        assert model.cached is False
+        # Non-empty directory missing config.json: not cached
+        (tmp_path / "stray.txt").write_text("partial download junk")
+        assert model.cached is False
+        # config.json present: cached
+        (tmp_path / "config.json").write_text("{}")
+        assert model.cached is True
+
+    def test_cuda_predict_uses_inference_lock(self, monkeypatch: MonkeyPatch) -> None:
+        # Mirror the OpenVINO concurrency test for CUDA: model.generate()
+        # must serialize across threads.
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda")
+        in_flight = 0
+        max_in_flight = 0
+        guard = threading.Lock()
+
+        class FakeProcessor:
+            def apply_chat_template(self, *args: Any, **kwargs: Any) -> str:
+                return "text"
+
+            def __call__(self, *args: Any, **kwargs: Any) -> Any:
+                class Inputs(dict[str, Any]):
+                    input_ids = [[0, 1, 2]]
+
+                    def to(self, device: Any) -> "Inputs":
+                        return self
+
+                return Inputs()
+
+            def batch_decode(self, *args: Any, **kwargs: Any) -> list[str]:
+                return [json.dumps({"description": "A room.", "tags": ["room"]})]
+
+        class FakeModel:
+            def generate(self, **kwargs: Any) -> list[list[int]]:
+                nonlocal in_flight, max_in_flight
+                with guard:
+                    in_flight += 1
+                    max_in_flight = max(max_in_flight, in_flight)
+                time.sleep(0.05)
+                with guard:
+                    in_flight -= 1
+                return [[0, 1, 2, 3, 4, 5]]
+
+        class FakeTorch:
+            class _NoGrad:
+                def __enter__(self) -> "FakeTorch._NoGrad":
+                    return self
+
+                def __exit__(self, *args: Any) -> None:
+                    return None
+
+            def inference_mode(self) -> "FakeTorch._NoGrad":
+                return self._NoGrad()
+
+        session: dict[str, Any] = {
+            "model": FakeModel(),
+            "processor": FakeProcessor(),
+            "device": "cuda:0",
+            "torch": FakeTorch(),
+            "torch_dtype": "float16",
+        }
+        model.session = session
+        model.loaded = True
+
+        image = Image.new("RGB", (3, 2), (1, 2, 3))
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(model._predict_qwen, image, None, "p") for _ in range(4)]
+            for future in futures:
+                future.result()
+
+        assert max_in_flight == 1
+
+    def test_florence_predict_serializes_all_three_subtasks(self, monkeypatch: MonkeyPatch) -> None:
+        # ml.md T4 — Florence ran caption/OCR/detection as three separately
+        # locked calls. Two concurrent requests could interleave between
+        # sub-tasks (T1.caption → T2.caption → T1.ocr → …) and race on
+        # KV-cache + tokenizer state. The fix holds ``_cuda_lock`` ONCE
+        # around the whole 3-call sequence.
+        #
+        # Strategy: assert the lock-granularity invariant directly by
+        # instrumenting ``_cuda_lock`` and counting acquire/release
+        # events. The per-request invariant is "exactly one acquire per
+        # ``_predict_florence`` call regardless of how many sub-tasks
+        # run inside". Under the broken per-task implementation each
+        # ``_run_florence_task`` would acquire the lock, producing 3×
+        # the count. This count is deterministic — it does not depend
+        # on thread scheduling, sleeps, or barriers — so it stays
+        # robust under heavy CI oversubscription.
+        model = ImageDescriptionModel("microsoft/Florence-2-base", acceleration="cuda")
+        # We need the model to think it's Florence — _predict_florence is
+        # only invoked for Florence and is the API surface we want to test.
+        assert model._is_florence_model() is True
+
+        events: list[tuple[int, str]] = []
+        events_guard = threading.Lock()
+
+        class TracingLock:
+            """Wrapper around ``threading.Lock`` that records every
+            acquire/release with the calling thread's identity so the
+            test can assert the lock-granularity invariant directly."""
+
+            def __init__(self) -> None:
+                self._inner = threading.Lock()
+
+            def __enter__(self) -> "TracingLock":
+                self._inner.acquire()
+                with events_guard:
+                    events.append((threading.get_ident(), "acquire"))
+                return self
+
+            def __exit__(self, *args: Any) -> None:
+                with events_guard:
+                    events.append((threading.get_ident(), "release"))
+                self._inner.release()
+
+            def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+                acquired = self._inner.acquire(blocking, timeout)
+                if acquired:
+                    with events_guard:
+                        events.append((threading.get_ident(), "acquire"))
+                return acquired
+
+            def release(self) -> None:
+                with events_guard:
+                    events.append((threading.get_ident(), "release"))
+                self._inner.release()
+
+        model._cuda_lock = TracingLock()  # type: ignore[assignment]
+
+        class FakeProcessor:
+            def __call__(self, *args: Any, **kwargs: Any) -> Any:
+                class _Vals:
+                    def to(self, *_a: Any, **_kw: Any) -> "_Vals":
+                        return self
+
+                # Provide the keys _run_florence_task expects.
+                return {"input_ids": _Vals(), "pixel_values": _Vals()}
+
+            def batch_decode(self, *args: Any, **kwargs: Any) -> list[str]:
+                return ["<MORE_DETAILED_CAPTION>some-caption"]
+
+            def post_process_generation(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+                task = kwargs.get("task")
+                if task == "<MORE_DETAILED_CAPTION>":
+                    return {"<MORE_DETAILED_CAPTION>": "A room."}
+                if task == "<OCR>":
+                    return {"<OCR>": "sign"}
+                return {"<OD>": {"labels": ["chair"]}}
+
+        class FakeModel:
+            def generate(self, **kwargs: Any) -> list[list[int]]:
+                return [[0, 1, 2, 3, 4, 5]]
+
+        class FakeTorch:
+            class _NoGrad:
+                def __enter__(self) -> "FakeTorch._NoGrad":
+                    return self
+
+                def __exit__(self, *args: Any) -> None:
+                    return None
+
+            def inference_mode(self) -> "FakeTorch._NoGrad":
+                return self._NoGrad()
+
+        session: dict[str, Any] = {
+            "model": FakeModel(),
+            "processor": FakeProcessor(),
+            "device": "cuda:0",
+            "torch": FakeTorch(),
+            "torch_dtype": "float16",
+        }
+        model.session = session
+        model.loaded = True
+
+        image = Image.new("RGB", (3, 2), (1, 2, 3))
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(model._predict_florence, image) for _ in range(2)]
+            for future in futures:
+                future.result()
+
+        # Per-request invariant: exactly one acquire+release per
+        # ``_predict_florence`` call, so 2 acquires + 2 releases
+        # across two concurrent callers. If the lock were per-task we
+        # would see 6/6 (one acquire per ``_run_florence_task``).
+        acquires = [event for event in events if event[1] == "acquire"]
+        releases = [event for event in events if event[1] == "release"]
+        assert len(acquires) == 2, (
+            f"Expected 2 lock acquires (one per _predict_florence call), got {len(acquires)}: {events}"
+        )
+        assert len(releases) == 2, f"Expected 2 lock releases, got {len(releases)}: {events}"
+        # Mutual exclusion: the lock guarantees the second caller's
+        # acquire cannot land between the first caller's acquire and
+        # release. Verify acquire/release events strictly alternate
+        # (acq, rel, acq, rel) — any other order means the callers'
+        # lock holds overlapped, which the lock should prevent.
+        # (The ThreadPoolExecutor may reuse a worker thread when the
+        # first task finishes fast, so we do NOT assert distinct
+        # thread identities here — that would flake.)
+        assert [e[1] for e in events] == ["acquire", "release", "acquire", "release"], (
+            f"Florence callers' lock holds overlapped: {events}"
+        )
+
+
+@pytest.mark.usefixtures("ort_session")
+class TestOrtSession:
+    CPU_EP = ["CPUExecutionProvider"]
+    CUDA_EP = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    OV_EP = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
+    CUDA_EP_OUT_OF_ORDER = ["CPUExecutionProvider", "CUDAExecutionProvider"]
+    TRT_EP = ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
+    TRT_RTX_EP = ["nv_tensorrt_rtx", "CUDAExecutionProvider", "CPUExecutionProvider"]
+    ROCM_EP = ["MIGraphXExecutionProvider", "CPUExecutionProvider"]
+    COREML_EP = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+
+    @pytest.mark.providers(CPU_EP)
+    def test_sets_cpu_provider(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == self.CPU_EP
+
+    @pytest.mark.providers(CUDA_EP)
+    def test_sets_cuda_provider_if_available(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == self.CUDA_EP
+
+    @pytest.mark.ov_device_ids(["GPU.0", "CPU"])
+    @pytest.mark.providers(OV_EP)
+    def test_sets_openvino_provider_if_available(self, providers: list[str], ov_device_ids: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == self.OV_EP
+
+    @pytest.mark.providers(CUDA_EP_OUT_OF_ORDER)
+    def test_sets_providers_in_correct_order(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == self.CUDA_EP
+
+    @pytest.mark.providers(TRT_EP)
+    def test_ignores_unsupported_providers(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == self.CUDA_EP
+
+    @pytest.mark.providers(TRT_RTX_EP)
+    def test_leaves_cuda_out_beside_tensorrt_rtx(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == ["nv_tensorrt_rtx", "CPUExecutionProvider"]
+
+    @pytest.mark.providers(ROCM_EP)
+    def test_uses_rocm(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == self.ROCM_EP
+
+    @pytest.mark.providers(COREML_EP)
+    def test_uses_coreml(self, providers: list[str]) -> None:
+        session = OrtSession("ViT-B-32__openai")
+
+        assert session.providers == self.COREML_EP
+
+    def test_sets_provider_kwarg(self) -> None:
+        providers = ["CUDAExecutionProvider"]
+        session = OrtSession("ViT-B-32__openai", providers=providers)
+
+        assert session.providers == providers
+
+    @pytest.mark.ov_device_ids(["GPU.0", "CPU"])
+    def test_sets_default_provider_options(self, ov_device_ids: list[str]) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider", "CPUExecutionProvider"])
+
+        assert session.provider_options == [
+            {
+                "device_type": "GPU.0",
+                "precision": "FP32",
+                "cache_dir": "/cache/ViT-B-32__openai/textual/openvino",
+            },
+            {"arena_extend_strategy": "kSameAsRequested"},
+        ]
+
+    @pytest.mark.ov_device_ids(["GPU", "CPU"])
+    def test_sets_provider_options_for_openvino_unindexed_gpu(
+        self, ov_device_ids: list[str], monkeypatch: MonkeyPatch
+    ) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+        monkeypatch.delenv("MACHINE_LEARNING_DEVICE_ID", raising=False)
+
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider"])
+
+        assert session.provider_options == [
+            {
+                "device_type": "GPU",
+                "precision": "FP32",
+                "cache_dir": "/cache/ViT-B-32__openai/textual/openvino",
+            }
+        ]
+
+    @pytest.mark.ov_device_ids(["GPU.0", "GPU.1", "CPU"])
+    def test_sets_provider_options_for_openvino(self, ov_device_ids: list[str]) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+        os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
+
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider"])
+
+        assert session.provider_options == [
+            {
+                "device_type": "GPU.1",
+                "precision": "FP32",
+                "cache_dir": "/cache/ViT-B-32__openai/textual/openvino",
+            }
+        ]
+
+    @pytest.mark.ov_device_ids(["GPU.0", "CPU"])
+    def test_sets_provider_options_for_openvino_auto_device(self, ov_device_ids: list[str]) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider"], device_id="AUTO")
+
+        assert session.provider_options == [
+            {
+                "device_type": "GPU.0",
+                "precision": "FP32",
+                "cache_dir": "/cache/ViT-B-32__openai/textual/openvino",
+            }
+        ]
+
+    @pytest.mark.ov_device_ids(["GPU.0", "GPU.1", "CPU"])
+    def test_sets_openvino_to_fp16_if_enabled(self, ov_device_ids: list[str], mocker: MockerFixture) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+        os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
+        mocker.patch.object(settings, "openvino_precision", ModelPrecision.FP16)
+
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider"])
+
+        assert session.provider_options == [
+            {
+                "device_type": "GPU.1",
+                "precision": "FP16",
+                "cache_dir": "/cache/ViT-B-32__openai/textual/openvino",
+            }
+        ]
+
+    @pytest.mark.ov_device_ids(["CPU"])
+    def test_sets_provider_options_for_openvino_cpu(self, ov_device_ids: list[str]) -> None:
+        model_path = "/cache/ViT-B-32__openai/model.onnx"
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider"])
+
+        assert session.provider_options == [
+            {
+                "device_type": "CPU",
+                "precision": "FP32",
+                "cache_dir": "/cache/ViT-B-32__openai/openvino",
+            }
+        ]
+
+    @pytest.mark.ov_device_ids(["GPU.0", "CPU"])
+    def test_sets_provider_options_for_openvino_missing_requested_gpu(
+        self, ov_device_ids: list[str], monkeypatch: MonkeyPatch, warning: mock.Mock
+    ) -> None:
+        model_path = "/cache/ViT-B-32__openai/model.onnx"
+        monkeypatch.setenv("MACHINE_LEARNING_DEVICE_ID", "1")
+
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider"])
+
+        assert session.provider_options == [
+            {
+                "device_type": "GPU.0",
+                "precision": "FP32",
+                "cache_dir": "/cache/ViT-B-32__openai/openvino",
+            }
+        ]
+        warning.assert_called_once()
+
+    def test_sets_provider_options_for_cuda(self) -> None:
+        os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
+
+        session = OrtSession("ViT-B-32__openai", providers=["CUDAExecutionProvider"])
+
+        assert session.provider_options == [{"arena_extend_strategy": "kSameAsRequested", "device_id": "1"}]
+
+    def test_sets_provider_options_for_tensorrt_rtx(self, mocker: MockerFixture) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+        os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
+        mkdir = mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+
+        session = OrtSession(model_path, providers=["nv_tensorrt_rtx", "CPUExecutionProvider"])
+
+        assert session.provider_options == [
+            {"device_id": "1", "nv_runtime_cache_path": "/cache/ViT-B-32__openai/textual/trt-rtx"},
+            {"arena_extend_strategy": "kSameAsRequested"},
+        ]
+        mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_serializes_tensorrt_rtx_sessions_and_runs(self, mocker: MockerFixture) -> None:
+        lock = FakeLock()
+        mocker.patch("frameleaf_ml.sessions.ort._trt_rtx_lock", lock)
+        mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+        input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
+
+        session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["nv_tensorrt_rtx"])
+        assert lock.enter.call_count == 1  # opening a session records too
+
+        session.run(None, input_feed)
+        session.run(None, input_feed)
+
+        assert lock.enter.call_count == 3
+        assert lock.exit.call_count == 3
+        session.session.run.assert_has_calls([mock.call(None, input_feed, None), mock.call(None, input_feed, None)])
+
+    def test_sets_provider_options_for_rocm(self, mocker: MockerFixture) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+        os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
+        mkdir = mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+
+        session = OrtSession(model_path, providers=["MIGraphXExecutionProvider"])
+
+        assert session.provider_options == [
+            {
+                "device_id": "1",
+                "migraphx_model_cache_dir": "/cache/ViT-B-32__openai/textual/migraphx",
+                "migraphx_fp16_enable": "0",
+            }
+        ]
+        mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_sets_rocm_to_fp16_if_enabled(self, path: mock.Mock, mocker: MockerFixture) -> None:
+        model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
+        os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
+        mocker.patch.object(settings, "rocm_precision", ModelPrecision.FP16)
+        mkdir = mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+
+        session = OrtSession(model_path, providers=["MIGraphXExecutionProvider"])
+
+        assert session.provider_options == [
+            {
+                "device_id": "1",
+                "migraphx_model_cache_dir": "/cache/ViT-B-32__openai/textual/migraphx",
+                "migraphx_fp16_enable": "1",
+            }
+        ]
+        mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_sets_provider_options_kwarg(self) -> None:
+        session = OrtSession(
+            "ViT-B-32__openai",
+            providers=["OpenVINOExecutionProvider", "CPUExecutionProvider"],
+            provider_options=[],
+        )
+
+        assert session.provider_options == []
+
+    def test_sets_default_sess_options_if_cpu(self) -> None:
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"])
+
+        assert session.sess_options.execution_mode == ort.ExecutionMode.ORT_SEQUENTIAL
+        assert session.sess_options.inter_op_num_threads == 1
+        assert session.sess_options.intra_op_num_threads == 2
+
+    def test_runs_a_model_on_the_threads_it_asks_for(self) -> None:
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"], threads=4)
+
+        assert session.sess_options.intra_op_num_threads == 4
+
+    def test_flushes_denormals_in_the_session(self) -> None:
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"])
+
+        assert session.sess_options.get_session_config_entry("session.set_denormal_as_zero") == "1"
+
+    @pytest.mark.parametrize(
+        ("machine", "providers", "disabled"),
+        [
+            ("x86_64", ["CPUExecutionProvider"], []),
+            ("aarch64", ["CPUExecutionProvider"], ["ConvAddActivationFusion"]),
+            ("x86_64", ["CUDAExecutionProvider", "CPUExecutionProvider"], ["MatMulAddFusion"]),
+            (
+                "arm64",
+                ["CoreMLExecutionProvider", "CPUExecutionProvider"],
+                ["ConvAddActivationFusion", "MatMulAddFusion"],
+            ),
+        ],
+    )
+    def test_disables_the_optimizers_that_slow_a_provider(
+        self, ort_session: mock.Mock, mocker: MockerFixture, machine: str, providers: list[str], disabled: list[str]
+    ) -> None:
+        mocker.patch("frameleaf_ml.sessions.ort.platform.machine", return_value=machine)
+
+        session = OrtSession("ViT-B-32__openai", providers=providers)
+
+        assert session.disabled_optimizers == disabled
+        assert ort_session.call_args.kwargs["disabled_optimizers"] == disabled
+
+    def test_flush_denormals_only_touches_linux_x86_64(self, mocker: MockerFixture) -> None:
+        mocker.patch("frameleaf_ml.sessions.ort.sys.platform", "darwin")
+        cdll = mocker.patch("frameleaf_ml.sessions.ort.ctypes.CDLL")
+
+        flush_denormals()
+
+        cdll.assert_not_called()
+
+    @pytest.mark.ov_device_ids(["CPU"])
+    def test_sets_default_sess_options_if_openvino_cpu(self, ov_device_ids: list[str]) -> None:
+        model_path = "/cache/ViT-B-32__openai/model.onnx"
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider"])
+
+        assert session.sess_options.execution_mode == ort.ExecutionMode.ORT_SEQUENTIAL
+        assert session.sess_options.inter_op_num_threads == 0
+        assert session.sess_options.intra_op_num_threads == 0
+
+    @pytest.mark.ov_device_ids(["GPU.0", "CPU"])
+    def test_sets_default_sess_options_if_openvino_gpu(self, ov_device_ids: list[str]) -> None:
+        model_path = "/cache/ViT-B-32__openai/model.onnx"
+        session = OrtSession(model_path, providers=["OpenVINOExecutionProvider"])
+
+        assert session.sess_options.inter_op_num_threads == 0
+        assert session.sess_options.intra_op_num_threads == 0
+
+    def test_sets_default_sess_options_does_not_set_threads_if_non_cpu_and_default_threads(self) -> None:
+        session = OrtSession("ViT-B-32__openai", providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+
+        assert session.sess_options.inter_op_num_threads == 0
+        assert session.sess_options.intra_op_num_threads == 0
+
+    def test_sets_default_sess_options_sets_threads_if_non_cpu_and_set_threads(self, mocker: MockerFixture) -> None:
+        mock_settings = mocker.patch("frameleaf_ml.sessions.ort.settings", autospec=True)
+        mock_settings.model_inter_op_threads = 2
+        mock_settings.model_intra_op_threads = 4
+
+        session = OrtSession("ViT-B-32__openai", providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+
+        assert session.sess_options.inter_op_num_threads == 2
+        assert session.sess_options.intra_op_num_threads == 4
+
+    def test_uses_arena_if_enabled(self, mocker: MockerFixture) -> None:
+        mock_settings = mocker.patch("frameleaf_ml.sessions.ort.settings", autospec=True)
+        mock_settings.model_inter_op_threads = 0
+        mock_settings.model_intra_op_threads = 0
+        mock_settings.model_arena = True
+
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"])
+
+        assert session.sess_options.enable_cpu_mem_arena
+
+    def test_does_not_use_arena_if_disabled(self, mocker: MockerFixture) -> None:
+        mock_settings = mocker.patch("frameleaf_ml.sessions.ort.settings", autospec=True)
+        mock_settings.model_inter_op_threads = 0
+        mock_settings.model_intra_op_threads = 0
+        mock_settings.model_arena = False
+
+        session = OrtSession("ViT-B-32__openai", providers=["CPUExecutionProvider"])
+
+        assert not session.sess_options.enable_cpu_mem_arena
+
+    def test_sets_sess_options_kwarg(self) -> None:
+        sess_options = ort.SessionOptions()
+        session = OrtSession(
+            "ViT-B-32__openai",
+            providers=["OpenVINOExecutionProvider", "CPUExecutionProvider"],
+            provider_options=[],
+            sess_options=sess_options,
+        )
+
+        assert sess_options is session.sess_options
+
+    def test_serializes_rocm_first_run_for_new_input_signature(self, mocker: MockerFixture) -> None:
+        lock = FakeLock()
+        get_model_lock = mocker.patch("frameleaf_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
+        mocker.patch("frameleaf_ml.sessions.ort._migraphx_compiled_inputs", set())
+        mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+        session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["MIGraphXExecutionProvider"])
+        input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
+
+        session.run(None, input_feed)
+        session.run(None, input_feed)
+
+        lock.enter.assert_called_once()
+        lock.exit.assert_called_once()
+        get_model_lock.assert_called_once()
+        session.session.run.assert_has_calls([mock.call(None, input_feed, None), mock.call(None, input_feed, None)])
+
+    def test_serializes_rocm_run_for_each_new_input_signature(self, mocker: MockerFixture) -> None:
+        lock = FakeLock()
+        mocker.patch("frameleaf_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
+        mocker.patch("frameleaf_ml.sessions.ort._migraphx_compiled_inputs", set())
+        mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
+        session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["MIGraphXExecutionProvider"])
+        input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
+        new_shape_input_feed = {"input": np.random.rand(2, 3, 224, 224).astype(np.float32)}
+
+        session.run(None, input_feed)
+        session.run(None, new_shape_input_feed)
+
+        assert lock.enter.call_count == 2
+        assert lock.exit.call_count == 2
+        session.session.run.assert_has_calls(
+            [mock.call(None, input_feed, None), mock.call(None, new_shape_input_feed, None)]
+        )
+
+    def test_does_not_serialize_non_rocm_run(self, mocker: MockerFixture) -> None:
+        lock = FakeLock()
+        get_model_lock = mocker.patch("frameleaf_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
+        session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["CPUExecutionProvider"])
+        input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
+
+        session.run(None, input_feed)
+
+        get_model_lock.assert_not_called()
+        lock.enter.assert_not_called()
+        session.session.run.assert_called_once_with(None, input_feed, None)
+
+
+class TestAnnSession:
+    def test_creates_ann_session(self, ann_session: mock.Mock, info: mock.Mock) -> None:
+        model_path = mock.MagicMock(spec=Path)
+        cache_dir = mock.MagicMock(spec=Path)
+
+        AnnSession(model_path, cache_dir)
+
+        ann_session.assert_called_once_with(tuning_level=2, tuning_file=(cache_dir / "gpu-tuning.ann").as_posix())
+        ann_session.return_value.load.assert_called_once_with(
+            model_path.as_posix(), cached_network_path=model_path.with_suffix(".anncache").as_posix(), fp16=False
+        )
+        info.assert_has_calls(
+            [
+                mock.call("Loading ANN model %s ...", model_path),
+                mock.call("Loaded ANN model with ID %d", ann_session.return_value.load.return_value),
+            ]
+        )
+
+    def test_get_inputs(self, ann_session: mock.Mock) -> None:
+        ann_session.return_value.load.return_value = 123
+        ann_session.return_value.input_shapes = {123: [(1, 3, 224, 224)]}
+        session = AnnSession(Path("ViT-B-32__openai"))
+
+        inputs = session.get_inputs()
+
+        assert len(inputs) == 1
+        assert inputs[0].name == "input.1"
+        assert inputs[0].shape == (1, 3, 224, 224)
+
+    def test_get_outputs(self, ann_session: mock.Mock) -> None:
+        ann_session.return_value.load.return_value = 123
+        ann_session.return_value.output_shapes = {123: [(1, 3, 224, 224)]}
+        session = AnnSession(Path("ViT-B-32__openai"))
+
+        outputs = session.get_outputs()
+
+        assert len(outputs) == 1
+        assert outputs[0].name == "output.1"
+        assert outputs[0].shape == (1, 3, 224, 224)
+
+    def test_run(self, ann_session: mock.Mock, mocker: MockerFixture) -> None:
+        ann_session.return_value.load.return_value = 123
+        np_spy = mocker.spy(np, "ascontiguousarray")
+        session = AnnSession(Path("ViT-B-32__openai"))
+        [input1, input2] = [np.random.rand(1, 3, 224, 224).astype(np.float32) for _ in range(2)]
+        input_feed = {"input.1": input1, "input.2": input2}
+
+        session.run(None, input_feed)
+
+        ann_session.return_value.execute.assert_called_once_with(123, [input1, input2])
+        assert np_spy.call_count == 2
+        np_spy.assert_has_calls([mock.call(input1), mock.call(input2)])
+
+
+class TestRknnSession:
+    def test_creates_rknn_session(self, rknn_session: mock.Mock, info: mock.Mock, mocker: MockerFixture) -> None:
+        model_path = mock.MagicMock(spec=Path)
+        tpe = 1
+        mocker.patch("frameleaf_ml.sessions.rknn.soc_name", "rk3566")
+        mocker.patch("frameleaf_ml.sessions.rknn.is_available", True)
+        RknnSession(model_path)
+
+        rknn_session.assert_called_once_with(model_path=model_path.as_posix(), tpes=tpe, func=run_inference)
+
+        info.assert_has_calls([mock.call(f"Loaded RKNN model from {model_path} with {tpe} threads.")])
+
+    def test_run_rknn(self, rknn_session: mock.Mock, mocker: MockerFixture) -> None:
+        rknn_session.return_value.load.return_value = 123
+        np_spy = mocker.spy(np, "ascontiguousarray")
+        mocker.patch("frameleaf_ml.sessions.rknn.soc_name", "rk3566")
+        session = RknnSession(Path("ViT-B-32__openai"))
+        [input1, input2] = [np.random.rand(1, 3, 224, 224).astype(np.float32) for _ in range(2)]
+        input_feed = {"input.1": input1, "input.2": input2}
+
+        session.run(None, input_feed)
+
+        rknn_session.return_value.run.assert_called_once_with([input1, input2])
+        assert np_spy.call_count == 2
+        np_spy.assert_has_calls([mock.call(input1), mock.call(input2)])
+
+
+class TestCLIP:
+    def test_reads_model_configs_as_utf8(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        original_open = Path.open
+
+        def locale_default_is_ascii(self: Path, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+            if "b" not in mode and kwargs.get("encoding") is None:
+                kwargs["encoding"] = "ascii"
+            return original_open(self, mode, *args, **kwargs)
+
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipVisualEncoder, "download")
+
+        textual = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=tmp_path)
+        visual = OpenClipVisualEncoder("ViT-B-32__openai", cache_dir=tmp_path)
+        paths = [
+            textual.model_cfg_path,
+            textual.tokenizer_file_path,
+            textual.tokenizer_cfg_path,
+            visual.model_cfg_path,
+            visual.preprocess_cfg_path,
+        ]
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(orjson.dumps({"eos_token": "<|café|>"}).decode(), encoding="utf-8")
+
+        mocker.patch.object(Path, "open", locale_default_is_ascii)
+
+        assert textual.model_cfg["eos_token"] == "<|café|>"
+        assert textual.tokenizer_file["eos_token"] == "<|café|>"
+        assert textual.tokenizer_cfg["eos_token"] == "<|café|>"
+        assert visual.model_cfg["eos_token"] == "<|café|>"
+        assert visual.preprocess_cfg["eos_token"] == "<|café|>"
+
+    embedding = np.random.rand(512).astype(np.float32)
+    cache_dir = Path("test_cache")
+
+    def test_basic_image(
+        self,
+        pil_image: Image.Image,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_preprocess_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        mocker.patch.object(OpenClipVisualEncoder, "download")
+        mocker.patch.object(OpenClipVisualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipVisualEncoder, "preprocess_cfg", clip_preprocess_cfg)
+
+        mocked = mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mocked.run.return_value = [[self.embedding]]
+
+        clip_encoder = OpenClipVisualEncoder("ViT-B-32__openai", cache_dir="test_cache")
+        embedding_str = clip_encoder.predict(pil_image)
+        assert isinstance(embedding_str, str)
+        embedding = orjson.loads(embedding_str)
+        assert isinstance(embedding, list)
+        assert len(embedding) == clip_model_cfg["embed_dim"]
+        mocked.run.assert_called_once()
+
+    def test_basic_text(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+
+        mocked = mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mocked.run.return_value = [[self.embedding]]
+        mocker.patch("frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True)
+
+        clip_encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="test_cache")
+        embedding_str = clip_encoder.predict("test search query")
+        assert isinstance(embedding_str, str)
+        embedding = orjson.loads(embedding_str)
+        assert isinstance(embedding, list)
+        assert len(embedding) == clip_model_cfg["embed_dim"]
+        mocked.run.assert_called_once()
+
+    def test_predict_passes_language_through_to_tokenizer_for_nllb(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        # Regression: a `language` option must survive the full predict() path
+        # (predict -> _predict -> tokenize), not just a direct tokenize() call.
+        # base.predict() calls _predict(*inputs) WITHOUT forwarding kwargs, so
+        # the CLIP encoder threads `language` through itself. Otherwise
+        # multilingual (NLLB) search silently drops the query language.
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+        mocked = mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mocked.run.return_value = [[self.embedding]]
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
+        mock_tokenizer.encode.return_value = SimpleNamespace(ids=[randint(0, 50000) for _ in range(77)])
+
+        clip_encoder = OpenClipTextualEncoder("nllb-clip-base-siglip__mrl", cache_dir="test_cache")
+        clip_encoder.predict("test search query", language="de")
+
+        mock_tokenizer.encode.assert_called_once_with("deu_Latntest search query")
+
+        # `language` must be per-call, not persisted on the shared cached
+        # instance: a later request without a language must not inherit "de".
+        # This guards against the race-prone instance-state approach.
+        mock_tokenizer.encode.reset_mock()
+        clip_encoder.predict("another query")
+        mock_tokenizer.encode.assert_called_once_with("another query")
+
+    def test_openclip_tokenizer(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+        mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
+        mock_ids = [randint(0, 50000) for _ in range(77)]
+        mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
+
+        clip_encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="test_cache")
+        clip_encoder._load()
+        tokens = clip_encoder.tokenize("test   search query")
+
+        assert "text" in tokens
+        assert isinstance(tokens["text"], np.ndarray)
+        assert tokens["text"].shape == (1, 77)
+        assert tokens["text"].dtype == np.int32
+        assert np.allclose(tokens["text"], np.array([mock_ids], dtype=np.int32), atol=0)
+        mock_tokenizer.encode.assert_called_once_with("test search query")
+
+    def test_openclip_tokenizer_canonicalizes_text(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        clip_model_cfg["text_cfg"]["tokenizer_kwargs"] = {"clean": "canonicalize"}
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+        mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
+        mock_ids = [randint(0, 50000) for _ in range(77)]
+        mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
+
+        clip_encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="test_cache")
+        clip_encoder._load()
+        tokens = clip_encoder.tokenize("Test   Search Query!")
+
+        assert "text" in tokens
+        assert isinstance(tokens["text"], np.ndarray)
+        assert tokens["text"].shape == (1, 77)
+        assert tokens["text"].dtype == np.int32
+        assert np.allclose(tokens["text"], np.array([mock_ids], dtype=np.int32), atol=0)
+        mock_tokenizer.encode.assert_called_once_with("test search query")
+
+    def test_openclip_tokenizer_adds_flores_token_for_nllb(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+        mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
+        mock_ids = [randint(0, 50000) for _ in range(77)]
+        mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
+
+        clip_encoder = OpenClipTextualEncoder("nllb-clip-base-siglip__mrl", cache_dir="test_cache")
+        clip_encoder._load()
+        clip_encoder.tokenize("test search query", language="de")
+
+        mock_tokenizer.encode.assert_called_once_with("deu_Latntest search query")
+
+    def test_openclip_tokenizer_removes_country_code_from_language_for_nllb_if_not_found(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+        mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
+        mock_ids = [randint(0, 50000) for _ in range(77)]
+        mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
+
+        clip_encoder = OpenClipTextualEncoder("nllb-clip-base-siglip__mrl", cache_dir="test_cache")
+        clip_encoder._load()
+        clip_encoder.tokenize("test search query", language="de-CH")
+
+        mock_tokenizer.encode.assert_called_once_with("deu_Latntest search query")
+
+    def test_openclip_tokenizer_falls_back_to_english_for_nllb_if_language_code_not_found(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+        warning: mock.Mock,
+    ) -> None:
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+        mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
+        mock_ids = [randint(0, 50000) for _ in range(77)]
+        mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
+
+        clip_encoder = OpenClipTextualEncoder("nllb-clip-base-siglip__mrl", cache_dir="test_cache")
+        clip_encoder._load()
+        clip_encoder.tokenize("test search query", language="unknown")
+
+        mock_tokenizer.encode.assert_called_once_with("eng_Latntest search query")
+        warning.assert_called_once_with("Language 'unknown' not found, defaulting to 'en'")
+
+    def test_openclip_tokenizer_does_not_add_flores_token_for_non_nllb_model(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+        mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
+        mock_ids = [randint(0, 50000) for _ in range(77)]
+        mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
+
+        clip_encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="test_cache")
+        clip_encoder._load()
+        clip_encoder.tokenize("test search query", language="de")
+
+        mock_tokenizer.encode.assert_called_once_with("test search query")
+
+    def test_mclip_tokenizer(
+        self,
+        mocker: MockerFixture,
+        clip_model_cfg: dict[str, Any],
+        clip_tokenizer_cfg: Callable[[Path], dict[str, Any]],
+    ) -> None:
+        mocker.patch.object(MClipTextualEncoder, "download")
+        mocker.patch.object(MClipTextualEncoder, "model_cfg", clip_model_cfg)
+        mocker.patch.object(MClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
+        mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
+        mock_ids = [randint(0, 50000) for _ in range(77)]
+        mock_attention_mask = [randint(0, 1) for _ in range(77)]
+        mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids, attention_mask=mock_attention_mask)
+
+        clip_encoder = MClipTextualEncoder("ViT-B-32__openai", cache_dir="test_cache")
+        clip_encoder._load()
+        tokens = clip_encoder.tokenize("test search query")
+
+        assert "input_ids" in tokens
+        assert "attention_mask" in tokens
+        assert isinstance(tokens["input_ids"], np.ndarray)
+        assert isinstance(tokens["attention_mask"], np.ndarray)
+        assert tokens["input_ids"].shape == (1, 77)
+        assert tokens["attention_mask"].shape == (1, 77)
+        assert np.allclose(tokens["input_ids"], np.array([mock_ids], dtype=np.int32), atol=0)
+        assert np.allclose(tokens["attention_mask"], np.array([mock_attention_mask], dtype=np.int32), atol=0)
+
+
+def make_scrfd_heads(detections: list[tuple[int, int, float]]) -> list[np.ndarray]:
+    """Build the 9 head tensors a SCRFD keypoint model emits at 640x640.
+
+    `detections` is a list of (cell_x, cell_y, score) placed on the stride-8 level.
+    Distances and keypoint offsets are fixed so the decoded geometry is known by
+    hand rather than derived from the code under test:
+        box  = [cx - 1*8, cy - 2*8, cx + 3*8, cy + 4*8]
+        kps  = [cx, cy] + [0, 1, 2, ... 9] * 8, reshaped to 5 points
+    """
+    heads: list[np.ndarray] = []
+    counts = [(640 // stride) ** 2 * 2 for stride in (8, 16, 32)]
+    for channels in (1, 4, 10):
+        for n in counts:
+            heads.append(np.zeros((n, channels), dtype=np.float32))
+    for cell_x, cell_y, score in detections:
+        i = 2 * (cell_y * 80 + cell_x)  # anchor-major, 2 anchors per cell
+        heads[0][i] = score
+        heads[3][i] = [1, 2, 3, 4]
+        heads[6][i] = np.arange(10)
+    return heads
+
+
+def expected_box(cell_x: int, cell_y: int) -> list[float]:
+    cx, cy = cell_x * 8, cell_y * 8
+    return [cx - 8, cy - 16, cx + 24, cy + 32]
+
+
+def expected_landmarks(cell_x: int, cell_y: int) -> np.ndarray:
+    cx, cy = cell_x * 8, cell_y * 8
+    return (np.tile([cx, cy], 5) + np.arange(10) * 8).reshape(5, 2).astype(np.float32)
+
+
+@pytest.fixture
+def batch_axis(mocker: MockerFixture) -> SimpleNamespace:
+    """Patches for the `_add_batch_axis` path: the onnx module it rewrites the model
+    through, and the download it would otherwise trigger on load."""
+    mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
+    return SimpleNamespace(
+        onnx=mocker.patch("frameleaf_ml.models.facial_recognition.recognition.onnx", autospec=True),
+        update_dims=mocker.patch(
+            "frameleaf_ml.models.facial_recognition.recognition.update_inputs_outputs_dims", autospec=True
+        ),
+    )
+
+
+class TestFaceRecognition:
+    def test_detection(self, stub_session: Callable[..., mock.Mock], mocker: MockerFixture) -> None:
+        mocker.patch.object(FaceDetector, "load")
+        face_detector = FaceDetector("buffalo_s", cache_dir="test_cache")
+
+        session = stub_session((1, 3, 640, 640), outputs=make_scrfd_heads([(10, 10, 0.9), (50, 50, 0.8)]))
+        face_detector.session = session
+
+        faces = face_detector.predict(Image.new("RGB", (640, 640)), minScore=0.7)
+
+        assert isinstance(faces, dict)
+        assert set(faces) == {"boxes", "scores", "landmarks"}
+        # NMS returns highest score first
+        assert faces["boxes"].tolist() == [expected_box(10, 10), expected_box(50, 50)]
+        assert np.allclose(faces["scores"], [0.9, 0.8])
+        assert faces["landmarks"].shape == (2, 5, 2)
+        assert np.allclose(faces["landmarks"][0], expected_landmarks(10, 10))
+        assert np.allclose(faces["landmarks"][1], expected_landmarks(50, 50))
+
+    def test_detection_applies_min_score_per_request(
+        self, stub_session: Callable[..., mock.Mock], mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(FaceDetector, "load")
+        face_detector = FaceDetector("buffalo_s", cache_dir="test_cache")
+
+        session = stub_session((1, 3, 640, 640), outputs=make_scrfd_heads([(10, 10, 0.9), (50, 50, 0.5)]))
+        face_detector.session = session
+
+        # the threshold is a request parameter, so the same loaded model must honour both
+        assert face_detector.predict(Image.new("RGB", (640, 640)), minScore=0.7)["boxes"].shape[0] == 1
+        assert face_detector.predict(Image.new("RGB", (640, 640)), minScore=0.4)["boxes"].shape[0] == 2
+
+    def test_detection_scales_boxes_back_to_the_original_image(
+        self, stub_session: Callable[..., mock.Mock], mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(FaceDetector, "load")
+        face_detector = FaceDetector("buffalo_s", cache_dir="test_cache")
+
+        session = stub_session((1, 3, 640, 640), outputs=make_scrfd_heads([(10, 10, 0.9)]))
+        face_detector.session = session
+
+        # a 320x320 image is letterboxed up to 640, so coordinates come back halved
+        faces = face_detector.predict(Image.new("RGB", (320, 320)), minScore=0.7)
+
+        assert faces["boxes"].tolist() == [[v / 2 for v in expected_box(10, 10)]]
+        assert np.allclose(faces["landmarks"][0], expected_landmarks(10, 10) / 2)
+
+    def test_recognition(self, stub_session: Callable[..., mock.Mock], mocker: MockerFixture) -> None:
+        mocker.patch.object(FaceRecognizer, "load")
+        mocker.patch(
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            return_value=["CPUExecutionProvider"],
+        )
+        face_recognizer = FaceRecognizer("buffalo_s", cache_dir="test_cache")
+
+        # a uniform grey image whose crops land wholly inside it, so every sampled
+        # pixel is 128 and the normalised value the session receives is exact
+        image = Image.new("RGB", (600, 800), (128, 128, 128))
+        num_faces = 2
+        arcface_dst = np.array(
+            [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]],
+            dtype=np.float32,
+        )
+        kpss = np.stack([arcface_dst * 2 + [200, 300], arcface_dst * 2 + [220, 320]]).astype(np.float32)
+        bbox = np.random.rand(num_faces, 4).astype(np.float32)
+        scores = np.array([0.67] * num_faces).astype(np.float32)
+        embeddings = np.random.rand(num_faces, 512).astype(np.float32)
+
+        session = stub_session(("batch", 3, 112, 112), outputs=[embeddings])
+        face_recognizer.session = session
+
+        faces = face_recognizer.predict(image, {"boxes": bbox, "landmarks": kpss, "scores": scores})
+
+        assert isinstance(faces, list)
+        assert len(faces) == num_faces
+        for face in faces:
+            assert set(face["boundingBox"]) == {"x1", "y1", "x2", "y2"}
+            assert all(isinstance(val, np.float32) for val in face["boundingBox"].values())
+            embedding = orjson.loads(face["embedding"])
+            assert isinstance(embedding, list)
+            assert len(embedding) == 512
+            assert isinstance(face.get("score", None), np.float32)
+
+        session.run.assert_called_once()
+        crops = session.run.call_args.args[1]["input.1"]
+        assert crops.shape == (num_faces, 3, 112, 112)
+        assert crops.dtype == np.float32
+        # mean/std 127.5, not raw 0-255. atol is loose enough for the float32 cancellation
+        # in normalize's scale-then-subtract, but still rejects a wrong mean or std
+        assert np.allclose(crops, (128 - 127.5) / 127.5, atol=1e-6)
+
+    def test_recognition_returns_early_without_faces(self, pil_image: Image.Image, mocker: MockerFixture) -> None:
+        mocker.patch.object(FaceRecognizer, "load")
+        mocker.patch(
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            return_value=["CPUExecutionProvider"],
+        )
+        face_recognizer = FaceRecognizer("buffalo_s", cache_dir="test_cache")
+        session = mock.Mock()
+        face_recognizer.session = session
+
+        empty = {
+            "boxes": np.empty((0, 4), dtype=np.float32),
+            "landmarks": np.empty((0, 5, 2), dtype=np.float32),
+            "scores": np.empty(0, dtype=np.float32),
+        }
+
+        assert face_recognizer.predict(pil_image, empty) == []
+        session.run.assert_not_called()
+
+    def test_recognition_batches_when_batch_size_is_set(
+        self, pil_image: Image.Image, stub_session: Callable[..., mock.Mock], mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(FaceRecognizer, "load")
+        mocker.patch(
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            return_value=["CPUExecutionProvider"],
+        )
+        face_recognizer = FaceRecognizer("buffalo_s", cache_dir="test_cache")
+        face_recognizer.batch_size = 2
+
+        num_faces = 5
+        session = stub_session((1, 3, 112, 112))
+        session.run.side_effect = lambda _, feed: [np.zeros((feed["input.1"].shape[0], 512), dtype=np.float32)]
+        face_recognizer.session = session
+
+        faces = {
+            "boxes": np.random.rand(num_faces, 4).astype(np.float32),
+            "landmarks": (np.random.rand(num_faces, 5, 2) * 100).astype(np.float32),
+            "scores": np.array([0.67] * num_faces, dtype=np.float32),
+        }
+        assert len(face_recognizer.predict(pil_image, faces)) == num_faces
+        assert session.run.call_count == 3  # 2 + 2 + 1
+        assert [c.args[1]["input.1"].shape[0] for c in session.run.call_args_list] == [2, 2, 1]
+
+    @pytest.mark.parametrize(
+        ("num_faces", "batch_size"), [(0, 2), (1, 1), (1, 4), (5, 2), (17, 4), (17, 1), (17, None)]
+    )
+    @pytest.mark.parametrize("image_type", ["array", "pil", "bytes", "grayscale"])
+    def test_recognition_prepares_only_the_current_batch_with_exact_input_pixels(
+        self,
+        num_faces: int,
+        batch_size: int | None,
+        image_type: str,
+        stub_session: Callable[..., mock.Mock],
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch.object(FaceRecognizer, "load")
+        recognizer = FaceRecognizer("buffalo_s", cache_dir="test_cache")
+        recognizer.batch_size = batch_size
+        image = np.random.default_rng(42).integers(0, 256, (240, 320, 3), dtype=np.uint8)
+        pil = Image.fromarray(image)
+        if image_type == "grayscale":
+            pil = pil.convert("L")
+            image = np.asarray(pil.convert("RGB"))
+        image_input: Any = image if image_type == "array" else pil
+        if image_type == "bytes":
+            encoded = BytesIO()
+            pil.save(encoded, format="PNG")
+            image_input = encoded.getvalue()
+        landmarks = np.stack(
+            [ARCFACE_DST * (1 + i / 20) + [i * 7 - 15, i * 5] for i in range(max(num_faces, 1))]
+        ).astype(np.float32)[:num_faces]
+        faces: FaceDetectionOutput = {
+            "boxes": np.arange(num_faces * 4, dtype=np.float32).reshape(num_faces, 4),
+            "landmarks": landmarks,
+            "scores": np.linspace(0.5, 0.9, num_faces, dtype=np.float32),
+        }
+        # Freeze the eager reference pipeline: real OpenCV alignment, float32 scale then subtract.
+        expected = np.stack([align_face(image, kps).transpose(2, 0, 1) for kps in landmarks]) if num_faces else None
+        if expected is not None:
+            expected *= 1.0 / 127.5
+            expected -= 1.0
+        prepared = 0
+        consumed = 0
+
+        def prepare(image: Any, kps: Any) -> Any:
+            nonlocal prepared
+            prepared += 1
+            return align_face(image, kps)
+
+        def infer(_: Any, feed: Any) -> Any:
+            nonlocal consumed
+            crops = feed["input.1"]
+            count = crops.shape[0]
+            consumed += count
+            assert prepared == consumed  # no future crops exist when this batch reaches the model
+            assert count <= (batch_size or num_faces)
+            assert expected is not None
+            assert crops.shape[1:] == (3, 112, 112)
+            assert crops.dtype == np.float32
+            assert crops.tobytes() == expected[consumed - count : consumed].tobytes()
+            return [crops.reshape(count, -1)[:, :512].copy()]
+
+        mocker.patch("frameleaf_ml.models.facial_recognition.recognition.align_face", side_effect=prepare)
+        session = stub_session(("batch", 3, 112, 112))
+        session.run.side_effect = infer
+        recognizer.session = session
+        # Empty detections must bypass even image decoding.
+        result = recognizer.predict(image_input if num_faces else b"not an image", faces)
+
+        assert prepared == consumed == num_faces
+        assert len(result) == num_faces
+        for i, face in enumerate(result):
+            assert expected is not None
+            assert (
+                face["embedding"]
+                == orjson.dumps(expected[i].reshape(-1)[:512], option=orjson.OPT_SERIALIZE_NUMPY).decode()
+            )
+            assert list(face["boundingBox"].values()) == faces["boxes"][i].tolist()
+            assert face["score"] == faces["scores"][i]
+
+    def test_recognition_adds_batch_axis_for_ort(
+        self, batch_axis: SimpleNamespace, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
+    ) -> None:
+        mocker.patch(
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            return_value=["CPUExecutionProvider"],
+        )
+        ort_session.return_value.get_inputs.return_value = [SimpleNamespace(name="input.1", shape=(1, 3, 224, 224))]
+        ort_session.return_value.get_outputs.return_value = [SimpleNamespace(name="output.1", shape=(1, 800))]
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+
+        proto = mock.Mock()
+
+        input_dims = mock.Mock()
+        input_dims.name = "input.1"
+        input_dims.type.tensor_type.shape.dim = [SimpleNamespace(dim_value=size) for size in [1, 3, 224, 224]]
+        proto.graph.input = [input_dims]
+
+        output_dims = mock.Mock()
+        output_dims.name = "output.1"
+        output_dims.type.tensor_type.shape.dim = [SimpleNamespace(dim_value=size) for size in [1, 800]]
+        proto.graph.output = [output_dims]
+
+        batch_axis.onnx.load.return_value = proto
+
+        face_recognizer = FaceRecognizer("buffalo_s", cache_dir=path)
+        face_recognizer.load()
+
+        assert face_recognizer.batch_size is None
+        batch_axis.update_dims.assert_called_once_with(
+            proto, {"input.1": ["batch", 3, 224, 224]}, {"output.1": ["batch", 800]}
+        )
+        batch_axis.onnx.save.assert_called_once_with(batch_axis.update_dims.return_value, face_recognizer.model_path)
+
+    def test_recognition_does_not_add_batch_axis_if_exists(
+        self, batch_axis: SimpleNamespace, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
+    ) -> None:
+        mocker.patch(
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            return_value=["CPUExecutionProvider"],
+        )
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+
+        inputs = [SimpleNamespace(name="input.1", shape=("batch", 3, 224, 224))]
+        outputs = [SimpleNamespace(name="output.1", shape=("batch", 800))]
+        ort_session.return_value.get_inputs.return_value = inputs
+        ort_session.return_value.get_outputs.return_value = outputs
+
+        face_recognizer = FaceRecognizer("buffalo_s", cache_dir=path)
+        face_recognizer.load()
+
+        # batching is available here, so the axis is only skipped because it already exists
+        assert face_recognizer.batch_size is None
+        batch_axis.update_dims.assert_not_called()
+        batch_axis.onnx.load.assert_not_called()
+        batch_axis.onnx.save.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("session_fixture", "suffix", "model_kwargs", "available_providers"),
+        [
+            pytest.param("ann_session", ".armnn", {"model_format": ModelFormat.ARMNN}, None, id="armnn"),
+            pytest.param(
+                "ort_session", ".onnx", {}, ["OpenVINOExecutionProvider", "CPUExecutionProvider"], id="openvino"
+            ),
+            pytest.param(
+                "ort_session", ".onnx", {}, ["MIGraphXExecutionProvider", "CPUExecutionProvider"], id="migraphx"
+            ),
+        ],
+    )
+    def test_recognition_does_not_add_batch_axis_when_batching_is_unsupported(
+        self,
+        request: pytest.FixtureRequest,
+        batch_axis: SimpleNamespace,
+        path: mock.Mock,
+        ort_pybind: mock.Mock,
+        mocker: MockerFixture,
+        session_fixture: str,
+        suffix: str,
+        model_kwargs: dict[str, Any],
+        available_providers: list[str] | None,
+    ) -> None:
+        session = request.getfixturevalue(session_fixture)
+        ort_pybind.get_available_openvino_device_ids.return_value = ["CPU"]
+        mocker.patch(
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            return_value=available_providers,
+        )
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = suffix
+        session.return_value.get_inputs.return_value = [SimpleNamespace(name="input.1", shape=(1, 3, 224, 224))]
+        session.return_value.get_outputs.return_value = [SimpleNamespace(name="output.1", shape=(1, 800))]
+
+        face_recognizer = FaceRecognizer("buffalo_s", cache_dir=path, **model_kwargs)
+        face_recognizer.load()
+
+        assert face_recognizer.batch_size == 1
+        batch_axis.update_dims.assert_not_called()
+        batch_axis.onnx.load.assert_not_called()
+        batch_axis.onnx.save.assert_not_called()
+
+    def test_set_custom_max_batch_size(self, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "max_batch_size", MaxBatchSize(facial_recognition=2))
+
+        recognizer = FaceRecognizer("buffalo_l", cache_dir="test_cache")
+
+        assert recognizer.batch_size == 2
+
+    def test_ignore_other_custom_max_batch_size(self, mocker: MockerFixture) -> None:
+        mocker.patch.object(settings, "max_batch_size", MaxBatchSize(ocr=2))
+        mocker.patch(
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            return_value=["CPUExecutionProvider"],
+        )
+
+        recognizer = FaceRecognizer("buffalo_l", cache_dir="test_cache")
+
+        assert recognizer.batch_size is None
+
+
+class TestOcr:
+    @staticmethod
+    def _serve(snapshot_download: mock.Mock, content: bytes) -> None:
+        """Make the mocked model source 'serve' `content` for whichever file was requested."""
+
+        def fake(repo_id: str, *, local_dir: Path, allow_patterns: list[str], **kwargs: Any) -> str:
+            target = Path(local_dir) / allow_patterns[0].removesuffix("/*") / "model.onnx"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            return str(local_dir)
+
+        snapshot_download.side_effect = fake
+
+    @pytest.mark.parametrize(
+        ("model_class", "model_name", "repo"),
+        [
+            (TextDetector, "PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextRecognizer, "PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextDetector, "PP-OCRv5_server", "frameleaf/PP-OCRv5_server"),
+            (TextRecognizer, "CH__PP-OCRv5_server", "frameleaf/PP-OCRv5_server"),
+            (TextDetector, "LATIN__PP-OCRv5_mobile", "frameleaf/PP-OCRv5_mobile"),
+            (TextRecognizer, "LATIN__PP-OCRv5_mobile", "frameleaf/LATIN__PP-OCRv5_mobile"),
+            (TextRecognizer, "KOREAN__PP-OCRv5_mobile", "frameleaf/KOREAN__PP-OCRv5_mobile"),
+            (TextDetector, "PP-OCRv6_tiny", "frameleaf/PP-OCRv6_tiny"),
+            (TextRecognizer, "PP-OCRv6_medium", "frameleaf/PP-OCRv6_medium"),
+        ],
+    )
+    def test_download_goes_to_model_source(
+        self,
+        snapshot_download: mock.Mock,
+        mocker: MockerFixture,
+        tmp_path: Path,
+        model_class: type[InferenceModel],
+        model_name: str,
+        repo: str,
+    ) -> None:
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com/")
+        rapidocr_download = mocker.patch("rapidocr.utils.download_file.DownloadFile.run")
+        content = b"onnx bytes"
+        source = get_ocr_model_file(model_name, model_class.identity[0])
+        mocker.patch(
+            "frameleaf_ml.models.ocr.source.get_ocr_model_file",
+            return_value=source._replace(sha256=hashlib.sha256(content).hexdigest()),
+        )
+        self._serve(snapshot_download, content)
+        model = model_class(model_name, cache_dir=tmp_path)
+
+        model.download()
+
+        snapshot_download.assert_called_once_with(
+            repo,
+            cache_dir=tmp_path,
+            local_dir=tmp_path,
+            allow_patterns=[f"{model.model_type.value}/*"],
+            endpoint="https://models.example.com",
+            token=False,
+        )
+        assert model.model_path == tmp_path / model.model_type.value / "model.onnx"
+        assert model.model_path.read_bytes() == content
+        rapidocr_download.assert_not_called()
+
+    @pytest.mark.parametrize("model_class", [TextDetector, TextRecognizer])
+    def test_download_rejects_checksum_mismatch(
+        self, snapshot_download: mock.Mock, tmp_path: Path, model_class: type[InferenceModel]
+    ) -> None:
+        self._serve(snapshot_download, b"not the pinned export")
+        model = model_class("PP-OCRv5_mobile", cache_dir=tmp_path)
+
+        with pytest.raises(ModelUnavailableError, match="checksum") as raised:
+            model.download()
+
+        assert "frameleaf/PP-OCRv5_mobile" in str(raised.value)
+        assert not model.model_path.exists()
+
+    def test_download_names_missing_file(self, snapshot_download: mock.Mock, tmp_path: Path) -> None:
+        model = TextRecognizer("EN__PP-OCRv5_mobile", cache_dir=tmp_path)
+
+        with pytest.raises(ModelUnavailableError, match="recognition/model.onnx") as raised:
+            model.download()
+
+        assert "frameleaf/EN__PP-OCRv5_mobile" in str(raised.value)
+        assert "https://models.frameleaf.cloud" in str(raised.value)
+
+    def test_every_ocr_model_has_pinned_files(self) -> None:
+        for model_name in _PADDLE_MODELS:
+            assert get_model_source(model_name) == ModelSource.PADDLE
+            for model_type in (ModelType.DETECTION, ModelType.RECOGNITION):
+                source = get_ocr_model_file(model_name, model_type)
+                assert re.fullmatch(r"([A-Z]+__)?PP-OCRv5_(mobile|server)|PP-OCRv6_(tiny|small|medium)", source.repo)
+                assert len(source.sha256) == 64
+                int(source.sha256, 16)
+
+    def test_ppocr_v6_pins_a_detector_and_recognizer_per_size(self) -> None:
+        for size in ("tiny", "small", "medium"):
+            detection = get_ocr_model_file(f"PP-OCRv6_{size}", ModelType.DETECTION)
+            recognition = get_ocr_model_file(f"PP-OCRv6_{size}", ModelType.RECOGNITION)
+            assert detection.repo == recognition.repo == f"PP-OCRv6_{size}"
+            assert detection.sha256 != recognition.sha256
+
+    def test_det_min_score_is_per_request(self, path: mock.Mock) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        text_detector = TextDetector("PP-OCRv5_mobile", cache_dir="test_cache")
+        probs = np.zeros((1, 1, 64, 64), dtype=np.float32)
+        probs[..., 16:32, 8:56] = 0.6
+        text_detector.session = mock.Mock()
+        text_detector.session.get_inputs.return_value = [SimpleNamespace(name="input.1", shape=(1, 3, 64, 64))]
+        text_detector.session.run.return_value = [probs]
+        image = Image.new("RGB", (64, 64))
+
+        assert len(text_detector._predict(image, minScore=0.5)["boxes"]) == 1
+        assert len(text_detector._predict(image, minScore=0.9)["boxes"]) == 0
+        # the default must be unaffected by the request that just ran
+        assert len(text_detector._predict(image)["boxes"]) == 1
+
+    @pytest.mark.parametrize(("max_resolution", "short_side"), [(736, 736), (1000, 1024), (1080, 1088), (1088, 1088)])
+    def test_det_rounds_the_resolution_up_to_a_multiple_of_32(
+        self, path: mock.Mock, max_resolution: int, short_side: int
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        text_detector = TextDetector("PP-OCRv5_mobile", cache_dir="test_cache")
+        text_detector.session = mock.Mock()
+        text_detector.session.get_inputs.return_value = [SimpleNamespace(name="input.1", shape=(1, 3, -1, -1))]
+        text_detector.session.run.return_value = [np.zeros((1, 1, short_side, 2 * short_side), dtype=np.float32)]
+        image = Image.new("RGB", (4000, 2000))
+
+        text_detector._predict(image, maxResolution=max_resolution)
+
+        fed = text_detector.session.run.call_args.args[1]["input.1"]
+        assert fed.shape == (1, 3, short_side, 2 * short_side)  # the short side is never below what was asked
+
+    def test_rec_min_score_is_per_request(self, path: mock.Mock, mocker: MockerFixture) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        text_recognizer = TextRecognizer("PP-OCRv5_mobile", cache_dir="test_cache")
+        text_recognizer.session = mock.Mock()
+        text_recognizer.session.get_inputs.return_value = [SimpleNamespace(name="input.1", shape=(1, 3, 48, 96))]
+        text_recognizer.session.run.return_value = [np.zeros((1, 4, 8), dtype=np.float32)]
+        text_recognizer.decoder = mock.Mock()
+        text_recognizer.decoder.decode.return_value = (["hello"], np.array([0.8], dtype=np.float32))
+        mocker.patch.object(text_recognizer, "_crop", return_value=np.zeros((48, 96, 3), dtype=np.uint8))
+        image = Image.new("RGB", (100, 50))
+        box = np.array([[[0, 0], [96, 0], [96, 48], [0, 48]]], dtype=np.float32)
+
+        texts = {"boxes": box, "scores": np.array([0.9], dtype=np.float32)}
+
+        assert text_recognizer._predict(image, texts, minScore=0.7)["text"] == ["hello"]
+        # the default (0.9) rejects a 0.8 score, and must be unaffected by the 0.7 request
+        assert text_recognizer._predict(image, texts)["text"] == []
+
+    def test_set_rec_set_default_max_batch_size(
+        self, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
+
+        text_recognizer = TextRecognizer("PP-OCRv5_mobile", cache_dir="test_cache")
+
+        assert text_recognizer.batch_size == 6
+
+    def test_set_custom_max_batch_size(self, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
+        mocker.patch.object(settings, "max_batch_size", MaxBatchSize(ocr=4))
+
+        text_recognizer = TextRecognizer("PP-OCRv5_mobile", cache_dir="test_cache")
+
+        assert text_recognizer.batch_size == 4
+
+    def test_ignore_other_custom_max_batch_size(
+        self, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
+    ) -> None:
+        path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
+        mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
+        mocker.patch.object(settings, "max_batch_size", MaxBatchSize(facial_recognition=3))
+
+        text_recognizer = TextRecognizer("PP-OCRv5_mobile", cache_dir="test_cache")
+
+        assert text_recognizer.batch_size == 6
+
+
+@pytest.mark.asyncio
+class TestCache:
+    async def test_caches(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION)
+        await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION)
+        assert len(model_cache.cache._cache) == 1
+        mock_get_model.assert_called_once()
+
+    async def test_kwargs_used(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        await model_cache.get(
+            "test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, cache_dir="test_cache"
+        )
+        mock_get_model.assert_called_once_with(
+            "test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, cache_dir="test_cache"
+        )
+
+    async def test_different_clip(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        await model_cache.get("test_model_name", ModelType.VISUAL, ModelTask.SEARCH)
+        await model_cache.get("test_model_name", ModelType.TEXTUAL, ModelTask.SEARCH)
+        mock_get_model.assert_has_calls(
+            [
+                mock.call("test_model_name", ModelType.VISUAL, ModelTask.SEARCH),
+                mock.call("test_model_name", ModelType.TEXTUAL, ModelTask.SEARCH),
+            ]
+        )
+        assert len(model_cache.cache._cache) == 2
+
+    async def test_different_image_description_acceleration(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        await model_cache.get(
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+            ModelType.VISUAL,
+            ModelTask.IMAGE_DESCRIPTION,
+            acceleration="openvino",
+            device="AUTO",
+        )
+        await model_cache.get(
+            "Qwen/Qwen2.5-VL-3B-Instruct",
+            ModelType.VISUAL,
+            ModelTask.IMAGE_DESCRIPTION,
+            acceleration="cuda",
+            device="AUTO",
+        )
+
+        assert len(model_cache.cache._cache) == 2
+        assert mock_get_model.call_count == 2
+
+    async def test_parallel_misses_create_one_model(self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch) -> None:
+        model_cache = ModelCache(timeout=1)
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+        original_get = model_cache.cache.get
+
+        async def yielding_get(*args: Any, **kwargs: Any) -> Any:
+            value = await original_get(*args, **kwargs)
+            await asyncio.sleep(0)
+            return value
+
+        monkeypatch.setattr(model_cache.cache, "get", yielding_get)
+
+        models = await asyncio.gather(*[model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH) for _ in range(20)])
+
+        assert mock_get_model.call_count == 1
+        assert all(model is models[0] for model in models)
+
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [
+            ({"device": "CPU", "acceleration": "cuda"}, {"device": "GPU", "acceleration": "cuda"}),
+            ({"device": "CPU", "acceleration": "cuda"}, {"device": "CPU", "acceleration": "openvino"}),
+            ({"device": "ab", "acceleration": "c"}, {"device": "a", "acceleration": "bc"}),
+        ],
+    )
+    async def test_cache_identity_fields_do_not_collide(
+        self, mock_get_model: mock.Mock, first: dict[str, str], second: dict[str, str]
+    ) -> None:
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, **first)
+        two = await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, **second)
+
+        assert one is not two
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, **first) is one
+        assert mock_get_model.call_count == 2
+
+    async def test_prediction_options_do_not_split_cache(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100, threshold=0.5)
+        two = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=200, threshold=0.8)
+        assert one is two
+        mock_get_model.assert_called_once()
+
+    async def test_model_ttl(self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch) -> None:
+        loop = asyncio.get_running_loop()
+        monkeypatch.setattr(loop, "time", lambda: 1000.0)
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100)
+        key = next(iter(model_cache.cache._cache))
+        handler = model_cache.cache._handlers[key]
+        assert handler.when() == 1100.0
+
+        # Fire the expiry callback deterministically, without waiting for wall-clock time.
+        handler._run()
+        handler.cancel()
+        assert key not in model_cache.cache._cache
+        two = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100)
+        assert two is not one
+        assert mock_get_model.call_count == 2
+
+    @pytest.mark.parametrize("revalidate", [False, True])
+    async def test_ttl_refreshes_only_when_enabled(
+        self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch, revalidate: bool
+    ) -> None:
+        loop = asyncio.get_running_loop()
+        now = 1000.0
+        monkeypatch.setattr(loop, "time", lambda: now)
+        model_cache = ModelCache(revalidate=revalidate)
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100)
+        key = next(iter(model_cache.cache._cache))
+        original = model_cache.cache._handlers[key]
+        now = 1050.0
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100) is one
+        assert model_cache.cache._handlers[key].when() == (1150.0 if revalidate else 1100.0)
+        assert original.cancelled() == revalidate
+
+    async def test_revalidation_preserves_no_expiry(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache(revalidate=True)
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=0)
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100) is one
+        assert not model_cache.cache._handlers
+
+    async def test_creation_failure_can_retry(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        model = SimpleNamespace()
+        mock_get_model.side_effect = [ValueError("construction failed"), model]
+        with pytest.raises(ValueError, match="construction failed"):
+            await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH)
+        assert not model_cache.cache._cache
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH) is model
+
+    async def test_cancelled_cache_write_can_retry(self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch) -> None:
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+        started = asyncio.Event()
+        original_set = model_cache.cache.set
+
+        async def blocked_set(*args: Any, **kwargs: Any) -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(model_cache.cache, "set", blocked_set)
+        task = asyncio.create_task(model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        monkeypatch.setattr(model_cache.cache, "set", original_set)
+        model = await asyncio.wait_for(model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH), timeout=1)
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH) is model
+
+    @mock.patch("frameleaf_ml.models.cache.SimpleMemoryCache.expire")
+    async def test_revalidate_get(self, mock_cache_expire: mock.Mock, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache(revalidate=True)
+        await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
+        await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
+        mock_cache_expire.assert_called_once_with(mock.ANY, 100)
+
+    async def test_profiling(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache(profiling=True)
+        await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
+        profiling = await model_cache.get_profiling()
+        assert isinstance(profiling, dict)
+        assert profiling == model_cache.cache.profiling
+
+    async def test_loads_mclip(self) -> None:
+        model_cache = ModelCache()
+
+        model = await model_cache.get("XLM-Roberta-Large-Vit-B-32", ModelType.TEXTUAL, ModelTask.SEARCH)
+
+        assert isinstance(model, MClipTextualEncoder)
+        assert model.model_name == "XLM-Roberta-Large-Vit-B-32"
+
+    async def test_raises_exception_if_invalid_model_type(self) -> None:
+        invalid: Any = SimpleNamespace(value="invalid")
+        model_cache = ModelCache()
+
+        with pytest.raises(ValueError):
+            await model_cache.get("XLM-Roberta-Large-Vit-B-32", ModelType.TEXTUAL, invalid)
+
+    async def test_raises_exception_if_unknown_model_name(self) -> None:
+        model_cache = ModelCache()
+
+        with pytest.raises(ValueError):
+            await model_cache.get("test_model_name", ModelType.TEXTUAL, ModelTask.SEARCH)
+
+    async def test_preloads_clip_models(self, monkeypatch: MonkeyPatch, mock_get_model: mock.Mock) -> None:
+        os.environ["MACHINE_LEARNING_PRELOAD__CLIP__TEXTUAL"] = "ViT-B-32__openai"
+        os.environ["MACHINE_LEARNING_PRELOAD__CLIP__VISUAL"] = "ViT-B-32__openai"
+
+        settings = Settings()
+        assert settings.preload is not None
+        assert settings.preload.clip.textual == "ViT-B-32__openai"
+        assert settings.preload.clip.visual == "ViT-B-32__openai"
+
+        model_cache = ModelCache()
+        monkeypatch.setattr("frameleaf_ml.main.model_cache", model_cache)
+
+        await preload_models(settings.preload)
+        mock_get_model.assert_has_calls(
+            [
+                mock.call("ViT-B-32__openai", ModelType.TEXTUAL, ModelTask.SEARCH),
+                mock.call("ViT-B-32__openai", ModelType.VISUAL, ModelTask.SEARCH),
+            ],
+            any_order=True,
+        )
+
+    async def test_preloads_facial_recognition_models(
+        self, monkeypatch: MonkeyPatch, mock_get_model: mock.Mock
+    ) -> None:
+        os.environ["MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__DETECTION"] = "buffalo_s"
+        os.environ["MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__RECOGNITION"] = "buffalo_s"
+
+        settings = Settings()
+        assert settings.preload is not None
+        assert settings.preload.facial_recognition.detection == "buffalo_s"
+        assert settings.preload.facial_recognition.recognition == "buffalo_s"
+
+        model_cache = ModelCache()
+        monkeypatch.setattr("frameleaf_ml.main.model_cache", model_cache)
+
+        await preload_models(settings.preload)
+        mock_get_model.assert_has_calls(
+            [
+                mock.call("buffalo_s", ModelType.DETECTION, ModelTask.FACIAL_RECOGNITION),
+                mock.call("buffalo_s", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION),
+            ],
+            any_order=True,
+        )
+
+    async def test_preloads_ocr_models(self, monkeypatch: MonkeyPatch, mock_get_model: mock.Mock) -> None:
+        os.environ["MACHINE_LEARNING_PRELOAD__OCR__DETECTION"] = "PP-OCRv5_mobile"
+        os.environ["MACHINE_LEARNING_PRELOAD__OCR__RECOGNITION"] = "PP-OCRv5_mobile"
+
+        settings = Settings()
+        assert settings.preload is not None
+        assert settings.preload.ocr.detection == "PP-OCRv5_mobile"
+        assert settings.preload.ocr.recognition == "PP-OCRv5_mobile"
+
+        model_cache = ModelCache()
+        monkeypatch.setattr("frameleaf_ml.main.model_cache", model_cache)
+
+        await preload_models(settings.preload)
+        mock_get_model.assert_has_calls(
+            [
+                mock.call("PP-OCRv5_mobile", ModelType.DETECTION, ModelTask.OCR),
+                mock.call("PP-OCRv5_mobile", ModelType.RECOGNITION, ModelTask.OCR),
+            ],
+            any_order=True,
+        )
+
+    async def test_preloads_all_models(self, monkeypatch: MonkeyPatch, mock_get_model: mock.Mock) -> None:
+        os.environ["MACHINE_LEARNING_PRELOAD__CLIP__TEXTUAL"] = "ViT-B-32__openai"
+        os.environ["MACHINE_LEARNING_PRELOAD__CLIP__VISUAL"] = "ViT-B-32__openai"
+        os.environ["MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__RECOGNITION"] = "buffalo_s"
+        os.environ["MACHINE_LEARNING_PRELOAD__FACIAL_RECOGNITION__DETECTION"] = "buffalo_s"
+        os.environ["MACHINE_LEARNING_PRELOAD__OCR__DETECTION"] = "PP-OCRv5_mobile"
+        os.environ["MACHINE_LEARNING_PRELOAD__OCR__RECOGNITION"] = "PP-OCRv5_mobile"
+
+        settings = Settings()
+        assert settings.preload is not None
+        assert settings.preload.clip.visual == "ViT-B-32__openai"
+        assert settings.preload.clip.textual == "ViT-B-32__openai"
+        assert settings.preload.facial_recognition.recognition == "buffalo_s"
+        assert settings.preload.facial_recognition.detection == "buffalo_s"
+        assert settings.preload.ocr.detection == "PP-OCRv5_mobile"
+        assert settings.preload.ocr.recognition == "PP-OCRv5_mobile"
+
+        model_cache = ModelCache()
+        monkeypatch.setattr("frameleaf_ml.main.model_cache", model_cache)
+
+        await preload_models(settings.preload)
+        mock_get_model.assert_has_calls(
+            [
+                mock.call("ViT-B-32__openai", ModelType.TEXTUAL, ModelTask.SEARCH),
+                mock.call("ViT-B-32__openai", ModelType.VISUAL, ModelTask.SEARCH),
+                mock.call("buffalo_s", ModelType.DETECTION, ModelTask.FACIAL_RECOGNITION),
+                mock.call("buffalo_s", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION),
+                mock.call("PP-OCRv5_mobile", ModelType.DETECTION, ModelTask.OCR),
+                mock.call("PP-OCRv5_mobile", ModelType.RECOGNITION, ModelTask.OCR),
+            ],
+            any_order=True,
+        )
+
+
+@pytest.mark.asyncio
+class TestRequestState:
+    async def test_releases_memory_shortly_after_the_last_request(self, mocker: MockerFixture) -> None:
+        from frameleaf_ml import main
+
+        release = mocker.patch("frameleaf_ml.main.allocator.release")
+        mocker.patch.object(main, "release", None)
+        mocker.patch.object(main, "active_requests", 0)
+        first, second = main.update_state(), main.update_state()
+
+        await first.__anext__()
+        await second.__anext__()
+        assert main.active_requests == 2
+        with pytest.raises(StopAsyncIteration):
+            await first.__anext__()
+        assert main.release is None  # one request is still running
+
+        with pytest.raises(StopAsyncIteration):
+            await second.__anext__()
+
+        assert main.active_requests == 0
+        timer = main.release
+        assert timer is not None
+        assert timer.when() - asyncio.get_running_loop().time() == pytest.approx(5, abs=0.5)
+        release.assert_not_called()
+
+        third = main.update_state()
+        await third.__anext__()
+        assert main.release is None  # a new request keeps the memory
+        assert timer.cancelled()
+        with pytest.raises(StopAsyncIteration):
+            await third.__anext__()
+        main.release.cancel()
+
+
+@pytest.mark.asyncio
+class TestLoad:
+    async def test_cache_recovery_keeps_the_load_lock(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
+        model = mock.Mock(spec=InferenceModel)
+        model.loaded, model.load_attempts = False, 0
+        model.model_name, model.model_type = "fixture", ModelType.VISUAL
+        model.load.side_effect = [OSError("broken cache"), None]
+        inside = False
+
+        def enter() -> None:
+            nonlocal inside
+            inside = True
+
+        def leave(*args: Any) -> None:
+            nonlocal inside
+            inside = False
+
+        def clear() -> None:
+            assert inside
+
+        model.clear_cache.side_effect = clear
+        with mock.patch("frameleaf_ml.main.lock") as load_lock:
+            load_lock.__enter__.side_effect = enter
+            load_lock.__exit__.side_effect = leave
+            assert await load(model) is model
+        assert not inside
+        assert model.load.call_count == 2
+
+    async def test_rechecks_loaded_state_after_acquiring_lock(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
+        model = mock.Mock(spec=InferenceModel)
+        model.loaded, model.load_attempts = False, 0
+
+        def complete_other_load() -> None:
+            model.loaded, model.load_attempts = True, 2
+
+        with mock.patch("frameleaf_ml.main.lock") as load_lock:
+            load_lock.__enter__.side_effect = complete_other_load
+            assert await load(model) is model
+        model.load.assert_not_called()
+        model.clear_cache.assert_not_called()
+
+    async def test_load(self) -> None:
+        mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.loaded = False
+        mock_model.load_attempts = 0
+
+        res = await load(mock_model)
+
+        assert res is mock_model
+        mock_model.load.assert_called_once()
+        mock_model.clear_cache.assert_not_called()
+
+    async def test_load_returns_model_if_loaded(self) -> None:
+        mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.loaded = True
+
+        res = await load(mock_model)
+
+        assert res is mock_model
+        mock_model.load.assert_not_called()
+
+    async def test_load_clears_cache_and_retries_if_os_error(self) -> None:
+        mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.model_name = "test_model_name"
+        mock_model.model_type = ModelType.VISUAL
+        mock_model.model_task = ModelTask.SEARCH
+        mock_model.load.side_effect = [OSError, None]
+        mock_model.loaded = False
+        mock_model.load_attempts = 0
+
+        res = await load(mock_model)
+
+        assert res is mock_model
+        mock_model.clear_cache.assert_called_once()
+        assert mock_model.load.call_count == 2
+
+    async def test_load_reports_missing_model_without_clearing_cache(self) -> None:
+        mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.model_name = "buffalo_l"
+        mock_model.model_type = ModelType.RECOGNITION
+        mock_model.model_task = ModelTask.FACIAL_RECOGNITION
+        mock_model.loaded = False
+        mock_model.load_attempts = 0
+        mock_model.load.side_effect = ModelUnavailableError("Model 'buffalo_l' isn't available")
+
+        with pytest.raises(HTTPException) as raised:
+            await load(mock_model)
+
+        assert raised.value.status_code == 503
+        assert raised.value.detail == "Model 'buffalo_l' isn't available"
+        mock_model.clear_cache.assert_not_called()
+        mock_model.load.assert_called_once()
+
+    async def test_load_raises_if_os_error_and_already_retried(self) -> None:
+        mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.model_name = "test_model_name"
+        mock_model.model_type = ModelType.VISUAL
+        mock_model.model_task = ModelTask.SEARCH
+        mock_model.loaded = False
+        mock_model.load_attempts = 2
+
+        with pytest.raises(HTTPException):
+            await load(mock_model)
+
+        mock_model.clear_cache.assert_not_called()
+        mock_model.load.assert_not_called()
+
+    async def test_falls_back_to_onnx_if_other_format_does_not_exist(self, warning: mock.Mock) -> None:
+        mock_model = mock.Mock(spec=InferenceModel)
+        mock_model.model_name = "test_model_name"
+        mock_model.model_type = ModelType.VISUAL
+        mock_model.model_task = ModelTask.SEARCH
+        mock_model.model_format = ModelFormat.ARMNN
+        mock_model.loaded = False
+        mock_model.load_attempts = 0
+        error = FileNotFoundError()
+        mock_model.load.side_effect = [error, None]
+
+        await load(mock_model)
+
+        mock_model.clear_cache.assert_not_called()
+        assert mock_model.load.call_count == 2
+        warning.assert_called_once_with(
+            "ARMNN is available, but model 'test_model_name' does not support it.", exc_info=error
+        )
+        mock_model.model_format = ModelFormat.ONNX
+
+
+@pytest.mark.parametrize("size", [(0, 100), (100, 0), (0, 0)])
+def test_predict_rejects_empty_image(size: tuple[int, int], deployed_app: TestClient) -> None:
+    with mock.patch("frameleaf_ml.main.decode_pil", return_value=Image.new("RGB", size)):
+        response = deployed_app.post(
+            "http://localhost:3003/predict",
+            data={"entries": json.dumps({"clip": {"visual": {"modelName": "ViT-B-32__openai"}}})},
+            files={"image": b"fake image bytes"},
+        )
+
+    assert response.status_code == 400
+    assert "zero" in response.json()["detail"].lower()
+
+
+def test_root_endpoint(deployed_app: TestClient) -> None:
+    response = deployed_app.get("http://localhost:3003")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body == {"message": "Frameleaf ML"}
+
+
+def test_ping_endpoint(deployed_app: TestClient) -> None:
+    response = deployed_app.get("http://localhost:3003/ping")
+
+    assert response.status_code == 200
+    assert response.text == "pong"
+
+
+def test_bearer_auth_constant_time_compare() -> None:
+    # Constant-time comparison rejects mismatched tokens uniformly. We can
+    # only verify functional correctness here; timing is structurally enforced
+    # by secrets.compare_digest.
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse as _PR
+    from starlette.routing import Route
+
+    from frameleaf_ml.main import BearerAuthMiddleware
+
+    async def home(_req: Any) -> Any:
+        return _PR("ok")
+
+    async def ping_endpoint(_req: Any) -> Any:
+        return _PR("pong")
+
+    # Register /ping at both casings so the path-normalization assertion can
+    # check that an exempt path returns 200 from the underlying handler,
+    # rather than a 401 from the middleware or a 404 from the router
+    # (the 200-or-404 disjunction masked path-normalization bugs).
+    app = Starlette(
+        routes=[
+            Route("/", home),
+            Route("/ping", ping_endpoint),
+            Route("/PING", ping_endpoint),
+            Route("/predict", home, methods=["POST"]),
+        ]
+    )
+    app.add_middleware(BearerAuthMiddleware, expected_token="my-token")
+    client = TestClient(app)
+
+    # Exempt path
+    assert client.get("/ping").status_code == 200
+    # Case + trailing slash normalization: middleware must exempt /PING/
+    # exactly the same as /ping. Tight assertion — any other status (incl.
+    # 401 from the middleware) is a regression.
+    assert client.get("/PING/").status_code == 200
+    # Missing header — non-exempt path must be 401
+    assert client.post("/predict").status_code == 401
+    # Wrong scheme — non-exempt path must be 401
+    assert client.post("/predict", headers={"Authorization": "Basic x"}).status_code == 401
+    # Wrong token — non-exempt path must be 401
+    assert client.post("/predict", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    # Correct token
+    assert client.post("/predict", headers={"Authorization": "Bearer my-token"}).status_code == 200
+
+
+def test_bearer_auth_rejects_oversized_header() -> None:
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse as _PR
+    from starlette.routing import Route
+
+    from frameleaf_ml.main import BearerAuthMiddleware
+
+    async def home(_req: Any) -> Any:
+        return _PR("ok")
+
+    app = Starlette(routes=[Route("/predict", home, methods=["POST"])])
+    app.add_middleware(BearerAuthMiddleware, expected_token="my-token")
+    client = TestClient(app)
+    huge = "Bearer " + ("x" * (16 * 1024))
+    assert client.post("/predict", headers={"Authorization": huge}).status_code == 401
+
+
+def test_bearer_auth_open_when_no_token() -> None:
+    # With no token configured the middleware is disabled and serves every
+    # request, including inference paths. This matches upstream Immich (the ML
+    # service ships without auth) and is the default for local / same-LAN
+    # deployments. A token is only expected when something sets
+    # FRAMELEAF_ML_AUTH_TOKEN, e.g. a LAN worker behind a proxy.
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse as _PR
+    from starlette.routing import Route
+
+    from frameleaf_ml.main import BearerAuthMiddleware
+
+    async def home(_req: Any) -> Any:
+        return _PR("ok")
+
+    async def ping_endpoint(_req: Any) -> Any:
+        return _PR("pong")
+
+    app = Starlette(routes=[Route("/ping", ping_endpoint), Route("/predict", home, methods=["POST"])])
+    app.add_middleware(BearerAuthMiddleware, expected_token=None)
+    client = TestClient(app)
+    # Health endpoint serves.
+    assert client.get("/ping").status_code == 200
+    # Inference path is open — no auth required, with or without a header.
+    assert client.post("/predict").status_code == 200
+    assert client.post("/predict", headers={"Authorization": "Bearer anything"}).status_code == 200
+
+
+def test_refuses_a_model_this_container_cannot_run_without_loading_it(
+    deployed_app: TestClient, monkeypatch: MonkeyPatch
+) -> None:
+    # FL-676: the CPU image has no OpenVINO GenAI. A Qwen request is refused at once with a code the
+    # server recognises (no download, no load, no traceback), and the warning is logged once.
+    monkeypatch.setattr("frameleaf_ml.models.image_description.find_spec", lambda _: None)
+    download = mock.Mock()
+    monkeypatch.setattr("frameleaf_ml.models.image_description.snapshot_download", download)
+    warning = mock.Mock()
+    monkeypatch.setattr("frameleaf_ml.main.log.warning", warning)
+    monkeypatch.setattr("frameleaf_ml.main._missing_runtime_logged", set())
+    # The runtime probe may import a native library, so it runs off the event loop.
+    to_thread = mock.AsyncMock(side_effect=asyncio.to_thread)
+    monkeypatch.setattr("frameleaf_ml.main.asyncio.to_thread", to_thread)
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8)).save(buffer, format="PNG")
+    entries = {
+        "image-description-tagging": {
+            "visual": {"modelName": "Qwen/Qwen2.5-VL-3B-Instruct", "options": {"acceleration": "openvino"}}
+        }
+    }
+
+    for _ in range(2):
+        response = deployed_app.post(
+            "http://localhost:3003/predict",
+            data={"entries": json.dumps(entries)},
+            files={"image": buffer.getvalue()},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "model_runtime_unavailable"
+
+    download.assert_not_called()
+    assert warning.call_count == 1
+    assert to_thread.await_count == 2
+    assert all(call.args[0].__name__ == "missing_runtime" for call in to_thread.await_args_list)
+
+
+def test_options_validation_rejects_unknown_keys(deployed_app: TestClient) -> None:
+    # Per-task option validation rejects unknown keys to prevent schema
+    # drift / arbitrary kwargs to model constructors.
+    response = deployed_app.post(
+        "http://localhost:3003/predict",
+        data={
+            "entries": json.dumps(
+                {
+                    "image-description-tagging": {
+                        "visual": {
+                            "modelName": "Qwen/Qwen2.5-VL-3B-Instruct",
+                            "options": {"some_unknown_key": "x"},
+                        }
+                    }
+                }
+            )
+        },
+        files={"image": b"fake"},
+    )
+    assert response.status_code == 422
+
+
+def test_options_validation_caps_external_prompt(deployed_app: TestClient) -> None:
+    from frameleaf_ml.schemas import MAX_EXTERNAL_PROMPT_LENGTH
+
+    response = deployed_app.post(
+        "http://localhost:3003/predict",
+        data={
+            "entries": json.dumps(
+                {
+                    "image-description-tagging": {
+                        "visual": {
+                            "modelName": "Qwen/Qwen2.5-VL-3B-Instruct",
+                            "options": {"external_prompt": "x" * (MAX_EXTERNAL_PROMPT_LENGTH + 1)},
+                        }
+                    }
+                }
+            )
+        },
+        files={"image": b"fake"},
+    )
+    assert response.status_code == 422
+
+
+def test_options_validation_rejects_ttl_key(deployed_app: TestClient) -> None:
+    # ml.md duplicate-kwarg latent regression — _OptionsBase used to declare
+    # ttl; main.run_inference passes ttl=settings.model_ttl alongside
+    # **entry["options"]. If a caller sent ttl in options the validation
+    # accepted it, the spread crashed with TypeError. ttl is now removed
+    # from the option schema so a request containing it returns 422
+    # (extra="forbid") rather than crashing at runtime.
+    response = deployed_app.post(
+        "http://localhost:3003/predict",
+        data={
+            "entries": json.dumps(
+                {
+                    "image-description-tagging": {
+                        "visual": {
+                            "modelName": "Qwen/Qwen2.5-VL-3B-Instruct",
+                            "options": {"ttl": 60},
+                        }
+                    }
+                }
+            )
+        },
+        files={"image": b"fake"},
+    )
+    assert response.status_code == 422
+
+
+def test_options_validation_accepts_clip_language() -> None:
+    # Regression: the server sends a `language` option for multilingual CLIP
+    # text search (TextEncodingOptions in machine-learning.repository.ts). The
+    # closed-keyspace hardening (extra="forbid") must whitelist it, otherwise
+    # every search request carrying a language code is rejected with HTTP 422
+    # ("ClipOptions language Extra inputs are not permitted").
+    from pydantic import ValidationError
+
+    from frameleaf_ml.schemas import validate_options
+
+    assert validate_options(ModelTask.SEARCH, ModelType.TEXTUAL, {"language": "en-US"}) == {"language": "en-US"}
+    # An omitted language still yields an empty option set (exclude_none=True).
+    assert validate_options(ModelTask.SEARCH, ModelType.TEXTUAL, {}) == {}
+    # Hardening intact: genuinely unknown keys are still rejected.
+    with pytest.raises(ValidationError):
+        validate_options(ModelTask.SEARCH, ModelType.TEXTUAL, {"bogus": "x"})
+
+
+def test_options_validation_accepts_ocr_max_resolution() -> None:
+    # Regression: the server sends a `maxResolution` option for OCR text
+    # detection (machine-learning.repository.ts -> DETECTION options) and the
+    # detector's configure() consumes it (models/ocr/detection.py). The
+    # closed-keyspace hardening (extra="forbid") must whitelist it, otherwise
+    # every OCR request is rejected with HTTP 422 ("OcrDetectionOptions
+    # maxResolution Extra inputs are not permitted").
+    from pydantic import ValidationError
+
+    from frameleaf_ml.schemas import validate_options
+
+    # 736 is the server default (config.ts); a larger override must also pass.
+    assert validate_options(ModelTask.OCR, ModelType.DETECTION, {"maxResolution": 736}) == {"maxResolution": 736}
+    assert validate_options(ModelTask.OCR, ModelType.DETECTION, {"minScore": 0.5, "maxResolution": 1500}) == {
+        "minScore": 0.5,
+        "maxResolution": 1500,
+    }
+    # An omitted maxResolution still yields a valid option set (exclude_none=True).
+    assert validate_options(ModelTask.OCR, ModelType.DETECTION, {}) == {}
+    # Bound mirrors the server DTO (model-config.dto.ts: z.int().min(1)).
+    with pytest.raises(ValidationError):
+        validate_options(ModelTask.OCR, ModelType.DETECTION, {"maxResolution": 0})
+    # Hardening intact: genuinely unknown keys are still rejected.
+    with pytest.raises(ValidationError):
+        validate_options(ModelTask.OCR, ModelType.DETECTION, {"bogus": "x"})
+
+
+def test_extract_signal_field_returns_bool_for_non_canonical_values() -> None:
+    from frameleaf_ml.models.image_description import ImageDescriptionModel
+
+    model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+    body = '"safety": {"is_nsfw_likely": "high", "confidence": "high"}'
+    result = model._extract_signal_field(body, "safety", "is_nsfw_likely")
+    # "high" -> True via _bool_value, not the literal string "high"
+    assert result["is_nsfw_likely"] is True
+
+
+def test_capabilities_endpoint_lists_library_workloads_and_transcription(deployed_app: TestClient) -> None:
+    response = deployed_app.get("http://localhost:3003/capabilities")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["protocol"] == "predict-v1"
+    # The predict container never claims restoration. It claims Studio AI only for Whisper speech to
+    # text (/transcribe), and only when that runtime is installed.
+    assert body["workloads"] == ["face", "clip", "ocr", "enrichment", "pet-recognition", "studio-ai"]
+    assert not {"restoration-faithful", "restoration-creative"} & set(body["workloads"])
+
+
+def test_capabilities_endpoint_requires_bearer_when_token_is_set() -> None:
+    # Capabilities describe what the worker can run and are probed with the same credentials
+    # as inference, so they are not on the unauthenticated health allow-list.
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse as _JR
+    from starlette.routing import Route
+
+    from frameleaf_ml.main import BearerAuthMiddleware
+
+    async def caps(_req: Any) -> Any:
+        return _JR({"workloads": ["face"]})
+
+    app = Starlette(routes=[Route("/capabilities", caps)])
+    app.add_middleware(BearerAuthMiddleware, expected_token="my-token")
+    client = TestClient(app)
+
+    assert client.get("/capabilities").status_code == 401
+    assert client.get("/capabilities", headers={"Authorization": "Bearer my-token"}).status_code == 200
+
+
+def test_hardware_endpoint_reports_cuda(deployed_app: TestClient, monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "frameleaf_ml.main.ort.get_available_providers",
+        lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr("frameleaf_ml.main._torch_cuda_info", lambda: (True, 1))
+    container = {"image": "cuda", "backend": "CUDA", "gpus": [], "driver": None, "nvidiaError": None, "devices": {}}
+    monkeypatch.setattr("frameleaf_ml.main.container_report", lambda _providers, _ids: container)
+
+    response = deployed_app.get("http://localhost:3003/hardware")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "container": container,
+        "providers": ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        "openvinoDeviceIds": [],
+        "torchCudaAvailable": True,
+        "cudaDeviceCount": 1,
+        "preferredAcceleration": "cuda",
+    }
+
+
+def test_hardware_endpoint_reports_openvino(deployed_app: TestClient, monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "frameleaf_ml.main.ort.get_available_providers",
+        lambda: ["OpenVINOExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr("frameleaf_ml.main._openvino_device_ids", lambda _: ["GPU.0", "CPU"])
+    monkeypatch.setattr("frameleaf_ml.main._torch_cuda_info", lambda: (False, 0))
+
+    response = deployed_app.get("http://localhost:3003/hardware")
+
+    assert response.status_code == 200
+    assert response.json()["preferredAcceleration"] == "openvino"
+    assert response.json()["openvinoDeviceIds"] == ["GPU.0", "CPU"]
+
+
+@pytest.mark.skipif(
+    not settings.test_full,
+    reason="More time-consuming since it deploys the app and loads models.",
+)
+class TestPredictionEndpoints:
+    def test_clip_image_endpoint(
+        self, pil_image: Image.Image, responses: dict[str, Any], deployed_app: TestClient
+    ) -> None:
+        byte_image = BytesIO()
+        pil_image.save(byte_image, format="jpeg")
+        expected = responses["clip"]["image"]
+
+        response = deployed_app.post(
+            "http://localhost:3003/predict",
+            data={"entries": json.dumps({"clip": {"visual": {"modelName": "ViT-B-32__openai"}}})},
+            files={"image": byte_image.getvalue()},
+        )
+
+        actual = response.json()
+        assert response.status_code == 200
+        assert isinstance(actual, dict)
+        embedding = actual.get("clip", None)
+        assert isinstance(embedding, str)
+        parsed_embedding = orjson.loads(embedding)
+        assert np.allclose(expected, parsed_embedding)
+
+    def test_clip_text_endpoint(self, responses: dict[str, Any], deployed_app: TestClient) -> None:
+        expected = responses["clip"]["text"]
+
+        response = deployed_app.post(
+            "http://localhost:3003/predict",
+            data={
+                "entries": json.dumps(
+                    {
+                        "clip": {"textual": {"modelName": "ViT-B-32__openai"}},
+                    },
+                ),
+                "text": "test search query",
+            },
+        )
+
+        actual = response.json()
+        assert response.status_code == 200
+        assert isinstance(actual, dict)
+        embedding = actual.get("clip", None)
+        assert isinstance(embedding, str)
+        parsed_embedding = orjson.loads(embedding)
+        assert np.allclose(expected, parsed_embedding)
+
+    def test_face_endpoint(self, pil_image: Image.Image, responses: dict[str, Any], deployed_app: TestClient) -> None:
+        byte_image = BytesIO()
+        pil_image.save(byte_image, format="jpeg")
+
+        response = deployed_app.post(
+            "http://localhost:3003/predict",
+            data={
+                "entries": json.dumps(
+                    {
+                        "facial-recognition": {
+                            "detection": {"modelName": "buffalo_l", "options": {"minScore": 0.034}},
+                            "recognition": {"modelName": "buffalo_l"},
+                        }
+                    }
+                )
+            },
+            files={"image": byte_image.getvalue()},
+        )
+
+        actual = response.json()
+        assert response.status_code == 200
+        assert isinstance(actual, dict)
+        assert actual.get("imageHeight", None) == responses["imageHeight"]
+        assert actual.get("imageWidth", None) == responses["imageWidth"]
+        assert "facial-recognition" in actual and isinstance(actual["facial-recognition"], list)
+        assert len(actual["facial-recognition"]) == len(responses["facial-recognition"])
+
+        for expected_face, actual_face in zip(responses["facial-recognition"], actual["facial-recognition"]):
+            assert expected_face["boundingBox"] == actual_face["boundingBox"]
+            embedding = actual_face.get("embedding", None)
+            assert isinstance(embedding, str)
+            parsed_embedding = orjson.loads(embedding)
+            assert np.allclose(expected_face["embedding"], parsed_embedding)
+            assert np.allclose(expected_face["score"], actual_face["score"])
+
+
+def test_hardware_report_names_the_gpu_torch_uses_and_the_devices_passed_in(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from frameleaf_ml import hardware_report
+
+    monkeypatch.setattr(
+        hardware_report,
+        "_torch_gpus",
+        lambda: (
+            [{"name": "NVIDIA GeForce RTX 3060", "vendor": "NVIDIA", "memoryTotalBytes": 12884901888}],
+            "CUDA 12.4",
+            "CUDA",
+        ),
+    )
+    monkeypatch.setattr(
+        hardware_report, "_nvidia_smi", lambda: {"name": "x", "memoryTotalBytes": 1, "driver": "550.107"}
+    )
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setenv("DEVICE", "cuda")
+
+    report = hardware_report.container_report(["CUDAExecutionProvider"], [])
+
+    assert report["backend"] == "CUDA"
+    assert report["image"] == "cuda"
+    assert report["gpus"][0]["name"] == "NVIDIA GeForce RTX 3060"
+    assert report["driver"] == "Driver 550.107 · CUDA 12.4"
+
+
+def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    from frameleaf_ml import hardware_report
+
+    dev = tmp_path / "dri"
+    dev.mkdir()
+    (dev / "renderD128").write_text("")
+    sys_drm = tmp_path / "drm"
+    (sys_drm / "renderD128" / "device").mkdir(parents=True)
+    (sys_drm / "renderD128" / "device" / "vendor").write_text("0x8086\n")
+
+    nodes = hardware_report._render_nodes(dev, sys_drm)
+    assert nodes == [
+        {
+            "node": "renderD128",
+            "vendor": "Intel",
+            "accessible": True,
+            "memoryTotalBytes": None,
+            "gid": (dev / "renderD128").stat().st_gid,
+            # Not a device node, so no host node can be named.
+            "hostNode": None,
+        }
+    ]
+
+    monkeypatch.setattr(hardware_report, "_torch_gpus", lambda: ([], None, None))
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: nodes)
+    report = hardware_report.container_report(["CPUExecutionProvider"], ["CPU"])
+    assert report["backend"] == "CPU"
+    assert report["gpus"] == []
+    assert report["devices"]["renderNodes"] == nodes
+    assert report["computeCapability"] is None
+    assert set(report["host"]) == {"kernel", "gpus", "dxg", "groups", "root"}
+
+
+def test_hardware_report_names_the_amd_gpus_migraphx_uses_without_torch(monkeypatch: MonkeyPatch) -> None:
+    from frameleaf_ml import hardware_report
+
+    monkeypatch.setattr(hardware_report, "_torch_gpus", lambda: ([], None, None))
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setattr(
+        hardware_report,
+        "_rocm_smi",
+        lambda: [{"name": "Navi 31 [Radeon RX 7900 XTX]", "vendor": "AMD", "memoryTotalBytes": 24 * 1024**3}],
+    )
+    monkeypatch.setenv("DEVICE", "rocm")
+
+    report = hardware_report.container_report(["MIGraphXExecutionProvider", "CPUExecutionProvider"], [])
+
+    assert report["backend"] == "ROCm"
+    assert report["gpus"] == [
+        {"name": "Navi 31 [Radeon RX 7900 XTX]", "vendor": "AMD", "memoryTotalBytes": 24 * 1024**3}
+    ]
+    assert report["rocm"] is not None
+
+
+def test_hardware_report_reads_rocm_smi_json(monkeypatch: MonkeyPatch) -> None:
+    from frameleaf_ml import hardware_report
+
+    cards = {
+        "card1": {"Card Series": "Radeon RX 6800 XT", "VRAM Total Memory (B)": "17163091968"},
+        "card0": {"Device Name": "AMD Radeon Graphics", "VRAM Total Memory (B)": "536870912"},
+        "system": {"Driver version": "6.12.12"},
+    }
+    monkeypatch.setattr(hardware_report.shutil, "which", lambda name: "/opt/rocm/bin/rocm-smi")
+    monkeypatch.setattr(
+        hardware_report.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=json.dumps(cards), stderr=""),
+    )
+
+    assert hardware_report._rocm_smi() == [
+        {"name": "AMD Radeon Graphics", "vendor": "AMD", "memoryTotalBytes": 536870912},
+        {"name": "Radeon RX 6800 XT", "vendor": "AMD", "memoryTotalBytes": 17163091968},
+    ]
+
+    monkeypatch.setattr(hardware_report.shutil, "which", lambda name: None)
+    assert hardware_report._rocm_smi() == []
+
+
+def test_hardware_report_names_amd_render_nodes_when_rocm_smi_is_missing(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    from frameleaf_ml import hardware_report
+
+    sys_drm = tmp_path / "drm"
+    (sys_drm / "renderD129" / "device").mkdir(parents=True)
+    (sys_drm / "renderD129" / "device" / "product_name").write_text("Radeon RX 7600\n")
+    (sys_drm / "renderD130" / "device").mkdir(parents=True)
+    nodes = [
+        {"node": "renderD128", "vendor": "Intel", "accessible": True, "memoryTotalBytes": None},
+        {"node": "renderD129", "vendor": "AMD", "accessible": True, "memoryTotalBytes": 8 * 1024**3},
+        {"node": "renderD130", "vendor": "AMD", "accessible": True, "memoryTotalBytes": None},
+    ]
+    monkeypatch.setattr(hardware_report, "_rocm_smi", lambda: [])
+    monkeypatch.setattr(
+        hardware_report, "rocm_facts", lambda: {"gfxTargets": ["gfx1102", "gfx1036"], "hsaOverride": None}
+    )
+
+    assert hardware_report._amd_gpus(nodes, sys_drm) == [
+        {"name": "Radeon RX 7600", "vendor": "AMD", "memoryTotalBytes": 8 * 1024**3},
+        {"name": "AMD gfx1036", "vendor": "AMD", "memoryTotalBytes": None},
+    ]
+
+
+def test_hardware_report_lists_the_host_gpus_from_the_pci_list(tmp_path: Path) -> None:
+    from frameleaf_ml import hardware_report
+
+    pci = tmp_path / "pci"
+    for address, vendor, device_class, vram, render in [
+        ("0000:00:02.0", "0x8086", "0x030000", None, "renderD128"),
+        ("0000:03:00.0", "0x1002", "0x030000", str(16 * 1024**3), "renderD129"),
+        ("0000:00:1f.3", "0x8086", "0x040300", None, None),  # audio: not a GPU
+        ("0000:05:00.0", "0x1a03", "0x030000", None, None),  # a server's BMC display: not a GPU
+    ]:
+        device = pci / address
+        device.mkdir(parents=True)
+        (device / "vendor").write_text(vendor + "\n")
+        (device / "class").write_text(device_class + "\n")
+        if vram:
+            (device / "mem_info_vram_total").write_text(vram + "\n")
+        if render:
+            (device / "drm" / render).mkdir(parents=True)
+
+    assert hardware_report._host_gpus(pci) == [
+        {
+            "pciAddress": "0000:00:02.0",
+            "vendor": "Intel",
+            "renderNode": "renderD128",
+            "integrated": True,
+            "memoryTotalBytes": None,
+        },
+        {
+            "pciAddress": "0000:03:00.0",
+            "vendor": "AMD",
+            "renderNode": "renderD129",
+            "integrated": False,
+            "memoryTotalBytes": 16 * 1024**3,
+        },
+    ]
+    assert hardware_report._host_gpus(tmp_path / "missing") is None
+
+
+def test_hardware_report_names_rocm_gfx_targets_and_the_override(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    from frameleaf_ml import hardware_report
+
+    topology = tmp_path / "nodes"
+    (topology / "0").mkdir(parents=True)
+    (topology / "0" / "properties").write_text("cpu_cores_count 16\ngfx_target_version 0\n")
+    (topology / "1").mkdir()
+    (topology / "1" / "properties").write_text("simd_count 64\ngfx_target_version 100302\n")
+    (topology / "2").mkdir()
+    (topology / "2" / "properties").write_text("gfx_target_version 90010\n")
+    monkeypatch.delenv("HSA_OVERRIDE_GFX_VERSION", raising=False)
+
+    assert hardware_report.rocm_facts(topology) == {"gfxTargets": ["gfx1032", "gfx90a"], "hsaOverride": None}
+
+    monkeypatch.setenv("HSA_OVERRIDE_GFX_VERSION", "10.3.0")
+    assert hardware_report.rocm_facts(topology)["hsaOverride"] == "10.3.0"
+
+
+def test_hardware_report_reads_the_compute_capability_for_cuda(monkeypatch: MonkeyPatch) -> None:
+    from frameleaf_ml import hardware_report
+
+    monkeypatch.setattr(
+        hardware_report,
+        "_torch_gpus",
+        lambda: ([{"name": "NVIDIA GeForce GTX 1650", "vendor": "NVIDIA", "memoryTotalBytes": 1}], "CUDA 12.4", "CUDA"),
+    )
+    monkeypatch.setattr(hardware_report, "_nvidia_smi", lambda: None)
+    monkeypatch.setattr(hardware_report, "_render_nodes", lambda: [])
+    monkeypatch.setattr(hardware_report, "_compute_capability", lambda: "7.5")
+    monkeypatch.setenv("DEVICE", "cuda")
+
+    report = hardware_report.container_report(["CUDAExecutionProvider"], [])
+
+    assert report["computeCapability"] == "7.5"
+    assert report["rocm"] is None
+
+
+def test_hardware_endpoint_needs_a_cuda_device_not_just_the_provider(
+    deployed_app: TestClient, monkeypatch: MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "frameleaf_ml.main.ort.get_available_providers",
+        lambda: ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"],
+    )
+    monkeypatch.setattr("frameleaf_ml.main._torch_cuda_info", lambda: (False, 0))
+
+    response = deployed_app.get("http://localhost:3003/hardware")
+
+    assert response.status_code == 200
+    assert response.json()["preferredAcceleration"] == "auto"
+
+
+def test_semantic_mask_requests_leave_the_device_to_the_worker_setting() -> None:
+    from frameleaf_ml.schemas import ModelTask, ModelType, validate_options
+
+    assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"target": "sky"}) == {"target": "sky"}
+    assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"device": "cuda"})["device"] == "cuda"

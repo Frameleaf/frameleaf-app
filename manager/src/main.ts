@@ -1,0 +1,506 @@
+import 'reflect-metadata';
+import {
+  Body,
+  Catch,
+  Controller,
+  Get,
+  Module,
+  Post,
+  Req,
+  Res,
+  type ArgumentsHost,
+  type ExceptionFilter,
+} from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import express, { type Request, type Response } from 'express';
+import { createReadStream, fstatSync } from 'node:fs';
+import { createNativeService } from './runtime/native-service.js';
+import { chmod, mkdir, readFile, realpath, stat, statfs } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { isIP } from 'node:net';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { z, ZodError } from 'zod';
+import { Store } from './store.js';
+import { DesktopGrants } from './desktop-grants.js';
+import { desktopApi } from './desktop-api.js';
+import { Docker, command } from './docker.js';
+import { Security } from './security.js';
+import { Backups } from './backups.js';
+import { Releases } from './releases.js';
+import { Operations, ReviewInput } from './operations.js';
+import { Refusal, publicSource, redact, secretEnvironmentValues } from './contracts.js';
+import { appdataDefaults } from './appdata.js';
+import { nativeListener } from './runtime/native-listener.js';
+import { PostgresStorage } from './postgres-storage.js';
+import { ServiceOverrides, detectAcceleration, hostInstallations, suggestedPort } from './compose.js';
+import { sharePortWithRedirect } from './http-redirect.js';
+
+const directory = process.env.MANAGER_DATA;
+const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
+let acceleration: ReturnType<typeof detectAcceleration> | undefined;
+// Docker: optional; without it Manager answers on any IP, localhost, .local or single-label address.
+const origin = process.env.MANAGER_ORIGIN || undefined;
+if (!directory || directory !== resolve(directory) || (runtime === 'native' && !origin))
+  throw new Error('MANAGER_DATA is required, and MANAGER_ORIGIN for the native runtime');
+const nativeAddress = runtime === 'native' ? nativeListener(origin!) : null;
+if (!['docker', 'native'].includes(runtime)) throw new Refusal('manager_runtime_invalid');
+const store = new Store(directory);
+if (runtime === 'docker' && store.get('native-installation')) throw new Refusal('manager_runtime_changed');
+if (runtime === 'native') {
+  const bootstrapPipe = fstatSync(0);
+  if (!bootstrapPipe.isFIFO() && !bootstrapPipe.isSocket()) throw new Refusal('native_bootstrap_unavailable');
+}
+const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (runtime === 'native' ? join(directory, 'backups') : undefined);
+if (!backupRoot || backupRoot !== resolve(backupRoot))
+  throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
+const native = runtime === 'native'
+  ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin!, join(backupRoot, 'frameleaf-database'))
+  : null;
+const docker = new Docker();
+const security = new Security(store, origin, process.env.MANAGER_FRAME_ORIGIN);
+const seed = store.get<string>('release-seed') ?? randomBytes(32).toString('hex');
+store.createOnce('release-seed', seed);
+const releases = new Releases(join(directory, 'releases'), seed);
+const backups = native?.backups ?? new Backups(join(backupRoot, 'frameleaf-database'), native?.backupPassword ?? join(directory, 'recovery-key'), native?.backupCommand ?? command);
+const unraidConfig = '/run/frameleaf-host/docker.cfg';
+async function databaseDefaults() {
+  const config = await readFile(unraidConfig, 'utf8').catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null;
+    throw new Refusal('unraid_configuration_unavailable');
+  });
+  return appdataDefaults(process.env, config);
+}
+const defaults = native ? { roots: [], platform: 'native' as const } : await databaseDefaults();
+// The Unraid template mounts the host's unraid-autostart file here; MANAGER_UNRAID_AUTOSTART only overrides the path.
+const mountedAutostart = '/run/frameleaf-host/unraid-autostart';
+const autostart = process.env.MANAGER_UNRAID_AUTOSTART || mountedAutostart;
+const autostartStat = native ? null : await stat(autostart).catch(() => null);
+// Docker creates a directory when the host file is missing; that is not Unraid's autostart list.
+if (autostartStat?.isDirectory()) console.error(`manager: ${autostart} is a directory, not Unraid's unraid-autostart file`);
+if (autostartStat?.isFile()) process.env.MANAGER_UNRAID_AUTOSTART = autostart;
+else delete process.env.MANAGER_UNRAID_AUTOSTART;
+const databaseStorage = new PostgresStorage(docker, directory, defaults.roots, defaults.platform === 'unraid');
+const operations = new Operations(
+  store,
+  docker,
+  releases,
+  backups,
+  (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean),
+  databaseStorage,
+  process.env.MANAGER_UNRAID_AUTOSTART,
+);
+const lifecycle = native ?? operations;
+const RequestKey = z.string().uuid();
+const Password = z.string().min(14).max(256);
+
+@Catch()
+class Errors implements ExceptionFilter {
+  catch(error: unknown, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse<Response>();
+    if (response.headersSent) {
+      response.destroy();
+      return;
+    }
+    const status = error instanceof Refusal ? error.status : error instanceof ZodError ? 400 : 500;
+    response.status(status).json({
+      code:
+        error instanceof Refusal
+          ? error.code
+          : error instanceof ZodError
+            ? 'invalid_request'
+            : 'manager_operation_failed',
+      ...(error instanceof Refusal && error.detail ? { detail: error.detail } : {}),
+    });
+  }
+}
+
+@Controller('manager-api')
+class Api {
+  @Get('status') status() {
+    return { claimed: security.claimed() };
+  }
+
+  @Post('claim') async claim(@Body() input: unknown, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const value = z
+      .object({ name: z.string().min(1).max(120), password: Password })
+      .strict()
+      .parse(input);
+    await security.claim(value.name, value.password, request.socket.remoteAddress);
+    const session = await security.login(value.password);
+    security.cookie(response, session.session);
+    return { csrf: session.csrf };
+  }
+  @Post('login') async login(@Body() input: unknown, @Res({ passthrough: true }) response: Response) {
+    const { password } = z
+      .object({ password: z.string().max(256) })
+      .strict()
+      .parse(input);
+    const session = await security.login(password);
+    security.cookie(response, session.session);
+    return { csrf: session.csrf };
+  }
+  @Post('logout') logout(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    security.logout(request, response);
+    return { signedOut: true };
+  }
+  @Post('administrator') async administrator(@Body() input: unknown, @Res({ passthrough: true }) response: Response) {
+    const value = z
+      .object({
+        name: z.string().trim().min(1).max(120),
+        password: z.string().max(256),
+        newPassword: Password.optional(),
+      })
+      .strict()
+      .parse(input);
+    const session = await security.updateAdministrator(value.name, value.password, value.newPassword);
+    security.cookie(response, session.session);
+    return { csrf: session.csrf };
+  }
+  @Get('dashboard') async dashboard(@Req() request: Request) {
+    const installation = operations.installation();
+    // Without an installation the switcher is optional; with one, an unreachable Docker still fails as before.
+    const inventory = await docker.inventory().catch((error) => {
+      if (installation) throw error;
+      return [];
+    });
+    const containers = installation
+      ? inventory.filter((c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id)
+      : [];
+    const host = await docker.compatibility().catch(() => null);
+    return {
+      csrf: security.session(request).csrf,
+      installation,
+      operations: operations.history(),
+      profile: store.get('profile'),
+      administrator: { name: store.get<{ name: string }>('administrator')?.name },
+      managerOrigin: security.requestOrigin(request),
+      backupRoot,
+      host: {
+        name: new URL(security.requestOrigin(request)).hostname,
+        available: !!host,
+        platform: host?.platform ?? 'Unavailable',
+        version: host?.version ?? 'Unavailable',
+        memory: host?.memory,
+        processors: host?.processors,
+        // ponytail: probed once per Manager start; a new GPU or driver shows after Manager restarts.
+        acceleration: runtime === 'docker' ? await (acceleration ??= detectAcceleration()) : 'cpu',
+      },
+      summary: installation ? await operations.librarySummary().catch(() => null) : null,
+      services: containers.map((c) => ({
+        id: c.Id,
+        service: c.Config.Labels['com.docker.compose.service'],
+        running: c.State.Running,
+        health: c.State.Health?.Status ?? 'unknown',
+      })),
+      storageRoots: (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean),
+      retainedMedia: store
+        .history()
+        .filter((o) => o.kind === 'move-library')
+        .map((o) => store.get(`retained-media:${o.id}`))
+        .filter(Boolean),
+      databaseStorage: await databaseDefaults(),
+      onboardingFinished: !!store.get('onboarding-finished'),
+      installations: hostInstallations(inventory, installation?.id, security.requestOrigin(request)),
+      suggestedPort: suggestedPort(inventory, [Number(new URL(security.requestOrigin(request)).port || 443)]),
+      appUrl: installation ? new URL(`http://${new URL(security.requestOrigin(request)).hostname}:${installation.port}`).origin : null,
+      librarySetup: installation
+        ? await operations.libraryStatus().catch(() => ({ phase: 'unavailable', canFinish: false }))
+        : null,
+    };
+  }
+  @Get('sources') async sources() {
+    const result = await operations.discover();
+    return { sources: result.sources.map(publicSource), refused: result.refused };
+  }
+  @Post('source-review') sourceReview(@Body() input: unknown) {
+    const { sourceId } = z.object({ sourceId: ReviewInput.shape.sourceId.unwrap() }).strict().parse(input);
+    return operations.sourceReview(sourceId);
+  }
+  @Post('source-settings') sourceSettings(@Body() input: unknown) {
+    const { sourceId, settings } = z
+      .object({
+        sourceId: ReviewInput.shape.sourceId.unwrap(),
+        settings: z.record(z.string(), z.unknown()).nullable().optional(),
+      })
+      .strict()
+      .parse(input);
+    return settings === undefined
+      ? operations.sourceSettings(sourceId)
+      : operations.saveSourceSettings(sourceId, settings);
+  }
+  @Get('storage') async storage() {
+    const roots = [
+      ...new Set([
+        ...(process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean),
+        ...defaults.roots,
+        backupRoot!,
+      ]),
+    ];
+    return Promise.all(
+      roots.map(async (path) => {
+        try {
+          if ((await realpath(path)) !== path) throw new Refusal('storage_path_changed');
+          const space = await statfs(path);
+          return {
+            path,
+            totalBytes: space.blocks * space.bsize,
+            availableBytes: space.bavail * space.bsize,
+            freeBytes: space.bfree * space.bsize,
+          };
+        } catch {
+          return { path, totalBytes: null, availableBytes: null, freeBytes: null };
+        }
+      }),
+    );
+  }
+  @Get('releases') available() {
+    return releases.available();
+  }
+  @Post('review') review(@Body() input: unknown) {
+    return operations.review(ReviewInput.parse(input));
+  }
+  @Post('install') install(@Body() input: unknown) {
+    const value = z.object({ reviewId: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    const { id } = operations.start(value.reviewId, value.key);
+    return { id };
+  }
+  @Post('control') control(@Body() input: unknown) {
+    const value = z
+      .object({ action: z.enum(['start', 'stop', 'restart', 'backup']), key: RequestKey })
+      .strict()
+      .parse(input);
+    return { id: operations.control(value.action, value.key).id };
+  }
+  @Get('container-settings') containerSettings() {
+    return operations.containerSettings();
+  }
+  @Post('container-settings') saveContainerSettings(@Body() input: unknown) {
+    const { services, key } = z.object({ services: ServiceOverrides, key: RequestKey }).strict().parse(input);
+    return { id: operations.reconfigure(services, key).id };
+  }
+  @Post('recover') async recover(@Body() input: unknown) {
+    const value = z.object({ id: z.string().uuid() }).strict().parse(input);
+    await operations.recover(value.id);
+    return { sourceStopped: true };
+  }
+  @Post('resume') resume(@Body() input: unknown) {
+    const { id } = z.object({ id: z.string().uuid() }).strict().parse(input);
+    return { id: operations.resume(id).id };
+  }
+  @Post('review-update') reviewUpdate(@Body() input: unknown) {
+    const { tag } = z.object({ tag: ReviewInput.shape.tag }).strict().parse(input);
+    return operations.reviewUpdate(tag);
+  }
+  @Post('update') update(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.update(id, key).id };
+  }
+  @Post('unlock-backups') async unlockBackups(@Body() input: unknown) {
+    if (store.history().some((operation) => operation.state !== 'complete')) throw new Refusal('operation_in_progress');
+    const { key } = z
+      .object({ key: z.string().max(128) })
+      .strict()
+      .parse(input);
+    await backups.unlock(key);
+    return { unlocked: true };
+  }
+  @Get('backups') async snapshots() {
+    return (await backups.list()).map(({ id, time }) => ({ id, time }));
+  }
+  @Get('backup-status') backupStatus() {
+    return backups.status();
+  }
+  @Post('backup-key') async backupKey(@Body() input: unknown, @Res() response: Response) {
+    const { password } = z
+      .object({ password: z.string().max(256) })
+      .strict()
+      .parse(input);
+    await security.confirm(password);
+    const key = await backups.recoveryKey().catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') throw new Refusal('recovery_key_unavailable');
+      throw error;
+    });
+    response.setHeader('Content-Disposition', 'attachment; filename="frameleaf-manager-recovery-key.txt"');
+    response.type('application/octet-stream').send(key);
+  }
+  @Post('review-restore') reviewRestore(@Body() input: unknown) {
+    const { snapshot, databaseRoot } = z
+      .object({ snapshot: z.string().regex(/^[a-f0-9]{64}$/), databaseRoot: ReviewInput.shape.databaseRoot })
+      .strict()
+      .parse(input);
+    return operations.reviewRestore(snapshot, databaseRoot);
+  }
+  @Post('review-move') reviewMove(@Body() input: unknown) {
+    const { root } = z
+      .object({ root: z.string().min(1).max(4096) })
+      .strict()
+      .parse(input);
+    return operations.reviewMove(root);
+  }
+  @Post('move-library') moveLibrary(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.move(id, key).id };
+  }
+  @Post('stop-move') async stopMove(@Body() input: unknown) {
+    const { id } = z.object({ id: z.string().uuid() }).strict().parse(input);
+    await operations.stopMove(id);
+    return { requested: true };
+  }
+  @Post('restore') restore(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.restore(id, key).id };
+  }
+  @Post('logs') async logs(@Body() input: unknown) {
+    const { id } = z
+      .object({ id: z.string().regex(/^[a-f0-9]{64}$/) })
+      .strict()
+      .parse(input);
+    const container = await docker.inspect(id),
+      installation = operations.installation();
+    if (!installation || container.Config.Labels?.['app.frameleaf.manager'] !== installation.id)
+      throw new Refusal('not_a_managed_container', 403);
+    // Exact values of secret-named environment variables are removed in addition to generic token and
+    // credential patterns. Other values (NODE_ENV=production, NVIDIA_DRIVER_CAPABILITIES=all) are not secrets.
+    return {
+      logs: redact(await docker.logs(id), [
+        ...secretEnvironmentValues(container.Config.Env),
+        store.get<string>('database-password') ?? '',
+      ]),
+    };
+  }
+  @Post('profile') profile(@Body() input: unknown) {
+    const profile = z
+      .object({
+        firstName: z.string().min(1).max(80),
+        lastName: z.string().max(80),
+        email: z.email(),
+        account: z.enum(['local', 'create', 'existing']),
+      })
+      .strict()
+      .parse(input);
+    store.set('profile', profile);
+    return { saved: true, accountCreated: false };
+  }
+  @Post('finish-setup') async finishSetup(@Body() input: unknown) {
+    z.object({}).strict().parse(input);
+    const setup = (await operations.libraryStatus()) as { canFinish?: boolean };
+    if (!setup?.canFinish) throw new Refusal('library_and_phone_setup_incomplete');
+    store.set('onboarding-finished', Date.now());
+    return { complete: true };
+  }
+  @Post('retry-setup') async retrySetup(@Body() input: unknown) {
+    z.object({}).strict().parse(input);
+    return operations.libraryStatus(true);
+  }
+  @Post('export') async configuration(@Body() input: unknown, @Res() response: Response) {
+    const { password } = z
+      .object({ password: z.string().max(256) })
+      .strict()
+      .parse(input);
+    await security.confirm(password); // fresh credential proof, independent of the existing browser session
+    response.setHeader('Content-Disposition', 'attachment; filename="frameleaf-manager-recovery.json"');
+    response.type('application/octet-stream').send(
+      JSON.stringify({
+        schemaVersion: 1,
+        installation: operations.installation(),
+        compose: await readFile(join(operations.directory(), 'compose.json'), 'utf8'),
+        application: store.get('application-config'),
+        recoveryKey: await backups.recoveryKey().catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return null;
+          throw error;
+        }),
+        mediaIncluded: false,
+      }),
+    );
+  }
+}
+@Module({ controllers: [Api] })
+class ManagerModule {}
+
+async function main() {
+  process.umask(0o077);
+  await mkdir(directory!, { recursive: true, mode: 0o700 });
+  const cert = join(directory!, 'tls.crt'),
+    key = join(directory!, 'tls.key');
+  if (!native) {
+    try {
+      await stat(cert);
+      await stat(key);
+    } catch {
+      const host = origin ? new URL(origin).hostname.replace(/^\[|\]$/g, '') : 'localhost';
+      if (!/^[A-Za-z0-9.:-]+$/.test(host)) throw new Error('Invalid HTTPS hostname');
+      await command('openssl', [
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:3072',
+        '-nodes',
+        '-days',
+        '365',
+        '-keyout',
+        key,
+        '-out',
+        cert,
+        '-subj',
+        `/CN=${host}`,
+        '-addext',
+        `subjectAltName=${isIP(host) ? 'IP' : 'DNS'}:${host}`,
+      ]);
+      await chmod(key, 0o600);
+    }
+  }
+  const httpsOptions = native
+    ? native.httpsOptions()
+    : { cert: await readFile(cert), key: await readFile(key) };
+  store.interrupt();
+  const app = await NestFactory.create(ManagerModule, {
+    logger: false,
+    bodyParser: false,
+    httpsOptions,
+  });
+  app.use(desktopApi(store, security, new DesktopGrants(store, security), lifecycle, native ?? undefined));
+  app.use(security.guard);
+  if (native) {
+    // Native management uses the desktop UI; Docker recovery/import routes cannot operate on native state.
+    const credentials = new Set(['/manager-api/status', '/manager-api/claim', '/manager-api/login', '/manager-api/logout', '/manager-api/administrator']);
+    app.use((request: Request, response: Response, next: express.NextFunction) => {
+      if (credentials.has(request.path)) return next();
+      response.status(409).json({ code: 'native_action_unavailable' });
+    });
+  }
+  app.use(express.json({ limit: '32kb' }));
+  app.useGlobalFilters(new Errors());
+  let ui = fileURLToPath(new URL('../ui/dist', import.meta.url));
+  if (process.env.MANAGER_UI_DIRECTORY) {
+    // The platform package supplies original UI assets through a read-only mount.
+    // Restrict the override to this one path; never expose arbitrary host/state folders.
+    if (process.env.MANAGER_UI_DIRECTORY !== '/run/frameleaf-ui' ||
+        await realpath('/run/frameleaf-ui') !== '/run/frameleaf-ui' ||
+        await realpath('/run/frameleaf-ui/index.html') !== '/run/frameleaf-ui/index.html')
+      throw new Error('Invalid mounted Manager UI directory');
+    ui = '/run/frameleaf-ui';
+    app.use(async (request: Request, response: Response, next: express.NextFunction) => {
+      if (request.path.startsWith('/manager-api/')) return next();
+      try {
+        const file = resolve(ui, '.' + decodeURIComponent(request.path === '/' ? '/index.html' : request.path));
+        if (!file.startsWith(ui + '/') || await realpath(file) !== file || !(await stat(file)).isFile())
+          return response.sendStatus(404);
+        next();
+      } catch { response.sendStatus(404); }
+    });
+  }
+  app.use(express.static(ui, { index: 'index.html', dotfiles: 'deny' }));
+  app.enableShutdownHooks();
+  if (native) await app.listen(nativeAddress!.port, nativeAddress!.host);
+  else {
+    // Docker: browsers send a typed "IP:port" as http://, so redirect it instead of an empty reply.
+    await app.init();
+    await new Promise<void>((done) => sharePortWithRedirect(app.getHttpServer()).listen(9443, '0.0.0.0', done));
+  }
+  if (native) process.stdout.write(JSON.stringify(native.ready(origin!)) + '\n');
+}
+main().catch(() => {
+  process.stderr.write('Frameleaf Manager could not start; check its mounted configuration.\n');
+  process.exitCode = 1;
+});

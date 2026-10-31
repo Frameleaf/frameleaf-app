@@ -1,0 +1,45 @@
+{
+  "description": "FL-455 golden-set inputs for the Frameleaf Cloud release parity gate. Paths are relative to the repository root. To extend the set, add a licensed test image (in this directory or an existing fixture directory) and list it here with its source.",
+  "images": [
+    {
+      "id": "avatar-emma",
+      "path": "e2e/src/fixtures/frameleaf-media/avatar-emma.png",
+      "source": "Fictional generated portrait from the reviewed Frameleaf sample test media (e2e/src/fixtures/frameleaf-media/SOURCE.md)."
+    },
+    {
+      "id": "avatar-jamie",
+      "path": "e2e/src/fixtures/frameleaf-media/avatar-jamie.png",
+      "source": "Fictional generated portrait from the reviewed Frameleaf sample test media (e2e/src/fixtures/frameleaf-media/SOURCE.md)."
+    },
+    {
+      "id": "hiking",
+      "path": "e2e/src/fixtures/frameleaf-media/hiking.png",
+      "source": "Fictional generated photo from the reviewed Frameleaf sample test media (e2e/src/fixtures/frameleaf-media/SOURCE.md)."
+    },
+    {
+      "id": "auth-cabin",
+      "path": "web/src/lib/assets/frameleaf/auth-cabin.webp",
+      "source": "Frameleaf prototype hero art, fictional generated scene (ported in FL-80)."
+    },
+    {
+      "id": "auth-summit",
+      "path": "web/src/lib/assets/frameleaf/auth-summit.webp",
+      "source": "Frameleaf prototype hero art, fictional generated scene (ported in FL-80)."
+    },
+    {
+      "id": "cityscape",
+      "path": "server/test/native/fixtures/android-ultrahdr/cityscape.jpg",
+      "source": "Android platform samples, Apache-2.0, copyright Google LLC (server/test/native/fixtures/android-ultrahdr/README.md and LICENSE). No faces."
+    },
+    {
+      "id": "develop-hdr",
+      "path": "server/test/native/fixtures/develop-hdr.jpg",
+      "source": "Synthetic export from the Frameleaf server worker (server/test/native/fixtures/README.md). No faces; extreme 32:1 aspect ratio."
+    },
+    {
+      "id": "synthetic-2x2",
+      "path": "server/test/fixtures/camera-metadata/synthetic.jpg",
+      "source": "Synthetic 2 x 2 JPEG owned by the server tests. No faces; smallest-input edge case."
+    }
+  ]
+}

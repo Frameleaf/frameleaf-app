@@ -1,0 +1,158 @@
+monorepo_root = true
+
+[monorepo]
+config_roots = [
+  "packages/plugin-core",
+  "server",
+  "packages/cli",
+  "e2e",
+  "web",
+  "docs",
+  ".github",
+  "machine-learning",
+]
+
+[tools]
+node = "22.23.4"
+pnpm = "12.11.2"
+"npm:oazapfts" = "7.5.0"
+"github:extism/cli" = "1.6.3"
+"github:webassembly/binaryen" = { version = "133", version_prefix = "version_" }
+"github:extism/js-pdk" = "v1.7.0"
+
+[tools."github:jellyfin/jellyfin-ffmpeg"]
+version = "8.1.3-1"
+
+[tools."github:jellyfin/jellyfin-ffmpeg".platforms]
+linux-x64 = { asset_pattern = "jellyfin-ffmpeg_*_portable_linux64-gpl.tar.xz" }
+linux-arm64 = { asset_pattern = "jellyfin-ffmpeg_*_portable_linuxarm64-gpl.tar.xz" }
+macos-x64 = { asset_pattern = "jellyfin-ffmpeg_*_portable_mac64-gpl.tar.xz" }
+macos-arm64 = { asset_pattern = "jellyfin-ffmpeg_*_portable_macarm64-gpl.tar.xz" }
+
+[settings]
+pin = true
+lockfile = true
+
+[tasks.plugins]
+run = [
+  "pnpm --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk --filter @frameleaf/plugin-core install --frozen-lockfile",
+  "pnpm --filter @frameleaf/sdk --filter @frameleaf/plugin-sdk --filter @frameleaf/plugin-core build",
+]
+
+[tasks.open-api-typescript]
+run = [
+  "node scripts/generate-typescript-sdk.mjs",
+  { task = "//:sdk:install" },
+  { task = "//:sdk:build" },
+  { task = "//:sdk:test" },
+]
+
+[tasks.open-api]
+run = [
+  { task = "//:plugins" },
+  { task = "//server:install" },
+  { task = "//server:build" },
+  { task = "//server:sync-open-api" },
+  { task = ":open-api-typescript" },
+]
+
+[tasks.sql]
+dir = "server"
+run = "node ./dist/bin/sync-sql.js"
+
+# TODO dev, prod, and e2e should be de-duplicated by using env but for some reason I ran into issues
+[tasks.dev]
+depends = "//:plugins"
+dir = "docker"
+interactive = true
+env = { COMPOSE_BAKE = true }
+run = "docker compose -f ./docker-compose.dev.yml up --remove-orphans"
+depends_post = "//:dev-down"
+
+[tasks.dev-update]
+run = { task = "//:dev", args = ["--build", "-V"] }
+
+[tasks.dev-scale]
+run = { task = "//:dev", args = ["--build", "-V", "--scale frameleaf-server=3"] }
+
+[tasks.dev-down]
+dir = "docker"
+run = "docker compose -f ./docker-compose.dev.yml down --remove-orphans"
+
+[tasks.prod]
+depends = "//:plugins"
+dir = "docker"
+interactive = true
+env = { COMPOSE_BAKE = true }
+run = "docker compose -f ./docker-compose.prod.yml up --build --remove-orphans"
+depends_post = "//:prod-down"
+
+[tasks.prod-scale]
+run = { task = "//:prod", args = [
+  "--build",
+  "-V",
+  "--scale frameleaf-server=3",
+  "--scale immich-microservices",
+] }
+
+[tasks.prod-down]
+dir = "docker"
+run = "docker compose -f ./docker-compose.prod.yml down --remove-orphans"
+
+[tasks.e2e]
+depends = "//:plugins"
+dir = "e2e"
+interactive = true
+env = { COMPOSE_BAKE = true }
+run = "docker compose -f ./docker-compose.yml up --remove-orphans"
+depends_post = "//:e2e-down"
+
+[tasks.e2e-dev]
+depends = "//:plugins"
+dir = "e2e"
+interactive = true
+env = { COMPOSE_BAKE = true }
+run = "docker compose -f ./docker-compose.dev.yml up --remove-orphans"
+depends_post = "//:e2e-dev-down"
+
+[tasks.e2e-update]
+run = { task = "//:e2e", args = ["--build", '-V'] }
+
+[tasks.e2e-down]
+dir = "e2e"
+run = "docker compose -f ./docker-compose.yml down --remove-orphans"
+
+[tasks.e2e-dev-down]
+dir = "e2e"
+run = "docker compose -f ./docker-compose.dev.yml down --remove-orphans"
+
+# SDK tasks
+[tasks."sdk:install"]
+dir = "packages/sdk"
+run = "pnpm --filter @frameleaf/sdk install --frozen-lockfile"
+
+[tasks."sdk:build"]
+dir = "packages/sdk"
+run = "pnpm build"
+
+[tasks."sdk:test"]
+dir = "packages/sdk"
+run = "pnpm test"
+
+# i18n tasks
+[tasks."i18n:format"]
+run = "pnpm format"
+
+[tasks."i18n:format-fix"]
+run = "pnpm format:fix"
+
+[tasks.clean]
+run = [
+  "find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +",
+  "find . -name 'dist' -type d -prune -exec rm -rf '{}' +",
+  "find . -name 'build' -type d -prune -exec rm -rf '{}' +",
+  "find . -name '.svelte-kit' -type d -prune -exec rm -rf '{}' +",
+  "find . -name 'coverage' -type d -prune -exec rm -rf '{}' +",
+  "find . -name '.pnpm-store' -type d -prune -exec rm -rf '{}' +",
+  { task = "//:*-down" },
+]
