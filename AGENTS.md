@@ -29,8 +29,8 @@
   write to upstream Immich. Its default branch is `main`.
 - **Synology product boundary:** the approved interactive prototype, native DSM
   UI, DSM integration, Synology package source, SPK builders, tests and all
-  DSM/Synology package releases belong in the **private** repository
-  `Frameleaf/frameleaf-synology`. Build and publish DSM packages only there.
+  DSM/Synology package releases belong in the separate private Synology
+  repository. Build and publish DSM packages only there.
   The original native Synology app is Frameleaf's commercial product; do not
   put its source or packages in this public repository or public CI artifacts.
   Verify the Synology repository is private before pushing or publishing.
@@ -46,8 +46,5 @@
 - Local tests, lint, typechecks, builds, and CI validation are allowed. Hosted
   checks must pass for the exact candidate before an authorized merge; source
   review, CI, deployment, and acceptance are separate claims.
-- Before changing existing functions/classes/methods, use GitNexus upstream impact
-  analysis and report HIGH/CRITICAL risk. Run `detect_changes` before committing
-  when the index is available; report missing or stale coverage honestly.
 - Assign one owner per external operation. Reconcile live PR state, exact code ancestry,
   exact-head checks, and linked issue status at shipping boundaries.
