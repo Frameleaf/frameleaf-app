@@ -1,0 +1,179 @@
+Subject: Offer a host-provided Library view in the media bin
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/media-library/components/media-library.tsx b/src/features/media-library/components/media-library.tsx
+index e4b951d..d708c51 100644
+--- a/src/features/media-library/components/media-library.tsx
++++ b/src/features/media-library/components/media-library.tsx
+@@ -38,9 +38,11 @@ import {
+   FileText,
+   ScanSearch,
+   FileJson,
++  Library,
+ } from 'lucide-react'
+ import { useTranslation } from 'react-i18next'
+ import { importSceneBrowserPanel, useSceneBrowserStore } from '../deps/scene-browser'
++import { useLibraryPanel } from '../library-panel-registry'
+ import { createLogger } from '@/shared/logging/logger'
+ 
+ const logger = createLogger('MediaLibrary')
+@@ -266,6 +268,12 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+   const sceneBrowserOpen = useSceneBrowserStore((s) => s.open)
+   const openSceneBrowser = useSceneBrowserStore((s) => s.openBrowser)
+   const closeSceneBrowser = useSceneBrowserStore((s) => s.closeBrowser)
++  // Frameleaf (FL-636): the host's whole-library view, a third choice beside Media and Scenes.
++  const libraryPanel = useLibraryPanel()
++  const [libraryViewChosen, setLibraryViewChosen] = useState(false)
++  const libraryViewOpen = !!libraryPanel && libraryViewChosen && !sceneBrowserOpen
++  const otherViewOpen = sceneBrowserOpen || libraryViewOpen
++  const LibraryPanel = libraryPanel?.Panel
+   const mediaItemSize = useMediaLibraryStore((s) => s.mediaItemSize)
+   const setMediaItemSize = useMediaLibraryStore((s) => s.setMediaItemSize)
+   const selectedMediaIds = useMediaLibraryStore((s) => s.selectedMediaIds)
+@@ -984,7 +992,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+       <div className="px-4 pt-3 pb-2 space-y-2 flex-shrink-0">
+         {/* Search + Media/Scenes toggle group */}
+         <div className="@container flex items-center gap-2">
+-          {!sceneBrowserOpen && (
++          {!otherViewOpen && (
+             <div className="relative group flex-1 min-w-0">
+               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+               <Input
+@@ -1003,7 +1011,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+               )}
+             </div>
+           )}
+-          {sceneBrowserOpen && <div className="flex-1 min-w-0" aria-hidden />}
++          {otherViewOpen && <div className="flex-1 min-w-0" aria-hidden />}
+           <div
+             role="group"
+             aria-label={t('media.library.libraryView')}
+@@ -1012,12 +1020,13 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+             <HeaderActionTooltip label={t('media.library.showMediaLibrary')}>
+               <button
+                 onClick={() => {
++                  setLibraryViewChosen(false)
+                   if (sceneBrowserOpen) closeSceneBrowser()
+                 }}
+-                aria-pressed={!sceneBrowserOpen}
++                aria-pressed={!otherViewOpen}
+                 className={cn(
+                   'flex items-center gap-1 h-6 px-1.5 @[280px]:px-2 rounded-[3px] text-[11px] transition-colors duration-150',
+-                  !sceneBrowserOpen
++                  !otherViewOpen
+                     ? 'bg-primary text-primary-foreground'
+                     : 'text-muted-foreground hover:text-foreground',
+                 )}
+@@ -1029,6 +1038,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+             <HeaderActionTooltip label={t('media.library.searchScenes')}>
+               <button
+                 onClick={() => {
++                  setLibraryViewChosen(false)
+                   if (!sceneBrowserOpen) openSceneBrowser()
+                 }}
+                 aria-pressed={sceneBrowserOpen}
+@@ -1043,10 +1053,32 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                 <span className="hidden @[280px]:inline">{t('media.library.scenesTab')}</span>
+               </button>
+             </HeaderActionTooltip>
++            {libraryPanel && (
++              <HeaderActionTooltip label={libraryPanel.label}>
++                <button
++                  onClick={() => {
++                    if (sceneBrowserOpen) closeSceneBrowser()
++                    setLibraryViewChosen(true)
++                  }}
++                  aria-pressed={libraryViewOpen}
++                  aria-label={libraryPanel.label}
++                  data-frameleaf-library-toggle=""
++                  className={cn(
++                    'flex items-center gap-1 h-6 px-1.5 @[280px]:px-2 rounded-[3px] text-[11px] transition-colors duration-150',
++                    libraryViewOpen
++                      ? 'bg-primary text-primary-foreground'
++                      : 'text-muted-foreground hover:text-foreground',
++                  )}
++                >
++                  <Library className="w-3 h-3" />
++                  <span className="hidden @[280px]:inline">{libraryPanel.label}</span>
++                </button>
++              </HeaderActionTooltip>
++            )}
+           </div>
+         </div>
+ 
+-        {!sceneBrowserOpen && (
++        {!otherViewOpen && (
+           <>
+             {/* Filters and sort */}
+             <div className="@container flex items-center gap-1.5 min-w-0">
+@@ -1212,11 +1244,12 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+             <LazySceneBrowserPanel className="absolute inset-0 bg-background" />
+           </Suspense>
+         )}
++        {libraryViewOpen && LibraryPanel && <LibraryPanel className="absolute inset-0 bg-background" />}
+         <div
+           ref={scrollContainerRef}
+           className={cn(
+             'relative h-full overflow-y-auto px-4 pb-4 [scrollbar-gutter:stable]',
+-            sceneBrowserOpen && 'hidden',
++            otherViewOpen && 'hidden',
+           )}
+           onClick={handleScrollContentClick}
+           onDragEnter={handleDragEnter}
+diff --git b/src/features/media-library/library-panel-registry.ts b/src/features/media-library/library-panel-registry.ts
+new file mode 100644
+index 0000000..54ff447
+--- /dev/null
++++ b/src/features/media-library/library-panel-registry.ts
+@@ -0,0 +1,49 @@
++/**
++ * Frameleaf: a host-provided Library view in the media bin (FL-636).
++ *
++ * The bin's Media / Scenes toggle gains a third view when the host registers one. The panel itself
++ * (search, filters and result tiles) belongs to the host's adapter, which can reach the person's
++ * whole library; the bin only gives it room and a toggle. With nothing registered the bin is
++ * unchanged.
++ */
++import { useSyncExternalStore, type ComponentType } from 'react'
++
++export interface LibraryPanelRegistration {
++  /** The toggle's label, already translated by the host. */
++  label: string
++  /** Fills the bin's content area while the Library view is shown. */
++  Panel: ComponentType<{ className?: string }>
++}
++
++let current: LibraryPanelRegistration | null = null
++const listeners = new Set<() => void>()
++
++const publish = () => {
++  for (const listener of listeners) listener()
++}
++
++/** Offer the Library view; the returned function withdraws this registration only. */
++export function registerLibraryPanel(registration: LibraryPanelRegistration): () => void {
++  current = registration
++  publish()
++  return () => {
++    if (current !== registration) return
++    current = null
++    publish()
++  }
++}
++
++export function getLibraryPanel(): LibraryPanelRegistration | null {
++  return current
++}
++
++const subscribe = (listener: () => void) => {
++  listeners.add(listener)
++  return () => {
++    listeners.delete(listener)
++  }
++}
++
++export function useLibraryPanel(): LibraryPanelRegistration | null {
++  return useSyncExternalStore(subscribe, getLibraryPanel, getLibraryPanel)
++}

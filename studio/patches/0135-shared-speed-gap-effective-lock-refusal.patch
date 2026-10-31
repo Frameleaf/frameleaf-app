@@ -1,0 +1,86 @@
+diff --git a/src/features/timeline/stores/actions/item-actions.ts b/src/features/timeline/stores/actions/item-actions.ts
+--- a/src/features/timeline/stores/actions/item-actions.ts
++++ b/src/features/timeline/stores/actions/item-actions.ts
+@@ -1116,6 +1116,14 @@
+     .map((item) => ({ id: item.id, from: item.from - gapSize }))
+   if (updates.length === 0) return
+ 
++  const linkedIds = expandIdsWithLinkedItems(items, updates.map(({ id }) => id), isLinkedSelectionEnabled())
++  const propagation = buildRemovedIntervalPreviewUpdatesForSyncLockedTracks({
++    items, tracks: useItemsStore.getState().tracks,
++    editedTrackIds: new Set([trackId]), intervals: [{ start: gapStart, end: gapEnd }],
++  })
++  const affectedIds = new Set([...linkedIds, ...propagation.map(({ id }) => id)])
++  if (hasLockedEditParticipants(items.filter((item) => affectedIds.has(item.id)))) return
++
+   execute(
+     'CLOSE_GAP',
+     () => {
+@@ -1163,6 +1171,8 @@
+ 
+   const updates = buildLinkedLeftShiftUpdates(items, baseShiftByItemId, isLinkedSelectionEnabled())
+   if (updates.length === 0) return
++  const affectedIds = new Set(updates.map(({ id }) => id))
++  if (hasLockedEditParticipants(items.filter((item) => affectedIds.has(item.id)))) return
+ 
+   execute(
+     'CLOSE_ALL_GAPS',
+@@ -1199,6 +1209,8 @@
+   }
+ 
+   if (updates.length === 0) return
++  const affectedIds = new Set(updates.map(({ id }) => id))
++  if (hasLockedEditParticipants(items.filter((item) => affectedIds.has(item.id)))) return
+ 
+   execute(
+     'TRACK_PUSH',
+diff --git a/src/features/timeline/stores/actions/edit/rate-stretch-actions.ts b/src/features/timeline/stores/actions/edit/rate-stretch-actions.ts
+--- a/src/features/timeline/stores/actions/edit/rate-stretch-actions.ts
++++ b/src/features/timeline/stores/actions/edit/rate-stretch-actions.ts
+@@ -4,10 +4,29 @@
+ import { useKeyframesStore } from '../../keyframes-store'
+ import { useTimelineSettingsStore } from '../../timeline-settings-store'
+ import { execute, applyTransitionRepairs } from '../shared'
+-import { getSynchronizedLinkedItemsForEdit } from '../linked-edit'
++import { getSynchronizedLinkedItemsForEdit, hasLockedEditParticipants } from '../linked-edit'
++import { roundDuration, roundFrame } from '../../items-store-normalize'
+ import { timelineToSourceFrames, sourceToTimelineFrames } from '../../../utils/source-calculations'
+ import { expandItemIdsWithAttachedCaptions, getLinkedItemIds } from '../../../utils/linked-items'
+ import { isLinkedSelectionEnabled, requestPostEditWarmForItems } from './shared'
++
++// Discover both stretched and rippled participants before any item, keyframe or history write.
++function hasLockedRateStretchParticipants(id: string, newFrom: number, newDuration: number): boolean {
++  const items = useItemsStore.getState().items
++  const synchronized = getSynchronizedLinkedItemsForEdit(items, id, isLinkedSelectionEnabled())
++  const anchor = synchronized.find((item) => item.id === id)
++  if (!anchor) return false
++  const stretchable = anchor.type === 'video' || anchor.type === 'audio' || anchor.type === 'composition'
++    || (anchor.type === 'image' && anchor.label?.toLowerCase().endsWith('.gif'))
++  const moves = getRateStretchRippleUpdates(
++    items, synchronized, useTransitionsStore.getState().transitions,
++    anchor.from, anchor.durationInFrames,
++    stretchable ? roundFrame(newFrom) : anchor.from,
++    stretchable ? roundDuration(newDuration) : anchor.durationInFrames,
++  )
++  const affectedIds = new Set([...synchronized.map(({ id }) => id), ...moves.map(({ id }) => id)])
++  return hasLockedEditParticipants(items.filter((item) => affectedIds.has(item.id)))
++}
+ 
+ export function rateStretchItemWithoutHistory(
+   id: string,
+@@ -15,6 +34,7 @@
+   newDuration: number,
+   newSpeed: number,
+ ): void {
++  if (hasLockedRateStretchParticipants(id, newFrom, newDuration)) return
+   const itemsStore = useItemsStore.getState()
+   const itemsBefore = itemsStore.items
+   const synchronizedItems = getSynchronizedLinkedItemsForEdit(
+@@ -96,6 +116,7 @@
+   newDuration: number,
+   newSpeed: number,
+ ): void {
++  if (hasLockedRateStretchParticipants(id, newFrom, newDuration)) return
+   execute(
+     'RATE_STRETCH_ITEM',
+     () => {

@@ -1,0 +1,454 @@
+diff --git a/src/features/media-library/services/media-asset-helpers.test.ts b/src/features/media-library/services/media-asset-helpers.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/media-library/services/media-asset-helpers.test.ts
+@@ -0,0 +1,130 @@
++// @vitest-environment node
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { MediaMetadata } from '@/types/storage'
++import { asHandle, createRoot } from '@/infrastructure/storage/workspace-fs/__tests__/in-memory-handle'
++import { persistGeneratedMediaAsset } from './media-asset-helpers'
++
++const storage = vi.hoisted(() => ({
++  associateMediaWithProject: vi.fn(),
++  createMedia: vi.fn(),
++  deleteMedia: vi.fn(),
++  deleteThumbnailsByMediaId: vi.fn(),
++  saveThumbnail: vi.fn(),
++  writeMediaSource: vi.fn(),
++}))
++vi.mock('@/features/media-library/deps/storage', () => storage)
++vi.mock('@/features/media-library/services/opfs-service', () => ({
++  opfsService: { saveFile: vi.fn(), deleteFile: vi.fn() },
++}))
++
++const makeMedia = (): MediaMetadata => ({
++  id: 'generated',
++  storageType: 'workspace',
++  fileName: 'out.mp4',
++  fileSize: 5,
++  mimeType: 'video/mp4',
++  duration: 1,
++  width: 1280,
++  height: 720,
++  fps: 30000 / 1001,
++  codec: 'avc',
++  bitrate: 1,
++  tags: [],
++  createdAt: 1,
++  updatedAt: 1,
++})
++
++describe('generated completion persistence boundary', () => {
++  beforeEach(() => {
++    vi.resetAllMocks()
++  })
++  const setup = () => {
++    const calls: string[] = []
++    for (const name of ['writeMediaSource', 'saveThumbnail', 'createMedia', 'associateMediaWithProject'] as const) {
++      storage[name].mockImplementation(async () => {
++        calls.push(name)
++      })
++    }
++    const root = asHandle(createRoot())
++    let current = true
++    const completion = {
++      hold: vi.fn(async () => {
++        calls.push('hold')
++      }),
++      complete: vi.fn(async () => {
++        calls.push('complete')
++      }),
++      cancel: vi.fn(),
++    }
++    const options = {
++      file: new File(['bytes'], 'out.mp4', { type: 'video/mp4' }),
++      projectId: 'project',
++      mediaMetadata: makeMedia(),
++      thumbnailBlob: new Blob(['thumb']),
++      thumbnailWidth: 320,
++      thumbnailHeight: 180,
++      admission: { root, isCurrent: () => current },
++      completion,
++    }
++    return {
++      calls,
++      completion,
++      options,
++      retire: () => {
++        current = false
++      },
++    }
++  }
++  it('calls completion only after all owned writes and project association on captured root', async () => {
++    const state = setup()
++    const media = await persistGeneratedMediaAsset(state.options)
++    expect(state.calls).toEqual([
++      'hold',
++      'writeMediaSource',
++      'saveThumbnail',
++      'createMedia',
++      'associateMediaWithProject',
++      'complete',
++    ])
++    expect(state.completion.complete).toHaveBeenCalledWith(state.options.file, media)
++    expect(storage.writeMediaSource.mock.calls[0]?.[3]).toMatchObject({
++      originRoot: state.options.admission.root,
++      rejectExisting: true,
++    })
++    expect(storage.associateMediaWithProject).toHaveBeenCalledWith(
++      'project',
++      media.id,
++      state.options.admission.root,
++      state.options.admission.isCurrent,
++    )
++  })
++  it.each(['hold', 'writeMediaSource', 'saveThumbnail', 'createMedia', 'associateMediaWithProject'] as const)(
++    'never calls completion when %s fails',
++    async (stage: 'hold' | 'writeMediaSource' | 'saveThumbnail' | 'createMedia' | 'associateMediaWithProject') => {
++      const state = setup()
++      const failing = stage === 'hold' ? state.completion.hold : storage[stage]
++      failing.mockRejectedValueOnce(new Error(stage))
++      await expect(persistGeneratedMediaAsset(state.options)).rejects.toThrow(stage)
++      expect(state.completion.complete).not.toHaveBeenCalled()
++      expect(state.completion.cancel).toHaveBeenCalledWith('generated')
++      // Preserve existing scoped conservative rollback; never delete uncertain namespaces.
++      expect(storage.deleteMedia).not.toHaveBeenCalled()
++    },
++  )
++  it('refuses completion when cancellation or retirement wins after association', async () => {
++    const state = setup()
++    storage.associateMediaWithProject.mockImplementationOnce(async () => {
++      state.retire()
++    })
++    await expect(persistGeneratedMediaAsset(state.options)).rejects.toThrow('completion_retired')
++    expect(state.completion.complete).not.toHaveBeenCalled()
++    expect(state.completion.cancel).toHaveBeenCalledWith('generated')
++  })
++  it('keeps the ordinary generated caller free of completion hooks', async () => {
++    const state = setup()
++    const { completion: _completion, admission: _admission, ...ordinary } = state.options
++    await persistGeneratedMediaAsset(ordinary)
++    expect(state.completion.hold).not.toHaveBeenCalled()
++    expect(state.completion.complete).not.toHaveBeenCalled()
++  })
++})
+diff --git a/src/features/media-library/services/media-asset-helpers.ts b/src/features/media-library/services/media-asset-helpers.ts
+--- a/src/features/media-library/services/media-asset-helpers.ts
++++ b/src/features/media-library/services/media-asset-helpers.ts
+@@ -120,7 +120,15 @@
+   isCurrent: () => boolean
+ }
+ 
++/** Only explicit producer completion can submit held bytes to the host. */
++export interface GeneratedMediaCompletion {
++  hold(id: string): Promise<void>
++  complete(file: File, media: MediaMetadata): Promise<void>
++  cancel(id: string): void
++}
++
+ interface PersistGeneratedMediaOptions {
++  completion?: GeneratedMediaCompletion
+   admission?: RecordingAdmission
+   file: File
+   projectId: string
+@@ -138,7 +146,9 @@
+   thumbnailWidth,
+   thumbnailHeight,
+   admission,
++  completion,
+ }: PersistGeneratedMediaOptions): Promise<MediaMetadata> {
++  if (completion && !admission) throw new Error('completion_requires_origin')
+   if (admission) {
+     if (!admission.isCurrent()) throw new Error('recording_retired')
+     // FSA creation is idempotent, not exclusive. Never adopt a known existing namespace.
+@@ -155,6 +165,8 @@
+   let thumbnailSaved = false
+ 
+   try {
++    // Suppression must precede the source observer, and survive every failure below.
++    await completion?.hold(mediaMetadata.id)
+     // Durable primary store: the user-picked workspace folder. It's the
+     // cross-origin source of truth, so a copied/generated/remote asset must
+     // land here — not OPFS, which is origin-scoped and invisible when the
+@@ -205,9 +217,12 @@
+     await (admission
+       ? associateMediaWithProject(projectId, mediaMetadata.id, originRoot, admission.isCurrent)
+       : associateMediaWithProject(projectId, mediaMetadata.id))
++    if (completion && admission && !admission.isCurrent()) throw new Error('completion_retired')
++    await completion?.complete(file, mediaMetadata)
+     event.success({ projectId, mediaId: mediaMetadata.id })
+     return mediaMetadata
+   } catch (error) {
++    completion?.cancel(mediaMetadata.id)
+     if (admission) {
+       // No exclusive cross-tab namespace claim exists. Never recursively delete uncertain files.
+       // The real failure propagates; any admitted partial origin artifact remains for recovery.
+diff --git a/src/features/media-library/services/media-library-service.ts b/src/features/media-library/services/media-library-service.ts
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -81,6 +81,7 @@
+ import { enqueueBackgroundMediaWork } from './background-media-work'
+ import {
+   type RecordingAdmission,
++  type GeneratedMediaCompletion,
+   getGeneratedImageDimensions,
+   getThumbnailDimensions,
+   persistGeneratedMediaAsset,
+@@ -1385,7 +1386,7 @@
+   async importGeneratedVideo(
+     file: File,
+     projectId: string,
+-    options?: { fps?: number; tags?: string[] },
++    options?: { fps?: number; tags?: string[]; admission?: RecordingAdmission; completion?: GeneratedMediaCompletion },
+   ): Promise<MediaMetadata> {
+     if (!projectId) {
+       throw new Error('No project selected')
+@@ -1405,6 +1406,7 @@
+       throw new Error(`Generated file did not probe as video (got "${metadata.type}").`)
+     }
+ 
++    if (options?.admission && !options.admission.isCurrent()) throw new Error('completion_retired')
+     const thumbnailDimensions = resolveGeneratedThumbnailSize(thumbnail, metadata)
+     const mediaMetadata = buildGeneratedVideoMetadata(file, resolvedMimeType, metadata, options)
+ 
+@@ -1415,6 +1417,8 @@
+       thumbnailBlob: thumbnail,
+       thumbnailWidth: thumbnailDimensions?.width,
+       thumbnailHeight: thumbnailDimensions?.height,
++      admission: options?.admission,
++      completion: options?.completion,
+     })
+   }
+ 
+diff --git a/src/features/media-library/services/upscale-service.test.ts b/src/features/media-library/services/upscale-service.test.ts
+--- a/src/features/media-library/services/upscale-service.test.ts
++++ b/src/features/media-library/services/upscale-service.test.ts
+@@ -1,8 +1,10 @@
+ // @vitest-environment node
+ 
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { UpscaleResult } from '../upscale-constants'
++import type { GeneratedMediaCompletion, RecordingAdmission } from './media-asset-helpers'
+ import type { MediaMetadata } from '@/types/storage'
+-import { UpscaleService } from './upscale-service'
++import { UpscaleService, type Anime4kRetention } from './upscale-service'
+ 
+ const mediaLibraryServiceMocks = vi.hoisted(() => ({
+   importGeneratedVideo: vi.fn(),
+@@ -20,6 +22,9 @@
+   })
+   return { promise, resolve }
+ }
++
++const result: UpscaleResult = { variant: 'liveAction', width: 3840, height: 2160,
++  sourceWidth: 1920, sourceHeight: 1080, fps: 30000 / 1001, codec: 'avc', frameCount: 30 }
+ 
+ const job = {
+   mediaId: 'source-1',
+@@ -83,7 +88,7 @@
+     seedJob(service, true)
+     const internals = service as unknown as {
+       post(message: unknown): void
+-      importResult(activeJob: typeof job, width: number, height: number, fps: number): Promise<void>
++      importResult(activeJob: typeof job, completed: typeof result): Promise<void>
+     }
+     const post = vi.spyOn(internals, 'post').mockImplementation(() => undefined)
+     const importResult = vi.spyOn(internals, 'importResult').mockResolvedValue(undefined)
+@@ -97,12 +102,42 @@
+       type: 'complete',
+       jobId: job.jobId,
+       opfsPath: 'upscale/job-1.mp4',
+-      result: { width: 3840, height: 2160, fps: 30 },
++      result,
+     })
+ 
+     expect(post).toHaveBeenCalledWith({ type: 'cancel', jobId: job.jobId })
+     expect(importResult).not.toHaveBeenCalled()
+     expect(service.isGenerating(job.mediaId)).toBe(false)
++  })
++
++  it('passes all actual worker facts through explicit helper completion on the captured root', async () => {
++    const service = new UpscaleService()
++    const retention: Anime4kRetention = { root: {} as FileSystemDirectoryHandle,
++      isCurrent: () => true, hold: vi.fn(async () => {}), complete: vi.fn(async () => {}), cancel: vi.fn() }
++    const retainedJob = { ...job, retention }
++    const internals = service as unknown as { jobsByMediaId: Map<string, typeof retainedJob>;
++      importResult(active: typeof retainedJob, completed: typeof result): Promise<void> }
++    internals.jobsByMediaId.set(job.mediaId, retainedJob)
++    mediaLibraryServiceMocks.importGeneratedVideo.mockImplementationOnce(async (file: File, projectId: string, options: { fps: number; admission: RecordingAdmission; completion: GeneratedMediaCompletion }) => {
++      expect(projectId).toBe(job.projectId)
++      expect(options.fps).toBe(result.fps)
++      expect(options.admission.root).toBe(retention.root)
++      await options.completion.hold('generated-1')
++      await options.completion.complete(file, makeMedia())
++      return makeMedia()
++    })
++    await internals.importResult(retainedJob, result)
++    expect(retention.hold).toHaveBeenCalledWith('generated-1')
++    expect(retention.complete).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ id: 'generated-1' }), result)
++    expect(mediaLibraryServiceMocks.deleteMediaFromProject).not.toHaveBeenCalled()
++  })
++
++  it('rejects a worker variant that differs from the admitted request', async () => {
++    const service = new UpscaleService()
++    seedJob(service, false)
++    await (service as unknown as { importResult(active: typeof job, completed: typeof result): Promise<void> })
++      .importResult(job, { ...result, variant: 'animation' })
++    expect(mediaLibraryServiceMocks.importGeneratedVideo).not.toHaveBeenCalled()
+   })
+ 
+   it('rolls back media when cancellation lands during import', async () => {
+@@ -117,12 +152,10 @@
+       service as unknown as {
+         importResult(
+           activeJob: typeof job,
+-          width: number,
+-          height: number,
+-          fps: number,
++          completed: typeof result,
+         ): Promise<void>
+       }
+-    ).importResult(job, 3840, 2160, 30)
++    ).importResult(job, result)
+     await vi.waitFor(() => expect(mediaLibraryServiceMocks.importGeneratedVideo).toHaveBeenCalled())
+ 
+     service.cancel(job.mediaId)
+diff --git a/src/features/media-library/services/upscale-service.ts b/src/features/media-library/services/upscale-service.ts
+--- a/src/features/media-library/services/upscale-service.ts
++++ b/src/features/media-library/services/upscale-service.ts
+@@ -11,12 +11,14 @@
+ import { canUpscale, type UpscaleVariant } from '@/infrastructure/upscale'
+ import { createLogger } from '@/shared/logging/logger'
+ import { createManagedWorker } from '@/shared/utils/managed-worker'
++import type { GeneratedMediaCompletion, RecordingAdmission } from './media-asset-helpers'
+ import type { MediaMetadata } from '@/types/storage'
+ import {
+   UPSCALE_TMP_DIR,
+   UPSCALED_MEDIA_TAG,
+   upscaledFileName,
+   type UpscaleStage,
++  type UpscaleResult,
+ } from '../upscale-constants'
+ import type { UpscaleWorkerRequest, UpscaleWorkerResponse } from '../workers/upscale-worker'
+ 
+@@ -55,7 +57,14 @@
+   sourceFps: number
+ }
+ 
++export interface Anime4kRetention extends RecordingAdmission {
++  hold(id: string): Promise<void>
++  complete(file: File, media: MediaMetadata, result: UpscaleResult): Promise<void>
++  cancel(id: string): void
++}
++
+ interface Job extends UpscaleRequestInput {
++  retention?: Anime4kRetention
+   jobId: string
+ }
+ 
+@@ -86,6 +95,12 @@
+   private activeJob: Job | null = null
+   private readonly cancelledJobIds = new Set<string>()
+ 
++  private retentionCapture: ((projectId: string, sourceId: string) => Anime4kRetention) | null = null
++
++  setCompletionRetentionCapture(capture: ((projectId: string, sourceId: string) => Anime4kRetention) | null): void {
++    this.retentionCapture = capture
++  }
++
+   private statusListener: UpscaleStatusListener | null = null
+   private mediaListener: UpscaleMediaListener | null = null
+   private readonly lastEmit = new Map<string, { at: number; progress: number }>()
+@@ -128,7 +143,8 @@
+   generate(request: UpscaleRequestInput): void {
+     if (this.jobsByMediaId.has(request.mediaId)) return
+ 
+-    const job: Job = { ...request, jobId: crypto.randomUUID() }
++    const job: Job = { ...request, jobId: crypto.randomUUID(),
++      retention: this.retentionCapture?.(request.projectId, request.mediaId) }
+     this.jobsByMediaId.set(request.mediaId, job)
+     this.pendingJobs.push(job)
+     this.statusListener?.(request.mediaId, 'generating', 0, 'preparing')
+@@ -259,12 +275,7 @@
+       if (this.cancelledJobIds.has(job.jobId)) {
+         await removeTmpFile(job.jobId)
+       } else if (message.type === 'complete') {
+-        await this.importResult(
+-          job,
+-          message.result.width,
+-          message.result.height,
+-          message.result.fps,
+-        )
++        await this.importResult(job, message.result)
+       } else if (message.type === 'error') {
+         logger.error('Upscale failed', { mediaId: job.mediaId, error: message.error })
+         this.finish(job, 'error')
+@@ -277,7 +288,8 @@
+     }
+   }
+ 
+-  private async importResult(job: Job, width: number, height: number, fps: number): Promise<void> {
++  private async importResult(job: Job, result: UpscaleResult): Promise<void> {
++    const { width, height, fps } = result
+     try {
+       const rendered = await readTmpFile(job.jobId)
+       if (this.cancelledJobIds.has(job.jobId)) return
+@@ -295,13 +307,23 @@
+       // out.
+       const { mediaLibraryService } = await import('./media-library-service')
+       if (this.cancelledJobIds.has(job.jobId)) return
++      if (result.variant !== job.variant) throw new Error('upscale_variant_changed')
++      const current = () => !this.cancelledJobIds.has(job.jobId) && (job.retention?.isCurrent() ?? true)
++      const completion: GeneratedMediaCompletion | undefined = job.retention && {
++        hold: (id) => job.retention!.hold(id),
++        complete: (file, media) => job.retention!.complete(file, media, result),
++        cancel: (id) => job.retention!.cancel(id),
++      }
+       const media = await mediaLibraryService.importGeneratedVideo(file, job.projectId, {
+         fps,
+         tags: [UPSCALED_MEDIA_TAG],
++        admission: job.retention && { root: job.retention.root, isCurrent: current },
++        completion,
+       })
+ 
+       if (this.cancelledJobIds.has(job.jobId)) {
+-        await mediaLibraryService.deleteMediaFromProject(job.projectId, media.id)
++        if (job.retention) job.retention.cancel(media.id)
++        else await mediaLibraryService.deleteMediaFromProject(job.projectId, media.id)
+         return
+       }
+ 
+diff --git a/src/infrastructure/storage/workspace-fs/media-source-retention.test.ts b/src/infrastructure/storage/workspace-fs/media-source-retention.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/storage/workspace-fs/media-source-retention.test.ts
+@@ -0,0 +1,17 @@
++// @vitest-environment node
++import { afterEach, expect, it } from 'vite-plus/test'
++import { asHandle, createRoot } from './__tests__/in-memory-handle'
++import { writeBlob } from './fs-primitives'
++import { setWorkspaceRoot } from './root'
++import { hasMediaSource, readMediaSource, writeMediaSource } from './media-source'
++
++afterEach(() => { setWorkspaceRoot(null) })
++it('never adopts the suppression marker as source bytes', async () => {
++  const root = asHandle(createRoot())
++  setWorkspaceRoot(root)
++  const id = 'b7c1d2e3-0000-4000-8000-000000000001'
++  await writeBlob(root, ['media', id, 'retention.json'], new Blob(['{malformed']))
++  expect(await hasMediaSource(id)).toBe(false)
++  await writeMediaSource(id, new Blob(['actual-output']), 'out.mp4', { strict: true, originRoot: root, rejectExisting: true })
++  expect(await (await readMediaSource(id))?.text()).toBe('actual-output')
++})
+diff --git a/src/infrastructure/storage/workspace-fs/media-source.ts b/src/infrastructure/storage/workspace-fs/media-source.ts
+--- a/src/infrastructure/storage/workspace-fs/media-source.ts
++++ b/src/infrastructure/storage/workspace-fs/media-source.ts
+@@ -25,6 +25,7 @@
+ /** Reserved media/{id}/* filenames that are NOT the source blob. */
+ const NON_SOURCE_NAMES = new Set([
+   'metadata.json',
++  'retention.json',
+   'thumbnail.jpg',
+   'thumbnail.meta.json',
+   'source.link.json',

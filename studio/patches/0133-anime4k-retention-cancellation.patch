@@ -1,0 +1,45 @@
+diff --git a/src/features/media-library/services/upscale-service.ts b/src/features/media-library/services/upscale-service.ts
+--- a/src/features/media-library/services/upscale-service.ts
++++ b/src/features/media-library/services/upscale-service.ts
+@@ -64,6 +64,7 @@
+ }
+ 
+ interface Job extends UpscaleRequestInput {
++  retainedImportId?: string
+   retention?: Anime4kRetention
+   jobId: string
+ }
+@@ -163,6 +164,9 @@
+     }
+ 
+     this.cancelledJobIds.add(job.jobId)
++    // Completion may be awaiting registration/upload. Notify its captured scope before
++    // the completion bridge settles and disposes; never wait for importGeneratedVideo.
++    if (job.retainedImportId) job.retention?.cancel(job.retainedImportId)
+     this.finish(job, 'idle')
+     if (this.activeJob?.jobId === job.jobId) {
+       this.post({ type: 'cancel', jobId: job.jobId })
+@@ -310,7 +314,10 @@
+       if (result.variant !== job.variant) throw new Error('upscale_variant_changed')
+       const current = () => !this.cancelledJobIds.has(job.jobId) && (job.retention?.isCurrent() ?? true)
+       const completion: GeneratedMediaCompletion | undefined = job.retention && {
+-        hold: (id) => job.retention!.hold(id),
++        hold: (id) => {
++          job.retainedImportId = id
++          return job.retention!.hold(id)
++        },
+         complete: (file, media) => job.retention!.complete(file, media, result),
+         cancel: (id) => job.retention!.cancel(id),
+       }
+@@ -322,8 +329,9 @@
+       })
+ 
+       if (this.cancelledJobIds.has(job.jobId)) {
+-        if (job.retention) job.retention.cancel(media.id)
+-        else await mediaLibraryService.deleteMediaFromProject(job.projectId, media.id)
++        // Retained imports were cancelled immediately through their held identity.
++        // A late committed publication is reconciled by the host, never deleted here.
++        if (!job.retention) await mediaLibraryService.deleteMediaFromProject(job.projectId, media.id)
+         return
+       }
+ 

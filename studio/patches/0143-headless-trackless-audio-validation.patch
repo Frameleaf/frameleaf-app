@@ -1,0 +1,239 @@
+Subject: Verify source audio before headless strict mix validation
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1187,6 +1187,19 @@
+   return segments
+ }
+
++/** Only a real video track can prove that absent embedded audio is valid. */
++export async function hasSourceAudio(src: string): Promise<boolean> {
++  const mb = await import('mediabunny')
++  const input = new mb.Input({ formats: mb.ALL_FORMATS, source: createMediabunnyInputSource(mb, src) })
++  try {
++    if (await input.getPrimaryAudioTrack()) return true
++    if (await input.getPrimaryVideoTrack()) return false
++    throw new Error('Source has no audio or video track')
++  } finally {
++    input.dispose()
++  }
++}
++
+ /** Missing embedded sound is valid only when the source still contains a video track. */
+ async function getActiveAudioSegments(
+   composition: CompositionInputProps,
+@@ -1198,14 +1211,7 @@
+   for (const segment of segments) {
+     if (signal?.aborted) throw new DOMException('Audio processing cancelled', 'AbortError')
+     if (segment.type !== 'video' || segment.audioCodec || tracklessVideos.has(segment.src)) continue
+-    const mb = await import('mediabunny')
+-    const input = new mb.Input({ formats: mb.ALL_FORMATS, source: createMediabunnyInputSource(mb, segment.src) })
+-    try {
+-      const audio = await input.getPrimaryAudioTrack()
+-      tracklessVideos.set(segment.src, !audio && !!(await input.getPrimaryVideoTrack()))
+-    } finally {
+-      input.dispose()
+-    }
++    tracklessVideos.set(segment.src, !(await hasSourceAudio(segment.src)))
+   }
+   return segments.filter(segment => segment.type !== 'video' || segment.audioCodec || !tracklessVideos.get(segment.src))
+ }
+diff --git a/src/headless/main.ts b/src/headless/main.ts
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -380,7 +380,7 @@
+   mediaById: Map<string, MediaMetadata>,
+   strict: boolean | undefined,
+ ): Promise<HeadlessRenderWarning[]> {
+-  if (!hasAudioCapableItems(composition.tracks, mediaById)) return []
++  if (!(await hasAudioCapableItems(composition.tracks, mediaById))) return []
+   if (await hasAudioContent(composition)) return []
+   const warning: HeadlessRenderWarning = {
+     code: 'NO_AUDIO_IN_MIX',
+diff --git a/src/headless/validation.ts b/src/headless/validation.ts
+--- a/src/headless/validation.ts
++++ b/src/headless/validation.ts
+@@ -6,6 +6,7 @@
+  * (or not at all) costs hours of false trails. These checks turn the known
+  * silent failures into explicit warnings the driver can log or fail on.
+  */
++import { hasSourceAudio } from '@/features/export/utils/canvas-audio'
+ import type { TimelineItem } from '@/types/timeline'
+ import type { MediaMetadata } from '@/types/storage'
+ import type { CompositionInputProps } from '@/types/export'
+@@ -293,23 +294,26 @@
+   return !metadata || Boolean(metadata.audioCodec)
+ }
+
+-function itemCanCarryAudio(
++async function itemCanCarryAudio(
+   item: CompositionInputProps['tracks'][number]['items'][number],
+   mediaById: Map<string, MediaMetadata>,
+-): boolean {
++): Promise<boolean> {
+   if (item.type === 'audio') return true
+-  return item.type === 'video' && videoCarriesAudio(item, mediaById)
++  if (item.type !== 'video' || !videoCarriesAudio(item, mediaById)) return false
++  if (!item.src || (item.mediaId && mediaById.has(item.mediaId))) return true
++  return hasSourceAudio(item.audioSrc || item.src)
+ }
+
+ /** True when any item on an unmuted, visible track can contribute audio. */
+-export function hasAudioCapableItems(
++export async function hasAudioCapableItems(
+   tracks: CompositionInputProps['tracks'],
+   mediaById: Map<string, MediaMetadata>,
+-): boolean {
+-  return tracks.some(
+-    (track) =>
+-      track.visible !== false &&
+-      track.muted !== true &&
+-      (track.items ?? []).some((item) => itemCanCarryAudio(item, mediaById)),
+-  )
+-}
++): Promise<boolean> {
++  for (const track of tracks) {
++    if (track.visible === false || track.muted === true) continue
++    for (const item of track.items ?? []) {
++      if (await itemCanCarryAudio(item, mediaById)) return true
++    }
++  }
++  return false
++}
+diff --git a/src/headless/validation.test.ts b/src/headless/validation.test.ts
+--- a/src/headless/validation.test.ts
++++ b/src/headless/validation.test.ts
+@@ -110,14 +110,14 @@
+     expect(videoCarriesAudio({ mediaId: 'unknown' }, new Map())).toBe(true)
+   })
+
+-  it('hasAudioCapableItems skips muted and hidden tracks', () => {
++  it('hasAudioCapableItems skips muted and hidden tracks', async () => {
+     const map = new Map([['m', withAudio]])
+     const item = { id: 'v', type: 'video', mediaId: 'm', from: 0, durationInFrames: 10 }
+     const track = (overrides: Record<string, unknown>) =>
+       ({ id: 't', items: [item], ...overrides }) as never
+-    expect(hasAudioCapableItems([track({})], map)).toBe(true)
+-    expect(hasAudioCapableItems([track({ muted: true })], map)).toBe(false)
+-    expect(hasAudioCapableItems([track({ visible: false })], map)).toBe(false)
++    expect(await hasAudioCapableItems([track({})], map)).toBe(true)
++    expect(await hasAudioCapableItems([track({ muted: true })], map)).toBe(false)
++    expect(await hasAudioCapableItems([track({ visible: false })], map)).toBe(false)
+   })
+ })
+
+diff --git a/src/features/export/utils/canvas-audio-track-absence.test.ts b/src/features/export/utils/canvas-audio-track-absence.test.ts
+--- a/src/features/export/utils/canvas-audio-track-absence.test.ts
++++ b/src/features/export/utils/canvas-audio-track-absence.test.ts
+@@ -3,7 +3,7 @@
+ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+-import { afterAll, beforeAll, expect, it } from 'vite-plus/test'
++import { afterAll, beforeAll, expect, it, vi } from 'vite-plus/test'
+ import type { CompositionInputProps } from '@/types/export'
+ import type { VideoItem } from '@/types/timeline'
+ import {
+@@ -16,6 +16,15 @@
+   processAudio,
+   processAudioWindows,
+ } from './canvas-audio'
++
++import { hasAudioCapableItems } from '@/headless/validation'
++
++const renderBoundary = vi.hoisted(() => vi.fn())
++vi.mock('./canvas-render-orchestrator', () => ({
++  renderComposition: renderBoundary,
++  renderAudioOnly: renderBoundary,
++  renderSingleFrame: renderBoundary,
++}))
+
+ const directory = mkdtempSync(join(tmpdir(), 'studio-silent-video-'))
+ const silent = 'blob:silent-export-fixture'
+@@ -166,3 +175,82 @@
+     expect(Math.max(...mix.samples[0]!)).toBeGreaterThan(0.12)
+   }
+ })
++
++it('classifies confirmed trackless video as having no audio in headless validation', async () => {
++  expect(await hasAudioCapableItems(composition(silent).tracks, new Map())).toBe(false)
++})
++
++it('passes the actual strict headless render entry for a real trackless MP4', async () => {
++  vi.stubGlobal('window', globalThis)
++  vi.stubGlobal('__freecutSupportedCodecsOverride', ['avc'])
++  const stop = new Error('encoder boundary reached')
++  renderBoundary.mockRejectedValueOnce(stop)
++  try {
++    await import('@/headless/main')
++    const input = composition(silent)
++    await expect(
++      window.freecut.renderTimeline({
++        tracks: input.tracks,
++        items: input.tracks.flatMap((track) => track.items),
++        fps: 30,
++        width: 64,
++        height: 36,
++        strict: true,
++        media: [{ mediaId: 'fixture', url: silent }],
++        settings: {
++          mode: 'video',
++          container: 'mp4',
++          codec: 'avc',
++          quality: 'high',
++          resolution: { width: 64, height: 36 },
++          fps: 30,
++        },
++      }),
++    ).rejects.toBe(stop)
++    expect(renderBoundary).toHaveBeenCalledOnce()
++  } finally {
++    vi.unstubAllGlobals()
++  }
++})
++
++it('retains headless audio classification for audible and explicit audio clips', async () => {
++  expect(await hasAudioCapableItems(composition(audible).tracks, new Map())).toBe(true)
++  const explicit = composition(silent)
++  explicit.tracks[0]!.items[0] = { ...(explicit.tracks[0]!.items[0] as VideoItem), type: 'audio' }
++  expect(await hasAudioCapableItems(explicit.tracks, new Map())).toBe(true)
++  await expect(hasAudioCapableItems(composition(corrupt).tracks, new Map())).rejects.toThrow()
++})
++
++it('keeps the strict missing-mix refusal for an audible video whose clip is muted', async () => {
++  vi.stubGlobal('window', globalThis)
++  vi.stubGlobal('__freecutSupportedCodecsOverride', ['avc'])
++  renderBoundary.mockClear()
++  try {
++    await import('@/headless/main')
++    const input = composition(audible)
++    input.tracks[0]!.items[0]!.muted = true
++    input.tracks[0]!.items[0]!.mediaId = 'audible-fixture'
++    await expect(
++      window.freecut.renderTimeline({
++        tracks: input.tracks,
++        items: input.tracks.flatMap((track) => track.items),
++        fps: 30,
++        width: 64,
++        height: 36,
++        strict: true,
++        media: [{ mediaId: 'audible-fixture', url: audible }],
++        settings: {
++          mode: 'video',
++          container: 'mp4',
++          codec: 'avc',
++          quality: 'high',
++          resolution: { width: 64, height: 36 },
++          fps: 30,
++        },
++      }),
++    ).rejects.toThrow('NO_AUDIO_IN_MIX')
++    expect(renderBoundary).not.toHaveBeenCalled()
++  } finally {
++    vi.unstubAllGlobals()
++  }
++})
