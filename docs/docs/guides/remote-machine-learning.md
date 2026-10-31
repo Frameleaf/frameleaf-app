@@ -37,8 +37,10 @@ services:
       # The Studio render worker can only enrol on the server's host; see the note below.
       FRAMELEAF_STUDIO_WORKER: 'false'
     restart: always
-    # The worker has no authentication. This publishes it on every interface of the host: bind it to a
-    # private address instead (for example 192.168.1.10:3003:3003), or firewall it to the Frameleaf server.
+    # The worker has no authentication, and this publishes it on every interface of the host. Allow only
+    # the Frameleaf server to reach port 3003 (an allowlist firewall rule or ACL), or put both hosts on an
+    # isolated private network. Binding to a private address (for example 192.168.1.10:3003:3003) is
+    # extra defence in depth, not enough on its own: every device on that network could still reach it.
     ports:
       - 3003:3003
 
