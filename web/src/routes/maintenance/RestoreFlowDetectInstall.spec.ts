@@ -43,3 +43,16 @@ it.each(['current', 'close', 'session'])(
     expect(handleError).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
   },
 );
+
+it('keeps refresh usable after a session change drops a pending check', async () => {
+  const pending = deferredPromise<typeof install>();
+  sdkMock.detectPriorInstall.mockResolvedValueOnce(install).mockReturnValueOnce(pending.promise);
+  render(RestoreFlowDetectInstall, { next: vi.fn(), end: vi.fn() });
+  const refresh = await screen.findByRole('button', { name: 'refresh' });
+  await fireEvent.click(refresh);
+  expect(refresh).toBeDisabled();
+  authManager.reset();
+  pending.reject(new Error('Offline'));
+  await waitFor(() => expect(refresh).toBeEnabled());
+  expect(handleError).not.toHaveBeenCalled();
+});

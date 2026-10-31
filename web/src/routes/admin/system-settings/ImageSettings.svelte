@@ -195,6 +195,7 @@
         queueCommandDto: { command: QueueCommand.Start, force: true },
       });
       said = $t('frameleaf_play_img_rebuild_started');
+      await readWaiting();
     } catch (error) {
       handleError(error, $t('frameleaf_play_img_rebuild_failed'));
     } finally {

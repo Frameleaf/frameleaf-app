@@ -47,7 +47,8 @@
         handleError(error, $t('errors.something_went_wrong'));
       }
     } finally {
-      if (isCurrent()) {
+      // a session change drops the result, not the flag, or reload and retry stay disabled
+      if (alive) {
         loading = false;
       }
     }

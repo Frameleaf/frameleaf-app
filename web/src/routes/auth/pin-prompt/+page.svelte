@@ -204,6 +204,7 @@
         }
         hasPinCode = true;
         firstPin = '';
+        stage = 'enter';
         clear();
       } catch (error) {
         if (!current(request)) {
@@ -298,7 +299,10 @@
       resetPassword = '';
       resetting = false;
       hasPinCode = false;
-      restart();
+      // not restart(): it does nothing while this request is still working
+      firstPin = '';
+      stage = 'enter';
+      clear();
     } catch (error) {
       if (!current(request)) {
         return;
