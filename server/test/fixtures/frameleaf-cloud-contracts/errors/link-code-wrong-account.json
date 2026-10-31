@@ -1,0 +1,6 @@
+{
+  "code": "link_code_wrong_account",
+  "message": "This code is for another server or another Frameleaf account. Use the account this server is linked to.",
+  "retryable": false,
+  "requestId": "req_01J8ZK3M4N5P6QD3"
+}

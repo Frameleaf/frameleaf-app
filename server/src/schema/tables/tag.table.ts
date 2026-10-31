@@ -1,0 +1,49 @@
+import {
+  AfterDeleteTrigger,
+  Column,
+  CreateDateColumn,
+  ForeignKeyColumn,
+  PrimaryGeneratedColumn,
+  Table,
+  Unique,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { tag_delete_audit } from 'src/schema/functions.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+
+@AfterDeleteTrigger({ scope: 'statement', function: tag_delete_audit, referencingOldTableAs: 'old' })
+@Table('tag')
+@UpdatedAtTrigger('tag_updatedAt')
+@Unique({ columns: ['userId', 'value'] })
+export class TagTable {
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => UserTable, {
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE',
+    // [userId, value] makes this redundant
+    index: false,
+  })
+  userId!: string;
+
+  @Column()
+  value!: string;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+
+  @Column({ type: 'character varying', nullable: true, default: null })
+  color!: string | null;
+
+  @ForeignKeyColumn(() => TagTable, { nullable: true, onDelete: 'CASCADE' })
+  parentId!: string | null;
+
+  @UpdateIdColumn({ index: true })
+  updateId!: Generated<string>;
+}

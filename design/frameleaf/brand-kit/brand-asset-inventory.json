@@ -1,0 +1,133 @@
+{
+  "approvedReferences": [
+    {
+      "bytes": 10109,
+      "id": "reference:design/frameleaf/tokens.json",
+      "path": "design/frameleaf/tokens.json",
+      "role": "approved-token-reference",
+      "sha256": "43a3d64395934e9ad44fc4bca1506b7b63bf68347222bbbeeb9d7576a646596c"
+    },
+    {
+      "bytes": 988033,
+      "id": "reference:design/frameleaf/mark.png",
+      "path": "design/frameleaf/mark.png",
+      "role": "historical-raster-reference-not-authority",
+      "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db"
+    }
+  ],
+  "compatibilitySentinels": [
+    {
+      "expectedValue": "@frameleaf/sdk",
+      "parser": "json-name",
+      "path": "packages/sdk/package.json"
+    },
+    {
+      "expectedValue": "frameleaf",
+      "parser": "json-name",
+      "path": "server/package.json"
+    },
+    {
+      "expectedValue": "frameleaf-ml",
+      "parser": "toml-project-name",
+      "path": "machine-learning/pyproject.toml"
+    },
+    {
+      "expectedValue": "frameleaf_ml",
+      "parser": "toml-build-includes",
+      "path": "machine-learning/pyproject.toml"
+    },
+    {
+      "expectedValue": "@frameleaf/sdk",
+      "parser": "svelte-import",
+      "path": "web/src/routes/+layout.svelte"
+    }
+  ],
+  "counts": {
+    "approvedReferenceDocuments": 1,
+    "generatedDerivatives": 0,
+    "historicalRasterReferences": 1,
+    "suppliedFiles": 8,
+    "suppliedVectors": 7
+  },
+  "digests": {
+    "approvedReferenceLedgerSha256": "e017b57570e3362ca5f922127e64612cb00b29ee9cecbe705ddcffde51610040",
+    "suppliedSourceLedgerSha256": "59f073d84b24756562e8047f7db74a098c049c3f2ed817d479d08e399d4aaced"
+  },
+  "expectedDuplicateContent": [],
+  "manifest": {
+    "bytes": 11927,
+    "path": "design/frameleaf/brand-kit/manifest.json",
+    "sha256": "768b1780125b5548becf87c43b12092eb695c00a1d088883d58b1f18462ca7a7"
+  },
+  "policies": {
+    "derivativesRequireSeparateIdentityAndProvenance": true,
+    "globalImmichStringReplacementProhibited": true,
+    "suppliedSourceMutationProhibited": true,
+    "unknownBrandKitMembersProhibited": true
+  },
+  "product": "Frameleaf",
+  "schemaVersion": 1,
+  "sourceManifest": {
+    "bytes": 54824,
+    "path": "design/frameleaf/source-manifest.json",
+    "sha256": "dfeef2e51e00288f818f2c12802a74ba14d61f4e910295eaa8a25b20a8e25b13"
+  },
+  "suppliedSources": [
+    {
+      "bytes": 2089,
+      "id": "supplied:README.txt",
+      "kind": "supplied-provenance",
+      "path": "design/frameleaf/brand-kit/README.txt",
+      "sha256": "1255df3da15dc546ca160f50583a7e37044a8ef733d0768a0f28ac594688f7ff"
+    },
+    {
+      "bytes": 2126,
+      "id": "supplied:frameleaf-app-icon.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "bytes": 200233,
+      "id": "supplied:frameleaf-dark-styleboard.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-dark-styleboard.svg",
+      "sha256": "7c633f7095f9e647a841ec567dbce50229095e5c0da3554ad1edae250b78d6ea"
+    },
+    {
+      "bytes": 13971,
+      "id": "supplied:frameleaf-logo-dark-tagline.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-logo-dark-tagline.svg",
+      "sha256": "9b8c1286f289874a2c40c2d75d0ad168152bd1ee91916da3d4d6e47ae56a98f7"
+    },
+    {
+      "bytes": 6442,
+      "id": "supplied:frameleaf-logo-dark.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "sha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b"
+    },
+    {
+      "bytes": 5306,
+      "id": "supplied:frameleaf-logo-white.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-logo-white.svg",
+      "sha256": "1ab00db27ed39ea9e3de7374bf324c88a097fc684b25ecfeb7695a504b92be45"
+    },
+    {
+      "bytes": 1325,
+      "id": "supplied:frameleaf-symbol-white.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+      "sha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b"
+    },
+    {
+      "bytes": 2165,
+      "id": "supplied:frameleaf-symbol.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    }
+  ]
+}

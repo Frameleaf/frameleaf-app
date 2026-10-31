@@ -1,0 +1,1645 @@
+<script lang="ts" module>
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
+  import { setWorkerUrl } from 'maplibre-gl';
+  import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
+  // FC-69: the Frameleaf tile host serves plain Z/X/Y vector tiles, so no pmtiles:// protocol is registered.
+  setWorkerUrl(workerUrl);
+</script>
+
+<script lang="ts">
+  import { goto } from '$app/navigation';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
+  import {
+    landmarksWithItems,
+    layoutLandmarkPins,
+    PIN_BRAND_PX,
+    PIN_ICON_PX,
+    pinNameWidth,
+    type LandmarkPin,
+  } from '$lib/frameleaf/landmark-pins';
+  import { landmarkHref, landmarkKind } from '$lib/frameleaf/landmarks';
+  import {
+    applyClusterLabelLayout,
+    BUBBLE_NAME_LAYER,
+    clusterRadius,
+    MAP_CLUSTER_DISTANCE,
+    updateBubbleNames,
+  } from '$lib/frameleaf/map-clusters';
+  import {
+    markerCardLine,
+    markerDetail,
+    markerPlace,
+    markerRowLine,
+    markerTypeCounts,
+  } from '$lib/frameleaf/map-markers';
+  import { isInMapArea, mapDateWindow, MAP_DATE_PRESETS, toMapArea, type MapArea } from '$lib/frameleaf/map-settings';
+  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
+  import { mapSettings, type MapSettings, locale } from '$lib/stores/preferences.store';
+  import { getAssetMediaUrl } from '$lib/utils';
+  import {
+    AssetMediaSize,
+    getAlbumMapMarkers,
+    getMapMarkers,
+    getMapStatistics,
+    getVisitedLandmarks,
+    type MapMarkerResponseDto,
+    type MapStatisticsResponseDto,
+    type SearchLandmarkResponseDto,
+  } from '@frameleaf/sdk';
+  import { Icon, Theme, themeManager } from '@frameleaf/ui';
+  import {
+    mdiArrowExpandAll,
+    mdiClose,
+    mdiCogOutline,
+    mdiCrosshairsGps,
+    mdiImageOutline,
+    mdiMapMarkerOffOutline,
+    mdiMagnify,
+    mdiMapMarkerMultipleOutline,
+    mdiMapMarkerOutline,
+    mdiMinus,
+    mdiPlus,
+    mdiViewListOutline,
+  } from '@mdi/js';
+  import type { Feature, Point } from 'geojson';
+  import { LngLatBounds, type GeoJSONSource, type Map } from 'maplibre-gl';
+  import { onDestroy, tick } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import { MediaQuery } from 'svelte/reactivity';
+  import { AttributionControl, GeoJSON, MapLibre, Marker, MarkerLayer } from 'svelte-maplibre';
+
+  /**
+   * The Map screen (prototype `MapView.jsx`, FL-51): located items as clusters over the configured
+   * tile source, with the prototype's chrome — the in-view chip, "Search this area", the tools
+   * column (zoom, show all, list, settings), the legend, the settings sheet and the "In view" list.
+   *
+   * Markers come from the existing endpoints with the settings sheet's filters: `GET /map/markers`
+   * for the whole library, or the album's own `GET /albums/{id}/map-markers` when the screen is
+   * scoped to an album (`/map?albumId=`, prototype `setMapScope("collection")`), where each switch
+   * only narrows the album's own items.
+   */
+  interface Props {
+    /** Scope the screen to this album's located items. */
+    albumId?: string;
+    /** Accessible name of the map region. */
+    title: string;
+    /** Opens an item; `inView` is the items in view, in the list's order, for the viewer's filmstrip (V-17). */
+    onOpenAsset: (assetId: string, inView: string[]) => void;
+    /** "Search this area": the prototype opens the Library over the visible bounds. */
+    onSearchArea?: (area: MapArea) => void;
+  }
+
+  let { albumId, title, onOpenAsset, onSearchArea }: Props = $props();
+
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 18;
+
+  type SettingsSwitch = 'includeArchived' | 'withSharedAlbums' | 'withPartners' | 'onlyFavorites' | 'showAssetPanel';
+  const presetLabels = $derived({
+    all: $t('frameleaf_map_preset_all'),
+    '30d': $t('frameleaf_map_preset_30d'),
+    year: $t('frameleaf_map_preset_year'),
+    custom: $t('frameleaf_map_preset_custom'),
+  });
+  const scoped = $derived(albumId !== undefined);
+
+  // FL-326: partners' items are the viewer's own copies, so "Partner items" only narrows an album
+  // map, where it covers every item someone else owns
+  const switches = $derived<{ key: SettingsSwitch; label: string }[]>([
+    { key: 'includeArchived', label: $t('frameleaf_map_include_archived') },
+    { key: 'withSharedAlbums', label: $t('frameleaf_map_include_shared') },
+    ...(scoped ? [{ key: 'withPartners' as const, label: $t('frameleaf_map_include_partner') }] : []),
+    { key: 'onlyFavorites', label: $t('frameleaf_map_only_favorites') },
+    { key: 'showAssetPanel', label: $t('frameleaf_map_asset_panel') },
+  ]);
+
+  let map = $state<Map>();
+  let loadedMarkers = $state<MapMarkerResponseDto[]>([]);
+  let loaded = $state(false);
+  /** The located items could not be loaded: its own card with Try again, never "nothing here". */
+  let loadFailed = $state(false);
+  /** Bumped by Try again: asks for the same markers once more. */
+  let attempt = $state(0);
+  let inView = $state<MapMarkerResponseDto[]>([]);
+  /**
+   * FL-139: the in-view list draws its rows a page at a time as it is scrolled, so a zoomed-out map of
+   * a large library does not build a row for every item it shows. The count and the viewer's order
+   * still cover them all.
+   */
+  const LIST_PAGE = 120;
+  let listShown = $state(LIST_PAGE);
+  let listEnd = $state<HTMLElement>();
+  const listRows = $derived(inView.slice(0, listShown));
+  $effect(() => {
+    const target = listEnd;
+    if (!target || typeof IntersectionObserver !== 'function') {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          listShown += LIST_PAGE;
+        }
+      },
+      { rootMargin: '400px 0px' },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  });
+  let zoom = $state(2);
+  let changed = $state(false);
+  let settingsOpen = $state(false);
+  /** The phone layout (the stylesheet's 640px): the tools are a bar along the foot of the map. */
+  const phone = new MediaQuery('max-width: 640px');
+  let status = $state('');
+  let hoveredCluster = $state<Feature>();
+  let hoveredSingle = $state<Feature>();
+  let gear = $state<HTMLElement>();
+  let settingsSheet = $state<HTMLElement>();
+  let fitted = false;
+  let abort: AbortController | undefined;
+  /** MapView.jsx settings counts: archived and partner items and items without a location (library scope). */
+  let statistics = $state<MapStatisticsResponseDto>();
+  /**
+   * FL-51: the configured tile source cannot be reached (offline, or the style or its tiles fail).
+   * The located items stay reachable through the "In view" list, which needs no tiles.
+   */
+  let tilesFailed = $state(false);
+  let offline = $state(typeof navigator !== 'undefined' && !navigator.onLine);
+
+  const markers = $derived(loadedMarkers);
+  const listOpen = $derived($mapSettings.showAssetPanel);
+  const styleUrl = $derived(
+    themeManager.value === Theme.Dark
+      ? serverConfigManager.value.mapDarkStyleUrl
+      : serverConfigManager.value.mapLightStyleUrl,
+  );
+  // A link from Places, an asset's location or the map itself carries `#zoom/lat/lng`.
+  const focusedByLink = typeof location !== 'undefined' && /^#[\d.-]+\/[\d.-]+\/[\d.-]+/.test(location.hash);
+
+  const patchSettings = (patch: Partial<MapSettings>) => ($mapSettings = { ...$mapSettings, ...patch });
+  const focusGear = () => gear?.querySelector('button')?.focus();
+
+  /* ------------------------------------------------------------------ */
+  /* Markers                                                             */
+  /* ------------------------------------------------------------------ */
+  // A string, so toggling the list or the sheet (same store) does not refetch the markers.
+  const filterKey = $derived(
+    JSON.stringify(
+      albumId
+        ? {
+            id: albumId,
+            // an album shows archived items and everyone else's items unless the sheet leaves them
+            // out, so these are sent either way; withSharedAlbums narrows nothing in album scope
+            isArchived: $mapSettings.includeArchived,
+            isFavorite: $mapSettings.onlyFavorites || undefined,
+            withPartners: $mapSettings.withPartners,
+            withSharedAlbums: $mapSettings.withSharedAlbums,
+            ...mapDateWindow($mapSettings),
+          }
+        : {
+            isArchived: $mapSettings.includeArchived || undefined,
+            isFavorite: $mapSettings.onlyFavorites || undefined,
+            withSharedAlbums: $mapSettings.withSharedAlbums || undefined,
+            ...mapDateWindow($mapSettings),
+          },
+    ),
+  );
+
+  $effect(() => {
+    const query: unknown = JSON.parse(filterKey);
+    void attempt;
+    abort?.abort();
+    const controller = new AbortController();
+    abort = controller;
+    const request = albumId
+      ? getAlbumMapMarkers(query as Parameters<typeof getAlbumMapMarkers>[0], { signal: controller.signal })
+      : getMapMarkers(query as Parameters<typeof getMapMarkers>[0], { signal: controller.signal });
+    request
+      .then((result) => {
+        loadedMarkers = result;
+        loaded = true;
+        loadFailed = false;
+      })
+      .catch(() => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        loadFailed = true;
+      });
+  });
+  /* ------------------------------------------------------------------ */
+  /* Landmark pins (FL-355)                                              */
+  /* ------------------------------------------------------------------ */
+  // The landmarks the viewer has items at, most photographed first. An album's own map has none yet.
+  let landmarks = $state<SearchLandmarkResponseDto[]>([]);
+  $effect(() => {
+    if (scoped) {
+      return;
+    }
+    getVisitedLandmarks()
+      .then((visited) => (landmarks = visited))
+      // an older server, or one without the place pack: a map without pins
+      .catch(() => {});
+  });
+  const pinLandmarks = $derived(scoped ? [] : landmarksWithItems(landmarks, markers));
+  let pins = $state<LandmarkPin<SearchLandmarkResponseDto>[]>([]);
+
+  /** Which pins to draw for this view, and how: `layoutLandmarkPins` has the rules. */
+  const layoutPins = () => {
+    const instance = map;
+    if (!instance || pinLandmarks.length === 0) {
+      pins = [];
+      return;
+    }
+    // The photo bubbles on screen, which a pin's name must not cover.
+    let bubbles: { x: number; y: number; count: number }[] = [];
+    try {
+      bubbles = instance.querySourceFeatures('geojson').map((feature) => ({
+        ...instance.project((feature.geometry as Point).coordinates as [number, number]),
+        count: (feature.properties?.point_count as number) ?? 1,
+      }));
+    } catch {
+      // no style yet: the pins are laid out again once the items are on the map
+    }
+    const canvas = instance.getCanvas();
+    pins = layoutLandmarkPins({
+      places: pinLandmarks,
+      zoom: instance.getZoom(),
+      size: { width: canvas.clientWidth, height: canvas.clientHeight },
+      project: ({ longitude, latitude }) => instance.project([longitude, latitude]),
+      bubbles,
+      textWidth: pinNameWidth,
+    });
+  };
+  $effect(() => {
+    void pinLandmarks;
+    layoutPins();
+  });
+
+  const retryMarkers = () => {
+    loadFailed = false;
+    attempt += 1;
+  };
+
+  /**
+   * A hovered cluster shows one of its own items and where it is, rather than a blank tile over raw
+   * coordinates. The cluster's first item is read from the map's own index when the pointer arrives.
+   */
+  let clusterPreview = $state<{ cluster: number; id: string; place: string }>();
+  $effect(() => {
+    const cluster = hoveredCluster?.properties?.cluster_id as number | undefined;
+    if (cluster === undefined || !map) {
+      return;
+    }
+    const source = map.getSource('geojson') as GeoJSONSource | undefined;
+    if (!source) {
+      return;
+    }
+    let stale = false;
+    source
+      .getClusterLeaves(cluster, 1, 0)
+      .then(([leaf]) => {
+        if (!stale && leaf?.properties?.id) {
+          clusterPreview = { cluster, id: leaf.properties.id as string, place: leaf.properties.place as string };
+        }
+      })
+      .catch(() => {
+        // the card falls back to the count and the coordinates
+      });
+    return () => {
+      stale = true;
+    };
+  });
+
+  onDestroy(() => abort?.abort());
+
+  // The settings sheet's counts follow its date and favorite filters (not the switches they count for).
+  const statisticsKey = $derived(
+    JSON.stringify({ isFavorite: $mapSettings.onlyFavorites || undefined, ...mapDateWindow($mapSettings) }),
+  );
+  $effect(() => {
+    const query = JSON.parse(statisticsKey) as Parameters<typeof getMapStatistics>[0];
+    if (scoped) {
+      statistics = undefined;
+      return;
+    }
+    let stale = false;
+    getMapStatistics(query)
+      .then((result) => {
+        if (!stale) {
+          statistics = result;
+        }
+      })
+      .catch(() => {
+        // the counts are a hint beside the switches; the markers still load without them
+        if (!stale) {
+          statistics = undefined;
+        }
+      });
+    return () => {
+      stale = true;
+    };
+  });
+
+  const placeOf = markerPlace;
+
+  const features = $derived({
+    type: 'FeatureCollection' as const,
+    features: markers.map(
+      (marker): Feature<Point, { id: string; place: string; name: string; line: string; video: boolean }> => {
+        const detail = markerDetail(marker);
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [marker.lon, marker.lat] },
+          properties: {
+            id: marker.id,
+            place: detail.place,
+            name: detail.name ?? '',
+            line: markerCardLine(detail),
+            video: detail.video,
+          },
+        };
+      },
+    ),
+  });
+  const counts = $derived(markerTypeCounts(inView));
+
+  const retryTiles = () => {
+    tilesFailed = false;
+    map?.setStyle(styleUrl);
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Viewport                                                            */
+  /* ------------------------------------------------------------------ */
+  const extent = () => {
+    const bounds = new LngLatBounds();
+    for (const marker of markers) {
+      bounds.extend([marker.lon, marker.lat]);
+    }
+    return bounds;
+  };
+
+  const updateInView = () => {
+    if (!map) {
+      return;
+    }
+    const area = toMapArea(map.getBounds());
+    inView = markers.filter(({ lon, lat }) => isInMapArea(area, lon, lat));
+    listShown = LIST_PAGE;
+    zoom = map.getZoom();
+    layoutPins();
+  };
+
+  const fitAll = (announce = true) => {
+    if (!map || markers.length === 0) {
+      return;
+    }
+    // Clear of the floating overlays: the in-view chip and legend (top, bottom) and the tools, a column
+    // on the right (72px) or, on a phone, a bar above the legend (DISCOVERY-P2, about 140px from the foot).
+    map.fitBounds(extent(), {
+      padding: phone.current
+        ? { top: 64, bottom: 156, left: 32, right: 32 }
+        : { top: 64, bottom: 64, left: 48, right: 120 },
+      maxZoom: 15,
+      animate: announce,
+    });
+    changed = false;
+    if (announce) {
+      status = $t('frameleaf_map_status_reset');
+    }
+  };
+
+  // Fit once the first markers arrive, unless a link asked for a particular place.
+  $effect(() => {
+    if (!map || !loaded || fitted) {
+      return;
+    }
+    fitted = true;
+    if (scoped || !focusedByLink) {
+      fitAll(false);
+    }
+    updateInView();
+  });
+
+  // New markers (a settings change) re-count what is in view without moving the map.
+  $effect(() => {
+    void markers;
+    updateInView();
+  });
+
+  // Keeps the markers when the theme swaps the style (svelte-maplibre#146).
+  $effect(() => {
+    map?.setStyle(styleUrl, {
+      transformStyle: (previous, next) => {
+        if (!previous) {
+          return next;
+        }
+        const sources = next.sources;
+        for (const [key, value] of Object.entries(previous.sources || {})) {
+          if (key.startsWith('geojson')) {
+            sources[key] = value;
+          }
+        }
+        // …and the invisible layers svelte-maplibre reads the bubbles through, as the stock map does
+        // (shared-components/map/Map.svelte): a markers source left with no layer drops its tiles, and
+        // the bubbles are gone until the obstacle layer has brought the tiles back.
+        const markerLayers = previous.layers.filter((layer) => layer.type === 'fill' && layer.source === 'geojson');
+        return { ...next, sources, layers: [...next.layers, ...markerLayers] };
+      },
+    });
+  });
+
+  const zoomBy = (delta: number) => {
+    if (!map) {
+      return;
+    }
+    map.zoomTo(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, map.getZoom() + delta)));
+    changed = true;
+  };
+
+  const openCluster = async (feature: Feature) => {
+    if (!map) {
+      return;
+    }
+    const clusterId = feature.properties?.cluster_id as number;
+    const count = feature.properties?.point_count as number;
+    const source = map.getSource('geojson') as GeoJSONSource;
+    const expansion = await source.getClusterExpansionZoom(clusterId);
+    const [lng, lat] = (feature.geometry as Point).coordinates;
+    map.easeTo({ center: [lng, lat], zoom: Math.min(MAX_ZOOM, Math.max(expansion, map.getZoom() + 2)) });
+    changed = true;
+    status = $t('frameleaf_map_status_zoomed', { values: { count } });
+  };
+
+  const locate = (marker: MapMarkerResponseDto) => {
+    map?.easeTo({ center: [marker.lon, marker.lat], zoom: Math.max(map.getZoom(), 12) });
+    changed = true;
+    status = $t('frameleaf_map_status_centred', { values: { place: placeOf(marker) || $t('frameleaf_map_item') } });
+  };
+
+  const searchArea = () => {
+    if (!map) {
+      return;
+    }
+    changed = false;
+    status = $t('frameleaf_map_status_searching', { values: { count: inView.length } });
+    onSearchArea?.(toMapArea(map.getBounds()));
+  };
+
+  const onKeydown = (event: KeyboardEvent) => {
+    if (settingsOpen && event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      settingsOpen = false;
+      focusGear();
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    if (target?.classList.contains('maplibregl-canvas') && (event.key === 'Home' || event.key === '0')) {
+      event.preventDefault();
+      fitAll();
+    }
+  };
+
+  const toggleSettings = async () => {
+    settingsOpen = !settingsOpen;
+    if (settingsOpen) {
+      await tick();
+      settingsSheet?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.focus();
+    }
+  };
+
+  const coordinatesOf = (feature: Feature) => {
+    const [lng, lat] = (feature.geometry as Point).coordinates;
+    return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  };
+</script>
+
+<svelte:window
+  ononline={() => {
+    offline = false;
+    if (tilesFailed) {
+      retryTiles();
+    }
+  }}
+  onoffline={() => (offline = true)}
+/>
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="fl-map" class:with-list={listOpen} onkeydown={onKeydown}>
+  <div
+    class="stage"
+    role="region"
+    aria-label={$t('frameleaf_map_region', { values: { title, count: inView.length } })}
+    aria-describedby="fl-map-help"
+  >
+    <MapLibre
+      style=""
+      hash={!scoped}
+      class="fl-map-canvas"
+      attributionControl={false}
+      diffStyleUpdates={true}
+      minZoom={MIN_ZOOM}
+      maxZoom={MAX_ZOOM}
+      onerror={(event) => {
+        // FL-193: attached here, not inside onload, so a style or tile fetch that fails before the
+        // map's first "load" (offline at startup, or the tile server unreachable) still shows the
+        // offline state instead of leaving the map blank. onload only fires once the style has
+        // loaded, so an error handler registered there would never see a startup failure.
+        const failed = (event as { sourceId?: string }).sourceId;
+        if (failed !== 'geojson' && failed !== BUBBLE_NAME_LAYER) {
+          tilesFailed = true;
+        }
+      }}
+      onmoveend={(event: { originalEvent?: unknown }) => {
+        // FL-51: attached with the map, not in onload, so with an unreachable style (no "load") the
+        // In view list the offline card points to still follows the view.
+        if (event.originalEvent) {
+          changed = true;
+        }
+        updateInView();
+      }}
+      onload={(instance: Map) => {
+        // MapView.jsx:230-240: place names start past their dot and clear of the bubbles, on every style.
+        // MapLibre fires both events from inside a frame, after it has evaluated the layers and before
+        // it draws them, and a layer added there is drawn with no layout: the renderer throws. A theme
+        // change does just that (it drops the obstacle layer from a source that keeps its tiles), so
+        // the style is only changed once the frame is over.
+        const layoutLabels = () => queueMicrotask(() => applyClusterLabelLayout(instance, 'geojson'));
+        instance.on('styledata', layoutLabels);
+        instance.on('sourcedata', (event: { sourceId?: string }) => {
+          if (event.sourceId !== 'geojson') {
+            return;
+          }
+          layoutLabels();
+        });
+        // The bubbles have settled for this view: the pins keep clear of where they are now.
+        instance.on('idle', layoutPins);
+        // The markers source goes on at "style.load", so on a first load both events are over before
+        // "load" attaches the listeners above, and nothing would lay the labels out until the view
+        // crossed a zoom level. "load" itself is fired after the frame has been drawn.
+        layoutLabels();
+        // …and a place hidden under a bubble is named at the bubble's edge, once the map is at rest.
+        // While it moves, a name goes as soon as its bubble regroups.
+        instance.on('idle', () => updateBubbleNames(instance, 'geojson'));
+        instance.on('move', () => queueMicrotask(() => updateBubbleNames(instance, 'geojson', false)));
+      }}
+      bind:map
+    >
+      <AttributionControl compact position="bottom-right" />
+      <GeoJSON data={features} id="geojson" cluster={{ radius: MAP_CLUSTER_DISTANCE, maxZoom: 17 }}>
+        <MarkerLayer
+          applyToClusters
+          asButton
+          bind:hovered={hoveredCluster}
+          onclick={(event) => void openCluster(event.feature)}
+        >
+          {#snippet children({ feature })}
+            {@const count = (feature.properties?.point_count as number) ?? 0}
+            <span
+              class="cluster"
+              style:--fl-cluster-size="{clusterRadius(count) * 2}px"
+              role="img"
+              aria-label={$t('frameleaf_map_cluster_label', { values: { count } })}
+            >
+              {count.toLocaleString($locale)}
+              {#if hoveredCluster?.properties?.cluster_id === feature.properties?.cluster_id}
+                {@const preview =
+                  clusterPreview?.cluster === feature.properties?.cluster_id ? clusterPreview : undefined}
+                <span class="card" aria-hidden="true">
+                  {#if preview}
+                    <img src={getAssetMediaUrl({ id: preview.id, size: AssetMediaSize.Thumbnail })} alt="" />
+                  {:else}
+                    <span class="card-empty"><Icon icon={mdiImageOutline} size="20" /></span>
+                  {/if}
+                  <span class="card-copy">
+                    <strong>{$t('frameleaf_map_items', { values: { count } })}</strong>
+                    <small>{preview?.place || coordinatesOf(feature)}</small>
+                  </span>
+                </span>
+              {/if}
+            </span>
+          {/snippet}
+        </MarkerLayer>
+        <MarkerLayer
+          applyToClusters={false}
+          asButton
+          bind:hovered={hoveredSingle}
+          onclick={(event) =>
+            onOpenAsset(
+              event.feature.properties?.id as string,
+              inView.map(({ id }) => id),
+            )}
+        >
+          {#snippet children({ feature })}
+            {@const id = feature.properties?.id as string}
+            {@const place = feature.properties?.place as string}
+            {@const name = (feature.properties?.name as string) || $t('frameleaf_map_item')}
+            {@const line = feature.properties?.line as string}
+            <!-- MapView.jsx:582-584, 626-628, 634-658: "Open name, place", a video dot, and the hover
+                 card with the file name over the capture day and place. -->
+            <span class="single">
+              <img
+                src={getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail })}
+                alt={place
+                  ? $t('frameleaf_map_open_named_at', { values: { name, place } })
+                  : $t('frameleaf_map_open_named', { values: { name } })}
+              />
+              {#if feature.properties?.video}
+                <span class="video-dot" aria-hidden="true"></span>
+              {/if}
+              {#if hoveredSingle?.properties?.id === id}
+                <span class="card" aria-hidden="true">
+                  <img src={getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail })} alt="" />
+                  <span class="card-copy">
+                    <strong>{name}</strong>
+                    <small>{line || coordinatesOf(feature)}</small>
+                  </span>
+                </span>
+              {/if}
+            </span>
+          {/snippet}
+        </MarkerLayer>
+      </GeoJSON>
+      <!-- FL-355, MapView.jsx `landmarkPins`: a pin above the photos taken at a landmark; it opens them. -->
+      {#each pins as pin (pin.place.id)}
+        {@const landmark = pin.place}
+        <Marker
+          lngLat={[landmark.longitude, landmark.latitude]}
+          anchor="bottom"
+          offset={[0, -30]}
+          zIndex={2}
+          asButton
+          onclick={() => void goto(landmarkHref(landmark.id))}
+        >
+          <span
+            class="lm-pin"
+            class:branded={pin.branded}
+            class:compact={pin.compact}
+            class:side={pin.side}
+            role="img"
+            aria-label={$t('frameleaf_landmarks_card_label', {
+              values: {
+                name: landmark.name,
+                kind: $t(landmarkKind(landmark.kind).labelKey),
+                count: landmark.assetCount,
+              },
+            })}
+          >
+            <LandmarkBadge {landmark} size={pin.branded ? PIN_BRAND_PX : PIN_ICON_PX} brand={pin.branded} />
+            {#if !pin.compact}{landmark.name}{/if}
+          </span>
+        </Marker>
+      {/each}
+    </MapLibre>
+
+    <p id="fl-map-help" class="sr-only">{$t('frameleaf_map_help')}</p>
+
+    <div class="overlay top-left">
+      {#if loaded}
+        <span class="chip">
+          <Icon icon={mdiMapMarkerMultipleOutline} size="16" />
+          {$t('frameleaf_map_in_view', { values: { count: inView.length } })}
+          <small>· {$t('frameleaf_map_located', { values: { count: markers.length } })}</small>
+        </span>
+      {:else if !loadFailed}
+        <!-- No counts until there is an answer: "0 in view" would read as an empty map. -->
+        <span class="chip finding" role="status">
+          <Icon icon={mdiMapMarkerMultipleOutline} size="16" />
+          {$t('frameleaf_map_finding')}
+        </span>
+      {/if}
+    </div>
+
+    {#if changed && onSearchArea}
+      <div class="overlay top-center">
+        <Button variant="primary" onclick={searchArea}>
+          <Icon icon={mdiMagnify} size="18" />
+          {$t('frameleaf_map_search_this_area')}
+        </Button>
+      </div>
+    {/if}
+
+    <div class="overlay tools" role="toolbar" aria-label={$t('frameleaf_map_tools')}>
+      <IconButton label={$t('frameleaf_map_zoom_in')} disabled={zoom >= MAX_ZOOM} onclick={() => zoomBy(0.5)}>
+        <Icon icon={mdiPlus} size="20" />
+      </IconButton>
+      <IconButton label={$t('frameleaf_map_zoom_out')} disabled={zoom <= MIN_ZOOM} onclick={() => zoomBy(-0.5)}>
+        <Icon icon={mdiMinus} size="20" />
+      </IconButton>
+      <IconButton label={$t('frameleaf_map_show_all')} onclick={() => fitAll()}>
+        <Icon icon={mdiArrowExpandAll} size="20" />
+      </IconButton>
+      <IconButton
+        label={listOpen ? $t('frameleaf_map_hide_list') : $t('frameleaf_map_show_list')}
+        pressed={listOpen}
+        onclick={() => patchSettings({ showAssetPanel: !listOpen })}
+      >
+        <Icon icon={mdiViewListOutline} size="20" />
+      </IconButton>
+      <span bind:this={gear} class="gear">
+        <IconButton label={$t('frameleaf_map_settings')} pressed={settingsOpen} onclick={() => void toggleSettings()}>
+          <Icon icon={mdiCogOutline} size="20" />
+        </IconButton>
+      </span>
+    </div>
+
+    <div class="overlay legend" role="group" aria-label={$t('frameleaf_map_legend')}>
+      <span><i class="dot small"></i> 1</span>
+      <span><i class="dot"></i> 2–9</span>
+      <span><i class="dot large"></i> 10+</span>
+      <span class="legend-counts">
+        {$t('frameleaf_map_legend_counts', { values: { photos: counts.photos, videos: counts.videos } })}
+      </span>
+    </div>
+
+    {#if tilesFailed || offline}
+      <!-- FL-51: the tile source cannot be reached; the prototype's empty-state card, with the list
+           as the way to the located items. -->
+      <div class="offline" role="status">
+        <Icon icon={mdiMapMarkerOffOutline} size="24" />
+        <strong>{offline ? $t('frameleaf_map_offline_title') : $t('frameleaf_map_tiles_failed_title')}</strong>
+        <p>{$t('frameleaf_map_tiles_failed_help')}</p>
+        <div class="offline-actions">
+          {#if !listOpen}
+            <Button onclick={() => patchSettings({ showAssetPanel: true })}>{$t('frameleaf_map_show_list')}</Button>
+          {/if}
+          {#if !offline}
+            <Button onclick={retryTiles}>{$t('frameleaf_map_try_again')}</Button>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    {#if loadFailed}
+      <!-- The legend, tools and list stay; only the located items say they could not load. -->
+      <div class="load-failed">
+        <InlineError
+          compact
+          title={$t('frameleaf_map_load_failed_title')}
+          message={$t('frameleaf_map_load_failed_help')}
+          retryLabel={$t('frameleaf_map_try_again')}
+          onRetry={retryMarkers}
+        />
+      </div>
+    {/if}
+
+    {#if settingsOpen}
+      <div class="settings" role="dialog" aria-label={$t('frameleaf_map_settings')} bind:this={settingsSheet}>
+        <header>
+          <strong>{$t('frameleaf_map_settings')}</strong>
+          <IconButton
+            label={$t('frameleaf_map_close_settings')}
+            onclick={() => {
+              settingsOpen = false;
+              focusGear();
+            }}
+          >
+            <Icon icon={mdiClose} size="18" />
+          </IconButton>
+        </header>
+        <fieldset>
+          <legend>{$t('frameleaf_map_date_range')}</legend>
+          <div class="presets" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_map_date_range')}>
+            {#each MAP_DATE_PRESETS as preset (preset)}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={$mapSettings.datePreset === preset}
+                class:on={$mapSettings.datePreset === preset}
+                onclick={() => patchSettings({ datePreset: preset })}
+              >
+                {presetLabels[preset]}
+              </button>
+            {/each}
+          </div>
+          {#if $mapSettings.datePreset === 'custom'}
+            <div class="dates">
+              <label>
+                {$t('frameleaf_map_from')}
+                <input
+                  type="date"
+                  value={$mapSettings.dateAfter}
+                  max={$mapSettings.dateBefore || undefined}
+                  onchange={(event) => patchSettings({ dateAfter: event.currentTarget.value })}
+                />
+              </label>
+              <label>
+                {$t('frameleaf_map_to')}
+                <input
+                  type="date"
+                  value={$mapSettings.dateBefore}
+                  min={$mapSettings.dateAfter || undefined}
+                  onchange={(event) => patchSettings({ dateBefore: event.currentTarget.value })}
+                />
+              </label>
+            </div>
+          {/if}
+        </fieldset>
+        <fieldset>
+          <legend>{$t('frameleaf_map_include')}</legend>
+          {#each switches as option (option.key)}
+            {@const count = option.key === 'includeArchived' ? statistics?.archived : undefined}
+            <button
+              type="button"
+              role="switch"
+              class="switch"
+              class:on={$mapSettings[option.key]}
+              aria-checked={$mapSettings[option.key]}
+              onclick={() => patchSettings({ [option.key]: !$mapSettings[option.key] })}
+            >
+              <span class="track" aria-hidden="true"></span>
+              <span
+                >{option.label}{#if count !== undefined}&nbsp;<small>{count.toLocaleString($locale)}</small>{/if}</span
+              >
+            </button>
+          {/each}
+        </fieldset>
+        <dl class="counts">
+          <div>
+            <dt>{$t('frameleaf_map_count_located')}</dt>
+            <dd>{markers.length}</dd>
+          </div>
+          <div>
+            <dt>{$t('frameleaf_map_count_in_view')}</dt>
+            <dd>{inView.length}</dd>
+          </div>
+          {#if statistics}
+            <div>
+              <dt>{$t('frameleaf_map_count_unlocated')}</dt>
+              <dd>{statistics.unlocated}</dd>
+            </div>
+          {/if}
+        </dl>
+      </div>
+    {/if}
+
+    <output class="sr-only" aria-live="polite">{status}</output>
+  </div>
+
+  {#if listOpen}
+    <aside class="list" aria-label={$t('frameleaf_map_items_in_view')}>
+      <header>
+        <strong>{$t('frameleaf_map_count_in_view')}</strong>
+        <small>{$t('frameleaf_map_items', { values: { count: inView.length } })}</small>
+        <IconButton label={$t('frameleaf_map_hide_list')} onclick={() => patchSettings({ showAssetPanel: false })}>
+          <Icon icon={mdiClose} size="18" />
+        </IconButton>
+      </header>
+      {#if inView.length > 0}
+        <ul>
+          {#each listRows as marker (marker.id)}
+            {@const detail = markerDetail(marker)}
+            {@const place = detail.name ?? (detail.place || $t('frameleaf_map_item'))}
+            {@const line = markerRowLine(detail, $t('frameleaf_map_video'))}
+            <li>
+              <!-- MapView.jsx:806-829: the file name over "day · city · Video", and "Centre map on name". -->
+              <button
+                type="button"
+                class="row"
+                onclick={() =>
+                  onOpenAsset(
+                    marker.id,
+                    inView.map(({ id }) => id),
+                  )}
+              >
+                <img src={getAssetMediaUrl({ id: marker.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
+                <span>
+                  <strong>{place}</strong>
+                  <small>{line || `${marker.lat.toFixed(3)}, ${marker.lon.toFixed(3)}`}</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="locate"
+                aria-label={$t('frameleaf_map_centre_on', { values: { place } })}
+                title={$t('frameleaf_map_centre')}
+                onclick={() => locate(marker)}
+              >
+                <Icon icon={mdiCrosshairsGps} size="16" />
+              </button>
+            </li>
+          {/each}
+          {#if listShown < inView.length}
+            <li class="list-more" aria-hidden="true" bind:this={listEnd}></li>
+          {/if}
+        </ul>
+      {:else if loaded}
+        <p class="list-empty" role="status">{$t('frameleaf_map_list_empty')}</p>
+      {:else if !loadFailed}
+        <p class="list-empty" role="status">{$t('frameleaf_map_finding')}</p>
+      {/if}
+    </aside>
+  {/if}
+
+  {#if loaded && !loadFailed && markers.length === 0}
+    <div class="empty" role="status">
+      <Icon icon={mdiMapMarkerOutline} size="30" />
+      <!-- MapView.jsx has one empty state for both scopes: the settings sheet narrows an album too. -->
+      <strong>{$t('frameleaf_map_empty_title')}</strong>
+      <p>{$t('frameleaf_map_empty_help')}</p>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .fl-map {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 320px;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fl-text);
+    background: var(--fl-canvas);
+    font-size: var(--fl-font-size);
+  }
+  .stage {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  .stage :global(.fl-map-canvas) {
+    width: 100%;
+    height: 100%;
+  }
+  .overlay {
+    position: absolute;
+    z-index: 2;
+  }
+  .top-left {
+    top: 12px;
+    left: 12px;
+  }
+  .top-center {
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-1);
+    font-size: var(--fl-font-small);
+    font-weight: 500;
+  }
+  .chip small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+    font-weight: 400;
+  }
+  .tools {
+    top: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-2);
+    background: var(--fl-panel);
+    border-radius: var(--fl-radius-card);
+    box-shadow: var(--fl-shadow-1);
+  }
+  /*
+   * The map's own credit line. Its round "i" keeps the size the map library draws it at: grown to a
+   * control's height it repeats its icon under the pill and reaches over whatever sits below.
+   */
+  .stage :global(.maplibregl-ctrl-attrib-button) {
+    min-width: 0;
+    min-height: 0;
+    background-repeat: no-repeat;
+  }
+  .gear {
+    display: contents;
+  }
+  .legend {
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 30px;
+    padding: 6px 12px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-1);
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .dot {
+    display: inline-block;
+    box-sizing: border-box;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--fl-text);
+    border-radius: 50%;
+    background: var(--fl-raised);
+  }
+  .switch small {
+    color: var(--fl-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .legend-counts {
+    padding-inline-start: 12px;
+    border-inline-start: 1px solid var(--fl-border);
+  }
+  /*
+   * A phone's map is too narrow for the legend and the credit line side by side: the legend sits above
+   * it, without the counts (map-view.css:642-668). The tools leave the right-hand column, which hid a
+   * third of the map, for a bar above the legend at the right (DISCOVERY-P2).
+   */
+  @media (max-width: 640px) {
+    .legend {
+      bottom: calc(var(--fl-space-3) + var(--fl-space-8));
+    }
+    .legend .legend-counts {
+      display: none;
+    }
+    .tools {
+      top: auto;
+      /* The legend's foot, its 30px and 8px between them. */
+      bottom: calc(var(--fl-space-3) + var(--fl-space-8) + 30px + var(--fl-space-2));
+      flex-direction: row;
+    }
+    /* With the column gone, "Search this area" sits under the in-view chip instead of over it. */
+    .top-center {
+      top: calc(var(--fl-space-3) + 34px + var(--fl-space-2));
+      left: var(--fl-space-3);
+      transform: none;
+    }
+  }
+  .video-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--fl-panel);
+    border-radius: 50%;
+    background: var(--fl-accent);
+  }
+  .offline {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: min(320px, calc(100% - 32px));
+    padding: 18px;
+    transform: translateX(-50%);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-2);
+    text-align: center;
+    color: var(--fl-muted);
+  }
+  .load-failed {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    z-index: 3;
+    width: min(360px, calc(100% - 32px));
+    transform: translateX(-50%);
+    box-shadow: var(--fl-shadow-2);
+    border-radius: var(--fl-radius-card);
+  }
+  .offline strong {
+    color: var(--fl-text);
+  }
+  .offline p {
+    margin: 0;
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  .offline-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .dot.small {
+    width: 9px;
+    height: 9px;
+  }
+  .dot.large {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Markers */
+  .cluster,
+  .single {
+    position: relative;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--fl-text);
+    border-radius: 50%;
+    box-shadow: 0 2px 6px #0006;
+    color: var(--fl-text);
+    transition: border-color var(--fl-motion) var(--fl-ease);
+  }
+  /* MapView.jsx:104-105: the bubble grows with its count up to 40 items (clusterRadius). */
+  .cluster {
+    width: var(--fl-cluster-size, 38px);
+    height: var(--fl-cluster-size, 38px);
+    background: var(--fl-raised);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .single {
+    width: 42px;
+    height: 42px;
+    background: var(--fl-panel);
+  }
+  .single > img {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  /* Landmark pins: icon and name, lifted above the photo bubble at the same spot (landmarks.css `.lm-pin`). */
+  .lm-pin {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 11px 4px 4px;
+    border-radius: 999px;
+    background: rgba(244, 247, 245, 0.96);
+    color: #10201a;
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+  }
+  .lm-pin::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -5px;
+    width: 10px;
+    height: 10px;
+    background: inherit;
+    transform: translateX(-50%) rotate(45deg);
+    border-radius: 2px;
+  }
+  .lm-pin.branded {
+    padding: 3px 13px 3px 3px;
+    gap: 9px;
+    font-size: 13px;
+  }
+  .lm-pin.compact {
+    padding: 4px;
+  }
+  .lm-pin.branded.compact {
+    padding: 3px;
+  }
+  /* The name runs right from the pin instead of being centred on it. */
+  .lm-pin.side {
+    --lm-icon: 16px;
+    transform: translateX(calc(50% - var(--lm-icon)));
+  }
+  .lm-pin.side.branded {
+    --lm-icon: 22px;
+  }
+  .lm-pin.side::after {
+    left: var(--lm-icon);
+  }
+  :global(.maplibregl-marker:hover) .cluster,
+  :global(.maplibregl-marker:hover) .single,
+  :global(.maplibregl-marker:focus-visible) .cluster,
+  :global(.maplibregl-marker:focus-visible) .single {
+    border-color: var(--fl-accent);
+  }
+  .card {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 180px;
+    padding: 8px;
+    transform: translateX(-50%);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-2);
+    color: var(--fl-text);
+    text-align: start;
+    pointer-events: none;
+  }
+  .card img,
+  .card-empty {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 46px;
+    height: 46px;
+    border-radius: var(--fl-radius-control);
+    object-fit: cover;
+    background: var(--fl-raised);
+    color: var(--fl-muted);
+  }
+  .card-copy {
+    min-width: 0;
+  }
+  .card strong,
+  .card small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card strong {
+    font-size: var(--fl-font-small);
+    font-weight: 560;
+  }
+  .card small {
+    margin-top: var(--fl-space-1);
+    font-size: var(--fl-font-micro);
+    font-weight: 400;
+    color: var(--fl-muted);
+  }
+
+  /* Settings sheet */
+  .settings {
+    position: absolute;
+    top: 12px;
+    /* Clear of the tool column (12px + its 60px) by 8px. */
+    right: 80px;
+    z-index: 4;
+    width: 300px;
+    max-width: calc(100% - 92px);
+    max-height: calc(100% - 24px);
+    overflow: auto;
+    padding: 14px 16px 16px;
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-2);
+  }
+  /* On a phone the settings open from the bar below as a sheet across the foot (map-view.css:670-679). */
+  @media (max-width: 640px) {
+    .settings {
+      top: auto;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      width: auto;
+      max-width: none;
+      max-height: 70%;
+      border-radius: var(--fl-radius-card) var(--fl-radius-card) 0 0;
+    }
+  }
+  .settings header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .settings header strong {
+    font-weight: 600;
+  }
+  .settings fieldset {
+    margin: 0 0 var(--fl-space-2);
+    padding: 10px 0 0;
+    border: 0;
+    border-top: 1px solid var(--fl-border);
+  }
+  .settings legend {
+    padding: 10px 0 8px;
+    font-size: var(--fl-font-micro);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fl-muted);
+  }
+  .presets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--fl-space-2);
+  }
+  .presets button {
+    min-height: 34px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: transparent;
+    color: var(--fl-text);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  .presets button.on {
+    border-color: transparent;
+    background: var(--fl-raised);
+    font-weight: 560;
+  }
+  .dates {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .dates label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-2);
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+  }
+  .dates input {
+    min-height: 34px;
+    padding: 5px 8px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-canvas);
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+  }
+  .switch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 36px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fl-text);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    text-align: start;
+    cursor: pointer;
+  }
+  .track {
+    position: relative;
+    flex-shrink: 0;
+    width: 32px;
+    height: 18px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-border);
+    transition: background var(--fl-motion) var(--fl-ease);
+  }
+  .track::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    inset-inline-start: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--fl-text);
+    transition: transform var(--fl-motion) var(--fl-ease);
+  }
+  .switch.on .track {
+    background: var(--fl-accent);
+  }
+  .switch.on .track::after {
+    transform: translateX(14px);
+    background: var(--fl-accent-text);
+  }
+  :global([dir='rtl']) .switch.on .track::after {
+    transform: translateX(-14px);
+  }
+  .counts {
+    display: flex;
+    gap: 14px;
+    margin: 8px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--fl-border);
+  }
+  .counts div {
+    flex: 1;
+  }
+  .counts dt {
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+  }
+  .counts dd {
+    margin: var(--fl-space-1) 0 0;
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* In-view list */
+  .list {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    width: 300px;
+    min-height: 0;
+    border-inline-start: 1px solid var(--fl-border);
+    background: var(--fl-panel);
+  }
+  .list header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 52px;
+    padding: 10px 10px 10px 16px;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .list header strong {
+    font-weight: 600;
+  }
+  .list header small {
+    flex: 1;
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+  }
+  .list ul {
+    min-height: 0;
+    margin: 0;
+    padding: 6px;
+    overflow: auto;
+    list-style: none;
+  }
+  .list li {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .row {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 6px;
+    border: 0;
+    border-radius: var(--fl-radius-control);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .row:hover {
+    background: var(--fl-raised);
+  }
+  .row img {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--fl-radius-control);
+    object-fit: cover;
+    background: var(--fl-raised);
+  }
+  .row > span {
+    min-width: 0;
+  }
+  .row strong,
+  .row small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row strong {
+    font-size: var(--fl-font-small);
+    font-weight: 540;
+  }
+  .row small {
+    margin-top: var(--fl-space-1);
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .locate {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: var(--fl-radius-control);
+    background: none;
+    color: var(--fl-muted);
+    cursor: pointer;
+  }
+  .locate:hover {
+    background: var(--fl-raised);
+    color: var(--fl-text);
+  }
+  .list-empty {
+    padding: 24px 16px;
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+    color: var(--fl-muted);
+  }
+  .empty {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 3;
+    width: min(320px, calc(100% - 32px));
+    padding: 22px;
+    transform: translate(-50%, -50%);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-2);
+    text-align: center;
+    color: var(--fl-muted);
+  }
+  .empty strong {
+    display: block;
+    margin-top: 10px;
+    color: var(--fl-text);
+  }
+  .empty p {
+    margin: 8px 0 0;
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  /*
+   * Entrances (map-view.css map-card-in, map-list-in, map-sheet-in): the hover card lifts into
+   * place, the list slides in from its edge, and the settings sheet rises. Under Reduce Motion each
+   * is the short crossfade. The "finding" chip breathes until the located items arrive.
+   */
+  .card {
+    animation: map-card-in var(--fl-motion) var(--fl-ease) both;
+  }
+  .list {
+    animation: map-list-in var(--fl-motion) var(--fl-ease) both;
+  }
+  .settings {
+    animation: map-sheet-in var(--fl-motion-slow) var(--fl-ease) both;
+  }
+  .chip.finding {
+    animation: fl-skeleton-pulse var(--fl-duration-pulse) var(--fl-ease) infinite alternate;
+  }
+  @keyframes map-card-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--fl-space-1);
+    }
+  }
+  @keyframes map-list-in {
+    from {
+      opacity: 0;
+      translate: var(--fl-space-3) 0;
+    }
+  }
+  @keyframes map-sheet-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--fl-space-4);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card,
+    .list,
+    .settings {
+      animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
+    }
+    .chip.finding {
+      animation: none !important;
+    }
+  }
+  @media (max-width: 720px) {
+    .list {
+      animation-name: map-sheet-in;
+      animation-duration: var(--fl-motion-slow);
+    }
+    .fl-map.with-list {
+      flex-direction: column;
+    }
+    .list {
+      width: 100%;
+      max-height: 45%;
+      border-top: 1px solid var(--fl-border);
+      border-inline-start: 0;
+    }
+  }
+</style>

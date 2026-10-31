@@ -1,0 +1,356 @@
+from collections.abc import Sequence
+from enum import Enum
+from typing import Any, Literal, Protocol, TypeGuard, TypeVar
+
+import numpy as np
+import numpy.typing as npt
+import orjson
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing_extensions import TypedDict
+
+
+class ORJSONResponse(JSONResponse):
+    def render(self, content: Any) -> bytes:
+        return orjson.dumps(content, option=orjson.OPT_SERIALIZE_NUMPY)
+
+
+class StrEnum(str, Enum):
+    __str__ = str.__str__
+
+
+class BoundingBox(TypedDict):
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
+class ModelTask(StrEnum):
+    FACIAL_RECOGNITION = "facial-recognition"
+    SEARCH = "clip"
+    OCR = "ocr"
+    IMAGE_DESCRIPTION = "image-description-tagging"
+    NSFW_DETECTION = "nsfw-detection"
+    SEMANTIC_MASK = "semantic-mask"
+    INPAINT = "inpaint"
+    TRANSCRIBE = "transcribe"
+    MUSIC = "music"
+    SUBJECT_MATTE = "subject-matte"
+    VOICE_CLEANUP = "voice-cleanup"
+    TRANSLATE = "translate"
+
+
+class ModelType(StrEnum):
+    CLASSIFICATION = "classification"
+    DETECTION = "detection"
+    RECOGNITION = "recognition"
+    TEXTUAL = "textual"
+    VISUAL = "visual"
+    AUDIO = "audio"
+
+
+class ModelFormat(StrEnum):
+    ARMNN = "armnn"
+    ONNX = "onnx"
+    RKNN = "rknn"
+
+
+class ModelSource(StrEnum):
+    INSIGHTFACE = "insightface"
+    MCLIP = "mclip"
+    OPENCLIP = "openclip"
+    PADDLE = "paddle"
+
+
+class ModelPrecision(StrEnum):
+    FP16 = "FP16"
+    FP32 = "FP32"
+
+
+class ImageDescriptionAcceleration(StrEnum):
+    AUTO = "auto"
+    OPENVINO = "openvino"
+    CUDA = "cuda"
+
+
+ModelIdentity = tuple[ModelType, ModelTask]
+
+
+class SessionNode(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def shape(self) -> tuple[int, ...]: ...
+
+
+class ModelSession(Protocol):
+    def run(
+        self,
+        output_names: list[str] | None,
+        input_feed: dict[str, npt.NDArray[np.float32]]
+        | dict[str, npt.NDArray[np.int32]]
+        | dict[str, npt.NDArray[np.uint8]],
+        run_options: Any = None,
+    ) -> list[npt.NDArray[np.float32]]: ...
+
+    def get_inputs(self) -> Sequence[SessionNode]: ...
+
+    def get_outputs(self) -> Sequence[SessionNode]: ...
+
+    def get_metadata(self) -> dict[str, str]: ...
+
+
+class HasProfiling(Protocol):
+    profiling: dict[str, float]
+
+
+class FaceDetectionOutput(TypedDict):
+    boxes: npt.NDArray[np.float32]
+    scores: npt.NDArray[np.float32]
+    landmarks: npt.NDArray[np.float32]
+
+
+class DetectedFace(TypedDict):
+    boundingBox: BoundingBox
+    embedding: str
+    score: float
+
+
+FacialRecognitionOutput = list[DetectedFace]
+
+
+class PipelineEntry(TypedDict):
+    modelName: str
+    options: dict[str, Any]
+
+
+PipelineRequest = dict[ModelTask, dict[ModelType, PipelineEntry]]
+
+
+class InferenceEntry(TypedDict):
+    name: str
+    task: ModelTask
+    type: ModelType
+    options: dict[str, Any]
+
+
+InferenceEntries = tuple[list[InferenceEntry], list[InferenceEntry]]
+
+
+InferenceResponse = dict[ModelTask | Literal["imageHeight"] | Literal["imageWidth"], Any]
+
+
+def has_profiling(obj: Any) -> TypeGuard[HasProfiling]:
+    return hasattr(obj, "profiling") and isinstance(obj.profiling, dict)
+
+
+# Max length for the externally-supplied VLM prompt. Multipart body limits
+# are the primary defense; this cap is belt-and-braces against an attacker
+# who controls the server side and could otherwise send a 100MB prompt.
+# See ml.md High concern "external_prompt and other ML model options".
+MAX_EXTERNAL_PROMPT_LENGTH = 64 * 1024
+
+
+class _OptionsBase(BaseModel):
+    """Common ground for per-task option models.
+
+    `extra="forbid"` enforces a closed keyspace per task — this catches
+    schema drift between server and ML service, and provides a defensive
+    barrier against an attacker who controls the server side from sending
+    arbitrary kwargs to model constructors.
+
+    NOTE: ``ttl`` is intentionally NOT declared here. ``main.run_inference``
+    passes ``ttl=settings.model_ttl`` to ``model_cache.get`` alongside
+    ``**entry["options"]``; declaring ``ttl`` as a per-task option would
+    let a caller send ``ttl`` in the validated payload, then collide with
+    the explicit keyword and raise ``TypeError: got multiple values for
+    keyword argument 'ttl'``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device: str | None = Field(default=None, max_length=64)
+
+
+class ClipOptions(_OptionsBase):
+    """Options for CLIP textual/visual models."""
+
+    # Weblate language code (e.g. "en-US", "de") for multilingual CLIP text
+    # search. The server forwards it via TextEncodingOptions; NLLB tokenizers
+    # map it to a FLORES-200 code (see models/clip/textual.py). Bounded length
+    # preserves the closed-keyspace hardening's defensive posture.
+    language: str | None = Field(default=None, max_length=64)
+
+
+class FacialRecognitionDetectionOptions(_OptionsBase):
+    """Options for the facial-recognition detection task."""
+
+    minScore: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class FacialRecognitionRecognitionOptions(_OptionsBase):
+    """Options for the facial-recognition recognition task."""
+
+
+class OcrDetectionOptions(_OptionsBase):
+    """Options for the OCR detection task."""
+
+    minScore: float | None = Field(default=None, ge=0.0, le=1.0)
+    # The server forwards maxResolution (machine-learning.repository.ts) and the
+    # detector's configure() consumes it (models/ocr/detection.py). Without it
+    # declared here, extra="forbid" rejects every OCR request. Bound mirrors the
+    # server DTO (model-config.dto.ts: z.int().min(1)).
+    maxResolution: int | None = Field(default=None, ge=1)
+
+
+class OcrRecognitionOptions(_OptionsBase):
+    """Options for the OCR recognition task."""
+
+    minScore: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class NsfwDetectionOptions(_OptionsBase):
+    """Options for the NSFW classification model."""
+
+    threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class ImageDescriptionOptions(_OptionsBase):
+    """Options for the image-description-tagging task.
+
+    Restricts the option keyspace per ml.md High concern — unknown keys are
+    rejected, the external prompt is length-capped, and acceleration/device
+    are constrained to expected values.
+    """
+
+    external_prompt: str | None = None
+    # nsfw can be the dict shape {"isNsfw": bool} or None.
+    nsfw: dict[str, Any] | None = None
+    acceleration: ImageDescriptionAcceleration | str | None = None
+
+    @field_validator("external_prompt")
+    @classmethod
+    def _cap_prompt_length(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if len(value) > MAX_EXTERNAL_PROMPT_LENGTH:
+            raise ValueError(f"external_prompt exceeds maximum length of {MAX_EXTERNAL_PROMPT_LENGTH} characters")
+        return value
+
+
+class SemanticMaskOptions(_OptionsBase):
+    target: Literal["subject", "sky"] = "subject"
+    # None leaves the choice to MACHINE_LEARNING_SEMANTIC_MASK_DEVICE.
+    device: Literal["cpu", "cuda"] | None = None
+
+
+class SubjectMattePoint(_OptionsBase):
+    """One "Add to subject" (1) or "Take away" (0) point: a frame of the clip and fractions of it."""
+
+    frame: int = Field(ge=0, lt=600)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    label: Literal[0, 1]
+
+
+class SubjectMatteOptions(_OptionsBase):
+    """Options for the subject-matte task (Studio cut-out, FL-639).
+
+    `seedKind` "face" seeds the subject from `seedBox`, the chosen person's face as fractions of the
+    first frame; "subject" finds the main subject with Florence-2. `points` refine the subject from
+    their frame on. The matte comes back at `matteWidth` x `matteHeight`.
+    """
+
+    seedKind: Literal["face", "subject"] = "subject"
+    seedBox: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    points: list[SubjectMattePoint] = Field(default_factory=list, max_length=64)
+    matteWidth: int = Field(default=256, ge=1, le=512)
+    matteHeight: int = Field(default=256, ge=1, le=512)
+    # None leaves the choice to MACHINE_LEARNING_SEMANTIC_MASK_DEVICE, as for photo masks.
+    device: Literal["cpu", "cuda"] | None = None
+
+
+class InpaintOptions(_OptionsBase):
+    """Options for the inpaint task (Clean Up Remove fills). The server sends none today."""
+
+
+class TranscribeOptions(_OptionsBase):
+    """Options for the transcribe task (Studio captions, Whisper).
+
+    `language` is a Whisper language code (`en`, `de`, `yue`); absent means detect it from the audio.
+    The server maps the request's BCP 47 tag (or `auto`) to it.
+    """
+
+    language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}$")
+    wordTimestamps: bool = True
+
+
+class MusicOptions(_OptionsBase):
+    """Options for the music task (Make a movie, MusicGen small).
+
+    `prompt` describes the music, `duration` is its length in seconds and `seed` makes a run
+    repeatable: the same prompt, length and seed give the same music.
+    """
+
+    prompt: str = Field(min_length=1, max_length=500)
+    duration: float = Field(gt=0, le=180)
+    seed: int = Field(default=0, ge=0, le=2**31 - 1)
+
+
+class VoiceCleanupOptions(_OptionsBase):
+    """Options for the voice clean-up task (Studio "Clean up voice", FL-637, DeepFilterNet3).
+
+    `mode` is `analyze` (what is in the sound) or `clean`. For `clean`, `strength` is Light, Standard or
+    Strong and `noises` the problems to remove. `humHz` is the mains frequency the analysis found; absent,
+    the worker looks for it again.
+    """
+
+    mode: Literal["analyze", "clean"] = "clean"
+    strength: Literal["light", "standard", "strong"] = "standard"
+    noises: list[Literal["wind", "hum", "background", "echo"]] = Field(default_factory=list, max_length=4)
+    humHz: Literal[50, 60] | None = None
+
+
+class TranslateOptions(_OptionsBase):
+    """Options for the translate task (Studio captions in other languages, FL-641).
+
+    `source` and `target` are the BCP 47 primary tags of the languages Studio offers (`en`, `fr`, `nb`);
+    the worker refuses any other.
+    """
+
+    source: str = Field(pattern=r"^[a-z]{2,3}$")
+    target: str = Field(pattern=r"^[a-z]{2,3}$")
+
+
+# Map of (task, type) -> options pydantic class for per-entry validation.
+OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
+    (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
+    (ModelTask.SEARCH, ModelType.VISUAL): ClipOptions,
+    (ModelTask.FACIAL_RECOGNITION, ModelType.DETECTION): FacialRecognitionDetectionOptions,
+    (ModelTask.FACIAL_RECOGNITION, ModelType.RECOGNITION): FacialRecognitionRecognitionOptions,
+    (ModelTask.OCR, ModelType.DETECTION): OcrDetectionOptions,
+    (ModelTask.OCR, ModelType.RECOGNITION): OcrRecognitionOptions,
+    (ModelTask.IMAGE_DESCRIPTION, ModelType.VISUAL): ImageDescriptionOptions,
+    (ModelTask.NSFW_DETECTION, ModelType.CLASSIFICATION): NsfwDetectionOptions,
+    (ModelTask.SEMANTIC_MASK, ModelType.VISUAL): SemanticMaskOptions,
+    (ModelTask.INPAINT, ModelType.VISUAL): InpaintOptions,
+    (ModelTask.TRANSCRIBE, ModelType.AUDIO): TranscribeOptions,
+    (ModelTask.MUSIC, ModelType.AUDIO): MusicOptions,
+    (ModelTask.SUBJECT_MATTE, ModelType.VISUAL): SubjectMatteOptions,
+    (ModelTask.VOICE_CLEANUP, ModelType.AUDIO): VoiceCleanupOptions,
+    (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
+}
+
+
+def validate_options(task: ModelTask, type_: ModelType, options: dict[str, Any]) -> dict[str, Any]:
+    """Validate per-task options. Falls back to passthrough if the (task, type)
+    pair is not registered (e.g. a future task that doesn't need validation)."""
+    validator = OPTIONS_VALIDATORS.get((task, type_))
+    if validator is None:
+        return options
+    return validator.model_validate(options).model_dump(exclude_none=True)
+
+
+T = TypeVar("T")

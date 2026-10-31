@@ -1,0 +1,1910 @@
+{
+  "catalogs": {
+    "en-XA": {
+      "version": 1,
+      "messages": {
+        "item-share-one": {
+          "title": "[Fixture shared]",
+          "body": "[Fixture {senderName} shared one item]"
+        },
+        "access-removed-unknown": {
+          "title": "[Fixture access]",
+          "body": "[Fixture album access ended]"
+        },
+        "reconciliation-missing-one": {
+          "title": "[Fixture Backup needs attention]",
+          "body": "[Fixture One item on this device is not on your server yet]"
+        },
+        "reconciliation-missing-many": {
+          "title": "[Fixture Backup needs attention]",
+          "body": "[Fixture {count} items on this device are not on your server yet]"
+        },
+        "memories-one": {
+          "title": "[Fixture Memories]",
+          "body": "[Fixture A new memory is ready]"
+        },
+        "memories-many": {
+          "title": "[Fixture Memories]",
+          "body": "[Fixture {count} new memories are ready]"
+        },
+        "partner-added": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture {senderName} shared their library with you]"
+        },
+        "partner-removed": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture {senderName} stopped sharing their library with you]"
+        },
+        "studio-export-ready": {
+          "title": "[Fixture Render finished]",
+          "body": "[Fixture Your Studio export is ready]"
+        },
+        "studio-export-ready-named": {
+          "title": "[Fixture Render finished]",
+          "body": "[Fixture {label} is ready]"
+        },
+        "studio-export-failed": {
+          "title": "[Fixture Render failed]",
+          "body": "[Fixture Your Studio export could not be finished]"
+        },
+        "studio-export-failed-named": {
+          "title": "[Fixture Render failed]",
+          "body": "[Fixture {label} could not be finished]"
+        },
+        "backup-stale-one": {
+          "title": "[Fixture Backup is out of date]",
+          "body": "[Fixture {deviceName} has not backed up for 1 day]"
+        },
+        "backup-stale-many": {
+          "title": "[Fixture Backup is out of date]",
+          "body": "[Fixture {deviceName} has not backed up for {count} days]"
+        },
+        "activation-plan-active": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · Activating your plan]"
+        },
+        "activation-server-notified": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · Notifying your server]"
+        },
+        "activation-preparing-storage": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · Preparing storage]"
+        },
+        "activation-first-backup-complete": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · First backup complete]"
+        },
+        "activation-first-backup-failed": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · First backup needs attention]"
+        },
+        "activation-first-backup-running": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · First backup running]"
+        },
+        "activation-first-backup-scheduled": {
+          "title": "[Fixture Cloud Backup setup]",
+          "body": "[Fixture {step} of {total} · First backup scheduled]"
+        },
+        "album-invite-anonymous": {
+          "title": "[Fixture Shared Album Invitation]",
+          "body": "[Fixture An album ({albumName}) was shared with you]"
+        },
+        "album-role-editor": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture Your role in {albumName} is now editor]"
+        },
+        "album-role-owner": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture Your role in {albumName} is now owner]"
+        },
+        "album-role-viewer": {
+          "title": "[Fixture Access changed]",
+          "body": "[Fixture Your role in {albumName} is now viewer]"
+        },
+        "cloud-heartbeat-failed": {
+          "title": "[Fixture This server cannot reach Frameleaf Cloud]",
+          "body": "[Fixture The last {count} check-ins failed ({error}). Cloud features may pause; local features keep working.]"
+        },
+        "license-grace": {
+          "title": "[Fixture Your Frameleaf Cloud renewal did not go through]",
+          "body": "[Fixture Remote access and cloud backup keep working until {until}. Update your payment method in your Frameleaf account to avoid a pause. Local features are not affected.]"
+        },
+        "license-expired": {
+          "title": "[Fixture Your Frameleaf Cloud plan has ended]",
+          "body": "[Fixture Remote access and cloud backup are paused. Everything else on this server, including every photo, keeps working.]"
+        },
+        "buddy-backup-stale": {
+          "title": "[Fixture Buddy Backup is out of date]",
+          "body": "[Fixture Your last complete restore point is more than three days old. Check the sending status.]"
+        },
+        "buddy-backup-first-stale": {
+          "title": "[Fixture Buddy Backup is out of date]",
+          "body": "[Fixture Buddy Backup has not completed its first restore point after three days. Check the sending status.]"
+        },
+        "buddy-storage-low": {
+          "title": "[Fixture Buddy storage is running low]",
+          "body": "[Fixture Increase the hosting capacity or free space on the volume. Retained backups will not be deleted to make room.]"
+        },
+        "buddy-pairing-ended": {
+          "title": "[Fixture Your Buddy pairing has ended]",
+          "body": "[Fixture Recover your backup before {readUntil}. New backups have stopped.]"
+        },
+        "buddy-access-blocked": {
+          "title": "[Fixture Buddy access was blocked]",
+          "body": "[Fixture The hosted encrypted vault remains on disk. Contact your buddy to arrange recovery.]"
+        },
+        "cloud-ml-migration": {
+          "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+          "body": "[Fixture Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+        },
+        "cloud-ml-migration-removed-one": {
+          "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+          "body": "[Fixture The cloud processing destination {names} was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+        },
+        "cloud-ml-migration-removed-many": {
+          "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+          "body": "[Fixture The cloud processing destinations {names} were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+        },
+        "cloud-ml-migration-jobs-one": {
+          "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+          "body": "[Fixture 1 unfinished job stopped and can be started again.]"
+        },
+        "cloud-ml-migration-jobs-many": {
+          "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+          "body": "[Fixture {count} unfinished jobs stopped and can be started again.]"
+        },
+        "cloud-ml-migration-workers-one": {
+          "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+          "body": "[Fixture 1 render worker was signed out.]"
+        },
+        "cloud-ml-migration-workers-many": {
+          "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+          "body": "[Fixture {count} render workers were signed out.]"
+        },
+        "admin-granted": {
+          "title": "[Fixture New administrator]",
+          "body": "[Fixture {name} became an administrator through Frameleaf Cloud]"
+        },
+        "cloud-description-budget": {
+          "title": "[Fixture Automatic descriptions paused for today]",
+          "body": "[Fixture Describing new photos with Frameleaf Cloud reached today's budget of ${budget}. New photos wait and are described from tomorrow; nothing is sent to another destination.]"
+        },
+        "buddy-backup-incomplete": {
+          "title": "[Fixture Buddy Backup needs attention]",
+          "body": "[Fixture {error}]"
+        },
+        "relay-disconnected": {
+          "title": "[Fixture Remote access relay disconnected]",
+          "body": "[Fixture This server has not been connected to the Frameleaf relay since {since}. It keeps trying; at home it works as before.]"
+        },
+        "relay-disconnected-error": {
+          "title": "[Fixture Remote access relay disconnected]",
+          "body": "[Fixture This server has not been connected to the Frameleaf relay since {since}. It keeps trying; at home it works as before. The last problem was: {error}]"
+        },
+        "edge-certificate-address": {
+          "title": "[Fixture Remote access certificate could not be renewed]",
+          "body": "[Fixture The certificate for this server’s Frameleaf address could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}.]"
+        },
+        "edge-certificate-address-expiring": {
+          "title": "[Fixture Remote access certificate could not be renewed]",
+          "body": "[Fixture The certificate for this server’s Frameleaf address could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}. The current certificate works until {until}.]"
+        },
+        "edge-certificate-domain": {
+          "title": "[Fixture Remote access certificate could not be renewed]",
+          "body": "[Fixture The certificate for your custom domain could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}.]"
+        },
+        "edge-certificate-domain-expiring": {
+          "title": "[Fixture Remote access certificate could not be renewed]",
+          "body": "[Fixture The certificate for your custom domain could not be issued ({error}). It is retried automatically, next at {nextAttemptAt}. The current certificate works until {until}.]"
+        },
+        "cloud-region-mismatch": {
+          "title": "[Fixture Cloud processing is using the wrong region]",
+          "body": "[Fixture Frameleaf Cloud refused cloud processing because this server is using another region than its Frameleaf account’s data region, even after reading Frameleaf Cloud’s service list and this server’s link again. Cloud processing stays off until this is fixed: check that FRAMELEAF_CLOUD_URL points to Frameleaf Cloud, then link the server again in Administration > Frameleaf Cloud.]"
+        },
+        "cloud-clone-suspected": {
+          "title": "[Fixture Two servers are using this server’s identity]",
+          "body": "[Fixture Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity folder. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart.]"
+        },
+        "mail-needs-sign-in": {
+          "title": "[Fixture Email stopped: sign in to {provider} again]",
+          "body": "[Fixture {provider} is asking you to sign in again, because the account’s password changed or Frameleaf’s access was removed. Emails are not sent until you do; invitations and album updates appear in the app only. Open Settings > Notifications > Email delivery and choose Sign in again.]"
+        },
+        "cloud-linked": {
+          "title": "[Fixture Server linked to Frameleaf]",
+          "body": "[Fixture This server is linked to {account}. Cloud features you turn on use this link.]"
+        },
+        "cloud-linked-unnamed": {
+          "title": "[Fixture Server linked to Frameleaf]",
+          "body": "[Fixture This server is linked to a Frameleaf account. Cloud features you turn on use this link.]"
+        },
+        "cloud-unlinked": {
+          "title": "[Fixture Server unlinked from Frameleaf]",
+          "body": "[Fixture Cloud features on this server stopped. Local photos, accounts and sign-in are unchanged.]"
+        },
+        "cloud-revoked": {
+          "title": "[Fixture Frameleaf Cloud ended this server’s link]",
+          "body": "[Fixture {reason} Cloud features stopped; local photos, accounts and sign-in are unchanged. Link again from Settings → Frameleaf Cloud.]"
+        },
+        "cloud-message": {
+          "title": "[Fixture Message from Frameleaf Cloud]",
+          "body": "[Fixture {message}]"
+        },
+        "cloud-hostname-failing": {
+          "title": "[Fixture Custom hostname needs attention]",
+          "body": "[Fixture {host} is not fully verified by Frameleaf Cloud. {problem}]"
+        },
+        "cloud-relink-key": {
+          "title": "[Fixture Link this server to Frameleaf again]",
+          "body": "[Fixture Frameleaf Cloud no longer accepts this server’s key. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.]"
+        },
+        "cloud-relink-command": {
+          "title": "[Fixture Link this server to Frameleaf again]",
+          "body": "[Fixture Frameleaf Cloud asked for this server to be linked again. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.]"
+        },
+        "cloud-identity-key-damaged": {
+          "title": "[Fixture This server’s new identity key could not be read]",
+          "body": "[Fixture The key Frameleaf Cloud accepted in the last key rotation could not be read, so it was set aside and this server keeps using its previous key. A new rotation is under way. If it does not finish before the previous key expires (within a day of that rotation), the link to Frameleaf Cloud stops working and this server must be linked again. This rotation runs whatever the cloud command permissions are set to.]"
+        },
+        "cloud-identity-key-expired": {
+          "title": "[Fixture Link this server to Frameleaf again]",
+          "body": "[Fixture This server’s identity key could not be replaced before its previous key expired, so Frameleaf Cloud no longer accepts it. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.]"
+        },
+        "plan-tier-asked": {
+          "title": "[Fixture Your backups have outgrown your plan]",
+          "body": "[Fixture Your backups no longer fit the {current} plan. Open the Frameleaf app to move to {suggested}.]"
+        },
+        "plan-tier-accepted": {
+          "title": "[Fixture Your Frameleaf plan was upgraded]",
+          "body": "[Fixture Your plan is now {suggested}. Backups carry on with the room it gives them.]"
+        },
+        "plan-tier-declined": {
+          "title": "[Fixture Your plan stays the same]",
+          "body": "[Fixture Your plan stays at {current}. Backups that do not fit wait until the plan is upgraded.]"
+        },
+        "plan-tier-declined-paused": {
+          "title": "[Fixture Backups are paused: plan full]",
+          "body": "[Fixture Your backups no longer fit the {current} plan, so new items wait. Upgrade in the Frameleaf app to back them up.]"
+        },
+        "plan-full-upgrade": {
+          "title": "[Fixture Backups are paused: plan full]",
+          "body": "[Fixture Backups no longer fit the Frameleaf plan, so new items wait until it is upgraded. Your library is untouched and restores keep working.]"
+        },
+        "plan-full-ask-organiser": {
+          "title": "[Fixture Backups are paused: plan full]",
+          "body": "[Fixture Your family's plan is full. Ask your family organiser to upgrade.]"
+        },
+        "cloud-backup-failed": {
+          "title": "[Fixture Cloud backup failed]",
+          "body": "[Fixture The last cloud backup stopped: {error}]"
+        },
+        "cloud-backup-key-locked": {
+          "title": "[Fixture Cloud backup is waiting for its key]",
+          "body": "[Fixture This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup.]"
+        },
+        "cloud-backup-check-problems": {
+          "title": "[Fixture Cloud backup check found problems]",
+          "body": "[Fixture {missing} backed-up files are missing and {damaged} are damaged. The next backup uploads them again from this server; {incomplete} earlier backups are marked incomplete.]"
+        },
+        "cloud-backup-check-failed": {
+          "title": "[Fixture Cloud backup check failed]",
+          "body": "[Fixture {error}]"
+        },
+        "cloud-backup-cleanup-failed": {
+          "title": "[Fixture Cloud backup clean-up failed]",
+          "body": "[Fixture {error}]"
+        },
+        "cloud-restore-failed": {
+          "title": "[Fixture Restore from cloud backup failed]",
+          "body": "[Fixture {error}]"
+        },
+        "studio-export-cancelled": {
+          "title": "[Fixture Render cancelled]",
+          "body": "[Fixture Your Studio export was cancelled]"
+        },
+        "studio-export-cancelled-named": {
+          "title": "[Fixture Render cancelled]",
+          "body": "[Fixture {label} was cancelled]"
+        },
+        "studio-render-progress": {
+          "title": "[Fixture Rendering]",
+          "body": "[Fixture Your Studio export · {percent}%]"
+        },
+        "studio-render-progress-named": {
+          "title": "[Fixture Rendering]",
+          "body": "[Fixture {label} · {percent}%]"
+        }
+      }
+    },
+    "en-XB": {
+      "version": 0,
+      "messages": {
+        "item-share-one": {
+          "title": "STALE",
+          "body": "STALE {senderName}"
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "known template renders only system text",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "item-share-one",
+        "args": {
+          "senderName": "Zoë <img src=x> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë <img src=x> $& {count} shared an item with you"
+      },
+      "expected": {
+        "title": "[Fixture shared]",
+        "body": "[Fixture Zoë <img src=x> $& {count} shared one item]"
+      }
+    },
+    {
+      "name": "new known template needs no consumer mapping",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "access-removed-unknown",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "You no longer have access to an album"
+      },
+      "expected": {
+        "title": "[Fixture access]",
+        "body": "[Fixture album access ended]"
+      }
+    },
+    {
+      "name": "unknown template version keeps supplied English",
+      "locale": "en-XA",
+      "template": {
+        "version": 2,
+        "key": "access-removed-unknown",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "You no longer have access to an album"
+      },
+      "expected": {
+        "title": "Access changed",
+        "body": "You no longer have access to an album"
+      }
+    },
+    {
+      "name": "unknown template key keeps supplied English",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "future-template",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Future notice",
+        "body": "Future English text"
+      },
+      "expected": {
+        "title": "Future notice",
+        "body": "Future English text"
+      }
+    },
+    {
+      "name": "legacy English has no template",
+      "locale": "en-XA",
+      "fallback": {
+        "title": "Custom <b>title</b>",
+        "body": "A caption or message {senderName} $& stays verbatim"
+      },
+      "expected": {
+        "title": "Custom <b>title</b>",
+        "body": "A caption or message {senderName} $& stays verbatim"
+      }
+    },
+    {
+      "name": "unsupported locale keeps supplied English",
+      "locale": "fr-CA",
+      "template": {
+        "version": 1,
+        "key": "item-share-one",
+        "args": {
+          "senderName": "Zoë"
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë shared an item with you"
+      },
+      "expected": {
+        "title": "Shared with you",
+        "body": "Zoë shared an item with you"
+      }
+    },
+    {
+      "name": "stale catalog keeps supplied English",
+      "locale": "en-XB",
+      "template": {
+        "version": 1,
+        "key": "item-share-one",
+        "args": {
+          "senderName": "Zoë"
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë shared an item with you"
+      },
+      "expected": {
+        "title": "Shared with you",
+        "body": "Zoë shared an item with you"
+      }
+    },
+    {
+      "name": "incorrect argument type keeps supplied English",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "item-share-many",
+        "args": {
+          "senderName": "Zoë",
+          "count": "2"
+        }
+      },
+      "fallback": {
+        "title": "Shared with you",
+        "body": "Zoë shared 2 items with you"
+      },
+      "expected": {
+        "title": "Shared with you",
+        "body": "Zoë shared 2 items with you"
+      }
+    },
+    {
+      "name": "producer reconciliation-missing-one preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "reconciliation-missing-one",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Backup needs attention",
+        "body": "One item on this device is not on your server yet"
+      },
+      "expected": {
+        "title": "[Fixture Backup needs attention]",
+        "body": "[Fixture One item on this device is not on your server yet]"
+      }
+    },
+    {
+      "name": "producer reconciliation-missing-many preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "reconciliation-missing-many",
+        "args": {
+          "count": 2
+        }
+      },
+      "fallback": {
+        "title": "Backup needs attention",
+        "body": "2 items on this device are not on your server yet"
+      },
+      "expected": {
+        "title": "[Fixture Backup needs attention]",
+        "body": "[Fixture 2 items on this device are not on your server yet]"
+      }
+    },
+    {
+      "name": "producer memories-one preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "memories-one",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Memories",
+        "body": "A new memory is ready"
+      },
+      "expected": {
+        "title": "[Fixture Memories]",
+        "body": "[Fixture A new memory is ready]"
+      }
+    },
+    {
+      "name": "producer memories-many preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "memories-many",
+        "args": {
+          "count": 2
+        }
+      },
+      "fallback": {
+        "title": "Memories",
+        "body": "2 new memories are ready"
+      },
+      "expected": {
+        "title": "[Fixture Memories]",
+        "body": "[Fixture 2 new memories are ready]"
+      }
+    },
+    {
+      "name": "producer partner-added preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "partner-added",
+        "args": {
+          "senderName": "Zoë <img src=x> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Zoë <img src=x> $& {count} shared their library with you"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Zoë <img src=x> $& {count} shared their library with you]"
+      }
+    },
+    {
+      "name": "producer partner-removed preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "partner-removed",
+        "args": {
+          "senderName": "Zoë <img src=x> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Zoë <img src=x> $& {count} stopped sharing their library with you"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Zoë <img src=x> $& {count} stopped sharing their library with you]"
+      }
+    },
+    {
+      "name": "producer album-role-editor preserves album name",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "album-role-editor",
+        "args": {
+          "albumName": "Lake <b>trip</b> $& {role}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Your role in Lake <b>trip</b> $& {role} is now editor"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Your role in Lake <b>trip</b> $& {role} is now editor]"
+      }
+    },
+    {
+      "name": "producer album-role-owner preserves album name",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "album-role-owner",
+        "args": {
+          "albumName": "Lake <b>trip</b> $& {role}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Your role in Lake <b>trip</b> $& {role} is now owner"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Your role in Lake <b>trip</b> $& {role} is now owner]"
+      }
+    },
+    {
+      "name": "producer album-role-viewer preserves album name",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "album-role-viewer",
+        "args": {
+          "albumName": "Lake <b>trip</b> $& {role}"
+        }
+      },
+      "fallback": {
+        "title": "Access changed",
+        "body": "Your role in Lake <b>trip</b> $& {role} is now viewer"
+      },
+      "expected": {
+        "title": "[Fixture Access changed]",
+        "body": "[Fixture Your role in Lake <b>trip</b> $& {role} is now viewer]"
+      }
+    },
+    {
+      "name": "producer studio-export-ready preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-ready",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Render finished",
+        "body": "Your Studio export is ready"
+      },
+      "expected": {
+        "title": "[Fixture Render finished]",
+        "body": "[Fixture Your Studio export is ready]"
+      }
+    },
+    {
+      "name": "producer studio-export-ready-named preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-ready-named",
+        "args": {
+          "label": "Lake <b>trip</b> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Render finished",
+        "body": "Lake <b>trip</b> $& {count} is ready"
+      },
+      "expected": {
+        "title": "[Fixture Render finished]",
+        "body": "[Fixture Lake <b>trip</b> $& {count} is ready]"
+      }
+    },
+    {
+      "name": "producer studio-export-failed preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-failed",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Render failed",
+        "body": "Your Studio export could not be finished"
+      },
+      "expected": {
+        "title": "[Fixture Render failed]",
+        "body": "[Fixture Your Studio export could not be finished]"
+      }
+    },
+    {
+      "name": "producer studio-export-failed-named preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-failed-named",
+        "args": {
+          "label": "Lake <b>trip</b> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Render failed",
+        "body": "Lake <b>trip</b> $& {count} could not be finished"
+      },
+      "expected": {
+        "title": "[Fixture Render failed]",
+        "body": "[Fixture Lake <b>trip</b> $& {count} could not be finished]"
+      }
+    },
+    {
+      "name": "producer backup-stale-one preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "backup-stale-one",
+        "args": {
+          "deviceName": "Phone <b>one</b> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "Backup is out of date",
+        "body": "Phone <b>one</b> $& {count} has not backed up for 1 day"
+      },
+      "expected": {
+        "title": "[Fixture Backup is out of date]",
+        "body": "[Fixture Phone <b>one</b> $& {count} has not backed up for 1 day]"
+      }
+    },
+    {
+      "name": "producer backup-stale-many preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "backup-stale-many",
+        "args": {
+          "deviceName": "Phone <b>one</b> $& {count}",
+          "count": 4
+        }
+      },
+      "fallback": {
+        "title": "Backup is out of date",
+        "body": "Phone <b>one</b> $& {count} has not backed up for 4 days"
+      },
+      "expected": {
+        "title": "[Fixture Backup is out of date]",
+        "body": "[Fixture Phone <b>one</b> $& {count} has not backed up for 4 days]"
+      }
+    },
+    {
+      "name": "producer activation-plan-active preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-plan-active",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · Activating your plan"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · Activating your plan]"
+      }
+    },
+    {
+      "name": "producer activation-server-notified preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-server-notified",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · Notifying your server"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · Notifying your server]"
+      }
+    },
+    {
+      "name": "producer activation-preparing-storage preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-preparing-storage",
+        "args": {
+          "step": 3,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "3 of 4 · Preparing storage"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 3 of 4 · Preparing storage]"
+      }
+    },
+    {
+      "name": "producer activation-first-backup-complete preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-first-backup-complete",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · First backup complete"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · First backup complete]"
+      }
+    },
+    {
+      "name": "producer activation-first-backup-failed preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-first-backup-failed",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · First backup needs attention"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · First backup needs attention]"
+      }
+    },
+    {
+      "name": "producer activation-first-backup-running preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-first-backup-running",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · First backup running"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · First backup running]"
+      }
+    },
+    {
+      "name": "producer activation-first-backup-scheduled preserves arguments",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "activation-first-backup-scheduled",
+        "args": {
+          "step": 4,
+          "total": 4
+        }
+      },
+      "fallback": {
+        "title": "Cloud Backup setup",
+        "body": "4 of 4 · First backup scheduled"
+      },
+      "expected": {
+        "title": "[Fixture Cloud Backup setup]",
+        "body": "[Fixture 4 of 4 · First backup scheduled]"
+      }
+    },
+    {
+      "name": "anonymous album invite never invents a sender",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "album-invite-anonymous",
+        "args": {
+          "albumName": "Lake <b>trip</b> $& {senderName}"
+        }
+      },
+      "fallback": {
+        "title": "Shared Album Invitation",
+        "body": "An album (Lake <b>trip</b> $& {senderName}) was shared with you"
+      },
+      "expected": {
+        "title": "[Fixture Shared Album Invitation]",
+        "body": "[Fixture An album (Lake <b>trip</b> $& {senderName}) was shared with you]"
+      }
+    },
+    {
+      "name": "administrator producer cloud-heartbeat-failed",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-heartbeat-failed",
+        "args": {
+          "count": 3,
+          "error": "unavailable <b>now</b> $& {count}"
+        }
+      },
+      "fallback": {
+        "title": "This server cannot reach Frameleaf Cloud",
+        "body": "The last 3 check-ins failed (unavailable <b>now</b> $& {count}). Cloud features may pause; local features keep working."
+      },
+      "expected": {
+        "title": "[Fixture This server cannot reach Frameleaf Cloud]",
+        "body": "[Fixture The last 3 check-ins failed (unavailable <b>now</b> $& {count}). Cloud features may pause; local features keep working.]"
+      }
+    },
+    {
+      "name": "administrator producer license-grace",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "license-grace",
+        "args": {
+          "until": "2026-10-14"
+        }
+      },
+      "fallback": {
+        "title": "Your Frameleaf Cloud renewal did not go through",
+        "body": "Remote access and cloud backup keep working until 2026-10-14. Update your payment method in your Frameleaf account to avoid a pause. Local features are not affected."
+      },
+      "expected": {
+        "title": "[Fixture Your Frameleaf Cloud renewal did not go through]",
+        "body": "[Fixture Remote access and cloud backup keep working until 2026-10-14. Update your payment method in your Frameleaf account to avoid a pause. Local features are not affected.]"
+      }
+    },
+    {
+      "name": "administrator producer license-expired",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "license-expired",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Your Frameleaf Cloud plan has ended",
+        "body": "Remote access and cloud backup are paused. Everything else on this server, including every photo, keeps working."
+      },
+      "expected": {
+        "title": "[Fixture Your Frameleaf Cloud plan has ended]",
+        "body": "[Fixture Remote access and cloud backup are paused. Everything else on this server, including every photo, keeps working.]"
+      }
+    },
+    {
+      "name": "administrator producer buddy-backup-stale",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "buddy-backup-stale",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Buddy Backup is out of date",
+        "body": "Your last complete restore point is more than three days old. Check the sending status."
+      },
+      "expected": {
+        "title": "[Fixture Buddy Backup is out of date]",
+        "body": "[Fixture Your last complete restore point is more than three days old. Check the sending status.]"
+      }
+    },
+    {
+      "name": "administrator producer buddy-backup-first-stale",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "buddy-backup-first-stale",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Buddy Backup is out of date",
+        "body": "Buddy Backup has not completed its first restore point after three days. Check the sending status."
+      },
+      "expected": {
+        "title": "[Fixture Buddy Backup is out of date]",
+        "body": "[Fixture Buddy Backup has not completed its first restore point after three days. Check the sending status.]"
+      }
+    },
+    {
+      "name": "administrator producer buddy-storage-low",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "buddy-storage-low",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Buddy storage is running low",
+        "body": "Increase the hosting capacity or free space on the volume. Retained backups will not be deleted to make room."
+      },
+      "expected": {
+        "title": "[Fixture Buddy storage is running low]",
+        "body": "[Fixture Increase the hosting capacity or free space on the volume. Retained backups will not be deleted to make room.]"
+      }
+    },
+    {
+      "name": "administrator producer buddy-pairing-ended",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "buddy-pairing-ended",
+        "args": {
+          "readUntil": "2026-11-07T12:30:00.000Z"
+        }
+      },
+      "fallback": {
+        "title": "Your Buddy pairing has ended",
+        "body": "Recover your backup before 2026-11-07T12:30:00.000Z. New backups have stopped."
+      },
+      "expected": {
+        "title": "[Fixture Your Buddy pairing has ended]",
+        "body": "[Fixture Recover your backup before 2026-11-07T12:30:00.000Z. New backups have stopped.]"
+      }
+    },
+    {
+      "name": "administrator producer buddy-access-blocked",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "buddy-access-blocked",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Buddy access was blocked",
+        "body": "The hosted encrypted vault remains on disk. Contact your buddy to arrange recovery."
+      },
+      "expected": {
+        "title": "[Fixture Buddy access was blocked]",
+        "body": "[Fixture The hosted encrypted vault remains on disk. Contact your buddy to arrange recovery.]"
+      }
+    },
+    {
+      "name": "administrator producer license-grace rejects invalid date",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "license-grace",
+        "args": {
+          "until": "not-a-date"
+        }
+      },
+      "fallback": {
+        "title": "Legacy notice",
+        "body": "Existing supplied English is preserved"
+      },
+      "expected": {
+        "title": "Legacy notice",
+        "body": "Existing supplied English is preserved"
+      }
+    },
+    {
+      "name": "administrator producer buddy-pairing-ended rejects invalid date",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "buddy-pairing-ended",
+        "args": {
+          "readUntil": "tomorrow"
+        }
+      },
+      "fallback": {
+        "title": "Legacy notice",
+        "body": "Existing supplied English is preserved"
+      },
+      "expected": {
+        "title": "Legacy notice",
+        "body": "Existing supplied English is preserved"
+      }
+    },
+    {
+      "name": "FL-406 cloud-ml-migration renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-ml-migration",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Cloud processing moved to Frameleaf Cloud",
+        "body": "Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud."
+      },
+      "expected": {
+        "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+        "body": "[Fixture Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-ml-migration-removed-one renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-ml-migration-removed-one",
+        "args": {
+          "names": "Old GPU <b>box</b>, Lab $&"
+        }
+      },
+      "fallback": {
+        "title": "Cloud processing moved to Frameleaf Cloud",
+        "body": "The cloud processing destination Old GPU <b>box</b>, Lab $& was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud."
+      },
+      "expected": {
+        "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+        "body": "[Fixture The cloud processing destination Old GPU <b>box</b>, Lab $& was removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-ml-migration-removed-many renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-ml-migration-removed-many",
+        "args": {
+          "names": "Old GPU <b>box</b>, Lab $&"
+        }
+      },
+      "fallback": {
+        "title": "Cloud processing moved to Frameleaf Cloud",
+        "body": "The cloud processing destinations Old GPU <b>box</b>, Lab $& were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud."
+      },
+      "expected": {
+        "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+        "body": "[Fixture The cloud processing destinations Old GPU <b>box</b>, Lab $& were removed: Frameleaf Cloud replaces the previous cloud processing service. The work that used it is not sent anywhere else. Choose where it runs under Processing destinations, or add Frameleaf Cloud.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-ml-migration-jobs-one renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-ml-migration-jobs-one",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Cloud processing moved to Frameleaf Cloud",
+        "body": "1 unfinished job stopped and can be started again."
+      },
+      "expected": {
+        "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+        "body": "[Fixture 1 unfinished job stopped and can be started again.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-ml-migration-jobs-many renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-ml-migration-jobs-many",
+        "args": {
+          "count": 3
+        }
+      },
+      "fallback": {
+        "title": "Cloud processing moved to Frameleaf Cloud",
+        "body": "3 unfinished jobs stopped and can be started again."
+      },
+      "expected": {
+        "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+        "body": "[Fixture 3 unfinished jobs stopped and can be started again.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-ml-migration-workers-one renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-ml-migration-workers-one",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Cloud processing moved to Frameleaf Cloud",
+        "body": "1 render worker was signed out."
+      },
+      "expected": {
+        "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+        "body": "[Fixture 1 render worker was signed out.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-ml-migration-workers-many renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-ml-migration-workers-many",
+        "args": {
+          "count": 3
+        }
+      },
+      "fallback": {
+        "title": "Cloud processing moved to Frameleaf Cloud",
+        "body": "3 render workers were signed out."
+      },
+      "expected": {
+        "title": "[Fixture Cloud processing moved to Frameleaf Cloud]",
+        "body": "[Fixture 3 render workers were signed out.]"
+      }
+    },
+    {
+      "name": "FL-406 admin-granted renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "admin-granted",
+        "args": {
+          "name": "Zoë <img src=x> $&"
+        }
+      },
+      "fallback": {
+        "title": "New administrator",
+        "body": "Zoë <img src=x> $& became an administrator through Frameleaf Cloud"
+      },
+      "expected": {
+        "title": "[Fixture New administrator]",
+        "body": "[Fixture Zoë <img src=x> $& became an administrator through Frameleaf Cloud]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-description-budget renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-description-budget",
+        "args": {
+          "budget": "2.50"
+        }
+      },
+      "fallback": {
+        "title": "Automatic descriptions paused for today",
+        "body": "Describing new photos with Frameleaf Cloud reached today's budget of $2.50. New photos wait and are described from tomorrow; nothing is sent to another destination."
+      },
+      "expected": {
+        "title": "[Fixture Automatic descriptions paused for today]",
+        "body": "[Fixture Describing new photos with Frameleaf Cloud reached today's budget of $2.50. New photos wait and are described from tomorrow; nothing is sent to another destination.]"
+      }
+    },
+    {
+      "name": "FL-406 buddy-backup-incomplete renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "buddy-backup-incomplete",
+        "args": {
+          "error": "timeout {count}"
+        }
+      },
+      "fallback": {
+        "title": "Buddy Backup needs attention",
+        "body": "timeout {count}"
+      },
+      "expected": {
+        "title": "[Fixture Buddy Backup needs attention]",
+        "body": "[Fixture timeout {count}]"
+      }
+    },
+    {
+      "name": "FL-406 relay-disconnected renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "relay-disconnected",
+        "args": {
+          "since": "2026-10-22T10:00:00.000Z"
+        }
+      },
+      "fallback": {
+        "title": "Remote access relay disconnected",
+        "body": "This server has not been connected to the Frameleaf relay since 2026-10-22T10:00:00.000Z. It keeps trying; at home it works as before."
+      },
+      "expected": {
+        "title": "[Fixture Remote access relay disconnected]",
+        "body": "[Fixture This server has not been connected to the Frameleaf relay since 2026-10-22T10:00:00.000Z. It keeps trying; at home it works as before.]"
+      }
+    },
+    {
+      "name": "FL-406 relay-disconnected-error renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "relay-disconnected-error",
+        "args": {
+          "error": "timeout {count}",
+          "since": "2026-10-22T10:00:00.000Z"
+        }
+      },
+      "fallback": {
+        "title": "Remote access relay disconnected",
+        "body": "This server has not been connected to the Frameleaf relay since 2026-10-22T10:00:00.000Z. It keeps trying; at home it works as before. The last problem was: timeout {count}"
+      },
+      "expected": {
+        "title": "[Fixture Remote access relay disconnected]",
+        "body": "[Fixture This server has not been connected to the Frameleaf relay since 2026-10-22T10:00:00.000Z. It keeps trying; at home it works as before. The last problem was: timeout {count}]"
+      }
+    },
+    {
+      "name": "FL-406 edge-certificate-address renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "edge-certificate-address",
+        "args": {
+          "error": "timeout {count}",
+          "nextAttemptAt": "2026-10-22T11:00:00.000Z"
+        }
+      },
+      "fallback": {
+        "title": "Remote access certificate could not be renewed",
+        "body": "The certificate for this server’s Frameleaf address could not be issued (timeout {count}). It is retried automatically, next at 2026-10-22T11:00:00.000Z."
+      },
+      "expected": {
+        "title": "[Fixture Remote access certificate could not be renewed]",
+        "body": "[Fixture The certificate for this server’s Frameleaf address could not be issued (timeout {count}). It is retried automatically, next at 2026-10-22T11:00:00.000Z.]"
+      }
+    },
+    {
+      "name": "FL-406 edge-certificate-address-expiring renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "edge-certificate-address-expiring",
+        "args": {
+          "error": "timeout {count}",
+          "nextAttemptAt": "2026-10-22T11:00:00.000Z",
+          "until": "2026-11-01"
+        }
+      },
+      "fallback": {
+        "title": "Remote access certificate could not be renewed",
+        "body": "The certificate for this server’s Frameleaf address could not be issued (timeout {count}). It is retried automatically, next at 2026-10-22T11:00:00.000Z. The current certificate works until 2026-11-01."
+      },
+      "expected": {
+        "title": "[Fixture Remote access certificate could not be renewed]",
+        "body": "[Fixture The certificate for this server’s Frameleaf address could not be issued (timeout {count}). It is retried automatically, next at 2026-10-22T11:00:00.000Z. The current certificate works until 2026-11-01.]"
+      }
+    },
+    {
+      "name": "FL-406 edge-certificate-domain renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "edge-certificate-domain",
+        "args": {
+          "error": "timeout {count}",
+          "nextAttemptAt": "2026-10-22T11:00:00.000Z"
+        }
+      },
+      "fallback": {
+        "title": "Remote access certificate could not be renewed",
+        "body": "The certificate for your custom domain could not be issued (timeout {count}). It is retried automatically, next at 2026-10-22T11:00:00.000Z."
+      },
+      "expected": {
+        "title": "[Fixture Remote access certificate could not be renewed]",
+        "body": "[Fixture The certificate for your custom domain could not be issued (timeout {count}). It is retried automatically, next at 2026-10-22T11:00:00.000Z.]"
+      }
+    },
+    {
+      "name": "FL-406 edge-certificate-domain-expiring renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "edge-certificate-domain-expiring",
+        "args": {
+          "error": "timeout {count}",
+          "nextAttemptAt": "2026-10-22T11:00:00.000Z",
+          "until": "2026-11-01"
+        }
+      },
+      "fallback": {
+        "title": "Remote access certificate could not be renewed",
+        "body": "The certificate for your custom domain could not be issued (timeout {count}). It is retried automatically, next at 2026-10-22T11:00:00.000Z. The current certificate works until 2026-11-01."
+      },
+      "expected": {
+        "title": "[Fixture Remote access certificate could not be renewed]",
+        "body": "[Fixture The certificate for your custom domain could not be issued (timeout {count}). It is retried automatically, next at 2026-10-22T11:00:00.000Z. The current certificate works until 2026-11-01.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-region-mismatch renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-region-mismatch",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Cloud processing is using the wrong region",
+        "body": "Frameleaf Cloud refused cloud processing because this server is using another region than its Frameleaf account’s data region, even after reading Frameleaf Cloud’s service list and this server’s link again. Cloud processing stays off until this is fixed: check that FRAMELEAF_CLOUD_URL points to Frameleaf Cloud, then link the server again in Administration > Frameleaf Cloud."
+      },
+      "expected": {
+        "title": "[Fixture Cloud processing is using the wrong region]",
+        "body": "[Fixture Frameleaf Cloud refused cloud processing because this server is using another region than its Frameleaf account’s data region, even after reading Frameleaf Cloud’s service list and this server’s link again. Cloud processing stays off until this is fixed: check that FRAMELEAF_CLOUD_URL points to Frameleaf Cloud, then link the server again in Administration > Frameleaf Cloud.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-clone-suspected renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-clone-suspected",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Two servers are using this server’s identity",
+        "body": "Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity folder. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart."
+      },
+      "expected": {
+        "title": "[Fixture Two servers are using this server’s identity]",
+        "body": "[Fixture Frameleaf Cloud saw this server’s key start from two places. If you copied this server, give the copy its own identity folder. Cloud backup and cloud processing pause until this is resolved: the account owner can confirm this server in the Frameleaf account, or it clears on its own after 24 hours without a restart.]"
+      }
+    },
+    {
+      "name": "FL-406 mail-needs-sign-in renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "mail-needs-sign-in",
+        "args": {
+          "provider": "Gmail"
+        }
+      },
+      "fallback": {
+        "title": "Email stopped: sign in to Gmail again",
+        "body": "Gmail is asking you to sign in again, because the account’s password changed or Frameleaf’s access was removed. Emails are not sent until you do; invitations and album updates appear in the app only. Open Settings > Notifications > Email delivery and choose Sign in again."
+      },
+      "expected": {
+        "title": "[Fixture Email stopped: sign in to Gmail again]",
+        "body": "[Fixture Gmail is asking you to sign in again, because the account’s password changed or Frameleaf’s access was removed. Emails are not sent until you do; invitations and album updates appear in the app only. Open Settings > Notifications > Email delivery and choose Sign in again.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-linked renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-linked",
+        "args": {
+          "account": "family@example.com"
+        }
+      },
+      "fallback": {
+        "title": "Server linked to Frameleaf",
+        "body": "This server is linked to family@example.com. Cloud features you turn on use this link."
+      },
+      "expected": {
+        "title": "[Fixture Server linked to Frameleaf]",
+        "body": "[Fixture This server is linked to family@example.com. Cloud features you turn on use this link.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-linked-unnamed renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-linked-unnamed",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Server linked to Frameleaf",
+        "body": "This server is linked to a Frameleaf account. Cloud features you turn on use this link."
+      },
+      "expected": {
+        "title": "[Fixture Server linked to Frameleaf]",
+        "body": "[Fixture This server is linked to a Frameleaf account. Cloud features you turn on use this link.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-unlinked renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-unlinked",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Server unlinked from Frameleaf",
+        "body": "Cloud features on this server stopped. Local photos, accounts and sign-in are unchanged."
+      },
+      "expected": {
+        "title": "[Fixture Server unlinked from Frameleaf]",
+        "body": "[Fixture Cloud features on this server stopped. Local photos, accounts and sign-in are unchanged.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-revoked renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-revoked",
+        "args": {
+          "reason": "The account owner removed this server."
+        }
+      },
+      "fallback": {
+        "title": "Frameleaf Cloud ended this server’s link",
+        "body": "The account owner removed this server. Cloud features stopped; local photos, accounts and sign-in are unchanged. Link again from Settings → Frameleaf Cloud."
+      },
+      "expected": {
+        "title": "[Fixture Frameleaf Cloud ended this server’s link]",
+        "body": "[Fixture The account owner removed this server. Cloud features stopped; local photos, accounts and sign-in are unchanged. Link again from Settings → Frameleaf Cloud.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-message renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-message",
+        "args": {
+          "message": "Maintenance tonight {x}"
+        }
+      },
+      "fallback": {
+        "title": "Message from Frameleaf Cloud",
+        "body": "Maintenance tonight {x}"
+      },
+      "expected": {
+        "title": "[Fixture Message from Frameleaf Cloud]",
+        "body": "[Fixture Maintenance tonight {x}]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-hostname-failing renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-hostname-failing",
+        "args": {
+          "host": "photos.example.com",
+          "problem": "DNS is not set up yet."
+        }
+      },
+      "fallback": {
+        "title": "Custom hostname needs attention",
+        "body": "photos.example.com is not fully verified by Frameleaf Cloud. DNS is not set up yet."
+      },
+      "expected": {
+        "title": "[Fixture Custom hostname needs attention]",
+        "body": "[Fixture photos.example.com is not fully verified by Frameleaf Cloud. DNS is not set up yet.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-relink-key renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-relink-key",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Link this server to Frameleaf again",
+        "body": "Frameleaf Cloud no longer accepts this server’s key. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed."
+      },
+      "expected": {
+        "title": "[Fixture Link this server to Frameleaf again]",
+        "body": "[Fixture Frameleaf Cloud no longer accepts this server’s key. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-relink-command renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-relink-command",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Link this server to Frameleaf again",
+        "body": "Frameleaf Cloud asked for this server to be linked again. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed."
+      },
+      "expected": {
+        "title": "[Fixture Link this server to Frameleaf again]",
+        "body": "[Fixture Frameleaf Cloud asked for this server to be linked again. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-identity-key-expired renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-identity-key-expired",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Link this server to Frameleaf again",
+        "body": "This server’s identity key could not be replaced before its previous key expired, so Frameleaf Cloud no longer accepts it. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed."
+      },
+      "expected": {
+        "title": "[Fixture Link this server to Frameleaf again]",
+        "body": "[Fixture This server’s identity key could not be replaced before its previous key expired, so Frameleaf Cloud no longer accepts it. Open Settings → Frameleaf Cloud → Account & link, unlink and link again. Nothing on this server is removed.]"
+      }
+    },
+    {
+      "name": "FL-406 plan-tier-asked renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "plan-tier-asked",
+        "args": {
+          "current": "2 TB",
+          "suggested": "5 TB"
+        }
+      },
+      "fallback": {
+        "title": "Your backups have outgrown your plan",
+        "body": "Your backups no longer fit the 2 TB plan. Open the Frameleaf app to move to 5 TB."
+      },
+      "expected": {
+        "title": "[Fixture Your backups have outgrown your plan]",
+        "body": "[Fixture Your backups no longer fit the 2 TB plan. Open the Frameleaf app to move to 5 TB.]"
+      }
+    },
+    {
+      "name": "FL-406 plan-tier-accepted renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "plan-tier-accepted",
+        "args": {
+          "suggested": "5 TB"
+        }
+      },
+      "fallback": {
+        "title": "Your Frameleaf plan was upgraded",
+        "body": "Your plan is now 5 TB. Backups carry on with the room it gives them."
+      },
+      "expected": {
+        "title": "[Fixture Your Frameleaf plan was upgraded]",
+        "body": "[Fixture Your plan is now 5 TB. Backups carry on with the room it gives them.]"
+      }
+    },
+    {
+      "name": "FL-406 plan-tier-declined renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "plan-tier-declined",
+        "args": {
+          "current": "2 TB"
+        }
+      },
+      "fallback": {
+        "title": "Your plan stays the same",
+        "body": "Your plan stays at 2 TB. Backups that do not fit wait until the plan is upgraded."
+      },
+      "expected": {
+        "title": "[Fixture Your plan stays the same]",
+        "body": "[Fixture Your plan stays at 2 TB. Backups that do not fit wait until the plan is upgraded.]"
+      }
+    },
+    {
+      "name": "FL-406 plan-tier-declined-paused renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "plan-tier-declined-paused",
+        "args": {
+          "current": "2 TB"
+        }
+      },
+      "fallback": {
+        "title": "Backups are paused: plan full",
+        "body": "Your backups no longer fit the 2 TB plan, so new items wait. Upgrade in the Frameleaf app to back them up."
+      },
+      "expected": {
+        "title": "[Fixture Backups are paused: plan full]",
+        "body": "[Fixture Your backups no longer fit the 2 TB plan, so new items wait. Upgrade in the Frameleaf app to back them up.]"
+      }
+    },
+    {
+      "name": "FL-406 plan-full-upgrade renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "plan-full-upgrade",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Backups are paused: plan full",
+        "body": "Backups no longer fit the Frameleaf plan, so new items wait until it is upgraded. Your library is untouched and restores keep working."
+      },
+      "expected": {
+        "title": "[Fixture Backups are paused: plan full]",
+        "body": "[Fixture Backups no longer fit the Frameleaf plan, so new items wait until it is upgraded. Your library is untouched and restores keep working.]"
+      }
+    },
+    {
+      "name": "FL-406 plan-full-ask-organiser renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "plan-full-ask-organiser",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Backups are paused: plan full",
+        "body": "Your family's plan is full. Ask your family organiser to upgrade."
+      },
+      "expected": {
+        "title": "[Fixture Backups are paused: plan full]",
+        "body": "[Fixture Your family's plan is full. Ask your family organiser to upgrade.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-backup-failed renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-backup-failed",
+        "args": {
+          "error": "timeout {count}"
+        }
+      },
+      "fallback": {
+        "title": "Cloud backup failed",
+        "body": "The last cloud backup stopped: timeout {count}"
+      },
+      "expected": {
+        "title": "[Fixture Cloud backup failed]",
+        "body": "[Fixture The last cloud backup stopped: timeout {count}]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-backup-key-locked renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-backup-key-locked",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Cloud backup is waiting for its key",
+        "body": "This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup."
+      },
+      "expected": {
+        "title": "[Fixture Cloud backup is waiting for its key]",
+        "body": "[Fixture This server does not keep the backup key. Load it in Settings › Frameleaf Cloud › Cloud backup.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-backup-check-problems renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-backup-check-problems",
+        "args": {
+          "damaged": 3,
+          "incomplete": 3,
+          "missing": 3
+        }
+      },
+      "fallback": {
+        "title": "Cloud backup check found problems",
+        "body": "3 backed-up files are missing and 3 are damaged. The next backup uploads them again from this server; 3 earlier backups are marked incomplete."
+      },
+      "expected": {
+        "title": "[Fixture Cloud backup check found problems]",
+        "body": "[Fixture 3 backed-up files are missing and 3 are damaged. The next backup uploads them again from this server; 3 earlier backups are marked incomplete.]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-backup-check-failed renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-backup-check-failed",
+        "args": {
+          "error": "timeout {count}"
+        }
+      },
+      "fallback": {
+        "title": "Cloud backup check failed",
+        "body": "timeout {count}"
+      },
+      "expected": {
+        "title": "[Fixture Cloud backup check failed]",
+        "body": "[Fixture timeout {count}]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-backup-cleanup-failed renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-backup-cleanup-failed",
+        "args": {
+          "error": "timeout {count}"
+        }
+      },
+      "fallback": {
+        "title": "Cloud backup clean-up failed",
+        "body": "timeout {count}"
+      },
+      "expected": {
+        "title": "[Fixture Cloud backup clean-up failed]",
+        "body": "[Fixture timeout {count}]"
+      }
+    },
+    {
+      "name": "FL-406 cloud-restore-failed renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "cloud-restore-failed",
+        "args": {
+          "error": "timeout {count}"
+        }
+      },
+      "fallback": {
+        "title": "Restore from cloud backup failed",
+        "body": "timeout {count}"
+      },
+      "expected": {
+        "title": "[Fixture Restore from cloud backup failed]",
+        "body": "[Fixture timeout {count}]"
+      }
+    },
+    {
+      "name": "FL-406 studio-export-cancelled renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-cancelled",
+        "args": {}
+      },
+      "fallback": {
+        "title": "Render cancelled",
+        "body": "Your Studio export was cancelled"
+      },
+      "expected": {
+        "title": "[Fixture Render cancelled]",
+        "body": "[Fixture Your Studio export was cancelled]"
+      }
+    },
+    {
+      "name": "FL-406 studio-export-cancelled-named renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-export-cancelled-named",
+        "args": {
+          "label": "Holiday cut $1"
+        }
+      },
+      "fallback": {
+        "title": "Render cancelled",
+        "body": "Holiday cut $1 was cancelled"
+      },
+      "expected": {
+        "title": "[Fixture Render cancelled]",
+        "body": "[Fixture Holiday cut $1 was cancelled]"
+      }
+    },
+    {
+      "name": "FL-406 studio-render-progress renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-render-progress",
+        "args": {
+          "percent": 3
+        }
+      },
+      "fallback": {
+        "title": "Rendering",
+        "body": "Your Studio export · 3%"
+      },
+      "expected": {
+        "title": "[Fixture Rendering]",
+        "body": "[Fixture Your Studio export · 3%]"
+      }
+    },
+    {
+      "name": "FL-406 studio-render-progress-named renders in the recipient language",
+      "locale": "en-XA",
+      "template": {
+        "version": 1,
+        "key": "studio-render-progress-named",
+        "args": {
+          "label": "Holiday cut $1",
+          "percent": 3
+        }
+      },
+      "fallback": {
+        "title": "Rendering",
+        "body": "Holiday cut $1 · 3%"
+      },
+      "expected": {
+        "title": "[Fixture Rendering]",
+        "body": "[Fixture Holiday cut $1 · 3%]"
+      }
+    }
+  ]
+}

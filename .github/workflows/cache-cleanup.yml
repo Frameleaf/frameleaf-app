@@ -1,0 +1,17 @@
+# Inherited bot-based cache deletion is disabled; no cleanup write credentials are configured.
+# No scheduled/event-driven mutations or foreign credentials are retained.
+name: Cache Cleanup
+'on':
+  workflow_dispatch: null
+permissions: {}
+jobs:
+  disabled:
+    name: Legacy automation is disabled
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Explain the retired automation
+        run:
+          printf '%s\n' 'Inherited bot-based cache deletion is disabled; no cleanup write credentials are configured.' 'No
+          external action was taken. Configure an owned replacement in a reviewed change before enabling automation.'

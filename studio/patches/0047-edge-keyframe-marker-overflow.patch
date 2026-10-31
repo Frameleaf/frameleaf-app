@@ -1,0 +1,773 @@
+Subject: Let edge keyframe markers overflow their lane so the whole marker can be hit
+
+Freecut MIT adaptation (FL-100). The linked Edit keyframe lanes have no edge
+inset: the key of the first or last visible frame is centred on the lane
+edge. Each lane clipped its content, so only 5 of that marker's 12 pixels
+were drawn and reachable, and its centre belonged to the cell border (left)
+or the scrollbar strip (right). An ordinary click on it hit a neighbour.
+
+Markers of a lane without an edge inset now live in their own layer, clipped
+half a marker outside the axis instead of at the lane. A marker on either
+edge is drawn and hit whole, over the property column on the left and the
+scrollbar strip on the right, and stays on its frame. Everything else in the
+cell (grid lines, blocked ranges, bands, connectors, easing spans) is still
+clipped by the lane, and a key panned off the axis still disappears. The
+overflowing layer takes no pointer input itself; only a marker's own box
+does, so the property column's controls and the scrollbar keep every pixel
+outside it.
+
+A scroll container clips at its padding edge, so in that presentation the
+sheet viewport now spans the scrollbar strip as padding instead of stopping
+before it. The rows keep their width, and the measured sheet width subtracts
+the strip. Lanes with an edge inset (the standalone and Motion sheets) keep
+the lane as their marker clip and are laid out as before.
+
+diff --git a/src/features/keyframes/components/dopesheet-editor/layout.ts b/src/features/keyframes/components/dopesheet-editor/layout.ts
+--- a/src/features/keyframes/components/dopesheet-editor/layout.ts
++++ b/src/features/keyframes/components/dopesheet-editor/layout.ts
+@@ -8,7 +8,56 @@
+ export const KEYFRAME_DIAMOND_RENDERED_WIDTH_PX =
+   Math.SQRT2 * KEYFRAME_DIAMOND_SIDE_PX
+ export const KEYFRAME_EDGE_INSET = Math.ceil((Math.sqrt(2) * KEYFRAME_BUTTON_SIZE) / 2)
++const KEYFRAME_MARKER_HALF_WIDTH_PX = KEYFRAME_BUTTON_SIZE / 2
+ 
++/** Furthest a marker layer may reach past the right edge of its lane. */
++const KEYFRAME_MARKER_MAX_LANE_OVERFLOW_PX = KEYFRAME_MARKER_HALF_WIDTH_PX + 1
++
++export interface KeyframeMarkerLayerBox {
++  /** Clip of the marker layer, relative to the cell surface. */
++  clip: { left: number; width: number; minWidth: string; maxWidth: string }
++  /** Left of the marker content inside the clip: back at the surface origin. */
++  contentLeft: number
++}
++
++/**
++ * Horizontal box that clips the keyframe markers of a timeline cell whose axis
++ * has no edge inset, or `null` when the lane itself is the clip.
++ *
++ * With an edge inset, markers stay inside the lane and the lane clips them, as
++ * it always did. An axis without one centres the key of its first or last
++ * frame on the lane edge, where a lane clip leaves less than half of the
++ * marker reachable. The marker layer is then clipped half a marker outside the
++ * axis instead, so a marker on either edge is drawn and hit whole. A key
++ * panned off the axis still disappears, and nothing but markers leaves the
++ * lane.
++ *
++ * `axisOriginOffset` is how far the axis origin lies left of the cell
++ * surface. Whatever axis width is reported, the right edge never clips inside
++ * the lane and stays within `KEYFRAME_MARKER_MAX_LANE_OVERFLOW_PX` of it,
++ * inside the scrollbar strip the sheet lends it.
++ */
++export function getKeyframeMarkerLayerBox(
++  axisWidth: number,
++  axisOriginOffset: number | undefined,
++): KeyframeMarkerLayerBox | null {
++  if (axisOriginOffset === undefined) return null
++
++  const overflowLeft = axisOriginOffset + KEYFRAME_MARKER_HALF_WIDTH_PX
++  return {
++    clip: {
++      left: -overflowLeft,
++      // Half a marker either side of the axis...
++      width: axisWidth + KEYFRAME_MARKER_HALF_WIDTH_PX * 2,
++      // ...but at least to the lane's right edge, and at most just past it.
++      // Percentages are of the surface, the lane's own width.
++      minWidth: `calc(100% + ${overflowLeft}px)`,
++      maxWidth: `calc(100% + ${overflowLeft + KEYFRAME_MARKER_MAX_LANE_OVERFLOW_PX}px)`,
++    },
++    contentLeft: overflowLeft,
++  }
++}
++
+ function getFrameRange(viewport: Viewport): number {
+   return Math.max(1, viewport.endFrame - viewport.startFrame)
+ }
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-constants.ts b/src/features/keyframes/components/dopesheet-editor/dopesheet-constants.ts
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-constants.ts
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-constants.ts
+@@ -11,6 +11,8 @@
+ export const GROUP_HEADER_HEIGHT = 22
+ export const ROW_HEIGHT = 30
+ export const RULER_HEIGHT = 22
++/** Width of the sheet's vertical scrollbar strip, right of the scroll viewport. */
++export const SHEET_SCROLLBAR_STRIP_WIDTH = 12
+ export const ZOOM_IN_FACTOR = 0.8
+ export const ZOOM_OUT_FACTOR = 1.25
+ export const DRAG_THRESHOLD = 2
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-timeline-cells.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-timeline-cells.tsx
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-timeline-cells.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-timeline-cells.tsx
+@@ -9,7 +9,7 @@
+  * across scrubs, so `React.memo` skips these subtrees entirely while scrubbing.
+  */
+ import { memo } from 'react'
+-import type { CSSProperties, MutableRefObject } from 'react'
++import type { CSSProperties, MutableRefObject, ReactNode } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import { cn } from '@/shared/ui/cn'
+ import type { AnimatableProperty, Keyframe } from '@/types/keyframe'
+@@ -19,7 +19,7 @@
+ import { getDisplayedGroupFrameGroups } from './sheet-preview-frame-groups'
+ import type { DopesheetPropertyGroupStructure } from './dopesheet-helpers'
+ import type { KeyframeMeta } from './dopesheet-types'
+-import { KEYFRAME_DIAMOND_SIDE_PX, KEYFRAME_EDGE_INSET } from './layout'
++import { getKeyframeMarkerLayerBox, KEYFRAME_DIAMOND_SIDE_PX, KEYFRAME_EDGE_INSET } from './layout'
+ import { SegmentEasingPopover, type SegmentEasingChange } from './segment-easing-popover'
+ import { buildSegmentSpans } from './segment-spans'
+ 
+@@ -142,6 +142,54 @@
+       title={title}
+     />
+   )
++}
++
++/**
++ * Keyframe markers and their drag ghosts, above the lane content.
++ *
++ * The lane clips everything else in a cell. Markers get their own clip so an
++ * axis without an edge inset can show the marker of its first or last frame
++ * whole (see `getKeyframeMarkerLayerBox`); otherwise the clip is the lane.
++ * A layer that overflows the lane takes no pointer events itself: only its
++ * markers do (`getOverflowingMarkerPointerClass`), so an overflowing marker
++ * covers its neighbours by exactly its own box.
++ */
++function KeyframeMarkerLayer({
++  axisWidth,
++  edgeMarkerAxisOriginOffset,
++  children,
++}: {
++  axisWidth: number
++  edgeMarkerAxisOriginOffset: number | undefined
++  children: ReactNode
++}) {
++  const box = getKeyframeMarkerLayerBox(axisWidth, edgeMarkerAxisOriginOffset)
++  return (
++    <div
++      data-motion-keyframe-marker-clip
++      className={cn('absolute overflow-hidden', box ? 'pointer-events-none inset-y-0' : 'inset-0')}
++      style={box?.clip}
++    >
++      <div
++        data-motion-span-drag-visual
++        className={cn('absolute', box ? 'inset-y-0 right-0' : 'inset-0')}
++        style={box ? { left: box.contentLeft } : undefined}
++      >
++        {children}
++      </div>
++    </div>
++  )
++}
++
++/**
++ * Markers inside an overflowing (pointer-inert) layer take pointer input
++ * again, unless the whole editor is disabled and has switched it off above.
++ */
++function getOverflowingMarkerPointerClass(
++  edgeMarkerAxisOriginOffset: number | undefined,
++  editorDisabled: boolean,
++): string | false {
++  return edgeMarkerAxisOriginOffset !== undefined && !editorDisabled && 'pointer-events-auto'
+ }
+ 
+ interface GroupTimelineCellProps {
+@@ -154,6 +202,11 @@
+   rows: StructureRow[]
+   ticks: number[]
+   axisWidth: number
++  /**
++   * Set when the axis has no edge inset: how far its origin lies left of the
++   * cell surface. Edge markers then overflow the lane by half a marker.
++   */
++  edgeMarkerAxisOriginOffset?: number
+   frameToX: (frame: number) => number
+   gridFrameToX?: (frame: number) => number
+   getRenderedKeyframeX: (frame: number) => number | null
+@@ -177,6 +230,7 @@
+   rows,
+   ticks,
+   axisWidth,
++  edgeMarkerAxisOriginOffset,
+   frameToX,
+   gridFrameToX = frameToX,
+   getRenderedKeyframeX,
+@@ -198,7 +252,10 @@
+ 
+   return (
+     <div
+-      className="relative h-full border-l border-border/60 bg-muted/20 overflow-hidden"
++      className={cn(
++        'relative h-full border-l border-border/60 bg-muted/20',
++        edgeMarkerAxisOriginOffset === undefined && 'overflow-hidden',
++      )}
+       onPointerDown={onBackgroundPointerDown}
+     >
+       <div
+@@ -207,14 +264,19 @@
+         data-motion-viewport-axis-width={axisWidth}
+         className="absolute inset-0"
+       >
+-        <div
+-          aria-hidden
+-          data-motion-grid-frames={ticks.join(',')}
+-          className="pointer-events-none absolute inset-y-0 w-px bg-current text-border/30"
+-          style={getTimelineGridLineStyle(ticks, gridFrameToX)}
+-        />
++        <div data-motion-lane-clip className="absolute inset-0 overflow-hidden">
++          <div
++            aria-hidden
++            data-motion-grid-frames={ticks.join(',')}
++            className="pointer-events-none absolute inset-y-0 w-px bg-current text-border/30"
++            style={getTimelineGridLineStyle(ticks, gridFrameToX)}
++          />
++        </div>
+ 
+-        <div data-motion-span-drag-visual className="absolute inset-0">
++        <KeyframeMarkerLayer
++          axisWidth={axisWidth}
++          edgeMarkerAxisOriginOffset={edgeMarkerAxisOriginOffset}
++        >
+           {!expanded &&
+             renderedFrameGroups.map((frameGroup) => {
+               const renderedX = getRenderedKeyframeX(frameGroup.frame) ?? frameToX(frameGroup.frame)
+@@ -234,6 +296,7 @@
+                   data-dopesheet-frame={frameGroup.frame}
+                   className={cn(
+                     'group absolute z-10 flex h-3 w-3 -ml-1.5 -mt-1.5 items-center justify-center',
++                    getOverflowingMarkerPointerClass(edgeMarkerAxisOriginOffset, disabled),
+                     movableEntries.length > 0 && 'cursor-grab active:cursor-grabbing',
+                     movableEntries.length === 0 && 'cursor-not-allowed opacity-50',
+                   )}
+@@ -293,7 +356,7 @@
+                 </div>
+               )
+             })}
+-        </div>
++        </KeyframeMarkerLayer>
+       </div>
+     </div>
+   )
+@@ -307,6 +370,11 @@
+   locked: boolean
+   ticks: number[]
+   axisWidth: number
++  /**
++   * Set when the axis has no edge inset: how far its origin lies left of the
++   * cell surface. Edge markers then overflow the lane by half a marker.
++   */
++  edgeMarkerAxisOriginOffset?: number
+   frameToX: (frame: number) => number
+   gridFrameToX?: (frame: number) => number
+   getRenderedKeyframeX: (frame: number) => number | null
+@@ -341,6 +409,7 @@
+   locked,
+   ticks,
+   axisWidth,
++  edgeMarkerAxisOriginOffset,
+   frameToX,
+   gridFrameToX = frameToX,
+   getRenderedKeyframeX,
+@@ -401,7 +470,10 @@
+ 
+   return (
+     <div
+-      className="relative h-full border-l border-border/60 overflow-hidden"
++      className={cn(
++        'relative h-full border-l border-border/60',
++        edgeMarkerAxisOriginOffset === undefined && 'overflow-hidden',
++      )}
+       onPointerDown={(event) => onRowPointerDown(property, event)}
+     >
+       <div
+@@ -410,55 +482,62 @@
+         data-motion-viewport-axis-width={axisWidth}
+         className="absolute inset-0"
+       >
+-        <div
+-          aria-hidden
+-          data-motion-grid-frames={ticks.join(',')}
+-          className="pointer-events-none absolute inset-y-0 w-px bg-current text-border/30"
+-          style={getTimelineGridLineStyle(ticks, gridFrameToX)}
+-        />
+-
+-        {transitionBlockedRanges.map((range, index) => (
++        <div data-motion-lane-clip className="absolute inset-0 overflow-hidden">
+           <div
+-            key={`${property}-${index}-${range.start}-${range.end}`}
+-            data-dopesheet-from-frame={range.start}
+-            data-dopesheet-to-frame={range.end}
+-            className="absolute inset-y-0 bg-destructive/10 border-x border-destructive/20 pointer-events-none"
+-            style={{
+-              left: frameToX(range.start),
+-              width: frameToX(range.end) - frameToX(range.start),
+-            }}
++            aria-hidden
++            data-motion-grid-frames={ticks.join(',')}
++            className="pointer-events-none absolute inset-y-0 w-px bg-current text-border/30"
++            style={getTimelineGridLineStyle(ticks, gridFrameToX)}
+           />
+-        ))}
+ 
+-        <div data-motion-span-drag-visual className="absolute inset-0">
+-          {proceduralBand && (
+-            <ProceduralBandView
+-              band={proceduralBand}
+-              frameToX={frameToX}
+-              title={t('timeline.keyframeEditor.proceduralBand')}
++          {transitionBlockedRanges.map((range, index) => (
++            <div
++              key={`${property}-${index}-${range.start}-${range.end}`}
++              data-dopesheet-from-frame={range.start}
++              data-dopesheet-to-frame={range.end}
++              className="absolute inset-y-0 bg-destructive/10 border-x border-destructive/20 pointer-events-none"
++              style={{
++                left: frameToX(range.start),
++                width: frameToX(range.end) - frameToX(range.start),
++              }}
+             />
+-          )}
++          ))}
+ 
+-          <KeyframeConnectors itemId={itemId} segments={connectorSegments} />
+-
+-          {onSegmentEasingChange &&
+-            segmentSpans.map((span) => (
+-              <SegmentEasingPopover
+-                key={`seg-${span.from.id}`}
+-                left={span.left}
+-                width={span.width}
+-                fromFrame={span.fromFrame}
+-                toFrame={span.toFrame}
+-                refs={[{ itemId, property, keyframeId: span.from.id }]}
+-                easing={span.from.easing}
+-                easingConfig={span.from.easingConfig}
+-                held={span.from.easing === 'hold'}
+-                onChange={onSegmentEasingChange}
+-                onDragStart={onSegmentDragStart}
+-                onDragEnd={onSegmentDragEnd}
++          <div data-motion-span-drag-visual className="absolute inset-0">
++            {proceduralBand && (
++              <ProceduralBandView
++                band={proceduralBand}
++                frameToX={frameToX}
++                title={t('timeline.keyframeEditor.proceduralBand')}
+               />
+-            ))}
++            )}
+ 
++            <KeyframeConnectors itemId={itemId} segments={connectorSegments} />
++
++            {onSegmentEasingChange &&
++              segmentSpans.map((span) => (
++                <SegmentEasingPopover
++                  key={`seg-${span.from.id}`}
++                  left={span.left}
++                  width={span.width}
++                  fromFrame={span.fromFrame}
++                  toFrame={span.toFrame}
++                  refs={[{ itemId, property, keyframeId: span.from.id }]}
++                  easing={span.from.easing}
++                  easingConfig={span.from.easingConfig}
++                  held={span.from.easing === 'hold'}
++                  onChange={onSegmentEasingChange}
++                  onDragStart={onSegmentDragStart}
++                  onDragEnd={onSegmentDragEnd}
++                />
++              ))}
++          </div>
++        </div>
++
++        <KeyframeMarkerLayer
++          axisWidth={axisWidth}
++          edgeMarkerAxisOriginOffset={edgeMarkerAxisOriginOffset}
++        >
+           {keyframes.map((keyframe) => {
+             const renderedX = xForKeyframe(keyframe)
+             if (renderedX === null) return null
+@@ -474,6 +553,7 @@
+                 data-dopesheet-frame={displayedFrame(keyframe)}
+                 className={cn(
+                   'group absolute z-10 flex h-3 w-3 -ml-1.5 -mt-1.5 items-center justify-center',
++                  getOverflowingMarkerPointerClass(edgeMarkerAxisOriginOffset, disabled),
+                   !locked && 'cursor-grab active:cursor-grabbing',
+                   locked && 'cursor-not-allowed opacity-50',
+                 )}
+@@ -551,7 +631,7 @@
+               </div>,
+             ]
+           })}
+-        </div>
++        </KeyframeMarkerLayer>
+       </div>
+     </div>
+   )
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-sheet-body.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-sheet-body.tsx
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-sheet-body.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-sheet-body.tsx
+@@ -2,7 +2,11 @@
+ import type { PointerEvent as ReactPointerEvent, ReactNode, RefObject } from 'react'
+ import { KeyframeMarqueeOverlay } from '../keyframe-marquee'
+ import { VerticalScrollbarOverlay } from '@/shared/ui/vertical-scrollbar-overlay'
+-import { PROPERTY_COLUMN_WIDTH, RULER_HEIGHT } from './dopesheet-constants'
++import {
++  PROPERTY_COLUMN_WIDTH,
++  RULER_HEIGHT,
++  SHEET_SCROLLBAR_STRIP_WIDTH,
++} from './dopesheet-constants'
+ import { DopesheetEmptyState } from './dopesheet-empty-state'
+ 
+ interface DopesheetSheetBodyProps {
+@@ -15,6 +19,14 @@
+   marqueeOverlayRef: RefObject<HTMLDivElement | null>
+   propertyColumnWidth?: number
+   subtractRulerHeight?: boolean
++  /**
++   * Lets keyframe markers on the last visible frame overflow their lane onto
++   * the scrollbar strip. A scroll container clips at its padding edge, so the
++   * viewport then spans the strip as padding instead of stopping before it:
++   * the rows keep their width and the strip stays the scrollbar's, except
++   * under a marker's own box.
++   */
++  edgeMarkerOverflow?: boolean
+   onTimelineBackgroundPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void
+ }
+ 
+@@ -33,6 +45,7 @@
+   marqueeOverlayRef,
+   propertyColumnWidth = PROPERTY_COLUMN_WIDTH,
+   subtractRulerHeight = true,
++  edgeMarkerOverflow = false,
+   onTimelineBackgroundPointerDown,
+ }: DopesheetSheetBodyProps) {
+   const middlePanRef = useRef<MiddleRowPanState | null>(null)
+@@ -114,7 +127,9 @@
+           subtractRulerHeight ? 'absolute inset-y-0 left-0 overflow-auto' : 'overflow-hidden'
+         }
+         style={{
+-          right: subtractRulerHeight ? 12 : 0,
++          right: subtractRulerHeight && !edgeMarkerOverflow ? SHEET_SCROLLBAR_STRIP_WIDTH : 0,
++          paddingRight:
++            subtractRulerHeight && edgeMarkerOverflow ? SHEET_SCROLLBAR_STRIP_WIDTH : undefined,
+           height: subtractRulerHeight ? undefined : '100%',
+           scrollbarWidth: subtractRulerHeight ? 'none' : undefined,
+         }}
+diff --git a/src/features/keyframes/components/dopesheet-editor/index.tsx b/src/features/keyframes/components/dopesheet-editor/index.tsx
+--- a/src/features/keyframes/components/dopesheet-editor/index.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
+@@ -139,6 +139,7 @@
+   SPACIOUS_PROPERTY_COLUMN_WIDTH,
+   ROW_HEIGHT,
+   RULER_HEIGHT,
++  SHEET_SCROLLBAR_STRIP_WIDTH,
+   SNAP_THRESHOLD_PX,
+   ZOOM_IN_FACTOR,
+   ZOOM_OUT_FACTOR,
+@@ -758,8 +759,11 @@
+ }
+ 
+ const TimelineViewportCuller = memo(function TimelineViewportCuller({
++  edgeMarkerOverflow = false,
+   children,
+ }: {
++  /** The cell clips its own content and lets edge markers overflow the lane. */
++  edgeMarkerOverflow?: boolean
+   children: React.ReactNode
+ }) {
+   const rootRef = useRef<HTMLDivElement>(null)
+@@ -789,7 +793,7 @@
+   }, [])
+ 
+   return (
+-    <div ref={rootRef} className="min-w-0 overflow-hidden">
++    <div ref={rootRef} className={cn('min-w-0', !edgeMarkerOverflow && 'overflow-hidden')}>
+       {isNearViewport ? children : null}
+     </div>
+   )
+@@ -1570,7 +1574,16 @@
+   )
+   const fallbackTimelineWidth = Math.max(width - columnWidth, 1)
+   const fullTimelineWidth = timelineWidth || fallbackTimelineWidth
+-  const sheetTimelineWidth = Math.max(0, sheetScrollWidth - columnWidth)
++  // A lane without an edge inset centres the key of its first or last frame on
++  // the lane edge. Its markers may overflow the lane by half a marker, onto the
++  // property column on the left and the scrollbar strip on the right, so the
++  // whole marker can be hit. The sheet viewport then spans that strip as
++  // padding, which its measured client width includes.
++  const edgeMarkerOverflow = presentation === 'classic'
++  const sheetTimelineWidth = Math.max(
++    0,
++    sheetScrollWidth - (edgeMarkerOverflow ? SHEET_SCROLLBAR_STRIP_WIDTH : 0) - columnWidth,
++  )
+   const alignedTimelineWidth =
+     showSheetPane && sheetTimelineWidth > 0
+       ? Math.min(fullTimelineWidth, sheetTimelineWidth)
+@@ -1599,6 +1612,12 @@
+     1,
+   )
+   const timelineEdgeInset = presentation === 'classic' ? 0 : undefined
++  // The linked axis starts on the cell's one-pixel border, left of its surface.
++  const edgeMarkerAxisOriginOffset = edgeMarkerOverflow
++    ? hasLinkedTimelineAxis
++      ? 1
++      : 0
++    : undefined
+   const timelinePixelsPerSecond = useMemo(
+     () => (effectiveTimelineWidth / frameRange) * fps,
+     [effectiveTimelineWidth, frameRange, fps],
+@@ -4730,7 +4749,7 @@
+               style={groupTimelineRowStyle}
+             >
+               {sheetGroupContentById.get(entry.group.id)}
+-              <TimelineViewportCuller>
++              <TimelineViewportCuller edgeMarkerOverflow={edgeMarkerOverflow}>
+                 <GroupTimelineCell
+                   groupId={entry.group.id}
+                   groupLabel={entry.group.label}
+@@ -4741,6 +4760,7 @@
+                   rows={groupTimelineById.get(entry.group.id)?.rows ?? EMPTY_STRUCTURE_ROWS}
+                   ticks={ticks}
+                   axisWidth={effectiveTimelineWidth}
++                  edgeMarkerAxisOriginOffset={edgeMarkerAxisOriginOffset}
+                   frameToX={frameToX}
+                   gridFrameToX={timelineGridDivisions ? sharedGridFrameToX : undefined}
+                   getRenderedKeyframeX={getRenderedKeyframeX}
+@@ -4766,7 +4786,7 @@
+             style={propertyTimelineRowStyle}
+           >
+             {sheetPropertyContentByProperty.get(row.property)}
+-            <TimelineViewportCuller>
++            <TimelineViewportCuller edgeMarkerOverflow={edgeMarkerOverflow}>
+               <PropertyTimelineCell
+                 itemId={itemId}
+                 property={row.property}
+@@ -4774,6 +4794,7 @@
+                 locked={rowLocked}
+                 ticks={ticks}
+                 axisWidth={effectiveTimelineWidth}
++                edgeMarkerAxisOriginOffset={edgeMarkerAxisOriginOffset}
+                 frameToX={frameToX}
+                 gridFrameToX={timelineGridDivisions ? sharedGridFrameToX : undefined}
+                 getRenderedKeyframeX={getRenderedKeyframeX}
+@@ -4814,6 +4835,8 @@
+       disabled,
+       ticks,
+       effectiveTimelineWidth,
++      edgeMarkerOverflow,
++      edgeMarkerAxisOriginOffset,
+       frameToX,
+       sharedGridFrameToX,
+       timelineGridDivisions,
+@@ -4995,6 +5018,7 @@
+       marqueeOverlayRef={marqueeOverlayRef}
+       propertyColumnWidth={columnWidth}
+       subtractRulerHeight={presentation !== 'lanes'}
++      edgeMarkerOverflow={edgeMarkerOverflow}
+       onTimelineBackgroundPointerDown={handleTimelineBackgroundPointerDown}
+     />
+   )
+diff --git a/src/features/keyframes/components/dopesheet-editor/index.test.ts b/src/features/keyframes/components/dopesheet-editor/index.test.ts
+--- a/src/features/keyframes/components/dopesheet-editor/index.test.ts
++++ b/src/features/keyframes/components/dopesheet-editor/index.test.ts
+@@ -4,10 +4,46 @@
+ import {
+   getFrameAxisX,
+   getFrameFromAxisX,
++  getKeyframeMarkerLayerBox,
+   getVisibleKeyframeX,
+   KEYFRAME_EDGE_INSET,
+ } from './layout'
+ 
++describe('getKeyframeMarkerLayerBox', () => {
++  it('leaves the lane as the marker clip when the axis has an edge inset', () => {
++    expect(getKeyframeMarkerLayerBox(600, undefined)).toBeNull()
++  })
++
++  it('clips markers half a marker outside an axis that starts at the surface', () => {
++    // 12px markers: a key on frame 0 spans -6..6 and one on the last frame
++    // spans 594..606 of a 600px axis, so the clip runs from -6 to 606. It
++    // reaches at least the lane's right edge and at most 7px past it.
++    expect(getKeyframeMarkerLayerBox(600, 0)).toEqual({
++      clip: {
++        left: -6,
++        width: 612,
++        minWidth: 'calc(100% + 6px)',
++        maxWidth: 'calc(100% + 13px)',
++      },
++      contentLeft: 6,
++    })
++  })
++
++  it('follows a linked axis that starts on the cell border, left of the surface', () => {
++    // The 900px axis runs from -1 to 899 on the surface, so its edge markers
++    // span -7..5 and 893..905. Marker content stays at the surface origin.
++    expect(getKeyframeMarkerLayerBox(900, 1)).toEqual({
++      clip: {
++        left: -7,
++        width: 912,
++        minWidth: 'calc(100% + 7px)',
++        maxWidth: 'calc(100% + 14px)',
++      },
++      contentLeft: 7,
++    })
++  })
++})
++
+ describe('getVisibleKeyframeX', () => {
+   const viewport = { startFrame: 10, endFrame: 20 }
+ 
+diff --git a/src/features/keyframes/components/dopesheet-editor/playhead-overlay.test.tsx b/src/features/keyframes/components/dopesheet-editor/playhead-overlay.test.tsx
+--- a/src/features/keyframes/components/dopesheet-editor/playhead-overlay.test.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/playhead-overlay.test.tsx
+@@ -139,7 +139,10 @@
+     const clientWidthSpy = vi
+       .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+       .mockImplementation(function (this: HTMLElement) {
+-        return this.dataset.testid === 'dopesheet-scroll-area' ? 628 : 0
++        // The classic sheet viewport spans the 12px scrollbar strip as padding
++        // (edge keyframe markers overflow onto it), so its client width is the
++        // 628px of rows plus the strip.
++        return this.dataset.testid === 'dopesheet-scroll-area' ? 640 : 0
+       })
+ 
+     render(
+@@ -156,7 +159,8 @@
+     )
+ 
+     expect(screen.getByTestId('dopesheet-scroll-area')).toHaveStyle({
+-      right: '12px',
++      right: '0px',
++      paddingRight: '12px',
+     })
+     expect(screen.getByTestId('dopesheet-scrollbar')).toHaveClass(
+       'right-0',
+diff --git a/src/features/keyframes/components/dopesheet-editor/edge-marker-overflow.test.tsx b/src/features/keyframes/components/dopesheet-editor/edge-marker-overflow.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/keyframes/components/dopesheet-editor/edge-marker-overflow.test.tsx
+@@ -0,0 +1,127 @@
++import { render, screen } from '@testing-library/react'
++import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
++import { DopesheetEditor } from './index'
++
++// Layout only: which box clips a keyframe marker. Real hit testing on both lane
++// edges is the hosted linked Edit-axis fixture's job.
++describe('DopesheetEditor edge keyframe markers', () => {
++  beforeAll(() => {
++    class ResizeObserverMock {
++      observe() {}
++      unobserve() {}
++      disconnect() {}
++    }
++
++    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
++  })
++
++  const keyframesByProperty = {
++    x: [
++      { id: 'first', frame: 0, value: 0, easing: 'linear' as const },
++      { id: 'last', frame: 100, value: 10, easing: 'linear' as const },
++    ],
++  }
++
++  function markerBoxes(keyframeId: string) {
++    const marker = screen.getByTestId(`row-keyframe-x-${keyframeId}`)
++    const content = marker.parentElement as HTMLElement
++    const clip = content.parentElement as HTMLElement
++    const surface = clip.parentElement as HTMLElement
++    const cell = surface.parentElement as HTMLElement
++    const culler = cell.parentElement as HTMLElement
++    return { marker, content, clip, surface, cell, culler }
++  }
++
++  it('lets classic edge markers overflow the lane by half a marker', () => {
++    render(
++      <DopesheetEditor
++        itemId="item-1"
++        keyframesByProperty={keyframesByProperty}
++        frameViewport={{ startFrame: 0, endFrame: 100 }}
++        clampViewportToContent={false}
++        presentation="classic"
++        width={640}
++        height={240}
++      />,
++    )
++
++    const { marker, content, clip, surface, cell, culler } = markerBoxes('first')
++    // 640px editor - 248px property column - 1px cell border: a 391px axis
++    // that starts at the surface. 12px markers reach 6px past either end.
++    expect(surface).toHaveAttribute('data-motion-viewport-axis-width', '391')
++    expect(clip).toHaveAttribute('data-motion-keyframe-marker-clip')
++    expect(clip).toHaveClass('pointer-events-none', 'overflow-hidden')
++    expect(clip.style.left).toBe('-6px')
++    expect(clip.style.width).toBe('403px')
++    expect(clip.style.minWidth).toBe('calc(100% + 6px)')
++    expect(clip.style.maxWidth).toBe('calc(100% + 13px)')
++    expect(content).toHaveAttribute('data-motion-span-drag-visual')
++    expect(content.style.left).toBe('6px')
++    expect(marker).toHaveClass('pointer-events-auto')
++    expect(marker.style.left).toBe('0px')
++    expect(screen.getByTestId('row-keyframe-x-last').style.left).toBe('391px')
++
++    // Neither the cell nor its culling wrapper clips the marker layer...
++    expect(cell).not.toHaveClass('overflow-hidden')
++    expect(culler).not.toHaveClass('overflow-hidden')
++    // ...while everything else in the cell is still clipped by the lane.
++    const laneClip = surface.querySelector('[data-motion-lane-clip]') as HTMLElement
++    expect(laneClip).toHaveClass('absolute', 'inset-0', 'overflow-hidden')
++    expect(laneClip.querySelector('[data-motion-grid-frames]')).not.toBeNull()
++    expect(laneClip.querySelector('[data-testid="keyframe-connector"]')).not.toBeNull()
++    expect(laneClip.querySelector('[data-testid^="row-keyframe-"]')).toBeNull()
++
++    // The sheet viewport lends the markers its scrollbar strip as padding.
++    expect(screen.getByTestId('dopesheet-scroll-area')).toHaveStyle({
++      right: '0px',
++      paddingRight: '12px',
++    })
++  })
++
++  it('does not hand pointer input back to markers of a disabled editor', () => {
++    render(
++      <DopesheetEditor
++        itemId="item-1"
++        keyframesByProperty={keyframesByProperty}
++        frameViewport={{ startFrame: 0, endFrame: 100 }}
++        clampViewportToContent={false}
++        presentation="classic"
++        disabled
++        width={640}
++        height={240}
++      />,
++    )
++
++    const { marker, clip } = markerBoxes('first')
++    expect(clip).toHaveClass('pointer-events-none')
++    expect(marker).toBeDisabled()
++    expect(marker).not.toHaveClass('pointer-events-auto')
++  })
++
++  it('keeps the lane as the marker clip where the axis has an edge inset', () => {
++    render(
++      <DopesheetEditor
++        itemId="item-1"
++        keyframesByProperty={keyframesByProperty}
++        frameViewport={{ startFrame: 0, endFrame: 100 }}
++        clampViewportToContent={false}
++        width={640}
++        height={240}
++      />,
++    )
++
++    const { marker, content, clip, cell, culler } = markerBoxes('first')
++    expect(clip).toHaveClass('absolute', 'inset-0', 'overflow-hidden')
++    expect(clip).not.toHaveClass('pointer-events-none')
++    expect(marker).not.toHaveClass('pointer-events-auto')
++    expect(clip.getAttribute('style')).toBeNull()
++    expect(content).toHaveClass('absolute', 'inset-0')
++    expect(content.getAttribute('style')).toBeNull()
++    // The inset keeps the frame-0 marker inside the lane.
++    expect(marker.style.left).toBe('9px')
++    expect(cell).toHaveClass('overflow-hidden')
++    expect(culler).toHaveClass('overflow-hidden')
++    expect(screen.getByTestId('dopesheet-scroll-area')).toHaveStyle({ right: '12px' })
++    expect(screen.getByTestId('dopesheet-scroll-area').style.paddingRight).toBe('')
++  })
++})

@@ -1,0 +1,27 @@
+{
+  "estimate": "est1.Zr9mQ2x7VbN4kP1sT8yH3dLw6cJ0aF5gR2uE9iO4nM7qX1zB8vC3tY6hW0pK5sD2fG9jL4",
+  "workload": "descriptions",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "clientRef": "batch-0192f1b0",
+  "packKey": "album-7",
+  "deadlineSeconds": 3600,
+  "inputs": [
+    {
+      "inputId": "a1",
+      "contentType": "image/jpeg",
+      "bytes": 2483121,
+      "sha256": "9f2c1c0a7d3b5e8f6a4d2c1b0e9f8a7d6c5b4a3928171615141312111009f8e7"
+    },
+    {
+      "inputId": "a2",
+      "contentType": "image/heic",
+      "bytes": 1893002,
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    }
+  ],
+  "request": {
+    "language": "en",
+    "length": "standard"
+  }
+}

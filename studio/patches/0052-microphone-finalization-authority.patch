@@ -1,0 +1,1109 @@
+--- a/src/features/media-library/services/media-asset-helpers.ts
++++ b/src/features/media-library/services/media-asset-helpers.ts
+@@ -8,6 +8,7 @@
+   saveThumbnail as saveThumbnailDB,
+   writeMediaSource,
+ } from '@/features/media-library/deps/storage'
++import { MEDIA_DIR } from '@/infrastructure/storage/workspace-fs/paths'
+ import { opfsService } from '@/features/media-library/services/opfs-service'
+
+ const logger = createLogger('MediaAssetHelpers')
+@@ -93,7 +94,34 @@
+   return new Response(blob).arrayBuffer()
+ }
+
++/** A directory lookup distinguishes an absent namespace from either existing entry kind. */
++async function recordingNamespaceExists(root: FileSystemDirectoryHandle, mediaId: string): Promise<boolean> {
++  let parent: FileSystemDirectoryHandle
++  try {
++    parent = await root.getDirectoryHandle(MEDIA_DIR, { create: false })
++  } catch (error) {
++    if (error instanceof DOMException && error.name === 'NotFoundError') return false
++    throw error
++  }
++  try {
++    await parent.getDirectoryHandle(mediaId, { create: false })
++    return true
++  } catch (error) {
++    // Only the final entry's type mismatch proves a file collision. Parent/read errors still fail.
++    if (error instanceof DOMException && error.name === 'TypeMismatchError') return true
++    if (error instanceof DOMException && error.name === 'NotFoundError') return false
++    throw error
++  }
++}
++
++/** Admission is checked before the first write; admitted work settles on its origin root. */
++export interface RecordingAdmission {
++  root: FileSystemDirectoryHandle
++  isCurrent: () => boolean
++}
++
+ interface PersistGeneratedMediaOptions {
++  admission?: RecordingAdmission
+   file: File
+   projectId: string
+   mediaMetadata: MediaMetadata
+@@ -109,7 +137,15 @@
+   thumbnailBlob,
+   thumbnailWidth,
+   thumbnailHeight,
++  admission,
+ }: PersistGeneratedMediaOptions): Promise<MediaMetadata> {
++  if (admission) {
++    if (!admission.isCurrent()) throw new Error('recording_retired')
++    // FSA creation is idempotent, not exclusive. Never adopt a known existing namespace.
++    if (await recordingNamespaceExists(admission.root, mediaMetadata.id)) throw new Error('recording_namespace_exists')
++    if (!admission.isCurrent()) throw new Error('recording_retired')
++  }
++  const originRoot = admission?.root
+   const opId = createOperationId()
+   const event = logger.startEvent('persistGeneratedMediaAsset', opId)
+   event.merge({ projectId, mediaId: mediaMetadata.id })
+@@ -124,7 +160,9 @@
+     // land here — not OPFS, which is origin-scoped and invisible when the
+     // same project is opened on another origin. Strict: a failure here means
+     // the media isn't durably stored, so roll the whole import back.
+-    await writeMediaSource(mediaMetadata.id, file, mediaMetadata.fileName, { strict: true })
++    await writeMediaSource(mediaMetadata.id, file, mediaMetadata.fileName, admission
++      ? { strict: true, originRoot, isCurrent: admission.isCurrent, rejectExisting: true }
++      : { strict: true })
+     sourceWritten = true
+
+     // Optional OPFS copy — only when a caller still supplies an opfsPath (e.g.
+@@ -144,25 +182,38 @@
+       const sanitizedHeight = Math.max(1, Math.floor(Math.abs(rawHeight)))
+       const thumbnailId = crypto.randomUUID()
+
+-      await saveThumbnailDB({
++      const thumbnail = {
+         id: thumbnailId,
+         mediaId: mediaMetadata.id,
+         blob: thumbnailBlob,
+         timestamp: 0,
+         width: sanitizedWidth,
+         height: sanitizedHeight,
+-      })
++      }
++      await (admission
++        ? saveThumbnailDB(thumbnail, originRoot, admission.isCurrent)
++        : saveThumbnailDB(thumbnail))
+
+       mediaMetadata.thumbnailId = thumbnailId
+       thumbnailSaved = true
+     }
+
+-    await createMediaDB(mediaMetadata)
++    await (admission
++      ? createMediaDB(mediaMetadata, originRoot, admission.isCurrent)
++      : createMediaDB(mediaMetadata))
+     metadataCreated = true
+-    await associateMediaWithProject(projectId, mediaMetadata.id)
++    await (admission
++      ? associateMediaWithProject(projectId, mediaMetadata.id, originRoot, admission.isCurrent)
++      : associateMediaWithProject(projectId, mediaMetadata.id))
+     event.success({ projectId, mediaId: mediaMetadata.id })
+     return mediaMetadata
+   } catch (error) {
++    if (admission) {
++      // No exclusive cross-tab namespace claim exists. Never recursively delete uncertain files.
++      // The real failure propagates; any admitted partial origin artifact remains for recovery.
++      event.failure(error, { retainedPartialArtifact: 'possible', cleanup: 'not_attempted' })
++      throw error
++    }
+     // deleteMediaDB removes the whole `media/{id}/` dir recursively, so it
+     // cleans up the workspace source blob too — even when metadata was never
+     // written (source-only orphan).
+
+--- a/src/features/media-library/services/media-library-service.test.ts
++++ b/src/features/media-library/services/media-library-service.test.ts
+@@ -156,6 +156,7 @@
+   getSharedProxyKey: vi.fn((media: { id: string }) => `proxy-${media.id}`),
+ }))
+
++import { asHandle, createRoot } from '@/infrastructure/storage/workspace-fs/__tests__/in-memory-handle'
+ import { mediaLibraryService, FileAccessError } from './media-library-service'
+ import type { MediaMetadata } from '@/types/storage'
+ import { useMediaPreparationStore } from '../stores/media-preparation-store'
+@@ -216,6 +217,67 @@
+     indexedDbMocks.readAiOutput.mockResolvedValue(undefined)
+   })
+
++  describe('recorded audio preparation authority', () => {
++    function deferred<T>() {
++      let resolve!: (value: T | PromiseLike<T>) => void
++      let reject!: (reason: unknown) => void
++      const promise = new Promise<T>((accept, refuse) => { resolve = accept; reject = refuse })
++      return { promise, resolve, reject }
++    }
++    beforeEach(() => { vi.clearAllMocks() })
++    it('refuses after suspended probe before any storage writes', async () => {
++      const entered = deferred<void>()
++      const release = deferred<{ metadata: { type: 'audio'; duration: number; codec: string; bitrate: number }; thumbnail: undefined }>()
++      mediaProcessorMocks.processMedia.mockImplementationOnce(() => { entered.resolve(); return release.promise })
++      let current = true
++      const importing = mediaLibraryService.importRecordedAudio(new File(['take'], 'take.webm', { type: 'audio/webm' }), 'A', {
++        fallbackDurationMs: 1000, admission: { root: asHandle(createRoot()), isCurrent: () => current },
++      })
++      await entered.promise; current = false
++      release.resolve({ metadata: { type: 'audio', duration: 1, codec: 'opus', bitrate: 0 }, thumbnail: undefined })
++      await expect(importing).rejects.toThrow('recording_retired')
++      expect(indexedDbMocks.writeMediaSource).not.toHaveBeenCalled()
++      expect(indexedDbMocks.createMedia).not.toHaveBeenCalled()
++      expect(indexedDbMocks.associateMediaWithProject).not.toHaveBeenCalled()
++    })
++    it('refuses after suspended decode before persistence and closes only its decoder', async () => {
++      const entered = deferred<void>()
++      const release = deferred<{ duration: number }>()
++      const close = vi.fn(() => Promise.resolve())
++      const previousWindow = globalThis.window
++      const Decoder = class {
++        decodeAudioData = () => { entered.resolve(); return release.promise }
++        close = close
++      }
++      vi.stubGlobal('window', { AudioContext: Decoder })
++      mediaProcessorMocks.processMedia.mockResolvedValueOnce({ metadata: { type: 'audio', duration: 0, codec: 'opus', bitrate: 0 } })
++      let current = true
++      try {
++        const importing = mediaLibraryService.importRecordedAudio(new File(['take'], 'take.webm', { type: 'audio/webm' }), 'A', {
++          fallbackDurationMs: 1000, admission: { root: asHandle(createRoot()), isCurrent: () => current },
++        })
++        await entered.promise; current = false; release.resolve({ duration: 1 })
++        await expect(importing).rejects.toThrow('recording_retired')
++        expect(indexedDbMocks.writeMediaSource).not.toHaveBeenCalled()
++        expect(indexedDbMocks.associateMediaWithProject).not.toHaveBeenCalled()
++        expect(close).toHaveBeenCalledOnce()
++      } finally { vi.stubGlobal('window', previousWindow) }
++    })
++
++    it('skips eager custom-codec jobs only for a scoped recording and retains normal caller scheduling', async () => {
++      compositionRuntimeMocks.needsCustomAudioDecoder.mockReturnValue(true)
++      mediaProcessorMocks.processMedia.mockResolvedValue({ metadata: { type: 'audio', duration: 1, codec: 'vorbis', bitrate: 0 } })
++      const file = new File(['take'], 'take.webm', { type: 'audio/webm' })
++      await mediaLibraryService.importRecordedAudio(file, 'A', {
++        fallbackDurationMs: 1000, admission: { root: asHandle(createRoot()), isCurrent: () => true },
++      })
++      expect(backgroundMediaWorkMocks.enqueueBackgroundMediaWork).not.toHaveBeenCalled()
++      await mediaLibraryService.importRecordedAudio(file, 'A', { fallbackDurationMs: 1000 })
++      expect(backgroundMediaWorkMocks.enqueueBackgroundMediaWork).toHaveBeenCalledTimes(2)
++      compositionRuntimeMocks.needsCustomAudioDecoder.mockReturnValue(false)
++    })
++  })
++
+   describe('getAllMedia', () => {
+     it('returns all media from IndexedDB', async () => {
+       const media = [makeMediaMetadata({ id: 'm1' }), makeMediaMetadata({ id: 'm2' })]
+
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -78,6 +78,7 @@
+ import { ensureFileHandlePermission, FileAccessError } from './file-access'
+ import { enqueueBackgroundMediaWork } from './background-media-work'
+ import {
++  type RecordingAdmission,
+   getGeneratedImageDimensions,
+   getThumbnailDimensions,
+   persistGeneratedMediaAsset,
+@@ -741,7 +742,7 @@
+   async importRecordedAudio(
+     file: File,
+     projectId: string,
+-    options: { fallbackDurationMs: number },
++    options: { fallbackDurationMs: number; admission?: RecordingAdmission },
+   ): Promise<MediaMetadata> {
+     if (!projectId) {
+       throw new Error('No project selected')
+@@ -783,6 +784,7 @@
+       duration = await decodeAudioDurationSeconds(file, options.fallbackDurationMs / 1000)
+     }
+
++    if (options.admission && !options.admission.isCurrent()) throw new Error('recording_retired')
+     const mediaId = crypto.randomUUID()
+     const createdAt = Date.now()
+
+@@ -810,13 +812,18 @@
+       thumbnailBlob,
+       thumbnailWidth: thumbnailBlob ? 320 : undefined,
+       thumbnailHeight: thumbnailBlob ? 180 : undefined,
++      admission: options.admission,
+     })
+
+     // Schedules waveform decode so the clip renders its waveform like any audio.
+-    this.schedulePostImportWork(file, persistedMedia, {
+-      isVideo: false,
+-      previewAudioCodec: probedCodec,
+-    })
++    // Scoped recordings retain their source but never enqueue unbound deferred cache writes.
++    // Normal on-demand playback remains available; ordinary callers retain eager preparation.
++    if (!options.admission) {
++      this.schedulePostImportWork(file, persistedMedia, {
++        isVideo: false,
++        previewAudioCodec: probedCodec,
++      })
++    }
+
+     return persistedMedia
+   }
+
+--- /dev/null
++++ b/src/features/media-library/services/microphone-persistence.test.ts
+@@ -0,0 +1,157 @@
++// @vitest-environment node
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { handlesMocks } from '@/infrastructure/storage/test-utils/storage-test-mocks'
++vi.mock('./opfs-service', () => ({ opfsService: { saveFile: vi.fn(), deleteFile: vi.fn() } }))
++import { persistGeneratedMediaAsset } from './media-asset-helpers'
++import * as fs from '@/infrastructure/storage/workspace-fs/fs-primitives'
++import { setWorkspaceRoot, getWorkspaceRevision, onPermissionLost } from '@/infrastructure/storage/workspace-fs/root'
++import { asHandle, createRoot, readFileText } from '@/infrastructure/storage/workspace-fs/__tests__/in-memory-handle'
++import type { MediaMetadata } from '@/types/storage'
++
++const metadata = (id: string): MediaMetadata => ({
++  id, storageType: 'workspace', fileName: 'take.webm', fileSize: 4,
++  mimeType: 'audio/webm', duration: 1, width: 0, height: 0, fps: 0,
++  codec: 'opus', bitrate: 0, tags: ['voiceover'], createdAt: 1, updatedAt: 1,
++})
++afterEach(() => { vi.restoreAllMocks(); setWorkspaceRoot(null) })
++function deferred<T>() {
++  let resolve!: (value: T | PromiseLike<T>) => void
++  let reject!: (reason: unknown) => void
++  const promise = new Promise<T>((accept, refuse) => { resolve = accept; reject = refuse })
++  return { promise, resolve, reject }
++}
++describe('microphone origin-owned persistence', () => {
++  it('permanently changes workspace revision even when the original handle returns', () => {
++    const a = asHandle(createRoot()); const b = asHandle(createRoot())
++    setWorkspaceRoot(a); const origin = getWorkspaceRevision()
++    setWorkspaceRoot(b); setWorkspaceRoot(a)
++    expect(getWorkspaceRevision()).toBeGreaterThan(origin)
++  })
++  it('refuses retired preparation before any files are created', async () => {
++    const a = createRoot(); setWorkspaceRoot(asHandle(a))
++    await expect(persistGeneratedMediaAsset({ file: new File(['take'], 'take.webm'),
++      projectId: 'p', mediaMetadata: metadata('retired'),
++      admission: { root: asHandle(a), isCurrent: () => false },
++    })).rejects.toThrow('recording_retired')
++    expect(await readFileText(a, 'media', 'retired', 'metadata.json')).toBeNull()
++    expect(await readFileText(a, 'media', 'retired', 'take.webm')).toBeNull()
++  })
++  it('settles admitted source, thumbnail, metadata and association on A after replacement by B', async () => {
++    const a = createRoot(); const b = createRoot(); const root = asHandle(a)
++    handlesMocks.deleteHandle.mockClear(); handlesMocks.saveHandle.mockClear()
++    setWorkspaceRoot(root)
++    const entered = deferred<void>(); const release = deferred<void>()
++    const write = fs.writeBlob
++    vi.spyOn(fs, 'writeBlob').mockImplementation(async (target, path, bytes) => {
++      await write(target, path, bytes)
++      if (path.at(-1) === 'take.webm') { entered.resolve(); await release.promise }
++    })
++    let current = true
++    const saving = persistGeneratedMediaAsset({ file: new File(['take'], 'take.webm'),
++      projectId: 'p', mediaMetadata: metadata('take'), thumbnailBlob: new Blob(['image']),
++      thumbnailWidth: 1, thumbnailHeight: 1, admission: { root, isCurrent: () => current },
++    })
++    await entered.promise; current = false; setWorkspaceRoot(asHandle(b)); release.resolve()
++    await expect(saving).resolves.toMatchObject({ id: 'take', duration: 1 })
++    expect(JSON.parse((await readFileText(a, 'media', 'take', 'metadata.json'))!).id).toBe('take')
++    expect(await readFileText(a, 'media', 'take', 'take.webm')).toBe('take')
++    expect(await readFileText(a, 'media', 'take', 'thumbnail.jpg')).toBe('image')
++    expect(await readFileText(a, 'projects', 'p', 'media-links.json')).toContain('take')
++    expect(await readFileText(b, 'media', 'take', 'metadata.json')).toBeNull()
++    expect(await readFileText(b, 'projects', 'p', 'media-links.json')).toBeNull()
++    expect(handlesMocks.deleteHandle).not.toHaveBeenCalled()
++    expect(handlesMocks.saveHandle).not.toHaveBeenCalled()
++  })
++  it('refuses a deterministic UUID collision without changing existing source, metadata or unrelated files', async () => {
++    const a = createRoot(); const root = asHandle(a); setWorkspaceRoot(root)
++    const id = '00000000-0000-4000-8000-000000000001'
++    vi.spyOn(crypto, 'randomUUID').mockReturnValue(id)
++    await fs.writeBlob(root, ['media', id, 'original.wav'], new Blob(['original']))
++    await fs.writeJsonAtomic(root, ['media', id, 'metadata.json'], { id, owner: 'existing' })
++    await fs.writeBlob(root, ['media', 'unrelated', 'keep.bin'], new Blob(['keep']))
++    await expect(persistGeneratedMediaAsset({ file: new File(['new'], 'take.webm'), projectId: 'p',
++      mediaMetadata: metadata(crypto.randomUUID()), admission: { root, isCurrent: () => true },
++    })).rejects.toThrow('recording_namespace_exists')
++    expect(await readFileText(a, 'media', id, 'original.wav')).toBe('original')
++    expect(JSON.parse((await readFileText(a, 'media', id, 'metadata.json'))!).owner).toBe('existing')
++    expect(await readFileText(a, 'media', 'unrelated', 'keep.bin')).toBe('keep')
++    expect(await readFileText(a, 'projects', 'p', 'media-links.json')).toBeNull()
++  })
++  it('refuses a file occupying the generated namespace without changing its bytes', async () => {
++    const a = createRoot(); const root = asHandle(a); setWorkspaceRoot(root)
++    const id = '00000000-0000-4000-8000-000000000002'
++    await fs.writeBlob(root, ['media', id], new Blob(['existing namespace file']))
++    await expect(persistGeneratedMediaAsset({ file: new File(['new'], 'take.webm'), projectId: 'p',
++      mediaMetadata: metadata(id), admission: { root, isCurrent: () => true },
++    })).rejects.toThrow('recording_namespace_exists')
++    expect(await readFileText(a, 'media', id)).toBe('existing namespace file')
++    expect(await readFileText(a, 'projects', 'p', 'media-links.json')).toBeNull()
++  })
++  it.each(['NotAllowedError', 'NotReadableError'])('preserves the actual %s namespace read failure', async (name) => {
++    const a = createRoot(); const root = asHandle(a); setWorkspaceRoot(root)
++    const error = new DOMException('Actual namespace read failure', name)
++    const read = vi.spyOn(root, 'getDirectoryHandle').mockRejectedValue(error)
++    try {
++      await expect(persistGeneratedMediaAsset({ file: new File(['new'], 'take.webm'), projectId: 'p',
++        mediaMetadata: metadata('take'), admission: { root, isCurrent: () => true },
++      })).rejects.toBe(error)
++    } finally { read.mockRestore() }
++    expect(await readFileText(a, 'media', 'take', 'take.webm')).toBeNull()
++    expect(await readFileText(a, 'projects', 'p', 'media-links.json')).toBeNull()
++  })
++  it('propagates delayed A permission failure without notifying the current B gate', async () => {
++    const a = createRoot(); const b = createRoot(); const root = asHandle(a)
++    setWorkspaceRoot(root); const originRevision = getWorkspaceRevision()
++    const entered = deferred<void>(); const release = deferred<void>()
++    const resolveDirectory = root.getDirectoryHandle.bind(root)
++    vi.spyOn(root, 'getDirectoryHandle').mockImplementation(async (name, options) => {
++      if (options?.create) { entered.resolve(); await release.promise; throw new DOMException('Denied', 'NotAllowedError') }
++      return resolveDirectory(name, options)
++    })
++    const notify = vi.fn(); const unsubscribe = onPermissionLost(notify)
++    try {
++      const saving = persistGeneratedMediaAsset({ file: new File(['take'], 'take.webm'), projectId: 'p',
++        mediaMetadata: metadata('take'), admission: { root, isCurrent: () => getWorkspaceRevision() === originRevision },
++      })
++      await entered.promise; setWorkspaceRoot(asHandle(b)); release.resolve()
++      await expect(saving).rejects.toThrow('Denied')
++      expect(notify).not.toHaveBeenCalled()
++      expect(await readFileText(b, 'media', 'take', 'take.webm')).toBeNull()
++    } finally { release.resolve(); unsubscribe() }
++  })
++  it.each(['source', 'metadata', 'association'] as const)('retains admitted partial A artifacts on %s failure without deleting uncertain files', async (phase) => {
++    const a = createRoot(); const b = createRoot(); const root = asHandle(a)
++    setWorkspaceRoot(root)
++    await fs.writeBlob(root, ['media', 'unrelated', 'keep.bin'], new Blob(['keep']))
++    await fs.writeBlob(asHandle(b), ['media', 'take', 'keep.bin'], new Blob(['B']))
++    const write = fs.writeBlob; const json = fs.writeJsonAtomic
++    vi.spyOn(fs, 'writeBlob').mockImplementation(async (target, path, bytes) => {
++      await write(target, path, bytes)
++      if (path.at(-1) === 'take.webm') {
++        setWorkspaceRoot(asHandle(b))
++        if (phase === 'source') throw new Error('source failed after writing')
++      }
++    })
++    let failed = false
++    vi.spyOn(fs, 'writeJsonAtomic').mockImplementation(async (target, path, value) => {
++      if (!failed && ((phase === 'metadata' && path.at(-1) === 'metadata.json') ||
++        (phase === 'association' && path.at(-1) === 'media-links.json'))) {
++        failed = true
++        if (phase === 'association') await json(target, path, value)
++        throw new Error('persist failed')
++      }
++      return json(target, path, value)
++    })
++    await expect(persistGeneratedMediaAsset({ file: new File(['take'], 'take.webm'),
++      projectId: 'p', mediaMetadata: metadata('take'), admission: { root, isCurrent: () => true },
++    })).rejects.toThrow(/failed/)
++    expect(await readFileText(a, 'media', 'take', 'take.webm')).toBe('take')
++    const retainedMetadata = await readFileText(a, 'media', 'take', 'metadata.json')
++    if (phase === 'association') expect(JSON.parse(retainedMetadata!).id).toBe('take')
++    else expect(retainedMetadata).toBeNull()
++    expect(await readFileText(a, 'media', 'unrelated', 'keep.bin')).toBe('keep')
++    expect(await readFileText(b, 'media', 'take', 'keep.bin')).toBe('B')
++    const links = await readFileText(a, 'projects', 'p', 'media-links.json')
++    if (links) expect(JSON.parse(links).mediaIds.map((entry: { id: string }) => entry.id)).toEqual(['take'])
++  })
++})
+
+--- a/src/features/timeline/components/mic-record-control.tsx
++++ b/src/features/timeline/components/mic-record-control.tsx
+@@ -241,7 +241,7 @@
+     void refreshMicDevices()
+     return () => {
+       const status = useMicRecordingStore.getState().status
+-      if (isMicRecordingActive(status)) {
++      if (isMicRecordingActive(status) || status === 'finalizing') {
+         cancelMicRecording()
+       } else if (status === 'requesting') {
+         // A permission prompt / getUserMedia is still pending — cancel it so the
+
+--- /dev/null
++++ b/src/features/timeline/services/mic-recording-authority.test.ts
+@@ -0,0 +1,161 @@
++// @vitest-environment node
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++const mocks = vi.hoisted(() => ({
++  stop: vi.fn(), start: vi.fn(), dispose: vi.fn(), importAudio: vi.fn(), acquire: vi.fn(() => 'blob:take'),
++}))
++vi.mock('@/infrastructure/audio/mic-recorder', () => ({
++  MicRecorder: class {
++    start = mocks.start; stop = mocks.stop; dispose = mocks.dispose
++    pause = vi.fn(); resume = vi.fn(); elapsedMs = () => 1000
++  },
++  hasMicRecordingSupport: () => true, extensionForMimeType: () => 'webm',
++  enumerateAudioInputs: () => Promise.resolve([]), startMicLevelMonitor: vi.fn(),
++}))
++vi.mock('@/infrastructure/browser/blob-url-manager', () => ({ blobUrlManager: { acquire: mocks.acquire } }))
++vi.mock('../deps/media-library-service', () => ({
++  importMediaLibraryService: () => Promise.resolve({ mediaLibraryService: { importRecordedAudio: mocks.importAudio } }),
++}))
++vi.mock('../deps/media-library-store', async () => {
++  const { create } = await import('zustand')
++  return { useMediaLibraryStore: create(() => ({ currentProjectId: 'A', prependMediaItem: vi.fn() })) }
++})
++vi.mock('@/shared/state/playback', async () => {
++  const { create } = await import('zustand')
++  const usePlaybackStore = create<{
++    currentFrame: number; muted: boolean; isPlaying: boolean
++    busAudioEq: unknown; masterBusDb: number; masterBusMuted: boolean
++    setBusAudioEq: (value: unknown) => void; setMasterBusDb: (value: number) => void
++    setMasterBusMuted: (value: boolean) => void
++    play: () => void; pause: () => void; setMuted: (value: boolean) => void
++    setCurrentFrame: (value: number) => void
++  }>((set) => ({ currentFrame: 10, muted: false, isPlaying: false,
++    play: () => set({ isPlaying: true }), pause: () => set({ isPlaying: false }),
++    setMuted: (muted) => set({ muted }), setCurrentFrame: (currentFrame) => set({ currentFrame }),
++    busAudioEq: undefined, masterBusDb: 0, masterBusMuted: false,
++    setBusAudioEq: (busAudioEq) => set({ busAudioEq }),
++    setMasterBusDb: (masterBusDb) => set({ masterBusDb }),
++    setMasterBusMuted: (masterBusMuted) => set({ masterBusMuted }),
++  }))
++  return { usePlaybackStore }
++})
++vi.mock('@/i18n', () => ({ i18n: { t: (key: string) => key } }))
++vi.mock('sonner', () => ({ toast: { warning: vi.fn() } }))
++import { startMicRecording, stopMicRecording, cancelMicRecording, pauseMicRecording, resumeMicRecording } from './mic-recording-controller'
++import { useMicRecordingStore } from '@/shared/state/mic-recording-store'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { useMediaLibraryStore } from '../deps/media-library-store'
++import { useItemsStore } from '../stores/items-store'
++import { useTransitionsStore } from '../stores/transitions-store'
++import { useKeyframesStore } from '../stores/keyframes-store'
++import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
++import { useTimelineCommandStore } from '../stores/timeline-command-store'
++import { captureSnapshot } from '../stores/commands/snapshot'
++import { setWorkspaceRoot, getWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root'
++import { asHandle, createRoot } from '@/infrastructure/storage/workspace-fs/__tests__/in-memory-handle'
++import type { MediaMetadata } from '@/types/storage'
++const result = () => ({ blob: new Blob(['take']), mimeType: 'audio/webm', durationMs: 1000 })
++const media: MediaMetadata = { id: 'recorded', storageType: 'workspace', fileName: 'take.webm',
++  fileSize: 4, mimeType: 'audio/webm', duration: 1, width: 0, height: 0, fps: 0,
++  codec: 'opus', bitrate: 0, createdAt: 1, updatedAt: 1,
++}
++beforeEach(() => {
++  vi.clearAllMocks()
++  mocks.start.mockResolvedValue(undefined); mocks.stop.mockResolvedValue(result()); mocks.importAudio.mockResolvedValue(media)
++  setWorkspaceRoot(asHandle(createRoot()))
++  useMediaLibraryStore.setState({ currentProjectId: 'A' })
++  useMicRecordingStore.getState().reset(); useMicRecordingStore.getState().setSyncOffsetMs(100)
++  usePlaybackStore.setState({ currentFrame: 10, muted: false, isPlaying: false })
++  useItemsStore.getState().setItems([]); useItemsStore.getState().setTracks([])
++  useTransitionsStore.getState().setTransitions([]); useKeyframesStore.getState().setKeyframes([])
++  useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++  useTimelineCommandStore.getState().clearHistory()
++})
++afterEach(() => { cancelMicRecording(); setWorkspaceRoot(null) })
++function deferred<T>() {
++  let resolve!: (value: T | PromiseLike<T>) => void
++  let reject!: (reason: unknown) => void
++  const promise = new Promise<T>((accept, refuse) => { resolve = accept; reject = refuse })
++  return { promise, resolve, reject }
++}
++describe('recording finalization admission', () => {
++  it('retires suspended acquisition and denies its old level callback without stopping the new take', async () => {
++    const entered = deferred<void>(); const release = deferred<void>()
++    let oldLevel: ((level: number) => void) | undefined
++    mocks.start.mockImplementationOnce((options) => {
++      oldLevel = options.onLevel; entered.resolve(); return release.promise
++    })
++    const starting = startMicRecording(); await entered.promise
++    cancelMicRecording(); await startMicRecording()
++    release.resolve(); await starting
++    useMicRecordingStore.getState().setLevel(0)
++    oldLevel?.(1)
++    expect(useMicRecordingStore.getState().level).toBe(0)
++    expect(useMicRecordingStore.getState().status).toBe('recording')
++    expect(useMicRecordingStore.getState().error).toBeNull()
++    expect(mocks.importAudio).not.toHaveBeenCalled()
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++  it.each(['cancel', 'project-aba', 'workspace-aba'] as const)('retires a stopped take permanently on %s without resetting a newer take', async (retirement) => {
++    const entered = deferred<void>(); const release = deferred<ReturnType<typeof result>>()
++    mocks.stop.mockImplementationOnce(() => { entered.resolve(); return release.promise })
++    await startMicRecording(); const before = captureSnapshot()
++    const stopping = stopMicRecording(); await entered.promise
++    if (retirement === 'project-aba') {
++      useMediaLibraryStore.setState({ currentProjectId: 'B' }); useMediaLibraryStore.setState({ currentProjectId: 'A' })
++    } else if (retirement === 'workspace-aba') {
++      const origin = getWorkspaceRoot()!
++      setWorkspaceRoot(asHandle(createRoot())); setWorkspaceRoot(origin)
++    } else cancelMicRecording() // same controller retirement used by toolbar unmount
++    await startMicRecording()
++    release.resolve(result()); await stopping
++    expect(mocks.importAudio).not.toHaveBeenCalled()
++    expect(mocks.acquire).not.toHaveBeenCalled()
++    expect(captureSnapshot()).toEqual(before)
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    expect(useMicRecordingStore.getState().status).toBe('recording')
++    expect(useMicRecordingStore.getState().error).toBeNull()
++  })
++  it('does not publish an admitted origin artifact after its import is retired', async () => {
++    const entered = deferred<void>(); const release = deferred<MediaMetadata>()
++    mocks.importAudio.mockImplementationOnce(() => { entered.resolve(); return release.promise })
++    await startMicRecording(); const before = captureSnapshot()
++    const stopping = stopMicRecording(); await entered.promise
++    const options = mocks.importAudio.mock.calls[0]![2]
++    expect(options.admission.isCurrent()).toBe(true)
++    cancelMicRecording(); await startMicRecording()
++    expect(options.admission.isCurrent()).toBe(false)
++    release.resolve(media); await stopping
++    expect(captureSnapshot()).toEqual(before)
++    expect(mocks.acquire).not.toHaveBeenCalled()
++    expect(useMediaLibraryStore.getState().prependMediaItem).not.toHaveBeenCalled()
++    expect(useMicRecordingStore.getState().status).toBe('recording')
++  })
++  it('does not publish a late stop failure into a replacement take', async () => {
++    const release = deferred<ReturnType<typeof result>>()
++    mocks.stop.mockReturnValueOnce(release.promise)
++    await startMicRecording(); const stopping = stopMicRecording()
++    cancelMicRecording(); await startMicRecording()
++    release.reject(new Error('old device gone')); await stopping
++    expect(useMicRecordingStore.getState().status).toBe('recording')
++    expect(useMicRecordingStore.getState().error).toBeNull()
++  })
++  it('keeps captured timing and genuine history, undo/redo, monitor and pause semantics', async () => {
++    await startMicRecording()
++    expect(usePlaybackStore.getState().muted).toBe(true)
++    pauseMicRecording(); expect(usePlaybackStore.getState().isPlaying).toBe(false)
++    resumeMicRecording(); expect(usePlaybackStore.getState().isPlaying).toBe(true)
++    useMicRecordingStore.getState().setSyncOffsetMs(500)
++    useTimelineSettingsStore.setState({ fps: 60 })
++    const before = captureSnapshot()
++    await stopMicRecording()
++    expect(usePlaybackStore.getState().muted).toBe(false)
++    expect(useItemsStore.getState().items).toHaveLength(1)
++    expect(useItemsStore.getState().items[0]).toMatchObject({ type: 'audio', mediaId: 'recorded', from: 13, durationInFrames: 30 })
++    const after = captureSnapshot()
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(1)
++    useTimelineCommandStore.getState().undo(); expect(captureSnapshot()).toEqual(before)
++    useTimelineCommandStore.getState().redo(); expect(captureSnapshot()).toEqual(after)
++    expect(mocks.importAudio.mock.calls[0]![2].fallbackDurationMs).toBe(1000)
++    expect(useMicRecordingStore.getState().status).toBe('idle')
++  })
++})
+
+--- a/src/features/timeline/services/mic-recording-controller.ts
++++ b/src/features/timeline/services/mic-recording-controller.ts
+@@ -31,6 +31,11 @@
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { useMicRecordingStore, isMicRecordingActive } from '@/shared/state/mic-recording-store'
++import {
++  getWorkspaceRoot,
++  getWorkspaceRevision,
++  onWorkspaceRootChanged,
++} from '@/infrastructure/storage/workspace-fs/root'
+ import { createLogger } from '@/shared/logging/logger'
+ import { i18n } from '@/i18n'
+ import { useItemsStore } from '../stores/items-store'
+@@ -58,6 +63,35 @@
+  * mic so a cancelled request tears itself down instead of going live.
+  */
+ let startGeneration = 0
++interface RecordingTake {
++  token: number
++  recorder: MicRecorder
++  projectId: string
++  root: FileSystemDirectoryHandle
++  workspaceRevision: number
++  retired: boolean
++  anchor: number
++  fps: number
++  syncOffsetMs: number
++}
++let take: RecordingTake | null = null
++let workspaceUnsub: (() => void) | null = null
++
++function isTakeCurrent(origin: RecordingTake): boolean {
++  return take === origin && !origin.retired && origin.token === startGeneration &&
++    useMediaLibraryStore.getState().currentProjectId === origin.projectId &&
++    getWorkspaceRevision() === origin.workspaceRevision && getWorkspaceRoot() === origin.root
++}
++
++function retireTake(): void {
++  if (take) take.retired = true
++  take = null
++  startGeneration += 1
++  projectUnsub?.()
++  projectUnsub = null
++  workspaceUnsub?.()
++  workspaceUnsub = null
++}
+ /** Guards the transport watcher against our own intentional play/pause calls. */
+ let suppressTransport = false
+ /** When true, the timeline monitor was muted for this take and must be restored. */
+@@ -73,9 +107,10 @@
+  * permission has been granted, so call this again after the first successful
+  * `start()`.
+  */
+-export async function refreshMicDevices(): Promise<void> {
++export async function refreshMicDevices(isCurrent?: () => boolean): Promise<void> {
+   try {
+     const devices = await enumerateAudioInputs()
++    if (isCurrent && !isCurrent()) return
+     const store = useMicRecordingStore.getState()
+     store.setDevices(devices)
+     if (store.selectedDeviceId && !devices.some((d) => d.deviceId === store.selectedDeviceId)) {
+@@ -96,7 +131,8 @@
+   }
+
+   const projectId = useMediaLibraryStore.getState().currentProjectId
+-  if (!projectId) {
++  const root = getWorkspaceRoot()
++  if (!projectId || !root) {
+     store.setError(i18n.t('recording.errors.noProject'))
+     return
+   }
+@@ -111,19 +147,30 @@
+
+   const rec = new MicRecorder()
+   recorder = rec
++  const origin: RecordingTake = {
++    token, recorder: rec, projectId, root, workspaceRevision: getWorkspaceRevision(),
++    retired: false, anchor: usePlaybackStore.getState().currentFrame,
++    fps: useTimelineSettingsStore.getState().fps, syncOffsetMs: store.syncOffsetMs,
++  }
++  take = origin
++  watchProject()
++  workspaceUnsub = onWorkspaceRootChanged(() => {
++    if (take === origin && !isTakeCurrent(origin)) cancelMicRecording()
++  })
+
+   try {
+     await rec.start({
+       deviceId: store.selectedDeviceId ?? undefined,
+       noiseSuppression: store.noiseSuppression,
+       autoGainControl: store.autoGainControl,
+-      onLevel: handleLevel,
++      onLevel: (level) => { if (isTakeCurrent(origin)) handleLevel(level) },
+     })
+   } catch (error) {
+     rec.dispose()
+     if (recorder === rec) recorder = null
+     // Don't clobber a fresh idle/error state if we were cancelled mid-request.
+-    if (token === startGeneration) {
++    if (isTakeCurrent(origin)) {
++      retireTake()
+       store.setStatus('idle')
+       store.setError(describeGetUserMediaError(error))
+     }
+@@ -132,7 +179,7 @@
+
+   // Cancelled while acquiring the mic (component unmounted / project switched):
+   // release the freshly-acquired stream instead of going live in the background.
+-  if (token !== startGeneration) {
++  if (!isTakeCurrent(origin)) {
+     rec.dispose()
+     if (recorder === rec) recorder = null
+     return
+@@ -140,7 +187,7 @@
+
+   // Labels become available after the permission grant — refresh so the picker
+   // shows real device names next time.
+-  void refreshMicDevices()
++  void refreshMicDevices(() => isTakeCurrent(origin))
+
+   // Optionally silence the timeline monitor mix so speaker audio doesn't bleed
+   // into the mic. Remembered so we can restore the user's prior mute state.
+@@ -167,12 +214,12 @@
+     suppressTransport = false
+   }
+
++  origin.anchor = anchor
+   store.setRecordStartFrame(anchor)
+   store.setElapsedMs(0)
+   store.setStatus('recording')
+   startElapsedTimer()
+   watchTransport()
+-  watchProject()
+ }
+
+ /** Explicit lockstep pause: pauses the recorder and the transport together. */
+@@ -211,8 +258,6 @@
+
+   transportUnsub?.()
+   transportUnsub = null
+-  projectUnsub?.()
+-  projectUnsub = null
+   stopElapsedTimer()
+
+   suppressTransport = true
+@@ -220,19 +265,16 @@
+   suppressTransport = false
+   restoreMonitorMute()
+
+-  const rec = recorder
+-  recorder = null
+-  if (!rec) {
+-    store.reset()
++  const origin = take
++  const rec = origin?.recorder
++  if (!rec || !origin || !isTakeCurrent(origin)) {
++    cancelMicRecording()
+     return
+   }
+
+   // The take belongs to the project it was recorded in. Capture it now so a
+   // project switch during finalization can't commit media/timeline state into
+   // whatever project happens to be open when the save completes.
+-  const projectId = useMediaLibraryStore.getState().currentProjectId
+-  const anchor = store.recordStartFrame
+-
+   store.setStatus('finalizing')
+
+   let result: MicRecorderResult
+@@ -243,25 +285,44 @@
+     rec.dispose()
+     // `reset()` clears `error`, so surface the message *after* resetting or the
+     // toolbar never observes the non-null value.
+-    store.reset()
+-    store.setError(i18n.t('recording.errors.failed'))
++    if (isTakeCurrent(origin)) {
++      retireTake()
++      recorder = null
++      store.reset()
++      store.setError(i18n.t('recording.errors.failed'))
++    }
+     return
+   }
+
+   try {
+-    await commitRecording(result, anchor, projectId)
+-    store.reset()
++    if (isTakeCurrent(origin)) await commitRecording(result, origin)
++    if (isTakeCurrent(origin)) {
++      retireTake()
++      if (recorder === rec) recorder = null
++      store.reset()
++    }
+   } catch (error) {
+     logger.error('Failed to save recording', error)
+     // `reset()` clears `error`, so surface the message *after* resetting or the
+     // toolbar never observes the non-null value.
+-    store.reset()
+-    store.setError(i18n.t('recording.errors.saveFailed'))
++    if (isTakeCurrent(origin)) {
++      retireTake()
++      if (recorder === rec) recorder = null
++      store.reset()
++      store.setError(i18n.t('recording.errors.saveFailed'))
++    }
++  } finally {
++    rec.dispose()
++    if (take === origin) {
++      retireTake()
++      if (recorder === rec) recorder = null
++    }
+   }
+ }
+
+ /** Discard the in-progress take without touching the timeline. */
+ export function cancelMicRecording(): void {
++  retireTake()
+   transportUnsub?.()
+   transportUnsub = null
+   projectUnsub?.()
+@@ -285,7 +346,7 @@
+  */
+ export function cancelPendingMicRecording(): void {
+   if (useMicRecordingStore.getState().status !== 'requesting') return
+-  startGeneration += 1
++  retireTake()
+   recorder?.dispose()
+   recorder = null
+   useMicRecordingStore.getState().reset()
+@@ -383,10 +444,10 @@
+  */
+ function watchProject(): void {
+   projectUnsub?.()
+-  const startProjectId = useMediaLibraryStore.getState().currentProjectId
++  const origin = take
+   projectUnsub = useMediaLibraryStore.subscribe((state, prev) => {
+     if (state.currentProjectId === prev.currentProjectId) return
+-    if (state.currentProjectId !== startProjectId) {
++    if (origin && take === origin && !isTakeCurrent(origin)) {
+       cancelMicRecording()
+     }
+   })
+@@ -401,9 +462,10 @@
+
+ async function commitRecording(
+   result: MicRecorderResult,
+-  anchor: number,
+-  projectId: string | null,
++  origin: RecordingTake,
+ ): Promise<void> {
++  if (!isTakeCurrent(origin)) return
++  const { anchor, projectId, fps, syncOffsetMs } = origin
+   if (result.blob.size === 0) {
+     throw new Error('Recording produced no audio')
+   }
+@@ -422,25 +484,25 @@
+   // The service resolves an authoritative, finite duration (probe → decode →
+   // timer) once — reuse it here instead of decoding the blob a second time.
+   const { mediaLibraryService } = await importMediaLibraryService()
++  if (!isTakeCurrent(origin)) return
+   const media = await mediaLibraryService.importRecordedAudio(file, projectId, {
+     fallbackDurationMs: result.durationMs,
++    admission: { root: origin.root, isCurrent: () => isTakeCurrent(origin) },
+   })
+
+   // The clip was saved into its originating project's media folder. If the user
+   // switched projects while we were saving, the live timeline/media stores now
+   // point at a different project — don't graft the take onto it.
+-  if (useMediaLibraryStore.getState().currentProjectId !== projectId) {
++  if (!isTakeCurrent(origin)) {
+     logger.warn('Project changed during finalization; skipping timeline placement')
+     return
+   }
+
+-  const fps = useTimelineSettingsStore.getState().fps
+   const durationSeconds = media.duration
+   const durationInFrames = Math.max(1, Math.round(durationSeconds * fps))
+
+   // Apply the user's manual input-latency compensation (clamped to keep the
+   // clip on the timeline).
+-  const syncOffsetMs = useMicRecordingStore.getState().syncOffsetMs
+   const from = Math.max(0, anchor + Math.round((syncOffsetMs / 1000) * fps))
+
+   // We already hold the recorded blob in memory — bind it to the media id for
+
+--- a/src/infrastructure/storage/workspace-fs/fs-primitives.ts
++++ b/src/infrastructure/storage/workspace-fs/fs-primitives.ts
+@@ -45,9 +45,9 @@
+   return error instanceof DOMException && error.name === 'NotSupportedError'
+ }
+
+-function wrap<T>(operation: string, fn: () => Promise<T>): Promise<T> {
++function wrap<T>(operation: string, fn: () => Promise<T>, permissionIsCurrent?: () => boolean): Promise<T> {
+   return fn().catch((error) => {
+-    if (isNotAllowed(error)) {
++    if (isNotAllowed(error) && (!permissionIsCurrent || permissionIsCurrent())) {
+       notifyPermissionLost()
+     }
+     logger.warn(`${operation} failed`, error)
+@@ -93,6 +93,7 @@
+ export async function readJson<T>(
+   root: FileSystemDirectoryHandle,
+   segments: string[],
++  permissionIsCurrent?: () => boolean,
+ ): Promise<T | null> {
+   return wrap('readJson', async () => {
+     try {
+@@ -110,7 +111,7 @@
+       if (isNotFound(error)) return null
+       throw error
+     }
+-  })
++  }, permissionIsCurrent)
+ }
+
+ export async function readBlob(
+@@ -237,6 +238,7 @@
+   root: FileSystemDirectoryHandle,
+   segments: string[],
+   data: unknown,
++  permissionIsCurrent?: () => boolean,
+ ): Promise<number> {
+   return wrap('writeJsonAtomic', () =>
+     withKeyLock(writeJsonAtomicLockKey(segments), async () => {
+@@ -253,6 +255,7 @@
+
+       return json.length
+     }),
++    permissionIsCurrent,
+   )
+ }
+
+@@ -260,6 +263,7 @@
+   root: FileSystemDirectoryHandle,
+   segments: string[],
+   data: Blob | ArrayBuffer | Uint8Array | string,
++  permissionIsCurrent?: () => boolean,
+ ): Promise<void> {
+   // Serialized per-path for the same reason as writeJsonAtomic: two
+   // concurrent writers on the same file race on the writable lock. In
+@@ -275,6 +279,7 @@
+       await writable.write(data as FileSystemWriteChunkType)
+       await writable.close()
+     }),
++    permissionIsCurrent,
+   )
+ }
+
+@@ -312,6 +317,7 @@
+ export async function listDirectory(
+   root: FileSystemDirectoryHandle,
+   segments: string[],
++  permissionIsCurrent?: () => boolean,
+ ): Promise<DirectoryEntry[]> {
+   return wrap('listDirectory', async () => {
+     try {
+@@ -325,7 +331,7 @@
+       if (isNotFound(error)) return []
+       throw error
+     }
+-  })
++  }, permissionIsCurrent)
+ }
+
+ /**
+
+--- a/src/infrastructure/storage/workspace-fs/media-source.ts
++++ b/src/infrastructure/storage/workspace-fs/media-source.ts
+@@ -40,8 +40,9 @@
+ async function findSourceSegments(
+   root: FileSystemDirectoryHandle,
+   mediaId: string,
++  permissionIsCurrent?: () => boolean,
+ ): Promise<string[] | null> {
+-  const entries = await listDirectory(root, mediaDir(mediaId))
++  const entries = await listDirectory(root, mediaDir(mediaId), permissionIsCurrent)
+   for (const entry of entries) {
+     if (entry.kind !== 'file') continue
+     if (NON_SOURCE_NAMES.has(entry.name)) continue
+@@ -92,16 +93,20 @@
+   mediaId: string,
+   blob: Blob,
+   fileName: string | undefined,
+-  options?: { strict?: boolean },
++  options?: { strict?: boolean; originRoot?: FileSystemDirectoryHandle; isCurrent?: () => boolean; rejectExisting?: boolean },
+ ): Promise<void> {
+-  const root = requireWorkspaceRoot()
++  const root = options?.originRoot ?? requireWorkspaceRoot()
+   try {
+     // Already have a source file here (new layout or legacy) — don't write a
+     // second one under a different name.
+-    if (await findSourceSegments(root, mediaId)) return
++    if (await findSourceSegments(root, mediaId, options?.isCurrent)) {
++      if (options?.rejectExisting) throw new Error('recording_namespace_exists')
++      return
++    }
++    if (options?.isCurrent && !options.isCurrent()) throw new Error('recording_retired')
+
+     const path = mediaSourceByFileName(mediaId, fileName ?? 'source.bin')
+-    await writeBlob(root, path, blob)
++    await writeBlob(root, path, blob, options?.isCurrent)
+     logger.info(
+       `Wrote media source to workspace: ${mediaId} (${path[path.length - 1]}, ${blob.size} bytes)`,
+     )
+
+--- a/src/infrastructure/storage/workspace-fs/media.ts
++++ b/src/infrastructure/storage/workspace-fs/media.ts
+@@ -198,15 +198,19 @@
+   }
+ }
+
+-export async function createMedia(media: MediaMetadata): Promise<MediaMetadata> {
+-  const root = requireWorkspaceRoot()
+-  try {
+-    const existing = await readJson<SerializedMedia>(root, mediaMetadataPath(media.id))
++export async function createMedia(media: MediaMetadata, originRoot?: FileSystemDirectoryHandle, permissionIsCurrent?: () => boolean): Promise<MediaMetadata> {
++  const root = originRoot ?? requireWorkspaceRoot()
++  try {
++    const existing = await readJson<SerializedMedia>(root, mediaMetadataPath(media.id), permissionIsCurrent)
+     if (existing) {
+       throw new Error(`Media already exists: ${media.id}`)
+     }
+-    const serialized = await stashFileHandle(media)
+-    await writeJsonAtomic(root, mediaMetadataPath(media.id), serialized)
++    // Scoped recording metadata is workspace-only: never mutate the global handle registry.
++    if (originRoot && (media.storageType !== 'workspace' || media.fileHandle)) {
++      throw new Error('Scoped recording must use workspace storage')
++    }
++    const serialized = originRoot ? media : await stashFileHandle(media)
++    await writeJsonAtomic(root, mediaMetadataPath(media.id), serialized, permissionIsCurrent)
+     return media
+   } catch (error) {
+     logger.error('createMedia failed', error)
+
+--- a/src/infrastructure/storage/workspace-fs/project-media.ts
++++ b/src/infrastructure/storage/workspace-fs/project-media.ts
+@@ -68,8 +68,9 @@
+ async function readLinks(
+   root: FileSystemDirectoryHandle,
+   projectId: string,
++  permissionIsCurrent?: () => boolean,
+ ): Promise<ProjectMediaLinks> {
+-  const existing = await readJson<ProjectMediaLinks>(root, projectMediaLinksPath(projectId))
++  const existing = await readJson<ProjectMediaLinks>(root, projectMediaLinksPath(projectId), permissionIsCurrent)
+   if (existing && Array.isArray(existing.mediaIds)) return existing
+   return { version: LINKS_VERSION, mediaIds: [] }
+ }
+@@ -78,8 +79,9 @@
+   root: FileSystemDirectoryHandle,
+   projectId: string,
+   links: ProjectMediaLinks,
++  permissionIsCurrent?: () => boolean,
+ ): Promise<void> {
+-  await writeJsonAtomic(root, projectMediaLinksPath(projectId), links)
++  await writeJsonAtomic(root, projectMediaLinksPath(projectId), links, permissionIsCurrent)
+ }
+
+ function collectMediaIdsFromItems(
+@@ -113,14 +115,14 @@
+
+ /* ────────────────────────────── Public API ───────────────────────────── */
+
+-export async function associateMediaWithProject(projectId: string, mediaId: string): Promise<void> {
+-  const root = requireWorkspaceRoot()
++export async function associateMediaWithProject(projectId: string, mediaId: string, originRoot?: FileSystemDirectoryHandle, permissionIsCurrent?: () => boolean): Promise<void> {
++  const root = originRoot ?? requireWorkspaceRoot()
+   try {
+     await withKeyLock(linksLockKey(projectId), async () => {
+-      const links = await readLinks(root, projectId)
++      const links = await readLinks(root, projectId, permissionIsCurrent)
+       if (!links.mediaIds.some((entry) => entry.id === mediaId)) {
+         links.mediaIds.push({ id: mediaId, addedAt: Date.now() })
+-        await writeLinks(root, projectId, links)
++        await writeLinks(root, projectId, links, permissionIsCurrent)
+       }
+     })
+   } catch (error) {
+
+--- a/src/infrastructure/storage/workspace-fs/root.ts
++++ b/src/infrastructure/storage/workspace-fs/root.ts
+@@ -15,12 +15,25 @@
+ const logger = createLogger('WorkspaceRoot')
+
+ let activeRoot: FileSystemDirectoryHandle | null = null
++let workspaceRevision = 0
++const rootChangeListeners = new Set<() => void>()
++
++export function getWorkspaceRevision(): number {
++  return workspaceRevision
++}
++
++export function onWorkspaceRootChanged(listener: () => void): () => void {
++  rootChangeListeners.add(listener)
++  return () => rootChangeListeners.delete(listener)
++}
+
+ type PermissionLostListener = () => void
+ const permissionLostListeners = new Set<PermissionLostListener>()
+
+ export function setWorkspaceRoot(handle: FileSystemDirectoryHandle | null): void {
+   activeRoot = handle
++  workspaceRevision += 1
++  for (const listener of rootChangeListeners) listener()
+   if (handle) {
+     logger.info(`Workspace root set: ${handle.name}`)
+   } else {
+
+--- a/src/infrastructure/storage/workspace-fs/thumbnails.ts
++++ b/src/infrastructure/storage/workspace-fs/thumbnails.ts
+@@ -36,11 +36,11 @@
+
+ /* ────────────────────────────── Public API ───────────────────────────── */
+
+-export async function saveThumbnail(thumbnail: ThumbnailData): Promise<void> {
+-  const root = requireWorkspaceRoot()
++export async function saveThumbnail(thumbnail: ThumbnailData, originRoot?: FileSystemDirectoryHandle, permissionIsCurrent?: () => boolean): Promise<void> {
++  const root = originRoot ?? requireWorkspaceRoot()
+   try {
+     const bytes = new Uint8Array(await blobToArrayBuffer(thumbnail.blob))
+-    await writeBlob(root, mediaThumbnailPath(thumbnail.mediaId), bytes)
++    await writeBlob(root, mediaThumbnailPath(thumbnail.mediaId), bytes, permissionIsCurrent)
+   } catch (error) {
+     logger.error('saveThumbnail failed', error)
+     throw new Error('Failed to save thumbnail', { cause: error })

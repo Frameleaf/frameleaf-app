@@ -1,0 +1,418 @@
+--- a/src/features/export/utils/canvas-item-renderer/gpu.ts
++++ b/src/features/export/utils/canvas-item-renderer/gpu.ts
+@@ -206,7 +206,7 @@
+
+   const mediaOutputTexture =
+     participant.effects.length > 0
+-      ? gpuTexturePool.acquire(rctx.canvasSettings.width, rctx.canvasSettings.height)
++      ? gpuTexturePool.acquire(rctx.canvasSettings.width, rctx.canvasSettings.height, 'rgba16float')
+       : outputTexture
+
+   try {
+@@ -1050,10 +1050,11 @@
+     }
+   }
+   if (visibleChildren.length === 0) return null
++  if (visibleChildren.length > 1 && !rctx.gpuMediaBlendPipeline) return null
+
+   const texture = gpuPipeline.getDevice().createTexture({
+     size: { width, height },
+-    format: 'rgba8unorm',
++    format: 'rgba16float',
+     usage:
+       GPUTextureUsage.TEXTURE_BINDING |
+       GPUTextureUsage.RENDER_ATTACHMENT |
+@@ -1079,7 +1080,8 @@
+           visibleChild.masks,
+           {
+             clear: layerIndex === 0,
+-            blend: true,
++            // Keep straight RGB: replace the first layer, shader-composite later layers.
++            blend: layerIndex > 0,
+           },
+         )
+         if (!rendered) {
+@@ -1113,7 +1115,8 @@
+   const gpuMediaBlendPipeline = rctx.gpuMediaBlendPipeline
+   const gpuShapePipeline = rctx.gpuShapePipeline
+   const gpuMaskCombinePipeline = rctx.gpuMaskCombinePipeline
+-  const usesShaderComposite = needsLayerComposite && Boolean(gpuMediaBlendPipeline)
++  if (needsLayerComposite && !gpuMediaBlendPipeline) return false
++  const usesShaderComposite = needsLayerComposite
+   if (enabledEffects.length === 0 && masks.length === 0 && !usesShaderComposite) {
+     return renderGpuMediaParticipantToTexture(
+       prepared,
+@@ -1138,12 +1141,13 @@
+
+   const device = gpuPipeline.getDevice()
+   const scratchTextures: GPUTexture[] = []
+-  const acquireScratchTexture = () => {
++  const acquireScratchTexture = (format: GPUTextureFormat = outputTexture.format) => {
+     const texture = acquireGpuScratchTexture(
+       rctx,
+       device,
+       rctx.canvasSettings.width,
+       rctx.canvasSettings.height,
++      format,
+     )
+     scratchTextures.push(texture)
+     return texture
+@@ -1154,9 +1158,9 @@
+   const blendOutputTexture =
+     usesShaderComposite && gpuMediaBlendPipeline ? acquireScratchTexture() : null
+   const blendLayerTexture = usesShaderComposite ? acquireScratchTexture() : null
+-  const maskTextures = masks.map(() => acquireScratchTexture())
++  const maskTextures = masks.map(() => acquireScratchTexture('rgba8unorm'))
+   const combinedMaskTextures = Array.from({ length: Math.max(0, masks.length - 1) }, () =>
+-    acquireScratchTexture(),
++    acquireScratchTexture('rgba8unorm'),
+   )
+
+   try {
+@@ -1281,12 +1285,13 @@
+   device: GPUDevice,
+   width: number,
+   height: number,
++  format: GPUTextureFormat,
+ ): GPUTexture {
+   return (
+-    rctx.gpuScratchTexturePool?.acquire(width, height) ??
++    rctx.gpuScratchTexturePool?.acquire(width, height, format) ??
+     device.createTexture({
+       size: { width, height },
+-      format: 'rgba8unorm',
++      format,
+       usage:
+         GPUTextureUsage.TEXTURE_BINDING |
+         GPUTextureUsage.RENDER_ATTACHMENT |
+--- a/src/features/export/utils/canvas-item-renderer/transition.ts
++++ b/src/features/export/utils/canvas-item-renderer/transition.ts
+@@ -271,10 +271,12 @@
+     const leftTexture = gpuTexturePool.acquire(
+       rctx.canvasSettings.width,
+       rctx.canvasSettings.height,
++      'rgba16float',
+     )
+     const rightTexture = gpuTexturePool.acquire(
+       rctx.canvasSettings.width,
+       rctx.canvasSettings.height,
++      'rgba16float',
+     )
+     poolTextures.push(leftTexture, rightTexture)
+
+--- a/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
++++ b/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
+@@ -1818,7 +1818,7 @@
+         sourceHeight: 360,
+         destRect: { x: 0, y: 0, width: 640, height: 360 },
+         clear: true,
+-        blend: true,
++        blend: false,
+       }),
+     )
+     expect(gpuShapePipeline.renderShapeToTexture).toHaveBeenCalledWith(
+@@ -1875,7 +1875,7 @@
+         sourceHeight: 360,
+         destRect: { x: 0, y: 0, width: 640, height: 360 },
+         clear: true,
+-        blend: true,
++        blend: false,
+         maskTexture: combinedImageMaskTexture2,
+       }),
+     )
+@@ -2138,7 +2138,7 @@
+       2,
+       expect.objectContaining({ width: 640, height: 360 }),
+       subCompTexture,
+-      expect.objectContaining({ clear: true, blend: true }),
++      expect.objectContaining({ clear: true, blend: false }),
+     )
+     expect(gpuMediaPipeline.renderSourceToTexture).toHaveBeenNthCalledWith(
+       3,
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -2423,6 +2423,7 @@
+               const transitionTexture = gpu.texturePool.acquire(
+                 canvasSettings.width,
+                 canvasSettings.height,
++                'rgba16float',
+               )
+               const renderedToTexture = await renderTransitionToGpuTexture(
+                 transitionTexture,
+--- a/src/infrastructure/gpu-media/media-blend-pipeline.ts
++++ b/src/infrastructure/gpu-media/media-blend-pipeline.ts
+@@ -34,6 +34,7 @@
+ `
+
+ export class MediaBlendPipeline {
++  private readonly floatPipeline: GPURenderPipeline
+   private readonly pipeline: GPURenderPipeline
+   private readonly sampler: GPUSampler
+   private readonly bindGroupLayout: GPUBindGroupLayout
+@@ -54,17 +55,19 @@
+         { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+       ],
+     })
+-    this.pipeline = device.createRenderPipeline({
++    const createPipeline = (format: GPUTextureFormat) => device.createRenderPipeline({
+       label: 'media-blend-pipeline',
+       layout: device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
+       vertex: { module: shaderModule, entryPoint: 'vertexMain' },
+       fragment: {
+         module: shaderModule,
+         entryPoint: 'fragmentMain',
+-        targets: [{ format: 'rgba8unorm' }],
++        targets: [{ format }],
+       },
+       primitive: { topology: 'triangle-list' },
+     })
++    this.pipeline = createPipeline('rgba8unorm')
++    this.floatPipeline = createPipeline('rgba16float')
+     this.uniformBuffer = device.createBuffer({
+       size: 16,
+       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+@@ -111,7 +114,7 @@
+         },
+       ],
+     })
+-    pass.setPipeline(this.pipeline)
++    pass.setPipeline(outputTexture.format === 'rgba16float' ? this.floatPipeline : this.pipeline)
+     pass.setBindGroup(0, bindGroup)
+     pass.draw(6)
+     pass.end()
+--- a/src/infrastructure/gpu-media/media-render-pipeline.test.ts
++++ b/src/infrastructure/gpu-media/media-render-pipeline.test.ts
+@@ -5,7 +5,7 @@
+ function createPipelineHarness() {
+   vi.stubGlobal('GPUShaderStage', { FRAGMENT: 2 })
+   vi.stubGlobal('GPUBufferUsage', { COPY_DST: 8, UNIFORM: 64 })
+-  vi.stubGlobal('GPUTextureUsage', { COPY_DST: 2, TEXTURE_BINDING: 4 })
++  vi.stubGlobal('GPUTextureUsage', { COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 })
+   const inputView = {}
+   const outputView = {}
+   const inputTexture = {
+@@ -75,7 +75,7 @@
+     expect(device.createTexture).toHaveBeenCalledWith({
+       size: { width: 1920, height: 1080 },
+       format: 'rgba8unorm',
+-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
++      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+     })
+     expect(device.createBuffer).toHaveBeenCalledWith({
+       size: 176,
+--- a/src/infrastructure/gpu-media/media-render-pipeline.ts
++++ b/src/infrastructure/gpu-media/media-render-pipeline.ts
+@@ -64,13 +64,35 @@
+   cornerPinOriginSize: vec4f,
+   cornerPinMatrix0: vec4f,
+   cornerPinMatrix1: vec4f,
+-  cornerPinMatrix2: vec4f,
++  cornerPinMatrix2: vec3f,
++  filterStraightAlpha: f32,
+ };
+
+ @group(0) @binding(0) var texSampler: sampler;
+ @group(0) @binding(1) var sourceTex: texture_2d<f32>;
+ @group(0) @binding(2) var<uniform> u: MediaUniforms;
+ @group(0) @binding(3) var maskTex: texture_2d<f32>;
++
++// Interpolate premultiplied texels, then return the straight color contract.
++fn loadPremultiplied(pixel: vec2i) -> vec4f {
++  let lastPixel = vec2i(textureDimensions(sourceTex, 0)) - vec2i(1);
++  let color = textureLoad(sourceTex, clamp(pixel, vec2i(0), lastPixel), 0);
++  return vec4f(color.rgb * color.a, color.a);
++}
++
++fn sampleColor(uv: vec2f) -> vec4f {
++  if (u.filterStraightAlpha < 0.5) {
++    return textureSampleLevel(sourceTex, texSampler, uv, 0.0);
++  }
++  let pixel = uv * vec2f(textureDimensions(sourceTex, 0)) - vec2f(0.5);
++  let origin = vec2i(floor(pixel));
++  let weight = fract(pixel);
++  let top = mix(loadPremultiplied(origin), loadPremultiplied(origin + vec2i(1, 0)), weight.x);
++  let bottom = mix(loadPremultiplied(origin + vec2i(0, 1)), loadPremultiplied(origin + vec2i(1, 1)), weight.x);
++  let color = mix(top, bottom, weight.y);
++  if (color.a <= 0.0) { return vec4f(0.0); }
++  return vec4f(color.rgb / color.a, color.a);
++}
+
+ @fragment
+ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+@@ -121,7 +143,7 @@
+   let sourceMax = u.sourceRect.xy + max(u.sourceRect.zw - vec2f(0.5), vec2f(0.5));
+   let sourcePixel = clamp(unclampedSourcePixel, sourceMin, sourceMax);
+   let sourceUv = sourcePixel / max(u.sourceSize, vec2f(0.001));
+-  let color = textureSampleLevel(sourceTex, texSampler, sourceUv, 0.0);
++  let color = sampleColor(sourceUv);
+   let viewportLocal = samplePixel - u.destRect.xy;
+   let leftAlpha = select(1.0, clamp(viewportLocal.x / max(u.feather.x, 0.001), 0.0, 1.0), u.feather.x > 0.0);
+   let rightAlpha = select(1.0, clamp((u.destRect.z - viewportLocal.x) / max(u.feather.y, 0.001), 0.0, 1.0), u.feather.y > 0.0);
+@@ -170,6 +192,7 @@
+   private inputW = 0
+   private inputH = 0
+   private activeMaskView: GPUTextureView | null = null
++  private readonly floatReplacePipeline: GPURenderPipeline
+   private readonly replacePipeline: GPURenderPipeline
+   private readonly blendPipeline: GPURenderPipeline
+   private readonly sampler: GPUSampler
+@@ -191,6 +214,7 @@
+         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+       ],
+     })
++    this.floatReplacePipeline = this.createRenderPipeline(shaderModule, false, 'rgba16float')
+     this.replacePipeline = this.createRenderPipeline(shaderModule, false)
+     this.blendPipeline = this.createRenderPipeline(shaderModule, true)
+     this.uniformBuffer = device.createBuffer({
+@@ -199,7 +223,11 @@
+     })
+   }
+
+-  private createRenderPipeline(shaderModule: GPUShaderModule, blend: boolean): GPURenderPipeline {
++  private createRenderPipeline(
++    shaderModule: GPUShaderModule,
++    blend: boolean,
++    format: GPUTextureFormat = 'rgba8unorm',
++  ): GPURenderPipeline {
+     return this.device.createRenderPipeline({
+       label: 'media-render-pipeline',
+       layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
+@@ -209,7 +237,7 @@
+         entryPoint: 'fragmentMain',
+         targets: [
+           {
+-            format: 'rgba8unorm',
++            format,
+             blend: blend
+               ? {
+                   color: {
+@@ -290,7 +318,9 @@
+     this.activeMaskView = params.maskTexture?.createView() ?? null
+     this.bindGroup = null
+     try {
+-      return this.renderInputViewToTexture(outputTexture, params, sourceWidth, sourceHeight)
++      return this.renderInputViewToTexture(
++        outputTexture, params, sourceWidth, sourceHeight, sourceTexture.format === 'rgba16float',
++      )
+     } finally {
+       this.inputView = previousView
+       this.activeMaskView = previousMaskView
+@@ -309,7 +339,7 @@
+     this.inputTexture = this.device.createTexture({
+       size: { width, height },
+       format: 'rgba8unorm',
+-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
++      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+     })
+     this.inputView = this.inputTexture.createView()
+     this.bindGroup = null
+@@ -338,7 +368,10 @@
+     params: GpuMediaRenderParams,
+     sourceWidth: number,
+     sourceHeight: number,
++    filterStraightAlpha = false,
+   ): boolean {
++    // Float color stays straight; MediaBlendPipeline owns source-over compositing.
++    if (outputTexture.format === 'rgba16float' && params.blend) return false
+     const sourceRect = params.sourceRect ?? {
+       x: 0,
+       y: 0,
+@@ -392,7 +425,7 @@
+       cornerPin?.inverseMatrix[6] ?? 0,
+       cornerPin?.inverseMatrix[7] ?? 0,
+       cornerPin?.inverseMatrix[8] ?? 1,
+-      0,
++      filterStraightAlpha ? 1 : 0,
+     ])
+     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData)
+
+@@ -409,7 +442,13 @@
+         },
+       ],
+     })
+-    pass.setPipeline(params.blend ? this.blendPipeline : this.replacePipeline)
++    pass.setPipeline(
++      outputTexture.format === 'rgba16float'
++        ? this.floatReplacePipeline
++        : params.blend
++          ? this.blendPipeline
++          : this.replacePipeline,
++    )
+     pass.setBindGroup(0, bindGroup)
+     pass.draw(6)
+     pass.end()
+--- a/src/infrastructure/gpu-shapes/shape-render-pipeline.ts
++++ b/src/infrastructure/gpu-shapes/shape-render-pipeline.ts
+@@ -206,8 +206,8 @@
+     let trimStart = u.trimParams.x;
+     let trimEnd = u.trimParams.y;
+     strokeVisible = select(
+-      outlineProgress >= trimStart || outlineProgress < trimEnd,
+-      outlineProgress >= trimStart && outlineProgress < trimEnd,
++      (outlineProgress >= trimStart || outlineProgress < trimEnd),
++      (outlineProgress >= trimStart && outlineProgress < trimEnd),
+       trimEnd >= trimStart,
+     );
+     let visibleLength = select(1.0 - trimStart + trimEnd, trimEnd - trimStart, trimEnd >= trimStart);
+@@ -246,6 +246,7 @@
+ `
+
+ export class ShapeRenderPipeline {
++  private readonly floatReplacePipeline: GPURenderPipeline
+   private readonly replacePipeline: GPURenderPipeline
+   private readonly blendPipeline: GPURenderPipeline
+   private readonly bindGroupLayout: GPUBindGroupLayout
+@@ -261,6 +262,7 @@
+       label: 'shape-render-layout',
+       entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }],
+     })
++    this.floatReplacePipeline = this.createRenderPipeline(shaderModule, false, 'rgba16float')
+     this.replacePipeline = this.createRenderPipeline(shaderModule, false)
+     this.blendPipeline = this.createRenderPipeline(shaderModule, true)
+     this.uniformBuffer = device.createBuffer({
+@@ -269,7 +271,11 @@
+     })
+   }
+
+-  private createRenderPipeline(shaderModule: GPUShaderModule, blend: boolean): GPURenderPipeline {
++  private createRenderPipeline(
++    shaderModule: GPUShaderModule,
++    blend: boolean,
++    format: GPUTextureFormat = 'rgba8unorm',
++  ): GPURenderPipeline {
+     return this.device.createRenderPipeline({
+       label: 'shape-render-pipeline',
+       layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
+@@ -279,7 +285,7 @@
+         entryPoint: 'fragmentMain',
+         targets: [
+           {
+-            format: 'rgba8unorm',
++            format,
+             blend: blend
+               ? {
+                   color: {
+@@ -298,6 +304,8 @@
+   }
+
+   renderShapeToTexture(outputTexture: GPUTexture, params: GpuShapeRenderParams): boolean {
++    // Float color stays straight; MediaBlendPipeline owns source-over compositing.
++    if (outputTexture.format === 'rgba16float' && params.blend) return false
+     if (
+       outputTexture.width !== params.outputWidth ||
+       outputTexture.height !== params.outputHeight
+@@ -372,7 +380,13 @@
+         },
+       ],
+     })
+-    pass.setPipeline(params.blend ? this.blendPipeline : this.replacePipeline)
++    pass.setPipeline(
++      outputTexture.format === 'rgba16float'
++        ? this.floatReplacePipeline
++        : params.blend
++          ? this.blendPipeline
++          : this.replacePipeline,
++    )
+     pass.setBindGroup(0, bindGroup)
+     pass.draw(6)
+     pass.end()

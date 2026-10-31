@@ -1,0 +1,102 @@
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import {
+  AssetFaceCorrectionDto,
+  AssetFaceCreateDto,
+  AssetFaceDeleteDto,
+  AssetFaceResponseDto,
+  AssetFaceSourceResponseDto,
+  FaceDto,
+  FaceSearchDto,
+  PersonResponseDto,
+} from 'src/dtos/person.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { PersonService } from 'src/services/person.service.js';
+import { UUIDParamDto } from 'src/validation.js';
+
+@ApiTags(ApiTag.Faces)
+@Controller('faces')
+export class FaceController {
+  constructor(private service: PersonService) {}
+
+  @Post()
+  @Authenticated({ permission: Permission.FaceCreate })
+  @Endpoint({
+    summary: 'Create a face',
+    description:
+      'Create a new face that has not been discovered by facial recognition. The content of the bounding box is considered a face.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  createFace(@Auth() auth: AuthDto, @Body() dto: AssetFaceCreateDto): Promise<AssetFaceResponseDto> {
+    return this.service.createFace(auth, dto);
+  }
+
+  @Get('source')
+  @Authenticated({ permission: Permission.FaceRead })
+  @Endpoint({
+    summary: 'Retrieve the face source revision for an asset',
+    description:
+      'Retrieve the revision of the image faces are drawn on. Send it back as expectedSourceRevision when creating or moving a face; it changes when the image, its orientation or its edits change.',
+    history: new HistoryBuilder().added('v3.2.1'),
+  })
+  getFaceSource(@Auth() auth: AuthDto, @Query() dto: FaceDto): Promise<AssetFaceSourceResponseDto> {
+    return this.service.getFaceSource(auth, dto);
+  }
+
+  @Get()
+  @Authenticated({ permission: Permission.FaceRead })
+  @Endpoint({
+    summary: 'Retrieve faces for asset',
+    description: 'Retrieve all faces belonging to an asset.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getFaces(@Auth() auth: AuthDto, @Query() dto: FaceSearchDto): Promise<AssetFaceResponseDto[]> {
+    return this.service.getFacesById(auth, dto);
+  }
+
+  @Put(':id')
+  @Authenticated({ permission: Permission.FaceUpdate })
+  @Endpoint({
+    summary: 'Re-assign a face to another person',
+    description: 'Re-assign the face provided in the body to the person identified by the id in the path parameter.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  reassignFacesById(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: FaceDto,
+  ): Promise<PersonResponseDto> {
+    return this.service.reassignFacesById(auth, id, dto);
+  }
+
+  @Patch(':id')
+  @Authenticated({ permission: Permission.FaceUpdate })
+  @Endpoint({
+    summary: 'Correct a face',
+    description:
+      'Reassign or unassign a face, move or resize it, or hide it and show it again. The correction is refused with 409 when the face (or, for a box, the image) changed since expectedRevision.',
+    history: new HistoryBuilder().added('v3.2.1'),
+  })
+  correctFace(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AssetFaceCorrectionDto,
+  ): Promise<AssetFaceResponseDto> {
+    return this.service.correctFace(auth, id, dto);
+  }
+
+  @Delete(':id')
+  @Authenticated({ permission: Permission.FaceDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete a face',
+    description: 'Delete a face identified by the id. Optionally can be force deleted.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  deleteFace(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: AssetFaceDeleteDto): Promise<void> {
+    return this.service.deleteFace(auth, id, dto);
+  }
+}

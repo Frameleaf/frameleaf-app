@@ -1,0 +1,176 @@
+import { LoginResponseDto, searchStacks } from '@frameleaf/sdk';
+import { createUserDto } from 'src/fixtures.js';
+import { app, asBearerAuth, utils } from 'src/utils.js';
+import request from 'supertest';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+describe('/stacks', () => {
+  let admin: LoginResponseDto;
+  let user1: LoginResponseDto;
+
+  beforeAll(async () => {
+    await utils.resetDatabase();
+
+    admin = await utils.adminSetup();
+
+    user1 = await utils.userSetup(admin.accessToken, createUserDto.user1);
+  });
+
+  describe('POST /stacks', () => {
+    it('should create a stack', async () => {
+      const [asset1, asset2] = await Promise.all([
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(user1.accessToken),
+      ]);
+
+      const { status, body } = await request(app)
+        .post('/stacks')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ assetIds: [asset1.id, asset2.id] });
+
+      expect(status).toBe(201);
+      expect(body).toEqual({
+        id: expect.any(String),
+        primaryAssetId: asset1.id,
+        assets: [expect.objectContaining({ id: asset1.id }), expect.objectContaining({ id: asset2.id })],
+      });
+    });
+
+    // FL-36: a stack is all or nothing: someone else's item or a stale selection changes nothing.
+    it("refuses a stack that includes someone else's item", async () => {
+      const [own, other] = await Promise.all([
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(admin.accessToken),
+      ]);
+      const { status } = await request(app)
+        .post('/stacks')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ assetIds: [own.id, other.id] });
+      expect(status).toBe(400);
+    });
+
+    it('refuses a stale selection that names an item that is gone', async () => {
+      const own = await utils.createAsset(user1.accessToken);
+      const { status } = await request(app)
+        .post('/stacks')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ assetIds: [own.id, '00000000-0000-4000-8000-000000000000'] });
+      expect(status).toBe(400);
+    });
+
+    it('should merge an existing stack', async () => {
+      const [asset1, asset2, asset3] = await Promise.all([
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(user1.accessToken),
+      ]);
+
+      const response1 = await request(app)
+        .post('/stacks')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ assetIds: [asset1.id, asset2.id] });
+
+      expect(response1.status).toBe(201);
+
+      const stacksBefore = await searchStacks({}, { headers: asBearerAuth(user1.accessToken) });
+
+      const { status, body } = await request(app)
+        .post('/stacks')
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ assetIds: [asset1.id, asset3.id] });
+
+      expect(status).toBe(201);
+      expect(body).toEqual({
+        id: expect.any(String),
+        primaryAssetId: asset1.id,
+        assets: expect.arrayContaining([
+          expect.objectContaining({ id: asset1.id }),
+          expect.objectContaining({ id: asset2.id }),
+          expect.objectContaining({ id: asset3.id }),
+        ]),
+      });
+
+      const stacksAfter = await searchStacks({}, { headers: asBearerAuth(user1.accessToken) });
+      expect(stacksAfter.length).toBe(stacksBefore.length);
+    });
+  });
+
+  describe('GET /assets/:id', () => {
+    it('should include stack details for the primary asset', async () => {
+      const [asset1, asset2] = await Promise.all([
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(user1.accessToken),
+      ]);
+
+      await utils.createStack(user1.accessToken, [asset1.id, asset2.id]);
+
+      const { status, body } = await request(app)
+        .get(`/assets/${asset1.id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual(
+        expect.objectContaining({
+          id: asset1.id,
+          stack: {
+            id: expect.any(String),
+            assetCount: 2,
+            primaryAssetId: asset1.id,
+          },
+        }),
+      );
+    });
+
+    it('should include stack details for a non-primary asset', async () => {
+      const [asset1, asset2] = await Promise.all([
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(user1.accessToken),
+      ]);
+
+      await utils.createStack(user1.accessToken, [asset1.id, asset2.id]);
+
+      const { status, body } = await request(app)
+        .get(`/assets/${asset2.id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual(
+        expect.objectContaining({
+          id: asset2.id,
+          stack: {
+            id: expect.any(String),
+            assetCount: 2,
+            primaryAssetId: asset1.id,
+          },
+        }),
+      );
+    });
+  });
+
+  describe('GET /stacks/:id', () => {
+    it('should include exifInfo in stack assets', async () => {
+      const [asset1, asset2] = await Promise.all([
+        utils.createAsset(user1.accessToken),
+        utils.createAsset(user1.accessToken),
+      ]);
+
+      const stack = await utils.createStack(user1.accessToken, [asset1.id, asset2.id]);
+
+      const { status, body } = await request(app)
+        .get(`/stacks/${stack.id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual(
+        expect.objectContaining({
+          id: stack.id,
+          primaryAssetId: asset1.id,
+          assets: expect.arrayContaining([
+            expect.objectContaining({ id: asset1.id, exifInfo: expect.any(Object) }),
+            expect.objectContaining({ id: asset2.id, exifInfo: expect.any(Object) }),
+          ]),
+        }),
+      );
+    });
+  });
+});

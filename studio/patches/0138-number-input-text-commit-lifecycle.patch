@@ -1,0 +1,289 @@
+--- a/src/shared/ui/property-controls/number-input.tsx
++++ b/src/shared/ui/property-controls/number-input.tsx
+@@ -56,6 +56,7 @@
+   unitTitle,
+ }: NumberInputProps) {
+   const inputRef = useRef<HTMLInputElement>(null)
++  const textEditStateRef = useRef<'clean' | 'dirty' | 'committed'>('clean')
+   const [localValue, setLocalValue] = useState(() => {
+     if (value === 'mixed') return ''
+     if (step >= 1) return String(Math.round(value))
+@@ -89,12 +90,16 @@
+   )
+
+   const resetLocalValue = useCallback(() => {
++    textEditStateRef.current = 'clean'
+     const nextValue = value === 'mixed' ? '' : formatValue(value)
+     setLocalValue(nextValue)
+   }, [value, formatValue])
+
+   const commitLocalValue = useCallback(
+     (rawValue: string) => {
++      // Focus navigation must not commit rounded display text or repeat an explicit commit.
++      if (textEditStateRef.current !== 'dirty') return
++      textEditStateRef.current = 'committed'
+       const parsed = parseInputValue ? parseInputValue(rawValue) : parseFloat(rawValue)
+       if (!isNaN(parsed)) {
+         const committedValue = clamp(parsed)
+@@ -111,6 +116,8 @@
+
+   // Sync local value with prop value
+   useEffect(() => {
++    // Deferred prop updates must resync on clean blur without discarding a text draft.
++    if (textEditStateRef.current !== 'dirty') textEditStateRef.current = 'clean'
+     if (!inputRef.current || document.activeElement !== inputRef.current) {
+       const nextValue = value === 'mixed' ? '' : formatValue(value)
+       setLocalValue(nextValue)
+@@ -118,11 +125,13 @@
+   }, [value, formatValue])
+
+   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
++    textEditStateRef.current = 'dirty'
+     setLocalValue(e.target.value)
+   }
+
+   const handleInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+-    commitLocalValue(e.currentTarget.value)
++    if (textEditStateRef.current === 'clean') resetLocalValue()
++    else commitLocalValue(e.currentTarget.value)
+   }
+
+   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+@@ -133,6 +142,7 @@
+       resetLocalValue()
+       e.currentTarget.blur()
+     } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
++      textEditStateRef.current = 'committed'
+       e.preventDefault()
+       const currentValue = value === 'mixed' ? 0 : value
+       const multiplier = e.shiftKey ? 10 : 1
+@@ -176,6 +186,7 @@
+     const handleMouseUp = () => {
+       // Commit final value on mouseup
+       if (scrubValueRef.current !== null) {
++        textEditStateRef.current = 'committed'
+         onChange(scrubValueRef.current)
+       }
+       setIsScrubbing(false)
+@@ -206,6 +217,7 @@
+       const newValue = clamp(currentValue + direction * step * multiplier)
+       const formattedValue = formatValue(newValue)
+       setLocalValue(formattedValue)
++      textEditStateRef.current = 'committed'
+       onChange(newValue)
+     },
+     [disabled, value, step, clamp, formatValue, onChange],
+--- a/src/shared/ui/property-controls/number-input.test.tsx
++++ b/src/shared/ui/property-controls/number-input.test.tsx
+@@ -1,8 +1,165 @@
+-import { fireEvent, render, screen } from '@testing-library/react'
++import { act, fireEvent, render, screen } from '@testing-library/react'
+ import { describe, expect, it, vi } from 'vite-plus/test'
+ import { NumberInput } from './number-input'
+
+ describe('NumberInput', () => {
++  it.each([15, 15.25, 'mixed' as const])(
++    'does not commit untouched focus and blur for %s',
++    (value) => {
++      const onChange = vi.fn()
++      render(<NumberInput value={value} onChange={onChange} />)
++      const input = screen.getByRole('textbox')
++      input.focus()
++      act(() => input.blur())
++      expect(onChange).not.toHaveBeenCalled()
++    },
++  )
++
++  it('commits edited text once on Enter followed by blur', () => {
++    const onChange = vi.fn()
++    render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    fireEvent.change(input, { target: { value: '12' } })
++    fireEvent.keyDown(input, { key: 'Enter' })
++    expect(onChange.mock.calls).toEqual([[12]])
++  })
++
++  it('discards edited text on Escape before blur', () => {
++    const onChange = vi.fn()
++    render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    fireEvent.change(input, { target: { value: '12' } })
++    fireEvent.keyDown(input, { key: 'Escape' })
++    expect(input).toHaveValue('5')
++    expect(onChange).not.toHaveBeenCalled()
++  })
++
++  it('commits a mixed selection edit on blur', () => {
++    const onChange = vi.fn()
++    render(<NumberInput value="mixed" onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    fireEvent.change(input, { target: { value: '12' } })
++    fireEvent.blur(input)
++    expect(onChange.mock.calls).toEqual([[12]])
++  })
++
++  it('does not repeat an arrow commit on blur after typed text', () => {
++    const onChange = vi.fn()
++    render(<NumberInput value={5} onChange={onChange} step={2} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    fireEvent.change(input, { target: { value: '12' } })
++    fireEvent.keyDown(input, { key: 'ArrowUp', shiftKey: true })
++    act(() => input.blur())
++    expect(onChange.mock.calls).toEqual([[25]])
++  })
++
++  it('resynchronizes an untouched focused field after an external value update', () => {
++    const onChange = vi.fn()
++    const { rerender } = render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    rerender(<NumberInput value={10} onChange={onChange} />)
++    expect(input).toHaveValue('5')
++    act(() => input.blur())
++    expect(input).toHaveValue('10')
++    expect(onChange).not.toHaveBeenCalled()
++  })
++
++  it('resynchronizes a deferred formatter and mixed-value update without committing', () => {
++    const onChange = vi.fn()
++    const { rerender } = render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    rerender(
++      <NumberInput value={5} onChange={onChange} formatInputValue={(value) => value.toFixed(2)} />,
++    )
++    act(() => input.blur())
++    expect(input).toHaveValue('5.00')
++    input.focus()
++    rerender(<NumberInput value="mixed" onChange={onChange} />)
++    act(() => input.blur())
++    expect(input).toHaveValue('')
++    expect(onChange).not.toHaveBeenCalled()
++  })
++
++  it('preserves a dirty draft across external value updates until commit', () => {
++    const onChange = vi.fn()
++    const { rerender } = render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    fireEvent.change(input, { target: { value: '12' } })
++    rerender(<NumberInput value={10} onChange={onChange} />)
++    expect(input).toHaveValue('12')
++    fireEvent.keyDown(input, { key: 'Enter' })
++    expect(input).toHaveValue('12')
++    expect(onChange.mock.calls).toEqual([[12]])
++  })
++
++  it('reflects a deferred external update on Escape without committing the draft', () => {
++    const onChange = vi.fn()
++    const { rerender } = render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    fireEvent.change(input, { target: { value: '12' } })
++    rerender(<NumberInput value={10} onChange={onChange} />)
++    fireEvent.keyDown(input, { key: 'Escape' })
++    expect(input).toHaveValue('10')
++    expect(onChange).not.toHaveBeenCalled()
++  })
++
++  it('keeps an unacknowledged normalized Enter commit visible', () => {
++    const onChange = vi.fn()
++    render(<NumberInput value={5} onChange={onChange} min={0} max={10} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    fireEvent.change(input, { target: { value: '15' } })
++    fireEvent.keyDown(input, { key: 'Enter' })
++    expect(input).toHaveValue('10')
++    expect(onChange.mock.calls).toEqual([[10]])
++  })
++
++  it('resynchronizes an external value after an acknowledged arrow commit', () => {
++    const onChange = vi.fn()
++    const { rerender } = render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    fireEvent.keyDown(input, { key: 'ArrowUp' })
++    expect(input).toHaveValue('6')
++    rerender(<NumberInput value={6} onChange={onChange} />)
++    rerender(<NumberInput value={20} onChange={onChange} />)
++    expect(input).toHaveValue('6')
++    act(() => input.blur())
++    expect(input).toHaveValue('20')
++    expect(onChange.mock.calls).toEqual([[6]])
++  })
++
++  it('keeps an explicit wheel commit visible when the field later blurs without a parent update', () => {
++    const onChange = vi.fn()
++    render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    fireEvent.wheel(input.parentElement!, { deltaY: -1 })
++    expect(input).toHaveValue('6')
++    input.focus()
++    act(() => input.blur())
++    expect(input).toHaveValue('6')
++    expect(onChange.mock.calls).toEqual([[6]])
++  })
++
++  it('keeps an explicit scrub commit visible across its blur without a parent update', () => {
++    const onChange = vi.fn()
++    render(<NumberInput value={5} onChange={onChange} />)
++    const input = screen.getByRole('textbox')
++    input.focus()
++    fireEvent.mouseDown(input.parentElement!, { clientX: 0 })
++    fireEvent.mouseMove(window, { clientX: 3 })
++    fireEvent.mouseUp(window)
++    expect(input).toHaveValue('8')
++    expect(onChange.mock.calls).toEqual([[8]])
++  })
++
+   it('normalizes and reflects committed values without a parent rerender', () => {
+     const onChange = vi.fn()
+
+--- a/src/features/editor/components/properties-sidebar/clip-panel/crop-rotation-entry.test.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/crop-rotation-entry.test.tsx
+@@ -78,6 +78,42 @@
+       preview: null,
+     })
+     useTimelineStore.temporal.getState().clear()
++  })
++
++  it('leaves history empty when unchanged layout fields blur before one rotation edit', async () => {
++    render(
++      <TooltipProvider>
++        <Inspector rotation />
++      </TooltipProvider>,
++    )
++    const before = structuredClone(useItemsStore.getState().items)
++    // CPU event regression for the four real fields traversed by the native browser Tab walk.
++    const fields = screen.getAllByRole('textbox').slice(0, 4)
++    expect(fields.map((field) => (field as HTMLInputElement).value)).toEqual([
++      '15',
++      '25',
++      '960',
++      '540',
++    ])
++    for (const field of fields) {
++      act(() => {
++        field.focus()
++        field.blur()
++      })
++      expect(useItemsStore.getState().items).toEqual(before)
++      expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    }
++    await edit('editor.layoutSection.rotation', '35')
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
++    const after = structuredClone(useItemsStore.getState().items)
++    expect(after[0]!.transform).toEqual({ ...ITEM.transform, rotation: 35 })
++    act(() => useTimelineStore.temporal.getState().undo())
++    expect(useItemsStore.getState().items).toEqual(before)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(0)
++    expect(useTimelineStore.temporal.getState().futureStates).toHaveLength(1)
++    act(() => useTimelineStore.temporal.getState().redo())
++    expect(useItemsStore.getState().items).toEqual(after)
++    expect(useTimelineStore.temporal.getState().pastStates).toHaveLength(1)
+   })
+
+   it('names all crop edges and commits source pixels through one undoable canonical edit', async () => {

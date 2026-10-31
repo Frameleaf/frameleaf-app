@@ -1,0 +1,315 @@
+import { Injectable } from '@nestjs/common';
+import { dirname, join, relative, sep } from 'node:path';
+import type { JobOf, SystemFlags } from 'src/types.js';
+import { ErrorMessages } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import {
+  BootstrapEventPriority,
+  DatabaseLock,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
+  QueueName,
+  StorageFolder,
+  SystemMetadataKey,
+} from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { closeAttemptSweep } from 'src/utils/attempt-sweep.js';
+import { attemptIdentity } from 'src/utils/attempt-tree.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
+import { discoverMediaLocation } from 'src/utils/media-location.js';
+import { FrameleafStartupError } from 'src/utils/misc.js';
+
+const docsMessage = `Please see https://frameleaf.app/docs/admin/system-integrity/#folder-checks-at-start-up for more information.`;
+
+@Injectable()
+export class StorageService extends BaseService {
+  private attemptSweepTimer?: NodeJS.Timeout;
+  private attemptSweepActive?: Promise<void>;
+
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
+  startAttemptSweep() {
+    this.attemptSweepTimer ??= setInterval(() => void this.sweepAttemptOutputs(), 60_000);
+    this.attemptSweepTimer.unref();
+    void this.sweepAttemptOutputs();
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  async stopAttemptSweep() {
+    clearInterval(this.attemptSweepTimer);
+    this.attemptSweepTimer = undefined;
+    await this.attemptSweepActive;
+    await closeAttemptSweep();
+  }
+
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  sweepAttemptOutputs(): Promise<void> {
+    return (this.attemptSweepActive ??= this.physicalFileRepository
+      .sweepAttempts([
+        StorageCore.getBaseFolder(StorageFolder.Thumbnails),
+        StorageCore.getBaseFolder(StorageFolder.EncodedVideo),
+      ])
+      .then((result) => {
+        if (result?.deleted) this.logger.log(`Attempt output cleanup: ${result.deleted} files removed`);
+      })
+      .catch((error) => {
+        this.logger.warn(`Attempt output cleanup deferred: ${error}`);
+      })
+      .finally(() => {
+        this.attemptSweepActive = undefined;
+      }));
+  }
+
+  private detectMediaLocation(): string {
+    return discoverMediaLocation(this.configRepository.getEnv().storage.mediaLocation, (path) =>
+      this.storageRepository.existsSync(path),
+    );
+  }
+
+  initializeMediaLocation(): void {
+    StorageCore.setMediaLocation(this.detectMediaLocation());
+  }
+
+  @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.StorageService })
+  async onBootstrap() {
+    this.initializeMediaLocation();
+
+    await this.databaseRepository.withLock(DatabaseLock.SystemFileMounts, async () => {
+      const flags =
+        (await this.systemMetadataRepository.get(SystemMetadataKey.SystemFlags)) ||
+        ({ mountChecks: {} } as SystemFlags);
+
+      if (!flags.mountChecks) {
+        flags.mountChecks = {};
+      }
+
+      let isUpdated = false;
+
+      this.logger.log(`Verifying system mount folder checks, current state: ${JSON.stringify(flags)}`);
+
+      try {
+        // check each folder exists and is writable
+        for (const folder of Object.values(StorageFolder)) {
+          if (!flags.mountChecks[folder]) {
+            this.logger.log(`Writing initial mount file for the ${folder} folder`);
+            await this.createMountFile(folder);
+          }
+
+          await this.verifyReadAccess(folder);
+          await this.verifyWriteAccess(folder);
+
+          if (!flags.mountChecks[folder]) {
+            flags.mountChecks[folder] = true;
+            isUpdated = true;
+          }
+        }
+
+        if (isUpdated) {
+          await this.systemMetadataRepository.set(SystemMetadataKey.SystemFlags, flags);
+          this.logger.log('Successfully enabled system mount folders checks');
+        }
+
+        this.logger.log('Successfully verified system mount folder checks');
+      } catch (error) {
+        const envData = this.configRepository.getEnv();
+        if (envData.storage.ignoreMountCheckErrors) {
+          this.logger.error(error as Error);
+          this.logger.warn('Ignoring mount folder errors');
+        } else {
+          throw error;
+        }
+      }
+    });
+
+    await this.databaseRepository.withLock(DatabaseLock.MediaLocation, async () => {
+      const current = StorageCore.getMediaLocation();
+      const samples = await this.assetRepository.getFileSamples();
+      const savedValue = await this.systemMetadataRepository.get(SystemMetadataKey.MediaLocation);
+      if (samples.length > 0) {
+        const path = samples[0].path;
+
+        let previous = savedValue?.location || '';
+
+        if (!previous && this.configRepository.getEnv().storage.mediaLocation) {
+          previous = current;
+        }
+
+        if (!previous) {
+          previous = path.startsWith('upload/') ? 'upload' : '/usr/src/app/upload';
+        }
+
+        if (previous !== current) {
+          this.logger.log(`Media location changed (from=${previous}, to=${current})`);
+
+          const windowsSource = /^[a-z]:/i.test(previous) || previous.startsWith('\\\\');
+          const source =
+            previous.endsWith('/') || (windowsSource && previous.endsWith('\\')) ? previous.slice(0, -1) : previous;
+          const prefixes = [source + '/', ...(windowsSource ? [source + '\\'] : [])];
+          if (samples.some(({ path }) => path !== source && prefixes.every((prefix) => !path.startsWith(prefix)))) {
+            throw new Error(ErrorMessages.InconsistentMediaLocation);
+          }
+
+          this.logger.warn(
+            `Detected a change to media location, performing an automatic migration of file paths from ${previous} to ${current}, this may take awhile`,
+          );
+          await this.databaseRepository.migrateFilePaths(previous, current);
+        }
+      }
+
+      // Only set MediaLocation in systemMetadataRepository if needed
+      if (savedValue?.location !== current) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.MediaLocation, { location: current });
+      }
+    });
+  }
+
+  @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })
+  async handleDeleteFiles(job: JobOf<JobName.FileDelete>): Promise<JobStatus> {
+    const { files, removedAssetId, removedAssetOwnerId, original } = job;
+    if (removedAssetId && removedAssetOwnerId && !(await this.assetRepository.getById(removedAssetId))) {
+      await this.eventRepository.emit('AssetDelete', { assetId: removedAssetId, userId: removedAssetOwnerId });
+    }
+    const move = (from: string, to: string) => moveFileWithin(this.storageRepository, from, to);
+
+    // TODO: one job per file
+    for (const file of files) {
+      if (!file) {
+        continue;
+      }
+
+      try {
+        // Every caller queues deletes for a path it believes it owns, but a
+        // deduplicated path is owned by whichever asset happens to be
+        // canonical — the dedup migration queued its duplicates' original
+        // paths without checking whether those paths were already shared
+        // master files, and unlinked the only copy. Refuse to delete anything
+        // a live row still names, whatever the caller intended.
+        // universal storage: an unreferenced original goes to the file trash, never unlinked
+        const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(
+          file,
+          () => this.storageRepository.unlink(file),
+          {
+            removedAssetId,
+            trash: {
+              move,
+              ...(original?.path === file && {
+                original: {
+                  checksum: Buffer.from(original.checksum, 'hex'),
+                  sizeInBytes: original.sizeInBytes,
+                  ownerId: original.ownerId,
+                  assetId: original.assetId,
+                  originalFileName: original.originalFileName,
+                },
+              }),
+            },
+          },
+        );
+
+        if (!deleted) {
+          this.logger.debug(`Skipping delete for ${file}; ${references} reference(s) remain`);
+        }
+      } catch (error: any) {
+        this.logger.warn('Unable to remove file from disk', error);
+      }
+    }
+
+    // tidying folders is best effort; it never fails the deletion
+    await this.removeEmptyFolders(files).catch((error) =>
+      this.logger.warn(`Unable to remove the folders the deleted files left empty: ${error}`),
+    );
+    return JobStatus.Success;
+  }
+
+  /**
+   * The generated-file folders a removal left empty, up to the owner's folder. A job's staging folder
+   * (`.attempts/<job>/<token>`) goes once that attempt is proven stopped; any other is left to the attempt sweep.
+   */
+  private async removeEmptyFolders(files: (string | null | undefined)[]) {
+    const roots = [StorageFolder.Thumbnails, StorageFolder.EncodedVideo].map((folder) =>
+      StorageCore.getBaseFolder(folder),
+    );
+    for (const folder of new Set(files.filter((file): file is string => !!file).map((file) => dirname(file)))) {
+      const root = roots.find((root) => folder.startsWith(root + sep));
+      const [owner, ...rest] = root ? relative(root, folder).split(sep) : [];
+      if (!root || !owner || rest.length === 0) {
+        continue;
+      }
+      try {
+        const attempts = join(folder, '.attempts');
+        const claims = [];
+        for (const job of await this.storageRepository.readdir(attempts).catch(() => [])) {
+          for (const token of await this.storageRepository.readdir(join(attempts, job)).catch(() => [])) {
+            const identity = attemptIdentity(join(attempts, job, token, '_'));
+            if (identity) claims.push(identity);
+          }
+        }
+        const stopped = await this.jobRepository.getStoppedClaims(claims);
+        for (const { jobId, token } of claims) {
+          if (stopped.has(`${jobId}/${token}`)) {
+            await this.storageRepository.removeEmptyDirs(join(attempts, jobId, token), true);
+            await this.storageRepository.removeDirIfEmpty(join(attempts, jobId));
+          }
+        }
+        await this.storageRepository.removeDirIfEmpty(attempts);
+        const ownerFolder = join(root, owner);
+        for (let dir = folder; dir !== ownerFolder; dir = dirname(dir)) {
+          if (!(await this.storageRepository.removeDirIfEmpty(dir))) break;
+        }
+      } catch (error) {
+        this.logger.warn(`Unable to remove empty folders in ${folder}: ${error}`);
+      }
+    }
+  }
+
+  private async verifyReadAccess(folder: StorageFolder) {
+    const { folderPath, internalPath, externalPath } = this.getMountFilePaths(folder);
+    try {
+      try {
+        await this.storageRepository.readFile(internalPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        // A verified old marker proves the mount exists; never manufacture one on a missing mount.
+        const legacyPath = join(folderPath, '.immich');
+        await this.storageRepository.readFile(legacyPath);
+        await this.storageRepository.rename(legacyPath, internalPath);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to read (${internalPath}): ${error}`);
+      throw new FrameleafStartupError(`Failed to read: "${externalPath} (${internalPath}) - ${docsMessage}"`);
+    }
+  }
+
+  private async createMountFile(folder: StorageFolder) {
+    const { folderPath, internalPath, externalPath } = this.getMountFilePaths(folder);
+    try {
+      this.storageRepository.mkdirSync(folderPath);
+      await this.storageRepository.createFile(internalPath, Buffer.from(Date.now().toString()));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        this.logger.warn('Found existing mount file, skipping creation');
+        return;
+      }
+      this.logger.error(`Failed to create ${internalPath}: ${error}`);
+      throw new FrameleafStartupError(`Failed to create "${externalPath} - ${docsMessage}"`);
+    }
+  }
+
+  private async verifyWriteAccess(folder: StorageFolder) {
+    const { internalPath, externalPath } = this.getMountFilePaths(folder);
+    try {
+      await this.storageRepository.overwriteFile(internalPath, Buffer.from(Date.now().toString()));
+    } catch (error) {
+      this.logger.error(`Failed to write ${internalPath}: ${error}`);
+      throw new FrameleafStartupError(`Failed to write "${externalPath} - ${docsMessage}"`);
+    }
+  }
+
+  private getMountFilePaths(folder: StorageFolder) {
+    const folderPath = StorageCore.getBaseFolder(folder);
+    const internalPath = join(folderPath, '.frameleaf');
+    const externalPath = `<UPLOAD_LOCATION>/${folder}/.frameleaf`;
+
+    return { folderPath, internalPath, externalPath };
+  }
+}

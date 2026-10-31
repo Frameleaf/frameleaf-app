@@ -1,0 +1,93 @@
+name: immich-e2e
+
+services:
+  e2e-auth-server:
+    container_name: immich-e2e-auth-server
+    build:
+      context: ../
+      dockerfile: packages/e2e-auth-server/Dockerfile
+      args:
+        NODE_IMAGE: ${FRAMELEAF_CI_NODE_IMAGE:-node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf}
+    ports:
+      - 2286:2286
+
+  frameleaf-server:
+    container_name: immich-e2e-server
+    image: frameleaf-server:latest
+    build:
+      context: ../
+      dockerfile: server/Dockerfile
+      cache_from:
+        # main's end-to-end build cache (.github/workflows/e2e-build-cache.yml, FL-380), then
+        # the Deploy workflow's for main builds (.github/workflows/local-multi-runner-build.yml).
+        # A missing cache only makes the build slower.
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-arm64
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-amd64-cpu-prod
+        - type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:linux-arm64-cpu-prod
+      args:
+        - NODE_IMAGE=${FRAMELEAF_CI_NODE_IMAGE:-node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf}
+        - STUDIO_NODE_IMAGE=${FRAMELEAF_CI_STUDIO_NODE_IMAGE:-node:22.23.4-bookworm@sha256:2bd396628eceb5c999a6e43731fab69d5fb98b94ba9d9d90b5f64575c5178765}
+        - BUILD_ID=1234567890
+        - BUILD_IMAGE=e2e
+        - BUILD_SOURCE_REF=e2e
+        - BUILD_SOURCE_COMMIT=e2eeeeeeeeeeeeeeeeee
+      secrets:
+        - mise_github_token
+    environment:
+      DB_HOSTNAME: database
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_DATABASE_NAME: frameleaf
+      FRAMELEAF_MACHINE_LEARNING_ENABLED: 'false'
+      FRAMELEAF_ENV: testing
+      FRAMELEAF_CLOUD_URL: https://cloud.frameleaf.test
+      FRAMELEAF_PORT: '2285'
+      FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: 'true'
+    volumes:
+      - ./test-assets:/test-assets
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - 2285:2285
+
+  database:
+    container_name: immich-e2e-postgres
+    image: frameleaf-postgres:e2e
+    # Built from Frameleaf's own Postgres image source (docker/postgres).
+    build:
+      context: ../docker/postgres
+      dockerfile: Dockerfile
+      args:
+        POSTGRES_IMAGE: ${FRAMELEAF_CI_POSTGRES_IMAGE:-docker.io/library/postgres:19beta4-bookworm@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06}
+    command: -c fsync=off -c shared_preload_libraries=
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: frameleaf
+    ports:
+      - 5435:5432
+    shm_size: 128mb
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d frameleaf']
+      interval: 1s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+secrets:
+  # GITHUB_TOKEN is used by the frameleaf-server build (mise install) to authenticate
+  # against the GitHub releases API for cached binary downloads.
+  #
+  # Inside CI: test.yml sets `env: { GITHUB_TOKEN: ${{ github.token }} }` on the
+  # `docker compose up` step, so the host env has the token.
+  #
+  # For local reproduction (`docker compose up --build`): export a token first.
+  #   - personal classic PAT with `read:packages` is sufficient
+  #   - or run `export GITHUB_TOKEN=$(gh auth token)` after `gh auth login`
+  # Without the token mise will be rate-limited or 401 and the build fails with
+  # opaque "release not found" errors deep in the layer build.
+  # server/Dockerfile mounts this as id=mise_github_token (upstream renamed it)
+  mise_github_token:
+    environment: GITHUB_TOKEN

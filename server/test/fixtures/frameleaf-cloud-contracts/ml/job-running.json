@@ -1,0 +1,31 @@
+{
+  "jobId": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+  "status": "running",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "computeSku": "cs_KGECTVQ0",
+  "clientRef": "batch-2026-09-26",
+  "progress": {
+    "done": 1,
+    "total": 2,
+    "unit": "items",
+    "etaSeconds": 2
+  },
+  "run": {
+    "startedAt": "2026-09-26T04:02:10.000Z",
+    "meteredSeconds": 1,
+    "workers": 1,
+    "startFees": 1
+  },
+  "charges": {
+    "meteredUsd": 0.2013,
+    "holdUsd": 0.203251,
+    "ceilingUsd": 0.223577
+  },
+  "cost": null,
+  "result": null,
+  "error": null,
+  "purgeAfter": null,
+  "createdAt": "2026-09-26T04:01:00.000Z",
+  "updatedAt": "2026-09-26T04:02:11.000Z"
+}

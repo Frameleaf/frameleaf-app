@@ -1,0 +1,87 @@
+Subject: Preserve multichannel content through speed and pitch export
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1811,10 +1811,10 @@
+  * WSOLA overlap windows are consistent across channels (prevents phase drift
+  * between L/R that causes a hollow sound).
+  *
+- * @param channels - Input audio channels (mono or stereo)
++ * @param channels - Input audio channels (downmixed to stereo for this export)
+  * @param speed - Playback rate (1.0 = normal, 2.0 = double speed, 0.5 = half speed)
+  * @param sampleRate - Sample rate for the audio
+- * @returns Processed channels with the same channel count
++ * @returns Processed mono or stereo channels
+  */
+ async function applySpeedAndPitch(
+   channels: Float32Array[],
+@@ -1827,6 +1827,9 @@
+   if (!requiresTimeStretch) return channels
+   if (channels.length === 0 || channels[0]!.length === 0) return channels
+ 
++  // SoundTouch only accepts stereo; preserve every source channel in the
++  // export mix before processing rather than replacing C/surround with L.
++  if (channels.length > 2) channels = downmixToOutputChannels(channels, 2)
+   const numChannels = channels.length
+   const samplesPerChannel = channels[0]!.length
+ 
+@@ -1845,8 +1848,7 @@
+     st.pitch = getAudioPitchRatioFromSemitones(pitchShiftSemitones)
+     st.rate = 1.0
+ 
+-    // The processor consumes interleaved stereo. Interleave all channels
+-    // (for mono, duplicate to stereo so it gets valid input).
++    // The processor consumes interleaved stereo (duplicate mono input).
+     const stereoInput = new Float32Array(samplesPerChannel * 2)
+     const left = channels[0]!
+     const right = numChannels >= 2 ? channels[1]! : left
+@@ -1903,10 +1905,6 @@
+ 
+     if (numChannels >= 2) {
+       outputChannels.push(outLeft, outRight)
+-      // Pass through any additional channels beyond stereo (rare)
+-      for (let c = 2; c < numChannels; c++) {
+-        outputChannels.push(outLeft) // duplicate left for extra channels
+-      }
+     } else {
+       // Mono source: return left channel only
+       outputChannels.push(outLeft)
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -56,11 +56,14 @@
+         }
+         return plane
+       }
+-      const planes = [makePlane(), makePlane()]
++      const planes = this.track.src.includes('center-51')
++        ? [new Float32Array(frameCount), new Float32Array(frameCount), makePlane(),
++            new Float32Array(frameCount), new Float32Array(frameCount), new Float32Array(frameCount)]
++        : [makePlane(), makePlane()]
+ 
+       yield {
+         numberOfFrames: frameCount,
+-        numberOfChannels: 2,
++        numberOfChannels: planes.length,
+         sampleRate,
+         copyTo(destination: Float32Array, options: { planeIndex: number }) {
+           destination.set(planes[options.planeIndex] ?? planes[0]!)
+@@ -954,6 +957,14 @@
+     const midway = samples[48_000]!
+     expect(midway).toBeGreaterThan(0.07)
+     expect(midway).toBeLessThan(0.125)
++  })
++
++  it('keeps center-only 5.1 dialogue audible when speed changes', async () => {
++    const result = await processAudio(dspComposition({ src: 'blob:audio-center-51', speed: 2 }))
++    expect(result).not.toBeNull()
++    expect(result!.channels).toBe(2)
++    expect(result!.samples[0]![48_000]).toBeGreaterThan(0.05)
++    expect(result!.samples[1]![48_000]).toBeGreaterThan(0.05)
+   })
+ 
+   it('hasAudioContent: true for an audible clip, false when its track is muted', async () => {

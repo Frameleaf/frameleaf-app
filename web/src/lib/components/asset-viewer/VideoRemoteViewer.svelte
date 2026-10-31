@@ -1,0 +1,123 @@
+<script lang="ts">
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { castManager, CastState } from '$lib/managers/cast-manager.svelte';
+  import { handleError } from '$lib/utils/handle-error';
+  import { Icon, IconButton, LoadingSpinner } from '@frameleaf/ui';
+  import { mdiCastConnected, mdiPause, mdiPlay } from '@mdi/js';
+  import { onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
+
+  interface Props {
+    poster: string;
+    assetFileUrl: string;
+    onVideoStarted: () => void;
+    onVideoEnded: () => void;
+  }
+
+  let { poster, assetFileUrl, onVideoEnded, onVideoStarted }: Props = $props();
+
+  let alive = true;
+  let castRequest = 0;
+  onDestroy(() => {
+    alive = false;
+  });
+
+  let previousPlayerState: CastState | null = $state(null);
+
+  const handlePlayPauseButton = async () => {
+    switch (castManager.castState) {
+      case CastState.PLAYING: {
+        castManager.pause();
+        break;
+      }
+      case CastState.IDLE: {
+        await cast(assetFileUrl, true);
+        break;
+      }
+      default: {
+        castManager.play();
+        break;
+      }
+    }
+  };
+
+  $effect(() => {
+    if (assetFileUrl) {
+      void cast(assetFileUrl);
+    }
+  });
+
+  $effect(() => {
+    if (
+      castManager.castState === CastState.IDLE &&
+      previousPlayerState !== null &&
+      previousPlayerState !== CastState.IDLE &&
+      previousPlayerState !== CastState.PAUSED
+    ) {
+      onVideoEnded();
+    }
+
+    previousPlayerState = castManager.castState;
+  });
+
+  const cast = async (url: string, force: boolean = false) => {
+    if (!url || !castManager.isCasting) {
+      return;
+    }
+    const request = ++castRequest;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () =>
+      alive && request === castRequest && url === assetFileUrl && castManager.isCasting && isCurrentSession();
+    const fullUrl = new URL(url, location.href);
+
+    try {
+      await castManager.loadMedia(fullUrl.href, force);
+      if (isCurrent()) {
+        onVideoStarted();
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, 'Unable to cast');
+      }
+      return;
+    }
+  };
+
+  function handleSeek(event: Event) {
+    const newTime = Number((event.target as HTMLInputElement).value);
+    castManager.seekTo(newTime);
+  }
+</script>
+
+<span class="flex items-center space-x-2 text-2xl font-bold text-gray-200">
+  <Icon icon={mdiCastConnected} class="text-primary" size="36" />
+  <span>{$t('connected_to')} {castManager.receiverName}</span>
+</span>
+
+<img src={poster} alt="" class="m-4 rounded-xl" />
+
+<div class="flex place-content-center place-items-center">
+  {#if castManager.castState === CastState.BUFFERING}
+    <div class="p-3">
+      <LoadingSpinner />
+    </div>
+  {:else}
+    <IconButton
+      color="primary"
+      shape="round"
+      variant="ghost"
+      icon={castManager.castState === CastState.PLAYING ? mdiPause : mdiPlay}
+      onclick={() => handlePlayPauseButton()}
+      aria-label={castManager.castState === CastState.PLAYING ? 'Pause' : 'Play'}
+    />
+  {/if}
+
+  <input
+    type="range"
+    min="0"
+    max={castManager.duration}
+    value={castManager.currentTime ?? 0}
+    onchange={handleSeek}
+    class="h-4 w-full bg-primary"
+  />
+</div>

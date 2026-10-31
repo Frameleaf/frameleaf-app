@@ -1,0 +1,1954 @@
+--- a/src/features/editor/components/preview-area.tsx
++++ b/src/features/editor/components/preview-area.tsx
+@@ -22,6 +22,7 @@
+ import { useTranslation } from 'react-i18next'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { ShuttleIndicator } from '@/shared/ui/shuttle-indicator'
++import type { ProjectColorManagement } from '@/shared/graphics/color/managed-color'
+ 
+ interface PreviewAreaProps {
+   project: {
+@@ -29,6 +30,7 @@
+     height: number
+     fps: number
+     backgroundColor?: string
++    colorManagement?: ProjectColorManagement
+   }
+   durationInFrames?: number
+   preferProjectStoreMetadata?: boolean
+@@ -115,6 +117,7 @@
+     height: number
+     fps: number
+     backgroundColor?: string
++    colorManagement?: ProjectColorManagement
+   }
+   containerSize: {
+     width: number
+@@ -218,6 +221,7 @@
+   const projectHeight = useProjectStore((s) => s.currentProject?.metadata.height)
+   const projectFps = useProjectStore((s) => s.currentProject?.metadata.fps)
+   const projectBgColor = useProjectStore((s) => s.currentProject?.metadata.backgroundColor)
++  const projectColorManagement = useProjectStore((s) => s.currentProject?.metadata.colorManagement)
+ 
+   const width = preferProjectStoreMetadata ? (projectWidth ?? project.width) : project.width
+   const height = preferProjectStoreMetadata ? (projectHeight ?? project.height) : project.height
+@@ -225,6 +229,9 @@
+   const backgroundColor = preferProjectStoreMetadata
+     ? (projectBgColor ?? project.backgroundColor ?? '#000000')
+     : (project.backgroundColor ?? '#000000')
++  const colorManagement = preferProjectStoreMetadata
++    ? (projectColorManagement ?? project.colorManagement)
++    : project.colorManagement
+ 
+   // Use the precomputed index from items-store; returns 0 when there are no items.
+   const maxItemEndFrame = useItemsStore((s) => s.maxItemEndFrame)
+@@ -309,8 +316,8 @@
+   }, [editorLayout.previewPadding])
+ 
+   const liveProject = useMemo(
+-    () => ({ width, height, fps, backgroundColor }),
+-    [width, height, fps, backgroundColor],
++    () => ({ width, height, fps, backgroundColor, colorManagement }),
++    [width, height, fps, backgroundColor, colorManagement],
+   )
+ 
+   const sourcePreviewMediaId = useEditorStore((s) => s.sourcePreviewMediaId)
+--- a/src/features/export/hooks/use-client-render.ts
++++ b/src/features/export/hooks/use-client-render.ts
+@@ -233,6 +233,7 @@
+           masterBusDb,
+           masterBusMuted,
+         )
++        composition.colorManagement = currentProject?.metadata?.colorManagement
+ 
+         const totalCompositionItems = composition.tracks.reduce(
+           (sum, t) => sum + (t.items?.length ?? 0),
+--- a/src/features/export/hooks/use-render-queue-runner.ts
++++ b/src/features/export/hooks/use-render-queue-runner.ts
+@@ -114,6 +114,7 @@
+       snapshot.masterBusDb,
+       snapshot.masterBusMuted,
+     )
++    composition.colorManagement = snapshot.colorManagement
+ 
+     // Resolve mediaIds → blob URLs fresh at render time (export never proxies).
+     composition.tracks = await resolveMediaUrls(composition.tracks, { useProxy: false })
+--- a/src/features/export/stores/render-queue-store.ts
++++ b/src/features/export/stores/render-queue-store.ts
+@@ -15,6 +15,7 @@
+ import type { AudioEqSettings } from '@/types/audio'
+ import type { ClientExportSettings, RenderProgress } from '../utils/client-renderer'
+ import { abortJob } from '../utils/render-queue-control'
++import type { ProjectColorManagement } from '@/shared/graphics/color/managed-color'
+ 
+ export type RenderJobStatus = 'queued' | 'rendering' | 'completed' | 'failed' | 'cancelled'
+ 
+@@ -32,6 +33,8 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  /** Project managed colour captured with the job (FL-97). */
++  colorManagement?: ProjectColorManagement
+ }
+ 
+ export interface RenderJob {
+--- a/src/features/export/utils/build-render-job.ts
++++ b/src/features/export/utils/build-render-job.ts
+@@ -71,6 +71,7 @@
+     busAudioEq: seq.busAudioEq,
+     masterBusDb: seq.masterBusDb,
+     masterBusMuted: seq.masterBusMuted,
++    colorManagement: currentProject?.metadata.colorManagement,
+   }
+ 
+   // Distinguish exported sequence files from the Main-timeline export.
+--- a/src/features/export/utils/canvas-item-renderer.composition-effects.test.ts
++++ b/src/features/export/utils/canvas-item-renderer.composition-effects.test.ts
+@@ -9,7 +9,10 @@
+ import type { ItemRenderContext, ItemTransform, SubCompRenderData } from './canvas-item-renderer'
+ 
+ const mocks = vi.hoisted(() => ({
+-  renderEffects: vi.fn(async (_pool: unknown, source: unknown) => ({ source, poolCanvases: [] })),
++  renderEffects: vi.fn(async (_pool: unknown, source: unknown, _effects: unknown) => ({
++    source,
++    poolCanvases: [],
++  })),
+ }))
+ 
+ vi.mock('./canvas-shapes', () => ({ renderShape: vi.fn() }))
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -77,6 +77,7 @@
+ import type { FrameInvalidationRequest } from '@/shared/utils/frame-invalidation'
+ import { collectReachableCompositionIdsFromTracks } from '@/features/export/deps/timeline-compositions'
+ import { appendVirtualTranscriptCaptionTrack } from '@/features/export/deps/caption-items'
++import { resolveColorManagement } from '@/shared/graphics/color/managed-color'
+ 
+ // Item renderer
+ import {
+@@ -795,7 +796,10 @@
+   // composite output target, and the glyph/bitmap-mask texture caches are
+   // owned by the manager. Lazily initialized on first use; the effects
+   // pipeline owns the device that every other pipeline derives from.
+-  const gpu = new GpuPipelineManager()
++  // FL-97: an HDR project keeps extended range through the float effect route.
++  const gpu = new GpuPipelineManager(
++    resolveColorManagement(composition.colorManagement).workingRange,
++  )
+ 
+   // Build lookup maps
+   const keyframesMap = buildKeyframesMap(keyframes)
+--- /dev/null
++++ b/src/features/export/utils/gpu-pipeline-manager.test.ts
+@@ -0,0 +1,50 @@
++// @vitest-environment node
++import { describe, expect, it, vi } from 'vite-plus/test'
++
++const ranges = vi.hoisted(() => ({
++  effects: vi.fn(),
++  transition: vi.fn(),
++  mediaBlend: vi.fn(),
++  compositor: vi.fn(),
++}))
++vi.mock('@/infrastructure/gpu-effects', () => ({
++  EffectsPipeline: {
++    create: vi.fn(async () => ({ setWorkingRange: ranges.effects, getDevice: () => ({}) })),
++  },
++}))
++vi.mock('@/infrastructure/gpu-transitions', () => ({
++  TransitionPipeline: { create: vi.fn(() => ({ setWorkingRange: ranges.transition })) },
++}))
++vi.mock('@/infrastructure/gpu-media', () => ({
++  MediaBlendPipeline: vi.fn(function () {
++    return { setWorkingRange: ranges.mediaBlend }
++  }),
++  MediaRenderPipeline: vi.fn(),
++}))
++vi.mock('@/infrastructure/gpu-compositor', () => ({
++  CompositorPipeline: vi.fn(function () {
++    return { setWorkingRange: ranges.compositor }
++  }),
++  GpuTexturePool: vi.fn(),
++}))
++vi.mock('@/infrastructure/gpu-masks', () => ({
++  MaskCombinePipeline: vi.fn(),
++  MaskTextureManager: vi.fn(),
++}))
++
++const { GpuPipelineManager } = await import('./gpu-pipeline-manager')
++
++// FL-97: every node pipeline of a renderer runs in the composition's working range.
++describe('GpuPipelineManager working range', () => {
++  it.each(['sdr', 'hdr'] as const)(
++    'applies %s to effects, transitions, blends and compositing',
++    async (range) => {
++      const manager = range === 'sdr' ? new GpuPipelineManager() : new GpuPipelineManager(range)
++      await manager.ensureEffects()
++      manager.ensureTransition()
++      manager.ensureMediaBlend()
++      manager.ensureCompositor()
++      for (const setter of Object.values(ranges)) expect(setter).toHaveBeenLastCalledWith(range)
++    },
++  )
++})
+--- a/src/features/export/utils/gpu-pipeline-manager.ts
++++ b/src/features/export/utils/gpu-pipeline-manager.ts
+@@ -1,4 +1,5 @@
+ import { EffectsPipeline } from '@/infrastructure/gpu-effects'
++import type { WorkingRange } from '@/shared/graphics/color/managed-color'
+ import { TransitionPipeline } from '@/infrastructure/gpu-transitions'
+ import { MediaBlendPipeline, MediaRenderPipeline } from '@/infrastructure/gpu-media'
+ import { ShapeRenderPipeline } from '@/infrastructure/gpu-shapes'
+@@ -40,6 +41,12 @@
+   readonly bitmapMaskTextureCache = new Map<string, GpuBitmapMaskTextureCacheEntry>()
+ 
+   private effectsInitPromise: Promise<EffectsPipeline | null> | null = null
++
++  /**
++   * The composition's working range (FL-97), applied to every node pipeline:
++   * effects, transitions, media blends and the compositor.
++   */
++  constructor(readonly workingRange: WorkingRange = 'sdr') {}
+   private compositeCanvas: OffscreenCanvas | null = null
+   private compositeCtx: GPUCanvasContext | null = null
+   private compositeW = 0
+@@ -51,6 +58,7 @@
+     if (this.effects) return this.effects
+     if (this.effectsInitPromise) return this.effectsInitPromise
+     this.effectsInitPromise = EffectsPipeline.create().then((p) => {
++      p?.setWorkingRange(this.workingRange)
+       this.effects = p
+       this.effectsInitPromise = null
+       return p
+@@ -62,6 +70,7 @@
+     if (this.transition) return true
+     if (!this.effects) return false
+     this.transition = TransitionPipeline.create(this.effects.getDevice())
++    this.transition?.setWorkingRange(this.workingRange)
+     return this.transition !== null
+   }
+ 
+@@ -76,6 +85,7 @@
+     if (this.mediaBlend) return true
+     if (!this.effects) return false
+     this.mediaBlend = new MediaBlendPipeline(this.effects.getDevice())
++    this.mediaBlend.setWorkingRange(this.workingRange)
+     return true
+   }
+ 
+@@ -106,6 +116,7 @@
+     if (!this.effects) return false
+     const device = this.effects.getDevice()
+     this.compositor = new CompositorPipeline(device)
++    this.compositor.setWorkingRange(this.workingRange)
+     this.texturePool ??= new GpuTexturePool(device)
+     this.maskManager = new MaskTextureManager(device)
+     return true
+--- a/src/features/preview/components/video-preview.tsx
++++ b/src/features/preview/components/video-preview.tsx
+@@ -50,12 +50,14 @@
+ import { buildDomTextScrubOverlayPlan } from '../utils/dom-text-scrub-overlay'
+ import { shouldPreferDomPlayerForGizmo } from '../utils/gizmo-preview-presentation'
+ import { importCompositionRenderer, type CompositionRendererInstance } from '../deps/export'
++import type { ProjectColorManagement } from '@/shared/graphics/color/managed-color'
+ 
+ interface VideoPreviewProps {
+   project: {
+     width: number
+     height: number
+     backgroundColor?: string
++    colorManagement?: ProjectColorManagement
+   }
+   containerSize: {
+     width: number
+@@ -376,6 +378,8 @@
+         renderSize.width,
+         renderSize.height,
+         project.backgroundColor ?? '',
++        // FL-97: the working range selects node semantics, so it rebuilds the renderer.
++        project.colorManagement?.workingRange ?? 'sdr',
+         useProxy ? 'proxy' : 'source',
+         fastScrubTracksTopologyFingerprint,
+         domTextScrubOverlayPlan.enabled ? 'dom-text-overlay' : 'composited-text',
+@@ -387,6 +391,7 @@
+       fps,
+       playbackTransitionFingerprint,
+       project.backgroundColor,
++      project.colorManagement?.workingRange,
+       project.height,
+       project.width,
+       renderSize.height,
+--- a/src/features/preview/hooks/use-preview-composition-model.ts
++++ b/src/features/preview/hooks/use-preview-composition-model.ts
+@@ -23,6 +23,7 @@
+   type FastScrubBoundarySource,
+   type VideoSourceSpan,
+ } from '../utils/preview-constants'
++import type { ProjectColorManagement } from '@/shared/graphics/color/managed-color'
+ 
+ /** Return the effects list with enabled color-category effects switched off. */
+ function withColorGradeBypassed(effects: ItemEffect[] | undefined): ItemEffect[] | undefined {
+@@ -57,6 +58,7 @@
+   width: number
+   height: number
+   backgroundColor?: string
++  colorManagement?: ProjectColorManagement
+ }
+ 
+ interface PreviewPlayerSize {
+@@ -519,6 +521,7 @@
+     backgroundColor: project.backgroundColor,
+     keyframes,
+     busAudioEq,
++    colorManagement: project.colorManagement,
+   }
+   const playerRenderSize = {
+     width: Math.max(2, project.width),
+@@ -536,6 +539,7 @@
+     backgroundColor: project.backgroundColor,
+     keyframes: fastScrubScaledKeyframes,
+     busAudioEq,
++    colorManagement: project.colorManagement,
+   }
+   const fastScrubPreviewItems = fastScrubScaledTracks.flatMap(
+     (track) => track.items as TimelineItem[],
+--- a/src/features/projects/stores/project-store.test.ts
++++ b/src/features/projects/stores/project-store.test.ts
+@@ -97,3 +97,28 @@
+     expect(useProjectStore.getState().currentProject).toBeNull()
+   })
+ })
++
++describe('project-store updateProject managed colour (FL-97)', () => {
++  it('keeps the project working range when the settings form edits other fields', async () => {
++    const project: Project = {
++      ...makeProject('hdr'),
++      metadata: {
++        ...makeProject('hdr').metadata,
++        colorManagement: { workingRange: 'hdr', referenceWhiteNits: 203 },
++      },
++    }
++    useProjectStore.setState({ projects: [project], currentProject: project, error: null })
++    storageMocks.updateProject.mockImplementation(async (_id: string, value: Project) => value)
++
++    await useProjectStore.getState().updateProject('hdr', { width: 3840, height: 2160 })
++
++    const saved = useProjectStore.getState().projects[0]!
++    expect(saved.metadata).toEqual({
++      width: 3840,
++      height: 2160,
++      fps: 30,
++      backgroundColor: '#000000',
++      colorManagement: { workingRange: 'hdr', referenceWhiteNits: 203 },
++    })
++  })
++})
+--- a/src/features/projects/stores/project-store.ts
++++ b/src/features/projects/stores/project-store.ts
+@@ -189,6 +189,8 @@
+             name: data.name ?? existingProject.name,
+             description: data.description ?? existingProject.description,
+             metadata: {
++              // Keep fields this form does not edit, such as managed colour (FL-97).
++              ...existingProject.metadata,
+               width: data.width ?? existingProject.metadata.width,
+               height: data.height ?? existingProject.metadata.height,
+               fps: data.fps ?? existingProject.metadata.fps,
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -76,6 +76,7 @@
+ import { layoutTextBlock, lineInkWidth } from '@/shared/typography/text-block-layout'
+ import { createCanvasTextMeasurer } from '@/shared/typography/text-measurer'
+ import { resolveAnimatedTextItem } from '@/features/keyframes/utils/animated-text-item'
++import type { ProjectColorManagement } from '@/shared/graphics/color/managed-color'
+ 
+ const log = createLogger('Headless')
+ 
+@@ -162,7 +163,8 @@
+   const isApplied = (): boolean =>
+     GENERICS.every(
+       (generic) =>
+-        measure(`${weight} 100px "${family}", ${generic}`) !== measure(`${weight} 100px ${generic}`),
++        measure(`${weight} 100px "${family}", ${generic}`) !==
++        measure(`${weight} 100px ${generic}`),
+     )
+ 
+   let streak = 0
+@@ -231,6 +233,8 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  /** Project managed colour (FL-97); absent renders as an SDR project. */
++  colorManagement?: ProjectColorManagement
+   compositions?: SubComposition[]
+   media?: HeadlessMediaSource[]
+   settings: ClientExportSettings
+@@ -606,6 +610,7 @@
+     busAudioEq,
+     masterBusDb,
+     masterBusMuted,
++    colorManagement,
+     compositions = [],
+     media,
+     settings: requestedSettings,
+@@ -656,6 +661,7 @@
+     masterBusDb,
+     masterBusMuted,
+   )
++  composition.colorManagement = colorManagement
+ 
+   warnings.push(...(await prepareFonts(composition.tracks)))
+ 
+@@ -731,6 +737,7 @@
+     busAudioEq: timeline.busAudioEq,
+     masterBusDb: timeline.masterBusDb,
+     masterBusMuted: timeline.masterBusMuted,
++    colorManagement: meta?.colorManagement,
+     compositions: (timeline.compositions ?? []) as unknown as SubComposition[],
+     media,
+     settings,
+@@ -875,6 +882,7 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  colorManagement?: ProjectColorManagement
+   /** Non-fatal findings from project normalization (overlap repairs etc.). */
+   projectWarnings: ProjectWarning[]
+ }
+@@ -901,6 +909,7 @@
+     busAudioEq: timeline.busAudioEq,
+     masterBusDb: timeline.masterBusDb,
+     masterBusMuted: timeline.masterBusMuted,
++    colorManagement: meta?.colorManagement,
+   }
+ }
+ 
+@@ -913,7 +922,7 @@
+ }
+ 
+ function buildComposition(view: MigratedTimelineView): CompositionInputProps {
+-  return convertTimelineToComposition(
++  const composition = convertTimelineToComposition(
+     view.tracks,
+     view.items,
+     view.transitions,
+@@ -928,6 +937,8 @@
+     view.masterBusDb,
+     view.masterBusMuted,
+   )
++  composition.colorManagement = view.colorManagement
++  return composition
+ }
+ 
+ /**
+--- a/src/infrastructure/gpu-compositor/compositor-pipeline.test.ts
++++ b/src/infrastructure/gpu-compositor/compositor-pipeline.test.ts
+@@ -89,8 +89,9 @@
+   })
+ 
+   it('keeps linear-dodge highlights in float until the explicit canvas conversion', () => {
+-    // 0.7 + 0.6 = 1.3; a later subtract of 0.3 must yield 1.0, not 0.7.
+-    const { device } = createPipelineHarness()
++    // 0.7 + 0.6 = 1.3; a later subtract of 0.3 must yield 1.0, not 0.7 (HDR projects).
++    const { device, pipeline } = createPipelineHarness()
++    pipeline.setWorkingRange('hdr')
+     const shaderSources = (
+       device.createShaderModule.mock.calls as unknown as Array<[GPUShaderModuleDescriptor]>
+     ).map(([descriptor]) => descriptor.code)
+@@ -98,18 +99,34 @@
+       device.createRenderPipeline.mock.calls as unknown as Array<[GPURenderPipelineDescriptor]>
+     ).map(([descriptor]) => descriptor)
+ 
+-    expect(shaderSources.some((code) =>
+-      code.includes('fn blendLinearDodge(base: vec3f, layer: vec3f) -> vec3f { return base + layer; }'),
+-    )).toBe(true)
+-    const floatPipelines = pipelines.filter((pipeline) =>
+-      pipeline.fragment?.entryPoint === 'compositeFragment' ||
+-      pipeline.fragment?.entryPoint === 'compositeExternalFragment',
++    expect(
++      shaderSources.some((code) =>
++        code.includes(
++          'fn blendLinearDodge(base: vec3f, layer: vec3f) -> vec3f { return base + layer; }',
++        ),
++      ),
++    ).toBe(true)
++    const floatPipelines = pipelines.filter(
++      (pipeline) =>
++        pipeline.fragment?.entryPoint === 'compositeFragment' ||
++        pipeline.fragment?.entryPoint === 'compositeExternalFragment',
+     )
+-    expect(floatPipelines).toHaveLength(2)
+-    expect(floatPipelines.every((pipeline) => pipeline.fragment?.targets?.[0]?.format === 'rgba16float')).toBe(true)
+-    expect(shaderSources.some((code) =>
+-      code.includes('return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)) * c.a, c.a);'),
+-    )).toBe(true)
++    // SDR-project pipelines, then the HDR-project pipelines.
++    expect(floatPipelines).toHaveLength(4)
++    expect(
++      shaderSources.filter((code) => code.includes('const FL_BLEND_EXTENDED: bool = true;')),
++    ).toHaveLength(2)
++    expect(
++      shaderSources.filter((code) => code.includes('const FL_BLEND_EXTENDED: bool = false;')),
++    ).toHaveLength(2)
++    expect(
++      floatPipelines.every((pipeline) => pipeline.fragment?.targets?.[0]?.format === 'rgba16float'),
++    ).toBe(true)
++    expect(
++      shaderSources.some((code) =>
++        code.includes('return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)) * c.a, c.a);'),
++      ),
++    ).toBe(true)
+   })
+ 
+   it('binds independent uniforms for masked and unmasked layers encoded in one command buffer', () => {
+@@ -200,3 +217,32 @@
+     },
+   )
+ })
++
++describe('CompositorPipeline working range (FL-97)', () => {
++  it('selects the SDR or HDR blend pipelines for the project', () => {
++    const { commandEncoder, device, pipeline } = createPipelineHarness()
++    const created = () =>
++      (device.createRenderPipeline.mock.results as Array<{ value: unknown }>).map(
++        ({ value }) => value,
++      )
++    device.createRenderPipeline.mockImplementation(
++      ((descriptor: GPURenderPipelineDescriptor) => `${descriptor.label}`) as never,
++    )
++    pipeline.setWorkingRange('hdr')
++    const layer: CompositeLayer = {
++      params: DEFAULT_LAYER_PARAMS,
++      textureView: 'layer-view' as unknown as GPUTextureView,
++      maskView: 'mask-view' as unknown as GPUTextureView,
++    }
++    pipeline.compositeToTexture([layer], 640, 360, commandEncoder as unknown as GPUCommandEncoder)
++    const pass = commandEncoder.beginRenderPass.mock.results.at(-1)!.value as {
++      setPipeline: ReturnType<typeof vi.fn>
++    }
++    expect(pass.setPipeline).toHaveBeenLastCalledWith('compositor-regular-hdr-pipeline')
++    expect(created()).toContain('compositor-regular-hdr-pipeline')
++
++    pipeline.setWorkingRange('sdr')
++    pipeline.compositeToTexture([layer], 640, 360, commandEncoder as unknown as GPUCommandEncoder)
++    expect(pass.setPipeline).not.toHaveBeenLastCalledWith('compositor-regular-hdr-pipeline')
++  })
++})
+--- a/src/infrastructure/gpu-compositor/compositor-pipeline.ts
++++ b/src/infrastructure/gpu-compositor/compositor-pipeline.ts
+@@ -14,9 +14,10 @@
+ import type { BlendMode } from '@/types/blend-modes'
+ import { BLEND_MODE_INDEX } from '@/types/blend-modes'
+ import { createLogger } from '@/shared/logging/logger'
+-import { BLEND_MODES_WGSL } from '@/infrastructure/gpu-shared/blend-modes'
++import { blendModesWgsl } from '@/infrastructure/gpu-shared/blend-modes'
+ import { drawFullscreenCanvasPass } from '@/infrastructure/gpu-shared/fullscreen-canvas-pass'
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
++import type { WorkingRange } from '@/shared/graphics/color/managed-color'
+ 
+ const logger = createLogger('CompositorPipeline')
+ 
+@@ -60,8 +61,8 @@
+ };
+ `
+ 
+-const COMPOSITE_FRAGMENT = /* wgsl */ `
+-${BLEND_MODES_WGSL}
++const compositeFragment = (extended: boolean) => /* wgsl */ `
++${blendModesWgsl(extended)}
+ ${COMPOSITE_UNIFORMS}
+ 
+ @group(0) @binding(0) var texSampler: sampler;
+@@ -148,8 +149,8 @@
+ }
+ `
+ 
+-const COMPOSITE_EXTERNAL_FRAGMENT = /* wgsl */ `
+-${BLEND_MODES_WGSL}
++const compositeExternalFragment = (extended: boolean) => /* wgsl */ `
++${blendModesWgsl(extended)}
+ ${COMPOSITE_UNIFORMS}
+ 
+ @group(0) @binding(0) var texSampler: sampler;
+@@ -286,6 +287,10 @@
+ 
+   private externalPipeline: GPURenderPipeline | null = null
+   private externalLayout: GPUBindGroupLayout | null = null
++  // FL-97: HDR projects blend with extended-range semantics (see blend-modes.ts).
++  private workingRange: WorkingRange = 'sdr'
++  private regularPipelineHdr: GPURenderPipeline | null = null
++  private externalPipelineHdr: GPURenderPipeline | null = null
+   private blitPipeline: GPURenderPipeline | null = null
+   private blitLayout: GPUBindGroupLayout | null = null
+ 
+@@ -310,7 +315,7 @@
+     try {
+       const module = this.device.createShaderModule({
+         label: 'compositor-regular',
+-        code: VERTEX_SHADER + COMPOSITE_FRAGMENT,
++        code: VERTEX_SHADER + compositeFragment(false),
+       })
+       this.regularLayout = this.device.createBindGroupLayout({
+         label: 'compositor-regular-layout',
+@@ -337,7 +342,7 @@
+     try {
+       const module = this.device.createShaderModule({
+         label: 'compositor-external',
+-        code: VERTEX_SHADER + COMPOSITE_EXTERNAL_FRAGMENT,
++        code: VERTEX_SHADER + compositeExternalFragment(false),
+       })
+       this.externalLayout = this.device.createBindGroupLayout({
+         label: 'compositor-external-layout',
+@@ -390,6 +395,51 @@
+     }
+   }
+ 
++  /**
++   * Sets the project's working range. 'sdr' keeps Freecut's blend results; 'hdr'
++   * keeps light above reference white and wide-gamut negatives through blends.
++   */
++  setWorkingRange(range: WorkingRange): void {
++    this.workingRange = range
++    if (range === 'hdr') this.ensureHdrPipelines()
++  }
++
++  private ensureHdrPipelines(): void {
++    const create = (
++      label: string,
++      layout: GPUBindGroupLayout | null,
++      code: string,
++      entryPoint: string,
++    ): GPURenderPipeline | null => {
++      if (!layout) return null
++      try {
++        const module = this.device.createShaderModule({ label, code })
++        return this.device.createRenderPipeline({
++          label: `${label}-pipeline`,
++          layout: this.device.createPipelineLayout({ bindGroupLayouts: [layout] }),
++          vertex: { module, entryPoint: 'vertexMain' },
++          fragment: { module, entryPoint, targets: [{ format: 'rgba16float' }] },
++          primitive: { topology: 'triangle-list' },
++        })
++      } catch (e) {
++        logger.warn(`Failed to create ${label} pipeline`, e)
++        return null
++      }
++    }
++    this.regularPipelineHdr ??= create(
++      'compositor-regular-hdr',
++      this.regularLayout,
++      VERTEX_SHADER + compositeFragment(true),
++      'compositeFragment',
++    )
++    this.externalPipelineHdr ??= create(
++      'compositor-external-hdr',
++      this.externalLayout,
++      VERTEX_SHADER + compositeExternalFragment(true),
++      'compositeExternalFragment',
++    )
++  }
++
+   private ensurePingPong(w: number, h: number): void {
+     if (this.pingTexture && this.texW === w && this.texH === h) return
+     this.pingTexture?.destroy()
+@@ -446,7 +496,10 @@
+     commandEncoder: GPUCommandEncoder,
+   ): { texture: GPUTexture; view: GPUTextureView } | null {
+     if (layers.length === 0) return null
+-    if (!this.regularPipeline || !this.regularLayout) return null
++    const hdr = this.workingRange === 'hdr'
++    const regularPipeline = hdr ? this.regularPipelineHdr : this.regularPipeline
++    const externalPipeline = hdr ? this.externalPipelineHdr : this.externalPipeline
++    if (!regularPipeline || !this.regularLayout) return null
+ 
+     this.ensurePingPong(width, height)
+     if (!this.pingTexture || !this.pongTexture) return null
+@@ -484,9 +537,9 @@
+       let bindGroup: GPUBindGroup
+       let pipeline: GPURenderPipeline
+ 
+-      if (layer.externalTexture && this.externalPipeline && this.externalLayout) {
++      if (layer.externalTexture && externalPipeline && this.externalLayout) {
+         // External video texture path
+-        pipeline = this.externalPipeline
++        pipeline = externalPipeline
+         bindGroup = this.device.createBindGroup({
+           layout: this.externalLayout,
+           entries: [
+@@ -499,7 +552,7 @@
+         })
+       } else if (layer.textureView) {
+         // Regular texture path
+-        pipeline = this.regularPipeline
++        pipeline = regularPipeline
+         bindGroup = this.device.createBindGroup({
+           layout: this.regularLayout,
+           entries: [
+--- a/src/infrastructure/gpu-effects/common.ts
++++ b/src/infrastructure/gpu-effects/common.ts
+@@ -96,3 +96,30 @@
+   );
+ }
+ `
++
++/**
++ * Working-range helpers (FL-97). SDR projects and the rgba8unorm route keep
++ * Freecut's clamps, so each node's result is the reference result. On the
++ * rgba16float route of an HDR project, effects keep light above reference white
++ * and negative (wide-gamut) values until the explicit output conversion, and
++ * domain-bounded lookups (curves, LUTs) pass the out-of-domain offset through.
++ */
++export function effectRangeWgsl(extended: boolean): string {
++  return /* wgsl */ `
++const FL_EXTENDED_RANGE: bool = ${extended};
++// Extended range still stops at rgba16float's finite limit, so no pass writes inf.
++const FL_HALF_MAX: f32 = 65504.0;
++fn fl_range3(c: vec3f) -> vec3f {
++  if (FL_EXTENDED_RANGE) { return clamp(c, vec3f(-FL_HALF_MAX), vec3f(FL_HALF_MAX)); }
++  return clamp(c, vec3f(0.0), vec3f(1.0));
++}
++fn fl_pow3(c: vec3f, e: vec3f) -> vec3f {
++  if (FL_EXTENDED_RANGE) { return sign(c) * pow(abs(c), e); }
++  return pow(max(c, vec3f(0.0)), e);
++}
++fn fl_domain_offset3(c: vec3f) -> vec3f {
++  if (FL_EXTENDED_RANGE) { return c - clamp(c, vec3f(0.0), vec3f(1.0)); }
++  return vec3f(0.0);
++}
++`
++}
+--- a/src/infrastructure/gpu-effects/effects/color.ts
++++ b/src/infrastructure/gpu-effects/effects/color.ts
+@@ -56,7 +56,7 @@
+ fn brightnessFragment(input: VertexOutput) -> @location(0) vec4f {
+   let color = textureSample(inputTex, texSampler, input.uv);
+   let adjusted = color.rgb + params.amount;
+-  return vec4f(clamp(adjusted, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(adjusted), color.a);
+ }`,
+   params: {
+     amount: {
+@@ -87,7 +87,7 @@
+ fn contrastFragment(input: VertexOutput) -> @location(0) vec4f {
+   let color = textureSample(inputTex, texSampler, input.uv);
+   let adjusted = (color.rgb - 0.5) * params.amount + 0.5;
+-  return vec4f(clamp(adjusted, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(adjusted), color.a);
+ }`,
+   params: {
+     amount: {
+@@ -119,8 +119,8 @@
+   let color = textureSample(inputTex, texSampler, input.uv);
+   var adjusted = color.rgb * pow(2.0, params.exposure);
+   adjusted += params.offset;
+-  adjusted = pow(max(adjusted, vec3f(0.0)), vec3f(1.0 / params.gamma));
+-  return vec4f(clamp(adjusted, vec3f(0.0), vec3f(1.0)), color.a);
++  adjusted = fl_pow3(adjusted, vec3f(1.0 / params.gamma));
++  return vec4f(fl_range3(adjusted), color.a);
+ }`,
+   params: {
+     exposure: {
+@@ -255,12 +255,15 @@
+ @fragment
+ fn levelsFragment(input: VertexOutput) -> @location(0) vec4f {
+   let color = textureSample(inputTex, texSampler, input.uv);
+-  var adjusted = (color.rgb - vec3f(params.inputBlack)) /
+-                 (params.inputWhite - params.inputBlack);
+-  adjusted = clamp(adjusted, vec3f(0.0), vec3f(1.0));
+-  adjusted = pow(adjusted, vec3f(1.0 / params.gamma));
++  // A collapsed input range is a hard threshold, not a division by zero (FL-97).
++  let span = params.inputWhite - params.inputBlack;
++  let safeSpan = select(span, select(-1.0e-4, 1.0e-4, span >= 0.0), abs(span) < 1.0e-4);
++  var adjusted = (color.rgb - vec3f(params.inputBlack)) / safeSpan;
++  // HDR: light past input white keeps scaling past output white (FL-97).
++  adjusted = fl_range3(adjusted);
++  adjusted = fl_pow3(adjusted, vec3f(1.0 / params.gamma));
+   adjusted = mix(vec3f(params.outputBlack), vec3f(params.outputWhite), adjusted);
+-  return vec4f(adjusted, color.a);
++  return vec4f(fl_range3(adjusted), color.a);
+ }`,
+   params: {
+     inputBlack: {
+@@ -338,7 +341,7 @@
+   let color = textureSample(inputTex, texSampler, input.uv);
+   let gray = luminance601(color.rgb);
+   let adjusted = mix(vec3f(gray), color.rgb, params.amount);
+-  return vec4f(clamp(adjusted, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(adjusted), color.a);
+ }`,
+   params: {
+     amount: {
+@@ -374,7 +377,7 @@
+   adjusted.g -= params.tint * 0.1;
+   adjusted.r += params.tint * 0.05;
+   adjusted.b += params.tint * 0.05;
+-  return vec4f(clamp(adjusted, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(adjusted), color.a);
+ }`,
+   params: {
+     temperature: {
+@@ -451,7 +454,7 @@
+   let sepiaB = dot(color.rgb, vec3f(0.272, 0.534, 0.131));
+   let sepiaColor = vec3f(sepiaR, sepiaG, sepiaB);
+   let adjusted = mix(color.rgb, sepiaColor, params.amount);
+-  return vec4f(clamp(adjusted, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(adjusted), color.a);
+ }`,
+   params: {
+     amount: {
+@@ -500,7 +503,8 @@
+     sampleCurveLut(color.g).g,
+     sampleCurveLut(color.b).b,
+   );
+-  return vec4f(c, color.a);
++  // HDR: the curve covers [0, 1]; out-of-domain light keeps its offset (FL-97).
++  return vec4f(c + fl_domain_offset3(color.rgb), color.a);
+ }`,
+   params: Object.fromEntries([
+     ...GPU_CURVES_CHANNELS.flatMap((channel): Array<[string, EffectParam]> => {
+@@ -639,7 +643,7 @@
+     c = mix(c, detailAdjusted, midtoneMask);
+   }
+   c = (c + vec3f(params.lift) + vec3f(params.offset)) * params.gain;
+-  c = pow(max(c, vec3f(0.0)), vec3f(1.0 / max(params.gamma, 0.05)));
++  c = fl_pow3(c, vec3f(1.0 / max(params.gamma, 0.05)));
+   c = (c - vec3f(params.blackPoint)) /
+       vec3f(max(params.whitePoint - params.blackPoint, 0.001));
+   c += vec3f(params.shadows / 100.0) * shadowMask;
+@@ -661,7 +665,7 @@
+   }
+   let postLuma = luminance601(c);
+   c = mix(vec3f(postLuma), c, clamp(params.lumMix / 100.0, 0.0, 1.0));
+-  return vec4f(clamp(c, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(c), color.a);
+ }`,
+   params: {
+     shadowsHue: {
+@@ -1004,7 +1008,7 @@
+   let gray = luminance601(corrected);
+   corrected = mix(vec3f(gray), corrected, sat);
+ 
+-  return vec4f(clamp(mix(color.rgb, corrected, mask), vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(mix(color.rgb, corrected, mask)), color.a);
+ }`,
+   params: {
+     hueCenter: {
+@@ -1245,7 +1249,7 @@
+   let gray = luminance601(corrected);
+   corrected = mix(vec3f(gray), corrected, sat);
+ 
+-  return vec4f(clamp(mix(color.rgb, corrected, mask), vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(mix(color.rgb, corrected, mask)), color.a);
+ }`,
+   params: {
+     shape: {
+@@ -1408,7 +1412,7 @@
+   let vibrance = params.amount * (1.0 - sat);
+   let gray = luminance601(color.rgb);
+   let adjusted = mix(vec3f(gray), color.rgb, 1.0 + vibrance);
+-  return vec4f(clamp(adjusted, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(adjusted), color.a);
+ }`,
+   params: {
+     amount: {
+--- a/src/infrastructure/gpu-effects/effects/distort.ts
++++ b/src/infrastructure/gpu-effects/effects/distort.ts
+@@ -313,7 +313,7 @@
+ 
+   let glow = band * tail * clamp(abs(strength) * 12.0, 0.0, 1.0);
+   color = vec4f(color.rgb + glowColor * glow, color.a);
+-  return vec4f(clamp(color.rgb, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(color.rgb), color.a);
+ }`,
+   params: {
+     strength: {
+@@ -900,7 +900,7 @@
+   color = mix(color, shadowColor.rgb * shadowColor.a, 0.5 * shadows);
+   color += 0.5 * pow(shadows, 0.5) * shadowColor.rgb;
+   opacity += shadows;
+-  color = clamp(color, vec3f(0.0), vec3f(1.0));
++  color = fl_range3(color);
+   opacity = clamp(opacity, 0.0, 1.0);
+ 
+   color += image.rgb * (1.0 - opacity) * frame;
+@@ -1249,7 +1249,7 @@
+   var rgb = color.rgb;
+   rgb = mix(rgb, shadowColor.rgb, 0.5 * shadows * shadowColor.a);
+   rgb += highlightColor.rgb * highlights * highlightColor.a;
+-  rgb = clamp(rgb, vec3f(0.0), vec3f(1.0));
++  rgb = fl_range3(rgb);
+ 
+   return vec4f(rgb, color.a);
+ }`,
+@@ -1445,7 +1445,7 @@
+   var rgb = color.rgb * (1.0 + bevel);
+   rgb = mix(rgb, shadowColor.rgb, 0.5 * shadows * shadowColor.a);
+   rgb += highlightColor.rgb * highlights * highlightColor.a;
+-  rgb = clamp(rgb, vec3f(0.0), vec3f(1.0));
++  rgb = fl_range3(rgb);
+ 
+   return vec4f(rgb, color.a);
+ }`,
+@@ -1567,7 +1567,7 @@
+   let gapMask = step(edge, 0.5 - clamp(params.gap, 0.0, 0.4));
+   rgb = rgb * mix(0.55, 1.0, gapMask);
+ 
+-  return vec4f(clamp(rgb, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(rgb), color.a);
+ }`,
+   params: {
+     size: {
+--- a/src/infrastructure/gpu-effects/effects/lut.ts
++++ b/src/infrastructure/gpu-effects/effects/lut.ts
+@@ -26,7 +26,8 @@
+   let color = textureSample(inputTex, texSampler, input.uv);
+   let size = max(params.size, 2.0);
+   let coords = (clamp(color.rgb, vec3f(0.0), vec3f(1.0)) * (size - 1.0) + vec3f(0.5)) / size;
+-  let graded = textureSample(lutTex, texSampler, coords).rgb;
++  // HDR: the LUT covers [0, 1]; out-of-domain light keeps its offset (FL-97).
++  let graded = textureSample(lutTex, texSampler, coords).rgb + fl_domain_offset3(color.rgb);
+   return vec4f(mix(color.rgb, graded, clamp(params.intensity, 0.0, 1.0)), color.a);
+ }`,
+   params: {
+--- a/src/infrastructure/gpu-effects/effects/stylize.ts
++++ b/src/infrastructure/gpu-effects/effects/stylize.ts
+@@ -97,7 +97,7 @@
+   let luma = luminance(color.rgb);
+   let grainIntensity = params.amount * (1.0 - luma * 0.5);
+   let grainColor = color.rgb + vec3f(noise * grainIntensity);
+-  return vec4f(clamp(grainColor, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(grainColor), color.a);
+ }`,
+   params: {
+     amount: {
+@@ -169,7 +169,7 @@
+   }
+   blur /= totalWeight;
+   let sharpened = center.rgb + (center.rgb - blur.rgb) * params.amount;
+-  return vec4f(clamp(sharpened, vec3f(0.0), vec3f(1.0)), center.a);
++  return vec4f(fl_range3(sharpened), center.a);
+ }`,
+   params: {
+     amount: {
+@@ -269,7 +269,7 @@
+   totalWeight += 2.0;
+   glowVal /= totalWeight;
+   let result = color.rgb + glowVal * params.amount * 2.0;
+-  return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), color.a);
++  return vec4f(fl_range3(result), color.a);
+ }`,
+   params: {
+     amount: {
+@@ -2386,7 +2386,7 @@
+   let n = hash(uv * vec2f(params.width, params.height) * 0.5 + vec2f(tnx, tny)) - 0.5;
+   rgb = rgb + n * params.noise * 0.5;
+ 
+-  return vec4f(clamp(rgb, vec3f(0.0), vec3f(1.0)), a);
++  return vec4f(fl_range3(rgb), a);
+ }`,
+   params: {
+     bleed: {
+--- a/src/infrastructure/gpu-effects/effects-pipeline.ts
++++ b/src/infrastructure/gpu-effects/effects-pipeline.ts
+@@ -1,7 +1,8 @@
+ import { createLogger } from '@/shared/logging/logger'
+ import { drawFullscreenCanvasPass } from '@/infrastructure/gpu-shared/fullscreen-canvas-pass'
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
+-import { COMMON_WGSL } from './common'
++import { COMMON_WGSL, effectRangeWgsl } from './common'
++import type { WorkingRange } from '@/shared/graphics/color/managed-color'
+ import type {
+   EffectDataTexturePayload,
+   EffectDataTextureSpec,
+@@ -126,6 +127,8 @@
+   private texW = 0
+   private texH = 0
+   private initialized = false
++  // FL-97: an HDR project keeps extended range on the float route.
++  private workingRange: WorkingRange = 'sdr'
+ 
+   // Reusable uniform buffers per effect-chain pass. A pass must own its buffer
+   // because multiple passes are encoded before the command buffer is submitted.
+@@ -270,15 +273,30 @@
+       this.importBindGroupLayout = null
+       this.importUniformBuffer = null
+     }
++  }
++
++  /**
++   * Sets the project's working range (FL-97). An 'sdr' project keeps Freecut's
++   * node results exactly; the rgba16float route of an 'hdr' project keeps values
++   * outside [0, 1] until the explicit output conversion.
++   */
++  setWorkingRange(range: WorkingRange): void {
++    this.workingRange = range
++  }
++
++  getWorkingRange(): WorkingRange {
++    return this.workingRange
+   }
+ 
+   private createEffectPipeline(
+     id: string,
+     effect: GpuEffectDefinition,
+     format: EffectTextureFormat = 'rgba8unorm',
++    extended = false,
+   ): void {
++    const key = `${id}:${format}${extended ? ':hdr' : ''}`
+     try {
+-      const shaderCode = `${COMMON_WGSL}\n${effect.shader}`
++      const shaderCode = `${effectRangeWgsl(extended)}\n${COMMON_WGSL}\n${effect.shader}`
+       const shaderModule = this.device.createShaderModule({
+         label: `effect-${id}`,
+         code: shaderCode,
+@@ -307,7 +325,7 @@
+         label: `effect-${id}-layout`,
+         entries,
+       })
+-      this.bindGroupLayouts.set(`${id}:${format}`, bindGroupLayout)
++      this.bindGroupLayouts.set(key, bindGroupLayout)
+ 
+       const pipeline = this.device.createRenderPipeline({
+         label: `effect-${id}-pipeline`,
+@@ -320,7 +338,7 @@
+         },
+         primitive: { topology: 'triangle-list' },
+       })
+-      this.pipelines.set(`${id}:${format}`, pipeline)
++      this.pipelines.set(key, pipeline)
+     } catch (e) {
+       getLogger().warn(`Failed to create pipeline for ${id}`, e)
+     }
+@@ -330,9 +348,11 @@
+     id: string,
+     effect: GpuEffectDefinition,
+     format: EffectTextureFormat = 'rgba8unorm',
++    extended = false,
+   ): void {
++    const key = `${id}:${format}${extended ? ':hdr' : ''}`
+     try {
+-      const shaderCode = `${COMMON_WGSL}\n${effect.shader.replaceAll('EFFECT_OUTPUT_FORMAT', format)}`
++      const shaderCode = `${effectRangeWgsl(extended)}\n${COMMON_WGSL}\n${effect.shader.replaceAll('EFFECT_OUTPUT_FORMAT', format)}`
+       const shaderModule = this.device.createShaderModule({
+         label: `effect-${id}-compute`,
+         code: shaderCode,
+@@ -360,14 +380,14 @@
+         label: `effect-${id}-compute-layout`,
+         entries,
+       })
+-      this.computeBindGroupLayouts.set(`${id}:${format}`, bindGroupLayout)
++      this.computeBindGroupLayouts.set(key, bindGroupLayout)
+ 
+       const pipeline = this.device.createComputePipeline({
+         label: `effect-${id}-compute-pipeline`,
+         layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+         compute: { module: shaderModule, entryPoint: effect.entryPoint },
+       })
+-      this.computePipelines.set(`${id}:${format}`, pipeline)
++      this.computePipelines.set(key, pipeline)
+     } catch (e) {
+       getLogger().warn(`Failed to create compute pipeline for ${id}`, e)
+     }
+@@ -526,20 +546,21 @@
+       // Uniform contents change via writeBuffer, but each encoded pass gets a
+       // stable buffer object of its own, so the cached group stays valid.
+       const viewKey = inputView === this.pingView ? 'ping' : 'pong'
+-      const pipelineKey = `${effect.type}:${format}`
++      const extended = format === 'rgba16float' && this.workingRange === 'hdr'
++      const pipelineKey = `${effect.type}:${format}${extended ? ':hdr' : ''}`
+ 
+       // Compute-variant effects: read input via textureLoad, scatter to the
+       // output storage texture. Output is the opposite ping/pong texture, so no
+       // read-after-write hazard within the pass.
+       if (definition.compute) {
+         if (!this.computePipelines.has(pipelineKey)) {
+-          this.createComputeEffectPipeline(effect.type, definition, format)
++          this.createComputeEffectPipeline(effect.type, definition, format, extended)
+         }
+         const computePipeline = this.computePipelines.get(pipelineKey)
+         const computeLayout = this.computeBindGroupLayouts.get(pipelineKey)
+         if (!computePipeline || !computeLayout) continue
+ 
+-        const cacheKey = `${effectIndex}:${effect.type}:compute:${viewKey}`
++        const cacheKey = `${effectIndex}:${pipelineKey}:compute:${viewKey}`
+         let bindGroup = this.effectBindGroupCache.get(cacheKey)
+         if (!bindGroup) {
+           const bindEntries: GPUBindGroupEntry[] = [
+@@ -570,7 +591,7 @@
+       }
+ 
+       if (!this.pipelines.has(pipelineKey)) {
+-        this.createEffectPipeline(effect.type, definition, format)
++        this.createEffectPipeline(effect.type, definition, format, extended)
+       }
+       const pipeline = this.pipelines.get(pipelineKey)
+       const layout = this.bindGroupLayouts.get(pipelineKey)
+@@ -583,7 +604,7 @@
+         if (!dataTextureView) continue
+       }
+ 
+-      const cacheKey = `${effectIndex}:${effect.type}:${viewKey}`
++      const cacheKey = `${effectIndex}:${pipelineKey}:${viewKey}`
+       let bindGroup = this.effectBindGroupCache.get(cacheKey)
+       if (!bindGroup) {
+         const bindEntries: GPUBindGroupEntry[] = [
+@@ -801,7 +822,8 @@
+     const { width: w, height: h } = getExternalImageSourceDimensions(source)
+     if (w < 2 || h < 2) return false
+     if (outputTexture.width !== w || outputTexture.height !== h) return false
+-    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float') return false
++    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float')
++      return false
+ 
+     if (enabled.length === 0) {
+       this.device.queue.copyExternalImageToTexture(
+@@ -902,11 +924,14 @@
+     if (
+       (sourceTexture.format !== 'rgba8unorm' && sourceTexture.format !== 'rgba16float') ||
+       (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float')
+-    ) return false
+-    if (sourceTexture.format !== outputTexture.format && (
+-      !(sourceTexture.usage & GPUTextureUsage.TEXTURE_BINDING) ||
+-      !(outputTexture.usage & GPUTextureUsage.RENDER_ATTACHMENT)
+-    )) return false
++    )
++      return false
++    if (
++      sourceTexture.format !== outputTexture.format &&
++      (!(sourceTexture.usage & GPUTextureUsage.TEXTURE_BINDING) ||
++        !(outputTexture.usage & GPUTextureUsage.RENDER_ATTACHMENT))
++    )
++      return false
+ 
+     const format: EffectTextureFormat =
+       sourceTexture.format === 'rgba16float' || outputTexture.format === 'rgba16float'
+--- a/src/infrastructure/gpu-media/media-blend-pipeline.ts
++++ b/src/infrastructure/gpu-media/media-blend-pipeline.ts
+@@ -1,12 +1,13 @@
+ import type { BlendMode } from '@/types/blend-modes'
+ import { BLEND_MODE_INDEX } from '@/types/blend-modes'
+-import { BLEND_MODES_WGSL } from '@/infrastructure/gpu-shared/blend-modes'
++import { blendModesWgsl } from '@/infrastructure/gpu-shared/blend-modes'
++import type { WorkingRange } from '@/shared/graphics/color/managed-color'
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
+ 
+-const MEDIA_BLEND_SHADER = /* wgsl */ `
++const mediaBlendShader = (extended: boolean) => /* wgsl */ `
+ ${FULLSCREEN_QUAD_WGSL}
+ 
+-${BLEND_MODES_WGSL}
++${blendModesWgsl(extended)}
+ 
+ @group(0) @binding(0) var texSampler: sampler;
+ @group(0) @binding(1) var baseTex: texture_2d<f32>;
+@@ -34,6 +35,9 @@
+ `
+ 
+ export class MediaBlendPipeline {
++  // FL-97: SDR projects keep Freecut's blend results on the float route.
++  private workingRange: WorkingRange = 'sdr'
++  private readonly floatHdrPipeline: GPURenderPipeline
+   private readonly floatPipeline: GPURenderPipeline
+   private readonly pipeline: GPURenderPipeline
+   private readonly sampler: GPUSampler
+@@ -42,10 +46,16 @@
+ 
+   constructor(private readonly device: GPUDevice) {
+     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' })
+-    const shaderModule = device.createShaderModule({
++    // FL-97: Freecut's blend semantics everywhere except the float route of an
++    // HDR project, which keeps out-of-range values (see blend-modes.ts).
++    const reference = device.createShaderModule({
+       label: 'media-blend',
+-      code: MEDIA_BLEND_SHADER,
++      code: mediaBlendShader(false),
+     })
++    const extended = device.createShaderModule({
++      label: 'media-blend-hdr',
++      code: mediaBlendShader(true),
++    })
+     this.bindGroupLayout = device.createBindGroupLayout({
+       label: 'media-blend-layout',
+       entries: [
+@@ -55,25 +65,32 @@
+         { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+       ],
+     })
+-    const createPipeline = (format: GPUTextureFormat) => device.createRenderPipeline({
+-      label: 'media-blend-pipeline',
+-      layout: device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
+-      vertex: { module: shaderModule, entryPoint: 'vertexMain' },
+-      fragment: {
+-        module: shaderModule,
+-        entryPoint: 'fragmentMain',
+-        targets: [{ format }],
+-      },
+-      primitive: { topology: 'triangle-list' },
+-    })
++    const createPipeline = (format: GPUTextureFormat, module = reference) =>
++      device.createRenderPipeline({
++        label: 'media-blend-pipeline',
++        layout: device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
++        vertex: { module, entryPoint: 'vertexMain' },
++        fragment: {
++          module,
++          entryPoint: 'fragmentMain',
++          targets: [{ format }],
++        },
++        primitive: { topology: 'triangle-list' },
++      })
+     this.pipeline = createPipeline('rgba8unorm')
+     this.floatPipeline = createPipeline('rgba16float')
++    this.floatHdrPipeline = createPipeline('rgba16float', extended)
+     this.uniformBuffer = device.createBuffer({
+       size: 16,
+       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+     })
+   }
+ 
++  /** Sets the project's working range (see blend-modes.ts). */
++  setWorkingRange(range: WorkingRange): void {
++    this.workingRange = range
++  }
++
+   blend(
+     baseTexture: GPUTexture,
+     layerTexture: GPUTexture,
+@@ -114,7 +131,13 @@
+         },
+       ],
+     })
+-    pass.setPipeline(outputTexture.format === 'rgba16float' ? this.floatPipeline : this.pipeline)
++    pass.setPipeline(
++      outputTexture.format !== 'rgba16float'
++        ? this.pipeline
++        : this.workingRange === 'hdr'
++          ? this.floatHdrPipeline
++          : this.floatPipeline,
++    )
+     pass.setBindGroup(0, bindGroup)
+     pass.draw(6)
+     pass.end()
+--- a/src/infrastructure/gpu-shared/blend-modes.ts
++++ b/src/infrastructure/gpu-shared/blend-modes.ts
+@@ -2,11 +2,29 @@
+  * WGSL blend mode functions for the compositor shader.
+  * 25 blend modes matching the BlendMode TypeScript type.
+  *
+- * Each fn blendXxx(base: vec3f, layer: vec3f) -> vec3f
+- * operates on linear RGB [0..1].
++ * Each fn blendXxx(base: vec3f, layer: vec3f) -> vec3f is Freecut's formula on
++ * display-encoded RGB [0..1].
++ *
++ * FL-97: `blendModesWgsl(true)` serves rgba16float targets, which keep
++ * out-of-range values until the explicit output conversion:
++ * - arithmetic modes (normal, darken, multiply, lighten, linear burn/dodge/light,
++ *   difference, subtract) apply their formula without range clamps;
++ * - soft light uses its signed extension;
++ * - modes defined only on [0, 1] (screen, overlay, hard light, dodge/burn, vivid,
++ *   pin, hard mix, exclusion, divide and the HSL modes) blend the in-range part
++ *   and carry the base's out-of-range offset through, so highlights above
++ *   reference white and wide-gamut negatives survive.
++ * On in-range input every mode equals Freecut's result. `blendModesWgsl(false)`
++ * is Freecut's rgba8unorm behaviour exactly.
+  */
+ 
+-export const BLEND_MODES_WGSL = /* wgsl */ `
++export function blendModesWgsl(extended: boolean): string {
++  return BLEND_MODES_BODY.replace('__FL_BLEND_EXTENDED__', String(extended))
++}
++
++const BLEND_MODES_BODY = /* wgsl */ `
++const FL_BLEND_EXTENDED: bool = __FL_BLEND_EXTENDED__;
++
+ // ─── HSL helpers (needed for component blend modes) ───
+ 
+ fn compositor_rgb2hsl(c: vec3f) -> vec3f {
+@@ -161,6 +179,28 @@
+ 
+ // ─── Dispatch by mode index ───
+ 
++fn applyBlendModeRanged(base: vec3f, layer: vec3f, mode: u32) -> vec3f {
++  if (!FL_BLEND_EXTENDED) {
++    // SDR: Freecut's formulas on inputs as its 8-bit route would hold them, so an
++    // out-of-range colour (a CSS rgb(200%)) cannot produce NaN; linear dodge clamps.
++    let b = clamp(base, vec3f(0.0), vec3f(1.0));
++    let l = clamp(layer, vec3f(0.0), vec3f(1.0));
++    if (mode == 9u) { return min(b + l, vec3f(1.0)); }
++    return applyBlendMode(b, l, mode);
++  }
++  switch (mode) {
++    case 0u, 1u, 2u, 3u, 6u, 9u, 11u, 17u: { return applyBlendMode(base, layer, mode); }
++    case 5u: { return base + layer - 1.0; }
++    case 14u: { return base + 2.0 * layer - 1.0; }
++    case 19u: { return base - layer; }
++    default: {
++      let b = clamp(base, vec3f(0.0), vec3f(1.0));
++      let l = clamp(layer, vec3f(0.0), vec3f(1.0));
++      return applyBlendMode(b, l, mode) + (base - b);
++    }
++  }
++}
++
+ fn applyBlendMode(base: vec3f, layer: vec3f, mode: u32) -> vec3f {
+   switch (mode) {
+     case 0u:  { return blendNormal(base, layer); }
+@@ -223,7 +263,7 @@
+   }
+ 
+   let baseAlpha = clamp(baseColor.a, 0.0, 1.0);
+-  let blended = applyBlendMode(baseColor.rgb, layerColor.rgb, mode);
++  let blended = applyBlendModeRanged(baseColor.rgb, layerColor.rgb, mode);
+   let premulRgb =
+     blended * baseAlpha * srcAlpha +
+     layerColor.rgb * srcAlpha * (1.0 - baseAlpha) +
+--- a/src/infrastructure/gpu-transitions/transition-pipeline.ts
++++ b/src/infrastructure/gpu-transitions/transition-pipeline.ts
+@@ -2,12 +2,16 @@
+ import { TRANSITION_COMMON_WGSL } from './common'
+ import type { GpuTransitionDefinition } from './types'
+ import { GPU_TRANSITION_REGISTRY, getGpuTransition } from './registry'
++import type { WorkingRange } from '@/shared/graphics/color/managed-color'
+ 
+ const log = createLogger('TransitionPipeline')
+ 
+ interface TransitionPipelineRecord {
+   pipeline: GPURenderPipeline
++  /** rgba16float output with extended range: HDR projects (FL-97). */
+   floatPipeline: GPURenderPipeline
++  /** rgba16float output with Freecut's display bounds: SDR projects. */
++  floatSdrPipeline: GPURenderPipeline
+   straightPipeline: GPURenderPipeline
+   bindGroupLayout: GPUBindGroupLayout
+ }
+@@ -25,6 +29,8 @@
+   private pipelines = new Map<string, TransitionPipelineRecord>()
+   private uniformBuffers = new Map<string, GPUBuffer>()
+   private cachedBindGroups = new Map<string, GPUBindGroup>()
++  // FL-97: SDR projects keep Freecut's transition results on the float route.
++  private workingRange: WorkingRange = 'sdr'
+ 
+   // Input textures (left/right clip content)
+   private leftTexture: GPUTexture | null = null
+@@ -48,6 +54,18 @@
+     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' })
+   }
+ 
++  /**
++   * Sets the project's working range. 'sdr' keeps Freecut's transition results
++   * on float output; 'hdr' keeps extended range and exact endpoints.
++   */
++  setWorkingRange(range: WorkingRange): void {
++    this.workingRange = range
++  }
++
++  private floatPipelineFor(record: TransitionPipelineRecord): GPURenderPipeline {
++    return this.workingRange === 'hdr' ? record.floatPipeline : record.floatSdrPipeline
++  }
++
+   static create(device?: GPUDevice): TransitionPipeline | null {
+     const dev = device
+     if (!dev) return null
+@@ -127,7 +145,8 @@
+       // The transition shaders operate on premultiplied inputs. Preserve their
+       // SDR entry point; only float compositor output crosses to straight alpha.
+       const signature = `@fragment\nfn ${def.entryPoint}(input: VertexOutput) -> @location(0) vec4f`
+-      if (!def.shader.includes(signature)) throw new Error(`Unsupported transition entry point: ${id}`)
++      if (!def.shader.includes(signature))
++        throw new Error(`Unsupported transition entry point: ${id}`)
+       const floatShader = this.device.createShaderModule({
+         label: `transition-${id}-float`,
+         code: `${TRANSITION_COMMON_WGSL}\n${def.shader.replace(signature, `fn ${def.entryPoint}(input: VertexOutput) -> vec4f`)}
+@@ -155,6 +174,17 @@
+           entryPoint: 'straightFragment',
+           targets: [{ format: 'rgba16float' }],
+           constants: { preserveTransitionRange: 1 },
++        },
++        primitive: { topology: 'triangle-list' },
++      })
++      const floatSdrPipeline = this.device.createRenderPipeline({
++        label: `transition-${id}-float-sdr-pipeline`,
++        layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
++        vertex: { module: floatShader, entryPoint: 'vertexMain' },
++        fragment: {
++          module: floatShader,
++          entryPoint: 'straightFragment',
++          targets: [{ format: 'rgba16float' }],
+         },
+         primitive: { topology: 'triangle-list' },
+       })
+@@ -169,7 +199,13 @@
+         },
+         primitive: { topology: 'triangle-list' },
+       })
+-      this.pipelines.set(id, { pipeline, floatPipeline, straightPipeline, bindGroupLayout })
++      this.pipelines.set(id, {
++        pipeline,
++        floatPipeline,
++        floatSdrPipeline,
++        straightPipeline,
++        bindGroupLayout,
++      })
+     } catch (e) {
+       log.warn(`Failed to create pipeline for "${id}"`, e)
+     }
+@@ -351,9 +387,13 @@
+         },
+       ],
+     })
+-    pass.setPipeline(outputFormat === 'rgba16float'
+-      ? record.floatPipeline
+-      : outputAlpha === 'straight' ? record.straightPipeline : record.pipeline)
++    pass.setPipeline(
++      outputFormat === 'rgba16float'
++        ? this.floatPipelineFor(record)
++        : outputAlpha === 'straight'
++          ? record.straightPipeline
++          : record.pipeline,
++    )
+     pass.setBindGroup(0, bindGroup)
+     pass.draw(6)
+     pass.end()
+@@ -433,7 +473,8 @@
+     outputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
+   ): boolean {
+     if (!this.pipelines.has(transitionId) || !getGpuTransition(transitionId)) return false
+-    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float') return false
++    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float')
++      return false
+     if (width < 2 || height < 2) return false
+     if (outputTexture.width !== width || outputTexture.height !== height) return false
+ 
+@@ -470,13 +511,16 @@
+     height: number,
+     direction?: string,
+     properties?: Record<string, unknown>,
+-    inputAlpha: 'straight' | 'premultiplied' = outputTexture.format === 'rgba16float' ? 'straight' : 'premultiplied',
++    inputAlpha: 'straight' | 'premultiplied' = outputTexture.format === 'rgba16float'
++      ? 'straight'
++      : 'premultiplied',
+     outputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
+   ): boolean {
+     const record = this.pipelines.get(transitionId)
+     const def = getGpuTransition(transitionId)
+     if (!record || !def) return false
+-    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float') return false
++    if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float')
++      return false
+     if (width < 2 || height < 2) return false
+     if (
+       leftTexture.width !== width ||
+@@ -501,9 +545,10 @@
+     if (def.uniformSize > 0 && !uniformBuffer) return false
+ 
+     const commandEncoder = this.device.createCommandEncoder()
+-    const inputs = inputAlpha === 'straight'
+-      ? this.premultiplyInputs(leftTexture, rightTexture, commandEncoder)
+-      : [leftTexture, rightTexture]
++    const inputs =
++      inputAlpha === 'straight'
++        ? this.premultiplyInputs(leftTexture, rightTexture, commandEncoder)
++        : [leftTexture, rightTexture]
+     const bindGroup = this.createBindGroup(
+       record.bindGroupLayout,
+       inputs[0]!.createView(),
+@@ -520,9 +565,13 @@
+         },
+       ],
+     })
+-    pass.setPipeline(outputTexture.format === 'rgba16float'
+-      ? record.floatPipeline
+-      : outputAlpha === 'straight' ? record.straightPipeline : record.pipeline)
++    pass.setPipeline(
++      outputTexture.format === 'rgba16float'
++        ? this.floatPipelineFor(record)
++        : outputAlpha === 'straight'
++          ? record.straightPipeline
++          : record.pipeline,
++    )
+     pass.setBindGroup(0, bindGroup)
+     pass.draw(6)
+     pass.end()
+@@ -552,27 +601,45 @@
+         label: 'transition-premultiply',
+         layout: 'auto',
+         vertex: { module, entryPoint: 'vertexMain' },
+-        fragment: { module, entryPoint: 'premultiplyFragment', targets: [{ format: 'rgba16float' }] },
++        fragment: {
++          module,
++          entryPoint: 'premultiplyFragment',
++          targets: [{ format: 'rgba16float' }],
++        },
+         primitive: { topology: 'triangle-list' },
+       })
+     }
+-    if (this.premultipliedInputs[0]?.width !== left.width || this.premultipliedInputs[0]?.height !== left.height) {
++    if (
++      this.premultipliedInputs[0]?.width !== left.width ||
++      this.premultipliedInputs[0]?.height !== left.height
++    ) {
+       for (const texture of this.premultipliedInputs) texture.destroy()
+-      this.premultipliedInputs = [left, right].map(() => this.device.createTexture({
+-        size: [left.width, left.height],
+-        format: 'rgba16float',
+-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+-      }))
++      this.premultipliedInputs = [left, right].map(() =>
++        this.device.createTexture({
++          size: [left.width, left.height],
++          format: 'rgba16float',
++          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
++        }),
++      )
+     }
+     for (const [index, texture] of [left, right].entries()) {
+       const pass = encoder.beginRenderPass({
+-        colorAttachments: [{ view: this.premultipliedInputs[index]!.createView(), loadOp: 'clear', storeOp: 'store' }],
++        colorAttachments: [
++          {
++            view: this.premultipliedInputs[index]!.createView(),
++            loadOp: 'clear',
++            storeOp: 'store',
++          },
++        ],
+       })
+       pass.setPipeline(this.premultiplyPipeline)
+-      pass.setBindGroup(0, this.device.createBindGroup({
+-        layout: this.premultiplyPipeline.getBindGroupLayout(0),
+-        entries: [{ binding: 0, resource: texture.createView() }],
+-      }))
++      pass.setBindGroup(
++        0,
++        this.device.createBindGroup({
++          layout: this.premultiplyPipeline.getBindGroupLayout(0),
++          entries: [{ binding: 0, resource: texture.createView() }],
++        }),
++      )
+       pass.draw(6)
+       pass.end()
+     }
+--- /dev/null
++++ b/src/shared/graphics/color/managed-color.ts
+@@ -0,0 +1,253 @@
++/**
++ * Frameleaf managed colour (FL-97 / VID-201).
++ *
++ * Working space
++ * - SDR projects keep Freecut's reference behaviour: display-referred sRGB-encoded
++ *   BT.709 values in [0, 1], and every node (effect, blend, transition) clamps
++ *   exactly as upstream, whichever GPU route renders it.
++ * - HDR projects use extended-range sRGB encoding with BT.709 primaries, as the
++ *   browser's extended canvas does. 1.0 is reference white, `referenceWhiteNits`
++ *   (203 cd/m² by default, ITU-R BT.2408). Values above 1 are highlights. Negative
++ *   values carry colours outside BT.709, up to BT.2020. The transfer is odd-symmetric,
++ *   so the sign survives decoding. Nothing in the graph clips them.
++ *
++ * Alpha is straight (not premultiplied) in texture transport and bounded to [0, 1].
++ * Colour is converted only at an explicit boundary:
++ * - an SDR canvas, which clips unless tone mapping was chosen;
++ * - an HDR export (PQ or HLG, BT.2020, see {@link workingToSignal});
++ * - HDR sources entering the graph ({@link signalToWorking}).
++ *
++ * SDR sources placed in an HDR project map SDR white to reference white. They are
++ * never expanded implicitly. Tone mapping happens only when a monitoring or export
++ * policy names it ({@link ToneMapPolicy}). It is never inherited from browser or
++ * playback defaults.
++ */
++
++export type WorkingRange = 'sdr' | 'hdr'
++export type HdrTransfer = 'pq' | 'hlg'
++export type ToneMapPolicy = 'none' | 'bt2390'
++
++export interface ProjectColorManagement {
++  workingRange: WorkingRange
++  /** cd/m² represented by working value 1.0 in an HDR project. */
++  referenceWhiteNits?: number
++  /** Assumed mastering peak for monitoring/tone mapping and HLG's nominal display. */
++  masteringPeakNits?: number
++  /** How an HDR project is shown on an SDR display. Explicit; defaults to clipping. */
++  sdrMonitoring?: ToneMapPolicy
++}
++
++export const DEFAULT_REFERENCE_WHITE_NITS = 203
++export const DEFAULT_MASTERING_PEAK_NITS = 1000
++export const PQ_PEAK_NITS = 10000
++export const HLG_NOMINAL_PEAK_NITS = 1000
++
++export interface ResolvedColorManagement {
++  workingRange: WorkingRange
++  referenceWhiteNits: number
++  masteringPeakNits: number
++  sdrMonitoring: ToneMapPolicy
++}
++
++/** Absent settings mean an SDR project: every existing project keeps its pixels. */
++export function resolveColorManagement(
++  settings: ProjectColorManagement | undefined,
++): ResolvedColorManagement {
++  const positive = (value: number | undefined, fallback: number) =>
++    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
++  const referenceWhiteNits = positive(settings?.referenceWhiteNits, DEFAULT_REFERENCE_WHITE_NITS)
++  return {
++    workingRange: settings?.workingRange === 'hdr' ? 'hdr' : 'sdr',
++    referenceWhiteNits,
++    masteringPeakNits: Math.max(
++      referenceWhiteNits,
++      positive(settings?.masteringPeakNits, DEFAULT_MASTERING_PEAK_NITS),
++    ),
++    sdrMonitoring: settings?.sdrMonitoring === 'bt2390' ? 'bt2390' : 'none',
++  }
++}
++
++export type Rgb = readonly [number, number, number]
++type Matrix = readonly [Rgb, Rgb, Rgb]
++
++/** Linear BT.709 → BT.2020 (ITU-R BT.2087). */
++export const BT709_TO_BT2020: Matrix = [
++  [0.627404, 0.329282, 0.043314],
++  [0.069097, 0.91954, 0.011361],
++  [0.016392, 0.088013, 0.895595],
++]
++/** Linear BT.2020 → BT.709. */
++export const BT2020_TO_BT709: Matrix = [
++  [1.660491, -0.587641, -0.07285],
++  [-0.124551, 1.1329, -0.008349],
++  [-0.018151, -0.100579, 1.11873],
++]
++
++export function multiply(m: Matrix, [r, g, b]: Rgb): Rgb {
++  return [
++    m[0][0] * r + m[0][1] * g + m[0][2] * b,
++    m[1][0] * r + m[1][1] * g + m[1][2] * b,
++    m[2][0] * r + m[2][1] * g + m[2][2] * b,
++  ]
++}
++
++/** IEC 61966-2-1 sRGB encoding, extended to all reals by odd symmetry. */
++export function srgbEncodeExtended(linear: number): number {
++  const a = Math.abs(linear)
++  const encoded = a <= 0.0031308 ? 12.92 * a : 1.055 * a ** (1 / 2.4) - 0.055
++  return Math.sign(linear) * encoded
++}
++
++export function srgbDecodeExtended(encoded: number): number {
++  const a = Math.abs(encoded)
++  const linear = a <= 0.04045 ? a / 12.92 : ((a + 0.055) / 1.055) ** 2.4
++  return Math.sign(encoded) * linear
++}
++
++// SMPTE ST 2084
++const PQ_M1 = 2610 / 16384
++const PQ_M2 = (2523 / 4096) * 128
++const PQ_C1 = 3424 / 4096
++const PQ_C2 = (2413 / 4096) * 32
++const PQ_C3 = (2392 / 4096) * 32
++
++/** Absolute luminance (cd/m²) → PQ signal in [0, 1]. */
++export function pqEncode(nits: number): number {
++  const y = Math.min(Math.max(nits / PQ_PEAK_NITS, 0), 1) ** PQ_M1
++  return ((PQ_C1 + PQ_C2 * y) / (1 + PQ_C3 * y)) ** PQ_M2
++}
++
++/** PQ signal → absolute luminance (cd/m²). */
++export function pqDecode(signal: number): number {
++  const e = Math.min(Math.max(signal, 0), 1) ** (1 / PQ_M2)
++  return PQ_PEAK_NITS * (Math.max(e - PQ_C1, 0) / (PQ_C2 - PQ_C3 * e)) ** (1 / PQ_M1)
++}
++
++// ITU-R BT.2100 HLG
++const HLG_A = 0.17883277
++const HLG_B = 1 - 4 * HLG_A
++const HLG_C = 0.5 - HLG_A * Math.log(4 * HLG_A)
++
++/** Normalised scene-linear light [0, 1] → HLG signal. */
++export function hlgOetf(scene: number): number {
++  const e = Math.min(Math.max(scene, 0), 1)
++  return e <= 1 / 12 ? Math.sqrt(3 * e) : HLG_A * Math.log(12 * e - HLG_B) + HLG_C
++}
++
++export function hlgInverseOetf(signal: number): number {
++  const e = Math.min(Math.max(signal, 0), 1)
++  return e <= 0.5 ? (e * e) / 3 : (Math.exp((e - HLG_C) / HLG_A) + HLG_B) / 12
++}
++
++/** BT.2100 HLG system gamma for a nominal peak luminance. */
++export function hlgSystemGamma(peakNits: number): number {
++  return 1.2 + 0.42 * Math.log10(peakNits / 1000)
++}
++
++const luminance2020 = ([r, g, b]: Rgb) => 0.2627 * r + 0.678 * g + 0.0593 * b
++
++/** HLG OOTF: normalised scene-linear BT.2020 → display cd/m². */
++export function hlgOotf(scene: Rgb, peakNits = HLG_NOMINAL_PEAK_NITS): Rgb {
++  const gamma = hlgSystemGamma(peakNits)
++  const ys = Math.max(luminance2020(scene), 0)
++  const gain = ys > 0 ? peakNits * ys ** (gamma - 1) : 0
++  return [scene[0] * gain, scene[1] * gain, scene[2] * gain]
++}
++
++/** Inverse HLG OOTF: display cd/m² BT.2020 → normalised scene-linear. */
++export function hlgInverseOotf(display: Rgb, peakNits = HLG_NOMINAL_PEAK_NITS): Rgb {
++  const gamma = hlgSystemGamma(peakNits)
++  const yd = Math.max(luminance2020(display), 0)
++  if (yd <= 0) return [0, 0, 0]
++  const ys = (yd / peakNits) ** (1 / gamma)
++  const scale = 1 / (peakNits * ys ** (gamma - 1))
++  return [display[0] * scale, display[1] * scale, display[2] * scale]
++}
++
++/**
++ * Explicit HDR output conversion: working (extended sRGB, BT.709) → BT.2020 PQ or
++ * HLG signal in [0, 1]. Colours outside BT.2020 and light above the transfer's
++ * peak are clipped here and nowhere earlier. No tone mapping is implied.
++ */
++export function workingToSignal(
++  working: Rgb,
++  transfer: HdrTransfer,
++  referenceWhiteNits = DEFAULT_REFERENCE_WHITE_NITS,
++): Rgb {
++  const linear709: Rgb = [
++    srgbDecodeExtended(working[0]),
++    srgbDecodeExtended(working[1]),
++    srgbDecodeExtended(working[2]),
++  ]
++  const nits = multiply(BT709_TO_BT2020, linear709).map(
++    (v) => Math.max(v, 0) * referenceWhiteNits,
++  ) as unknown as Rgb
++  if (transfer === 'pq') return [pqEncode(nits[0]), pqEncode(nits[1]), pqEncode(nits[2])]
++  const clipped = nits.map((v) => Math.min(v, HLG_NOMINAL_PEAK_NITS)) as unknown as Rgb
++  const scene = hlgInverseOotf(clipped)
++  return [hlgOetf(scene[0]), hlgOetf(scene[1]), hlgOetf(scene[2])]
++}
++
++/** HDR source ingest: BT.2020 PQ/HLG signal → working (extended sRGB, BT.709). */
++export function signalToWorking(
++  signal: Rgb,
++  transfer: HdrTransfer,
++  referenceWhiteNits = DEFAULT_REFERENCE_WHITE_NITS,
++): Rgb {
++  const nits: Rgb =
++    transfer === 'pq'
++      ? [pqDecode(signal[0]), pqDecode(signal[1]), pqDecode(signal[2])]
++      : hlgOotf([hlgInverseOetf(signal[0]), hlgInverseOetf(signal[1]), hlgInverseOetf(signal[2])])
++  const relative: Rgb = [
++    nits[0] / referenceWhiteNits,
++    nits[1] / referenceWhiteNits,
++    nits[2] / referenceWhiteNits,
++  ]
++  const linear709 = multiply(BT2020_TO_BT709, relative)
++  return [
++    srgbEncodeExtended(linear709[0]),
++    srgbEncodeExtended(linear709[1]),
++    srgbEncodeExtended(linear709[2]),
++  ]
++}
++
++/**
++ * ITU-R BT.2390 EETF on PQ-encoded luminance: maps [0, sourcePeak] into
++ * [0, targetPeak] with a Hermite knee and leaves light below the knee unchanged.
++ */
++export function bt2390Eetf(nits: number, sourcePeakNits: number, targetPeakNits: number): number {
++  if (nits <= 0) return 0
++  if (targetPeakNits >= sourcePeakNits) return Math.min(nits, targetPeakNits)
++  const maxSource = pqEncode(sourcePeakNits)
++  const e1 = pqEncode(nits) / maxSource
++  const maxLum = pqEncode(targetPeakNits) / maxSource
++  const ks = 1.5 * maxLum - 0.5
++  let e2 = e1
++  if (e1 > ks && ks < 1) {
++    const t = (e1 - ks) / (1 - ks)
++    const t2 = t * t
++    const t3 = t2 * t
++    e2 = (2 * t3 - 3 * t2 + 1) * ks + (t3 - 2 * t2 + t) * (1 - ks) + (-2 * t3 + 3 * t2) * maxLum
++  }
++  return Math.min(pqDecode(Math.min(e2, 1) * maxSource), targetPeakNits)
++}
++
++/**
++ * Explicit SDR monitoring/delivery of an HDR working value: 'none' clips at
++ * reference white; 'bt2390' tone maps from the mastering peak to reference white
++ * by scaling colour with the luminance EETF (hue-preserving).
++ */
++export function workingToSdrDisplay(working: Rgb, color: ResolvedColorManagement): Rgb {
++  if (color.workingRange === 'sdr' || color.sdrMonitoring === 'none') {
++    return working.map((v) => Math.min(Math.max(v, 0), 1)) as unknown as Rgb
++  }
++  const linear = working.map(srgbDecodeExtended) as unknown as Rgb
++  const y = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
++  if (y <= 0) return working.map((v) => Math.min(Math.max(v, 0), 1)) as unknown as Rgb
++  const nits = y * color.referenceWhiteNits
++  const mapped = bt2390Eetf(nits, color.masteringPeakNits, color.referenceWhiteNits)
++  const scale = mapped / nits
++  return linear.map((v) =>
++    Math.min(Math.max(srgbEncodeExtended(v * scale), 0), 1),
++  ) as unknown as Rgb
++}
+--- /dev/null
++++ b/src/shared/graphics/color/managed-color.test.ts
+@@ -0,0 +1,132 @@
++// @vitest-environment node
++import { describe, expect, it } from 'vite-plus/test'
++import {
++  BT2020_TO_BT709,
++  BT709_TO_BT2020,
++  bt2390Eetf,
++  hlgInverseOetf,
++  hlgInverseOotf,
++  hlgOetf,
++  hlgOotf,
++  multiply,
++  pqDecode,
++  pqEncode,
++  resolveColorManagement,
++  signalToWorking,
++  srgbDecodeExtended,
++  srgbEncodeExtended,
++  workingToSdrDisplay,
++  workingToSignal,
++} from './managed-color'
++
++describe('managed colour reference transforms (FL-97)', () => {
++  it('defaults every existing project to the SDR reference behaviour', () => {
++    expect(resolveColorManagement(undefined)).toEqual({
++      workingRange: 'sdr',
++      referenceWhiteNits: 203,
++      masteringPeakNits: 1000,
++      sdrMonitoring: 'none',
++    })
++    expect(
++      resolveColorManagement({
++        workingRange: 'hdr',
++        referenceWhiteNits: -1,
++        masteringPeakNits: 100,
++      }),
++    ).toEqual({
++      workingRange: 'hdr',
++      referenceWhiteNits: 203,
++      masteringPeakNits: 203,
++      sdrMonitoring: 'none',
++    })
++  })
++
++  it('matches published PQ values (SMPTE ST 2084)', () => {
++    expect(pqEncode(0)).toBeCloseTo(0, 5)
++    expect(pqEncode(100)).toBeCloseTo(0.5081, 4)
++    expect(pqEncode(203)).toBeCloseTo(0.5807, 4)
++    expect(pqEncode(1000)).toBeCloseTo(0.7518, 4)
++    expect(pqEncode(10000)).toBeCloseTo(1, 6)
++    for (const nits of [0.01, 1, 58, 203, 1000, 4000]) {
++      expect(pqDecode(pqEncode(nits)) / nits).toBeCloseTo(1, 6)
++    }
++  })
++
++  it('matches BT.2100 HLG and BT.2408 reference white (75% → 203 cd/m²)', () => {
++    expect(hlgOetf(1 / 12)).toBeCloseTo(0.5, 6)
++    expect(hlgOetf(1)).toBeCloseTo(1, 6)
++    for (const scene of [0.001, 0.05, 1 / 12, 0.3, 0.9]) {
++      expect(hlgInverseOetf(hlgOetf(scene))).toBeCloseTo(scene, 7)
++    }
++    const white = hlgOotf([hlgInverseOetf(0.75), hlgInverseOetf(0.75), hlgInverseOetf(0.75)])
++    expect(white[0]).toBeCloseTo(203, 0)
++    const back = hlgInverseOotf(white)
++    expect(hlgOetf(back[1])).toBeCloseTo(0.75, 6)
++  })
++
++  it('keeps sign and range through the extended sRGB transfer', () => {
++    for (const v of [-2, -0.5, -0.001, 0, 0.002, 0.5, 1, 4.5]) {
++      expect(srgbDecodeExtended(srgbEncodeExtended(v))).toBeCloseTo(v, 9)
++    }
++    expect(srgbEncodeExtended(1)).toBeCloseTo(1, 9)
++    expect(srgbEncodeExtended(-1)).toBeCloseTo(-1, 9)
++  })
++
++  it('round-trips BT.709 and BT.2020 primaries', () => {
++    const colour = [0.2, 0.7, -0.1] as const
++    const back = multiply(BT2020_TO_BT709, multiply(BT709_TO_BT2020, colour))
++    back.forEach((v, i) => expect(v).toBeCloseTo(colour[i]!, 5))
++    // BT.2020 green is outside BT.709: it needs negative working values.
++    expect(Math.min(...multiply(BT2020_TO_BT709, [0, 1, 0]))).toBeLessThan(0)
++  })
++
++  it('maps reference white to 203 cd/m² in PQ and to 75% in HLG', () => {
++    const pq = workingToSignal([1, 1, 1], 'pq')
++    pq.forEach((v) => expect(v).toBeCloseTo(pqEncode(203), 4))
++    const hlg = workingToSignal([1, 1, 1], 'hlg')
++    hlg.forEach((v) => expect(v).toBeCloseTo(0.75, 3))
++  })
++
++  it('carries highlights and wide gamut from source to output without clipping', () => {
++    // A 1000-nit BT.2020 green PQ source survives ingest and export.
++    const source = [pqEncode(40), pqEncode(1000), pqEncode(10)] as const
++    const working = signalToWorking(source, 'pq')
++    expect(Math.max(...working)).toBeGreaterThan(1)
++    expect(Math.min(...working)).toBeLessThan(0)
++    const out = workingToSignal(working, 'pq')
++    out.forEach((v, i) => expect(v).toBeCloseTo(source[i]!, 4))
++    // HLG in and out, same round trip.
++    const hlgSource = [0.3, 0.9, 0.1] as const
++    const hlgOut = workingToSignal(signalToWorking(hlgSource, 'hlg'), 'hlg')
++    hlgOut.forEach((v, i) => expect(v).toBeCloseTo(hlgSource[i]!, 3))
++  })
++
++  it('maps SDR sources to reference white, not to a brighter guess', () => {
++    const sdrWhite = workingToSignal([1, 1, 1], 'pq', 203)
++    expect(pqDecode(sdrWhite[0])).toBeCloseTo(203, 1)
++    const midGrey = workingToSignal(
++      [srgbEncodeExtended(0.18), srgbEncodeExtended(0.18), srgbEncodeExtended(0.18)],
++      'pq',
++    )
++    expect(pqDecode(midGrey[1])).toBeCloseTo(0.18 * 203, 1)
++  })
++
++  it('tone maps only when the policy says so', () => {
++    const color = resolveColorManagement({ workingRange: 'hdr' })
++    const highlight = [2, 2, 2] as const
++    expect(workingToSdrDisplay(highlight, color)).toEqual([1, 1, 1])
++    const mapped = workingToSdrDisplay([2, 1, 0.5], { ...color, sdrMonitoring: 'bt2390' })
++    mapped.forEach((v) => expect(v).toBeLessThanOrEqual(1))
++    // Hue is kept: channel order survives, unlike per-channel clipping.
++    expect(mapped[0]).toBeGreaterThan(mapped[1]!)
++    expect(mapped[1]).toBeGreaterThan(mapped[2]!)
++    // Below the knee the EETF is the identity.
++    expect(bt2390Eetf(20, 1000, 203)).toBeCloseTo(20, 1)
++    expect(bt2390Eetf(1000, 1000, 203)).toBeCloseTo(203, 0)
++    expect(bt2390Eetf(5000, 1000, 203)).toBeLessThanOrEqual(203)
++    // SDR projects never tone map.
++    expect(workingToSdrDisplay([0.5, 0.25, 1.4], resolveColorManagement(undefined))).toEqual([
++      0.5, 0.25, 1,
++    ])
++  })
++})
+--- a/src/types/export.ts
++++ b/src/types/export.ts
+@@ -2,6 +2,7 @@
+ import type { TimelineTrack } from './timeline'
+ import type { Transition } from './transition'
+ import type { ItemKeyframes } from './keyframe'
++import type { ProjectColorManagement } from '@/shared/graphics/color/managed-color'
+ 
+ // Export modes
+ export type ExportMode = 'video' | 'audio'
+@@ -73,4 +74,6 @@
+   masterBusDb?: number
+   /** Project mix mute; device monitoring remains separate. Defaults to false. */
+   masterBusMuted?: boolean
++  /** Project managed colour (FL-97); absent renders as an SDR project. */
++  colorManagement?: ProjectColorManagement
+ }
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -8,6 +8,7 @@
+ import type { MaskVertex } from './masks'
+ import type { ShapeStyleFields } from './timeline'
+ import type { CompositionControlOverrides, CompositionControlSchema } from './composition-controls'
++import type { ProjectColorManagement } from '@/shared/graphics/color/managed-color'
+ 
+ /**
+  * Selects the editing surface a stored composition naturally opens in.
+@@ -289,4 +290,6 @@
+   height: number
+   fps: number
+   backgroundColor?: string // Hex color, defaults to #000000
++  /** Frameleaf managed colour (FL-97). Absent = SDR, Freecut's reference behaviour. */
++  colorManagement?: ProjectColorManagement
+ }

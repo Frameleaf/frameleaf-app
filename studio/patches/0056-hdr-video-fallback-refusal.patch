@@ -1,0 +1,2040 @@
+--- a/src/features/export/utils/canvas-effects.test.ts
++++ b/src/features/export/utils/canvas-effects.test.ts
+@@ -1,6 +1,8 @@
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import type { AdjustmentItem } from '@/types/timeline'
+ import type { ItemEffect } from '@/types/effects'
++import type { EffectsPipeline } from '@/infrastructure/gpu-effects'
++import { HdrRenderUnavailableError } from './hdr-video-sources'
+
+ const mockFns = vi.hoisted(() => ({
+   applyMasksMock: vi.fn(),
+@@ -125,6 +127,24 @@
+     mockFns.applyMasksMock.mockReset()
+   })
+
++  it('refuses HDR canvas effects before acquiring any masked or output canvas', async () => {
++    const acquire = vi.fn()
++    const pipeline = { getWorkingRange: () => 'hdr' } as EffectsPipeline
++    await expect(
++      renderEffectsFromMaskedSource(
++        { acquire },
++        { width: 64, height: 64 } as OffscreenCanvas,
++        [createGpuEffect('exposure', 2)],
++        [{ inverted: false, feather: 0, opacity: 1, maskType: 'alpha' }],
++        10,
++        { width: 64, height: 64, fps: 30 },
++        pipeline,
++      ),
++    ).rejects.toBeInstanceOf(HdrRenderUnavailableError)
++    expect(acquire).not.toHaveBeenCalled()
++    expect(mockFns.applyMasksMock).not.toHaveBeenCalled()
++  })
++
+   it('pre-masks the effect source before the effect chain draws from it', async () => {
+     const sourceCanvas = { width: 1920, height: 1080 } as OffscreenCanvas
+     const maskedSourceCanvas = { width: 1920, height: 1080 } as OffscreenCanvas
+--- a/src/features/export/utils/canvas-effects.ts
++++ b/src/features/export/utils/canvas-effects.ts
+@@ -11,6 +11,7 @@
+ import type { EffectsPipeline, GpuEffectInstance } from '@/infrastructure/gpu-effects'
+ import { applyMasks, type MaskCanvasSettings } from './canvas-masks'
+ import type { CanvasPool } from './canvas-pool'
++import { HdrRenderUnavailableError } from './hdr-video-sources'
+ import { resolveAnimatedColorEffects } from '@/features/export/deps/keyframes'
+
+ const log = createLogger('CanvasEffects')
+@@ -37,6 +38,9 @@
+   canvas: EffectCanvasSettings & MaskCanvasSettings,
+   gpuPipeline?: EffectsPipeline | null,
+ ): Promise<{ source: OffscreenCanvas; poolCanvases: OffscreenCanvas[] }> {
++  if (effects.some((effect) => effect.enabled) && gpuPipeline?.getWorkingRange() === 'hdr') {
++    throw new HdrRenderUnavailableError('HDR effects cannot use a canvas output')
++  }
+   const poolCanvases: OffscreenCanvas[] = []
+   let effectSource = sourceCanvas
+
+--- a/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
++++ b/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
+@@ -309,6 +309,7 @@
+     release: vi.fn(),
+   }
+   const gpuPipeline = {
++    getWorkingRange: vi.fn(() => 'sdr'),
+     getDevice: vi.fn(() => params.device),
+     applyEffectsToTexture: vi.fn().mockReturnValue(true),
+   }
+@@ -755,6 +756,42 @@
+   beforeEach(() => {
+     testSpies.loggerDebugSpy.mockClear()
+     localStorage.removeItem('freecut.debugGpuTransitions')
++  })
++
++  it('keeps masked effects and corner pins on the established fallback route', async () => {
++    const { outputTexture, gpuTexturePool, canvasPool } = createTransitionTextureHarness()
++    const pipelines = createGpuTransitionPipelineMocks()
++    const rctx = createItemRenderContext({
++      canvasPool: canvasPool as unknown as ItemRenderContext['canvasPool'],
++      gpuPipeline: {
++        applyEffectsToTexture: vi.fn(),
++      } as unknown as ItemRenderContext['gpuPipeline'],
++      gpuMediaPipeline:
++        pipelines.gpuMediaPipeline as unknown as ItemRenderContext['gpuMediaPipeline'],
++      gpuTransitionPipeline:
++        pipelines.gpuTransitionPipeline as unknown as ItemRenderContext['gpuTransitionPipeline'],
++    })
++    const mask = { inverted: false, feather: 0, opacity: 1, maskType: 'alpha' as const }
++    const effect: ItemEffect = {
++      id: 'masked-grade',
++      enabled: true,
++      effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure', params: { exposure: 1 } },
++    }
++    for (const changes of [
++      { effects: [effect] },
++      { cornerPin: { topLeft: [1, 1], topRight: [0, 0], bottomRight: [0, 0], bottomLeft: [0, 0] } },
++    ]) {
++      const transition = createActiveTransition()
++      Object.assign(transition.leftClip, changes)
++      expect(
++        await renderTransitionToGpuTexture(outputTexture, transition, 55, rctx, 1, gpuTexturePool, [
++          mask,
++        ]),
++      ).toBe(false)
++    }
++    expect(gpuTexturePool.acquire).not.toHaveBeenCalled()
++    expect(canvasPool.acquire).not.toHaveBeenCalled()
++    expect(pipelines.gpuTransitionPipeline.renderTexturesToTexture).not.toHaveBeenCalled()
+   })
+
+   it('routes eligible image participants through GPU media textures without canvas rendering', async () => {
+@@ -1495,6 +1532,7 @@
+       queue: { copyExternalImageToTexture: vi.fn() },
+     }
+     const gpuPipeline = {
++      getWorkingRange: vi.fn(() => 'sdr'),
+       getDevice: vi.fn(() => device),
+       applyEffectsToTexture: vi.fn().mockReturnValue(true),
+     }
+@@ -1853,6 +1891,7 @@
+       release: vi.fn(),
+     }
+     const gpuPipeline = {
++      getWorkingRange: vi.fn(() => 'sdr'),
+       getDevice: vi.fn(() => device),
+       applyEffectsToTexture: vi.fn().mockReturnValue(true),
+       applyTextureEffectsToTexture: vi.fn().mockReturnValue(true),
+@@ -2225,6 +2264,7 @@
+     }
+     const canvasPool = { acquire: vi.fn(), release: vi.fn() }
+     const gpuPipeline = {
++      getWorkingRange: vi.fn(() => 'sdr'),
+       getDevice: vi.fn(() => device),
+       applyEffectsToTexture: vi.fn().mockReturnValue(true),
+       applyTextureEffectsToTexture: vi.fn().mockReturnValue(true),
+@@ -2423,6 +2463,7 @@
+       release: vi.fn(),
+     }
+     const gpuPipeline = {
++      getWorkingRange: vi.fn(() => 'sdr'),
+       getDevice: vi.fn(() => device),
+       applyEffectsToTexture: vi.fn().mockReturnValue(true),
+       applyTextureEffectsToTexture: vi.fn().mockReturnValue(true),
+--- a/src/features/export/utils/canvas-item-renderer/gpu.ts
++++ b/src/features/export/utils/canvas-item-renderer/gpu.ts
+@@ -7,6 +7,7 @@
+ import type {
+   CompositionItem,
+   ImageItem,
++  LottieItem,
+   ShapeItem,
+   TextItem,
+   TimelineItem,
+@@ -74,6 +75,9 @@
+   getActiveSubCompMasks,
+ } from './composition'
+ import { resolveVideoParticipantSourceTime } from './video'
++import { isHdrVideoSource } from '../hdr-video-sources'
++import { getLottieItemSource } from './lottie'
++import { getTextRasterCacheKey, renderTextItem } from './text'
+
+ type GpuParticipantRenderOptions = { clear?: boolean; blend?: boolean }
+
+@@ -366,6 +370,7 @@
+
+   if (rctx.renderMode !== 'preview') return null
+   if (item.type !== 'video') return null
++  if (isHdrVideoSource(item.mediaId)) return null
+   if (!rctx.gpuPipeline) {
+     recordFastPath('no-gpu-pipeline')
+     return null
+@@ -716,6 +721,36 @@
+     }
+   }
+
++  if (participant.item.type === 'lottie') {
++    const gpuPipeline = rctx.gpuPipeline
++    const source = getLottieItemSource(participant.item, rctx, frame)
++    if (!gpuPipeline || !source) return null
++    const texture = gpuPipeline.getDevice().createTexture({
++      size: { width: source.width, height: source.height },
++      format: gpuPipeline.getWorkingRange() === 'hdr' ? 'rgba16float' : 'rgba8unorm',
++      usage:
++        GPUTextureUsage.TEXTURE_BINDING |
++        GPUTextureUsage.RENDER_ATTACHMENT |
++        GPUTextureUsage.COPY_DST,
++    })
++    let retained = false
++    try {
++      // Snapshot the borrowed provider canvas before another instance changes its frame.
++      if (!gpuPipeline.applyEffectsToTexture(source, [], texture)) return null
++      retained = true
++      return {
++        kind: 'media',
++        item: participant.item,
++        texture,
++        sourceWidth: source.width,
++        sourceHeight: source.height,
++        close: () => texture.destroy(),
++      }
++    } finally {
++      if (!retained) texture.destroy()
++    }
++  }
++
+   if (participant.item.type === 'text') {
+     return resolveGpuTextParticipantSource(
+       participant as TransitionParticipantRenderState<TextItem>,
+@@ -757,6 +792,7 @@
+       }
+     }
+   }
++  if (isHdrVideoSource(participant.item.mediaId)) return null
+   const domVideo = rctx.domVideoElementProvider?.(participant.item.id) ?? null
+   const hasActiveRamp =
+     participant.renderSpan.sourceTimeRamp !== undefined &&
+@@ -849,9 +885,12 @@
+     textMotionSpec !== undefined &&
+     isTextMotionActive(textMotionSpec, relativeFrame, rctx.fps, participant.item.durationInFrames)
+
+-  const cacheKey = textMotionActive
+-    ? null
+-    : getGpuTextTextureCacheKey(resolvedTextItem, sourceWidth, sourceHeight)
++  const format = rctx.gpuPipeline.getWorkingRange() === 'hdr' ? 'rgba16float' : 'rgba8unorm'
++  const bytes = sourceWidth * sourceHeight * (format === 'rgba16float' ? 8 : 4)
++  const cacheKey =
++    textMotionActive || bytes > GPU_TEXT_TEXTURE_CACHE_MAX_BYTES
++      ? null
++      : `${rctx.gpuPipeline.getWorkingRange()}:${getTextRasterCacheKey(resolvedTextItem, sourceWidth, sourceHeight)}`
+   const cached = cacheKey ? rctx.gpuTextTextureCache.get(cacheKey) : undefined
+   if (cacheKey && cached) {
+     rctx.gpuTextTextureCache.delete(cacheKey)
+@@ -870,81 +909,101 @@
+       sourceWidth: cached.width,
+       sourceHeight: cached.height,
+       texture: cached.texture,
+-    }
+-  }
+-
+-  if (rctx.gpuTextPipeline && isGpuGlyphAtlasTextEligible()) {
+-    const texture = rctx.gpuPipeline.getDevice().createTexture({
+-      size: { width: sourceWidth, height: sourceHeight },
+-      format: 'rgba8unorm',
+-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+-    })
+-    const rendered = rctx.gpuTextPipeline.renderTextToTexture(texture, {
+-      outputWidth: sourceWidth,
+-      outputHeight: sourceHeight,
+-      item: resolvedTextItem,
++      close: borrowGpuTextTexture(rctx.gpuTextTextureCache, cached),
++    }
++  }
++
++  const texture = rctx.gpuPipeline.getDevice().createTexture({
++    size: { width: sourceWidth, height: sourceHeight },
++    format,
++    usage:
++      GPUTextureUsage.TEXTURE_BINDING |
++      GPUTextureUsage.RENDER_ATTACHMENT |
++      GPUTextureUsage.COPY_DST,
++  })
++  let retained = false
++  try {
++    // HDR text enters as the existing SDR raster at reference white. This also
++    // avoids treating the glyph atlas's premultiplied 8-bit output as straight RGB.
++    const useAtlas =
++      rctx.gpuPipeline.getWorkingRange() !== 'hdr' &&
++      rctx.gpuTextPipeline &&
++      isGpuGlyphAtlasTextEligible()
++    let rendered = Boolean(
++      useAtlas &&
++      rctx.gpuTextPipeline?.renderTextToTexture(texture, {
++        outputWidth: sourceWidth,
++        outputHeight: sourceHeight,
++        item: resolvedTextItem,
++        width: sourceWidth,
++        height: sourceHeight,
++        ...(textMotionActive && textMotionSpec
++          ? {
++              motion: {
++                spec: textMotionSpec,
++                relativeFrame,
++                fps: rctx.fps,
++                durationInFrames: participant.item.durationInFrames,
++              },
++            }
++          : {}),
++      }),
++    )
++    if (!rendered) {
++      const { canvas, ctx } = rctx.canvasPool.acquire()
++      try {
++        canvas.width = sourceWidth
++        canvas.height = sourceHeight
++        renderTextItem(
++          ctx,
++          resolvedTextItem,
++          { x: 0, y: 0, width: sourceWidth, height: sourceHeight },
++          {
++            ...rctx,
++            canvasSettings: { ...rctx.canvasSettings, width: sourceWidth, height: sourceHeight },
++          },
++          textMotionActive
++            ? { relativeFrame, fps: rctx.fps, durationInFrames: participant.item.durationInFrames }
++            : undefined,
++        )
++        // Only the SDR source is uploaded here; every effect runs later in float.
++        rendered = rctx.gpuPipeline.applyEffectsToTexture(canvas, [], texture)
++      } finally {
++        rctx.canvasPool.release(canvas)
++      }
++    }
++    if (!rendered) return null
++    logGpuTextTextureCacheEvent(useAtlas ? 'atlas-render' : 'miss', {
++      itemId: participant.item.id,
+       width: sourceWidth,
+       height: sourceHeight,
+-      ...(textMotionActive && textMotionSpec
+-        ? {
+-            motion: {
+-              spec: textMotionSpec,
+-              relativeFrame,
+-              fps: rctx.fps,
+-              durationInFrames: participant.item.durationInFrames,
+-            },
+-          }
+-        : {}),
++      bytes,
++      ...(useAtlas ? {} : { reason: 'sdr-raster-ingress' }),
+     })
+-    if (rendered) {
+-      logGpuTextTextureCacheEvent('atlas-render', {
+-        itemId: participant.item.id,
+-        width: sourceWidth,
+-        height: sourceHeight,
+-        bytes: getGpuTextureByteSize(sourceWidth, sourceHeight),
+-        ...(textMotionActive ? { textMotionBypass: true } : {}),
+-      })
+-      if (!cacheKey) {
+-        // Motion-active frame: the texture is per-frame garbage as far as the
+-        // cache is concerned — hand ownership to the caller (all consumers
+-        // run `media.close?.()` in a finally).
+-        return {
+-          kind: 'text',
+-          item: resolvedTextItem,
+-          sourceWidth,
+-          sourceHeight,
+-          texture,
+-          close: () => texture.destroy(),
+-        }
+-      }
+-      rctx.gpuTextTextureCache.set(cacheKey, {
++    let close: () => void = () => texture.destroy()
++    if (cacheKey) {
++      const entry = {
+         texture,
+         width: sourceWidth,
+         height: sourceHeight,
+-        bytes: getGpuTextureByteSize(sourceWidth, sourceHeight),
+-      })
++        bytes,
++      }
++      close = borrowGpuTextTexture(rctx.gpuTextTextureCache, entry)
++      rctx.gpuTextTextureCache.set(cacheKey, entry)
+       pruneGpuTextTextureCache(rctx.gpuTextTextureCache)
+-      return {
+-        kind: 'text',
+-        item: resolvedTextItem,
+-        sourceWidth,
+-        sourceHeight,
+-        texture,
+-      }
+-    }
+-    texture.destroy()
+-  }
+-
+-  logGpuTextTextureCacheEvent('miss', {
+-    itemId: participant.item.id,
+-    width: sourceWidth,
+-    height: sourceHeight,
+-    bytes: getGpuTextureByteSize(sourceWidth, sourceHeight),
+-    cacheBytes: getGpuTextTextureCacheBytes(rctx.gpuTextTextureCache),
+-    entries: rctx.gpuTextTextureCache.size,
+-    reason: 'glyph-atlas-unavailable',
+-  })
+-  return null
++    }
++    retained = true
++    return {
++      kind: 'text',
++      item: resolvedTextItem,
++      sourceWidth,
++      sourceHeight,
++      texture,
++      close,
++    }
++  } finally {
++    if (!retained) texture.destroy()
++  }
+ }
+
+ function isGpuGlyphAtlasTextEligible(): boolean {
+@@ -1524,30 +1583,6 @@
+   device.queue.submit([commandEncoder.finish()])
+ }
+
+-function getGpuTextTextureCacheKey(item: TextItem, width: number, height: number): string {
+-  return JSON.stringify({
+-    width,
+-    height,
+-    text: item.text,
+-    textSpans: item.textSpans,
+-    fontSize: item.fontSize,
+-    fontFamily: item.fontFamily,
+-    fontWeight: item.fontWeight,
+-    fontStyle: item.fontStyle,
+-    underline: item.underline,
+-    color: item.color,
+-    backgroundColor: item.backgroundColor,
+-    backgroundRadius: item.backgroundRadius,
+-    textAlign: item.textAlign,
+-    verticalAlign: item.verticalAlign,
+-    lineHeight: item.lineHeight,
+-    letterSpacing: item.letterSpacing,
+-    textPadding: item.textPadding,
+-    textShadow: item.textShadow,
+-    stroke: item.stroke,
+-  })
+-}
+-
+ function getGpuBitmapMaskTextureCacheKey(
+   mask: ReturnType<typeof getActiveSubCompMasks>[number],
+ ): string {
+@@ -1579,18 +1614,30 @@
+   })
+ }
+
++function borrowGpuTextTexture(
++  cache: Map<string, GpuTextTextureCacheEntry>,
++  entry: GpuTextTextureCacheEntry,
++): () => void {
++  entry.borrowers = (entry.borrowers ?? 0) + 1
++  return () => {
++    entry.borrowers!--
++    pruneGpuTextTextureCache(cache)
++  }
++}
++
+ function pruneGpuTextTextureCache(cache: Map<string, GpuTextTextureCacheEntry>): void {
+-  while (getGpuTextTextureCacheBytes(cache) > GPU_TEXT_TEXTURE_CACHE_MAX_BYTES) {
+-    const oldestKey = cache.keys().next().value
+-    if (oldestKey === undefined) return
+-    const oldestEntry = cache.get(oldestKey)
+-    oldestEntry?.texture.destroy()
+-    cache.delete(oldestKey)
++  let bytes = getGpuTextTextureCacheBytes(cache)
++  for (const [key, entry] of cache) {
++    if (bytes <= GPU_TEXT_TEXTURE_CACHE_MAX_BYTES) return
++    if (entry.borrowers) continue
++    entry.texture.destroy()
++    cache.delete(key)
++    bytes -= entry.bytes
+     logGpuTextTextureCacheEvent('evict', {
+-      width: oldestEntry?.width,
+-      height: oldestEntry?.height,
+-      bytes: oldestEntry?.bytes,
+-      cacheBytes: getGpuTextTextureCacheBytes(cache),
++      width: entry.width,
++      height: entry.height,
++      bytes: entry.bytes,
++      cacheBytes: bytes,
+       entries: cache.size,
+     })
+   }
+@@ -1633,7 +1680,7 @@
+ }
+
+ function resolveGpuMediaCornerPin(
+-  item: CompositionItem | ImageItem | VideoItem | TextItem,
++  item: CompositionItem | ImageItem | VideoItem | TextItem | LottieItem,
+   mediaRect: GpuMediaRect,
+ ): NonNullable<GpuMediaRenderParams['cornerPin']> | undefined {
+   if (!hasCornerPin(item.cornerPin)) return undefined
+--- a/src/features/export/utils/canvas-item-renderer/lottie.ts
++++ b/src/features/export/utils/canvas-item-renderer/lottie.ts
+@@ -10,19 +10,15 @@
+ import type { ItemRenderContext } from './types'
+ import { drawContainedMediaSource } from './media-draw'
+
+-export function renderLottieItem(
+-  ctx: OffscreenCanvasRenderingContext2D,
++export function getLottieItemSource(
+   item: LottieItem,
+-  transform: { x: number; y: number; width: number; height: number },
+   rctx: ItemRenderContext,
+   frame: number,
+-): void {
+-  const { fps, canvasSettings, canvasPool, lottieProvider } = rctx
+-
++): OffscreenCanvas | null {
+   const localFrame = frame - item.from
+   const lottieFrame = mapTimelineFrameToLottieFrame({
+     localFrame,
+-    projectFps: fps,
++    projectFps: rctx.fps,
+     speed: item.speed ?? 1,
+     totalFrames: item.totalFrames,
+     frameRate: item.frameRate,
+@@ -33,7 +29,17 @@
+     segmentEnd: item.segmentEnd,
+   })
+
+-  const source = lottieProvider.renderFrame(item.id, lottieFrame)
++  return rctx.lottieProvider.renderFrame(item.id, lottieFrame)
++}
++
++export function renderLottieItem(
++  ctx: OffscreenCanvasRenderingContext2D,
++  item: LottieItem,
++  transform: { x: number; y: number; width: number; height: number },
++  rctx: ItemRenderContext,
++  frame: number,
++): void {
++  const source = getLottieItemSource(item, rctx, frame)
+   if (!source) return
+
+   drawContainedMediaSource(
+@@ -42,9 +48,9 @@
+     source.width,
+     source.height,
+     transform,
+-    canvasSettings,
++    rctx.canvasSettings,
+     item.crop,
+     undefined,
+-    canvasPool,
++    rctx.canvasPool,
+   )
+ }
+--- a/src/features/export/utils/canvas-item-renderer/render-item.ts
++++ b/src/features/export/utils/canvas-item-renderer/render-item.ts
+@@ -140,41 +140,45 @@
+
+   ctx.save()
+
+-  // Apply opacity only if it's not the default value (1.0)
+-  if (frameResolvedTransform.opacity !== 1) {
+-    ctx.globalAlpha = frameResolvedTransform.opacity
+-  }
+-
+-  applyItemTransformToContext(ctx, frameResolvedItem, frameResolvedTransform, rctx.canvasSettings)
+-
+-  // Apply corner radius clipping
+-  if (frameResolvedTransform.cornerRadius > 0) {
+-    const left =
+-      rctx.canvasSettings.width / 2 + frameResolvedTransform.x - frameResolvedTransform.width / 2
+-    const top =
+-      rctx.canvasSettings.height / 2 + frameResolvedTransform.y - frameResolvedTransform.height / 2
+-    ctx.beginPath()
+-    ctx.roundRect(
+-      left,
+-      top,
+-      frameResolvedTransform.width,
+-      frameResolvedTransform.height,
+-      frameResolvedTransform.cornerRadius,
++  try {
++    // Apply opacity only if it's not the default value (1.0)
++    if (frameResolvedTransform.opacity !== 1) {
++      ctx.globalAlpha = frameResolvedTransform.opacity
++    }
++
++    applyItemTransformToContext(ctx, frameResolvedItem, frameResolvedTransform, rctx.canvasSettings)
++
++    // Apply corner radius clipping
++    if (frameResolvedTransform.cornerRadius > 0) {
++      const left =
++        rctx.canvasSettings.width / 2 + frameResolvedTransform.x - frameResolvedTransform.width / 2
++      const top =
++        rctx.canvasSettings.height / 2 +
++        frameResolvedTransform.y -
++        frameResolvedTransform.height / 2
++      ctx.beginPath()
++      ctx.roundRect(
++        left,
++        top,
++        frameResolvedTransform.width,
++        frameResolvedTransform.height,
++        frameResolvedTransform.cornerRadius,
++      )
++      ctx.clip()
++    }
++
++    await renderItemContent(
++      ctx,
++      frameResolvedItem,
++      frameResolvedTransform,
++      frame,
++      rctx,
++      sourceFrameOffset,
++      renderSpan,
+     )
+-    ctx.clip()
+-  }
+-
+-  await renderItemContent(
+-    ctx,
+-    frameResolvedItem,
+-    frameResolvedTransform,
+-    frame,
+-    rctx,
+-    sourceFrameOffset,
+-    renderSpan,
+-  )
+-
+-  ctx.restore()
++  } finally {
++    ctx.restore()
++  }
+ }
+
+ /**
+--- a/src/features/export/utils/canvas-item-renderer/transition.ts
++++ b/src/features/export/utils/canvas-item-renderer/transition.ts
+@@ -41,6 +41,7 @@
+   shouldLogTransitionGpuDiagnostics,
+ } from './gpu'
+ import { renderItem } from './render-item'
++import { selectRenderFailure } from '../hdr-video-sources'
+
+ type RenderedTransitionParticipants = {
+   leftFinalCanvas: OffscreenCanvas
+@@ -128,7 +129,7 @@
+     const prevTransitionFlag = rctx.isRenderingTransition
+     rctx.isRenderingTransition = true
+     try {
+-      await Promise.all([
++      const settled = await Promise.allSettled([
+         renderItem(
+           leftCtx,
+           leftParticipant.item,
+@@ -150,6 +151,8 @@
+           trackMasks,
+         ),
+       ])
++      const failed = selectRenderFailure(settled)
++      if (failed) throw failed.reason
+     } finally {
+       rctx.isRenderingTransition = prevTransitionFlag
+     }
+@@ -269,6 +272,17 @@
+     rctx,
+   )
+
++  // ponytail: post-transition masks cover effect-free, unwarped participants;
++  // effects need their pre-effect matte and corner pins need a warped matte.
++  if (
++    trackMasks.length > 0 &&
++    [leftParticipant, rightParticipant].some(
++      (participant) => participant.effects.length > 0 || hasCornerPin(participant.item.cornerPin),
++    )
++  ) {
++    return null
++  }
++
+   const poolTextures: GPUTexture[] = []
+   const poolCanvases: OffscreenCanvas[] = []
+   const prevTransitionFlag = rctx.isRenderingTransition
+@@ -469,6 +483,7 @@
+   rctx: ItemRenderContext,
+   trackOrder: number,
+   gpuTexturePool?: Pick<GpuTexturePool, 'acquire' | 'release'>,
++  trackMasks: EffectSourceMask[] = [],
+ ): Promise<boolean> {
+   const renderer = transitionRegistry.getRenderer(activeTransition.transition.presentation)
+   const gpuTransitionId = renderer?.gpuTransitionId
+@@ -482,6 +497,7 @@
+       rctx,
+       trackOrder,
+       gpuTexturePool,
++      trackMasks,
+     )
+     if (textureParticipants) {
+       try {
+@@ -506,6 +522,8 @@
+     }
+   }
+
++  if (trackMasks.length > 0) return false
++
+   const participants = await renderTransitionParticipants(activeTransition, frame, rctx, trackOrder)
+   try {
+     return pipeline.renderToTexture(
+--- a/src/features/export/utils/canvas-item-renderer/types.ts
++++ b/src/features/export/utils/canvas-item-renderer/types.ts
+@@ -6,6 +6,7 @@
+   TimelineItem,
+   VideoItem,
+   ImageItem,
++  LottieItem,
+   TextItem,
+   ShapeItem,
+   CompositionItem,
+@@ -287,6 +288,8 @@
+ }
+
+ export interface GpuTextTextureCacheEntry {
++  /** Active participants keep the texture alive until their close hook runs. */
++  borrowers?: number
+   texture: GPUTexture
+   width: number
+   height: number
+@@ -342,7 +345,7 @@
+   | {
+       /** FL-97: an HDR frame already in working values (owned by the HDR source). */
+       kind: 'media'
+-      item: ImageItem | VideoItem
++      item: ImageItem | VideoItem | LottieItem
+       source?: undefined
+       texture: GPUTexture
+       sourceWidth: number
+--- /dev/null
++++ b/src/features/export/utils/canvas-item-renderer/video.hdr.test.ts
+@@ -0,0 +1,102 @@
++import { expect, it, vi } from 'vite-plus/test'
++import type { VideoItem } from '@/types/timeline'
++import { HdrVideoUnavailableError, registerHdrSourceUrl } from '../hdr-video-sources'
++import { getItemRenderTimelineSpan } from '../render-span'
++import * as mediaLibrary from '@/features/export/deps/media-library'
++import { prepareGpuMediaParticipant, renderPreviewVideoGpuEffectsToCanvas } from './gpu'
++import { renderVideoItem } from './video'
++import {
++  createItemRenderContext,
++  createItemTransform,
++  createMockCanvasContext,
++} from '../canvas-item-renderer-test-helpers'
++
++it('refuses registered HDR video before Canvas or decoded-SDR fallback; ordinary SDR still draws', async () => {
++  const item = {
++    id: 'hdr-video',
++    type: 'video',
++    mediaId: 'hdr-source',
++    src: 'sdr.mp4',
++    from: 0,
++    durationInFrames: 30,
++    sourceFps: 30,
++    sourceDuration: 30,
++    speed: 1,
++  } as VideoItem
++  const transform = createItemTransform()
++  const ctx = createMockCanvasContext()
++  const domVideoElementProvider = vi.fn()
++  const rctx = createItemRenderContext({
++    renderMode: 'preview',
++    gpuPipeline: {} as never,
++    gpuMediaPipeline: {} as never,
++    hdrVideo: { frameTexture: vi.fn(async () => null) },
++    domVideoElementProvider,
++  })
++  registerHdrSourceUrl(item.mediaId!, 'hdr.mp4')
++  try {
++    await expect(renderVideoItem(ctx, item, transform, 0, rctx)).rejects.toThrow(
++      HdrVideoUnavailableError,
++    )
++    expect(ctx.drawImage).not.toHaveBeenCalled()
++    await expect(
++      prepareGpuMediaParticipant(
++        { item, transform, effects: [], renderSpan: getItemRenderTimelineSpan(item) },
++        0,
++        rctx,
++      ),
++    ).resolves.toBeNull()
++    expect(
++      renderPreviewVideoGpuEffectsToCanvas(
++        item,
++        transform,
++        [{ enabled: true, effect: { type: 'gpu-effect' } } as never],
++        0,
++        rctx,
++      ),
++    ).toBeNull()
++    expect(domVideoElementProvider).not.toHaveBeenCalled()
++  } finally {
++    registerHdrSourceUrl(item.mediaId!, null)
++  }
++  const metadata = vi
++    .spyOn(mediaLibrary, 'getMediaMetadataById')
++    .mockReturnValue({ colorTransfer: 'pq' } as never)
++  try {
++    await expect(renderVideoItem(ctx, item, transform, 0, rctx)).rejects.toThrow('HDR video')
++    await expect(
++      prepareGpuMediaParticipant(
++        { item, transform, effects: [], renderSpan: getItemRenderTimelineSpan(item) },
++        0,
++        rctx,
++      ),
++    ).resolves.toBeNull()
++    expect(ctx.drawImage).not.toHaveBeenCalled()
++    expect(
++      renderPreviewVideoGpuEffectsToCanvas(
++        item,
++        transform,
++        [{ enabled: true, effect: { type: 'gpu-effect' } } as never],
++        0,
++        rctx,
++      ),
++    ).toBeNull()
++    expect(domVideoElementProvider).not.toHaveBeenCalled()
++  } finally {
++    metadata.mockRestore()
++  }
++  const bitmap = { width: 1280, height: 720 } as ImageBitmap
++  await expect(
++    renderVideoItem(
++      ctx,
++      item,
++      transform,
++      0,
++      createItemRenderContext({
++        renderMode: 'preview',
++        getCachedPredecodedBitmap: () => bitmap,
++      }),
++    ),
++  ).resolves.toBe(true)
++  expect(ctx.drawImage).toHaveBeenCalled()
++})
+--- a/src/features/export/utils/canvas-item-renderer/video.ts
++++ b/src/features/export/utils/canvas-item-renderer/video.ts
+@@ -19,6 +19,7 @@
+   waitForPreviewDomVideoDrawDecision,
+ } from '../frame-source-policy'
+ import type { CanvasPool } from '../canvas-pool'
++import { HdrVideoUnavailableError, isHdrVideoSource } from '../hdr-video-sources'
+ import type { CanvasSettings, ItemRenderContext, ItemTransform } from './types'
+ import {
+   isFrameInsideItemTimelineSpan,
+@@ -232,6 +233,9 @@
+   sourceFrameOffset: number = 0,
+   renderSpan?: RenderTimelineSpan,
+ ): Promise<boolean> {
++  if (isHdrVideoSource(item.mediaId)) {
++    throw new HdrVideoUnavailableError()
++  }
+   const {
+     fps,
+     videoExtractors,
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -106,7 +106,7 @@
+   type ItemRenderContext,
+   type SubCompRenderData,
+ } from './canvas-item-renderer'
+-import { HdrVideoSources } from './hdr-video-sources'
++import { HdrVideoSources, selectRenderFailure } from './hdr-video-sources'
+ import { HdrRasterSources, type HdrRasterInput } from './hdr-raster-sources'
+ import { ScrubbingCache } from '@/features/export/deps/preview'
+ import {
+@@ -2502,252 +2502,261 @@
+
+       // === PERFORMANCE: Use pooled canvas instead of creating new one each frame ===
+       const { canvas: contentCanvas, ctx: contentCtx } = canvasPool.acquire()
+-      const scrubPerfTaskStartMs = scrubPerfStartMs >= 0 ? performance.now() : -1
+-      let scrubPerfTaskEndMs = scrubPerfTaskStartMs
+-      let scrubPerfGpuWaitEndMs = scrubPerfTaskStartMs
+-      let scrubPerfCompositeEndMs = scrubPerfTaskStartMs
+-
+-      // Render tracks in order (bottom to top), with transitions at their track position
+-      // Track order: higher values render first (behind), lower values render last (on top)
+-      let skippedTracks = 0
+-      let finalCompositeSource: OffscreenCanvas = contentCanvas
+-
+-      // Parallelize item rendering (video decode is the bottleneck).
+-      // Collect all renderable items in z-order, fire all renders concurrently,
+-      // then composite results in z-order.
+-      const scrubSlowTasks: Array<{ id: string; kind: string; ms: number }> = []
+-      {
+-        if (occlusionCutoffOrder !== null) {
+-          skippedTracks = sortedTracks.filter(
+-            (track) => visibleTrackIds.has(track.id) && (track.order ?? 0) > occlusionCutoffOrder,
+-          ).length
+-        }
+-
+-        const renderMasksToGpuTexture = (masks: PreparedMask[]) =>
+-          renderMasksToGpuTexturePure(masks, { gpu, canvasSettings, maskSettings })
+-
+-        const renderTransitionFallbackCanvas = (
+-          task: Extract<(typeof renderTasks)[number], { type: 'transition' }>,
+-        ): Promise<RenderedTaskResult> =>
+-          renderTransitionFallbackCanvasPure(task, {
+-            frame,
+-            activeMasks,
+-            itemRenderContext,
+-            canvasPool,
+-          })
+-
+-        const applyTrackScopedMasks = (
+-          result: RenderedTaskResult | null,
+-          trackOrder: number,
+-          skipMasks: boolean,
+-        ): RenderedTaskResult | null =>
+-          applyTrackScopedMasksPure(result, trackOrder, skipMasks, {
+-            activeMasks,
+-            canvasPool,
+-            maskSettings,
+-          })
+-
+-        const renderTask = async (
+-          task: (typeof renderTasks)[number],
+-        ): Promise<RenderedTaskResult | null> => {
+-          const taskStartMs = scrubPerfStartMs >= 0 ? performance.now() : -1
+-          try {
+-            if (isSupersededActivePreviewFrame()) return null
+-            if (task.type === 'item') {
+-              const item = getCurrentItem(task.item)
+-              const canSeparateMasks =
+-                useGpuCompositor && gpu.texturePool && !hasCornerPin(item.cornerPin)
+-              if (floatRoute && canSeparateMasks && gpu.texturePool) {
+-                // FL-97: keep the item's extended range; masks stay with the compositor.
+-                const floatTexture = gpu.texturePool.acquire(
++      try {
++        const scrubPerfTaskStartMs = scrubPerfStartMs >= 0 ? performance.now() : -1
++        let scrubPerfTaskEndMs = scrubPerfTaskStartMs
++        let scrubPerfGpuWaitEndMs = scrubPerfTaskStartMs
++        let scrubPerfCompositeEndMs = scrubPerfTaskStartMs
++
++        // Render tracks in order (bottom to top), with transitions at their track position
++        // Track order: higher values render first (behind), lower values render last (on top)
++        let skippedTracks = 0
++        let finalCompositeSource: OffscreenCanvas = contentCanvas
++
++        // Parallelize item rendering (video decode is the bottleneck).
++        // Collect all renderable items in z-order, fire all renders concurrently,
++        // then composite results in z-order.
++        const scrubSlowTasks: Array<{ id: string; kind: string; ms: number }> = []
++        {
++          if (occlusionCutoffOrder !== null) {
++            skippedTracks = sortedTracks.filter(
++              (track) => visibleTrackIds.has(track.id) && (track.order ?? 0) > occlusionCutoffOrder,
++            ).length
++          }
++
++          const renderMasksToGpuTexture = (masks: PreparedMask[]) =>
++            renderMasksToGpuTexturePure(masks, { gpu, canvasSettings, maskSettings })
++
++          const renderTransitionFallbackCanvas = (
++            task: Extract<(typeof renderTasks)[number], { type: 'transition' }>,
++          ): Promise<RenderedTaskResult> =>
++            renderTransitionFallbackCanvasPure(task, {
++              frame,
++              activeMasks,
++              itemRenderContext,
++              canvasPool,
++            })
++
++          const applyTrackScopedMasks = (
++            result: RenderedTaskResult | null,
++            trackOrder: number,
++            skipMasks: boolean,
++          ): RenderedTaskResult | null =>
++            applyTrackScopedMasksPure(result, trackOrder, skipMasks, {
++              activeMasks,
++              canvasPool,
++              maskSettings,
++            })
++
++          const renderTask = async (
++            task: (typeof renderTasks)[number],
++          ): Promise<RenderedTaskResult | null> => {
++            const taskStartMs = scrubPerfStartMs >= 0 ? performance.now() : -1
++            try {
++              if (isSupersededActivePreviewFrame()) return null
++              if (task.type === 'item') {
++                const item = getCurrentItem(task.item)
++                const canSeparateMasks =
++                  useGpuCompositor && gpu.texturePool && !hasCornerPin(item.cornerPin)
++                if (floatRoute && canSeparateMasks && gpu.texturePool) {
++                  // FL-97: keep the item's extended range; masks stay with the compositor.
++                  const floatTexture = gpu.texturePool.acquire(
++                    canvasSettings.width,
++                    canvasSettings.height,
++                    'rgba16float',
++                  )
++                  const poolCanvases: OffscreenCanvas[] = []
++                  let rendered = false
++                  try {
++                    rendered = await renderItemToFloatTexture(
++                      task.item,
++                      frame,
++                      task.trackOrder,
++                      itemRenderContext,
++                      gpu.texturePool,
++                      floatTexture,
++                      poolCanvases,
++                    )
++                    if (rendered) return { gpuTexture: floatTexture, poolCanvases }
++                  } finally {
++                    if (!rendered) {
++                      gpu.texturePool.release(floatTexture)
++                      for (const pooled of poolCanvases) canvasPool.release(pooled)
++                    }
++                  }
++                }
++                if (item.type === 'image' && hdrRasterSources.has(item.mediaId)) {
++                  throw new Error('HDR raster could not be rendered on the float route')
++                }
++                return renderItemWithEffects(
++                  task.item,
++                  task.trackOrder,
++                  true,
++                  contentCtx,
++                  !canSeparateMasks,
++                  false,
++                )
++              }
++              const transitionMasks = activeMasks.filter((mask) =>
++                doesMaskAffectTrack(mask.trackOrder, task.trackOrder),
++              )
++              if (useGpuCompositor && gpu.texturePool && itemRenderContext.gpuTransitionPipeline) {
++                const transitionTexture = gpu.texturePool.acquire(
+                   canvasSettings.width,
+                   canvasSettings.height,
+                   'rgba16float',
+                 )
+-                const poolCanvases: OffscreenCanvas[] = []
+-                if (
+-                  await renderItemToFloatTexture(
+-                    task.item,
++                let renderedToTexture = false
++                try {
++                  renderedToTexture = await renderTransitionToGpuTexture(
++                    transitionTexture,
++                    task.transition,
+                     frame,
++                    itemRenderContext,
+                     task.trackOrder,
+-                    itemRenderContext,
+                     gpu.texturePool,
+-                    floatTexture,
+-                    poolCanvases,
++                    transitionMasks,
+                   )
+-                ) {
+-                  return { gpuTexture: floatTexture, poolCanvases }
++                  if (renderedToTexture) {
++                    return { gpuTexture: transitionTexture, poolCanvases: [] }
++                  }
++                } finally {
++                  if (!renderedToTexture) gpu.texturePool.release(transitionTexture)
+                 }
+-                gpu.texturePool.release(floatTexture)
+-                for (const pooled of poolCanvases) canvasPool.release(pooled)
+               }
+-              if (item.type === 'image' && hdrRasterSources.has(item.mediaId)) {
+-                throw new Error('HDR raster could not be rendered on the float route')
+-              }
+-              return renderItemWithEffects(
+-                task.item,
+-                task.trackOrder,
+-                true,
+-                contentCtx,
+-                !canSeparateMasks,
+-                false,
+-              )
+-            }
+-            const transitionMasks = activeMasks.filter((mask) =>
+-              doesMaskAffectTrack(mask.trackOrder, task.trackOrder),
+-            )
+-            if (
+-              useGpuCompositor &&
+-              gpu.texturePool &&
+-              transitionMasks.length === 0 &&
+-              itemRenderContext.gpuTransitionPipeline
+-            ) {
+-              const transitionTexture = gpu.texturePool.acquire(
+-                canvasSettings.width,
+-                canvasSettings.height,
+-                'rgba16float',
+-              )
+-              const renderedToTexture = await renderTransitionToGpuTexture(
+-                transitionTexture,
+-                task.transition,
+-                frame,
+-                itemRenderContext,
+-                task.trackOrder,
+-                gpu.texturePool,
+-              )
+-              if (renderedToTexture) {
+-                return {
+-                  gpuTexture: transitionTexture,
+-                  poolCanvases: [],
+-                } satisfies RenderedTaskResult
+-              }
+-              gpu.texturePool.release(transitionTexture)
+-            }
+-            // Transitions: render to a dedicated canvas
+-            return renderTransitionFallbackCanvas(task)
+-          } finally {
+-            if (taskStartMs >= 0) {
+-              const taskMs = performance.now() - taskStartMs
+-              if (taskMs >= 8) {
+-                const currentItem = task.type === 'item' ? getCurrentItem(task.item) : null
+-                scrubSlowTasks.push({
+-                  id:
+-                    currentItem?.id ??
+-                    (task.type === 'transition' ? task.transition.transition.id : 'unknown'),
+-                  kind: currentItem?.type ?? task.type,
+-                  ms: Number(taskMs.toFixed(2)),
+-                })
++              // Transitions: render to a dedicated canvas
++              return renderTransitionFallbackCanvas(task)
++            } finally {
++              if (taskStartMs >= 0) {
++                const taskMs = performance.now() - taskStartMs
++                if (taskMs >= 8) {
++                  const currentItem = task.type === 'item' ? getCurrentItem(task.item) : null
++                  scrubSlowTasks.push({
++                    id:
++                      currentItem?.id ??
++                      (task.type === 'transition' ? task.transition.transition.id : 'unknown'),
++                    kind: currentItem?.type ?? task.type,
++                    ms: Number(taskMs.toFixed(2)),
++                  })
++                }
+               }
+             }
+           }
+-        }
+-
+-        const renderTasksWithInteractionLimit = async () => {
+-          const results: Array<RenderedTaskResult | null> = Array(renderTasks.length).fill(null)
+-          const concurrency =
+-            renderMode === 'preview' ? Math.min(1, renderTasks.length) : renderTasks.length
+-          let nextTaskIndex = 0
+-          const worker = async () => {
+-            while (nextTaskIndex < renderTasks.length) {
+-              if (isSupersededActivePreviewFrame()) return
+-              const taskIndex = nextTaskIndex++
+-              results[taskIndex] = await renderTask(renderTasks[taskIndex]!)
++
++          const releaseResults = (results: Array<RenderedTaskResult | null>) => {
++            for (const result of results) {
++              if (!result) continue
++              for (const pooledCanvas of result.poolCanvases) canvasPool.release(pooledCanvas)
++              if (result.gpuTexture) gpu.texturePool?.release(result.gpuTexture)
+             }
+           }
+-          await Promise.all(Array.from({ length: concurrency }, () => worker()))
+-          return results
+-        }
+-
+-        let results: Array<RenderedTaskResult | null>
+-        try {
+-          // Ordinary playback/export retains full parallelism. Active scrubs
+-          // cap item-level concurrency so a complex frame cannot exhaust the
+-          // canvas pool while its exact worker bitmaps are still arriving.
+-          results = await renderTasksWithInteractionLimit()
+-          scrubPerfTaskEndMs = scrubPerfStartMs >= 0 ? performance.now() : -1
+-        } finally {
+-          // End GPU pool mode before compositing, even if one task fails.
+-          if (shouldUseDeferredGpuBatch && itemRenderContext.gpuPipeline) {
+-            itemRenderContext.gpuPipeline.endBatch()
++
++          const renderTasksWithInteractionLimit = async () => {
++            const results: Array<RenderedTaskResult | null> = Array(renderTasks.length).fill(null)
++            const concurrency =
++              renderMode === 'preview' ? Math.min(1, renderTasks.length) : renderTasks.length
++            let nextTaskIndex = 0
++            const worker = async () => {
++              while (nextTaskIndex < renderTasks.length) {
++                if (isSupersededActivePreviewFrame()) return
++                const taskIndex = nextTaskIndex++
++                results[taskIndex] = await renderTask(renderTasks[taskIndex]!)
++              }
++            }
++            // Drain siblings before releasing their results or rejecting the frame.
++            const settled = await Promise.allSettled(
++              Array.from({ length: concurrency }, () => worker()),
++            )
++            const failed = selectRenderFailure(settled)
++            if (failed) {
++              releaseResults(results)
++              throw failed.reason
++            }
++            return results
+           }
+-        }
+-
+-        if (isSupersededActivePreviewFrame() || activePreviewFramePending) {
+-          for (const result of results) {
+-            if (!result) continue
+-            for (const pooledCanvas of result.poolCanvases) {
+-              canvasPool.release(pooledCanvas)
+-            }
+-            if (result.gpuTexture) {
+-              gpu.texturePool?.release(result.gpuTexture)
++
++          let results: Array<RenderedTaskResult | null>
++          try {
++            // Ordinary playback/export retains full parallelism. Active scrubs
++            // cap item-level concurrency so a complex frame cannot exhaust the
++            // canvas pool while its exact worker bitmaps are still arriving.
++            results = await renderTasksWithInteractionLimit()
++            scrubPerfTaskEndMs = scrubPerfStartMs >= 0 ? performance.now() : -1
++          } finally {
++            // End GPU pool mode before compositing, even if one task fails.
++            if (shouldUseDeferredGpuBatch && itemRenderContext.gpuPipeline) {
++              itemRenderContext.gpuPipeline.endBatch()
+             }
+           }
+-          canvasPool.release(contentCanvas)
+-          abortActivePreviewRender()
+-          return
+-        }
+-
+-        // Consume pooled WebGPU canvases synchronously below. Awaiting the queue
+-        // here crosses a task boundary, allowing the browser to present and
+-        // discard a GPUCanvasContext texture before Canvas2D reads it. The first
+-        // drawImage performs the required GPU stall and preserves heavy effect
+-        // stacks without intermittent black frames.
+-        scrubPerfGpuWaitEndMs = scrubPerfStartMs >= 0 ? performance.now() : -1
+-
+-        finalCompositeSource = await compositeFrameResults({
+-          useGpuCompositor,
+-          gpu,
+-          gpuCompositeOutput,
+-          canvasSettings,
+-          maskSettings,
+-          renderTasks,
+-          results,
+-          activeMasks,
+-          contentCanvas,
+-          contentCtx,
+-          itemRenderContext,
+-          canvasPool,
+-          getCurrentItem,
+-          getEffectiveBlendMode,
+-          applyTrackScopedMasks,
+-          renderMasksToGpuTexture,
+-          renderTransitionFallbackCanvas,
+-          renderItemWithEffects,
+-          floatOutput:
+-            floatCapture || hdrWorking
+-              ? {
+-                  background: parseBackgroundColor(backgroundColor),
+-                  capture: floatCapture ? captureSignal : displayHdr,
+-                }
+-              : undefined,
+-        })
+-        scrubPerfCompositeEndMs = scrubPerfStartMs >= 0 ? performance.now() : -1
+-      }
+-
+-      // Log occlusion culling stats periodically (only in development)
+-      if (import.meta.env.DEV && skippedTracks > 0 && frame % 30 === 0) {
+-        getLog().debug(`Occlusion culling: skipped ${skippedTracks} tracks at frame ${frame}`)
+-      }
+-
+-      // A signal capture (FL-98) only reads the float composite: it leaves the display canvas and
+-      // the frame cache as the last display render left them.
+-      if (!floatCapture) ctx.drawImage(finalCompositeSource, 0, 0)
+-
+-      // Release content canvas back to pool
+-      canvasPool.release(contentCanvas)
+-      if (!floatCapture) cacheRenderedFrame(frame)
+-      if (scrubPerfStartMs >= 0) {
+-        const scrubPerfEndMs = performance.now()
+-        recordScrubPerf(frame, 'full', scrubPerfStartMs, {
+-          planMs: Number((scrubPerfTaskStartMs - scrubPerfStartMs).toFixed(2)),
+-          taskMs: Number((scrubPerfTaskEndMs - scrubPerfTaskStartMs).toFixed(2)),
+-          gpuWaitMs: Number((scrubPerfGpuWaitEndMs - scrubPerfTaskEndMs).toFixed(2)),
+-          compositeMs: Number((scrubPerfCompositeEndMs - scrubPerfGpuWaitEndMs).toFixed(2)),
+-          finalizeMs: Number((scrubPerfEndMs - scrubPerfCompositeEndMs).toFixed(2)),
+-          taskCount: renderTasks.length,
+-          transitionCount: activeTransitions.length,
+-          slowTasks: scrubSlowTasks.length > 0 ? scrubSlowTasks : undefined,
+-        })
++
++          if (isSupersededActivePreviewFrame() || activePreviewFramePending) {
++            releaseResults(results)
++            abortActivePreviewRender()
++            return
++          }
++
++          // Consume pooled WebGPU canvases synchronously below. Awaiting the queue
++          // here crosses a task boundary, allowing the browser to present and
++          // discard a GPUCanvasContext texture before Canvas2D reads it. The first
++          // drawImage performs the required GPU stall and preserves heavy effect
++          // stacks without intermittent black frames.
++          scrubPerfGpuWaitEndMs = scrubPerfStartMs >= 0 ? performance.now() : -1
++
++          finalCompositeSource = await compositeFrameResults({
++            useGpuCompositor,
++            gpu,
++            gpuCompositeOutput,
++            canvasSettings,
++            maskSettings,
++            renderTasks,
++            results,
++            activeMasks,
++            contentCanvas,
++            contentCtx,
++            itemRenderContext,
++            canvasPool,
++            getCurrentItem,
++            getEffectiveBlendMode,
++            applyTrackScopedMasks,
++            renderMasksToGpuTexture,
++            renderTransitionFallbackCanvas,
++            renderItemWithEffects,
++            floatOutput:
++              floatCapture || hdrWorking
++                ? {
++                    background: parseBackgroundColor(backgroundColor),
++                    capture: floatCapture ? captureSignal : displayHdr,
++                  }
++                : undefined,
++          })
++          scrubPerfCompositeEndMs = scrubPerfStartMs >= 0 ? performance.now() : -1
++        }
++
++        // Log occlusion culling stats periodically (only in development)
++        if (import.meta.env.DEV && skippedTracks > 0 && frame % 30 === 0) {
++          getLog().debug(`Occlusion culling: skipped ${skippedTracks} tracks at frame ${frame}`)
++        }
++
++        // A signal capture (FL-98) only reads the float composite: it leaves the display canvas and
++        // the frame cache as the last display render left them.
++        if (!floatCapture) ctx.drawImage(finalCompositeSource, 0, 0)
++
++        if (!floatCapture) cacheRenderedFrame(frame)
++        if (scrubPerfStartMs >= 0) {
++          const scrubPerfEndMs = performance.now()
++          recordScrubPerf(frame, 'full', scrubPerfStartMs, {
++            planMs: Number((scrubPerfTaskStartMs - scrubPerfStartMs).toFixed(2)),
++            taskMs: Number((scrubPerfTaskEndMs - scrubPerfTaskStartMs).toFixed(2)),
++            gpuWaitMs: Number((scrubPerfGpuWaitEndMs - scrubPerfTaskEndMs).toFixed(2)),
++            compositeMs: Number((scrubPerfCompositeEndMs - scrubPerfGpuWaitEndMs).toFixed(2)),
++            finalizeMs: Number((scrubPerfEndMs - scrubPerfCompositeEndMs).toFixed(2)),
++            taskCount: renderTasks.length,
++            transitionCount: activeTransitions.length,
++            slowTasks: scrubSlowTasks.length > 0 ? scrubSlowTasks : undefined,
++          })
++        }
++      } finally {
++        canvasPool.release(contentCanvas)
+       }
+     },
+
+--- a/src/features/export/utils/frame-compositing.ts
++++ b/src/features/export/utils/frame-compositing.ts
+@@ -11,6 +11,7 @@
+ import type { CanvasSettings, ItemRenderContext } from './canvas-item-renderer'
+ import type { GpuPipelineManager } from './gpu-pipeline-manager'
+ import type { RenderedTaskResult } from './frame-mask-helpers'
++import { HdrRenderUnavailableError } from './hdr-video-sources'
+
+ function getLog() {
+   return createLogger('ClientRenderEngine')
+@@ -146,19 +147,31 @@
+         const applicableMasks = activeMasks.filter((mask) =>
+           doesMaskAffectTrack(mask.trackOrder, task.trackOrder),
+         )
+-        const shouldUseSeparateMask = task.type === 'item' && !taskHasCornerPin
++        const shouldUseSeparateMask =
++          !taskHasCornerPin && (task.type === 'item' || Boolean(results[i]?.gpuTexture))
+         let result: RenderedTaskResult | null = shouldUseSeparateMask
+           ? (results[i] ?? null)
+           : applyTrackScopedMasks(results[i] ?? null, task.trackOrder, taskHasCornerPin)
+         if (!result) continue
+
+-        let maskInfo =
+-          shouldUseSeparateMask && applicableMasks.length > 0
+-            ? renderMasksToGpuTexture(applicableMasks)
+-            : null
++        let maskInfo: ReturnType<FrameCompositingDeps['renderMasksToGpuTexture']>
++        try {
++          maskInfo =
++            shouldUseSeparateMask && applicableMasks.length > 0
++              ? renderMasksToGpuTexture(applicableMasks)
++              : null
++        } catch (error) {
++          if (floatOutput) {
++            throw new HdrRenderUnavailableError('Float layer mask could not be rendered')
++          }
++          throw error
++        }
+         if (maskInfo) layerMaskTextures.push(maskInfo.texture)
+         let fallbackMasks = shouldUseSeparateMask ? applicableMasks : []
+         if (shouldUseSeparateMask && applicableMasks.length > 0 && !maskInfo) {
++          if (result.gpuTexture) {
++            throw new HdrRenderUnavailableError('Float layer mask could not be rendered')
++          }
+           const maskedResult = applyTrackScopedMasks(result, task.trackOrder, false)
+           if (!maskedResult) continue
+           result = maskedResult
+@@ -320,7 +333,12 @@
+       // Always return pooled resources, including when upload, compositing, or
+       // fallback rendering throws. Otherwise the pool permanently treats them
+       // as in-use and allocates replacements on every later frame.
+-      for (const texture of new Set(layerTextures)) gpu.texturePool!.release(texture)
++      for (const texture of new Set([
++        ...layerTextures,
++        ...results.flatMap((result) => (result?.gpuTexture ? [result.gpuTexture] : [])),
++      ])) {
++        gpu.texturePool!.release(texture)
++      }
+       for (const texture of new Set(layerMaskTextures)) gpu.texturePool!.release(texture)
+     }
+   } else {
+--- a/src/features/export/utils/frame-mask-helpers.ts
++++ b/src/features/export/utils/frame-mask-helpers.ts
+@@ -39,14 +39,19 @@
+   applyMasks(maskedCtx, maskSource, masks, maskSettings)
+
+   const texture = gpu.texturePool.acquire(canvasSettings.width, canvasSettings.height)
+-  gpu
+-    .effects!.getDevice()
+-    .queue.copyExternalImageToTexture(
+-      { source: maskedCanvas, flipY: false },
+-      { texture },
+-      { width: canvasSettings.width, height: canvasSettings.height },
+-    )
+-  return { texture, view: texture.createView() }
++  try {
++    gpu
++      .effects!.getDevice()
++      .queue.copyExternalImageToTexture(
++        { source: maskedCanvas, flipY: false },
++        { texture },
++        { width: canvasSettings.width, height: canvasSettings.height },
++      )
++    return { texture, view: texture.createView() }
++  } catch (error) {
++    gpu.texturePool.release(texture)
++    throw error
++  }
+ }
+
+ /**
+--- a/src/features/export/utils/frame-render-tasks.ts
++++ b/src/features/export/utils/frame-render-tasks.ts
+@@ -228,50 +228,57 @@
+   // === PERFORMANCE: Use pooled canvas instead of creating new one ===
+   const { canvas: itemCanvas, ctx: itemCtx } = canvasPool.acquire()
+
+-  // Render based on item type
+-  await renderItem(
+-    itemCtx,
+-    effectiveItem,
+-    transform,
+-    frame,
+-    itemRenderContext,
+-    0,
+-    undefined,
+-    renderMasks,
+-  )
+-
+-  // Apply effects (per-item — GPU effects applied here for both preview and export)
+-  if (combinedEffects.length > 0) {
+-    const hasGpu = combinedEffects.some((e) => e.enabled && e.effect.type === 'gpu-effect')
+-    if (hasGpu && !itemRenderContext.gpuPipeline) {
+-      itemRenderContext.gpuPipeline = await gpu.ensureEffects()
+-      if (!itemRenderContext.gpuPipeline) {
+-        getLog().warn('GPU pipeline init failed — GPU effects will be skipped')
+-      }
+-    }
+-    const { source, poolCanvases } = await renderEffectsFromMaskedSource(
+-      canvasPool,
+-      itemCanvas,
+-      combinedEffects,
+-      hasCornerPin(effectiveItem.cornerPin) ? [] : renderMasks,
++  let retainItemCanvas = false
++  try {
++    // Render based on item type
++    await renderItem(
++      itemCtx,
++      effectiveItem,
++      transform,
+       frame,
+-      maskSettings,
+-      itemRenderContext.gpuPipeline,
++      itemRenderContext,
++      0,
++      undefined,
++      renderMasks,
+     )
+-    canvasPool.release(itemCanvas)
++
++    // Apply effects (per-item — GPU effects applied here for both preview and export)
++    if (combinedEffects.length > 0) {
++      const hasGpu = combinedEffects.some((e) => e.enabled && e.effect.type === 'gpu-effect')
++      if (hasGpu && !itemRenderContext.gpuPipeline) {
++        itemRenderContext.gpuPipeline = await gpu.ensureEffects()
++        if (!itemRenderContext.gpuPipeline) {
++          getLog().warn('GPU pipeline init failed — GPU effects will be skipped')
++        }
++      }
++      const { source, poolCanvases } = await renderEffectsFromMaskedSource(
++        canvasPool,
++        itemCanvas,
++        combinedEffects,
++        hasCornerPin(effectiveItem.cornerPin) ? [] : renderMasks,
++        frame,
++        maskSettings,
++        itemRenderContext.gpuPipeline,
++      )
++
++      if (deferred) {
++        return { source, poolCanvases }
++      }
++      try {
++        targetCtx.drawImage(source, 0, 0)
++      } finally {
++        for (const effectCanvas of poolCanvases) canvasPool.release(effectCanvas)
++      }
++      return null
++    }
+
+     if (deferred) {
+-      return { source, poolCanvases }
+-    }
+-    targetCtx.drawImage(source, 0, 0)
+-    for (const effectCanvas of poolCanvases) canvasPool.release(effectCanvas)
++      retainItemCanvas = true
++      return { source: itemCanvas, poolCanvases: [itemCanvas] }
++    }
++    targetCtx.drawImage(itemCanvas, 0, 0)
+     return null
+-  }
+-
+-  if (deferred) {
+-    return { source: itemCanvas, poolCanvases: [itemCanvas] }
+-  }
+-  targetCtx.drawImage(itemCanvas, 0, 0)
+-  canvasPool.release(itemCanvas)
+-  return null
+-}
++  } finally {
++    if (!retainItemCanvas) canvasPool.release(itemCanvas)
++  }
++}
+--- a/src/features/export/utils/hdr-video-sources.ts
++++ b/src/features/export/utils/hdr-video-sources.ts
+@@ -5,15 +5,42 @@
+  * BT.2020 PQ/HLG intermediate of the original (Frameleaf's Studio HDR
+  * intermediate; never the original itself). An HDR project decodes that URL with
+  * WebCodecs and uploads the planes straight into working values, instead of
+- * reading the SDR playback stream. Anything that cannot (no URL yet, a decoder
+- * that hides its planes, a failed decode) keeps the SDR stream.
++ * reading the SDR playback stream. Known HDR sources without a usable float
++ * frame must be refused by the participant and Canvas paths.
+  */
+ import { HdrFrameUploader } from '@/infrastructure/gpu-color/hdr-frame-upload'
+ import { createLogger } from '@/shared/logging/logger'
+ import { VideoFrameExtractor } from './canvas-video-extractor'
++import { getMediaMetadataById } from '@/features/export/deps/media-library'
++import { workingRangeOfSources } from '@/shared/graphics/color/managed-color'
+
+ const log = createLogger('HdrVideoSources')
+ const hdrSourceUrls = new Map<string, string>()
++
++export class HdrRenderUnavailableError extends Error {
++  constructor(message: string) {
++    super(message)
++    this.name = 'HdrRenderUnavailableError'
++  }
++}
++
++export class HdrVideoUnavailableError extends HdrRenderUnavailableError {
++  constructor() {
++    super('HDR video cannot be drawn through a canvas')
++    this.name = 'HdrVideoUnavailableError'
++  }
++}
++
++export function selectRenderFailure(
++  results: PromiseSettledResult<unknown>[],
++): PromiseRejectedResult | undefined {
++  return (
++    results.find(
++      (result): result is PromiseRejectedResult =>
++        result.status === 'rejected' && result.reason instanceof HdrRenderUnavailableError,
++    ) ?? results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
++  )
++}
+
+ export function registerHdrSourceUrl(mediaId: string, url: string | null | undefined): void {
+   if (url) hdrSourceUrls.set(mediaId, url)
+@@ -22,6 +49,13 @@
+
+ export function getHdrSourceUrl(mediaId: string | undefined): string | undefined {
+   return mediaId ? hdrSourceUrls.get(mediaId) : undefined
++}
++
++export function isHdrVideoSource(mediaId: string | undefined): boolean {
++  return (
++    Boolean(getHdrSourceUrl(mediaId)) ||
++    workingRangeOfSources([getMediaMetadataById(mediaId)?.colorTransfer]) === 'hdr'
++  )
+ }
+
+ interface ItemSource {
+@@ -45,7 +79,7 @@
+
+   constructor(private readonly getDevice: () => GPUDevice | null | undefined) {}
+
+-  /** The item's frame at `sourceTime` in working values, or null to use the SDR route. */
++  /** The item's frame at `sourceTime` in working values, or null when unavailable. */
+   async frameTexture(
+     item: { id: string; mediaId?: string },
+     sourceTime: number,
+@@ -112,9 +146,9 @@
+   }
+
+   private fail(url: string, reason: string): null {
+-    // ponytail: one failure retires the URL for this renderer; the SDR stream takes over.
++    // ponytail: one failure retires the URL for this renderer; reopen to retry.
+     this.failed.add(url)
+-    log.warn('HDR intermediate unavailable; using the SDR stream', { reason })
++    log.warn('HDR intermediate unavailable', { reason })
+     return null
+   }
+ }
+--- a/src/features/preview/components/preview-stage.tsx
++++ b/src/features/preview/components/preview-stage.tsx
+@@ -43,6 +43,7 @@
+   initialFrame?: number
+   isResolving: boolean
+   isRenderedOverlayVisible: boolean
++  hdrPreviewUnavailable?: boolean
+   isSplitGradeAfterVisible?: boolean
+   colorGradeComparisonMode?: ColorGradeComparisonMode
+   colorGradeSplitPosition?: number
+@@ -84,6 +85,7 @@
+   initialFrame = 0,
+   isResolving,
+   isRenderedOverlayVisible,
++  hdrPreviewUnavailable = false,
+   isSplitGradeAfterVisible = false,
+   colorGradeComparisonMode = 'off',
+   colorGradeSplitPosition = 0.5,
+@@ -105,7 +107,7 @@
+   const playerSurfaceRef = useRef<HTMLDivElement | null>(null)
+   const textOverlayPlayerRef = useRef<PlayerRef | null>(null)
+   const renderedOverlayVisibleRef = useRef(isRenderedOverlayVisible)
+-  renderedOverlayVisibleRef.current = isRenderedOverlayVisible
++  renderedOverlayVisibleRef.current = isRenderedOverlayVisible || hdrPreviewUnavailable
+
+   // Observe the browser's actual video presentation rather than treating a
+   // Clock tick as visible output. The subscription is imperative so playback
+@@ -392,6 +394,15 @@
+                 </div>
+               )}
+
++              {hdrPreviewUnavailable && (
++                <div
++                  role="alert"
++                  className="absolute inset-0 flex items-center justify-center bg-black z-20"
++                >
++                  <p className="text-white text-sm">HDR preview unavailable</p>
++                </div>
++              )}
++
+               {!isResolving && isTimelineEmpty && (
+                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 px-6 text-center pointer-events-none">
+                   <div className="max-w-sm rounded-xl border border-white/10 bg-black/50 px-5 py-4 text-white shadow-xl backdrop-blur-sm">
+@@ -414,6 +425,7 @@
+                 style={{
+                   width: '100%',
+                   height: '100%',
++                  visibility: hdrPreviewUnavailable ? 'hidden' : undefined,
+                 }}
+                 onFrameChange={onFrameChange}
+                 onPlayStateChange={onPlayStateChange}
+@@ -433,7 +445,8 @@
+                     width: '100%',
+                     height: '100%',
+                     zIndex: 4,
+-                    visibility: isRenderedOverlayVisible ? 'visible' : 'hidden',
++                    visibility:
++                      isRenderedOverlayVisible && !hdrPreviewUnavailable ? 'visible' : 'hidden',
+                     clipPath: isSplitGradeComparison ? splitClipPath : undefined,
+                     backgroundColor: '#000',
+                   }}
+@@ -445,7 +458,8 @@
+                       ...displayCanvasStyle,
+                       maxWidth: 'none',
+                       maxHeight: 'none',
+-                      visibility: isRenderedOverlayVisible ? 'visible' : 'hidden',
++                      visibility:
++                        isRenderedOverlayVisible && !hdrPreviewUnavailable ? 'visible' : 'hidden',
+                     }}
+                   />
+                 </div>
+@@ -458,7 +472,8 @@
+                 style={{
+                   ...displayCanvasStyle,
+                   zIndex: isSplitGradeAfterVisible ? 3 : 5,
+-                  visibility: isSplitGradeAfterVisible ? 'visible' : 'hidden',
++                  visibility:
++                    isSplitGradeAfterVisible && !hdrPreviewUnavailable ? 'visible' : 'hidden',
+                 }}
+               />
+
+--- a/src/features/preview/components/video-preview.tsx
++++ b/src/features/preview/components/video-preview.tsx
+@@ -729,7 +729,7 @@
+       window.clearTimeout(timeoutId)
+     }
+   }, [ensureFastScrubRenderer, isResolving, shouldWarmGpuEffectsRenderer])
+-  usePreviewRenderPump({
++  const hdrPreviewUnavailable = usePreviewRenderPump({
+     fps,
+     forceFastScrubOverlay,
+     useProxy,
+@@ -974,6 +974,7 @@
+       initialFrame={initialPlayheadFrameRef.current ?? 0}
+       isResolving={isResolving}
+       isRenderedOverlayVisible={stageRenderedOverlayVisible}
++      hdrPreviewUnavailable={hdrPreviewUnavailable}
+       isSplitGradeAfterVisible={isSplitAfterVisible}
+       colorGradeComparisonMode={stageColorGradeComparisonMode}
+       colorGradeSplitPosition={colorGradeSplitPosition}
+--- a/src/features/preview/deps/export-contract.ts
++++ b/src/features/preview/deps/export-contract.ts
+@@ -7,6 +7,7 @@
+   SharedVideoExtractorPool,
+   type VideoFrameSource,
+ } from '@/features/export/utils/shared-video-extractor'
++export { HdrRenderUnavailableError } from '@/features/export/utils/hdr-video-sources'
+ export {
+   isFrameInsideSourceTimeRamp,
+   resolveAATransitionRamps,
+--- /dev/null
++++ b/src/features/preview/deps/export-test-contract.ts
+@@ -0,0 +1,7 @@
++export { renderTransitionToCanvas } from '@/features/export/utils/canvas-item-renderer/transition'
++export { registerHdrSourceUrl } from '@/features/export/utils/hdr-video-sources'
++export {
++  createItemRenderContext,
++  createItemTransform,
++  createMockCanvasContext,
++} from '@/features/export/utils/canvas-item-renderer-test-helpers'
+--- /dev/null
++++ b/src/features/preview/deps/hdr-preview-boundary.test.tsx
+@@ -0,0 +1,239 @@
++import { act, render, screen, waitFor } from '@testing-library/react'
++import { useMemo, type CSSProperties, type ReactNode } from 'react'
++import { afterEach, expect, it, vi } from 'vite-plus/test'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
++import { resetPlaybackPreviewState } from '@/shared/state/playback-preview-test-helpers'
++import { HdrRenderUnavailableError } from './export'
++import {
++  renderTransitionToCanvas,
++  registerHdrSourceUrl,
++  createItemRenderContext,
++  createItemTransform,
++  createMockCanvasContext,
++} from './export-test-contract'
++import { PreviewStage } from '../components/preview-stage'
++import { usePreviewOverlayController } from '../hooks/use-preview-overlay-controller'
++import { usePreviewRuntimeRefs } from '../hooks/use-preview-runtime-refs'
++import { usePreviewRenderPump } from '../hooks/use-preview-render-pump-controller'
++
++vi.mock('@/features/preview/deps/player-core', () => ({
++  HeadlessPlayer: ({ children, style }: { children: ReactNode; style: CSSProperties }) => (
++    <div data-testid="player" style={style}>
++      {children}
++    </div>
++  ),
++}))
++vi.mock('@/features/preview/deps/composition-runtime', async (importOriginal) => ({
++  ...(await importOriginal<typeof import('@/features/preview/deps/composition-runtime')>()),
++  MainComposition: () => <div />,
++  getBestDomVideoElementForItem: () => null,
++  resolveTrackRenderState: (tracks: unknown[]) => ({ visibleTracks: tracks }),
++  ensureAudioContextResumed: async () => {},
++  getPreviewAudioContextState: () => 'running',
++}))
++
++const inputProps = {
++  fps: 30,
++  width: 64,
++  height: 64,
++  durationInFrames: 60,
++  tracks: [],
++  transitions: [],
++  keyframes: [],
++  backgroundColor: '#000000',
++}
++const noop = () => {}
++const nothing = () => null
++const no = () => false
++
++afterEach(() => {
++  vi.restoreAllMocks()
++  registerHdrSourceUrl('right-hdr-video', null)
++  vi.unstubAllGlobals()
++})
++
++it('keeps the Player hidden after the real pump refuses HDR, across seeks; SDR errors still fall back', async () => {
++  resetPlaybackPreviewState(0)
++  const renderFrame = vi.fn()
++  const mediaId = 'right-hdr-video'
++  registerHdrSourceUrl(mediaId, 'hdr.mp4')
++  const dispose = vi.fn()
++  const ctx = {
++    clearRect: noop,
++    drawImage: noop,
++    save: noop,
++    restore: noop,
++    setTransform: noop,
++    getImageData: () => ({ data: new Uint8ClampedArray(256).fill(255) }),
++  }
++  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never)
++  vi.stubGlobal(
++    'OffscreenCanvas',
++    class {
++      width = 64
++      height = 64
++      getContext() {
++        return ctx
++      }
++    },
++  )
++  const participantContext = createItemRenderContext({
++    canvasSettings: { width: 64, height: 64, fps: 30 },
++    canvasPool: {
++      acquire: () => ({ canvas: new OffscreenCanvas(64, 64), ctx: createMockCanvasContext() }),
++      release: vi.fn(),
++    } as never,
++    hdrRaster: { has: (id: string) => id === 'left-hdr-raster' } as never,
++  })
++  const transform = createItemTransform({ width: 64, height: 64 })
++  const transition = {
++    transition: {
++      id: 'mixed-cut',
++      type: 'crossfade',
++      presentation: 'dissolve',
++      timing: 'linear',
++      trackId: 'mixed',
++      leftClipId: 'left-raster',
++      rightClipId: 'right-video',
++      durationInFrames: 20,
++    },
++    leftClip: {
++      id: 'left-raster',
++      type: 'image',
++      mediaId: 'left-hdr-raster',
++      from: 0,
++      durationInFrames: 30,
++      transform,
++    },
++    rightClip: {
++      id: 'right-video',
++      type: 'video',
++      mediaId,
++      src: 'hdr.mp4',
++      from: 30,
++      durationInFrames: 30,
++      sourceFps: 30,
++      speed: 1,
++      transform,
++    },
++    progress: 0.5,
++    transitionStart: 20,
++    transitionEnd: 40,
++    cutPoint: 30,
++    durationInFrames: 20,
++    leftPortion: 10,
++    rightPortion: 10,
++  } as Parameters<typeof renderTransitionToCanvas>[1]
++  renderFrame.mockImplementation(() =>
++    renderTransitionToCanvas(ctx as never, transition, 30, participantContext, 0),
++  )
++  function Harness() {
++    const refs = usePreviewRuntimeRefs()
++    const overlay = usePreviewOverlayController({
++      bypassPreviewSeekRef: refs.bypassPreviewSeekRef,
++      setDisplayedFrame: usePreviewBridgeStore.getState().setDisplayedFrame,
++    })
++    const params = useMemo(
++      () => ({
++        ...refs.renderPumpRefs,
++        fps: 30,
++        forceFastScrubOverlay: true,
++        useProxy: false,
++        combinedTracks: [],
++        fastScrubBoundaryFrames: [],
++        fastScrubBoundarySources: [],
++        playbackTransitionOverlayWindows: [],
++        playbackTransitionLookaheadFrames: 0,
++        playbackTransitionCooldownFrames: 0,
++        playbackTransitionPrerenderRunwayFrames: 0,
++        previewPerfRef: { current: {} as never },
++        ensureFastScrubRenderer: async () => {
++          refs.scrubOffscreenCanvasRef.current ??= new OffscreenCanvas(64, 64)
++          return { renderFrame } as never
++        },
++        ensureBgTransitionRenderer: async () => null,
++        disposeFastScrubRenderer: dispose,
++        shouldPreferPlayerForPreview: no,
++        shouldPreserveHighFidelityBackwardPreview: no,
++        getTransitionWindowByStartFrame: nothing,
++        getTransitionWindowForFrame: nothing,
++        getPlayingAnyTransitionPrewarmStartFrame: nothing,
++        getPausedTransitionPrewarmStartFrame: nothing,
++        getPinnedTransitionElementForItem: nothing,
++        pinTransitionPlaybackSession: nothing,
++        clearTransitionPlaybackSession: noop,
++        cacheTransitionSessionFrame: noop,
++        preparePlaybackTransitionFrame: async () => false,
++        pushTransitionTrace: noop,
++        isPausedTransitionOverlayActive: no,
++        trackPlayerSeek: noop,
++        setDisplayedFrame: usePreviewBridgeStore.getState().setDisplayedFrame,
++        hideFastScrubOverlay: overlay.hideFastScrubOverlay,
++        hidePlaybackTransitionOverlay: overlay.hidePlaybackTransitionOverlay,
++        showFastScrubOverlayForFrame: overlay.showFastScrubOverlayForFrame,
++        showPlaybackTransitionOverlayForFrame: overlay.showPlaybackTransitionOverlayForFrame,
++        showFastScrubOverlayRef: overlay.showFastScrubOverlayRef,
++      }),
++      [
++        refs.renderPumpRefs,
++        overlay.hideFastScrubOverlay,
++        overlay.hidePlaybackTransitionOverlay,
++        overlay.showFastScrubOverlayForFrame,
++        overlay.showPlaybackTransitionOverlayForFrame,
++        overlay.showFastScrubOverlayRef,
++        refs.scrubOffscreenCanvasRef,
++      ],
++    )
++    const unavailable = usePreviewRenderPump(params)
++    return (
++      <PreviewStage
++        backgroundRef={{ current: null }}
++        playerRef={refs.playerRef}
++        scrubCanvasRef={refs.scrubCanvasRef}
++        gpuEffectsCanvasRef={refs.gpuEffectsCanvasRef}
++        needsOverflow={false}
++        playerSize={{ width: 64, height: 64 }}
++        playerRenderSize={{ width: 64, height: 64 }}
++        overlayRenderSize={{ width: 64, height: 64 }}
++        totalFrames={60}
++        fps={30}
++        isResolving={false}
++        isRenderedOverlayVisible={overlay.isRenderedOverlayVisible}
++        hdrPreviewUnavailable={unavailable}
++        colorGradeComparisonMode="split"
++        inputProps={inputProps}
++        onBackgroundClick={noop}
++        onFrameChange={noop}
++        onPlayStateChange={noop}
++        setPlayerContainerRefCallback={noop}
++      />
++    )
++  }
++  const view = render(<Harness />)
++  await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('HDR preview unavailable'))
++  expect(screen.getByTestId('player').style.visibility).toBe('hidden')
++  const firstCalls = renderFrame.mock.calls.length
++  act(() => usePlaybackStore.getState().setPreviewFrame(1))
++  await waitFor(() => expect(renderFrame.mock.calls.length).toBeGreaterThan(firstCalls))
++  expect(screen.getByTestId('player').style.visibility).toBe('hidden')
++  expect(usePreviewBridgeStore.getState().displayedFrame).toBeNull()
++  renderFrame.mockResolvedValue(undefined)
++  act(() => usePlaybackStore.getState().setPreviewFrame(2))
++  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
++  view.unmount()
++  resetPlaybackPreviewState(0)
++  renderFrame.mockRejectedValue(new HdrRenderUnavailableError('HDR composition unavailable'))
++  const unavailableView = render(<Harness />)
++  await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('HDR preview unavailable'))
++  expect(screen.getByTestId('player').style.visibility).toBe('hidden')
++  unavailableView.unmount()
++  resetPlaybackPreviewState(0)
++  renderFrame.mockRejectedValue(new Error('ordinary SDR decode failure'))
++  render(<Harness />)
++  const previousDisposals = dispose.mock.calls.length
++  await waitFor(() => expect(dispose.mock.calls.length).toBeGreaterThan(previousDisposals))
++  expect(screen.queryByRole('alert')).toBeNull()
++  expect(screen.getByTestId('player').style.visibility).not.toBe('hidden')
++  vi.unstubAllGlobals()
++})
+--- a/src/features/preview/hooks/use-preview-render-pump-controller.ts
++++ b/src/features/preview/hooks/use-preview-render-pump-controller.ts
+@@ -1,4 +1,4 @@
+-import { useEffect, useRef, type MutableRefObject, type RefObject } from 'react'
++import { useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react'
+ import { getBestDomVideoElementForItem } from '@/features/preview/deps/composition-runtime'
+ import type { PlayerRef } from '@/features/preview/deps/player-core'
+ import { getGlobalVideoSourcePool } from '@/features/preview/deps/player-pool'
+@@ -113,6 +113,7 @@
+   recordPreviewScrubRequest,
+ } from '@/shared/logging/preview-scrub-performance'
+ import {
++  HdrRenderUnavailableError,
+   resolveAATransitionRamps,
+   type CompositionRendererInstance,
+ } from '@/features/preview/deps/export'
+@@ -349,6 +350,7 @@
+   trackPlayerSeek,
+   recordRenderFrameJitter,
+ }: UsePreviewRenderPumpParams) {
++  const [hdrPreviewUnavailable, setHdrPreviewUnavailable] = useState(false)
+   const unmountingRef = useRef(false)
+   const pausedPlaybackLookaheadFrameRef = useRef<number | null>(null)
+   const pausedPlaybackLookaheadOriginRef = useRef<PlaybackStartLookaheadOrigin | null>(null)
+@@ -522,6 +524,13 @@
+         return
+       }
+       drawSourceToPreviewDisplayCanvas(displayCtx, displayCanvas, source)
++      if (
++        source === scrubOffscreenCanvasRef.current &&
++        scrubOffscreenRenderedFrameRef.current === renderedFrame &&
++        !usedFallback
++      ) {
++        setHdrPreviewUnavailable(false)
++      }
+       setDisplayedFrame(renderedFrame)
+       recordPreviewScrubPresentationQuality(renderedFrame, usedFallback)
+       recordPreviewScrubPresented(renderedFrame)
+@@ -1333,7 +1342,13 @@
+           logger.debug('Ignoring stale preview render failure:', error)
+           scrubOffscreenRenderedFrameRef.current = null
+         } else {
+-          logger.warn('Render failed, using Player seek fallback:', error)
++          if (error instanceof HdrRenderUnavailableError) {
++            setHdrPreviewUnavailable(true)
++            setDisplayedFrame(null)
++            logger.warn('HDR preview unavailable:', error)
++          } else {
++            logger.warn('Render failed, using Player seek fallback:', error)
++          }
+           hideAllOverlays()
+           disposeFastScrubRenderer()
+         }
+@@ -3174,4 +3189,5 @@
+     lastPausedPrearmTargetRef,
+     lastPlayingPrearmTargetRef,
+   ])
++  return hdrPreviewUnavailable
+ }

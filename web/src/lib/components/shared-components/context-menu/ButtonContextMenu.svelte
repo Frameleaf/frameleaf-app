@@ -1,0 +1,214 @@
+<script lang="ts">
+  import { contextMenuNavigation } from '$lib/actions/context-menu-navigation';
+  import { shortcuts } from '$lib/actions/shortcut';
+  import ContextMenu from '$lib/components/shared-components/context-menu/ContextMenu.svelte';
+  import { languageManager } from '$lib/managers/language-manager.svelte';
+  import { createContextMenu } from '$lib/stores/context-menu.store';
+  import {
+    getContextMenuPositionFromBoundingRect,
+    getContextMenuPositionFromEvent,
+    type Align,
+  } from '$lib/utils/context-menu';
+  import { generateId } from '$lib/utils/generate-id';
+  import { IconButton, type Color, type Size, type Variants } from '@frameleaf/ui';
+  import type { Snippet } from 'svelte';
+  import type { HTMLAttributes } from 'svelte/elements';
+
+  type Props = {
+    icon: string;
+    title: string;
+    /**
+     * The alignment of the context menu relative to the button.
+     */
+    align?: Align;
+    /**
+     * The direction in which the context menu should open.
+     */
+    // TODO change to start vs end
+    direction?: 'left' | 'right';
+    color?: Color;
+    size?: Size | undefined;
+    variant?: Variants | undefined;
+    /**
+     * Additional classes to apply to the button.
+     */
+    buttonClass?: string | undefined;
+    hideContent?: boolean;
+    /** See ContextMenu: caps the menu at `window height - menuMaxHeightInset` pixels, scrolling inside. */
+    menuMaxHeightInset?: number;
+    /** See ContextMenu: keeps the menu's bottom edge this many pixels above the window's bottom. */
+    menuBottomInset?: number;
+    children?: Snippet;
+    offset?: {
+      x: number;
+      y: number;
+    };
+  } & HTMLAttributes<HTMLDivElement>;
+
+  let {
+    icon,
+    title,
+    align = 'top-left',
+    direction = 'right',
+    color = 'secondary',
+    size = undefined,
+    variant = 'ghost',
+    buttonClass = undefined,
+    hideContent = false,
+    menuMaxHeightInset = undefined,
+    menuBottomInset = undefined,
+    children,
+    offset,
+    ...restProps
+  }: Props = $props();
+
+  let isOpen = $state(false);
+  let contextMenuPosition = $state({ x: 0, y: 0 });
+  let menuContainer: HTMLUListElement | undefined = $state();
+  let buttonContainer: HTMLDivElement | undefined = $state();
+
+  const id = generateId();
+  const buttonId = `context-menu-button-${id}`;
+  const menuId = `context-menu-${id}`;
+
+  const layoutAlign = $derived.by(() => {
+    let layoutAlign = align;
+    if (languageManager.rtl) {
+      if (align.includes('left')) {
+        layoutAlign = align.replace('left', 'right') as Align;
+      } else if (align.includes('right')) {
+        layoutAlign = align.replace('right', 'left') as Align;
+      }
+    }
+    return layoutAlign;
+  });
+
+  $effect(() => {
+    if (isOpen && menuContainer) {
+      menuContainer.focus();
+    }
+  });
+
+  const openDropdown = (event: KeyboardEvent | MouseEvent) => {
+    contextMenuPosition = getContextMenuPositionFromEvent(event, layoutAlign);
+    isOpen = true;
+  };
+
+  const handleClick = (event: MouseEvent) => {
+    if (isOpen) {
+      closeDropdown();
+      return;
+    }
+    openDropdown(event);
+  };
+
+  const onEscape = (event: KeyboardEvent) => {
+    if (isOpen) {
+      // if the dropdown is open, stop the event from propagating
+      event.stopPropagation();
+    }
+    closeDropdown();
+  };
+
+  const onResize = () => {
+    if (!isOpen || !buttonContainer) {
+      return;
+    }
+
+    contextMenuPosition = getContextMenuPositionFromBoundingRect(buttonContainer.getBoundingClientRect(), layoutAlign);
+  };
+
+  const closeDropdown = () => {
+    if (!isOpen) {
+      return;
+    }
+    focusButton();
+    isOpen = false;
+    $selectedIdStore = undefined;
+  };
+
+  const { selectedId: selectedIdStore } = createContextMenu(closeDropdown);
+
+  const handleDocumentClick = (event: MouseEvent) => {
+    if (!isOpen) {
+      return;
+    }
+
+    const target = event.target as Node | null;
+    if (buttonContainer?.contains(target)) {
+      return;
+    }
+
+    closeDropdown();
+  };
+
+  const focusButton = () => {
+    const button = buttonContainer?.querySelector(`#${buttonId}`) as HTMLButtonElement | null;
+    button?.focus();
+  };
+</script>
+
+<svelte:window onresize={onResize} />
+<svelte:document onclick={handleDocumentClick} />
+
+<div
+  use:contextMenuNavigation={{
+    closeDropdown,
+    container: menuContainer,
+    isOpen,
+    onEscape,
+    openDropdown,
+    selectedId: $selectedIdStore,
+    selectionChanged: (id) => ($selectedIdStore = id),
+  }}
+  onresize={onResize}
+  {...restProps}
+>
+  <div bind:this={buttonContainer}>
+    <IconButton
+      {color}
+      {icon}
+      {size}
+      shape="round"
+      {variant}
+      aria-label={title}
+      aria-controls={menuId}
+      aria-expanded={isOpen}
+      aria-haspopup={true}
+      class={buttonClass}
+      id={buttonId}
+      onclick={handleClick}
+    />
+  </div>
+  {#if isOpen || !hideContent}
+    <div
+      use:shortcuts={[
+        {
+          shortcut: { key: 'Tab' },
+          onShortcut: closeDropdown,
+          preventDefault: false,
+        },
+        {
+          shortcut: { key: 'Tab', shift: true },
+          onShortcut: closeDropdown,
+          preventDefault: false,
+        },
+      ]}
+    >
+      <ContextMenu
+        {direction}
+        ariaActiveDescendant={$selectedIdStore}
+        ariaLabelledBy={buttonId}
+        bind:menuElement={menuContainer}
+        id={menuId}
+        isVisible={isOpen}
+        maxHeightInset={menuMaxHeightInset}
+        bottomInset={menuBottomInset}
+        x={contextMenuPosition.x - (offset?.x ?? 0)}
+        y={contextMenuPosition.y + (offset?.y ?? 0)}
+      >
+        {@render children?.()}
+      </ContextMenu>
+    </div>
+  {/if}
+</div>

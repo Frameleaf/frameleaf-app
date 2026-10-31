@@ -1,0 +1,17 @@
+{
+  "name": "@frameleaf/justified-layout-wasm",
+  "type": "module",
+  "version": "0.4.3",
+  "license": "AGPL-3",
+  "files": [
+    "js",
+    "pkg"
+  ],
+  "main": "js/index.ts",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Frameleaf/frameleaf-app.git",
+    "directory": "packages/justified-layout-wasm"
+  }
+}

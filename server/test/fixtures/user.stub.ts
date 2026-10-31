@@ -1,0 +1,43 @@
+import { UserAdmin } from 'src/database.js';
+import { UserStatus } from 'src/enum.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+
+export const userStub = {
+  admin: <UserAdmin>{
+    ...authStub.admin.user,
+    status: UserStatus.Active,
+    clusterGroupId: 'cluster-group-id',
+    profileChangedAt: new Date('2021-01-01'),
+    name: 'admin_name',
+    id: 'admin_id',
+    storageLabel: 'admin',
+    oauthId: null,
+    shouldChangePassword: false,
+    avatarColor: null,
+    profileImagePath: '',
+    createdAt: new Date('2021-01-01'),
+    deletedAt: null,
+    updatedAt: new Date('2021-01-01'),
+    metadata: [],
+    quotaSizeInBytes: null,
+    quotaUsageInBytes: 0,
+  },
+  user1: <UserAdmin>{
+    ...authStub.user1.user,
+    status: UserStatus.Active,
+    clusterGroupId: 'cluster-group-id',
+    profileChangedAt: new Date('2021-01-01'),
+    name: 'immich_name',
+    storageLabel: null,
+    oauthId: null,
+    shouldChangePassword: false,
+    avatarColor: null,
+    profileImagePath: '',
+    createdAt: new Date('2021-01-01'),
+    deletedAt: null,
+    updatedAt: new Date('2021-01-01'),
+    metadata: [],
+    quotaSizeInBytes: null,
+    quotaUsageInBytes: 0,
+  },
+};

@@ -1,0 +1,199 @@
+--- a/src/features/export/utils/embedded-subtitle-export.test.ts
++++ b/src/features/export/utils/embedded-subtitle-export.test.ts
+@@ -1,7 +1,8 @@
+ // @vitest-environment node
+
+ import { describe, expect, it } from 'vite-plus/test'
+-import { serializeSrt } from '@/shared/utils/subtitles'
++import { parseSrt, parseVtt, serializeSrt } from '@/shared/utils/subtitles'
++import { buildSubtitleSegmentForClip } from '@/features/media-library/utils/caption-items'
+ import type { CompositionInputProps } from '@/types/export'
+ import type { SubtitleSegmentItem, TimelineTrack } from '@/types/timeline'
+
+@@ -90,7 +91,7 @@
+     expect(composition.tracks[0]?.items?.map((item) => item.id)).toEqual(['subtitle-1', 'title-1'])
+   })
+
+-  it('returns null when there are no transcript subtitles to embed', () => {
++  it('collects explicitly extracted subtitle segments', () => {
+     const embeddedSubtitle = makeTranscriptSubtitle({
+       source: {
+         type: 'embedded-subtitles',
+@@ -101,7 +102,8 @@
+       },
+     })
+
+-    expect(buildTranscriptSubtitleWebVtt(makeComposition([embeddedSubtitle]))).toBeNull()
++    expect(buildTranscriptSubtitleWebVtt(makeComposition([embeddedSubtitle])))
++      .toContain('00:00:01.000 --> 00:00:02.000\nHello')
+   })
+ })
+
+@@ -218,3 +220,136 @@
+     })
+   })
+ })
++
++
++describe('extracted caption export modes', () => {
++  function extractedSegment(): SubtitleSegmentItem {
++    const segment = buildSubtitleSegmentForClip({
++      trackId: 'track-1', timelineFps: 30, canvasWidth: 1920, canvasHeight: 1080,
++      clip: {
++        id: 'clip-extracted', type: 'video', trackId: 'video-track', label: 'Owned clip',
++        src: 'owned-fixture.mp4', mediaId: 'media-extracted', from: 60, durationInFrames: 60,
++        sourceStart: 30, sourceEnd: 150, sourceFps: 30, speed: 2,
++      },
++      source: {
++        type: 'embedded-subtitles', mediaId: 'media-extracted', clipId: 'clip-extracted',
++        trackNumber: 2, language: 'eng', trackName: 'Owned captions', codecId: 'S_TEXT/UTF8',
++        importedAt: 123,
++      },
++      // Inline owned text qualifies the real builder, not container extraction or muxing.
++      cues: [
++        { id: 'source-1', startSeconds: 1, endSeconds: 3, text: 'First line\nSecond line' },
++        { id: 'source-2', startSeconds: 2, endSeconds: 4, text: 'Overlapping cue' },
++      ],
++      styleTemplate: { fontFamily: 'Inter', fontSize: 48, color: '#00ff00' },
++    })
++    if (!segment) throw new Error('Expected the real builder to retain both source cues')
++    return segment
++  }
++
++  const legacy = {
++    id: 'legacy-extracted', type: 'text' as const, textRole: 'caption' as const,
++    trackId: 'track-1', from: 15, durationInFrames: 30, label: 'Legacy extracted',
++    text: 'Legacy cue', color: '#ff00ff',
++    captionSource: {
++      type: 'embedded-subtitles' as const, mediaId: 'media-extracted',
++      clipId: 'clip-extracted', importedAt: 123,
++    },
++  }
++  const title = { ...legacy, id: 'ordinary-title', textRole: undefined, text: 'Ordinary title' }
++  const unsourcedCaption = {
++    ...legacy, id: 'unsourced-text', captionSource: undefined, text: 'Unclassified text',
++  }
++
++  it('uses real source windows and speed, then clamps without losing overlaps or provenance', () => {
++    const segment = extractedSegment()
++    const before = structuredClone(segment)
++    const full = makeComposition([segment])
++    expect(buildTranscriptSubtitleCues(full)).toEqual([
++      { id: 'source-1', startSeconds: 2, endSeconds: 3, text: 'First line\nSecond line' },
++      { id: 'source-2', startSeconds: 2.5, endSeconds: 3.5, text: 'Overlapping cue' },
++    ])
++    const trimmed = { ...full, durationInFrames: 90 }
++    const cues = buildTranscriptSubtitleCues(trimmed)
++    expect(cues).toEqual([
++      { id: 'source-1', startSeconds: 2, endSeconds: 3, text: 'First line\nSecond line' },
++      { id: 'source-2', startSeconds: 2.5, endSeconds: 3, text: 'Overlapping cue' },
++    ])
++    const expected = cues.map(({ startSeconds, endSeconds, text }) => ({ startSeconds, endSeconds, text }))
++    const vtt = buildTranscriptSubtitleWebVtt(trimmed)
++    expect(vtt).not.toBeNull()
++    for (const parsed of [parseSrt(serializeSrt(cues)), parseVtt(vtt!)]) {
++      expect(parsed.cues.map(({ startSeconds, endSeconds, text }) => ({ startSeconds, endSeconds, text })))
++        .toEqual(expected)
++      expect(parsed.warnings).toEqual(['Cue 2 overlaps the previous cue'])
++    }
++    expect(segment).toEqual(before)
++  })
++
++  it('collects only explicit extracted caption provenance and excludes hidden tracks', () => {
++    const composition = makeComposition([legacy, title, unsourcedCaption])
++    expect(buildTranscriptSubtitleCues(composition)).toEqual([
++      { id: legacy.id, startSeconds: 0.5, endSeconds: 1.5, text: legacy.text },
++    ])
++    const hidden = { ...composition, tracks: [{ ...composition.tracks[0]!, visible: false }] }
++    expect(buildTranscriptSubtitleCues(hidden)).toEqual([])
++    expect(buildTranscriptSubtitleWebVtt(hidden)).toBeNull()
++  })
++
++  it.each(['off', 'burn', 'sidecar', 'embedded'] as const)(
++    'honors %s for mixed caption sources while retaining styled titles and the input graph',
++    (subtitleMode) => {
++      const segment = extractedSegment()
++      const imported = { ...legacy, id: 'imported', captionSource: {
++        type: 'subtitle-import' as const, mediaId: '', clipId: '',
++        fileName: 'owned.srt', format: 'srt' as const, importedAt: 1,
++      } }
++      const composition = makeComposition([
++        segment, legacy, makeTranscriptSubtitle(), imported, title, unsourcedCaption,
++      ])
++      const before = structuredClone(composition)
++      const vtt = buildTranscriptSubtitleWebVtt(composition)
++      const plan = resolveSubtitleExportPlan({
++        subtitleMode, container: 'webm', supportsWebVttSubtitles: true,
++        hasTranscriptVtt: vtt !== null,
++      })
++      const rendered = plan.burnInSubtitles
++        ? composition : omitTranscriptSubtitleItemsForSoftSubtitleExport(composition)
++      expect(rendered.tracks[0]!.items!.map((item) => item.id)).toEqual(
++        subtitleMode === 'burn' ? composition.tracks[0]!.items!.map((item) => item.id)
++          : ['ordinary-title', 'unsourced-text'],
++      )
++      expect(plan.embedTranscriptSubtitles).toBe(subtitleMode === 'embedded')
++      expect(plan.fallbackToBurnIn).toBe(false)
++      if (subtitleMode === 'sidecar') expect(serializeSrt(buildTranscriptSubtitleCues(composition)))
++        .toContain('00:00:02,000 --> 00:00:03,000\nFirst line\nSecond line')
++      if (subtitleMode === 'embedded') expect(vtt)
++        .toContain('00:00:02.000 --> 00:00:03.000\nFirst line\nSecond line')
++      if (subtitleMode === 'burn') expect(rendered).toEqual(before)
++      expect(composition).toEqual(before)
++    },
++  )
++
++  it.each([
++    { container: 'webm', supported: true, embed: true },
++    { container: 'mkv', supported: true, embed: true },
++    { container: 'mp4', supported: true, embed: false },
++    { container: 'mov', supported: true, embed: false },
++    { container: 'webm', supported: false, embed: false },
++  ])('preserves shared helper compatibility for $container / $supported', ({ container, supported, embed }) => {
++    const composition = makeComposition([extractedSegment(), legacy, title])
++    const before = structuredClone(composition)
++    const plan = resolveSubtitleExportPlan({
++      subtitleMode: 'embedded', container, supportsWebVttSubtitles: supported,
++      hasTranscriptVtt: buildTranscriptSubtitleWebVtt(composition) !== null,
++    })
++    expect(plan).toEqual({
++      embedTranscriptSubtitles: embed, burnInSubtitles: !embed, fallbackToBurnIn: !embed,
++    })
++    const rendered = plan.burnInSubtitles
++      ? composition : omitTranscriptSubtitleItemsForSoftSubtitleExport(composition)
++    if (embed) expect(rendered.tracks[0]!.items).toEqual([title])
++    else expect(rendered).toEqual(before)
++    expect(composition).toEqual(before)
++  })
++})
+--- a/src/features/export/utils/embedded-subtitle-export.ts
++++ b/src/features/export/utils/embedded-subtitle-export.ts
+@@ -42,21 +42,23 @@
+   return { embedTranscriptSubtitles, burnInSubtitles, fallbackToBurnIn }
+ }
+
+-// Keep the existing helper contract, including transcript behavior, while admitting imported cues.
++// Keep the existing helper contract, including transcript behavior, while admitting imported and extracted cues.
+ function isTranscriptSubtitleItem(item: TimelineItem): item is SubtitleSegmentItem | TextItem {
+   return (
+     (item.type === 'subtitle' &&
+-      (item.source.type === 'transcript' || item.source.type === 'subtitle-import')) ||
++      (item.source.type === 'transcript' || item.source.type === 'subtitle-import' ||
++        item.source.type === 'embedded-subtitles')) ||
+     (item.type === 'text' &&
+       item.textRole === 'caption' &&
+-      item.captionSource?.type === 'subtitle-import')
++      (item.captionSource?.type === 'subtitle-import' ||
++        item.captionSource?.type === 'embedded-subtitles'))
+   )
+ }
+
+ /**
+- * Collect transcript and imported subtitle cues from the (export-trimmed) composition,
++ * Collect transcript, imported and extracted subtitle cues from the (export-trimmed) composition,
+  * offset to the export timeline and clamped to its duration. Returns [] when
+- * there are none. Imported source provenance remains unchanged. Shared by the soft-embed (VTT) and sidecar (SRT) paths.
++ * there are none. Source provenance remains unchanged. Shared by the soft-embed (VTT) and sidecar (SRT) paths.
+  */
+ export function buildTranscriptSubtitleCues(composition: CompositionInputProps): SubtitleCue[] {
+   const fps = composition.fps

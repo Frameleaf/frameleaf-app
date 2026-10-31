@@ -1,0 +1,240 @@
+import js from '@eslint/js';
+import tslintPluginCompat from '@koddsson/eslint-plugin-tscompat';
+import prettier from 'eslint-config-prettier';
+import eslintPluginBetterTailwindcss from 'eslint-plugin-better-tailwindcss';
+import eslintPluginCompat from 'eslint-plugin-compat';
+import eslintPluginSvelte from 'eslint-plugin-svelte';
+import eslintPluginUnicorn from 'eslint-plugin-unicorn';
+import globals from 'globals';
+import parser from 'svelte-eslint-parser';
+import typescriptEslint from 'typescript-eslint';
+import fs from 'node:fs';
+import path from 'node:path';
+import './lint-env.js';
+
+const ROUTE_CONTINUE = "CallExpression[callee.object.name='Route'][callee.property.name='continue']";
+const NAVIGATION_PARAM_READ = [
+  "CallExpression[callee.property.name='get']",
+  ":matches([arguments.0.value='continue'], [arguments.0.value='previousRoute'],",
+  " [arguments.0.property.name='PREVIOUS_ROUTE'])",
+].join('');
+
+export default typescriptEslint.config(
+  ...eslintPluginSvelte.configs.recommended,
+  eslintPluginUnicorn.configs.recommended,
+  js.configs.recommended,
+  prettier,
+  {
+    plugins: {
+      tscompat: tslintPluginCompat,
+    },
+    rules: {
+      'tscompat/tscompat': [
+        'error',
+        {
+          browserslist: fs
+            .readFileSync(path.join(import.meta.dirname, '.browserslistrc'), 'utf8')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line && !line.startsWith('#')),
+        },
+      ],
+    },
+    languageOptions: {
+      parser,
+      parserOptions: {
+        project: ['./tsconfig.json', './tsconfig.service-worker.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    // ignores: ['**/service-worker/**'],
+  },
+  {
+    plugins: {
+      compat: eslintPluginCompat,
+    },
+    settings: {
+      polyfills: [],
+      lintAllEsApis: true,
+    },
+    rules: {
+      'compat/compat': 'error',
+    },
+  },
+  {
+    ignores: [
+      '**/.DS_Store',
+      '**/node_modules',
+      'build',
+      '.svelte-kit',
+      'static/studio-engine',
+      'package',
+      '**/.env',
+      '**/.env.*',
+      '!**/.env.example',
+      '**/pnpm-lock.yaml',
+      '**/package-lock.json',
+      '**/yarn.lock',
+      '**/svelte.config.js',
+      'eslint.config.js',
+      'lint-env.js',
+      'tailwind.config.js',
+      'coverage',
+      'vite.config.ts',
+    ],
+  },
+  typescriptEslint.configs.recommended,
+  {
+    plugins: {
+      svelte: eslintPluginSvelte,
+    },
+
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        NodeJS: true,
+      },
+
+      parser: typescriptEslint.parser,
+      ecmaVersion: 2022,
+      sourceType: 'module',
+
+      parserOptions: {
+        extraFileExtensions: ['.svelte'],
+        tsconfigRootDir: import.meta.dirname,
+        project: ['./tsconfig.json', './tsconfig.service-worker.json'],
+      },
+    },
+
+    ignores: ['**/service-worker/**'],
+
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_$',
+          varsIgnorePattern: '^_$',
+        },
+      ],
+
+      curly: 2,
+      // navigation-target query params must be origin-checked at the read site, not at the goto/redirect sink
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: `${NAVIGATION_PARAM_READ}:not(${ROUTE_CONTINUE} > ${NAVIGATION_PARAM_READ})`,
+          message: 'Pass this navigation-target query param through Route.continue() to reject cross-origin values.',
+        },
+      ],
+      // Keep the pre-upgrade documentation and parameter style policy.
+      'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
+      'unicorn/no-unnecessary-parameters': 'off',
+      // shortcut: restore widened style rules after focused reviews of the affected files.
+      'unicorn/prefer-ternary': 'off',
+      'unicorn/prefer-early-return': 'off',
+      'unicorn/prefer-continue': 'off',
+      'unicorn/no-unnecessary-array-flat-map': 'off',
+      'unicorn/prefer-combined-guards': 'off',
+      'unicorn/prefer-default-parameters': 'off',
+      'unicorn/prefer-logical-operator-over-ternary': 'off',
+      'unicorn/no-negated-condition': 'off',
+      'unicorn/prefer-escaped-irregular-whitespace': 'off',
+      'unicorn/prefer-url-href': 'off',
+      'unicorn/no-array-reverse': 'off', // toReversed() is not supported in Chrome 109 or Safari 15.4
+      'unicorn/no-useless-undefined': 'off',
+      'unicorn/prefer-spread': 'off',
+      'unicorn/no-null': 'off',
+      'unicorn/name-replacements': 'off',
+      'unicorn/no-nested-ternary': 'off',
+      'unicorn/consistent-function-scoping': 'off',
+      'unicorn/no-await-expression-member': 'off',
+      'svelte/prefer-svelte-reactivity': 'off', // immutable state copies and private caches use native collections
+      'unicorn/filename-case': 'off',
+      'unicorn/prefer-top-level-await': 'off',
+      'unicorn/import-style': 'off',
+      'unicorn/no-array-sort': 'off',
+      'unicorn/no-for-loop': 'off',
+      'unicorn/no-unreadable-for-of-expression': 'off',
+      'unicorn/no-break-in-nested-loop': 'off',
+      'unicorn/no-top-level-assignment-in-function': 'off',
+      'unicorn/prefer-uint8array-base64': 'off',
+      'unicorn/max-nested-calls': 'off',
+      'unicorn/no-declarations-before-early-exit': 'off',
+      'unicorn/no-unreadable-object-destructuring': 'off',
+      // not yet compatible with all our supported browsers
+      'unicorn/prefer-promise-with-resolvers': 'off',
+      // not yet compatible with all our supported browsers
+      'unicorn/prefer-iterator-to-array': 'off',
+      // not yet compatible with all our supported browsers
+      'unicorn/prefer-array-from-async': 'off',
+      // maybe we do want to enable this later. TBD
+      'unicorn/prefer-await': 'off',
+      'unicorn/consistent-class-member-order': 'off',
+      'unicorn/class-reference-in-static-methods': ['error', { preferThis: false, preferSuper: false }],
+      'unicorn/no-unsafe-property-key': 'off',
+      'unicorn/consistent-boolean-name': 'off',
+      'unicorn/no-non-function-verb-prefix': 'off',
+      'unicorn/prefer-minimal-ternary': 'off',
+      'unicorn/no-empty-file': 'off',
+      'unicorn/prefer-simple-condition-first': 'off',
+      'unicorn/single-line-block-comment-style': ['error', 'single-line'],
+      // prefer the typescript-eslint type-aware version
+      'unicorn/require-array-sort-compare': 'off',
+      '@typescript-eslint/require-array-sort-compare': 'error',
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/require-await': 'error',
+      '@typescript-eslint/switch-exhaustiveness-check': ['error', { considerDefaultExhaustiveForUnions: true }],
+      'svelte/button-has-type': 'error',
+      'object-shorthand': ['error', 'always'],
+      'svelte/no-navigation-without-resolve': 'off',
+      eqeqeq: 'error',
+    },
+  },
+  {
+    extends: [eslintPluginBetterTailwindcss.configs.recommended],
+    settings: {
+      'better-tailwindcss': {
+        entryPoint: 'src/app.css',
+      },
+    },
+
+    rules: {
+      'better-tailwindcss/enforce-consistent-line-wrapping': 'off',
+      'better-tailwindcss/no-unknown-classes': 'off',
+    },
+
+    files: ['**/*.svelte'],
+
+    languageOptions: {
+      parser: parser,
+      ecmaVersion: 5,
+      sourceType: 'script',
+
+      parserOptions: {
+        parser: typescriptEslint.parser,
+      },
+    },
+  },
+  {
+    files: ['**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/require-await': 'off',
+    },
+  },
+  {
+    // Retain the same style policy for service-worker files, whose parser settings are separate.
+    files: ['**/service-worker/**'],
+    rules: {
+      'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
+      'unicorn/no-unnecessary-parameters': 'off',
+      'unicorn/prefer-ternary': 'off',
+      'unicorn/prefer-early-return': 'off',
+      'unicorn/prefer-continue': 'off',
+      'unicorn/no-unnecessary-array-flat-map': 'off',
+      'unicorn/prefer-combined-guards': 'off',
+    },
+  },
+);

@@ -1,0 +1,19 @@
+import { Column, CreateDateColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
+import { UserMetadataKey } from 'src/enum.js';
+
+@Table('user_metadata_audit')
+export class UserMetadataAuditTable {
+  @PrimaryGeneratedUuidV7Column()
+  id!: Generated<string>;
+
+  @Column({ type: 'uuid', indexName: 'IDX_user_metadata_audit_user_id' })
+  userId!: string;
+
+  @Column({ indexName: 'IDX_user_metadata_audit_key' })
+  key!: UserMetadataKey;
+
+  @CreateDateColumn({ default: () => 'clock_timestamp()', indexName: 'IDX_user_metadata_audit_deleted_at' })
+  deletedAt!: Generated<Timestamp>;
+}

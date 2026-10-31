@@ -1,0 +1,354 @@
+import { createZodDto } from 'nestjs-zod';
+import z from 'zod';
+import { HistoryBuilder } from 'src/decorators.js';
+import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
+import {
+  AssetType,
+  AssetVisibilitySchema,
+  EnrichmentStaleReasonSchema,
+  LibraryScopeSchema,
+  LibraryViewScopeSchema,
+} from 'src/enum.js';
+import { AssetStats } from 'src/repositories/asset.repository.js';
+import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
+
+const UpdateAssetBaseSchema = z
+  .object({
+    libraryScope: LibraryScopeSchema.optional(),
+    isFavorite: z.boolean().optional().describe('Mark as favorite'),
+    visibility: AssetVisibilitySchema.optional(),
+    dateTimeOriginal: z.string().optional().describe('Original date and time'),
+    latitude: latitudeSchema
+      .nullable()
+      .optional()
+      .describe('Latitude coordinate; null together with a null longitude removes the location'),
+    longitude: longitudeSchema
+      .nullable()
+      .optional()
+      .describe('Longitude coordinate; null together with a null latitude removes the location'),
+    rating: z
+      .int()
+      .min(-1)
+      .max(5)
+      .nullish()
+      .refine((v) => v !== 0, {
+        error: 'Rating must be -1 (rejected), 1–5 (starred), or null (unrated); 0 is not valid',
+      })
+      .describe('Rating in range [1-5] (starred), -1 (rejected), or null (unrated)')
+      .meta({
+        ...new HistoryBuilder()
+          .added('v1')
+          .stable('v2')
+          .updated('v3', 'Using 0 as a rating is no longer valid.')
+          .getExtensions(),
+      }),
+    description: z.string().optional().describe('Asset description'),
+  })
+  .refine(
+    (data) =>
+      (data.latitude === undefined && data.longitude === undefined) ||
+      (data.latitude === null && data.longitude === null) ||
+      (typeof data.latitude === 'number' && typeof data.longitude === 'number'),
+    { message: 'Latitude and longitude must be provided together, both as numbers or both as null' },
+  );
+
+const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({
+  ids: z.array(z.uuidv4()).describe('Asset IDs to update'),
+  duplicateId: z.string().nullish().describe('Duplicate ID'),
+  dateTimeRelative: z.int().optional().describe('Relative time offset in minutes'),
+  timeZone: z.string().optional().describe('Time zone (IANA timezone)'),
+});
+
+const AssetBulkUpdateSchema = AssetBulkUpdateBaseSchema.pipe(
+  IsNotSiblingOf(AssetBulkUpdateBaseSchema, 'dateTimeRelative', ['dateTimeOriginal']),
+).meta({ id: 'AssetBulkUpdateDto' });
+
+/** FL-36 (V-24): a place name the owner types; an empty or null value clears it. */
+const placeNameSchema = z.string().max(255).nullish();
+
+const UpdateAssetSchema = UpdateAssetBaseSchema.extend({
+  livePhotoVideoId: z.uuidv4().nullish().describe('Live photo video ID'),
+  city: placeNameSchema.describe('City name; kept over reverse geocoding until the item is moved again'),
+  state: placeNameSchema.describe('State or region name; kept over reverse geocoding until the item is moved again'),
+  country: placeNameSchema.describe('Country name; kept over reverse geocoding until the item is moved again'),
+}).meta({ id: 'UpdateAssetDto' });
+
+const AssetBulkDeleteSchema = BulkIdsSchema.extend({
+  force: z.boolean().optional().describe('Force delete even if in use'),
+}).meta({ id: 'AssetBulkDeleteDto' });
+
+export const AssetIdsSchema = z
+  .object({
+    assetIds: z.array(z.uuidv4()).describe('Asset IDs'),
+  })
+  .meta({ id: 'AssetIdsDto' });
+
+export enum AssetJobName {
+  REFRESH_FACES = 'refresh-faces',
+  REFRESH_METADATA = 'refresh-metadata',
+  /** FL-63: read the photo's text again, through the routed text recognition destination */
+  REFRESH_OCR = 'refresh-ocr',
+  REGENERATE_THUMBNAIL = 'regenerate-thumbnail',
+  TRANSCODE_VIDEO = 'transcode-video',
+}
+
+const AssetJobNameSchema = z.enum(AssetJobName).describe('Job name').meta({ id: 'AssetJobName' });
+
+const AssetJobsSchema = AssetIdsSchema.extend({
+  name: AssetJobNameSchema,
+}).meta({ id: 'AssetJobsDto' });
+
+export enum AssetImageEnrichmentAction {
+  RerunImageDescription = 'rerun-image-description',
+  RerunNsfwDetection = 'rerun-nsfw-detection',
+  AcceptNsfwResult = 'accept-nsfw-result',
+  MarkNsfw = 'mark-nsfw',
+  MarkSafe = 'mark-safe',
+  ClearGeneratedDescription = 'clear-generated-description',
+  ClearGeneratedTags = 'clear-generated-tags',
+}
+
+const AssetImageEnrichmentActionSchema = z
+  .enum(AssetImageEnrichmentAction)
+  .describe('Image enrichment repair action')
+  .meta({ id: 'AssetImageEnrichmentAction' });
+
+const AssetImageEnrichmentActionRequestSchema = z
+  .object({
+    action: AssetImageEnrichmentActionSchema,
+  })
+  .meta({ id: 'AssetImageEnrichmentActionRequestDto' });
+
+const ImageEnrichmentReviewSchema = z
+  .object({
+    action: z.enum(['accepted', 'marked-safe', 'marked-nsfw']),
+    isNsfw: z.boolean(),
+    reviewedAt: z.string().describe('Review timestamp'),
+    reviewedBy: z.string().describe('Reviewer user ID'),
+  })
+  .meta({ id: 'ImageEnrichmentReview' });
+
+const ImageDescriptionEnrichmentResponseSchema = z
+  .object({
+    status: z.enum(['missing', 'success', 'failed', 'skipped']),
+    modelName: z.string().optional(),
+    updatedAt: z.string().optional(),
+    error: z.string().optional(),
+    skipReason: z.string().optional().describe('Machine-readable reason when status === "skipped"'),
+    description: z.string().optional(),
+    // always sent; optional in the schema so clients built before FL-36 keep compiling
+    confidence: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .nullable()
+      .optional()
+      .describe(
+        "The model's confidence in the description, 0 to 1, when the processing destination reported one; null otherwise",
+      )
+      .meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
+    tags: z.array(z.string()).optional(),
+    objects: z.array(z.string()).optional(),
+    people: z
+      .array(
+        z.object({
+          count: z.number().int(),
+          apparent_age_group: z.string(),
+          activity: z.string(),
+          confidence: z.string(),
+        }),
+      )
+      .optional(),
+    environment: z.string().optional(),
+    visibleText: z.array(z.string()).optional(),
+    context: z.string().optional(),
+    appliedDescription: z.boolean(),
+    appliedTags: z.boolean(),
+    destinationId: z.string().optional().describe('The processing destination that generated the description'),
+    staleReason: EnrichmentStaleReasonSchema.optional().describe(
+      'Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed',
+    ),
+  })
+  .meta({ id: 'ImageDescriptionEnrichmentResponseDto' });
+
+const NsfwDetectionEnrichmentResponseSchema = z
+  .object({
+    status: z.enum(['missing', 'success', 'failed']),
+    modelName: z.string().optional(),
+    updatedAt: z.string().optional(),
+    error: z.string().optional(),
+    isNsfw: z.boolean().optional(),
+    effectiveIsNsfw: z.boolean(),
+    score: z.number().meta({ format: 'double' }).optional(),
+    labels: z.record(z.string(), z.number().meta({ format: 'double' })).optional(),
+    review: ImageEnrichmentReviewSchema.optional(),
+    appliedTags: z.boolean(),
+  })
+  .meta({ id: 'NsfwDetectionEnrichmentResponseDto' });
+
+const AssetImageEnrichmentResponseSchema = z
+  .object({
+    assetId: z.string().describe('Asset ID'),
+    description: ImageDescriptionEnrichmentResponseSchema,
+    nsfwDetection: NsfwDetectionEnrichmentResponseSchema,
+  })
+  .meta({ id: 'AssetImageEnrichmentResponseDto' });
+
+const AssetStatsSchema = z
+  .object({
+    libraryScope: LibraryViewScopeSchema.optional(),
+    visibility: AssetVisibilitySchema.optional(),
+    isFavorite: stringToBool.optional().describe('Filter by favorite status'),
+    isTrashed: stringToBool.optional().describe('Filter by trash status'),
+  })
+  .meta({ id: 'AssetStatsDto' });
+
+const AssetStatsResponseSchema = z
+  .object({
+    images: z.int().describe('Number of images'),
+    videos: z.int().describe('Number of videos'),
+    total: z.int().describe('Total number of assets'),
+  })
+  .meta({ id: 'AssetStatsResponseDto' });
+
+const AssetMetadataRouteParamsSchema = z
+  .object({
+    id: z.uuidv4().describe('Asset ID'),
+    key: z.string().describe('Metadata key'),
+  })
+  .meta({ id: 'AssetMetadataRouteParams' });
+
+export const AssetMetadataUpsertItemSchema = z
+  .object({
+    key: z.string().describe('Metadata key'),
+    value: z.record(z.string(), z.unknown()).describe('Metadata value (object)'),
+  })
+  .meta({ id: 'AssetMetadataUpsertItemDto' });
+
+const AssetMetadataUpsertSchema = z
+  .object({
+    items: z.array(AssetMetadataUpsertItemSchema).describe('Metadata items to upsert'),
+  })
+  .meta({ id: 'AssetMetadataUpsertDto' });
+
+const AssetMetadataBulkUpsertItemSchema = z
+  .object({
+    assetId: z.uuidv4().describe('Asset ID'),
+    key: z.string().describe('Metadata key'),
+    value: z.record(z.string(), z.unknown()).describe('Metadata value (object)'),
+  })
+  .meta({ id: 'AssetMetadataBulkUpsertItemDto' });
+
+const AssetMetadataBulkUpsertSchema = z
+  .object({
+    items: z.array(AssetMetadataBulkUpsertItemSchema).describe('Metadata items to upsert'),
+  })
+  .meta({ id: 'AssetMetadataBulkUpsertDto' });
+
+const AssetMetadataBulkDeleteItemSchema = z
+  .object({
+    assetId: z.uuidv4().describe('Asset ID'),
+    key: z.string().describe('Metadata key'),
+  })
+  .meta({ id: 'AssetMetadataBulkDeleteItemDto' });
+
+const AssetMetadataBulkDeleteSchema = z
+  .object({
+    items: z.array(AssetMetadataBulkDeleteItemSchema).describe('Metadata items to delete'),
+  })
+  .meta({ id: 'AssetMetadataBulkDeleteDto' });
+
+const AssetMetadataResponseSchema = z
+  .object({
+    key: z.string().describe('Metadata key'),
+    value: z.record(z.string(), z.unknown()).describe('Metadata value (object)'),
+    updatedAt: isoDatetimeToDate.describe('Last update date'),
+  })
+  .meta({ id: 'AssetMetadataResponseDto' });
+
+const AssetMetadataBulkResponseSchema = AssetMetadataResponseSchema.extend({
+  assetId: z.uuidv4().describe('Asset ID'),
+}).meta({ id: 'AssetMetadataBulkResponseDto' });
+
+const AssetCopySchema = z
+  .object({
+    sourceId: z.uuidv4().describe('Source asset ID'),
+    targetId: z.uuidv4().describe('Target asset ID'),
+    sharedLinks: z.boolean().default(true).optional().describe('Copy shared links'),
+    albums: z.boolean().default(true).optional().describe('Copy album associations'),
+    sidecar: z.boolean().default(true).optional().describe('Copy sidecar file'),
+    stack: z.boolean().default(true).optional().describe('Copy stack association'),
+    favorite: z.boolean().default(true).optional().describe('Copy favorite status'),
+  })
+  .meta({ id: 'AssetCopyDto' });
+
+const AssetDownloadOriginalSchema = z
+  .object({
+    edited: stringToBool
+      .default(false)
+      .optional()
+      .describe(
+        "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
+      ),
+    format: z
+      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'])
+      .optional()
+      .describe(
+        'Explicit still export from an unedited photo; omission returns the untouched original or selected edit',
+      ),
+  })
+  .meta({ id: 'AssetDownloadOriginalDto' });
+
+export const mapStats = (stats: AssetStats): AssetStatsResponseDto => {
+  return {
+    images: stats[AssetType.Image],
+    videos: stats[AssetType.Video],
+    total: Object.values(stats).reduce((total, value) => total + value, 0),
+  };
+};
+
+export class AssetBulkUpdateDto extends createZodDto(AssetBulkUpdateSchema) {}
+export class UpdateAssetDto extends createZodDto(UpdateAssetSchema) {}
+export class AssetBulkDeleteDto extends createZodDto(AssetBulkDeleteSchema) {}
+export class AssetIdsDto extends createZodDto(AssetIdsSchema) {}
+export class AssetJobsDto extends createZodDto(AssetJobsSchema) {}
+export class AssetImageEnrichmentActionRequestDto extends createZodDto(AssetImageEnrichmentActionRequestSchema) {}
+export class AssetImageEnrichmentResponseDto extends createZodDto(AssetImageEnrichmentResponseSchema) {}
+export class AssetStatsDto extends createZodDto(AssetStatsSchema) {}
+export class AssetStatsResponseDto extends createZodDto(AssetStatsResponseSchema) {}
+export class AssetMetadataRouteParams extends createZodDto(AssetMetadataRouteParamsSchema) {}
+export class AssetMetadataUpsertDto extends createZodDto(AssetMetadataUpsertSchema) {}
+export class AssetMetadataBulkUpsertDto extends createZodDto(AssetMetadataBulkUpsertSchema) {}
+export class AssetMetadataBulkDeleteDto extends createZodDto(AssetMetadataBulkDeleteSchema) {}
+export class AssetMetadataResponseDto extends createZodDto(AssetMetadataResponseSchema) {}
+export class AssetMetadataBulkResponseDto extends createZodDto(AssetMetadataBulkResponseSchema) {}
+export class AssetCopyDto extends createZodDto(AssetCopySchema) {}
+export class AssetDownloadOriginalDto extends createZodDto(AssetDownloadOriginalSchema) {}
+
+/** FL-647: the most assets one bulk read returns; a client reads a longer list in pages. */
+export const ASSET_INFO_BATCH_MAX = 200;
+
+const AssetInfoBatchSchema = z
+  .object({
+    ids: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(ASSET_INFO_BATCH_MAX)
+      .describe(`Asset IDs to read, at most ${ASSET_INFO_BATCH_MAX}`),
+  })
+  .meta({ id: 'AssetInfoBatchDto' });
+
+const AssetInfoBatchResponseSchema = z
+  .object({
+    assets: z
+      .array(AssetResponseSchema)
+      .describe(
+        'Each requested asset the caller may read, as the single-asset read returns it, in request order; ids the caller may not read or that do not exist are left out',
+      ),
+  })
+  .meta({ id: 'AssetInfoBatchResponseDto' });
+
+export class AssetInfoBatchDto extends createZodDto(AssetInfoBatchSchema) {}
+export class AssetInfoBatchResponseDto extends createZodDto(AssetInfoBatchResponseSchema) {}

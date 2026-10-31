@@ -1,0 +1,7 @@
+{
+  "providers": [
+    "CUDAExecutionProvider"
+  ],
+  "cudaDeviceCount": 1,
+  "preferredAcceleration": "cuda"
+}

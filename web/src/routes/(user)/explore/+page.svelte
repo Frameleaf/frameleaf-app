@@ -1,0 +1,183 @@
+<script lang="ts">
+  /**
+   * Frameleaf Explore destination (FL-50). The Frameleaf UI is the only UI here now: see
+   * `$lib/components/frameleaf/ExplorePanel.svelte` for the section layout and
+   * `$lib/frameleaf/explore.ts` for the shortcut/quality-score adapters it is built on. Every
+   * section is real, already-accessible data gathered by `+page.ts` — there is no sample or
+   * fixture data anywhere in this path.
+   */
+  import PlacesRestoringNotice from '$lib/components/frameleaf/PlacesRestoringNotice.svelte';
+  import ExplorePanel from '$lib/components/frameleaf/ExplorePanel.svelte';
+  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { Route } from '$lib/route';
+  import { getAssetMediaUrl, memoryLaneTitle } from '$lib/utils';
+  import { getAltText } from '$lib/utils/thumbnail-util';
+  import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
+  import { toTimelineAsset } from '$lib/utils/timeline-util';
+  import { onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import { handleError } from '$lib/utils/handle-error';
+  import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
+  import { invalidateAll } from '$app/navigation';
+  import Portal from '$lib/elements/Portal.svelte';
+  import type { PageData } from './$types';
+  import type { Snapshot } from '@sveltejs/kit';
+
+  interface Props {
+    data: PageData;
+  }
+
+  let { data }: Props = $props();
+
+  // Follows the loader (so "Try again" fills in a section that failed) and can be replaced in
+  // place: a thumbnail-ready event bumps a person's `updatedAt` so the avatar picks up the freshly
+  // generated image without a full reload.
+  let peopleCards = $derived(data.peopleCards);
+  const onPersonThumbnailReady = ({ id }: { id: string }) => {
+    if (peopleCards.every((card) => card.person.id !== id)) {
+      return;
+    }
+    const updatedAt = new Date().toISOString();
+    peopleCards = peopleCards.map((card) =>
+      card.person.id === id ? { ...card, person: { ...card.person, updatedAt } } : card,
+    );
+  };
+
+  let memories = $derived(
+    data.memories.map((memory) => ({
+      id: memory.id,
+      title: $memoryLaneTitle(memory),
+      href: Route.viewMemory({ id: memory.id, assetId: memory.assets[0].id }),
+      alt: $getAltText(toTimelineAsset(memory.assets[0])),
+      src: getAssetMediaUrl({ id: memory.assets[0].id }),
+      count: memory.assets.length,
+    })),
+  );
+
+  // A section that could not load offers "Try again", which re-runs the loader for the whole page.
+  let retrying = $state(false);
+  const onRetry = async () => {
+    retrying = true;
+    try {
+      await invalidateAll();
+    } finally {
+      retrying = false;
+    }
+  };
+
+  let alive = true;
+  let openRequest = 0;
+  onDestroy(() => {
+    alive = false;
+  });
+  const onViewAsset = async (id: string, cached?: AssetResponseDto) => {
+    const request = ++openRequest;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => alive && request === openRequest && isCurrentSession();
+    try {
+      const asset = cached ?? (await getAssetInfo({ ...authManager.params, id }));
+      if (isCurrent()) {
+        assetViewerManager.setAsset(asset);
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, $t('errors.something_went_wrong'));
+      }
+    }
+  };
+
+  /**
+   * V-17: an item opened from "Recent captures" steps through that row, with its filmstrip; anything
+   * else opens on its own. The address carries no item here, so the viewer moves by opening the
+   * neighbour in place.
+   */
+  const recents = $derived(
+    assetViewerManager.asset && data.recentCaptures.some(({ id }) => id === assetViewerManager.asset!.id)
+      ? data.recentCaptures
+      : [],
+  );
+  const assetCursor = $derived({
+    current: assetViewerManager.asset!,
+    nextAsset: getNextAsset(recents, assetViewerManager.asset),
+    previousAsset: getPreviousAsset(recents, assetViewerManager.asset),
+  });
+  const filmstripAssets = $derived(recents.map((asset) => toTimelineAsset(asset)));
+  const openInPlace = ({ id }: { id: string }) =>
+    onViewAsset(
+      id,
+      recents.find((asset) => asset.id === id),
+    );
+
+  /**
+   * FL-50: Explore → a card's results → Back returns to the same place on the page. The page scrolls
+   * inside the layout's content area, not the window, so SvelteKit's own scroll restoration never
+   * sees it; the snapshot keeps that area's offset in the history entry instead.
+   */
+  let scroller: HTMLElement | undefined;
+  const captureScroller = (node: HTMLElement) => {
+    scroller = node;
+    return {
+      destroy() {
+        if (scroller === node) {
+          scroller = undefined;
+        }
+      },
+    };
+  };
+
+  export const snapshot: Snapshot<number> = {
+    capture: () => scroller?.scrollTop ?? 0,
+    restore: (top) => {
+      requestAnimationFrame(() => scroller?.scrollTo({ top, behavior: 'instant' }));
+    },
+  };
+</script>
+
+<OnEvents {onPersonThumbnailReady} />
+
+<UserPageLayout use={[captureScroller]}>
+  <PlacesRestoringNotice />
+  <ExplorePanel
+    people={peopleCards}
+    places={data.places}
+    things={data.things}
+    landmarks={data.landmarks}
+    albumSuggestion={data.landmarkAlbumSuggestion}
+    recents={data.recentCaptures}
+    libraryTotal={data.libraryTotal}
+    {memories}
+    albums={data.albums}
+    bestPhotos={data.bestPhotosPreview}
+    shortcutCounts={data.shortcutCounts}
+    failed={data.failed}
+    {onRetry}
+    {retrying}
+    {onViewAsset}
+  />
+</UserPageLayout>
+
+{#if assetViewerManager.isViewing}
+  {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
+    <Portal target="body">
+      <AssetViewer
+        cursor={assetCursor}
+        showNavigation={recents.length > 1}
+        {filmstripAssets}
+        onNavigateToAsset={openInPlace}
+        onClose={() => {
+          openRequest++;
+          assetViewerManager.showAssetViewer(false);
+        }}
+        onAssetUpdate={(updatedAsset) => {
+          // assetCursor is `$derived` from `assetViewerManager.asset`. Mutating cursor.current
+          // locally would be lost on the next recompute; push the refreshed asset into the
+          // manager so the derived cursor recomputes and the viewer reflects the change.
+          assetViewerManager.setAsset(updatedAsset);
+        }}
+      />
+    </Portal>
+  {/await}
+{/if}

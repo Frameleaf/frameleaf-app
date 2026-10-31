@@ -1,0 +1,416 @@
+import { createZodDto } from 'nestjs-zod';
+import z from 'zod';
+import type { SemVer } from 'semver';
+import { ExtraModel, HistoryBuilder } from 'src/decorators.js';
+import { FrameleafViaSchema, LoginPageMessageFormatSchema } from 'src/dtos/config.dto.js';
+import { isoDatetimeToDate } from 'src/validation.js';
+
+const ServerPingResponseSchema = z
+  .object({
+    res: z.string().meta({ example: 'pong' }),
+    // FL-229 (NAPI-005): `id` is this server's Frameleaf Cloud instance id while linked, or a
+    // locally-generated id that stays stable across restarts otherwise - either way, one value an
+    // app can compare across requests to confirm it reached the same server, on every route
+    // (LAN, direct, relay), without needing to be signed in.
+    id: z
+      .string()
+      .describe("This server's identity: the Frameleaf Cloud instance id while linked, else a stable local id")
+      .meta({ example: '018f5e7a-6b1e-7f6e-9c2e-1a2b3c4d5e6f' }),
+    linked: z.boolean().describe('Whether `id` is a Frameleaf Cloud instance id (true) or a local-only id (false)'),
+    lanDiscovery: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether LAN discovery is enabled; a host-network Docker companion must withdraw its announcement when false',
+      ),
+    name: z.string().describe("The server's display name (the admin-set server name, or a default)"),
+    // FL-292 (NAPI-012): what an app needs to offer setting this server up, and nothing about users
+    // or content; the setup code itself is never here
+    setup: z
+      .enum(['needed', 'complete'])
+      .describe(
+        '`needed` while the server has no administrator: the Frameleaf app can set it up from the home network',
+      ),
+    cloud: z
+      .enum(['available', 'unavailable'])
+      .describe('Whether this server can link to Frameleaf Cloud (FRAMELEAF_CLOUD_URL is set)'),
+  })
+  .meta({ id: 'ServerPingResponse' });
+
+// FL-430: this server's identity keys and the home-network proof that an address answers for it.
+const IdentityJwkSchema = z
+  .object({
+    kty: z.literal('OKP'),
+    crv: z.literal('Ed25519'),
+    x: z
+      .string()
+      .describe('The raw 32-byte Ed25519 public key, base64url without padding (RFC 8037)')
+      .meta({ example: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo' }),
+  })
+  .meta({ id: 'ServerIdentityJwk' });
+
+const ServerIdentityKeySchema = z
+  .object({
+    kid: z
+      .string()
+      .describe("The key id: the key's RFC 7638 JWK thumbprint (SHA-256, base64url without padding)")
+      .meta({ example: 'kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k' }),
+    jwk: IdentityJwkSchema,
+  })
+  .meta({ id: 'ServerIdentityKey' });
+
+const ServerIdentityResponseSchema = z
+  .object({
+    instanceId: z
+      .string()
+      .describe(
+        'The id this server signs as: the same value as `GET /server/ping` `id` (the Frameleaf Cloud instance id while linked, else a stable local id)',
+      ),
+    linked: z.boolean().describe('Whether `instanceId` is a Frameleaf Cloud instance id'),
+    identityKeys: z
+      .array(ServerIdentityKeySchema)
+      .describe(
+        "This server's Ed25519 identity keys, current key first, then the key the last rotation replaced while it is still kept (about a day). " +
+          'Linked servers use the key Frameleaf Cloud already holds, and the cloud lists the same `{kid, jwk}` entries for each instance. ' +
+          'This route is public because the keys are public, but an app must only PIN keys learned over a trusted path: this response fetched over https (a verified certificate) or the relay at sign-in, or the Frameleaf Cloud instance list. ' +
+          'Keys read over plain http are not trustworthy and must not replace a pinned set.',
+      ),
+  })
+  .meta({ id: 'ServerIdentityResponseDto' });
+
+const ServerIdentityChallengeSchema = z
+  .object({
+    nonce: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{22,128}$/)
+      .describe(
+        'A fresh random value from the app, used once: 16-96 random bytes as 22-128 base64url characters (no padding)',
+      ),
+  })
+  .meta({ id: 'ServerIdentityChallengeDto' });
+
+const LAN_PROOF_FORMAT =
+  'A compact JWS (RFC 7515) signed EdDSA (Ed25519, RFC 8037). Protected header: `{"alg":"EdDSA","typ":"frameleaf-lan-identity+jwt","kid":"<kid>"}`. ' +
+  'Payload segment: base64url of the UTF-8 string `frameleaf-lan-identity-v1|<instanceId>|<nonce>|<iat>|<origin>` (pipe-separated, not JSON; `iat` in Unix seconds; `origin` is `<scheme>://<host>[:port]`, lowercase, as the request arrived). ' +
+  'Signature: Ed25519 over the ASCII bytes `<header segment>.<payload segment>`. ' +
+  'The app checks `typ`, that `kid` is a pinned key and the signature verifies with it, that the nonce is the one it sent, that `instanceId` is the server it expects, and that `origin` equals the address it dialled. ' +
+  'Origin rule: one server answers on many origins at once (LAN addresses, the relay hostname, custom hostnames, a direct internet address) and one `identityKeys` set covers them all; `origin` is the origin this request actually arrived on: through Frameleaf remote access, the scheme and host the edge worker vouched for; otherwise the Host header as received and the connection scheme. `X-Forwarded-*` headers from any other peer are ignored. The app accepts the proof only when `origin` exactly equals the origin it dialled. ' +
+  'This proves the host holds the private key; it is not channel binding: a live man-in-the-middle on plain http can still relay, so apps should prefer https or the relay when available.';
+
+const ServerIdentityChallengeResponseSchema = z
+  .object({
+    instanceId: z.string().describe('The id signed in the proof (see `GET /server/identity`)'),
+    origin: z
+      .string()
+      .describe(
+        'The origin signed in the proof: `<scheme>://<host>[:port]`, lowercase, that the request actually arrived on (see the origin rule on `proof`)',
+      ),
+    iat: z.int().describe('When the proof was signed, Unix seconds'),
+    proof: z.string().describe(`Signed by the current identity key. ${LAN_PROOF_FORMAT}`),
+    retiringProof: z
+      .string()
+      .optional()
+      .describe(
+        'The same payload signed by the key the last rotation replaced, only while that key is still kept, so an app that pinned it keeps working until it learns the new key from a trusted path',
+      ),
+  })
+  .meta({ id: 'ServerIdentityChallengeResponseDto' });
+
+const ServerAboutResponseSchema = z
+  .object({
+    version: z.string().describe('Server version'),
+    versionUrl: z.string().describe('URL to version information'),
+    repository: z.string().optional().describe('Repository name'),
+    repositoryUrl: z.string().optional().describe('Repository URL'),
+    sourceRef: z.string().optional().describe('Source reference (branch/tag)'),
+    sourceCommit: z.string().optional().describe('Source commit hash'),
+    sourceUrl: z.string().optional().describe('Source URL'),
+    build: z.string().optional().describe('Build identifier'),
+    buildUrl: z.string().optional().describe('Build URL'),
+    buildImage: z.string().optional().describe('Build image name'),
+    buildImageUrl: z.string().optional().describe('Build image URL'),
+    nodejs: z.string().optional().describe('Node.js version'),
+    ffmpeg: z.string().optional().describe('FFmpeg version'),
+    imagemagick: z.string().optional().describe('ImageMagick version'),
+    libvips: z.string().optional().describe('libvips version'),
+    libraw: z.string().optional().describe('LibRaw/dcraw_emu version'),
+    exiftool: z.string().optional().describe('ExifTool version'),
+    licensed: z.boolean().describe('Whether the server is licensed'),
+    // FL-426: what an empty `server.timeZone` means, for Settings › Server name & welcome
+    systemTimeZone: z
+      .string()
+      .optional()
+      .describe('Time zone of the computer the server runs on (IANA name); the server uses it when none is chosen'),
+    thirdPartySourceUrl: z.string().optional().describe('Third-party source URL'),
+    thirdPartyBugFeatureUrl: z.string().optional().describe('Third-party bug/feature URL'),
+    thirdPartyDocumentationUrl: z.string().optional().describe('Third-party documentation URL'),
+    thirdPartySupportUrl: z.string().optional().describe('Third-party support URL'),
+  })
+  .meta({ id: 'ServerAboutResponseDto' });
+
+const ServerApkLinksSchema = z
+  .object({
+    arm64v8a: z.string().describe('APK download link for ARM64 v8a architecture'),
+    armeabiv7a: z.string().describe('APK download link for ARM EABI v7a architecture'),
+    universal: z.string().describe('APK download link for universal architecture'),
+    x86_64: z.string().describe('APK download link for x86_64 architecture'),
+  })
+  .meta({ id: 'ServerApkLinksDto' });
+
+const ServerAppReleasesResponseSchema = z
+  .object({
+    android: z
+      .object({
+        available: z.boolean().describe('Whether a signed Android release is configured for this server'),
+        appId: z.string().optional().describe('Android package id of the signed release'),
+        signingCertificateSha256: z
+          .string()
+          .optional()
+          .describe('SHA-256 fingerprint of the release signing certificate, as AA:BB:...'),
+        links: ServerApkLinksSchema.optional().describe('Signed APK downloads for this server version'),
+        storeUrl: z
+          .string()
+          .optional()
+          .describe('Store listing of the Android app, when the operator configured one (FL-135)'),
+      })
+      .describe('Android application'),
+    ios: z
+      .object({
+        available: z.boolean().describe('Whether an iOS release is configured for this server'),
+        url: z.string().optional().describe('App Store or TestFlight page'),
+      })
+      .describe('iOS application'),
+  })
+  .meta({ id: 'ServerAppReleasesResponseDto' });
+
+const ServerStorageResponseSchema = z
+  .object({
+    diskSize: z.string().describe('Total disk size (human-readable format)'),
+    diskUse: z.string().describe('Used disk space (human-readable format)'),
+    diskAvailable: z.string().describe('Available disk space (human-readable format)'),
+    diskSizeRaw: z.int().describe('Total disk size in bytes'),
+    diskUseRaw: z.int().describe('Used disk space in bytes'),
+    diskAvailableRaw: z.int().describe('Available disk space in bytes'),
+    diskUsagePercentage: z.number().meta({ format: 'double' }).describe('Disk usage percentage (0-100)'),
+  })
+  .meta({ id: 'ServerStorageResponseDto' });
+
+const ServerVersionResponseSchema = z
+  .object({
+    major: z.int().min(0).describe('Major version number'),
+    minor: z.int().min(0).describe('Minor version number'),
+    patch: z.int().min(0).describe('Patch version number'),
+    prerelease: z
+      .int()
+      .min(0)
+      .nullable()
+      .meta(HistoryBuilder.v3().getExtensions())
+      .describe('Pre-release version number'),
+    prereleaseName: z
+      .string()
+      .optional()
+      .meta(new HistoryBuilder().added('v3.2.0').getExtensions())
+      .describe('Full pre-release identifier (for example rc.1 or beta.2), present only for a pre-release (FL-80)'),
+  })
+  .meta({ id: 'ServerVersionResponseDto' });
+
+const ServerVersionHistoryResponseSchema = z
+  .object({
+    id: z.uuidv4().describe('Version history entry ID'),
+    createdAt: isoDatetimeToDate.describe('When this version was first seen'),
+    version: z.string().describe('Version string'),
+  })
+  .meta({ id: 'ServerVersionHistoryResponseDto' });
+
+const UsageByUserSchema = z
+  .object({
+    userId: z.uuidv4().describe('User ID'),
+    userName: z.string().describe('User name'),
+    photos: z.int().describe('Number of photos'),
+    videos: z.int().describe('Number of videos'),
+    usage: z.int().describe('Total storage usage in bytes'),
+    usagePhotos: z.int().describe('Storage usage for photos in bytes'),
+    usageVideos: z.int().describe('Storage usage for videos in bytes'),
+    quotaSizeInBytes: z.int().nullable().describe('User quota size in bytes (null if unlimited)'),
+  })
+  .meta({ id: 'UsageByUserDto' });
+
+const ServerStatsResponseSchema = z
+  .object({
+    photos: z.int().describe('Total number of photos'),
+    videos: z.int().describe('Total number of videos'),
+    usage: z.int().describe('Total storage usage in bytes'),
+    usagePhotos: z.int().describe('Storage usage for photos in bytes'),
+    usageVideos: z.int().describe('Storage usage for videos in bytes'),
+    usageByUser: z.array(UsageByUserSchema).describe('Array of usage for each user'),
+  })
+  .meta({ id: 'ServerStatsResponseDto' });
+
+const ServerMediaTypesResponseSchema = z
+  .object({
+    video: z.array(z.string()).describe('Supported video MIME types'),
+    image: z.array(z.string()).describe('Supported image MIME types'),
+    sidecar: z.array(z.string()).describe('Supported sidecar MIME types'),
+  })
+  .meta({ id: 'ServerMediaTypesResponseDto' });
+
+const ServerConfigSchema = z
+  .object({
+    oauthButtonText: z.string().describe('OAuth button text'),
+    oauthAccountManagementUrl: z.string().describe('OAuth account management URL').optional().default(''),
+    loginPageMessage: z.string().describe('Login page message'),
+    // FL-426: an app shows a plain message as typed, and cleans formatted text before showing it
+    loginPageMessageFormat: LoginPageMessageFormatSchema,
+    serverName: z.string().describe('Server name set by an administrator; empty when none is set'),
+    trashDays: z.int().describe('Number of days before trashed assets are permanently deleted'),
+    userDeleteDelay: z.int().describe('Delay in days before deleted users are permanently removed'),
+    isInitialized: z.boolean().describe('Whether the server has been initialized'),
+    isOnboarded: z.boolean().describe('Whether the admin has completed onboarding'),
+    isNewServerSetup: z
+      .boolean()
+      .describe('Whether first-run setup in progress is for a new server rather than an existing library'),
+    externalDomain: z.string().describe('External domain URL'),
+    publicUsers: z.boolean().describe('Whether public user registration is enabled'),
+    mapDarkStyleUrl: z.string().describe('Map dark style URL'),
+    mapLightStyleUrl: z.string().describe('Map light style URL'),
+    maintenanceMode: z.boolean().describe('Whether maintenance mode is active'),
+    placesRestoring: z
+      .boolean()
+      .describe(
+        'Whether place names and landmarks are being put back after a restore or a first start, so they can look missing for a few minutes',
+      ),
+    defaultImageDescriptionRawPromptTemplate: z
+      .string()
+      .describe('Canonical default for the image-description advanced raw prompt template'),
+    minFaces: z.int().describe('People min faces server default'),
+    frameleaf: z
+      .object({
+        via: FrameleafViaSchema.nullable().describe(
+          'How the request arrived; null when the edge worker did not vouch for it',
+        ),
+        cloudConfigured: z
+          .boolean()
+          .describe(
+            'Whether the deployment names a Frameleaf Cloud address (FRAMELEAF_CLOUD_URL), so setup can offer to link; nothing is contacted',
+          ),
+        signInAvailable: z.boolean().describe('Whether Sign in with Frameleaf is available (the server is linked)'),
+        signInRequired: z
+          .boolean()
+          .describe('Whether this request arrived through remote access, where a Frameleaf sign-in is required'),
+        publicUrl: z
+          .string()
+          .nullable()
+          .describe('The address Frameleaf Cloud published for this server, while it is linked'),
+      })
+      .describe('Frameleaf remote access and sign-in, for this request')
+      .meta({ id: 'ServerFrameleafConfigDto' }),
+  })
+  .meta({ id: 'ServerConfigDto' });
+
+const ImageCapabilitiesSchema = z
+  .object({
+    experimentalEnabled: z
+      .boolean()
+      .describe('Whether the administrator enabled experimental HDR processing and delivery'),
+    qualified: z
+      .boolean()
+      .describe('Whether the exact build passed the real-media and physical-display acceptance gates'),
+    renderer: z.string().nullable().describe('HDR renderer identity, or null when the isolated codec is unavailable'),
+    codecs: z.record(z.string(), z.string()).describe('Versions reported by the installed isolated codec'),
+    decode: z
+      .array(z.string())
+      .describe('Available source decoders; availability alone does not establish qualification'),
+    render: z.array(z.string()).describe('Available still-image render operations'),
+    export: z.array(z.string()).describe('Available encoded still output formats, independently of input formats'),
+    unavailable: z
+      .array(z.string())
+      .describe('Known unsupported capabilities; never infer support from the container extension'),
+  })
+  .meta({ id: 'ImageCapabilitiesDto' });
+export type ImageCapabilitiesDto = z.infer<typeof ImageCapabilitiesSchema>;
+
+const ServerFeaturesSchema = z
+  .object({
+    imageCapabilities: ImageCapabilitiesSchema.optional(),
+    smartSearch: z.boolean().describe('Whether smart search is enabled'),
+    askSearch: z
+      .boolean()
+      .describe('Whether Ask Search (natural-language questions about the library) is enabled and can answer'),
+    duplicateDetection: z.boolean().describe('Whether duplicate detection is enabled'),
+    configFile: z.boolean().describe('Whether config file is available'),
+    facialRecognition: z.boolean().describe('Whether facial recognition is enabled'),
+    map: z.boolean().describe('Whether map feature is enabled'),
+    trash: z.boolean().describe('Whether trash feature is enabled'),
+    reverseGeocoding: z.boolean().describe('Whether reverse geocoding is enabled'),
+    importFaces: z.boolean().describe('Whether face import is enabled'),
+    oauth: z.boolean().describe('Whether OAuth is enabled'),
+    oauthAutoLaunch: z.boolean().describe('Whether OAuth auto-launch is enabled'),
+    passwordLogin: z.boolean().describe('Whether password login is enabled'),
+    sidecar: z.boolean().describe('Whether sidecar files are supported'),
+    search: z.boolean().describe('Whether search is enabled'),
+    email: z.boolean().describe('Whether email notifications are enabled'),
+    ocr: z.boolean().describe('Whether OCR is enabled'),
+    imageDescription: z.boolean().describe('Whether image description and tag generation is enabled'),
+    nsfwDetection: z.boolean().describe('Whether NSFW detection is enabled'),
+    nsfwHiding: z.boolean().describe('Whether NSFW-tagged assets are hidden from non-elevated library views'),
+    physicalDeduplication: z.boolean().describe('Whether physical file deduplication is enabled'),
+    realtimeTranscoding: z.boolean().describe('Whether real-time transcoding is enabled'),
+    frameleafCloud: z.boolean().describe('Whether this server is linked to Frameleaf Cloud (FL-156)'),
+    remoteAccess: z.boolean().describe('Whether the Frameleaf Cloud plan includes remote access (FL-156)'),
+    cloudMl: z.boolean().describe('Whether the Frameleaf Cloud plan includes cloud processing (FL-156)'),
+    cloudBackup: z.boolean().describe('Whether the Frameleaf Cloud plan includes cloud backup (FL-156)'),
+    supporter: z.boolean().describe('Whether this server carries a Frameleaf supporter licence (FL-156)'),
+  })
+  .meta({ id: 'ServerFeaturesDto' });
+
+export enum ReleaseType {
+  Major = 'major',
+  Premajor = 'premajor',
+  Minor = 'minor',
+  Preminor = 'preminor',
+  Patch = 'patch',
+  Prepatch = 'prepatch',
+  Prerelease = 'prerelease',
+}
+
+const ReleaseTypeSchema = z.enum(ReleaseType).meta({ id: 'ReleaseType' }).describe('Release type');
+
+const ReleaseEventV1Schema = z.object({
+  isAvailable: z.boolean().describe('Whether a new version is available'),
+  checkedAt: z.string().describe('When the server last checked for a latest version. As an ISO timestamp'),
+  serverVersion: ServerVersionResponseSchema,
+  releaseVersion: ServerVersionResponseSchema,
+  type: ReleaseTypeSchema.nullable(),
+});
+
+export class ServerPingResponse extends createZodDto(ServerPingResponseSchema) {}
+export class ServerIdentityResponseDto extends createZodDto(ServerIdentityResponseSchema) {}
+export class ServerIdentityChallengeDto extends createZodDto(ServerIdentityChallengeSchema) {}
+export class ServerIdentityChallengeResponseDto extends createZodDto(ServerIdentityChallengeResponseSchema) {}
+export class ServerAboutResponseDto extends createZodDto(ServerAboutResponseSchema) {}
+export class ServerApkLinksDto extends createZodDto(ServerApkLinksSchema) {}
+export class ServerAppReleasesResponseDto extends createZodDto(ServerAppReleasesResponseSchema) {}
+export class ServerStorageResponseDto extends createZodDto(ServerStorageResponseSchema) {}
+
+export class ServerVersionResponseDto extends createZodDto(ServerVersionResponseSchema) {
+  static fromSemVer(value: SemVer): z.infer<typeof ServerVersionResponseSchema> {
+    return {
+      major: value.major,
+      minor: value.minor,
+      patch: value.patch,
+      prerelease: typeof value.prerelease[1] === 'number' ? value.prerelease[1] : null,
+      // FL-80: the number alone turns beta.2 into rc.2 in clients; the full identifier keeps it right.
+      ...(value.prerelease.length > 0 && { prereleaseName: value.prerelease.join('.') }),
+    };
+  }
+}
+
+export class ServerVersionHistoryResponseDto extends createZodDto(ServerVersionHistoryResponseSchema) {}
+export class UsageByUserDto extends createZodDto(UsageByUserSchema) {}
+export class ServerStatsResponseDto extends createZodDto(ServerStatsResponseSchema) {}
+export class ServerMediaTypesResponseDto extends createZodDto(ServerMediaTypesResponseSchema) {}
+export class ServerConfigDto extends createZodDto(ServerConfigSchema) {}
+export class ServerFeaturesDto extends createZodDto(ServerFeaturesSchema) {}
+
+@ExtraModel()
+export class ReleaseEventV1 extends createZodDto(ReleaseEventV1Schema) {}

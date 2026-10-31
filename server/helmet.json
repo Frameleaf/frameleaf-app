@@ -1,0 +1,16 @@
+{
+  "contentSecurityPolicy": {
+    "directives": {
+      "default-src": ["'self'"],
+      "script-src": ["'self'", "'wasm-unsafe-eval'", "'unsafe-inline'", "https://www.gstatic.com"],
+      "style-src": ["'self'", "'unsafe-inline'"],
+      "img-src": ["'self'", "data:", "blob:"],
+      "media-src": ["'self'", "data:", "blob:"],
+      "connect-src": ["'self'", "blob:", "https://tiles.frameleaf.cloud"],
+      "worker-src": ["'self'", "blob:"],
+      "frame-src": ["'none'"],
+      "object-src": ["'none'"],
+      "base-uri": ["'self'"]
+    }
+  }
+}

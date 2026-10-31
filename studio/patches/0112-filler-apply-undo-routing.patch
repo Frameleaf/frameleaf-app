@@ -1,0 +1,198 @@
+diff --git a/src/features/timeline/components/filler-removal-dialog.tsx b/src/features/timeline/components/filler-removal-dialog.tsx
+--- a/src/features/timeline/components/filler-removal-dialog.tsx
++++ b/src/features/timeline/components/filler-removal-dialog.tsx
+@@ -726,8 +726,8 @@
+     }
+ 
+     toast.success(t('timeline.fillerRemoval.toastRemoved', { count: result.removedItemCount }))
+-    setHasApplied(true)
+-  }, [itemIds, selectedRangesByMediaId, t])
++    handleClose()
++  }, [handleClose, itemIds, selectedRangesByMediaId, t])
+ 
+   const handleToggleRange = useCallback(
+     (id: string) => {
+diff --git a/src/features/timeline/components/filler-removal-dialog.test.tsx b/src/features/timeline/components/filler-removal-dialog.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/components/filler-removal-dialog.test.tsx
+@@ -0,0 +1,179 @@
++import type { ReactNode } from 'react'
++import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { AudioItem } from '@/types/timeline'
++import { useEditorStore } from '@/shared/state/editor'
++import { useSelectionStore } from '@/shared/state/selection'
++import { useItemsStore } from '../stores/items-store'
++import { useKeyframesStore } from '../stores/keyframes-store'
++import { useTransitionsStore } from '../stores/transitions-store'
++import { useTimelineCommandStore } from '../stores/timeline-command-store'
++import { useTimelineSettingsStore } from '../stores/timeline-settings-store'
++import { useFillerRemovalDialogStore } from '../stores/filler-removal-dialog-store'
++import { removeFillerWordsFromItems } from '../stores/actions/edit/range-removal-actions'
++import { useUIShortcuts } from '../hooks/shortcuts/use-ui-shortcuts'
++import { DEFAULT_FILLER_REMOVAL_SETTINGS } from '../utils/filler-word-removal-preview'
++import { useTimelineItemOverlayStore } from '../stores/timeline-item-overlay-store'
++import { FillerRemovalDialog } from './filler-removal-dialog'
++
++const { analyzeMock } = vi.hoisted(() => ({ analyzeMock: vi.fn() }))
++vi.mock('../utils/filler-word-removal-preview', async (importOriginal) => ({
++  ...(await importOriginal<typeof import('../utils/filler-word-removal-preview')>()),
++  analyzeFillerWordsForItems: analyzeMock,
++}))
++vi.mock('../utils/filler-audio-confidence', () => ({ scoreFillerRangesWithClap: vi.fn() }))
++vi.mock('../stores/actions/edit/range-removal-actions', async (importOriginal) => {
++  const actual =
++    await importOriginal<typeof import('../stores/actions/edit/range-removal-actions')>()
++  return { ...actual, removeFillerWordsFromItems: vi.fn(actual.removeFillerWordsFromItems) }
++})
++vi.mock('@/components/ui/floating-panel', () => ({
++  FloatingPanel: ({ children, headerExtra }: { children: ReactNode; headerExtra: ReactNode }) => (
++    <div>
++      {headerExtra}
++      {children}
++    </div>
++  ),
++}))
++
++const ranges = { 'media-1': [{ start: 1, end: 2, text: 'um' }] }
++function makeAudioItem(): AudioItem {
++  return {
++    id: 'audio-1',
++    type: 'audio',
++    trackId: 'audio-track',
++    from: 0,
++    durationInFrames: 90,
++    label: 'Dialogue.wav',
++    src: 'blob:audio',
++    mediaId: 'media-1',
++    originId: 'origin-1',
++    sourceStart: 0,
++    sourceEnd: 90,
++    sourceDuration: 90,
++    sourceFps: 30,
++  }
++}
++function RemovalWorkflow() {
++  useUIShortcuts({})
++  return <FillerRemovalDialog />
++}
++function sourceSpans() {
++  return useItemsStore
++    .getState()
++    .items.toSorted((a, b) => a.from - b.from)
++    .map((item) => ({
++      from: item.from,
++      durationInFrames: item.durationInFrames,
++      sourceStart: item.sourceStart,
++      sourceEnd: item.sourceEnd,
++    }))
++}
++async function editAndPreview() {
++  fireEvent.change(screen.getByLabelText('Cut Padding'), { target: { value: '50' } })
++  fireEvent.blur(screen.getByLabelText('Cut Padding'))
++  fireEvent.click(screen.getByRole('button', { name: 'Update Preview' }))
++  await waitFor(() => expect(analyzeMock).toHaveBeenCalledTimes(1))
++  await waitFor(() =>
++    expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled(),
++  )
++}
++
++describe('filler removal transaction', () => {
++  beforeEach(() => {
++    analyzeMock.mockReset().mockResolvedValue(ranges)
++    vi.mocked(removeFillerWordsFromItems).mockClear()
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useEditorStore.setState({ linkedSelectionEnabled: true })
++    useItemsStore.getState().setItems([makeAudioItem()])
++    useItemsStore.getState().setTracks([])
++    useTransitionsStore.getState().setTransitions([])
++    useKeyframesStore.getState().setKeyframes([])
++    useSelectionStore.getState().clearSelection()
++    useFillerRemovalDialogStore.getState().open({
++      itemIds: ['audio-1'],
++      settings: DEFAULT_FILLER_REMOVAL_SETTINGS,
++      rangesByMediaId: ranges,
++      summary: { rangeCount: 1, totalSeconds: 1 },
++    })
++  })
++  afterEach(cleanup)
++
++  it.each([{ metaKey: true }, { ctrlKey: true }])(
++    'restores source timing with one Undo after edited preview and Apply (%j)',
++    async (modifier) => {
++      render(<RemovalWorkflow />)
++      await editAndPreview()
++      expect(useItemsStore.getState().items).toEqual([makeAudioItem()])
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
++      expect(sourceSpans()).toEqual([
++        { from: 0, durationInFrames: 30, sourceStart: 0, sourceEnd: 30 },
++        { from: 30, durationInFrames: 30, sourceStart: 60, sourceEnd: 90 },
++      ])
++      expect(useTimelineCommandStore.getState().getLastCommandType()).toBe('REMOVE_FILLER_WORDS')
++      fireEvent.keyDown(document.body, { key: 'z', code: 'KeyZ', ...modifier })
++      expect(useItemsStore.getState().items).toEqual([makeAudioItem()])
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++      expect(useFillerRemovalDialogStore.getState().isOpen).toBe(false)
++    },
++  )
++
++  it('keeps draft Undo before Apply without editing the timeline', async () => {
++    render(<RemovalWorkflow />)
++    fireEvent.change(screen.getByLabelText('Cut Padding'), { target: { value: '50' } })
++    fireEvent.blur(screen.getByLabelText('Cut Padding'))
++    expect(screen.getByRole('button', { name: 'Undo' })).toBeEnabled()
++    fireEvent.keyDown(document.body, { key: 'z', code: 'KeyZ', metaKey: true })
++    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
++    expect(useFillerRemovalDialogStore.getState().isOpen).toBe(true)
++    expect(useItemsStore.getState().items).toEqual([makeAudioItem()])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++
++  it('keeps the panel open and history unchanged when Apply fails', async () => {
++    render(<RemovalWorkflow />)
++    await editAndPreview()
++    vi.mocked(removeFillerWordsFromItems).mockImplementationOnce(() => {
++      throw new Error('Removal failed')
++    })
++    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
++    expect(useFillerRemovalDialogStore.getState().isOpen).toBe(true)
++    expect(useItemsStore.getState().items).toEqual([makeAudioItem()])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++
++  it('keeps the panel open when no matching ranges can be removed', async () => {
++    analyzeMock.mockResolvedValue({ 'media-1': [{ start: 10, end: 11, text: 'um' }] })
++    render(<RemovalWorkflow />)
++    await editAndPreview()
++    expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled()
++    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
++    expect(useFillerRemovalDialogStore.getState().isOpen).toBe(true)
++    expect(useItemsStore.getState().items).toEqual([makeAudioItem()])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++  })
++
++  it('cancels pending preview and ignores its late result without editing the timeline', async () => {
++    let finish!: (value: typeof ranges) => void
++    analyzeMock.mockReturnValue(
++      new Promise<typeof ranges>((resolve) => {
++        finish = resolve
++      }),
++    )
++    render(<RemovalWorkflow />)
++    fireEvent.click(screen.getByRole('button', { name: 'Update Preview' }))
++    fireEvent.keyDown(document.body, { key: 'Escape' })
++    await act(async () => {
++      finish(ranges)
++    })
++    expect(useFillerRemovalDialogStore.getState()).toMatchObject({
++      isOpen: false,
++      rangesByMediaId: {},
++    })
++    expect(useItemsStore.getState().items).toEqual([makeAudioItem()])
++    expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++    expect(useTimelineItemOverlayStore.getState().overlaysByItemId['audio-1']).toBeUndefined()
++  })
++})

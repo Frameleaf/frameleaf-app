@@ -1,0 +1,351 @@
+<script lang="ts">
+  import { goto } from '$app/navigation';
+  import DetailPanelCameraIdentification from '$lib/components/asset-viewer/DetailPanelCameraIdentification.svelte';
+  import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
+  import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
+  import DetailPanelImageEnrichment from '$lib/components/asset-viewer/DetailPanelImageEnrichment.svelte';
+  import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
+  import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
+  import DetailPanelClassification from '$lib/components/asset-viewer/DetailPanelClassification.svelte';
+  import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
+  import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
+  import DocumentTextSection from '$lib/components/frameleaf/DocumentTextSection.svelte';
+  import VideoMomentsPanel from '$lib/components/frameleaf/VideoMomentsPanel.svelte';
+  import ViewerDetailRows from '$lib/components/frameleaf/ViewerDetailRows.svelte';
+  import { timeToLoadTheMap } from '$lib/constants';
+  import { coordinatesOf, ownerLine, type DescriptionReview } from '$lib/frameleaf/info-panel';
+  import { originOwnerName } from '$lib/frameleaf/partner-sharing';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { Route } from '$lib/route';
+  import { getAssetMediaUrl } from '$lib/utils';
+  import { delay } from '$lib/utils/asset-utils';
+  import { handleError } from '$lib/utils/handle-error';
+  import {
+    AssetMediaSize,
+    getAllAlbums,
+    LibraryScope,
+    getAssetInfo,
+    type AlbumResponseDto,
+    type AssetResponseDto,
+  } from '@frameleaf/sdk';
+  import { Icon, Link, LoadingSpinner, Text } from '@frameleaf/ui';
+  import { mdiAccountArrowLeftOutline, mdiAccountOutline } from '@mdi/js';
+  import { onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import OnEvents from '../OnEvents.svelte';
+  import AlbumListItemDetails from './AlbumListItemDetails.svelte';
+  import DetailPanelPeople from '$lib/components/asset-viewer/DetailPanelPeople.svelte';
+  import DetailPanelPets from '$lib/components/asset-viewer/DetailPanelPets.svelte';
+  import { faceManager } from '$lib/stores/face.svelte';
+
+  interface Props {
+    asset: AssetResponseDto;
+    currentAlbum?: AlbumResponseDto | null;
+    onAssetSuppressed?: (asset: AssetResponseDto) => void | Promise<void>;
+    onAssetUpdate?: (asset: AssetResponseDto) => void;
+  }
+
+  let { asset, currentAlbum = null, onAssetSuppressed, onAssetUpdate }: Props = $props();
+
+  let isOwner = $derived(authManager.authenticated && authManager.user.id === asset.ownerId);
+  // A shared link strips the owner from the asset, so it never shows one (the server drops it).
+  const owner = $derived(
+    ownerLine(asset, authManager.authenticated ? authManager.user.id : undefined, {
+      sharedAlbum: !!currentAlbum && currentAlbum.albumUsers.length > 1,
+    }),
+  );
+  // FL-326: a copy partner sharing brought into this library names the library it came from (MediaViewer.jsx .mv-origin)
+  const originName = $derived(originOwnerName(asset.origin));
+  let latlng = $derived(
+    (() => {
+      const point = coordinatesOf(asset.exifInfo);
+      if (point) {
+        return { lat: Number(point.lat.toFixed(7)), lng: Number(point.lng.toFixed(7)) };
+      }
+    })(),
+  );
+  let previousId: string | undefined = $state();
+  let previousRoute = $derived(currentAlbum?.id ? Route.viewAlbum(currentAlbum) : Route.photos());
+  /**
+   * FL-36: where the stored description came from, reported by the enrichment card so the
+   * editor above can badge it without a second request. Reset per asset, because a
+   * provenance carried over from the previous item would be a lie about this one.
+   */
+  let descriptionReview = $state<DescriptionReview | null>(null);
+
+  const refreshAlbums = async () => {
+    if (authManager.isSharedLink) {
+      return [];
+    }
+
+    try {
+      return await getAllAlbums({ assetId: asset.id });
+    } catch (error) {
+      handleError(error, 'Error getting asset album membership');
+      return [];
+    }
+  };
+
+  let albums = $derived(refreshAlbums());
+
+  let alive = true;
+  let generation = 0;
+  onDestroy(() => {
+    alive = false;
+  });
+
+  $effect.pre(() => {
+    if (!previousId) {
+      previousId = asset.id;
+      return;
+    }
+
+    if (asset.id === previousId) {
+      return;
+    }
+
+    generation++;
+    descriptionReview = null;
+    previousId = asset.id;
+  });
+
+  const handleRefreshPeople = async () => {
+    const id = asset.id;
+    const owner = generation;
+    const isCurrentSession = authManager.captureSession();
+    const updatedAsset = await getAssetInfo({ id });
+    if (!alive || owner !== generation || !isCurrentSession()) {
+      return;
+    }
+    onAssetUpdate?.(updatedAsset);
+    faceManager.clear();
+    await faceManager.getAssetFaces(id);
+  };
+</script>
+
+<OnEvents onAlbumAddAssets={() => (albums = refreshAlbums())} />
+
+<!--
+  VIEWER-P7 (.mv-info-scroll, .mv-info section, .mv-info h3; media-viewer.css:967-990): every part of
+  the card is a band with a divider under it and a small uppercase label (`fl-info-heading`) on top.
+-->
+<div class="fl-info">
+  <!-- V-6: a missing original is explained by the viewer's offline banner (ViewerOfflineBanner), not again here. -->
+
+  <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
+  <section>
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_captured')}</h3>
+    </div>
+
+    {#if !asset.exifInfo}
+      <Text size="small" color="muted">{$t('no_exif_info_available')}</Text>
+    {/if}
+
+    <DetailPanelDate {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+
+    <DetailPanelLocation {isOwner} {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  </section>
+
+  <!-- A Boards item's Source (Saved with, Page, the saved note, Added), as the Boards inspector shows it. -->
+  {#if asset.libraryScope === LibraryScope.Design || asset.libraryScope === LibraryScope.Both}
+    <AssetSources assetId={asset.id} canRead={isOwner} added={asset.createdAt} headingClass="fl-info-heading" />
+  {/if}
+
+  <!--
+      FL-36: the file, path, image, camera, lens, exposure, video and checksum rows the design
+      puts under Details. `infoDetailRows` decides which of them this asset can fill and keeps
+      the path and the checksum owner-only.
+    -->
+  <ViewerDetailRows {asset} {isOwner} />
+  <DetailPanelCameraIdentification {asset} {isOwner} />
+
+  <!-- FL-707 item 13: people, rating, then the description (once, with its AI evidence) and the
+       sensitive-content check, after when, where, file and camera. -->
+  <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
+  <!-- FL-58: the owner's pets in this photo, with add, draw and undo. -->
+  <DetailPanelPets {asset} {isOwner} />
+  <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  <DetailPanelImageEnrichment
+    {asset}
+    {isOwner}
+    onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+    {onAssetSuppressed}
+    onDescriptionReview={(review) => (descriptionReview = review)}
+  >
+    {#snippet descriptionEditor(evidence)}
+      <DetailPanelDescription
+        {asset}
+        {isOwner}
+        review={descriptionReview}
+        {evidence}
+        onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+      />
+    {/snippet}
+  </DetailPanelImageEnrichment>
+  <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
+  <VideoMomentsPanel {asset} {isOwner} />
+
+  {#if authManager.authenticated && authManager.preferences.tags.enabled}
+    <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  {/if}
+  {#if authManager.authenticated}
+    <DetailPanelClassification {asset} {isOwner} />
+  {/if}
+
+  {#if latlng && featureFlagsManager.value.map}
+    <div class="fl-info-map h-90">
+      {#await import('$lib/components/shared-components/map/Map.svelte')}
+        {#await delay(timeToLoadTheMap) then}
+          <!-- show the loading spinner only if loading the map takes too much time -->
+          <div class="flex size-full items-center justify-center">
+            <LoadingSpinner />
+          </div>
+        {/await}
+      {:then { default: Map }}
+        <Map
+          mapMarkers={[
+            {
+              lat: latlng.lat,
+              lon: latlng.lng,
+              id: asset.id,
+              city: asset.exifInfo?.city ?? null,
+              state: asset.exifInfo?.state ?? null,
+              country: asset.exifInfo?.country ?? null,
+            },
+          ]}
+          center={latlng}
+          zoom={12.5}
+          simplified
+          useLocationPin
+          showSimpleControls
+          onOpenInMapView={() => goto(Route.map({ ...latlng, zoom: 12.5 }))}
+        >
+          {#snippet popup({ marker })}
+            {@const { lat, lon } = marker}
+            <div class="flex flex-col items-center gap-1">
+              <Text fontWeight="bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</Text>
+              <Link
+                href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
+                class="text-primary"
+              >
+                {$t('open_in_openstreetmap')}
+              </Link>
+            </div>
+          {/snippet}
+        </Map>
+      {/await}
+    </div>
+  {/if}
+
+  {#await albums then albums}
+    {#if albums.length > 0}
+      <section class="dark:text-immich-dark-fg">
+        <div class="fl-info-heading-row">
+          <h3 class="fl-info-heading">{$t('appears_in')}</h3>
+        </div>
+        {#each albums as album (album.id)}
+          <a href={Route.viewAlbum(album)}>
+            <div class="flex items-center gap-4 pt-2 hover:cursor-pointer">
+              <div>
+                <img
+                  alt={album.albumName}
+                  class="size-12.5 rounded-sm object-cover"
+                  src={album.albumThumbnailAssetId &&
+                    getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Preview })}
+                  draggable="false"
+                />
+              </div>
+
+              <div class="my-auto">
+                <p class="dark:text-immich-dark-primary">{album.albumName}</p>
+                <div class="flex flex-col gap-0 text-sm">
+                  <div>
+                    <AlbumListItemDetails {album} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </a>
+        {/each}
+      </section>
+    {/if}
+  {/await}
+
+  <!-- V-27: who owns or shared someone else's item, under the albums (MediaViewer.jsx:2514-2519). -->
+  {#if owner}
+    <p class="fl-owner" data-testid="detail-panel-owner">
+      <Icon icon={mdiAccountOutline} size="16" aria-hidden />
+      {owner.kind === 'shared'
+        ? $t('frameleaf_info_shared_by', { values: { name: owner.name } })
+        : $t('frameleaf_info_owned_by', { values: { name: owner.name } })}
+    </p>
+  {/if}
+
+  {#if originName}
+    <p class="fl-owner" data-testid="detail-panel-origin">
+      <Icon icon={mdiAccountArrowLeftOutline} size="16" aria-hidden />
+      {$t('frameleaf_partner_origin', { values: { name: originName } })}
+    </p>
+  {/if}
+
+  <!-- FL-63: the design puts "Text in this photo" last, after the albums and the owner. -->
+  <DocumentTextSection {asset} />
+</div>
+
+<style>
+  /* .mv-info-scroll (media-viewer.css:967-972): the details sit 24px in from the card's edges. */
+  .fl-info {
+    padding: var(--fl-space-1) var(--fl-space-6) var(--fl-space-12);
+  }
+
+  /* .mv-info section (media-viewer.css:973-978): one band per part, a divider under each. */
+  .fl-info > :global(section) {
+    margin: 0;
+    padding: var(--fl-space-4) 0;
+    border-bottom: 1px solid var(--fl-viewer-border);
+  }
+
+  .fl-info-map {
+    margin-block: var(--fl-space-4);
+    overflow: hidden;
+    border-radius: var(--fl-radius-card);
+  }
+
+  /* .mv-section-heading (media-viewer.css:991-1001): the label, and any action, on one line. */
+  .fl-info :global(.fl-info-heading-row) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-2);
+    min-height: 24px;
+    margin-bottom: var(--fl-space-2);
+  }
+
+  /* .mv-info h3 (media-viewer.css:979-990): a small uppercase muted label. */
+  .fl-info :global(.fl-info-heading) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--fl-viewer-muted);
+    font-size: var(--fl-font-micro);
+    font-weight: 550;
+    letter-spacing: 0.05em;
+    line-height: 1.3;
+    text-transform: uppercase;
+  }
+
+  /* .mv-owner (media-viewer.css:1690-1699). */
+  .fl-owner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--fl-viewer-border, rgb(255 255 255 / 8%));
+    color: var(--fl-viewer-muted);
+    font-size: var(--fl-font-small, 13px);
+  }
+</style>

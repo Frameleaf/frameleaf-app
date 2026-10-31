@@ -1,0 +1,1939 @@
+import { CronExpression } from '@nestjs/schedule';
+import { validateCronExpression } from 'cron';
+import { cloneDeep, defaultsDeep } from 'lodash-es';
+import { createZodDto } from 'nestjs-zod';
+import z from 'zod';
+import type { DeepPartial } from 'src/types.js';
+import { CloudBackupKeyModeSchema, CloudBackupTargetSettingSchema } from 'src/dtos/cloud-backup.dto.js';
+import { VideoTrimMode, VideoTrimModeSchema } from 'src/dtos/editing.dto.js';
+import {
+  RemoteAccessModeSchema,
+  RemoteAccessPublicUrlSchema,
+  RemoteHostnameStatusSchema,
+} from 'src/dtos/frameleaf-remote-access.dto.js';
+import {
+  AudioCodec,
+  AudioCodecSchema,
+  CQMode,
+  CQModeSchema,
+  ClassificationRuleAction,
+  ClassificationRuleActionSchema,
+  Colorspace,
+  ColorspaceSchema,
+  ConfigVisibility,
+  HlsVideoResolution,
+  HlsVideoResolutionSchema,
+  ImageFormat,
+  ImageFormatSchema,
+  LogLevel,
+  LogLevelSchema,
+  MachineLearningHardwareAcceleration,
+  MachineLearningHardwareAccelerationSchema,
+  MailTransportType,
+  MailTransportTypeSchema,
+  OAuthTokenEndpointAuthMethod,
+  OAuthTokenEndpointAuthMethodSchema,
+  OvernightStepTiming,
+  OvernightStepTimingSchema,
+  ReleaseChannel,
+  ReleaseChannelSchema,
+  ToneMapping,
+  ToneMappingSchema,
+  TranscodeHardwareAcceleration,
+  TranscodeHardwareAccelerationSchema,
+  TranscodePolicy,
+  TranscodePolicySchema,
+  VersionCheckFrequency,
+  VersionCheckFrequencySchema,
+  VideoCodec,
+  VideoCodecSchema,
+  VideoContainer,
+  VideoContainerSchema,
+} from 'src/enum.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { isServerTimeZone } from 'src/utils/server-time-zone.js';
+
+const { Admin, User, Public } = ConfigVisibility;
+
+const configBool = z
+  .preprocess(
+    (val) => z.stringbool({ truthy: ['true'], falsy: ['false'], case: 'sensitive' }).safeParse(val).data ?? val,
+    z.boolean(),
+  )
+
+  .nonoptional()
+  .meta({ type: 'boolean' });
+
+const cronExpressionSchema = z
+  .string()
+  .superRefine((value, ctx) => {
+    const validated = validateCronExpression(value);
+    if (!validated.valid) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Invalid cron expression. ${validated.error?.message ?? ''}`,
+        input: value,
+      });
+    }
+  })
+  .describe('Cron expression');
+
+const emptyOrUrl = (error: string) =>
+  z.string().refine((url) => url.length === 0 || z.url().safeParse(url).success, { error });
+
+/**
+ * FL-426: how the sign-in page shows the welcome message (`server.loginPageMessage`). Kept beside the
+ * setting rather than in enum.ts, whose digest the schema catalog records: it names no database type.
+ */
+export enum LoginPageMessageFormat {
+  /** Shown exactly as typed. */
+  Plain = 'plain',
+  /** Web formatting (HTML): links, bold and lists, cleaned of scripts, event handlers and remote embeds. */
+  Html = 'html',
+}
+
+/**
+ * FL-426: one schema for the setting and the server config the apps read, so both name the same enum.
+ * Its visibility (everyone: the sign-in page needs it before anyone signs in) is set on the setting.
+ */
+export const LoginPageMessageFormatSchema = z
+  .enum(LoginPageMessageFormat)
+  .describe('How the welcome message is shown: as typed (plain) or as cleaned web formatting (html)')
+  .meta({ id: 'LoginPageMessageFormat' });
+
+const AdminConfigIntegrityJobSchema = z
+  .object({
+    enabled: z.boolean().describe('Enabled'),
+    cronExpression: cronExpressionSchema.describe('Cron expression for when the integrity check should run'),
+  })
+  .describe('Integrity job config')
+  .meta({ id: 'AdminConfigIntegrityJobDto' });
+
+const AdminConfigJobSettingsSchema = z
+  .object({ concurrency: z.int().min(1).describe('Concurrency') })
+  .meta({ id: 'AdminConfigJobSettingsDto' });
+
+// Fork job entries need schema-level defaults so configs saved before these
+// queues existed still validate. A distinct schema id is required: reusing
+// AdminConfigJobSettingsSchema inside .default() would put the original object
+// (id kept) next to its visibility clone (same id) and break OpenAPI generation.
+const ForkJobSettingsSchema = z
+  .object({ concurrency: z.int().min(1).describe('Concurrency') })
+  .meta({ id: 'AdminConfigForkJobSettingsDto' });
+
+const AdminConfigMachineLearningTaskSchema = z.object({
+  enabled: z.boolean().describe('Whether the task is enabled').meta({ visibility: User }),
+});
+
+const AdminConfigMachineLearningModelSchema = AdminConfigMachineLearningTaskSchema.extend({
+  modelName: z.string().describe('Name of the model to use'),
+});
+
+// Fork defaults that are also used as schema-level `.default()` values. They
+// are hoisted as standalone constants (instead of referencing `defaults`)
+// because `defaults` is typed by the schema itself — referencing it from a
+// schema initializer would make the SystemConfig type circular.
+const imageDescriptionDefaults = {
+  enabled: true,
+  acceleration: MachineLearningHardwareAcceleration.Auto,
+  modelName: 'Qwen/Qwen2.5-VL-3B-Instruct',
+  fallbackModelName: 'microsoft/Florence-2-base-ft',
+  device: 'AUTO',
+  videoMomentCaptions: false,
+  prompt: {
+    style: 'balanced' as const,
+    sentenceCountTarget: 3,
+    lookFor: [
+      'brands',
+      'signage',
+      'screens',
+      'documents',
+      'uniforms',
+      'tools',
+      'vehicles',
+      'animals',
+      'food',
+      'landmarks',
+    ],
+    customVocabulary: [],
+    customInstructions: '',
+    nsfwIndicators: [
+      'adult-nudity',
+      'bare-buttocks',
+      'bondage',
+      'explicit',
+      'exposed-genitals',
+      'naked',
+      'nsfw',
+      'nudity',
+      'restraint',
+      'sex-toy',
+      'sexual-activity',
+    ],
+    medicalIndicators: [
+      'bandage',
+      'cast',
+      'crutches',
+      'exam-table',
+      'hospital',
+      'iv-line',
+      'lab-result',
+      'medical',
+      'medical-monitor',
+      'medical-paperwork',
+      'mobility-aid',
+      'pill-organizer',
+      'prescription',
+      'syringe',
+      'ultrasound',
+      'wheelchair',
+      'wound',
+      'x-ray',
+    ],
+    forbiddenInferences: ['diagnoses', 'medication names', 'procedures', 'pregnancy', 'disability'],
+    identityInjection: { enabled: true, maxNames: 5, minFaceConfidence: 0.7 },
+    advanced: { enabled: false, rawPromptTemplate: '', placeholderValidation: 'strict' as const },
+  },
+  pendingRequeueAt: null,
+  lastConfigChangeAt: null,
+};
+
+const nsfwDetectionDefaults = {
+  enabled: false,
+  modelName: 'onnx-community/nsfw_image_detection-ONNX',
+  threshold: 0.85,
+  device: 'AUTO',
+  hideFromLibrary: false,
+};
+
+/**
+ * FL-159: Frameleaf Cloud processing. Everything is off until an administrator turns it on and adds the
+ * destination. FL-455: smart search and faces are turned on with their own consent in the processing
+ * terms, not here; `faces.enabled` stays off and is kept only so saved configurations still read.
+ */
+const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studio', 'interpolation'] as const;
+const frameleafCloudDefaults = {
+  // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it. The client
+  // authenticates with this server's key only (private_key_jwt); there is no client secret (FL-177).
+  // FL-235: the storage quota (decimal GB, D5) of an account created by a Frameleaf invitation's first sign-in;
+  // null is unlimited, so backup works out of the box (owner decision, 2026-10-01).
+  signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, invitedStorageQuota: null as number | null },
+  // FL-161: what remote access may carry. Remote visitors always sign in with Frameleaf; originals,
+  // archives and database backups stay off the relay, and passwords are refused away from home,
+  // unless an administrator turns these on.
+  // FL-165: remote access itself is off until an administrator turns it on on a linked, entitled
+  // server. `directPort` is the external port direct connections use; `portMapping: false` means the
+  // administrator forwards it on the router. `publicUrl` chooses the published address: the Frameleaf
+  // relay name, or the custom hostname once Frameleaf Cloud verified its DNS records.
+  remoteAccess: {
+    enabled: false,
+    mode: 'relay' as 'relay' | 'relay-and-direct',
+    directPort: 2443,
+    portMapping: true,
+    allowOriginalsOverRelay: false,
+    allowPasswordOverRelay: false,
+    publicUrl: 'frameleaf' as 'frameleaf' | 'custom',
+    customHostname: { host: '', status: 'pending' as 'pending' | 'verified', checkedAt: null as string | null },
+  },
+  cloudMl: {
+    enabled: false,
+    // Where each kind of work may run (§3.2): this server only until an administrator chooses.
+    routing: {
+      descriptions: 'local' as 'local' | 'both' | 'cloud',
+      upscale: 'local' as 'local' | 'both' | 'cloud',
+      restoration: 'local' as 'local' | 'both' | 'cloud',
+      studio: 'local' as 'local' | 'both' | 'cloud',
+      interpolation: 'local' as 'local' | 'both' | 'cloud',
+    },
+    startWith: 'local' as 'local' | 'cloud',
+    // FL-186: the Frameleaf Cloud model is not a setting. It is the catalogue SKU chosen per model group
+    // (`ml_cloud_model_choice`, `PUT admin/cloud/ml/models/{group}`), else the catalogue's marked
+    // default; a `models` key saved by an earlier version is dropped when the configuration is read.
+    autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
+    faces: { enabled: false as const },
+    // FL-162 owner decision (2026-09-26): administrators may always spend the AI Wallet; anyone else
+    // only once an administrator allows them here, each with an optional monthly limit in USD.
+    spenders: [] as Array<{ userId: string; monthlyCapUsd: number | null }>,
+  },
+  // FL-160: cloud backup is off until an administrator sets it up (Settings › Frameleaf Cloud › Cloud
+  // backup), which claims the bucket. The bucket key is never part of the configuration: it is a 0600
+  // file under the identity directory, or held in memory only.
+  cloudBackup: {
+    enabled: false,
+    target: 'off' as 'off' | 'managed' | 'byo-s3',
+    s3: { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '' },
+    keyMode: 'server' as 'server' | 'own-stored' | 'own-memory',
+    include: { thumbs: false, encodedVideo: false },
+    // FL-164: one run a night; retention keeps 7 daily, 4 weekly and 12 monthly manifests and removes only
+    // objects no kept manifest names; a 1/52 sample is verified weekly (every referenced object monthly).
+    // Escrow of the bucket key with Frameleaf Cloud is off until an administrator turns it on (server key
+    // mode only).
+    schedule: { cronExpression: '0 3 * * *' },
+    retention: { keepDaily: 7, keepWeekly: 4, keepMonthly: 12 },
+    verifyWeekly: true,
+    escrow: false,
+  },
+};
+
+/**
+ * Library care (FL-69, settings-catalog.mjs:905-977): the template's Media health & integrity,
+ * Repair queues and Enrichment completeness toggles. Hoisted like the other fork defaults so the
+ * schema can default a configuration saved before the section existed.
+ */
+const libraryCareDefaults = {
+  healthScan: true,
+  healthScanCronExpression: CronExpression.EVERY_DAY_AT_2AM as string,
+  checksumScan: true,
+  integrityAudit: true,
+  livePhotoRepair: true,
+  rawRecovery: true,
+  duplicateReview: true,
+  incrementalEnrichment: true,
+  manualMetadata: true,
+};
+
+/**
+ * FL-422: the restoration style a new restoration starts on (settings-catalog.mjs `restorationMode`).
+ * The same values as the Faithful and Creative restoration modes; Smooth motion is its own step.
+ */
+export enum RestorationStyle {
+  Faithful = 'faithful',
+  Creative = 'creative',
+}
+
+const RestorationStyleSchema = z
+  .enum(RestorationStyle)
+  .describe(
+    'The restoration style a new restoration starts on. Faithful removes noise without inventing detail; creative rebuilds detail',
+  )
+  .meta({ id: 'RestorationStyle', visibility: User });
+
+/**
+ * Editing & playback › Edited masters and AI restoration (FL-422, settings-catalog.mjs:740-822). Only
+ * the choices the server honours: how a trim that names no mode is cut, and the style a restoration
+ * starts on. Both defaults are what the server did before the settings existed. Size, colour and
+ * audio are guarantees of the edited-master policy (`media-policy.ts`), not settings.
+ */
+const editingDefaults = {
+  trimMode: VideoTrimMode.Precise,
+  restoration: { style: RestorationStyle.Faithful },
+};
+
+/** FL-488: in-app help. The help articles are always there; Ask Frameleaf can be turned off. */
+const helpDefaults = { askEnabled: true };
+
+const smartAlbumRulesDefaults = {
+  visualCategories: true,
+  defaultAction: ClassificationRuleAction.Review,
+};
+
+const smartAlbumsDefaults = {
+  enabled: false,
+  rules: smartAlbumRulesDefaults,
+  builtIn: {
+    travel: {
+      enabled: true,
+      name: 'Travel',
+      tagTriggers: ['airport', 'beach', 'mountain', 'landmark', 'hotel', 'passport', 'suitcase', 'tourist'],
+      clipQueries: ['vacation travel landscape', 'tourist destination'],
+      threshold: 0.28,
+    },
+    documents: {
+      enabled: true,
+      name: 'Documents & Receipts',
+      tagTriggers: ['receipt', 'document', 'invoice', 'paperwork', 'scan', 'id-card'],
+      clipQueries: ['paper document', 'receipt or invoice'],
+      threshold: 0.28,
+    },
+    screenshots: {
+      enabled: true,
+      name: 'Screenshots',
+      tagTriggers: ['screenshot', 'ui', 'screen-capture', 'user-interface'],
+      clipQueries: ['phone or computer screenshot'],
+      threshold: 0.28,
+    },
+    food: {
+      enabled: true,
+      name: 'Food',
+      tagTriggers: ['food', 'meal', 'dish', 'restaurant', 'plate', 'cooking'],
+      clipQueries: ['plated food meal', 'restaurant dish'],
+      threshold: 0.28,
+    },
+    pets: {
+      enabled: true,
+      name: 'Pets',
+      tagTriggers: ['pet', 'dog', 'cat', 'puppy', 'kitten'],
+      clipQueries: ['domestic pet animal'],
+      threshold: 0.28,
+    },
+    nature: {
+      enabled: true,
+      name: 'Nature',
+      tagTriggers: ['nature', 'forest', 'mountain', 'ocean', 'sunset', 'wildlife', 'flower'],
+      clipQueries: ['natural landscape', 'wildlife'],
+      threshold: 0.28,
+    },
+  },
+};
+
+const AdminConfigZeroShotTaggingSchema = z
+  .object({
+    enabled: z.boolean().describe('Whether zero-shot auto-tagging is enabled'),
+    minSimilarity: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .describe('Cosine similarity above which a label is applied as a tag'),
+    maxTags: z.int().min(1).max(20).describe('Maximum number of zero-shot tags applied per asset'),
+  })
+  .meta({ id: 'AdminConfigZeroShotTaggingDto' });
+
+export const CLIPConfigSchema = AdminConfigMachineLearningModelSchema.extend({
+  zeroShotTagging: AdminConfigZeroShotTaggingSchema,
+}).meta({ id: 'AdminConfigClipDto' });
+
+export const DuplicateDetectionConfigSchema = AdminConfigMachineLearningTaskSchema.extend({
+  maxDistance: z
+    .number()
+    .min(0.001)
+    .max(0.1)
+    .describe('Maximum distance threshold for duplicate detection')
+    .meta({ format: 'double' }),
+  preferOriginalFormat: z
+    .boolean()
+    .describe(
+      'Deprecated compatibility setting. RAW, then HEIC/HEIF/HIF, are always preferred over other formats regardless of size',
+    )
+    .meta({ deprecated: true }),
+  enhancedVideo: z
+    .object({
+      enabled: z.boolean().describe('Whether enhanced video duplicate detection is enabled'),
+      // FL-651: videos are compared by their whole timeline; the sampled-frame settings below are kept
+      // for compatibility and no longer read.
+      minMatchFraction: z
+        .number()
+        .meta({ format: 'double' })
+        .min(0.5)
+        .max(1)
+        .default(0.7)
+        .describe('Share of the frames two videos have in common that must match to call them duplicates'),
+      maxHashDistance: z
+        .int()
+        .min(0)
+        .max(16)
+        .default(8)
+        .describe('Most bits two frame hashes (64 bits) may differ by and still count as the same picture'),
+      frameCount: z
+        .int()
+        .min(2)
+        .max(8)
+        .describe('Deprecated: videos are compared by their whole timeline')
+        .meta({ deprecated: true }),
+      minMatchingFrames: z
+        .int()
+        .min(1)
+        .max(8)
+        .describe('Deprecated: videos are compared by their whole timeline')
+        .meta({ deprecated: true }),
+      maxDistance: z
+        .number()
+        .meta({ format: 'double', deprecated: true })
+        .min(0.001)
+        .max(0.1)
+        .describe('Deprecated: videos are compared by their whole timeline'),
+    })
+    .meta({ id: 'AdminConfigEnhancedVideoDuplicateDetectionDto' })
+    .refine(({ frameCount, minMatchingFrames }) => minMatchingFrames <= frameCount, {
+      message: 'Minimum matching frames cannot exceed frame count',
+      path: ['minMatchingFrames'],
+    }),
+}).meta({ id: 'AdminConfigDuplicateDetectionDto' });
+
+const IdentityInjectionSchema = z
+  .object({
+    enabled: z.boolean().default(true).describe('Inject named-face data into description prompts'),
+    maxNames: z.int().min(1).max(20).default(5).describe('Maximum named persons to inject into a single prompt'),
+    minFaceConfidence: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .default(0.7)
+      .describe('Minimum face-recognition confidence required to inject a name'),
+  })
+  .meta({ id: 'AdminConfigIdentityInjectionDto' });
+
+const AdvancedPromptSchema = z
+  .object({
+    enabled: z.boolean().default(false).describe('Use a raw prompt template instead of the structured fields'),
+    rawPromptTemplate: z
+      .string()
+      .default('')
+      .describe('Raw prompt template with {names}, {schema}, {vocabulary}, {style_hint} placeholders'),
+    placeholderValidation: z
+      .enum(['strict', 'warn'])
+      .default('strict')
+      .describe('Whether missing {schema} placeholder fails save (strict) or warns (warn)'),
+  })
+  .meta({ id: 'AdminConfigAdvancedPromptDto' });
+
+export const ImageDescriptionPromptSchema = z
+  .object({
+    style: z.enum(['terse', 'balanced', 'rich']).default('balanced').describe('Description verbosity preset'),
+    sentenceCountTarget: z.int().min(1).max(6).default(3).describe('Target number of sentences in the description'),
+    lookFor: z
+      .array(z.string())
+      .default([
+        'brands',
+        'signage',
+        'screens',
+        'documents',
+        'uniforms',
+        'tools',
+        'vehicles',
+        'animals',
+        'food',
+        'landmarks',
+      ])
+      .describe('Additional categories the model should note when visibly supported (brands, sports equipment, etc.)'),
+    customVocabulary: z.array(z.string()).default([]).describe('Tag values the model should prefer when applicable'),
+    customInstructions: z
+      .string()
+      .max(2000)
+      .default('')
+      .describe(
+        'Free-form additional natural-language instructions appended to the description prompt. Example: "If you see a car, identify the make and model. If people are playing a sport, name the sport."',
+      ),
+    nsfwIndicators: z
+      .array(z.string())
+      .default([
+        'adult-nudity',
+        'bare-buttocks',
+        'bondage',
+        'explicit',
+        'exposed-genitals',
+        'naked',
+        'nsfw',
+        'nudity',
+        'restraint',
+        'sex-toy',
+        'sexual-activity',
+      ])
+      .describe('Allow-list of explicit NSFW indicator terms permitted in the description'),
+    medicalIndicators: z
+      .array(z.string())
+      .default([
+        'bandage',
+        'cast',
+        'crutches',
+        'exam-table',
+        'hospital',
+        'iv-line',
+        'lab-result',
+        'medical',
+        'medical-monitor',
+        'medical-paperwork',
+        'mobility-aid',
+        'pill-organizer',
+        'prescription',
+        'syringe',
+        'ultrasound',
+        'wheelchair',
+        'wound',
+        'x-ray',
+      ])
+      .describe('Allow-list of medical indicator terms permitted in the description'),
+    forbiddenInferences: z
+      .array(z.string())
+      .default(['diagnoses', 'medication names', 'procedures', 'pregnancy', 'disability'])
+      .describe('Categories the model must not infer (diagnoses, medications, etc.)'),
+    identityInjection: IdentityInjectionSchema.default(() => IdentityInjectionSchema.parse({})).describe(
+      'Named-face injection configuration',
+    ),
+    advanced: AdvancedPromptSchema.default(() => AdvancedPromptSchema.parse({})).describe(
+      'Advanced raw-prompt-editor configuration',
+    ),
+  })
+  .meta({ id: 'AdminConfigImageDescriptionPromptDto' });
+
+export const ImageDescriptionConfigSchema = AdminConfigMachineLearningModelSchema.extend({
+  acceleration: MachineLearningHardwareAccelerationSchema.default(MachineLearningHardwareAcceleration.Auto).describe(
+    'Hardware acceleration backend to use',
+  ),
+  fallbackModelName: z.string().describe('Name of the fallback model to use'),
+  device: z.string().describe('Hardware device to use'),
+  prompt: ImageDescriptionPromptSchema.default(() => ImageDescriptionPromptSchema.parse({})),
+  videoMomentCaptions: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Describe video moments: after a video is described, caption each of its reusable frames (one more model request per frame). Off by default; plans choose captions separately.',
+    ),
+  pendingRequeueAt: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      'ISO timestamp set when an admin defers a re-queue from the cost modal. Cleared when the re-queue actually dispatches. Drives the persistent "re-queue pending" banner.',
+    ),
+  lastConfigChangeAt: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe(
+      'ISO timestamp of the last meaningful imageDescription config change. Set server-side; ignored on inbound writes (server is the source of truth).',
+    ),
+}).meta({ id: 'AdminConfigImageDescriptionDto' });
+
+export const NsfwDetectionConfigSchema = AdminConfigMachineLearningModelSchema.extend({
+  threshold: z
+    .number()
+    .meta({ format: 'double' })
+    .min(0.01)
+    .max(1)
+    .describe('Minimum score required to mark an image as NSFW'),
+  device: z.string().describe('Hardware device to use'),
+  hideFromLibrary: z
+    .boolean()
+    .describe('Hide NSFW assets from library views unless the session has PIN-elevated access'),
+}).meta({ id: 'AdminConfigNsfwDetectionDto' });
+
+const CloudRouteModeSchema = z
+  .enum(['local', 'both', 'cloud'])
+  .describe(
+    'local: this server or a home-network worker only; both: each job lets the person pick; cloud: Frameleaf Cloud only',
+  )
+  .meta({ id: 'CloudRouteMode' });
+
+const routedRecord = <T extends z.ZodType>(schema: T) =>
+  z.object(
+    Object.fromEntries(CLOUD_ROUTED_WORKLOADS.map((workload) => [workload, schema])) as Record<
+      (typeof CLOUD_ROUTED_WORKLOADS)[number],
+      T
+    >,
+  );
+
+const AdminConfigFrameleafCloudSchema = z
+  .object({
+    signIn: z
+      .object({
+        buttonText: z.string().max(100).describe('Sign in with Frameleaf button text').meta({ visibility: Public }),
+        showOnLocalLogin: configBool
+          .describe('Show Sign in with Frameleaf on the local sign-in page too')
+          .meta({ visibility: Public }),
+        invitedStorageQuota: z
+          .int()
+          .min(0)
+          .max(1_000_000)
+          .nullable()
+          .optional()
+          .describe(
+            'Storage quota in GB (1 GB = 1,000,000,000 bytes) for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.',
+          ),
+      })
+      .default(frameleafCloudDefaults.signIn)
+      .meta({ id: 'AdminConfigFrameleafSignInDto' }),
+    remoteAccess: z
+      .object({
+        enabled: configBool.describe(
+          'Serve remote access through Frameleaf Cloud (needs a linked server with a remote access plan)',
+        ),
+        mode: RemoteAccessModeSchema,
+        directPort: z.int().min(1024).max(65_535).describe('External port for direct connections'),
+        portMapping: configBool.describe(
+          'Ask the router to open the direct port automatically; off when it is forwarded by hand',
+        ),
+        allowOriginalsOverRelay: configBool.describe(
+          'Allow original downloads, archives and database backups over the Frameleaf relay',
+        ),
+        allowPasswordOverRelay: configBool.describe(
+          'Allow password sign-in, and sessions it creates, over remote access',
+        ),
+        publicUrl: RemoteAccessPublicUrlSchema,
+        customHostname: z
+          .object({
+            host: z
+              .string()
+              .max(253)
+              .regex(/^$|^(?:[\da-z](?:[\da-z-]{0,61}[\da-z])?\.){2,}[\da-z](?:[\da-z-]{0,61}[\da-z])?$/)
+              .describe('A hostname on a domain the administrator owns; empty when none'),
+            status: RemoteHostnameStatusSchema,
+            checkedAt: z.string().nullable().describe('When its DNS records were last checked'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCustomHostnameDto' }),
+      })
+      .default(frameleafCloudDefaults.remoteAccess)
+      .meta({ id: 'AdminConfigFrameleafRemoteAccessDto' }),
+    cloudMl: z
+      .object({
+        enabled: configBool.describe(
+          'Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation)',
+        ),
+        routing: routedRecord(CloudRouteModeSchema)
+          .describe('Where each kind of work may run')
+          .meta({ id: 'AdminConfigFrameleafCloudRoutingDto' }),
+        startWith: z
+          .enum(['local', 'cloud'])
+          .describe('The destination a job preselects when its kind of work may run in both places'),
+        autoDescribe: z
+          .object({
+            enabled: configBool.describe('Describe new photos automatically on Frameleaf Cloud'),
+            dailyBudgetUsd: z
+              .number()
+              .min(0.5)
+              .max(100)
+              .meta({ format: 'double' })
+              .describe('Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudAutoDescribeDto' }),
+        faces: z
+          .object({
+            enabled: z
+              .literal(false)
+              .describe(
+                'Unused; faces on Frameleaf Cloud are turned on with their own consent in the processing terms',
+              ),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
+        spenders: z
+          .array(
+            z
+              .object({
+                userId: z.uuidv4().describe('A person allowed to confirm Frameleaf Cloud jobs'),
+                monthlyCapUsd: z
+                  .number()
+                  .min(0)
+                  .max(100_000)
+                  .meta({ format: 'double' })
+                  .nullable()
+                  .describe('Their monthly limit, USD: settled charges plus the holds of running jobs; null for none'),
+              })
+              .meta({ id: 'AdminConfigFrameleafCloudSpenderDto' }),
+          )
+          .max(1000)
+          .refine((spenders) => new Set(spenders.map((spender) => spender.userId)).size === spenders.length, {
+            message: 'Each person can be allowed once',
+          })
+          .describe('People besides administrators who may spend the AI Wallet, each with an optional monthly limit'),
+      })
+      .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
+    cloudBackup: z
+      .object({
+        enabled: configBool.describe(
+          'Back up to the claimed bucket (set up from Settings › Frameleaf Cloud › Cloud backup)',
+        ),
+        target: CloudBackupTargetSettingSchema,
+        s3: z
+          .object({
+            endpoint: emptyOrUrl('The storage address must be empty or a valid URL').describe(
+              'Storage address of your own S3-compatible bucket (HTTPS)',
+            ),
+            region: z.string().max(64).describe('Region; empty reads it from the storage address or uses us-east-1'),
+            bucket: z.string().max(63).describe('Bucket name'),
+            accessKeyId: z.string().max(256).describe('Access key ID'),
+            // FL-160: write-only, like the SMTP password (FL-67). mapAdminConfig() returns '' and a save
+            // that sends '' back keeps the stored secret for the same address, bucket and access key.
+            // Replace or clear it through /admin/config/credentials/cloud-backup-s3-secret-key.
+            secretAccessKey: z.string().describe('Secret access key (write-only; empty preserves the existing secret)'),
+            secretAccessKeyConfigured: z
+              .boolean()
+              .optional()
+              .describe('Read-only indicator that a secret access key is stored. Set by the server; ignored on write.'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupS3Dto' }),
+        keyMode: CloudBackupKeyModeSchema,
+        include: z
+          .object({
+            thumbs: configBool.describe('Also back up thumbnails and previews'),
+            encodedVideo: configBool.describe('Also back up transcoded videos'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupIncludeDto' }),
+        schedule: z
+          .object({ cronExpression: cronExpressionSchema.describe('When scheduled backup runs start') })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupScheduleDto' }),
+        retention: z
+          .object({
+            keepDaily: z.int().min(1).max(90).describe('Daily runs kept, in days'),
+            keepWeekly: z.int().min(0).max(52).describe('Weekly runs kept, in weeks'),
+            keepMonthly: z.int().min(0).max(120).describe('Monthly runs kept, in months'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudBackupRetentionDto' }),
+        verifyWeekly: configBool.describe(
+          'Check a sample of the backed-up files every week, and every referenced file every month',
+        ),
+        escrow: configBool.describe(
+          'Keep a passphrase-wrapped copy of the bucket key with Frameleaf Cloud (server key mode only)',
+        ),
+      })
+      .default(frameleafCloudDefaults.cloudBackup)
+      .meta({ id: 'AdminConfigFrameleafCloudBackupDto' }),
+  })
+  .meta({ id: 'AdminConfigFrameleafCloudDto' });
+
+/**
+ * A stored Frameleaf Cloud configuration read back over the defaults, so a value saved before a
+ * field existed (or in an older shape) still yields a complete configuration. Unknown keys are dropped,
+ * including the `cloudMl.models` slider positions of earlier versions (FL-186). Only a configuration
+ * that is still invalid falls back to the defaults.
+ */
+export const readFrameleafCloudConfig = (
+  value: unknown,
+  warn: (message: string) => void = () => {},
+): SystemConfig['frameleafCloud'] => {
+  const merged = defaultsDeep({}, value ?? {}, frameleafCloudDefaults) as SystemConfig['frameleafCloud'];
+  const parsed = AdminConfigFrameleafCloudSchema.safeParse(merged);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  warn(`Frameleaf Cloud settings could not be read and were reset to the defaults: ${parsed.error.message}`);
+  return cloneDeep(frameleafCloudDefaults);
+};
+
+// Admin-controlled but unbounded strings flow into background-job log lines
+// and the smart-album evaluator. Cap to 256 chars and reject control characters
+// (CWE-117 log injection hardening + general defensive bound).
+// eslint-disable-next-line no-control-regex
+const SMART_ALBUM_STRING_CONTROL_PATTERN = /[\u{0000}-\u{001F}\u{007F}]/u;
+const smartAlbumString = z
+  .string()
+  .max(256, { error: 'String must be 256 characters or fewer' })
+  .refine((value) => !SMART_ALBUM_STRING_CONTROL_PATTERN.test(value), {
+    error: 'String cannot contain control characters or newlines',
+  });
+
+const SmartAlbumKindSchema = z
+  .object({
+    enabled: configBool.describe('Whether this smart album is active'),
+    name: smartAlbumString.describe('User-visible album name'),
+    tagTriggers: z.array(smartAlbumString).describe('Tags that mark an asset as belonging to this album'),
+    clipQueries: z.array(smartAlbumString).describe('CLIP query phrases used when no tag trigger matches'),
+    threshold: z.number().meta({ format: 'double' }).min(0).max(1).describe('CLIP similarity threshold'),
+  })
+  .meta({ id: 'AdminConfigSmartAlbumKindDto' });
+
+/**
+ * Rules people write for their own smart albums (FL-60). `defaultAction` is only the action a new
+ * rule starts with; archiving is never a default and always an explicit, consented rule choice.
+ */
+const AdminConfigSmartAlbumRulesSchema = z
+  .object({
+    visualCategories: configBool.describe('Whether rules may match visual category phrases'),
+    defaultAction: ClassificationRuleActionSchema.describe('The action a new rule starts with'),
+  })
+  .meta({ id: 'AdminConfigSmartAlbumRulesDto' });
+
+const AdminConfigSmartAlbumsSchema = z
+  .object({
+    enabled: configBool.describe('Master smart-album enabled toggle'),
+    rules: AdminConfigSmartAlbumRulesSchema.default(smartAlbumRulesDefaults),
+    builtIn: z
+      .object({
+        travel: SmartAlbumKindSchema,
+        documents: SmartAlbumKindSchema,
+        screenshots: SmartAlbumKindSchema,
+        food: SmartAlbumKindSchema,
+        pets: SmartAlbumKindSchema,
+        nature: SmartAlbumKindSchema,
+      })
+      .meta({ id: 'AdminConfigSmartAlbumBuiltInDto' }),
+  })
+  .meta({ id: 'AdminConfigSmartAlbumsDto' });
+
+const AdminConfigLibraryCareSchema = z
+  .object({
+    healthScan: configBool.describe(
+      'Schedule incremental health scans of every account; each resumes from its recorded checkpoints',
+    ),
+    healthScanCronExpression: cronExpressionSchema.describe('When the scheduled health scan starts'),
+    checksumScan: configBool.describe('Health scans verify each original against its recorded checksum'),
+    integrityAudit: configBool.describe(
+      'Run the scheduled database and file reference audits (missing and untracked files)',
+    ),
+    livePhotoRepair: configBool.describe('Suggest Live Photo pairs to relink; ambiguous pairs stay in review'),
+    rawRecovery: configBool.describe('Search for recoverable copies of RAW originals when locating originals'),
+    duplicateReview: configBool.describe('Group near-duplicates for review; deletion stays explicit'),
+    incrementalEnrichment: configBool.describe(
+      'A full description rerun reprocesses only results that are missing, failed or out of date',
+    ),
+    manualMetadata: configBool.describe('A description rerun replaces only generated text and keeps manual text'),
+  })
+  .meta({ id: 'AdminConfigLibraryCareDto' });
+
+// FL-422: visible to every signed-in app, so the video editor and the restoration panels start on them.
+const AdminConfigEditingSchema = z
+  .object({
+    trimMode: VideoTrimModeSchema.describe(
+      'How a trim that names no mode is cut, and where the video editor starts a new trim. Fast stream-copies only when the trim is the only change',
+    ).meta({ visibility: User }),
+    restoration: z.object({ style: RestorationStyleSchema }).meta({ id: 'AdminConfigEditingRestorationDto' }),
+  })
+  .meta({ id: 'AdminConfigEditingDto' });
+
+const AdminConfigHelpSchema = z
+  .object({
+    askEnabled: configBool.describe(
+      "Ask Frameleaf in the help panel: questions go from this server to frameleaf.app's Ask service",
+    ),
+  })
+  .meta({ id: 'AdminConfigHelpDto' });
+
+const AdminConfigGeneratedImageSchema = z
+  .object({
+    format: ImageFormatSchema,
+    quality: z.int().min(1).max(100).describe('Quality'),
+    size: z.int().min(1).describe('Size').meta({ visibility: User }),
+    progressive: configBool.default(false).optional().describe('Progressive'),
+  })
+  .meta({ id: 'AdminConfigGeneratedImageDto' });
+
+const AdminConfigFFmpegSchema = z
+  .object({
+    crf: z.coerce.number().int().min(0).max(51).describe('CRF'),
+    threads: z.coerce.number().int().min(0).describe('Threads'),
+    preset: z.string().describe('Preset'),
+    targetVideoCodec: VideoCodecSchema,
+    acceptedVideoCodecs: z.array(VideoCodecSchema).describe('Accepted video codecs'),
+    targetAudioCodec: AudioCodecSchema,
+    acceptedAudioCodecs: z.array(AudioCodecSchema).describe('Accepted audio codecs'),
+    acceptedContainers: z.array(VideoContainerSchema).describe('Accepted containers'),
+    targetResolution: z.string().describe('Target resolution'),
+    maxBitrate: z.string().describe('Max bitrate'),
+    bframes: z.coerce.number().int().min(-1).max(16).describe('B-frames'),
+    refs: z.coerce.number().int().min(0).max(6).describe('References'),
+    gopSize: z.coerce.number().int().min(0).describe('GOP size'),
+    temporalAQ: configBool.describe('Temporal AQ'),
+    cqMode: CQModeSchema,
+    twoPass: configBool.describe('Two pass'),
+    preferredHwDevice: z.string().describe('Preferred hardware device'),
+    transcode: TranscodePolicySchema,
+    accel: TranscodeHardwareAccelerationSchema,
+    accelDecode: configBool.describe('Accelerated decode'),
+    tonemap: ToneMappingSchema,
+    realtime: z
+      .object({
+        enabled: configBool.describe('Enable real-time HLS transcoding (alpha)').meta({ visibility: User }),
+        videoCodecs: z
+          .array(VideoCodecSchema)
+          .describe('Video codecs to use for real-time HLS transcoding')
+          .meta({ visibility: User }),
+        resolutions: z
+          .array(HlsVideoResolutionSchema)
+          .describe('Resolutions to use for real-time HLS transcoding')
+          .meta({ visibility: User }),
+      })
+      .meta({ id: 'AdminConfigFFmpegRealtimeDto' }),
+  })
+  .meta({ id: 'AdminConfigFFmpegDto' });
+
+const AdminConfigSmtpSchema = z
+  .object({
+    enabled: configBool.describe('Whether SMTP email notifications are enabled'),
+    from: z.string().describe('Email address to send from'),
+    replyTo: z.string().describe('Email address for replies'),
+    transport: z
+      .object({
+        // FL-379: optional on the way in, so a client that predates it keeps saving a mail server
+        // entered by hand. Gmail and Microsoft need the account connected through
+        // /admin/notifications/mail-connection first; the other transport fields are then unused.
+        type: MailTransportTypeSchema.default(MailTransportType.Smtp),
+        ignoreCert: configBool.describe('Whether to ignore SSL certificate errors'),
+        host: z.string().describe('SMTP server hostname'),
+        port: z.int().min(0).max(65_535).describe('SMTP server port'),
+        secure: configBool.describe('Whether to use secure connection (TLS/SSL)'),
+        username: z.string().describe('SMTP username'),
+        // FL-67: write-only, like oauth.clientSecret. mapAdminConfig() returns '' and
+        // updateAdminConfig() keeps the stored password when '' comes back. Replace or clear it
+        // through /admin/config/credentials/smtp-password.
+        password: z.string().describe('SMTP password (write-only; empty preserves the existing password)'),
+        passwordConfigured: z
+          .boolean()
+          .optional()
+          .describe('Read-only indicator that an SMTP password is stored. Set by the server; ignored on write.'),
+      })
+      .meta({ id: 'AdminConfigSmtpTransportDto' }),
+  })
+  .meta({ id: 'AdminConfigSmtpDto' });
+
+const AdminConfigSchemaWithVisibility = z
+  .object({
+    backup: z
+      .object({
+        database: z
+          .object({
+            enabled: configBool.describe('Enabled'),
+            cronExpression: cronExpressionSchema,
+            keepLastAmount: z.int().min(1).describe('Keep last amount'),
+          })
+          .meta({ id: 'AdminConfigDatabaseBackupDto' }),
+        schedule: z
+          .object({
+            cronExpression: cronExpressionSchema
+              .or(z.literal(''))
+              .describe(
+                'When backups start: the copy on this server, then Buddy Backup, then Cloud Backup, one after another. Empty until it is first chosen: the schedule stored before then is used',
+              ),
+          })
+          .meta({ id: 'AdminConfigBackupScheduleDto' }),
+      })
+      .meta({ id: 'AdminConfigBackupsDto' }),
+    ffmpeg: AdminConfigFFmpegSchema,
+    integrityChecks: z
+      .object({
+        missingFiles: AdminConfigIntegrityJobSchema,
+        untrackedFiles: AdminConfigIntegrityJobSchema,
+        checksumFiles: AdminConfigIntegrityJobSchema.extend({
+          timeLimit: z.int().nonnegative().describe('How long the integrity checksum job may run for'),
+          percentageLimit: z
+            .float32()
+            .nonnegative()
+            .max(1)
+            .describe('Percentage limit of the integrity checksum job')
+            .meta({ format: 'double' }),
+        })
+          .describe('Integrity checksum job config')
+          .meta({ id: 'AdminConfigIntegrityChecksumJobDto' }),
+      })
+      .describe('Integrity checks config')
+      .meta({ id: 'AdminConfigIntegrityChecksDto' }),
+    job: z
+      .object({
+        thumbnailGeneration: AdminConfigJobSettingsSchema,
+        metadataExtraction: AdminConfigJobSettingsSchema,
+        videoConversion: AdminConfigJobSettingsSchema,
+        faceDetection: AdminConfigJobSettingsSchema,
+        smartSearch: AdminConfigJobSettingsSchema,
+        videoDuplicateDetection: AdminConfigJobSettingsSchema,
+        backgroundTask: AdminConfigJobSettingsSchema,
+        migration: AdminConfigJobSettingsSchema,
+        search: AdminConfigJobSettingsSchema,
+        sidecar: AdminConfigJobSettingsSchema,
+        library: AdminConfigJobSettingsSchema,
+        notifications: AdminConfigJobSettingsSchema,
+        ocr: AdminConfigJobSettingsSchema,
+        imageEnrichment: ForkJobSettingsSchema.default({ concurrency: 2 }),
+        imageDescription: ForkJobSettingsSchema.default({ concurrency: 2 }),
+        nsfwDetection: ForkJobSettingsSchema.default({ concurrency: 2 }),
+        mediaHealth: ForkJobSettingsSchema.default({ concurrency: 2 }),
+        workflow: AdminConfigJobSettingsSchema,
+        editor: AdminConfigJobSettingsSchema,
+        integrityCheck: AdminConfigJobSettingsSchema,
+        petRecognition: ForkJobSettingsSchema.default({ concurrency: 1 }),
+      })
+      .meta({ id: 'AdminConfigJobDto' }),
+    logging: z
+      .object({
+        enabled: configBool.describe('Enabled'),
+        level: LogLevelSchema,
+      })
+      .meta({ id: 'AdminConfigLoggingDto' }),
+    machineLearning: z
+      .object({
+        enabled: configBool.describe('Enabled').meta({ visibility: User }),
+        urls: z.array(z.string()).min(1).describe('ML service URLs'),
+        availabilityChecks: z
+          .object({
+            enabled: configBool.describe('Enabled'),
+            timeout: z.int(),
+            interval: z.int(),
+          })
+          .meta({ id: 'AdminConfigMachineLearningAvailabilityChecksDto' }),
+        clip: CLIPConfigSchema,
+        duplicateDetection: DuplicateDetectionConfigSchema,
+        facialRecognition: AdminConfigMachineLearningModelSchema.extend({
+          minScore: z
+            .number()
+            .min(0.1)
+            .max(1)
+            .describe('Minimum confidence score for face detection')
+            .meta({ format: 'double' }),
+          maxDistance: z
+            .number()
+            .min(0.1)
+            .max(2)
+            .describe('Maximum distance threshold for face recognition')
+            .meta({ format: 'double' }),
+          minFaces: z
+            .int()
+            .min(1)
+            .describe('Minimum number of faces required for recognition')
+            .meta({ visibility: User }),
+        }).meta({ id: 'AdminConfigFacialRecognitionDto' }),
+        ocr: AdminConfigMachineLearningModelSchema.extend({
+          maxResolution: z.int().min(1).describe('Maximum resolution for OCR processing'),
+          minDetectionScore: z
+            .number()
+            .min(0.1)
+            .max(1)
+            .describe('Minimum confidence score for text detection')
+            .meta({ format: 'double' }),
+          minRecognitionScore: z
+            .number()
+            .min(0.1)
+            .max(1)
+            .describe('Minimum confidence score for text recognition')
+            .meta({ format: 'double' }),
+          // FL-63: off by default, as in the design; suggestions stay editable and tied to their text
+          documentFields: z
+            .boolean()
+            .default(false)
+            .describe('Suggest receipt and document fields (dates, totals, references) from recognized text'),
+        }).meta({ id: 'AdminConfigOcrDto' }),
+        imageDescription: ImageDescriptionConfigSchema.default(imageDescriptionDefaults),
+        nsfwDetection: NsfwDetectionConfigSchema.default(nsfwDetectionDefaults),
+      })
+      .meta({ id: 'AdminConfigMachineLearningDto' }),
+    map: z
+      .object({
+        enabled: configBool.describe('Enabled').meta({ visibility: User }),
+        lightStyle: z.url().describe('Light map style URL').meta({ visibility: User }),
+        darkStyle: z.url().describe('Dark map style URL').meta({ visibility: User }),
+      })
+      .meta({ id: 'AdminConfigMapDto' }),
+    reverseGeocoding: z
+      .object({ enabled: configBool.describe('Enabled').meta({ visibility: User }) })
+      .meta({ id: 'AdminConfigReverseGeocodingDto' }),
+    metadata: z
+      .object({
+        faces: z.object({ import: configBool.describe('Import') }).meta({ id: 'AdminConfigFacesDto' }),
+      })
+      .meta({ id: 'AdminConfigMetadataDto' }),
+    oauth: z
+      .object({
+        autoLaunch: configBool.describe('Auto launch').meta({ visibility: Public }),
+        autoRegister: configBool.describe('Auto register'),
+        buttonText: z.string().describe('Button text').meta({ visibility: Public }),
+        clientId: z.string().describe('Client ID'),
+        // FL-67: write-only. mapAdminConfig() returns '' and updateAdminConfig() keeps the stored
+        // secret when '' comes back. Replace or clear it through
+        // /admin/config/credentials/oauth-client-secret.
+        clientSecret: z.string().describe('Client secret (write-only; empty preserves the existing secret)'),
+        clientSecretConfigured: z
+          .boolean()
+          .optional()
+          .describe('Read-only indicator that a client secret is stored. Set by the server; ignored on write.'),
+        tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethodSchema,
+        timeout: z.int().min(1).describe('Timeout'),
+        allowInsecureRequests: configBool.describe('Allow insecure requests'),
+        defaultStorageQuota: z
+          .int()
+          .min(0)
+          .nullable()
+          .describe('Default storage quota in GB (1 GB = 1,000,000,000 bytes) when the provider sends none'),
+        enabled: configBool.describe('Enabled').meta({ visibility: Public }),
+        issuerUrl: emptyOrUrl('Issuer URL must be an empty string or a valid URL').describe('Issuer URL'),
+        accountManagementUrl: emptyOrUrl('Account management URL must be an empty string or a valid URL')
+          .describe('Account management URL')
+          .optional()
+          .default(''),
+        scope: z.string().describe('Scope'),
+        prompt: z.string().describe('OAuth prompt parameter (e.g. select_account, login, consent)'),
+        endSessionEndpoint: emptyOrUrl('endSessionEndpoint must be an empty string or a valid URL').describe(
+          'End session endpoint',
+        ),
+        signingAlgorithm: z.string().describe('Signing algorithm'),
+        profileSigningAlgorithm: z.string().describe('Profile signing algorithm'),
+        storageLabelClaim: z.string().describe('Storage label claim'),
+        storageQuotaClaim: z.string().describe('Storage quota claim, a number of GB (1 GB = 1,000,000,000 bytes)'),
+        roleClaim: z.string().describe('Role claim'),
+        mobileOverrideEnabled: configBool.describe('Mobile override enabled'),
+        mobileRedirectUri: z.string().describe('Mobile redirect URI (set to empty string to disable)'),
+      })
+      .transform((value, ctx) => {
+        if (!value.mobileOverrideEnabled || value.mobileRedirectUri === '') {
+          return value;
+        }
+
+        if (!z.url().safeParse(value.mobileRedirectUri).success) {
+          ctx.issues.push({
+            code: 'custom',
+            message: 'Mobile redirect URI must be an empty string or a valid URL',
+            input: value.mobileRedirectUri,
+          });
+          return z.NEVER;
+        }
+
+        return value;
+      })
+      .meta({ id: 'AdminConfigOAuthDto' }),
+    passwordLogin: z
+      .object({ enabled: configBool.describe('Enabled').meta({ visibility: Public }) })
+      .meta({ id: 'AdminConfigPasswordLoginDto' }),
+    // FL-71: the template's "Logs & diagnostics" local analytics rows. The nightly collector only
+    // reads counts and sizes into this server's database; external telemetry stays off regardless.
+    analytics: z
+      .object({
+        enabled: configBool.describe('Collect local analytics history every night'),
+        historyDays: z.int().min(30).max(800).describe('Days of local analytics history to keep'),
+      })
+      .meta({ id: 'AdminConfigAnalyticsDto' })
+      .default({ enabled: true, historyDays: 730 }),
+    localFeatures: z
+      .object({
+        askSearch: z
+          .object({
+            enabled: configBool.describe('Enable local Ask Photos-style search'),
+            maxResults: z.int().min(1).max(1000).describe('Maximum number of Ask Search results'),
+          })
+          .meta({ id: 'AdminConfigAskSearchDto' }),
+      })
+      .meta({ id: 'AdminConfigLocalFeaturesDto' })
+      .default({ askSearch: { enabled: true, maxResults: 100 } }),
+    storageTemplate: z
+      .object({
+        enabled: configBool.describe('Enabled'),
+        hashVerificationEnabled: configBool.describe('Hash verification enabled'),
+        template: z.string().describe('Template'),
+      })
+      .meta({ id: 'AdminConfigStorageTemplateDto' }),
+    image: z
+      .object({
+        thumbnail: AdminConfigGeneratedImageSchema,
+        preview: AdminConfigGeneratedImageSchema,
+        fullsize: z
+          .object({
+            enabled: configBool.describe('Enabled').meta({ visibility: User }),
+            format: ImageFormatSchema,
+            quality: z.int().min(1).max(100).describe('Quality'),
+            progressive: configBool.default(false).optional().describe('Progressive'),
+          })
+          .meta({ id: 'AdminConfigGeneratedFullsizeImageDto' }),
+        colorspace: ColorspaceSchema,
+        extractEmbedded: configBool.describe('Extract embedded'),
+        enhancedRaw: z
+          .object({
+            enabled: configBool.describe('Enhanced RAW rendering'),
+          })
+          .meta({ id: 'AdminConfigEnhancedRawImageDto' })
+          .default({ enabled: true }),
+      })
+      .meta({ id: 'AdminConfigImageDto' }),
+    newVersionCheck: z
+      .object({
+        enabled: configBool.describe('Enabled'),
+        channel: ReleaseChannelSchema,
+        // FL-71: a file or client from before the setting existed keeps the default schedule
+        frequency: VersionCheckFrequencySchema.default(VersionCheckFrequency.Daily),
+      })
+      .meta({ id: 'AdminConfigNewVersionCheckDto' }),
+    nightlyTasks: z
+      .object({
+        startTime: z.iso
+          .time({
+            precision: -1,
+            error: (iss) => `Invalid input: expected string in HH:MM format, received ${typeof iss.input}`,
+          })
+          .describe('Start time (HH:MM)'),
+        databaseCleanup: configBool.describe('Database cleanup'),
+        missingThumbnails: configBool.describe('Missing thumbnails'),
+        clusterNewFaces: configBool.describe('Cluster new faces'),
+        generateMemories: configBool.describe('Generate memories'),
+        syncQuotaUsage: configBool.describe('Sync quota usage'),
+        // FL-363: one overnight schedule. Defaulted, so a stored configuration, a config file or an
+        // older client that does not name them keeps today's behaviour plus the new order.
+        stopTime: z
+          .union([
+            z.literal(''),
+            z.iso.time({
+              precision: -1,
+              error: (iss) => `Invalid input: expected string in HH:MM format, received ${typeof iss.input}`,
+            }),
+          ])
+          .default('06:00')
+          .describe('No step starts after this time (HH:MM); empty runs every step to the end'),
+        days: z
+          .array(z.int().min(0).max(6))
+          .min(1)
+          .default([0, 1, 2, 3, 4, 5, 6])
+          .describe('Days of the week the night’s work starts on, Sunday 0 to Saturday 6'),
+        emptyTrash: configBool
+          .default(true)
+          .describe('The tidy-up step empties Trash and removes deleted accounts; off leaves Trash alone'),
+        // FL-577: quiet hours. The window is the schedule's own start and stop times.
+        quietHours: configBool
+          .default(true)
+          .describe('Heavy background work (beyond thumbnails) waits for the overnight window'),
+        weeklyDay: z
+          .int()
+          .min(0)
+          .max(6)
+          .default(0)
+          .describe('The day a step set to run once a week runs on, Sunday 0 to Saturday 6'),
+        steps: z
+          .object({
+            cleanup: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            folders: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            icloud: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+            fileChecks: OvernightStepTimingSchema.default(OvernightStepTiming.Nightly),
+          })
+          .meta({ id: 'AdminConfigOvernightStepsDto' })
+          .default({
+            cleanup: OvernightStepTiming.Nightly,
+            folders: OvernightStepTiming.Nightly,
+            icloud: OvernightStepTiming.Nightly,
+            fileChecks: OvernightStepTiming.Nightly,
+          })
+          .describe('When each step runs: every night, once a week, or only when started'),
+      })
+      .meta({ id: 'AdminConfigNightlyTasksDto' }),
+    // FL-365: Storage & originals › "Warn me when the disk is nearly full". Defaulted, so a stored
+    // configuration or a config file that does not name it keeps today's 90%.
+    storageWarning: z
+      .object({
+        percent: z
+          .int()
+          .min(0)
+          .max(99)
+          .describe('Warn when the drive the library is on is this full, in per cent; 0 turns the warning off'),
+      })
+      .meta({ id: 'AdminConfigStorageWarningDto' })
+      .default({ percent: 90 }),
+    trash: z
+      .object({
+        enabled: configBool.describe('Enabled').meta({ visibility: User }),
+        days: z.int().min(0).describe('Days').meta({ visibility: User }),
+      })
+      .meta({ id: 'AdminConfigTrashDto' }),
+    theme: z
+      .object({
+        customCss: z.string().describe('Custom CSS for theming').meta({ visibility: Public }),
+        // FL-368: styling can be turned off without deleting the text. Defaulted, so a stored
+        // configuration, a config file or an older client that does not name it keeps it on.
+        customCssEnabled: z.boolean().default(true).describe('Serve the custom CSS to the web app'),
+      })
+      .meta({ id: 'AdminConfigThemeDto' }),
+    library: z
+      .object({
+        scan: z
+          .object({
+            enabled: configBool.describe('Enabled'),
+            cronExpression: cronExpressionSchema,
+          })
+          .meta({ id: 'AdminConfigLibraryScanDto' }),
+        watch: z.object({ enabled: configBool.describe('Enabled') }).meta({ id: 'AdminConfigLibraryWatchDto' }),
+      })
+      .meta({ id: 'AdminConfigLibraryDto' }),
+    notifications: z.object({ smtp: AdminConfigSmtpSchema }).meta({ id: 'AdminConfigNotificationsDto' }),
+    templates: z
+      .object({
+        email: z
+          .object({
+            welcomeTemplate: z.string().describe('Welcome template'),
+            albumInviteTemplate: z.string().describe('Album invite template'),
+            albumUpdateTemplate: z.string().describe('Album update template'),
+            // FL-426: "First line of an invitation" and "Show the Frameleaf name and logo"
+            // (settings-v2/server/notifications.jsx, The emails themselves). Defaulted, so a stored
+            // configuration, a config file or an older client that does not name them keeps the
+            // standard greeting and the branding.
+            invitationFirstLine: z
+              .string()
+              .trim()
+              .max(200)
+              .default('')
+              .describe(
+                'First line of an invitation email (an album or items shared with someone), shown as plain text in place of the standard greeting. {recipientName} and {senderName} are replaced; empty keeps the standard greeting. An album invitation with its own albumInviteTemplate is sent as that template says.',
+              ),
+            showBranding: z
+              .boolean()
+              .default(true)
+              .describe('Show the Frameleaf name and logo at the top of every email'),
+          })
+          .meta({ id: 'AdminConfigTemplateEmailsDto' }),
+      })
+      .meta({ id: 'AdminConfigTemplatesDto' }),
+    server: z
+      .object({
+        // FL-71 (CC-4): the server's name in the Command Center rail and context bar (CommandCenter.jsx).
+        name: z
+          .string()
+          .trim()
+          .max(100)
+          .describe('Server name shown in settings; empty uses the host name')
+          .meta({ visibility: Public }),
+        externalDomain: emptyOrUrl('External domain must be an empty string or a valid URL')
+          .describe('External domain')
+          .meta({ visibility: User }),
+        loginPageMessage: z.string().describe('Login page message').meta({ visibility: Public }),
+        // FL-426: plain text unless web formatting is chosen; formatted text is cleaned where it is shown.
+        // Defaulted (like timeZone), so a stored configuration or an older client that does not name it
+        // keeps a plain message and the computer's own time zone.
+        loginPageMessageFormat: LoginPageMessageFormatSchema.default(LoginPageMessageFormat.Plain).meta({
+          visibility: Public,
+        }),
+        // FL-426: the zone schedules and the server's calendar day follow; empty is the computer's own.
+        timeZone: z
+          .string()
+          .trim()
+          .refine(isServerTimeZone, 'Time zone must be empty or a time zone name such as America/Edmonton')
+          .default('')
+          .describe(
+            "Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on",
+          )
+          .meta({ visibility: Admin }),
+        publicUsers: configBool.describe('Public users').meta({ visibility: User }),
+        // FL-229 (NAPI-005, owner decision 2026-09-30): on by default on a fresh install. An app on
+        // the same network finds this server without a second login (the welcome screen's "Use Home
+        // Server on this Wi-Fi"). Turning it off only stops the advertisement - the server still
+        // answers a direct connection, so this is a discoverability setting, not an access control.
+        lanDiscovery: configBool
+          .describe(
+            'Advertise this server on the local network (DNS-SD `_frameleaf._tcp`) so apps on the same Wi-Fi can find it without typing an address. Turning this off does not require additional sign-in steps or block direct connections - it only stops the broadcast. While on, any device on this network can see that a Frameleaf server exists here and its display name.',
+          )
+          .meta({ visibility: Admin }),
+      })
+      .meta({ id: 'AdminConfigServerDto' }),
+    user: z
+      .object({
+        deleteDelay: z.int().min(1).describe('Delete delay').meta({ visibility: User }),
+        // FL-516: "Space for new people", however an account is made: added by hand, invited through
+        // Frameleaf, or created by a sign-in provider. Decimal GB (D5); null is no limit.
+        newUserStorageQuota: z
+          .int()
+          .min(0)
+          .max(1_000_000)
+          .nullable()
+          .optional()
+          .describe('Space each new account starts with, in GB (1 GB = 1,000,000,000 bytes); null is no limit'),
+      })
+      .meta({ id: 'AdminConfigUserDto' }),
+    smartAlbums: AdminConfigSmartAlbumsSchema.default(smartAlbumsDefaults),
+    frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
+    libraryCare: AdminConfigLibraryCareSchema.default(libraryCareDefaults),
+    editing: AdminConfigEditingSchema.default(editingDefaults),
+    help: AdminConfigHelpSchema.default(helpDefaults),
+  })
+  .describe('Configuration properties that are visible to the admin')
+  .meta({ id: 'AdminConfigDto' });
+
+export type SystemConfig = z.infer<typeof AdminConfigSchemaWithVisibility>;
+export type MachineLearningConfig = SystemConfig['machineLearning'];
+
+const visibilities = [Public, User, Admin];
+
+const isVisible = (property: ConfigVisibility, visibility: ConfigVisibility) =>
+  visibilities.indexOf(property) <= visibilities.indexOf(visibility);
+
+const getMeta = (schema: z.ZodType) =>
+  (z.globalRegistry.get(schema) ?? {}) as { id?: string; description?: string; visibility?: ConfigVisibility };
+
+const unwrap = (schema: z.ZodType): z.ZodType => {
+  // FL-158: a section with a default (the Frameleaf sections) is walked like any other, so its
+  // public properties are published and its visibility metadata is stripped
+  while (schema instanceof z.ZodDefault) {
+    schema = schema.def.innerType as z.ZodType;
+  }
+  return schema instanceof z.ZodPipe ? (schema.def.in as z.ZodType) : schema;
+};
+
+const visibleSchemas = new Map<z.ZodType, Map<ConfigVisibility, z.ZodType | undefined>>();
+
+const applyVisibility = (visibility: ConfigVisibility): z.ZodType | undefined => {
+  const map: Record<ConfigVisibility, string> = {
+    [Admin]: 'Configuration properties that are visible to the admin',
+    [User]: 'Configuration properties that are visible to a logged user',
+    [Public]: 'Configuration properties that are visible to everyone',
+  };
+
+  return applyVisibilityRecursive(AdminConfigSchemaWithVisibility, visibility, map[visibility]);
+};
+
+const applyVisibilityRecursive = (
+  schema: z.ZodType,
+  visibility: ConfigVisibility,
+  override?: string,
+): z.ZodType | undefined => {
+  const object = unwrap(schema);
+  const { id, description, visibility: property } = { ...getMeta(object), ...getMeta(schema) };
+
+  // the admin schema keeps a defaulted section whole, with its default (FL-158)
+  if (!(object instanceof z.ZodObject) || (visibility === Admin && schema instanceof z.ZodDefault)) {
+    return isVisible(property ?? Admin, visibility) ? schema : undefined;
+  }
+
+  // keyed by the section itself, so a section shared by several defaulted fields keeps one id
+  let cache = visibleSchemas.get(object);
+  if (!cache) {
+    cache = new Map();
+    visibleSchemas.set(object, cache);
+  }
+
+  if (cache.has(visibility)) {
+    return cache.get(visibility);
+  }
+
+  const shape: Record<string, z.ZodType> = {};
+  for (const [key, value] of Object.entries(object.shape as Record<string, z.ZodType>)) {
+    const visible = applyVisibilityRecursive(value, visibility);
+    if (visible) {
+      shape[key] = visible;
+    }
+  }
+
+  let visible: z.ZodType | undefined;
+  if (Object.keys(shape).length > 0) {
+    visible = z.object(shape).meta({
+      ...(id && { id: `${visibility}${id.slice(Admin.length)}` }),
+      ...((override ?? description) && { description: override ?? description }),
+    });
+  }
+
+  cache.set(visibility, visible);
+
+  return visible;
+};
+
+export const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
+  const pending: z.ZodType[] = [schema];
+  const visited = new WeakSet<z.ZodType>();
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    const object = unwrap(current);
+    if (object instanceof z.ZodObject) {
+      const children = Object.values(object.shape as Record<string, z.ZodType>);
+      for (let index = children.length - 1; index >= 0; index--) {
+        pending.push(children[index]);
+      }
+      continue;
+    }
+
+    const { visibility, ...meta } = getMeta(current);
+    if (visibility) {
+      z.globalRegistry.add(current, meta);
+    }
+  }
+
+  return schema;
+};
+
+export const AdminConfigSchema = applyVisibility(Admin)! as z.ZodType<SystemConfig>;
+const UserConfigSchema = applyVisibility(User)! as z.ZodType<DeepPartial<SystemConfig>>;
+/** FL-158, FL-161: how a request reached this server, as the edge worker vouched for it. */
+export const FrameleafViaSchema = z
+  .enum(['lan', 'wan', 'relay'])
+  .describe('How the request arrived, as vouched for by the edge worker')
+  .meta({ id: 'FrameleafVia' });
+
+/**
+ * FL-158: how Sign in with Frameleaf applies to this visitor, worked out per request (not stored
+ * configuration): whether it is available, whether it is the only way in (arrival through remote
+ * access), how the request arrived, and the addresses the login page offers.
+ */
+const FrameleafPublicConfigSchema = z
+  .object({
+    signInAvailable: z.boolean().describe('Whether Sign in with Frameleaf is available (the server is linked)'),
+    signInRequired: z
+      .boolean()
+      .describe('Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered'),
+    via: FrameleafViaSchema.nullable().describe(
+      'How the request arrived; null when the edge worker did not vouch for it',
+    ),
+    relayHost: z.string().nullable().describe('The remote-access host shown on the login page, when known'),
+    localUrl: z
+      .string()
+      .nullable()
+      .describe('This server on the home network; given only to a remote-access visitor who is on it'),
+    sameNetwork: z.boolean().describe('Whether a remote-access visitor is on the same network as this server'),
+    signInOrigin: z
+      .string()
+      .nullable()
+      .describe(
+        'Where a visitor on a home address signs in with Frameleaf before returning (the relay address or the verified custom domain)',
+      ),
+  })
+  .meta({ id: 'FrameleafPublicConfigDto' });
+export type FrameleafPublicConfig = z.infer<typeof FrameleafPublicConfigSchema>;
+export const FRAMELEAF_PUBLIC_DEFAULTS: FrameleafPublicConfig = Object.freeze({
+  signInAvailable: false,
+  signInRequired: false,
+  via: null,
+  relayHost: null,
+  localUrl: null,
+  sameNetwork: false,
+  signInOrigin: null,
+});
+
+const PublicConfigSchema = (applyVisibility(Public) as z.ZodObject).extend({
+  frameleaf: FrameleafPublicConfigSchema,
+}) as unknown as z.ZodType<DeepPartial<SystemConfig> & { frameleaf: FrameleafPublicConfig }>;
+
+// prevent visibility metadata from leaking to openapi spec
+// eslint-disable-next-line unicorn/no-top-level-side-effects
+stripVisibilityMetadata(AdminConfigSchemaWithVisibility);
+
+const ConfigTemplateStorageOptionSchema = z
+  .object({
+    yearOptions: z.array(z.string()).describe('Available year format options for storage template'),
+    monthOptions: z.array(z.string()).describe('Available month format options for storage template'),
+    weekOptions: z.array(z.string()).describe('Available week format options for storage template'),
+    dayOptions: z.array(z.string()).describe('Available day format options for storage template'),
+    hourOptions: z.array(z.string()).describe('Available hour format options for storage template'),
+    minuteOptions: z.array(z.string()).describe('Available minute format options for storage template'),
+    secondOptions: z.array(z.string()).describe('Available second format options for storage template'),
+    presetOptions: z.array(z.string()).describe('Available preset template options'),
+  })
+  .meta({ id: 'SystemConfigTemplateStorageOptionDto' });
+
+export class AdminConfigDto extends createZodDto(AdminConfigSchema) {}
+export class UserConfigDto extends createZodDto(UserConfigSchema) {}
+export class PublicConfigDto extends createZodDto(PublicConfigSchema) {}
+export class ConfigFFmpegDto extends createZodDto(AdminConfigFFmpegSchema) {}
+export class ConfigSmtpDto extends createZodDto(AdminConfigSmtpSchema) {}
+export class ConfigTemplateStorageOptionDto extends createZodDto(ConfigTemplateStorageOptionSchema) {}
+
+/** @deprecated the `/system-config` endpoints these are named after are on their way out */
+export { AdminConfigDto as SystemConfigDto, ConfigSmtpDto as SystemConfigSmtpDto };
+
+export class CLIPConfig extends createZodDto(CLIPConfigSchema) {}
+
+export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
+  // Redact secrets on read. Writes that come back with an empty string here
+  // preserve the stored value (see system-config.service.ts:updateAdminConfig).
+  // The `apiKeyConfigured` flag exists so the admin UI can render a "Key
+  // Saved" indicator without exposing the actual key.
+  // FL-67: the SMTP password and the OAuth client secret follow the same rule, so no secret ever
+  // reaches a settings draft, a copied or exported configuration, or a log of the response.
+  return {
+    ...config,
+    notifications: {
+      ...config.notifications,
+      smtp: {
+        ...config.notifications.smtp,
+        transport: {
+          ...config.notifications.smtp.transport,
+          password: '',
+          passwordConfigured: config.notifications.smtp.transport.password.length > 0,
+        },
+      },
+    },
+    oauth: {
+      ...config.oauth,
+      clientSecret: '',
+      clientSecretConfigured: config.oauth.clientSecret.length > 0,
+    },
+    frameleafCloud: {
+      ...config.frameleafCloud,
+      cloudBackup: {
+        ...config.frameleafCloud.cloudBackup,
+        s3: {
+          ...config.frameleafCloud.cloudBackup.s3,
+          secretAccessKey: '',
+          secretAccessKeyConfigured: config.frameleafCloud.cloudBackup.s3.secretAccessKey.length > 0,
+        },
+      },
+    },
+  };
+}
+
+export function mapUserConfig(config: SystemConfig): UserConfigDto {
+  return UserConfigSchema.parse(config);
+}
+
+export function mapPublicConfig(
+  config: SystemConfig,
+  frameleaf: FrameleafPublicConfig = FRAMELEAF_PUBLIC_DEFAULTS,
+): PublicConfigDto {
+  return PublicConfigSchema.parse({ ...config, frameleaf });
+}
+
+export const defaults = Object.freeze<SystemConfig>({
+  backup: {
+    database: {
+      enabled: true,
+      cronExpression: CronExpression.EVERY_DAY_AT_2AM,
+      keepLastAmount: 14,
+    },
+    schedule: {
+      cronExpression: '',
+    },
+  },
+  ffmpeg: {
+    crf: 23,
+    threads: 0,
+    preset: 'ultrafast',
+    targetVideoCodec: VideoCodec.H264,
+    acceptedVideoCodecs: [VideoCodec.H264],
+    targetAudioCodec: AudioCodec.Aac,
+    acceptedAudioCodecs: [AudioCodec.Aac, AudioCodec.Mp3, AudioCodec.Opus],
+    acceptedContainers: [VideoContainer.Mov, VideoContainer.Ogg, VideoContainer.Webm],
+    targetResolution: '1080',
+    maxBitrate: '0',
+    bframes: -1,
+    refs: 0,
+    gopSize: 0,
+    temporalAQ: false,
+    cqMode: CQMode.Auto,
+    twoPass: false,
+    preferredHwDevice: 'auto',
+    transcode: TranscodePolicy.Required,
+    tonemap: ToneMapping.Hable,
+    accel: TranscodeHardwareAcceleration.Disabled,
+    accelDecode: true,
+    realtime: {
+      enabled: false,
+      videoCodecs: [VideoCodec.H264, VideoCodec.Hevc],
+      resolutions: [HlsVideoResolution.p480, HlsVideoResolution.p720, HlsVideoResolution.p1080],
+    },
+  },
+  integrityChecks: {
+    missingFiles: {
+      enabled: true,
+      cronExpression: CronExpression.EVERY_DAY_AT_3AM,
+    },
+    untrackedFiles: {
+      enabled: true,
+      cronExpression: CronExpression.EVERY_DAY_AT_3AM,
+    },
+    checksumFiles: {
+      enabled: true,
+      cronExpression: CronExpression.EVERY_DAY_AT_3AM,
+      timeLimit: 60 * 60 * 1000, // 1 hour
+      percentageLimit: 1, // 100% of assets
+    },
+  },
+  job: {
+    thumbnailGeneration: { concurrency: 3 },
+    metadataExtraction: { concurrency: 5 },
+    videoConversion: { concurrency: 1 },
+    faceDetection: { concurrency: 2 },
+    smartSearch: { concurrency: 2 },
+    videoDuplicateDetection: { concurrency: 1 },
+    backgroundTask: { concurrency: 5 },
+    migration: { concurrency: 5 },
+    search: { concurrency: 5 },
+    sidecar: { concurrency: 5 },
+    library: { concurrency: 5 },
+    notifications: { concurrency: 5 },
+    ocr: { concurrency: 1 },
+    imageEnrichment: { concurrency: 2 },
+    imageDescription: { concurrency: 2 },
+    nsfwDetection: { concurrency: 2 },
+    mediaHealth: { concurrency: 2 },
+    workflow: { concurrency: 5 },
+    editor: { concurrency: 2 },
+    integrityCheck: { concurrency: 1 },
+    petRecognition: { concurrency: 1 },
+  },
+  logging: {
+    enabled: true,
+    level: LogLevel.Log,
+  },
+  machineLearning: {
+    enabled: readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_ENABLED') !== 'false',
+    urls: [readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_URL') || 'http://frameleaf-machine-learning:3003'],
+    availabilityChecks: {
+      enabled: true,
+      timeout: 2000,
+      interval: 30_000,
+    },
+    clip: {
+      enabled: true,
+      modelName: 'ViT-B-16-SigLIP-384__webli',
+      zeroShotTagging: {
+        enabled: true,
+        minSimilarity: 0.25,
+        maxTags: 6,
+      },
+    },
+    duplicateDetection: {
+      enabled: true,
+      maxDistance: 0.01,
+      preferOriginalFormat: true,
+      enhancedVideo: {
+        enabled: true,
+        minMatchFraction: 0.7,
+        maxHashDistance: 8,
+        frameCount: 4,
+        minMatchingFrames: 2,
+        maxDistance: 0.01,
+      },
+    },
+    facialRecognition: {
+      enabled: true,
+      modelName: 'buffalo_l',
+      minScore: 0.7,
+      maxDistance: 0.5,
+      minFaces: 3,
+    },
+    ocr: {
+      enabled: true,
+      modelName: 'PP-OCRv5_mobile',
+      minDetectionScore: 0.5,
+      minRecognitionScore: 0.8,
+      maxResolution: 736,
+      documentFields: false,
+    },
+    imageDescription: imageDescriptionDefaults,
+    nsfwDetection: nsfwDetectionDefaults,
+  },
+  map: {
+    enabled: true,
+    lightStyle: 'https://tiles.frameleaf.cloud/v1/style/light.json',
+    darkStyle: 'https://tiles.frameleaf.cloud/v1/style/dark.json',
+  },
+  reverseGeocoding: {
+    enabled: true,
+  },
+  metadata: {
+    faces: {
+      import: false,
+    },
+  },
+  oauth: {
+    autoLaunch: false,
+    autoRegister: true,
+    buttonText: 'Sign in with your provider',
+    clientId: '',
+    clientSecret: '',
+    defaultStorageQuota: null,
+    enabled: false,
+    issuerUrl: '',
+    accountManagementUrl: '',
+    endSessionEndpoint: '',
+    mobileOverrideEnabled: false,
+    mobileRedirectUri: '',
+    prompt: '',
+    scope: 'openid email profile',
+    signingAlgorithm: 'RS256',
+    profileSigningAlgorithm: 'none',
+    storageLabelClaim: 'preferred_username',
+    storageQuotaClaim: 'frameleaf_quota',
+    roleClaim: 'frameleaf_role',
+    tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethod.ClientSecretPost,
+    timeout: 30_000,
+    allowInsecureRequests: false,
+  },
+  passwordLogin: {
+    enabled: true,
+  },
+  analytics: {
+    enabled: true,
+    historyDays: 730,
+  },
+  localFeatures: {
+    askSearch: {
+      enabled: true,
+      maxResults: 100,
+    },
+  },
+  storageTemplate: {
+    enabled: false,
+    hashVerificationEnabled: true,
+    template: '{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}',
+  },
+  image: {
+    thumbnail: {
+      format: ImageFormat.Webp,
+      size: 250,
+      quality: 80,
+      progressive: false,
+    },
+    preview: {
+      format: ImageFormat.Jpeg,
+      size: 1440,
+      quality: 80,
+      progressive: false,
+    },
+    colorspace: Colorspace.P3,
+    extractEmbedded: false,
+    enhancedRaw: {
+      enabled: true,
+    },
+    fullsize: {
+      enabled: false,
+      format: ImageFormat.Jpeg,
+      quality: 80,
+      progressive: false,
+    },
+  },
+  newVersionCheck: {
+    enabled: false,
+    channel: ReleaseChannel.Stable,
+    frequency: VersionCheckFrequency.Daily,
+  },
+  nightlyTasks: {
+    startTime: '00:00',
+    databaseCleanup: true,
+    generateMemories: true,
+    syncQuotaUsage: true,
+    missingThumbnails: true,
+    clusterNewFaces: true,
+    stopTime: '06:00',
+    days: [0, 1, 2, 3, 4, 5, 6],
+    emptyTrash: true,
+    quietHours: true,
+    weeklyDay: 0,
+    steps: {
+      cleanup: OvernightStepTiming.Nightly,
+      folders: OvernightStepTiming.Nightly,
+      icloud: OvernightStepTiming.Nightly,
+      fileChecks: OvernightStepTiming.Nightly,
+    },
+  },
+  storageWarning: {
+    percent: 90,
+  },
+  trash: {
+    enabled: true,
+    days: 30,
+  },
+  theme: {
+    customCss: '',
+    customCssEnabled: true,
+  },
+  library: {
+    scan: {
+      enabled: true,
+      cronExpression: CronExpression.EVERY_DAY_AT_MIDNIGHT,
+    },
+    watch: {
+      enabled: false,
+    },
+  },
+  server: {
+    name: '',
+    externalDomain: '',
+    loginPageMessage: '',
+    loginPageMessageFormat: LoginPageMessageFormat.Plain,
+    timeZone: '',
+    publicUsers: true,
+    lanDiscovery: true,
+  },
+  notifications: {
+    smtp: {
+      enabled: false,
+      from: '',
+      replyTo: '',
+      transport: {
+        type: MailTransportType.Smtp,
+        ignoreCert: false,
+        host: '',
+        port: 587,
+        secure: false,
+        username: '',
+        password: '',
+      },
+    },
+  },
+  templates: {
+    email: {
+      welcomeTemplate: '',
+      albumInviteTemplate: '',
+      albumUpdateTemplate: '',
+      invitationFirstLine: '',
+      showBranding: true,
+    },
+  },
+  user: {
+    deleteDelay: 7,
+    newUserStorageQuota: null,
+  },
+  smartAlbums: smartAlbumsDefaults,
+  frameleafCloud: frameleafCloudDefaults,
+  libraryCare: libraryCareDefaults,
+  editing: editingDefaults,
+  help: helpDefaults,
+});

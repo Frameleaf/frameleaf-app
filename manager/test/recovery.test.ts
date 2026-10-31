@@ -1,0 +1,677 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile, utimes } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
+import { createRequire } from 'node:module';
+import { runInNewContext } from 'node:vm';
+import { Store } from '../src/store.js';
+import { Fencing } from '../src/fencing.js';
+import { Docker, SERVER_ADMIN, type Container } from '../src/docker.js';
+import { sourceFingerprint } from '../src/discovery.js';
+import { type Source, type Mount, type Installation } from '../src/contracts.js';
+import { copyVerified, fileHash } from '../src/files.js';
+import { BACKUP_INDEX, Backups } from '../src/backups.js';
+import { Operations } from '../src/operations.js';
+
+const media: Mount[] = [{ type: 'bind', source: '/fixture/media', target: '/data', readOnly: false }];
+function container(id: string, running = true, policy = 'unless-stopped'): Container {
+  return {
+    Id: id.repeat(64),
+    Name: `/worker-${id}`,
+    Image: `sha256:${id.repeat(64)}`,
+    State: { Running: running },
+    Config: { Image: 'fixture.invalid/source-server:v3.1.0', Env: [], Labels: {}, Entrypoint: null, Cmd: null },
+    HostConfig: { RestartPolicy: { Name: policy, MaximumRetryCount: 0 }, NetworkMode: 'bridge', PortBindings: {} },
+    Mounts: [{ Type: 'bind', Source: '/fixture/media', Destination: '/data', RW: true }],
+    NetworkSettings: { Networks: { private: { IPAddress: '172.19.0.2', Aliases: ['app'] } } },
+  };
+}
+test('an unlabelled competing writer, stopped auto-restarting writer and a volume alias all block cutover', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-fence-')),
+    store = new Store(directory);
+  const own = container('a', false, 'no'),
+    other = container('b');
+  const docker = { inventory: async () => [own, other] } as Docker;
+  const fencing = new Fencing(docker, store);
+  try {
+    await assert.rejects(fencing.assertMedia(media), /other_media_writer_detected/);
+    other.State.Running = false;
+    await assert.rejects(fencing.assertMedia(media), /other_media_writer_detected/);
+    other.HostConfig.RestartPolicy.Name = 'no';
+    await fencing.assertMedia(media);
+    other.State.Running = true;
+    own.Mounts = [{ Type: 'volume', Name: 'library', Source: '/fixture/media', Destination: '/data', RW: true }];
+    await assert.rejects(
+      fencing.assertMedia([{ ...media[0], type: 'volume', source: 'library' }]),
+      /other_media_writer_detected/,
+    );
+    other.Config.Labels['app.frameleaf.manager'] = 'owned';
+    await fencing.assertMedia(media, { id: 'owned' } as Installation);
+    // FL-473: the blocker is named; a file manager mapping a whole share or pool does not block.
+    delete other.Config.Labels['app.frameleaf.manager'];
+    own.Mounts = [{ Type: 'bind', Source: '/fixture/media', Destination: '/data', RW: true }];
+    await assert.rejects(fencing.assertMedia(media), (error: any) => error.detail?.includes('worker-b'));
+    const shared = [{ Type: 'bind', Source: '/mnt/user/appdata/immich/library', Destination: '/data', RW: true }];
+    own.Mounts = shared;
+    for (const Source of ['/mnt', '/mnt/user', '/mnt/cache']) {
+      other.Mounts = [{ Type: 'bind', Source, Destination: '/srv', RW: true }];
+      await fencing.assertMedia([{ ...media[0], source: shared[0].Source }]);
+    }
+    other.Mounts = [{ Type: 'bind', Source: '/mnt/user/appdata/immich', Destination: '/srv', RW: true }];
+    await assert.rejects(fencing.assertMedia([{ ...media[0], source: shared[0].Source }]), /other_media_writer_detected/);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+test('source fencing resumes after a crash between restart-policy changes without accepting other changes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-fence-')),
+    store = new Store(directory);
+  const app = container('a'),
+    worker = container('b'),
+    database = container('c');
+  database.Mounts = [];
+  const all = [app, worker, database];
+  const source = {
+    id: app.Id,
+    app: app.Id,
+    workers: [app.Id, worker.Id],
+    mounts: media,
+    platform: 'docker',
+    database: { container: database.Id },
+    fingerprint: sourceFingerprint(structuredClone(all)),
+    restart: Object.fromEntries([app, worker].map((c) => [c.Id, structuredClone(c.HostConfig.RestartPolicy)])),
+  } as Source;
+  let interrupt = true;
+  const docker = {
+    inventory: async () => structuredClone(all),
+    restartPolicy: async (id: string, policy: string) => {
+      all.find((c) => c.Id === id)!.HostConfig.RestartPolicy.Name = policy;
+      if (interrupt) {
+        interrupt = false;
+        throw new Error('simulated process termination');
+      }
+    },
+    stop: async (id: string) => {
+      const c = all.find((c) => c.Id === id)!;
+      c.State.Running = false;
+      c.NetworkSettings.Networks.private.IPAddress = '';
+    },
+  } as unknown as Docker;
+  try {
+    await assert.rejects(new Fencing(docker, store).stop(source), /simulated process termination/);
+    await new Fencing(docker, store).stop(source);
+    await new Fencing(docker, store).verify(source);
+    worker.Config.Env.push('IMMICH_MEDIA_LOCATION=/changed');
+    await assert.rejects(new Fencing(docker, store).verify(source), /source_changed_review_again/);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+test('FL-476: a verified import retires the source database and Redis, and source recovery restores them', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-retire-')),
+    store = new Store(directory);
+  const autostart = join(directory, 'unraid-autostart');
+  const app = container('a'),
+    database = container('b', true, 'always'),
+    redis = container('c', true, 'on-failure'),
+    otherRedis = container('d');
+  app.Name = '/immich_server';
+  database.Name = '/immich_postgres';
+  redis.Name = '/immich_redis';
+  redis.HostConfig.RestartPolicy.MaximumRetryCount = 3;
+  redis.NetworkSettings.Networks.private.Aliases = ['redis'];
+  // Another stack's Redis on a network the server is not attached to is never touched.
+  otherRedis.Name = '/other_redis';
+  otherRedis.NetworkSettings.Networks = { elsewhere: { IPAddress: '172.20.0.2', Aliases: ['redis'] } };
+  for (const c of [database, redis, otherRedis]) c.Mounts = [];
+  const all = [app, database, redis, otherRedis];
+  const source = {
+    id: app.Id,
+    app: app.Id,
+    workers: [app.Id],
+    mounts: media,
+    platform: 'unraid',
+    database: { container: database.Id },
+    fingerprint: sourceFingerprint(structuredClone([app, database])),
+    restart: { [app.Id]: structuredClone(app.HostConfig.RestartPolicy) },
+  } as Source;
+  const original = 'immich_redis\nimmich_postgres 10\nimmich_server\nfilebrowser\n';
+  await writeFile(autostart, original);
+  const docker = {
+    inventory: async () => structuredClone(all),
+    restartPolicy: async (id: string, policy: string) => {
+      const [name, count] = policy.split(':');
+      all.find((c) => c.Id === id)!.HostConfig.RestartPolicy = { Name: name, MaximumRetryCount: Number(count ?? 0) };
+    },
+    stop: async (id: string) => {
+      all.find((c) => c.Id === id)!.State.Running = false;
+    },
+    start: async (id: string) => {
+      all.find((c) => c.Id === id)!.State.Running = true;
+    },
+  } as unknown as Docker;
+  const fencing = new Fencing(docker, store, autostart);
+  try {
+    await fencing.stop(source);
+    assert.equal(await readFile(autostart, 'utf8'), 'immich_redis\nimmich_postgres 10\nfilebrowser\n');
+    const retired = await fencing.retireSourceServices(source);
+    assert.deepEqual(
+      retired.map((s) => [s.role, s.name, s.autostart]),
+      [
+        ['redis', 'immich_redis', 'immich_redis'],
+        ['database', 'immich_postgres', 'immich_postgres 10'],
+      ],
+    );
+    for (const c of [database, redis]) {
+      assert.equal(c.State.Running, false, c.Name);
+      assert.equal(c.HostConfig.RestartPolicy.Name, 'no', c.Name);
+    }
+    assert.equal(otherRedis.State.Running, true);
+    assert.equal(await readFile(autostart, 'utf8'), 'filebrowser\n');
+    // A retry is idempotent, and the fenced source still verifies with its database's policy changed.
+    await fencing.retireSourceServices(source);
+    await fencing.verify(source);
+    // A database changed by anyone else is still refused.
+    database.HostConfig.RestartPolicy.Name = 'unless-stopped';
+    await assert.rejects(fencing.verify(source), /source_changed_review_again/);
+    database.HostConfig.RestartPolicy.Name = 'no';
+
+    await fencing.recover(source, { mayHaveWrittenMedia: false } as Installation);
+    assert.deepEqual(database.HostConfig.RestartPolicy, { Name: 'always', MaximumRetryCount: 0 });
+    assert.deepEqual(redis.HostConfig.RestartPolicy, { Name: 'on-failure', MaximumRetryCount: 3 });
+    assert.equal(database.State.Running, true);
+    assert.equal(redis.State.Running, true);
+    // The application itself gets its restart policy back but stays stopped and out of autostart.
+    assert.equal(app.State.Running, false);
+    assert.equal(app.HostConfig.RestartPolicy.Name, 'unless-stopped');
+    assert.equal(await readFile(autostart, 'utf8'), 'immich_redis\nimmich_postgres 10\nfilebrowser\n');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+test('checkpoint retry replaces a partial published copy and never accepts a changed source', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-copy-'));
+  const source = join(directory, 'current.dump'),
+    target = join(directory, 'database.dump');
+  try {
+    await writeFile(source, 'complete postgres dump');
+    const hash = await fileHash(source);
+    await writeFile(target, 'complete post');
+    await writeFile(`${target}.partial`, 'interrupted retry');
+    await copyVerified(source, target, hash);
+    assert.equal(await fileHash(target), hash);
+    await writeFile(source, 'changed');
+    await writeFile(target, 'incomplete');
+    await assert.rejects(copyVerified(source, target, hash), /checkpoint_dump_changed/);
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+test('native backup reuse uses filename time and SQL library identity, not refreshed mtime', async () => {
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'manager-backup-')));
+  const identity = { id: 'f269b8ab-c83b-4fef-b3c8-216bf92b90cc', createdAt: Date.UTC(2026, 0, 1) };
+  const filename = (time: number) => {
+    const d = new Date(time),
+      pad = (n: number) => String(n).padStart(2, '0');
+    return `immich-db-backup-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-v3.1.0-pg14.19.sql.gz`;
+  };
+  const sql = (id: string) =>
+    `COPY public."user" (id, "createdAt") FROM stdin;\n${id}\t2026-01-01 00:00:00+00\n\\.\nCOPY public.asset (id) FROM stdin;\n\\.\nCOPY public.album (id) FROM stdin;\n\\.\n-- PostgreSQL database dump complete\n`;
+  const now = Date.now();
+  const valid = filename(now - 60_000),
+    wrong = filename(now - 120_000),
+    old = filename(now - 172_800_000);
+  try {
+    for (const [name, owner] of [
+      [valid, identity.id],
+      [wrong, 'another-library'],
+      [old, identity.id],
+    ]) {
+      await writeFile(join(directory, name), gzipSync(sql(owner)));
+      await utimes(join(directory, name), new Date(now), new Date(now));
+    }
+    let output = '';
+    await runInNewContext(BACKUP_INDEX, {
+      require: createRequire(import.meta.url),
+      Buffer,
+      process: {
+        argv: ['node', directory, JSON.stringify(identity)],
+        stdout: {
+          write: (value: string) => {
+            output += value;
+          },
+        },
+        exit: () => {
+          throw new Error('index failed');
+        },
+      },
+    });
+    assert.deepEqual(
+      JSON.parse(output).map((entry: { name: string }) => entry.name),
+      [valid],
+    );
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+test('a failed backup can be cancelled without stopping the application or holding the operation lock', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-operation-')),
+    store = new Store(directory);
+  store.set('installation', { id: 'owned', mayHaveWrittenMedia: true });
+  const { operation } = store.start('backup', 'backup', {});
+  operation.state = 'failed';
+  store.save(operation);
+  const docker = {
+    compose: async () => {
+      throw new Error('must not change running containers');
+    },
+  } as unknown as Docker;
+  try {
+    const operations = new Operations(store, docker, {} as never, {} as never, [], {} as never);
+    await operations.recover(operation.id);
+    assert.equal(store.history()[0].error, 'backup_cancelled');
+    assert.equal(store.start('stop', 'next-control', {}).created, true);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+test('cancellation claims the operation before awaiting Docker and excludes simultaneous resume or recovery', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-cancel-race-')),
+    store = new Store(directory);
+  const installation = { id: 'a'.repeat(12), sourceId: null, mayHaveWrittenMedia: false } as Installation;
+  store.set('installation', installation);
+  await mkdir(join(directory, 'stack'));
+  const { operation } = store.start('install', 'failed-install', {});
+  operation.state = 'failed';
+  operation.completed = ['configure'];
+  store.save(operation);
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const docker = {
+    inventory: async () => {
+      await blocked;
+      return [];
+    },
+  } as unknown as Docker;
+  const operations = new Operations(store, docker, {} as never, {} as never, [], {} as never);
+  const cancellation = operations.recover(operation.id);
+  try {
+    assert.equal(store.history()[0].state, 'running');
+    assert.ok(store.history()[0].receipts['cancellation-intent']);
+    assert.throws(() => operations.resume(operation.id), /operation_not_recoverable/);
+    await assert.rejects(operations.recover(operation.id), /operation_not_recoverable/);
+    release();
+    await cancellation;
+    assert.equal(store.history()[0].state, 'complete');
+    assert.equal(store.get('installation'), null);
+    assert.equal(store.start('install', 'next-install', {}).created, true);
+  } finally {
+    release();
+    await cancellation;
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+test('a restart after archiving the stack resumes cancellation instead of reinstalling or losing its recovery record', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-cancel-restart-')),
+    store = new Store(directory);
+  const installation = { id: 'b'.repeat(12), sourceId: null, mayHaveWrittenMedia: false } as Installation;
+  const password = 'private-recovery-fixture';
+  store.set('installation', installation);
+  store.set('database-password', password);
+  const { operation } = store.start('import', 'interrupted-cancellation', {});
+  const archive = join(directory, `cancelled-stack-${operation.id}`);
+  // The rename finished but its receipt was not persisted before the process stopped.
+  await mkdir(archive);
+  await writeFile(join(archive, 'compose.json'), '{}');
+  operation.state = 'interrupted';
+  operation.step = 'cancel-archive-stack';
+  operation.completed = ['configure', 'cancel-stop-target', 'cancel-source'];
+  operation.receipts['cancellation-intent'] = { kind: 'source', installation, archive };
+  store.save(operation);
+  try {
+    const operations = new Operations(store, {} as never, {} as never, {} as never, [], {} as never);
+    operations.resume(operation.id);
+    // Slow CI runners (arm64) need more than ~100 ms; closing the store early fails the background save.
+    for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(store.history()[0].state, 'complete', store.history()[0].error ?? undefined);
+    assert.equal(store.history()[0].error, 'recovered_source_stopped');
+    assert.equal(store.get('installation'), null);
+    assert.equal(store.get<{ password: string }>(`cancelled-installation:${operation.id}`)?.password, password);
+    assert.equal(await readFile(join(archive, 'compose.json'), 'utf8'), '{}');
+    assert.equal(store.start('install', 'next-install', {}).created, true);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+test('a completed Restic snapshot is reused after a lost acknowledgement', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-snapshot-'));
+  let backups = 0,
+    checks = 0;
+  const execute = async (_binary: string, args: string[]) => {
+    if (args.includes('snapshots'))
+      return JSON.stringify([
+        { id: 'a'.repeat(64), paths: [directory], tags: ['frameleaf-manager-database', 'frameleaf-canonical'] },
+      ]);
+    if (args.includes('backup')) backups++;
+    if (args.includes('check')) checks++;
+    return '';
+  };
+  try {
+    await writeFile(join(directory, 'recovery.json'), JSON.stringify({ databaseFormat: 'frameleaf-canonical' }));
+    assert.equal(await new Backups('/repo', '/key', execute).snapshot(directory, 'operation'), 'a'.repeat(64));
+    assert.equal(backups, 0);
+    assert.equal(checks, 1);
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('relative checkpoint backups restore the snapshot root, not their absolute source metadata path', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-restore-'));
+  const snapshot = 'a'.repeat(64),
+    destination = join(directory, 'empty');
+  const calls: string[][] = [];
+  const execute = async (_binary: string, args: string[]) => {
+    calls.push(args);
+    if (args.includes('snapshots'))
+      return JSON.stringify([
+        { id: snapshot, paths: ['/old/host/checkpoint'], tags: ['frameleaf-manager-database', 'frameleaf-canonical'] },
+      ]);
+    return '';
+  };
+  try {
+    await new Backups('/repo', '/key', execute).restore(snapshot, destination);
+    assert.deepEqual(calls[1], [
+      '--repo',
+      '/repo',
+      '--password-file',
+      '/key',
+      '--json',
+      'restore',
+      snapshot,
+      '--target',
+      destination,
+      '--verify',
+    ]);
+    await assert.rejects(
+      new Backups('/repo', '/key', execute).restore('b'.repeat(64), join(directory, 'unknown')),
+      /unknown_snapshot/,
+    );
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('a failed lifecycle operation resumes and releases its lock after successful reconciliation', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-retry-')),
+    store = new Store(directory);
+  const installation = {
+    id: 'a'.repeat(12),
+    project: `frameleaf-${'a'.repeat(12)}`,
+    mounts: [],
+    sourceId: null,
+  } as unknown as Installation;
+  store.set('installation', installation);
+  let attempts = 0;
+  const docker = {
+    inventory: async () => [],
+    compose: async () => {
+      if (++attempts === 1) throw new Error('engine unavailable');
+    },
+  } as unknown as Docker;
+  const wait = async () => {
+    for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+  };
+  try {
+    const operations = new Operations(store, docker, {} as never, {} as never, [], { verify: async () => {} } as never);
+    const operation = operations.control('start', 'start');
+    await wait();
+    assert.equal(store.history()[0].state, 'failed');
+    operations.resume(operation.id);
+    await wait();
+    assert.equal(store.history()[0].state, 'complete');
+    assert.equal(attempts, 2);
+    assert.equal(store.start('stop', 'next', {}).created, true);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('import verification uses the fenced dump receipt instead of earlier discovery counts', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-counts-')),
+    store = new Store(directory);
+  const app = container('a'),
+    sourceDb = container('b');
+  sourceDb.Mounts = [];
+  const source = {
+    id: app.Id,
+    app: app.Id,
+    workers: [app.Id],
+    mounts: media,
+    platform: 'docker',
+    database: { container: sourceDb.Id },
+    fingerprint: sourceFingerprint(structuredClone([app, sourceDb])),
+    restart: { [app.Id]: structuredClone(app.HostConfig.RestartPolicy) },
+    summary: { users: 1, assets: 1, albums: 1 },
+  } as Source;
+  app.State.Running = false;
+  app.HostConfig.RestartPolicy.Name = 'no';
+  const installation = {
+    id: 'e'.repeat(12),
+    project: `frameleaf-${'e'.repeat(12)}`,
+    databasePath: '/fixture/database',
+    mounts: media,
+    sourceId: app.Id,
+    mayHaveWrittenMedia: false,
+  } as Installation;
+  const target = container('c'),
+    server = container('d', false, 'no');
+  target.Mounts = [{ Type: 'bind', Source: installation.databasePath, Destination: '/var/lib/postgresql', RW: true }];
+  for (const [c, service] of [
+    [target, 'database'],
+    [server, 'frameleaf-server'],
+  ] as const)
+    c.Config.Labels = { 'app.frameleaf.manager': installation.id, 'com.docker.compose.service': service };
+  const docker = {
+    inventory: async () => structuredClone([app, sourceDb, target, server]),
+    sql: async () => JSON.stringify({ users: 1, assets: 2, albums: 1 }),
+    importCommand: async () => ({ status: 'activated' }),
+    node: async () => '{}',
+    compose: async () => {
+      server.State.Running = true;
+    },
+    restartPolicy: async (id: string, policy: string) => {
+      [app, sourceDb].find((c) => c.Id === id)!.HostConfig.RestartPolicy.Name = policy;
+    },
+    stop: async (id: string) => {
+      [app, sourceDb].find((c) => c.Id === id)!.State.Running = false;
+    },
+  } as unknown as Docker;
+  store.set('installation', installation);
+  store.set(`review:review`, { source, backup: { verified: true }, input: {} });
+  const { operation } = store.start('import', 'import', { reviewId: 'review' });
+  operation.completed = [
+    'preflight',
+    'download-images',
+    'configure',
+    'review-source',
+    'fence-source',
+    'start-database',
+    'capture-fenced-settings',
+    'copy-current-database',
+    'check-media-writable',
+    'configure-offline-import',
+    'import-canonical-database',
+    'import-settings',
+  ];
+  operation.receipts.configure = installation;
+  operation.receipts['copy-current-database'] = { summary: { users: 1, assets: 2, albums: 1 } };
+  operation.state = 'interrupted';
+  store.save(operation);
+  try {
+    const operations = new Operations(store, docker, { eligible: async () => {} } as never, {} as never, [], {
+      verify: async () => {},
+    } as never);
+    // This case isolates fenced-count selection; transport reconciliation has separate coverage.
+    Object.assign(operations, { runImport: async () => ({ status: 'activated' }) });
+    operations.resume(operation.id);
+    for (const deadline = Date.now() + 5000; store.history()[0].state === 'running' && Date.now() < deadline; )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(store.history()[0].state, 'complete', store.history()[0].error ?? undefined);
+    assert.deepEqual(store.history()[0].receipts['verify-import'], { countsMatch: true, activated: true });
+    // FL-476: after the verified import the source database is stopped with no restart policy.
+    assert.deepEqual(store.history()[0].receipts['retire-source-services'], [{ role: 'database', name: 'worker-b' }]);
+    assert.equal(sourceDb.State.Running, false);
+    assert.equal(sourceDb.HostConfig.RestartPolicy.Name, 'no');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('offline importer command refuses a surviving runner and never accepts arbitrary actions', async () => {
+  const active = container('a');
+  const project = 'frameleaf-aaaaaaaaaaaa';
+  const operation = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  active.Name = `/${project}-import-${operation}`;
+  active.Config.Labels['app.frameleaf.manager.import'] = operation;
+  const calls: string[][] = [];
+  const docker = new Docker(async (_binary, args) => {
+    calls.push(args);
+    if (args[0] === 'ps') return active.Id;
+    if (args[0] === 'inspect') return JSON.stringify([active]);
+    if (args.includes('run')) return '{"status":"activated"}';
+    return '';
+  });
+  await assert.rejects(docker.importCommand('/fixture', project, operation, 'verify'), /import_still_running/);
+  assert.equal(
+    calls.some((args) => args[0] === 'rm' || args.includes('run')),
+    false,
+  );
+  await assert.rejects(
+    docker.importCommand('/fixture', project, operation, 'shell' as never),
+    /invalid_import_command/,
+  );
+  active.State.Running = false;
+  assert.deepEqual(await docker.importCommand('/fixture', project, operation, 'status'), { status: 'activated' });
+  const command = calls.find((args) => args.includes('run'))!;
+  assert.deepEqual(
+    command.slice(-6),
+    [SERVER_ADMIN, 'frameleaf-server', 'import-immich', 'status', '--config', '/run/frameleaf/import.json'],
+  );
+});
+test('source recovery restores a default (empty) restart policy as "no" instead of refusing', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-fence-')),
+    store = new Store(directory);
+  // Containers created through the Engine API without a policy report RestartPolicy.Name "".
+  const app = container('a', true, ''),
+    database = container('c');
+  database.Mounts = [];
+  const all = [app, database];
+  const source = {
+    id: app.Id,
+    app: app.Id,
+    workers: [app.Id],
+    mounts: media,
+    platform: 'docker',
+    database: { container: database.Id },
+    fingerprint: sourceFingerprint(structuredClone(all)),
+    restart: { [app.Id]: structuredClone(app.HostConfig.RestartPolicy) },
+  } as Source;
+  const updates: string[] = [];
+  const docker = new Docker(async (_binary, args) => {
+    if (args[0] === 'update') {
+      updates.push(args[2]);
+      all.find((c) => c.Id === args[3])!.HostConfig.RestartPolicy.Name = args[2];
+    }
+    return '';
+  });
+  docker.inventory = async () => structuredClone(all);
+  docker.stop = async (id: string) => {
+    all.find((c) => c.Id === id)!.State.Running = false;
+  };
+  try {
+    await new Fencing(docker, store).recover(source, null);
+    assert.deepEqual(updates, ['no', 'no']);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+test('a server refusal of the in-container Manager request names its HTTP status and never the token', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-server-request-')),
+    store = new Store(directory);
+  const token = 'c'.repeat(64);
+  store.set('installation', { id: 'd'.repeat(12) } as Installation);
+  const server = container('e');
+  server.Config.Labels = { 'app.frameleaf.manager': 'd'.repeat(12), 'com.docker.compose.service': 'frameleaf-server' };
+  let status = 403;
+  const sent: { url: string; init: { method: string; headers: Record<string, string> } }[] = [];
+  const docker = {
+    inventory: async () => [server],
+    node: async (_id: string, script: string, args: string[]) => {
+      let output = '';
+      await runInNewContext(script, {
+        require: () => ({ readFileSync: () => `${token}\n` }),
+        fetch: async (url: string, init: { method: string; headers: Record<string, string> }) => {
+          sent.push({ url, init });
+          return { ok: status < 300, status, json: async () => ({ phase: 'preparing' }) };
+        },
+        process: {
+          argv: ['node', ...args],
+          stdout: { write: (value: string) => (output += value) },
+          exit: () => assert.fail('the request itself must not fail'),
+        },
+      });
+      return output;
+    },
+  } as unknown as Docker;
+  const operations = new Operations(store, docker, {} as never, {} as never, [], {} as never);
+  try {
+    const refused = await operations.libraryStatus(true).then(
+      () => assert.fail('a 403 must be refused'),
+      (error: Error) => error,
+    );
+    assert.equal(refused.message, 'server_refused_403');
+    assert.ok(!JSON.stringify(refused).includes(token) && !refused.stack?.includes(token));
+    assert.equal(sent[0].url, 'http://127.0.0.1:2283/api/server/library-setup/manager');
+    assert.equal(sent[0].init.method, 'POST');
+    assert.equal(sent[0].init.headers['x-frameleaf-manager'], token);
+    status = 200;
+    assert.deepEqual(await operations.libraryStatus(), { phase: 'preparing' });
+    assert.equal(sent[1].init.method, 'GET');
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
+test('a setup whose server container never started stays cancellable after a failed start', async () => {
+  const id = 'c'.repeat(12);
+  const server = (startedAt: string, running = false) => {
+    const c = container('c', running);
+    c.State.StartedAt = startedAt;
+    c.Config.Labels = { 'app.frameleaf.manager': id, 'com.docker.compose.service': 'frameleaf-server' };
+    return c;
+  };
+  const started = (containers: Container[]) =>
+    Object.assign(Object.create(Operations.prototype), { docker: { inventory: async () => containers } }).serverStarted({
+      id,
+    } as Installation);
+  assert.equal(await started([]), false);
+  assert.equal(await started([server('0001-01-01T00:00:00Z')]), false);
+  assert.equal(await started([server('2026-10-20T19:00:00Z')]), true);
+  assert.equal(await started([server('0001-01-01T00:00:00Z', true)]), true);
+});

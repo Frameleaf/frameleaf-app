@@ -1,0 +1,518 @@
+import { registerFunction } from '@frameleaf/sql-tools';
+import { BACKUP_DELETION_CAPTURE_BODY } from 'src/utils/cloud-backup-deletion-sql.js';
+
+export const immich_uuid_v7 = registerFunction({
+  name: 'immich_uuid_v7',
+  arguments: ['p_timestamp timestamp with time zone default clock_timestamp()'],
+  returnType: 'uuid',
+  language: 'SQL',
+  behavior: 'volatile',
+  body: `
+    SELECT encode(
+      set_bit(
+        set_bit(
+          overlay(uuid_send(gen_random_uuid())
+                  placing substring(int8send(floor(extract(epoch from p_timestamp) * 1000)::bigint) from 3)
+                  from 1 for 6
+          ),
+          52, 1
+        ),
+        53, 1
+      ),
+      'hex')::uuid;
+`,
+});
+
+export const album_user_after_insert = registerFunction({
+  name: 'album_user_after_insert',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      UPDATE album SET "updatedAt" = clock_timestamp(), "updateId" = immich_uuid_v7(clock_timestamp())
+      WHERE "id" IN (SELECT "albumId" FROM inserted_rows)
+        AND NOT EXISTS (SELECT FROM inserted_rows WHERE role = 'owner');
+      RETURN NULL;
+    END`,
+});
+
+export const updated_at = registerFunction({
+  name: 'updated_at',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    DECLARE
+        clock_timestamp TIMESTAMP := clock_timestamp();
+    BEGIN
+        new."updatedAt" = clock_timestamp;
+        new."updateId" = immich_uuid_v7(clock_timestamp);
+        return new;
+    END;`,
+});
+
+export const media_health_updated_at = registerFunction({
+  name: 'media_health_updated_at',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      new."updatedAt" = clock_timestamp();
+      return new;
+    END;`,
+});
+
+export const f_concat_ws = registerFunction({
+  name: 'f_concat_ws',
+  arguments: ['text', 'text[]'],
+  returnType: 'text',
+  language: 'SQL',
+  parallel: 'safe',
+  behavior: 'immutable',
+  body: `SELECT array_to_string($2, $1)`,
+});
+
+export const f_unaccent = registerFunction({
+  name: 'f_unaccent',
+  arguments: ['text'],
+  returnType: 'text',
+  language: 'SQL',
+  parallel: 'safe',
+  strict: true,
+  behavior: 'immutable',
+  return: `unaccent('unaccent', $1)`,
+});
+
+export const ll_to_earth_public = registerFunction({
+  name: 'll_to_earth_public',
+  arguments: ['latitude double precision', 'longitude double precision'],
+  returnType: 'public.earth',
+  language: 'SQL',
+  parallel: 'safe',
+  strict: true,
+  behavior: 'immutable',
+  body: `SELECT public.cube(public.cube(public.cube(public.earth()*cos(radians(latitude))*cos(radians(longitude))),public.earth()*cos(radians(latitude))*sin(radians(longitude))),public.earth()*sin(radians(latitude)))::public.earth`,
+});
+
+/**
+ * Keeps `asset_landmark` in step with an asset's coordinates, whichever code path wrote them (FL-352).
+ * 200000 is LANDMARK_MAX_RADIUS_M. A failure here must never fail the exif write itself. The change test
+ * lives in the body because the schema reader cannot print a WHEN clause that names both OLD and NEW.
+ */
+export const asset_exif_landmark_match = registerFunction({
+  name: 'asset_exif_landmark_match',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF TG_OP = 'UPDATE' AND OLD.latitude IS NOT DISTINCT FROM NEW.latitude
+        AND OLD.longitude IS NOT DISTINCT FROM NEW.longitude THEN
+        RETURN NULL;
+      END IF;
+      DELETE FROM public.asset_landmark WHERE "assetId" = NEW."assetId";
+      IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+        INSERT INTO public.asset_landmark ("assetId", "landmarkId")
+        SELECT NEW."assetId", l.id
+        FROM public.landmark l
+        WHERE public.earth_box(public.ll_to_earth_public(NEW.latitude, NEW.longitude), 200000)
+            OPERATOR(public.@>) public.ll_to_earth_public(l.latitude, l.longitude)
+          AND public.earth_distance(
+            public.ll_to_earth_public(NEW.latitude, NEW.longitude),
+            public.ll_to_earth_public(l.latitude, l.longitude)) <= l."radiusM"
+          AND (NOT EXISTS (SELECT FROM public.landmark_area a WHERE a."landmarkId" = l.id)
+            OR EXISTS (SELECT FROM public.landmark_area a
+              WHERE a."landmarkId" = l.id AND a.area @> point(NEW.longitude, NEW.latitude)))
+        ON CONFLICT DO NOTHING;
+      END IF;
+      RETURN NULL;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'asset_exif_landmark_match: %', SQLERRM;
+      RETURN NULL;
+    END`,
+});
+
+export const user_delete_audit = registerFunction({
+  name: 'user_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO user_audit ("userId")
+      SELECT "id"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const partner_delete_audit = registerFunction({
+  name: 'partner_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO partner_audit ("sharedById", "sharedWithId")
+      SELECT "sharedById", "sharedWithId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const asset_delete_audit = registerFunction({
+  name: 'asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO asset_audit ("assetId", "ownerId")
+      SELECT "id", "ownerId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const album_asset_delete_audit = registerFunction({
+  name: 'album_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO album_asset_audit ("albumId", "assetId")
+      SELECT "albumId", "assetId" FROM OLD
+      WHERE "albumId" IN (SELECT "id" FROM album WHERE "id" IN (SELECT "albumId" FROM OLD));
+      RETURN NULL;
+    END`,
+});
+
+export const album_user_delete = registerFunction({
+  name: 'album_user_delete',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      DELETE FROM "album"
+      WHERE "album"."id" = OLD."albumId"
+      AND NOT EXISTS (SELECT "albumId" FROM "album_user" WHERE "album_user"."albumId" = "album"."id" AND "album_user"."role" = 'owner');
+
+      RETURN NULL;
+    END`,
+});
+
+export const album_user_delete_audit = registerFunction({
+  name: 'album_user_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO album_audit ("albumId", "userId")
+      SELECT "albumId", "userId"
+      FROM OLD;
+
+      IF pg_trigger_depth() = 1 THEN
+        INSERT INTO album_user_audit ("albumId", "userId")
+        SELECT "albumId", "userId"
+        FROM OLD;
+      END IF;
+
+      RETURN NULL;
+    END`,
+});
+
+export const memory_delete_audit = registerFunction({
+  name: 'memory_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO memory_audit ("memoryId", "userId")
+      SELECT "id", "ownerId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const memory_asset_delete_audit = registerFunction({
+  name: 'memory_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO memory_asset_audit ("memoryId", "assetId")
+      SELECT "memoriesId", "assetId" FROM OLD
+      WHERE "memoriesId" IN (SELECT "id" FROM memory WHERE "id" IN (SELECT "memoriesId" FROM OLD));
+      RETURN NULL;
+    END`,
+});
+
+export const stack_delete_audit = registerFunction({
+  name: 'stack_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO stack_audit ("stackId", "userId")
+      SELECT "id", "ownerId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const person_delete_audit = registerFunction({
+  name: 'person_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO person_audit ("personGroupId", "ownerId")
+      SELECT "personGroupId", "ownerId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const person_group_delete_audit = registerFunction({
+  name: 'person_group_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO person_group_audit ("personGroupId", "clusterGroupId")
+      SELECT "id", "clusterGroupId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const user_metadata_audit = registerFunction({
+  name: 'user_metadata_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO user_metadata_audit ("userId", "key")
+      SELECT "userId", "key"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const asset_metadata_audit = registerFunction({
+  name: 'asset_metadata_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO asset_metadata_audit ("assetId", "key")
+      SELECT "assetId", "key"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const asset_face_audit = registerFunction({
+  name: 'asset_face_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO asset_face_audit ("assetFaceId", "assetId")
+      SELECT "id", "assetId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const asset_edit_insert = registerFunction({
+  name: 'asset_edit_insert',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      UPDATE asset
+      SET "isEdited" = true
+      FROM inserted_edit
+      WHERE asset.id = inserted_edit."assetId" AND NOT asset."isEdited";
+      RETURN NULL;
+    END
+  `,
+});
+
+export const asset_edit_delete = registerFunction({
+  name: 'asset_edit_delete',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      UPDATE asset
+      SET "isEdited" = false
+      FROM deleted_edit
+      WHERE asset.id = deleted_edit."assetId" AND asset."isEdited"
+        AND NOT EXISTS (SELECT FROM asset_edit edit WHERE edit."assetId" = asset.id);
+      RETURN NULL;
+    END
+  `,
+});
+
+export const asset_edit_audit = registerFunction({
+  name: 'asset_edit_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO asset_edit_audit ("editId", "assetId")
+      SELECT "id", "assetId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+export const asset_ocr_delete_audit = registerFunction({
+  name: 'asset_ocr_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO asset_ocr_audit ("assetId")
+      SELECT "assetId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
+// Cycle guard for the album closure tree. Rejects any parentId write that would
+// make an album its own ancestor. Defense-in-depth behind the app-level check in
+// AlbumService.validateAndReparent. Created by migration 2100000000020; declared
+// here so the schema generator treats it as part of the canonical schema.
+export const album_parent_cycle_check = registerFunction({
+  name: 'album_parent_cycle_check',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      -- Setting parent to self is always a cycle.
+      IF NEW."parentId" IS NOT NULL AND NEW."parentId" = NEW.id THEN
+        RAISE EXCEPTION 'Album % cannot be its own parent', NEW.id;
+      END IF;
+      -- New parent must not already be a descendant of this album (excluding the
+      -- self-row, which is always present per closure semantics).
+      IF NEW."parentId" IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM album_closure
+        WHERE id_ancestor = NEW.id
+          AND id_descendant = NEW."parentId"
+          AND id_ancestor <> id_descendant
+      ) THEN
+        RAISE EXCEPTION 'Album % cannot have % as parent (would create a cycle)', NEW.id, NEW."parentId";
+      END IF;
+      RETURN NEW;
+    END`,
+});
+
+export const tag_delete_audit = registerFunction({
+  name: 'tag_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN INSERT INTO tag_audit ("tagId", "userId") SELECT id, "userId" FROM OLD; RETURN NULL; END`,
+});
+export const tag_asset_delete_audit = registerFunction({
+  name: 'tag_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+    INSERT INTO tag_asset_audit ("tagId", "assetId", "userId")
+    SELECT deleted."tagId", deleted."assetId", coalesce(tag."userId", asset."ownerId")
+    FROM OLD AS deleted LEFT JOIN tag ON tag.id = deleted."tagId" LEFT JOIN asset ON asset.id = deleted."assetId"
+    WHERE coalesce(tag."userId", asset."ownerId") IS NOT NULL
+      AND (tag."userId" IS NULL OR asset."ownerId" IS NULL OR tag."userId" = asset."ownerId");
+    RETURN NULL; END`,
+});
+
+export const tag_asset_update_id = registerFunction({
+  name: 'tag_asset_update_id',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+
+export const pet_delete_audit = registerFunction({
+  name: 'pet_delete_audit',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN INSERT INTO pet_audit ("petId", "ownerId") SELECT id, "ownerId" FROM OLD; RETURN NULL; END`,
+});
+export const pet_observation_delete_audit = registerFunction({
+  name: 'pet_observation_delete_audit',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN
+ INSERT INTO pet_observation_audit ("observationId", "petId", "assetId", "ownerId")
+ SELECT deleted.id, deleted."petId", deleted."assetId", coalesce(pet."ownerId", asset."ownerId")
+ FROM OLD AS deleted LEFT JOIN pet ON pet.id = deleted."petId" LEFT JOIN asset ON asset.id = deleted."assetId"
+ WHERE coalesce(pet."ownerId", asset."ownerId") IS NOT NULL
+ AND (pet."ownerId" IS NULL OR asset."ownerId" IS NULL OR pet."ownerId" = asset."ownerId");
+ RETURN NULL; END`,
+});
+export const pet_update_id = registerFunction({
+  name: 'pet_update_id',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+export const pet_observation_update_id = registerFunction({
+  name: 'pet_observation_update_id',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+
+export const asset_backup_deletion_capture = registerFunction({
+  name: 'asset_backup_deletion_capture',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: BACKUP_DELETION_CAPTURE_BODY,
+});
+
+export const desktop_clip_producer_guard = registerFunction({
+  name: 'desktop_clip_producer_guard',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    DECLARE role text;
+    BEGIN
+      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';
+      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';
+      ELSE RAISE EXCEPTION 'unsupported_clip_store';
+      END IF;
+      NEW."producerAdmissionKey" := CASE WHEN NEW."producerModelKey" IS NULL THEN 'legacy' ELSE role || ':' || NEW."producerModelKey" END;
+      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW."producerAdmissionKey") ON CONFLICT DO NOTHING;
+      RETURN NEW;
+    END`,
+});
+
+// Returning to personal must re-send metadata cleared by an older client's asset deletion.
+export const asset_library_scope_refresh = registerFunction({
+  name: 'asset_library_scope_refresh',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+  IF OLD."libraryScope" = 'design' AND NEW."libraryScope" <> 'design' THEN
+    UPDATE asset_exif SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_edit SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_face SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_metadata SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+    UPDATE asset_ocr SET "updatedAt" = clock_timestamp() WHERE "assetId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END`,
+});
+
+export const album_library_scope_refresh = registerFunction({
+  name: 'album_library_scope_refresh',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `BEGIN
+  IF OLD."libraryScope" = 'design' AND NEW."libraryScope" <> 'design' THEN
+    UPDATE album_asset SET "updatedAt" = clock_timestamp() WHERE "albumId" = NEW.id;
+    UPDATE album_user SET "updatedAt" = clock_timestamp() WHERE "albumId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END`,
+});

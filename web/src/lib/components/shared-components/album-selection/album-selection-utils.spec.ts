@@ -1,0 +1,180 @@
+import type { AlbumResponseDto } from '@frameleaf/sdk';
+import {
+  type AlbumModalRow,
+  AlbumModalRowConverter,
+  AlbumModalRowType,
+} from '$lib/components/shared-components/album-selection/album-selection-utils';
+import { AlbumSortBy, SortOrder } from '$lib/stores/preferences.store';
+import { albumFactory } from '@test-data/factories/album-factory';
+
+// Some helper functions to make tests below more readable
+const createNewAlbumRow = (selected: boolean) => ({
+  type: AlbumModalRowType.NEW_ALBUM,
+  selected,
+});
+const createMessageRow = (message: string): AlbumModalRow => ({
+  type: AlbumModalRowType.MESSAGE,
+  text: message,
+});
+const createSectionRow = (message: string): AlbumModalRow => ({
+  type: AlbumModalRowType.SECTION,
+  text: message,
+});
+const createAlbumRow = (album: AlbumResponseDto, selected: boolean) => ({
+  type: AlbumModalRowType.ALBUM_ITEM,
+  album,
+  selected,
+  multiSelected: false,
+});
+
+describe('Album Modal', () => {
+  it('no albums configured yet shows message and new', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const modalRows = converter.toModalRows('', [], [], -1, []);
+
+    expect(modalRows).toStrictEqual([createNewAlbumRow(false), createMessageRow('no_albums_yet')]);
+  });
+
+  it('no matching albums shows message and new', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const modalRows = converter.toModalRows(
+      'matches_nothing',
+      [],
+      [albumFactory.build({ albumName: 'Holidays' })],
+      -1,
+      [],
+    );
+
+    expect(modalRows).toStrictEqual([createNewAlbumRow(false), createMessageRow('no_albums_with_name_yet')]);
+  });
+
+  it('displays single albums', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const holidayAlbum = albumFactory.build({ albumName: 'Holidays' });
+    const modalRows = converter.toModalRows('', [], [holidayAlbum], -1, []);
+
+    expect(modalRows).toStrictEqual([
+      createNewAlbumRow(false),
+      createSectionRow('ALL_ALBUMS'),
+      createAlbumRow(holidayAlbum, false),
+    ]);
+  });
+
+  it('displays multiple albums and recents', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const holidayAlbum = albumFactory.build({ albumName: 'Holidays' });
+    const constructionAlbum = albumFactory.build({ albumName: 'Construction' });
+    const birthdayAlbum = albumFactory.build({ albumName: 'Birthday' });
+    const christmasAlbum = albumFactory.build({ albumName: 'Christmas' });
+    const modalRows = converter.toModalRows(
+      '',
+      [holidayAlbum, constructionAlbum],
+      [holidayAlbum, constructionAlbum, birthdayAlbum, christmasAlbum],
+      -1,
+      [],
+    );
+
+    expect(modalRows).toStrictEqual([
+      createNewAlbumRow(false),
+      createSectionRow('RECENT'),
+      createAlbumRow(holidayAlbum, false),
+      createAlbumRow(constructionAlbum, false),
+      createSectionRow('ALL_ALBUMS'),
+      createAlbumRow(holidayAlbum, false),
+      createAlbumRow(constructionAlbum, false),
+      createAlbumRow(birthdayAlbum, false),
+      createAlbumRow(christmasAlbum, false),
+    ]);
+  });
+
+  it('marks matching recent and full-list rows without changing keyboard positions', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const album = albumFactory.build();
+    const rows = converter.toModalRows('', [album], [album], 2, [album.id, album.id, 'missing']);
+    const albumRows = rows.filter((row) => row.type === AlbumModalRowType.ALBUM_ITEM);
+    expect(albumRows.map((row) => row.multiSelected)).toEqual([true, true]);
+    expect(albumRows.map((row) => row.selected)).toEqual([false, true]);
+  });
+
+  it('search changes messaging and removes recent and non-matching albums', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const holidayAlbum = albumFactory.build({ albumName: 'Holidays' });
+    const constructionAlbum = albumFactory.build({ albumName: 'Construction' });
+    const birthdayAlbum = albumFactory.build({ albumName: 'Birthday' });
+    const christmasAlbum = albumFactory.build({ albumName: 'Christmas' });
+    const modalRows = converter.toModalRows(
+      'Cons',
+      [holidayAlbum, constructionAlbum],
+      [holidayAlbum, constructionAlbum, birthdayAlbum, christmasAlbum],
+      -1,
+      [],
+    );
+
+    expect(modalRows).toStrictEqual([
+      createNewAlbumRow(false),
+      createSectionRow('ALBUMS'),
+      createAlbumRow(constructionAlbum, false),
+    ]);
+  });
+
+  it('search matches on description as well as name', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const holidayAlbum = albumFactory.build({ albumName: 'Vacances 2019', description: 'Crete' });
+    const constructionAlbum = albumFactory.build({ albumName: 'Construction' });
+    const modalRows = converter.toModalRows('Crete', [], [holidayAlbum, constructionAlbum], -1, []);
+
+    expect(modalRows).toStrictEqual([
+      createNewAlbumRow(false),
+      createSectionRow('ALBUMS'),
+      createAlbumRow(holidayAlbum, false),
+    ]);
+  });
+
+  it('selection can select new album row', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const holidayAlbum = albumFactory.build({ albumName: 'Holidays' });
+    const constructionAlbum = albumFactory.build({ albumName: 'Construction' });
+    const modalRows = converter.toModalRows('', [holidayAlbum], [holidayAlbum, constructionAlbum], 0, []);
+
+    expect(modalRows).toStrictEqual([
+      createNewAlbumRow(true),
+      createSectionRow('RECENT'),
+      createAlbumRow(holidayAlbum, false),
+      createSectionRow('ALL_ALBUMS'),
+      createAlbumRow(holidayAlbum, false),
+      createAlbumRow(constructionAlbum, false),
+    ]);
+  });
+
+  it('selection can select recent row', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const holidayAlbum = albumFactory.build({ albumName: 'Holidays' });
+    const constructionAlbum = albumFactory.build({ albumName: 'Construction' });
+    const modalRows = converter.toModalRows('', [holidayAlbum], [holidayAlbum, constructionAlbum], 1, []);
+
+    expect(modalRows).toStrictEqual([
+      createNewAlbumRow(false),
+      createSectionRow('RECENT'),
+      createAlbumRow(holidayAlbum, true),
+      createSectionRow('ALL_ALBUMS'),
+      createAlbumRow(holidayAlbum, false),
+      createAlbumRow(constructionAlbum, false),
+    ]);
+  });
+
+  it('selection can select last row', () => {
+    const converter = new AlbumModalRowConverter(AlbumSortBy.MostRecentPhoto, SortOrder.Desc);
+    const holidayAlbum = albumFactory.build({ albumName: 'Holidays' });
+    const constructionAlbum = albumFactory.build({ albumName: 'Construction' });
+    const modalRows = converter.toModalRows('', [holidayAlbum], [holidayAlbum, constructionAlbum], 3, []);
+
+    expect(modalRows).toStrictEqual([
+      createNewAlbumRow(false),
+      createSectionRow('RECENT'),
+      createAlbumRow(holidayAlbum, false),
+      createSectionRow('ALL_ALBUMS'),
+      createAlbumRow(holidayAlbum, false),
+      createAlbumRow(constructionAlbum, true),
+    ]);
+  });
+});

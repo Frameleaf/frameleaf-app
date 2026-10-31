@@ -1,0 +1,646 @@
+diff --git a/src/features/timeline/components/timeline-track.tsx b/src/features/timeline/components/timeline-track.tsx
+index 684ee04..8b833fc 100644
+--- a/src/features/timeline/components/timeline-track.tsx
++++ b/src/features/timeline/components/timeline-track.tsx
+@@ -9,6 +9,7 @@ import type {
+   TimelineItem as TimelineItemType,
+ } from '@/types/timeline'
+ import type { MediaMetadata } from '@/types/storage'
++import { isTimelineDropPayload } from '../utils/locked-track-refusal'
+ import { TransitionItem } from './transition-item'
+ import { useTimelineStore } from '../stores/timeline-store'
+ import {
+@@ -229,6 +230,8 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+   const previewOwnerId = `track:${track.id}`
+   const [gapContextMenuRequest, setGapContextMenuRequest] =
+     useState<TrackGapContextMenuRequest | null>(null)
++  // Frameleaf (FL-450): a drag over a locked lane shows not-allowed and is announced.
++  const [isRefusingDrop, setIsRefusingDrop] = useState(false)
+   const trackRef = useRef<HTMLDivElement>(null)
+   const [trackContentLayerRef] = useState(createTimelineTrackContentLayerRef)
+   const gapContextMenuTokenRef = useRef(0)
+@@ -368,10 +371,18 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+     async (
+       entries: DroppedMediaEntry[],
+       dropFrame: number,
+-    ): Promise<{ items: TimelineItemType[]; tracks: TimelineTrackType[] }> => {
++    ): Promise<{
++      items: TimelineItemType[]
++      tracks: TimelineTrackType[]
++      lockedRefusals: number
++    }> => {
+       // Frameleaf (FL-94): read after any first-video prompt, which may have changed the rate.
+       const timelineFps = useTimelineStore.getState().fps
+-      const { plannedItems, tracks: workingTracks } = planTrackMediaDropPlacements({
++      const {
++        plannedItems,
++        tracks: workingTracks,
++        lockedRefusals,
++      } = planTrackMediaDropPlacements({
+         entries: entries.map((entry) => ({
+           payload: entry,
+           label: entry.label,
+@@ -387,7 +398,7 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+       })
+ 
+       if (plannedItems.length === 0) {
+-        return { items: [], tracks: workingTracks }
++        return { items: [], tracks: workingTracks, lockedRefusals }
+       }
+ 
+       const resolvedTimelineItems = await mapWithConcurrency(
+@@ -442,6 +453,7 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+       return {
+         items: resolvedTimelineItems.flatMap((timelineItems) => timelineItems ?? []),
+         tracks: workingTracks,
++        lockedRefusals,
+       }
+     },
+     [getCollisionTrackItemsMap, getCurrentCanvasSize, track.id],
+@@ -1002,6 +1014,11 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+       e.dataTransfer.dropEffect = 'none'
+       clearPendingDragPreview()
+       resetDragPreviewCache()
++      // No drop highlight or insertion marker on a locked lane; say why instead.
++      if (!isRefusingDrop && isTimelineDropPayload(e.dataTransfer)) {
++        clearTrackGhostPreviews()
++        setIsRefusingDrop(true)
++      }
+       return
+     }
+ 
+@@ -1057,6 +1074,7 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+     if (isDragPointInsideElement(e, e.currentTarget)) {
+       return
+     }
++    setIsRefusingDrop(false)
+     releaseTimelineDropPreviewOwner(previewOwnerId)
+     clearPendingDragPreview()
+     updateDragOverFlags(false, false)
+@@ -1073,6 +1091,23 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+     [clearPendingDragPreview, previewOwnerId],
+   )
+ 
++  // A drag that ends anywhere (dropped elsewhere or cancelled) stops refusing here.
++  useEffect(() => {
++    if (!isRefusingDrop) return
++    const stop = () => setIsRefusingDrop(false)
++    window.addEventListener('dragend', stop, true)
++    window.addEventListener('drop', stop, true)
++    return () => {
++      window.removeEventListener('dragend', stop, true)
++      window.removeEventListener('drop', stop, true)
++    }
++  }, [isRefusingDrop])
++
++  // A lock that ends mid-drag stops refusing at once.
++  useEffect(() => {
++    if (!isDropDisabled) setIsRefusingDrop(false)
++  }, [isDropDisabled])
++
+   const handleDrop = async (e: React.DragEvent) => {
+     e.preventDefault()
+     releaseTimelineDropPreviewOwner(previewOwnerId)
+@@ -1081,8 +1116,10 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+     clearTrackGhostPreviews()
+     resetDragPreviewCache()
+     clearExternalPreviewSession()
++    setIsRefusingDrop(false)
+ 
+     if (isDropDisabled) {
++      if (isTimelineDropPayload(e.dataTransfer)) toast.warning(t('timeline.track.lockedTrackRefused'))
+       return
+     }
+ 
+@@ -1116,7 +1153,11 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+             logger.warn('Cannot drop composition: compound clip definition not found')
+             return
+           }
+-          const { plannedItems, tracks: nextTracks } = planTrackMediaDropPlacements({
++          const {
++            plannedItems,
++            tracks: nextTracks,
++            lockedRefusals: compositionLockedRefusals,
++          } = planTrackMediaDropPlacements({
+             entries: [
+               {
+                 payload: data,
+@@ -1133,6 +1174,7 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+           })
+           const plannedItem = plannedItems[0]
+           if (!plannedItem) {
++            if (compositionLockedRefusals > 0) toast.warning(t('timeline.track.lockedTrackRefused'))
+             logger.warn('Cannot drop composition: no available placement found')
+             return
+           }
+@@ -1174,6 +1216,10 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+         }
+ 
+         const dropResult = await resolveTimelineItemsForEntries(entries, dropFrame)
++        if (dropResult.items.length === 0 && dropResult.lockedRefusals > 0) {
++          toast.warning(t('timeline.track.lockedTrackRefused'))
++          return
++        }
+         prewarmDroppedTimelineAudio(entries, dropResult.items)
+         applyResolvedTimelineDrop({
+           addItem,
+@@ -1208,6 +1254,10 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+     const droppedEntries = droppedFiles.entries
+ 
+     const dropResult = await resolveTimelineItemsForEntries(droppedEntries, droppedFiles.dropFrame)
++    if (dropResult.items.length === 0 && dropResult.lockedRefusals > 0) {
++      toast.warning(t('timeline.track.lockedTrackRefused'))
++      return
++    }
+     prewarmDroppedTimelineAudio(droppedEntries, dropResult.items)
+     applyResolvedTimelineDrop({
+       addItem,
+@@ -1228,7 +1278,9 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+         ref={trackRef}
+         data-track-id={track.id}
+         data-timeline-drop-target="true"
+-        className="relative"
++        data-drop-refused={isRefusingDrop || undefined}
++        aria-disabled={isTrackLocked || undefined}
++        className={isRefusingDrop ? 'relative cursor-not-allowed' : 'relative'}
+         style={{
+           height: `${track.height}px`,
+           // CSS containment tells browser this element's layout is independent
+@@ -1274,6 +1326,11 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
+               ))}
+           </div>
+ 
++          {/* FL-450: announce a refused drag over this locked lane. */}
++          <span role="status" aria-live="polite" className="sr-only">
++            {isRefusingDrop ? t('timeline.track.lockedTrackRefused') : ''}
++          </span>
++
+           {/* Locked track overlay indicator */}
+           {isTrackLocked && (
+             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+diff --git a/src/features/timeline/hooks/use-timeline-drag.ts b/src/features/timeline/hooks/use-timeline-drag.ts
+index 6c9a316..febf527 100644
+--- a/src/features/timeline/hooks/use-timeline-drag.ts
++++ b/src/features/timeline/hooks/use-timeline-drag.ts
+@@ -29,6 +29,9 @@ import { useLinkedEditPreviewStore } from '../stores/linked-edit-preview-store'
+ import { DRAG_THRESHOLD_PIXELS } from '../constants'
+ import { createLogger } from '@/shared/logging/logger'
+ import { createRafCoalescedCallback } from '../utils/raf-coalesced-callback'
++import { dragTargetsLockedTrack } from '../utils/locked-track-refusal'
++import { toast } from 'sonner'
++import { i18n } from '@/i18n'
+ 
+ const logger = createLogger('TimelineDrag')
+ 
+@@ -942,7 +945,7 @@ export function useTimelineDrag(
+         tracksRef.current.map((currentTrack, index) => [currentTrack.id, index]),
+       )
+       const dropTarget = getTrackDropTarget(e.clientY, dragStateRef.current.startTrackId)
+-      const previewTrackTargets = resolveDraggedTrackTargets({
++      const resolvedPreviewTrackTargets = resolveDraggedTrackTargets({
+         items: currentItems,
+         draggedItems: dragStateRef.current.draggedItems,
+         tracks: tracksRef.current,
+@@ -953,11 +956,24 @@ export function useTimelineDrag(
+             ?.height ??
+           64,
+       })
+-      const hoveredCompatibleTrackId = getCompatibleTrackIdFromMouseY(
++      const resolvedHoveredCompatibleTrackId = getCompatibleTrackIdFromMouseY(
+         e.clientY,
+         dragStateRef.current.startTrackId,
+         item.type,
+       )
++      // Frameleaf (FL-450): over a locked lane the clips stay where they are and the drop is refused.
++      const refusesLockedTrack = dragTargetsLockedTrack({
++        tracks: tracksRef.current,
++        startTrackId: dragStateRef.current.startTrackId,
++        dropTarget,
++        draggedItems: dragStateRef.current.draggedItems,
++        anchorTrackId:
++          resolvedPreviewTrackTargets?.trackAssignments.get(dragStateRef.current.itemId) ??
++          resolvedHoveredCompatibleTrackId,
++        trackAssignments: resolvedPreviewTrackTargets?.trackAssignments,
++      })
++      const previewTrackTargets = refusesLockedTrack ? null : resolvedPreviewTrackTargets
++      const hoveredCompatibleTrackId = refusesLockedTrack ? null : resolvedHoveredCompatibleTrackId
+       const hasInvalidExplicitDropTarget =
+         dropTarget.zone !== null && !previewTrackTargets && hoveredCompatibleTrackId === null
+       const linkedDropTarget =
+@@ -972,7 +988,11 @@ export function useTimelineDrag(
+       dragStateRef.current.currentMouseY = e.clientY
+ 
+       setGlobalDragCursor(
+-        hasInvalidExplicitDropTarget ? 'not-allowed' : e.altKey ? 'copy' : 'grabbing',
++        refusesLockedTrack || hasInvalidExplicitDropTarget
++          ? 'not-allowed'
++          : e.altKey
++            ? 'copy'
++            : 'grabbing',
+       )
+ 
+       // For multi-item drag, calculate group bounding box for snap visualization
+@@ -1231,9 +1251,20 @@ export function useTimelineDrag(
+       const newTrackId =
+         resolvedTrackTargets?.trackAssignments.get(dragState.itemId) ??
+         getCompatibleTrackIdFromMouseY(dragState.currentMouseY, dragState.startTrackId, item.type)
++      // Frameleaf (FL-450): a drop on a locked lane moves and duplicates nothing.
++      const refusesLockedTrack = dragTargetsLockedTrack({
++        tracks: tracksRef.current,
++        startTrackId: dragState.startTrackId,
++        dropTarget,
++        draggedItems: dragState.draggedItems,
++        anchorTrackId: newTrackId,
++        trackAssignments: resolvedTrackTargets?.trackAssignments,
++      })
+ 
+       // Multi-item drag or single?
+-      if (newTrackId === null) {
++      if (refusesLockedTrack) {
++        toast.warning(i18n.t('timeline.track.lockedTrackRefused'))
++      } else if (newTrackId === null) {
+         logger.warn('Cannot move items to an incompatible track')
+       } else if (dragState.draggedItems.length > 1) {
+         // Multi-item drag: calculate group bounding box for snapping
+diff --git a/src/features/timeline/stores/actions/source-edit-actions.ts b/src/features/timeline/stores/actions/source-edit-actions.ts
+index a9243bc..21caebf 100644
+--- a/src/features/timeline/stores/actions/source-edit-actions.ts
++++ b/src/features/timeline/stores/actions/source-edit-actions.ts
+@@ -16,6 +16,8 @@ import { useProjectStore } from '@/features/timeline/deps/projects'
+ import { importMediaLibraryService } from '@/features/timeline/deps/media-library-service'
+ import { getMediaType, resolveMediaUrl } from '@/features/timeline/deps/media-library-resolver'
+ import { toast } from 'sonner'
++import { i18n } from '@/i18n'
++import { getEffectivelyLockedTrackIds } from '../../utils/locked-track-refusal'
+ import { execute, applyTransitionRepairs, getLogger } from './shared'
+ import { resolveSourceEditTrackTargets } from '../../utils/source-edit-targeting'
+ import { buildMediaTimelineItems } from '../../utils/media-timeline-item-builder'
+@@ -180,11 +182,10 @@ async function resolveSourceEditContext(): Promise<SourceEditContext | null> {
+   const targetTrackIds = [resolvedTargets.videoTrackId, resolvedTargets.audioTrackId].filter(
+     (trackId): trackId is string => !!trackId,
+   )
+-  const lockedTarget = resolvedTargets.tracks.find(
+-    (timelineTrack) => targetTrackIds.includes(timelineTrack.id) && timelineTrack.locked,
+-  )
+-  if (lockedTarget) {
+-    toast.warning(`Target track ${lockedTarget.name} is locked`)
++  // Frameleaf (FL-450): the same refusal and message as a drag onto a locked lane.
++  const lockedTrackIds = getEffectivelyLockedTrackIds(resolvedTargets.tracks)
++  if (targetTrackIds.some((trackId) => lockedTrackIds.has(trackId))) {
++    toast.warning(i18n.t('timeline.track.lockedTrackRefused'))
+     return null
+   }
+ 
+diff --git a/src/features/timeline/utils/locked-track-refusal.test.ts b/src/features/timeline/utils/locked-track-refusal.test.ts
+new file mode 100644
+index 0000000..901d4d4
+--- /dev/null
++++ b/src/features/timeline/utils/locked-track-refusal.test.ts
+@@ -0,0 +1,118 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import { makeTimelineTrack, makeTwoVideoTwoAudioTimelineTracks } from '@/features/timeline/test-helpers'
++import {
++  dragTargetsLockedTrack,
++  getEffectivelyLockedTrackIds,
++  isTimelineDropPayload,
++  placementsTouchLockedTrack,
++} from './locked-track-refusal'
++
++const lock = (tracks: ReturnType<typeof makeTwoVideoTwoAudioTimelineTracks>, ...ids: string[]) =>
++  tracks.map((track) => (ids.includes(track.id) ? { ...track, locked: true } : track))
++
++describe('FL-450 locked track refusal', () => {
++  it('treats a lane in a locked Layer Group as locked', () => {
++    const tracks = [
++      makeTimelineTrack({ id: 'group', name: 'Group', order: 0, isGroup: true, locked: true }),
++      makeTimelineTrack({ id: 'child', name: 'V1', kind: 'video', order: 1, parentTrackId: 'group' }),
++      makeTimelineTrack({ id: 'free', name: 'V2', kind: 'video', order: 2 }),
++    ]
++
++    expect([...getEffectivelyLockedTrackIds(tracks)]).toEqual(['child'])
++    expect(placementsTouchLockedTrack(tracks, [{ trackId: 'child' }])).toBe(true)
++    expect(placementsTouchLockedTrack(tracks, [{ trackId: 'free' }])).toBe(false)
++  })
++
++  it('announces only drags that carry something the timeline places', () => {
++    expect(isTimelineDropPayload({ types: ['application/json'] })).toBe(true)
++    expect(isTimelineDropPayload({ types: ['Files'] })).toBe(true)
++    expect(isTimelineDropPayload({ types: ['text/plain'] })).toBe(false)
++    expect(isTimelineDropPayload(null)).toBe(false)
++  })
++
++  it('refuses a clip dragged over a locked lane, but not one kept on its own lane', () => {
++    const tracks = lock(makeTwoVideoTwoAudioTimelineTracks(), 'v2')
++    const draggedItems = [{ id: 'clip', initialTrackId: 'v1' }]
++
++    expect(
++      dragTargetsLockedTrack({
++        tracks,
++        startTrackId: 'v1',
++        dropTarget: { trackId: 'v2' },
++        draggedItems,
++        anchorTrackId: null,
++      }),
++    ).toBe(true)
++    expect(
++      dragTargetsLockedTrack({
++        tracks,
++        startTrackId: 'v1',
++        dropTarget: { trackId: 'v1' },
++        draggedItems,
++        anchorTrackId: 'v1',
++      }),
++    ).toBe(false)
++    // A new lane made by the drag is never locked, whichever row names its section.
++    expect(
++      dragTargetsLockedTrack({
++        tracks,
++        startTrackId: 'v1',
++        dropTarget: { trackId: 'v2', createNew: true },
++        draggedItems,
++        anchorTrackId: 'new-track',
++        trackAssignments: new Map([['clip', 'new-track']]),
++      }),
++    ).toBe(false)
++  })
++
++  it('refuses when a linked companion would land on a locked audio lane', () => {
++    const tracks = lock(makeTwoVideoTwoAudioTimelineTracks(), 'a2')
++
++    expect(
++      dragTargetsLockedTrack({
++        tracks,
++        startTrackId: 'v1',
++        dropTarget: { trackId: 'v2' },
++        draggedItems: [
++          { id: 'video', initialTrackId: 'v1' },
++          { id: 'audio', initialTrackId: 'a1' },
++        ],
++        anchorTrackId: 'v2',
++        trackAssignments: new Map([
++          ['video', 'v2'],
++          ['audio', 'a2'],
++        ]),
++      }),
++    ).toBe(true)
++  })
++
++  it('refuses when another selected clip would follow the anchor onto a locked lane', () => {
++    const tracks = lock(makeTwoVideoTwoAudioTimelineTracks(), 'a1')
++    const draggedItems = [
++      { id: 'anchor', initialTrackId: 'v1' },
++      { id: 'other', initialTrackId: 'v2' },
++    ]
++
++    // Moving the anchor from V1 to V2 carries the V2 clip one lane down, onto locked A1.
++    expect(
++      dragTargetsLockedTrack({
++        tracks,
++        startTrackId: 'v1',
++        dropTarget: { trackId: 'v2' },
++        draggedItems,
++        anchorTrackId: 'v2',
++      }),
++    ).toBe(true)
++    expect(
++      dragTargetsLockedTrack({
++        tracks: makeTwoVideoTwoAudioTimelineTracks(),
++        startTrackId: 'v1',
++        dropTarget: { trackId: 'v2' },
++        draggedItems,
++        anchorTrackId: 'v2',
++      }),
++    ).toBe(false)
++  })
++})
+diff --git a/src/features/timeline/utils/locked-track-refusal.ts b/src/features/timeline/utils/locked-track-refusal.ts
+new file mode 100644
+index 0000000..3667b0b
+--- /dev/null
++++ b/src/features/timeline/utils/locked-track-refusal.ts
+@@ -0,0 +1,85 @@
++import type { TimelineTrack } from '@/types/timeline'
++import { resolveEffectiveTrackStates } from './group-utils'
++
++/**
++ * Frameleaf (FL-450): a drag or add never lands a clip on a locked lane. A lane is locked when it
++ * or its Layer Group is locked.
++ */
++export function getEffectivelyLockedTrackIds(tracks: TimelineTrack[]): Set<string> {
++  return new Set(
++    resolveEffectiveTrackStates(tracks)
++      .filter((track) => track.locked)
++      .map((track) => track.id),
++  )
++}
++
++/**
++ * Whether a browser drag carries something the timeline would place: library media, a compound
++ * clip or template (`application/json`), or files. Other drags are not announced as refused.
++ */
++export function isTimelineDropPayload(dataTransfer: Pick<DataTransfer, 'types'> | null | undefined): boolean {
++  const types = Array.from(dataTransfer?.types ?? [])
++  return types.includes('Files') || types.includes('application/json')
++}
++
++/** Whether any placement of a planned drop or add would write to a locked lane. */
++export function placementsTouchLockedTrack(
++  tracks: TimelineTrack[],
++  placements: ReadonlyArray<{ trackId: string }>,
++): boolean {
++  const locked = getEffectivelyLockedTrackIds(tracks)
++  return locked.size > 0 && placements.some((placement) => locked.has(placement.trackId))
++}
++
++/** Where one dragged clip would land: the resolved assignment, or the anchor's track offset. */
++function resolveDraggedDestination(params: {
++  tracks: TimelineTrack[]
++  startTrackId: string
++  anchorTrackId: string
++  draggedItem: { id: string; initialTrackId: string }
++  draggedCount: number
++  trackAssignments?: ReadonlyMap<string, string>
++}): string {
++  const { tracks, startTrackId, anchorTrackId, draggedItem, draggedCount, trackAssignments } = params
++  const assigned = trackAssignments?.get(draggedItem.id)
++  if (assigned) return assigned
++  if (draggedCount <= 1) return anchorTrackId
++  // The same index offset the drag commit applies to every other selected clip.
++  const anchorIndex = tracks.findIndex((track) => track.id === startTrackId)
++  const itemIndex = tracks.findIndex((track) => track.id === draggedItem.initialTrackId)
++  const newAnchorIndex = tracks.findIndex((track) => track.id === anchorTrackId)
++  const newIndex = Math.max(0, Math.min(tracks.length - 1, newAnchorIndex + itemIndex - anchorIndex))
++  return tracks[newIndex]?.id || draggedItem.initialTrackId
++}
++
++/**
++ * Whether a clip drag points at a locked lane: the hovered row, or the lane any dragged clip
++ * (including a linked companion) would move to. A clip staying on its own lane never refuses.
++ */
++export function dragTargetsLockedTrack(params: {
++  tracks: TimelineTrack[]
++  startTrackId: string
++  dropTarget: { trackId: string; createNew?: boolean }
++  draggedItems: ReadonlyArray<{ id: string; initialTrackId: string }>
++  anchorTrackId: string | null
++  trackAssignments?: ReadonlyMap<string, string>
++}): boolean {
++  const { tracks, startTrackId, dropTarget, draggedItems, anchorTrackId, trackAssignments } = params
++  const locked = getEffectivelyLockedTrackIds(tracks)
++  if (locked.size === 0) return false
++  if (!dropTarget.createNew && dropTarget.trackId !== startTrackId && locked.has(dropTarget.trackId)) {
++    return true
++  }
++  const anchor = anchorTrackId ?? startTrackId
++  return draggedItems.some((draggedItem) => {
++    const destination = resolveDraggedDestination({
++      tracks,
++      startTrackId,
++      anchorTrackId: anchor,
++      draggedItem,
++      draggedCount: draggedItems.length,
++      trackAssignments,
++    })
++    return destination !== draggedItem.initialTrackId && locked.has(destination)
++  })
++}
+diff --git a/src/features/timeline/utils/track-media-drop-locked.test.ts b/src/features/timeline/utils/track-media-drop-locked.test.ts
+new file mode 100644
+index 0000000..0c76565
+--- /dev/null
++++ b/src/features/timeline/utils/track-media-drop-locked.test.ts
+@@ -0,0 +1,68 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import { makeTwoVideoTwoAudioTimelineTracks } from '@/features/timeline/test-helpers'
++import { planTrackMediaDropPlacements } from './track-media-drop'
++
++const entry = (hasLinkedAudio: boolean) => ({
++  payload: { id: 'media' },
++  label: 'clip.mp4',
++  mediaType: 'video' as const,
++  durationInFrames: 60,
++  hasLinkedAudio,
++})
++
++describe('FL-450 media drops never land on a locked lane', () => {
++  it('refuses a video whose linked sound would go on a locked audio track', () => {
++    const tracks = makeTwoVideoTwoAudioTimelineTracks().map((track) =>
++      track.id === 'a1' ? { ...track, locked: true } : track,
++    )
++
++    const result = planTrackMediaDropPlacements({
++      entries: [entry(true)],
++      dropFrame: 0,
++      tracks,
++      existingItems: [],
++      dropTargetTrackId: 'v1',
++    })
++
++    expect(result.plannedItems).toEqual([])
++    expect(result.lockedRefusals).toBe(1)
++  })
++
++  it('still places a silent video on an unlocked lane above a locked audio track', () => {
++    const tracks = makeTwoVideoTwoAudioTimelineTracks().map((track) =>
++      track.id === 'a1' ? { ...track, locked: true } : track,
++    )
++
++    const result = planTrackMediaDropPlacements({
++      entries: [entry(false)],
++      dropFrame: 0,
++      tracks,
++      existingItems: [],
++      dropTargetTrackId: 'v1',
++    })
++
++    expect(result.lockedRefusals).toBe(0)
++    expect(result.plannedItems[0]!.placements).toEqual([
++      expect.objectContaining({ trackId: 'v1', mediaType: 'video', from: 0 }),
++    ])
++  })
++
++  it('refuses a drop targeted at a locked lane', () => {
++    const tracks = makeTwoVideoTwoAudioTimelineTracks().map((track) =>
++      track.id === 'v2' ? { ...track, locked: true } : track,
++    )
++
++    const result = planTrackMediaDropPlacements({
++      entries: [entry(false)],
++      dropFrame: 0,
++      tracks,
++      existingItems: [],
++      dropTargetTrackId: 'v2',
++    })
++
++    expect(result.plannedItems).toEqual([])
++    expect(result.lockedRefusals).toBe(1)
++  })
++})
+diff --git a/src/features/timeline/utils/track-media-drop.ts b/src/features/timeline/utils/track-media-drop.ts
+index fe46640..bc549fe 100644
+--- a/src/features/timeline/utils/track-media-drop.ts
++++ b/src/features/timeline/utils/track-media-drop.ts
+@@ -14,6 +14,7 @@ import {
+ } from './classic-tracks'
+ import type { DroppableMediaType } from './dropped-media'
+ import { resolveLinkedDragTrackTargets } from './linked-drag-targeting'
++import { placementsTouchLockedTrack } from './locked-track-refusal'
+ 
+ export interface TrackMediaDropPlanEntry<T> {
+   payload: T
+@@ -122,11 +123,17 @@ export function planTrackMediaDropPlacements<T>(params: {
+   existingItems: CollisionRect[]
+   existingTrackItemsById?: Map<string, CollisionRect[]>
+   dropTargetTrackId: string
+-}): { plannedItems: Array<TrackMediaDropPlannedItem<T>>; tracks: TimelineTrack[] } {
++}): {
++  plannedItems: Array<TrackMediaDropPlannedItem<T>>
++  tracks: TimelineTrack[]
++  /** Frameleaf (FL-450): entries refused because a placement would land on a locked lane. */
++  lockedRefusals: number
++} {
+   let currentPosition = Math.max(0, params.dropFrame)
+   const reservedRanges: CollisionRect[] = []
+   const plannedItems: Array<TrackMediaDropPlannedItem<T>> = []
+   let workingTracks = [...params.tracks]
++  let lockedRefusals = 0
+   const baseTrackItemsById =
+     params.existingTrackItemsById ?? buildCollisionTrackItemsMap(params.existingItems)
+ 
+@@ -229,6 +236,12 @@ export function planTrackMediaDropPlacements<T>(params: {
+       ]
+     }
+ 
++    // A drop never writes to a locked lane, including a linked sound's audio track.
++    if (placementsTouchLockedTrack(workingTracks, placements)) {
++      lockedRefusals += 1
++      continue
++    }
++
+     plannedItems.push({
+       entry,
+       placements,
+@@ -257,6 +270,7 @@ export function planTrackMediaDropPlacements<T>(params: {
+   return {
+     plannedItems,
+     tracks: tracksUnchanged ? params.tracks : workingTracks,
++    lockedRefusals,
+   }
+ }
+ 
+diff --git a/src/i18n/locales/partials/en/timeline.json b/src/i18n/locales/partials/en/timeline.json
+index d266301..efde0f6 100644
+--- a/src/i18n/locales/partials/en/timeline.json
++++ b/src/i18n/locales/partials/en/timeline.json
+@@ -11,6 +11,7 @@
+       "droppedMediaItems": "dropped media items",
+       "droppedFiles": "dropped files",
+       "locked": "Locked",
++      "lockedTrackRefused": "This track is locked. Unlock it to place clips here.",
+       "compositionDropWrongZone": "Cannot drop a compound clip into this timeline zone.",
+       "compositionDropCycle": "Cannot drop a compound clip into itself.",
+       "templateVideoOnly": "Templates can only be dropped on video tracks.",

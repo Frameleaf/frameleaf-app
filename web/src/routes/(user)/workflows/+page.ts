@@ -1,0 +1,6 @@
+import { redirectUtility } from '$lib/frameleaf/utilities-redirect';
+import type { PageLoad } from './$types';
+
+export const load = (async ({ url }) => {
+  return redirectUtility(url, 'workflows');
+}) satisfies PageLoad;

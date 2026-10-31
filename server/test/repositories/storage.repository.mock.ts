@@ -1,0 +1,89 @@
+import { ChokidarOptions } from 'chokidar';
+import { Mocked, vitest } from 'vitest';
+import type { RepositoryInterface } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageRepository, WatchEvents } from 'src/repositories/storage.repository.js';
+
+interface MockWatcherOptions {
+  items?: Array<{ event: 'change' | 'add' | 'unlink' | 'error'; value: string }>;
+  close?: () => Promise<void>;
+}
+
+export const makeMockWatcher =
+  ({ items, close }: MockWatcherOptions) =>
+  (paths: string[], options: ChokidarOptions, events: Partial<WatchEvents>) => {
+    events.onReady?.();
+    for (const item of items ?? []) {
+      switch (item.event) {
+        case 'add': {
+          events.onAdd?.(item.value);
+          break;
+        }
+        case 'change': {
+          events.onChange?.(item.value);
+          break;
+        }
+        case 'unlink': {
+          events.onUnlink?.(item.value);
+          break;
+        }
+        case 'error': {
+          events.onError?.(new Error(item.value));
+          break;
+        }
+      }
+    }
+
+    if (close) {
+      return () => close();
+    }
+
+    return () => Promise.resolve();
+  };
+
+export const newStorageRepositoryMock = (): Mocked<RepositoryInterface<StorageRepository>> => {
+  StorageCore.reset();
+  StorageCore.setMediaLocation('/data');
+
+  return {
+    createZipStream: vitest.fn(),
+    createPlainReadStream: vitest.fn(),
+    createReadStream: vitest.fn(),
+    createGzip: vitest.fn(),
+    createGunzip: vitest.fn(),
+    readFile: vitest.fn(),
+    readJsonFile: vitest.fn() as Mocked<StorageRepository>['readJsonFile'],
+    readdirWithTypes: vitest.fn(),
+    openForRandomRead: vitest.fn(),
+    createFile: vitest.fn(),
+    createWriteStream: vitest.fn(),
+    createOrOverwriteFile: vitest.fn(),
+    existsSync: vitest.fn(),
+    overwriteFile: vitest.fn(),
+    unlink: vitest.fn().mockResolvedValue(void 0),
+    unlinkDir: vitest.fn().mockResolvedValue(true),
+    removeEmptyDirs: vitest.fn(),
+    removeDirIfEmpty: vitest.fn().mockResolvedValue(false),
+    checkFileExists: vitest.fn(),
+    mkdirSync: vitest.fn(),
+    checkDiskUsage: vitest.fn(),
+    getFolderBytes: vitest.fn().mockResolvedValue(0),
+    getDevice: vitest.fn().mockResolvedValue(null),
+    readdir: vitest.fn(),
+    realpath: vitest.fn().mockImplementation((filepath: string) => Promise.resolve(filepath)),
+    stat: vitest.fn(),
+    crawl: vitest.fn(),
+    walk: vitest.fn().mockImplementation(async function* () {}),
+    walkLibrary: vitest.fn().mockImplementation(async function* () {}),
+    walkFiles: vitest.fn().mockImplementation(async function* () {}),
+    walkWithCursor: vitest.fn().mockImplementation((cursor) => {
+      cursor.length = 0;
+      return (async function* () {})();
+    }),
+    rename: vitest.fn(),
+    copyFile: vitest.fn(),
+    utimes: vitest.fn(),
+    watch: vitest.fn().mockImplementation(makeMockWatcher({})),
+    watchDir: vitest.fn().mockImplementation(() => ({ close: vitest.fn(), on: vitest.fn() })),
+  };
+};

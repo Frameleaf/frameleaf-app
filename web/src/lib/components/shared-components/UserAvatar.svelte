@@ -1,0 +1,113 @@
+<script lang="ts" module>
+  export type Size = 'full' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'xxxl';
+</script>
+
+<script lang="ts">
+  import { getProfileImageUrl } from '$lib/utils';
+  import { type UserAvatarColor } from '@frameleaf/sdk';
+  import { t } from 'svelte-i18n';
+
+  interface User {
+    id: string;
+    name: string;
+    email: string;
+    profileImagePath: string;
+    avatarColor: UserAvatarColor;
+    profileChangedAt: string;
+  }
+
+  interface Props {
+    user: User;
+    size?: Size;
+    noTitle?: boolean;
+    label?: string | undefined;
+  }
+
+  let { user, size = 'full', noTitle = false, label = undefined }: Props = $props();
+
+  let img: HTMLImageElement | undefined = $state();
+  let showFallback = $state(true);
+
+  const colorClasses: Record<UserAvatarColor, string> = {
+    primary: 'bg-primary text-light dark:text-light',
+    pink: 'bg-pink-400 text-light dark:text-dark',
+    red: 'bg-red-500 text-light dark:text-dark',
+    yellow: 'bg-yellow-500 text-light dark:text-dark',
+    blue: 'bg-blue-500 text-light dark:text-dark',
+    green: 'bg-green-600 text-light dark:text-dark',
+    purple: 'bg-purple-600 text-light dark:text-dark',
+    orange: 'bg-orange-600 text-light dark:text-dark',
+    gray: 'bg-gray-600 text-light dark:text-dark',
+    amber: 'bg-amber-600 text-light dark:text-dark',
+  };
+
+  const sizeClasses: Record<Size, string> = {
+    full: 'w-full h-full',
+    // The prototype's 18px face in avatar stacks (AlbumCard.jsx AvatarStack size 18).
+    xs: 'w-4.5 h-4.5',
+    sm: 'w-7 h-7',
+    md: 'w-10 h-10',
+    lg: 'w-12 h-12',
+    xl: 'w-16 h-16',
+    xxl: 'w-24 h-24',
+    xxxl: 'w-28 h-28',
+  };
+
+  $effect(() => {
+    const image = img;
+    const source = user.profileImagePath ? getProfileImageUrl(user) : undefined;
+    showFallback = true;
+    if (!image || !source) {
+      return;
+    }
+    let active = true;
+    void image
+      .decode()
+      .then(() => {
+        if (active) {
+          showFallback = false;
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  });
+
+  let colorClass = $derived(colorClasses[user.avatarColor]);
+  let sizeClass = $derived(sizeClasses[size]);
+  let title = $derived(label ?? `${user.name} (${user.email})`);
+</script>
+
+<!--
+  The figure is only the squircle (app.css masks it) and carries no colour or border of its own. A
+  square border under that mask shows as four slivers at the sides, and a tile colour painted
+  behind the photo shows at the photo's edge at fractional pixel ratios, so the colour belongs to
+  the fallback tile alone and is gone once the photo is up.
+-->
+<figure class="{sizeClass} fl-squircle overflow-hidden shadow-md" title={noTitle ? undefined : title}>
+  {#if user.profileImagePath}
+    <img
+      bind:this={img}
+      src={getProfileImageUrl(user)}
+      alt={$t('profile_image_of_user', { values: { user: title } })}
+      class="size-full object-cover"
+      class:hidden={showFallback}
+      draggable="false"
+    />
+  {/if}
+  {#if showFallback}
+    <span
+      class="{colorClass} flex size-full items-center justify-center font-medium uppercase select-none {size === 'xs'
+        ? 'text-[0.625rem]'
+        : ''}"
+      class:text-xs={size === 'sm'}
+      class:text-lg={size === 'lg'}
+      class:text-xl={size === 'xl'}
+      class:text-2xl={size === 'xxl'}
+      class:text-3xl={size === 'xxxl'}
+    >
+      {user.name[0] || ''}
+    </span>
+  {/if}
+</figure>

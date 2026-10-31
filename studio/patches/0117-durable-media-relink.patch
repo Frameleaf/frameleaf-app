@@ -1,0 +1,230 @@
+diff --git a/src/features/media-library/components/media-grid.tsx b/src/features/media-library/components/media-grid.tsx
+index a82359a..bc934e2 100644
+--- a/src/features/media-library/components/media-grid.tsx
++++ b/src/features/media-library/components/media-grid.tsx
+@@ -25,10 +25,7 @@ import {
+ } from '@/components/ui/alert-dialog'
+
+ import { GRID_MIN_SIZE_PX, GRID_GAP_BY_SIZE } from './media-grid-constants'
+-import {
+-  showMediaFilePicker,
+-  getSupportedMediaFormatLabels,
+-} from '@/features/media-library/utils/media-file-picker'
++import { getSupportedMediaFormatLabels } from '@/features/media-library/utils/media-file-picker'
+
+ interface MediaGridProps {
+   onMediaSelect?: (mediaId: string) => void
+@@ -177,12 +174,7 @@ const MediaGridBase = memo(function MediaGridBase({
+   const handleRelink = useCallback(
+     async (mediaId: string) => {
+       try {
+-        const handles = await showMediaFilePicker({ multiple: false })
+-
+-        const handle = handles[0]
+-        if (!handle) return
+-
+-        await relinkMedia(mediaId, handle)
++        await relinkMedia(mediaId)
+       } catch (error) {
+         // User cancelled - ignore AbortError
+         if (error instanceof Error && error.name !== 'AbortError') {
+diff --git a/src/features/media-library/components/missing-media-dialog.tsx b/src/features/media-library/components/missing-media-dialog.tsx
+index 7bd4268..c53579c 100644
+--- a/src/features/media-library/components/missing-media-dialog.tsx
++++ b/src/features/media-library/components/missing-media-dialog.tsx
+@@ -17,7 +17,6 @@ import { Link2Off, RefreshCw, FolderOpen, X, AlertTriangle, Search, Folder } fro
+ import { useMediaLibraryStore } from '../stores/media-library-store'
+ import { importMediaLibraryService } from '../services/media-library-service-loader'
+ import { useProjectStore } from '@/features/media-library/deps/projects'
+-import { showMediaFilePicker } from '@/features/media-library/utils/media-file-picker'
+ import { getProjectBrokenMediaInfo } from '@/features/media-library/utils/broken-media'
+
+ export function MissingMediaDialog() {
+@@ -150,12 +149,7 @@ export function MissingMediaDialog() {
+         return
+       }
+
+-      const handles = await showMediaFilePicker({ multiple: false })
+-
+-      const handle = handles[0]
+-      if (!handle) return
+-
+-      const success = await relinkMedia(item.mediaId, handle)
++      const success = await relinkMedia(item.mediaId)
+       if (success) {
+         setRelinkedIds((prev) => new Set([...prev, item.mediaId]))
+       }
+diff --git a/src/features/media-library/stores/media-relinking-actions.ts b/src/features/media-library/stores/media-relinking-actions.ts
+index 852f2b5..63ec029 100644
+--- a/src/features/media-library/stores/media-relinking-actions.ts
++++ b/src/features/media-library/stores/media-relinking-actions.ts
+@@ -9,10 +9,23 @@ import type { MediaMetadata } from '@/types/storage'
+ import { loadMediaLibraryService } from './media-library-service-access'
+ import { getMediaRelinkingTimelineActions } from './media-relinking-timeline-actions'
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
++import { showMediaFilePicker } from '../utils/media-file-picker'
+ import { createLogger } from '@/shared/logging/logger'
+
+ const logger = createLogger('MediaRelinkingActions')
+
++let fileRelink: ((mediaId: string) => Promise<boolean>) | null = null
++
++/** The embedding host owns portable selection, byte admission and durable project persistence. */
++export function registerMediaFileRelink(
++  handler: (mediaId: string) => Promise<boolean>,
++): () => void {
++  fileRelink = handler
++  return () => {
++    if (fileRelink === handler) fileRelink = null
++  }
++}
++
+ type Set = (
+   partial:
+     | Partial<MediaLibraryState>
+@@ -183,11 +196,14 @@ export function createRelinkingActions(
+       }))
+     },
+
+-    relinkMedia: async (mediaId: string, newHandle: FileSystemFileHandle) => {
++    relinkMedia: async (mediaId: string, newHandle?: FileSystemFileHandle) => {
+       try {
++        if (fileRelink && !newHandle) return await fileRelink(mediaId)
++        const handle = newHandle ?? (await showMediaFilePicker({ multiple: false }))[0]
++        if (!handle) return false
+         // Update in service/DB
+         const { mediaLibraryService } = await loadMediaLibraryService()
+-        const updated = await mediaLibraryService.relinkMediaHandle(mediaId, newHandle)
++        const updated = await mediaLibraryService.relinkMediaHandle(mediaId, handle)
+         applySuccessfulRelink(set, get, mediaId, updated)
+         get().showNotification({
+           type: 'success',
+@@ -196,6 +212,7 @@ export function createRelinkingActions(
+
+         return true
+       } catch (error) {
++        if (error instanceof Error && error.name === 'AbortError') return false
+         logger.error(`[relinkMedia] error:`, error)
+         get().showNotification({
+           type: 'error',
+diff --git a/src/features/media-library/types.ts b/src/features/media-library/types.ts
+index 08ba792..32b739a 100644
+--- a/src/features/media-library/types.ts
++++ b/src/features/media-library/types.ts
+@@ -202,7 +202,7 @@ export interface MediaLibraryActions {
+   markMediaHealthy: (id: string) => void
+   dismissMissingMediaWarnings: (ids: string[]) => void
+   scanMediaHealth: () => Promise<void>
+-  relinkMedia: (mediaId: string, newHandle: FileSystemFileHandle) => Promise<boolean>
++  relinkMedia: (mediaId: string, newHandle?: FileSystemFileHandle) => Promise<boolean>
+   relinkMediaBatch: (
+     relinks: Array<{ mediaId: string; handle: FileSystemFileHandle }>,
+   ) => Promise<{ success: string[]; failed: string[] }>
+diff --git a/src/features/timeline/stores/commands/snapshot.ts b/src/features/timeline/stores/commands/snapshot.ts
+index 56a2188..ab4a831 100644
+--- a/src/features/timeline/stores/commands/snapshot.ts
++++ b/src/features/timeline/stores/commands/snapshot.ts
+@@ -5,6 +5,8 @@ import { useKeyframesStore } from '../keyframes-store'
+ import { useMarkersStore } from '../markers-store'
+ import { useTimelineSettingsStore } from '../timeline-settings-store'
+ import { useCompositionsStore } from '../compositions-store'
++import { useCompositionNavigationStore } from '../composition-navigation-store'
++import type { TimelineItem } from '@/types/timeline'
+ import { useSequencesStore } from '../sequences-store'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { useProjectStore } from '@/features/timeline/deps/projects'
+@@ -117,6 +119,56 @@ function restoreProjectMetadata(snapshot: TimelineSnapshot): void {
+   )
+ }
+
++/** Keep navigation structure intact while undoing source changes in held Main/parent timelines. */
++function sourceField(key: string): boolean {
++  return (
++    key === 'mediaId' ||
++    key.startsWith('source') ||
++    key.startsWith('reverseConform') ||
++    [
++      'src',
++      'audioSrc',
++      'thumbnailUrl',
++      'waveformData',
++      'transcriptCaptions',
++      'frameRate',
++      'totalFrames',
++    ].includes(key)
++  )
++}
++
++function navigationMediaSources(): Record<string, Record<string, unknown>> {
++  const nav = useCompositionNavigationStore.getState()
++  const items = [nav.mainHolder, ...nav.stashStack].flatMap((holder) => holder?.items ?? [])
++  return Object.fromEntries(
++    items
++      .filter((item) => item.mediaId)
++      .map((item) => [
++        item.id,
++        Object.fromEntries(Object.entries(item).filter(([key]) => sourceField(key))),
++      ]),
++  )
++}
++
++function restoreNavigationMediaSources(sources: TimelineSnapshot['navigationMediaSources']): void {
++  if (!sources) return
++  const restoreItems = (items: TimelineItem[]) =>
++    items.map((item) => {
++      const source = sources[item.id]
++      if (!source) return item
++      return {
++        ...Object.fromEntries(Object.entries(item).filter(([key]) => !sourceField(key))),
++        ...source,
++      } as unknown as TimelineItem
++    })
++  useCompositionNavigationStore.setState((nav) => ({
++    mainHolder: nav.mainHolder
++      ? { ...nav.mainHolder, items: restoreItems(nav.mainHolder.items) }
++      : null,
++    stashStack: nav.stashStack.map((holder) => ({ ...holder, items: restoreItems(holder.items) })),
++  }))
++}
++
+ /**
+  * Capture a snapshot of all timeline state.
+  * This is called before executing commands to enable undo.
+@@ -133,6 +185,7 @@ export function captureSnapshot(): TimelineSnapshot {
+   const currentProject = projectState.currentProject
+
+   return {
++    navigationMediaSources: navigationMediaSources(),
+     items: itemsState.items,
+     tracks: itemsState.tracks,
+     transitions: transitionsState.transitions,
+@@ -161,6 +214,7 @@ export function captureSnapshot(): TimelineSnapshot {
+  * All stores are updated synchronously to avoid inconsistent intermediate states.
+  */
+ export function restoreSnapshot(snapshot: TimelineSnapshot, restoreMasterMute = false): void {
++  restoreNavigationMediaSources(snapshot.navigationMediaSources)
+   // Restore items and tracks
+   useItemsStore.getState().setItems(snapshot.items)
+   useItemsStore.getState().setTracks(snapshot.tracks)
+@@ -213,6 +267,8 @@ export function restoreSnapshot(snapshot: TimelineSnapshot, restoreMasterMute =
+  */
+ export function snapshotsEqual(a: TimelineSnapshot, b: TimelineSnapshot): boolean {
+   return (
++    JSON.stringify(a.navigationMediaSources ?? {}) ===
++      JSON.stringify(b.navigationMediaSources ?? {}) &&
+     a.items === b.items &&
+     a.tracks === b.tracks &&
+     a.transitions === b.transitions &&
+diff --git a/src/features/timeline/stores/commands/types.ts b/src/features/timeline/stores/commands/types.ts
+index 51e1718..f2826fa 100644
+--- a/src/features/timeline/stores/commands/types.ts
++++ b/src/features/timeline/stores/commands/types.ts
+@@ -11,6 +11,8 @@ import type { ProjectResolution } from '@/types/project'
+  * Excludes ephemeral state (for example isDirty) that shouldn't be in history.
+  */
+ export interface TimelineSnapshot {
++  /** Source bindings held outside the live sequence; runtime history only (FL-105). */
++  navigationMediaSources?: Record<string, Record<string, unknown>>
+   items: TimelineItem[]
+   tracks: TimelineTrack[]
+   transitions: Transition[]

@@ -1,0 +1,284 @@
+--- a/src/features/keyframes/utils/property-expression.ts
++++ b/src/features/keyframes/utils/property-expression.ts
+@@ -9,6 +9,11 @@
+
+ export type ExpressionValue = number | Vector2
+
++export interface PropertyExpressionBudget {
++  remaining: number
++  references: Map<string, ExpressionValue>
++}
++
+ export interface PropertyExpressionContext {
+   preValue: ExpressionValue
+   globalFrame: number
+@@ -16,6 +21,7 @@
+   resolveProperty: (
+     itemId: string,
+     property: DirectLinkableProperty,
++    budget: PropertyExpressionBudget,
+   ) => ExpressionValue | null
+ }
+
+@@ -203,6 +209,7 @@
+   constructor(
+     private readonly tokens: Token[],
+     private readonly context: PropertyExpressionContext,
++    private readonly budget: PropertyExpressionBudget,
+   ) {}
+
+   parse(): ExpressionValue {
+@@ -338,7 +345,7 @@
+     if (!isDirectLinkableProperty(propertyName)) {
+       throw new Error(`Unknown property "${propertyName}"`)
+     }
+-    const value = this.context.resolveProperty(itemId, propertyName)
++    const value = this.context.resolveProperty(itemId, propertyName, this.budget)
+     if (value === null) throw new Error('Property reference is unavailable')
+     return value
+   }
+@@ -366,9 +373,12 @@
+ export function evaluatePropertyExpression(
+   source: string,
+   context: PropertyExpressionContext,
++  budget: PropertyExpressionBudget = { remaining: 64, references: new Map() },
+ ): PropertyExpressionResult {
+   try {
+-    const value = new Parser(tokenize(source), context).parse()
++    if (budget.remaining <= 0) throw new Error('Expression dependency limit exceeded')
++    budget.remaining -= 1
++    const value = new Parser(tokenize(source), context, budget).parse()
+     return { value }
+   } catch (error) {
+     return {
+--- a/src/features/keyframes/utils/animated-transform-resolver.ts
++++ b/src/features/keyframes/utils/animated-transform-resolver.ts
+@@ -30,6 +30,7 @@
+   evaluatePropertyExpression,
+   isExpressionValueCompatible,
+   type ExpressionValue,
++  type PropertyExpressionBudget,
+   type PropertyExpressionResult,
+ } from './property-expression'
+
+@@ -312,6 +313,7 @@
+   property: DirectLinkableProperty,
+   context: LinkedPropertyEvaluationContext,
+   state: LinkedTransformEvaluationState,
++  budget?: PropertyExpressionBudget,
+ ): ExpressionValue | null {
+   const item = context.getItem(itemId)
+   if (!item) return null
+@@ -324,6 +326,7 @@
+       postLinkValue,
+       context,
+       state,
++      budget,
+     )
+     if (result.error) throw new Error(result.error)
+     return result.value
+@@ -343,6 +346,7 @@
+     postLinkValue,
+     context,
+     state,
++    budget,
+   )
+   if (result.error) throw new Error(result.error)
+   return result.value
+@@ -352,13 +356,14 @@
+   itemId: string,
+   property: DirectLinkableProperty,
+   context: LinkedPropertyEvaluationContext,
++  budget?: PropertyExpressionBudget,
+ ): ExpressionValue | null {
+   return resolveReferencedExpressionProperty(itemId, property, context, {
+     cache: new Map(),
+     vectorCache: new Map(),
+-    expressionCache: new Map(),
++    expressionCache: budget?.references ?? new Map(),
+     active: new Set(),
+-  })
++  }, budget)
+ }
+
+ /** Evaluate a stored expression after keyframes and direct links. */
+@@ -373,6 +378,7 @@
+     expressionCache: new Map(),
+     active: new Set(),
+   },
++  budget?: PropertyExpressionBudget,
+ ): PropertyExpressionResult {
+   const expression = getPropertyExpressions(context.getKeyframes(itemId)).find(
+     (candidate) => candidate.targetProperty === property && candidate.enabled,
+@@ -391,9 +397,9 @@
+     preValue: preExpressionValue,
+     globalFrame: context.globalFrame,
+     fps: context.canvas.fps,
+-    resolveProperty: (sourceItemId, sourceProperty) =>
+-      resolveReferencedExpressionProperty(sourceItemId, sourceProperty, context, state),
+-  })
++    resolveProperty: (sourceItemId, sourceProperty, evaluationBudget) =>
++      resolveReferencedExpressionProperty(sourceItemId, sourceProperty, context, state, evaluationBudget),
++  }, budget)
+   state.active.delete(dependencyKey)
+   if (result.error || !isExpressionValueCompatible(property, result.value)) {
+     return {
+--- a/src/features/keyframes/components/dopesheet-editor/index.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
+@@ -113,6 +113,7 @@
+   evaluatePropertyExpression,
+   isExpressionValueCompatible,
+   type ExpressionValue,
++  type PropertyExpressionBudget,
+ } from '@/features/keyframes/utils/property-expression'
+ import {
+   arePreviewFramesEqual,
+@@ -349,6 +350,7 @@
+   resolveExpressionReference?: (
+     itemId: string,
+     property: DirectLinkableProperty,
++    budget: PropertyExpressionBudget,
+   ) => ExpressionValue | null
+   /** Create or update a sandboxed property expression. */
+   onSetPropertyExpression?: (
+@@ -635,8 +637,8 @@
+     preValue: preExpressionValue,
+     globalFrame: params.currentGlobalFrame,
+     fps: params.fps,
+-    resolveProperty: (sourceItemId, sourceProperty) =>
+-      params.resolveExpressionReference?.(sourceItemId, sourceProperty) ?? null,
++    resolveProperty: (sourceItemId, sourceProperty, budget) =>
++      params.resolveExpressionReference?.(sourceItemId, sourceProperty, budget) ?? null,
+   })
+   const compoundRow = params.compoundRows[row.property]
+   return {
+@@ -3609,8 +3611,8 @@
+                 preValue: preExpressionValue,
+                 globalFrame: globalFrame ?? itemFrom + currentFrame,
+                 fps,
+-                resolveProperty: (sourceItemId, sourceProperty) =>
+-                  resolveExpressionReference?.(sourceItemId, sourceProperty) ?? null,
++                resolveProperty: (sourceItemId, sourceProperty, budget) =>
++                  resolveExpressionReference?.(sourceItemId, sourceProperty, budget) ?? null,
+               },
+             )
+           : undefined
+--- a/src/features/timeline/components/keyframe-graph-panel.tsx
++++ b/src/features/timeline/components/keyframe-graph-panel.tsx
+@@ -3062,13 +3062,13 @@
+     vectorPreExpressionTransform,
+   ])
+   const resolveExpressionReference = useCallback(
+-    (itemId: string, property: DirectLinkableProperty) =>
++    (itemId: string, property: DirectLinkableProperty, budget: Parameters<typeof resolveExpressionReferenceValue>[3]) =>
+       resolveExpressionReferenceValue(itemId, property, {
+         globalFrame: currentFrame,
+         canvas,
+         getItem: (candidateId) => allItemsById[candidateId],
+         getKeyframes: (candidateId) => allKeyframesByItemId[candidateId],
+-      }),
++      }, budget),
+     [allItemsById, allKeyframesByItemId, canvas, currentFrame],
+   )
+   const handleSetPropertyExpression = useCallback(
+--- a/src/features/editor/components/compose-workspace/compositing-timeline.tsx
++++ b/src/features/editor/components/compose-workspace/compositing-timeline.tsx
+@@ -1971,13 +1971,13 @@
+     [buildValues, itemKeyframes],
+   )
+   const resolveExpressionReference = useCallback(
+-    (sourceItemId: string, sourceProperty: DirectLinkableProperty) =>
++    (sourceItemId: string, sourceProperty: DirectLinkableProperty, budget: Parameters<typeof resolveExpressionReferenceValue>[3]) =>
+       resolveExpressionReferenceValue(sourceItemId, sourceProperty, {
+         globalFrame: currentFrame,
+         canvas: { ...canvas, fps },
+         getItem: (candidateId) => itemById[candidateId],
+         getKeyframes: (candidateId) => allKeyframesByItemId[candidateId],
+-      }),
++      }, budget),
+     [allKeyframesByItemId, canvas, currentFrame, fps, itemById],
+   )
+   const propertyLinkSourceLabels = useMemo(
+--- /dev/null
++++ b/src/features/keyframes/utils/property-expression-budget.test.ts
+@@ -0,0 +1,80 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import type { ItemKeyframes } from '@/types/keyframe'
++import type { ShapeItem } from '@/types/timeline'
++import { resolveAnimatedTransform, resolveExpressionReferenceValue, resolvePropertyExpressionValue } from './animated-transform-resolver'
++import { evaluatePropertyExpression } from './property-expression'
++
++function fixture(property: 'x' | 'position') {
++  const items = new Map<string, ShapeItem>()
++  const keyframes = new Map<string, ItemKeyframes>()
++  const chain = (prefix: string, length: number) => {
++    for (let index = 0; index < length; index += 1) {
++      const id = `${prefix}-${index}`
++      items.set(id, {
++        id, type: 'shape', shapeType: 'rectangle', trackId: 'track',
++        from: 0, durationInFrames: 60, label: id,
++        transform: { x: 20, y: 30, width: 100, height: 100 },
++        fillColor: '#fff', strokeColor: '#fff', strokeWidth: 1,
++      })
++      keyframes.set(id, { itemId: id, properties: [], expressions: [{
++        type: 'expression', targetProperty: property, enabled: true,
++        source: index === length - 1 ? 'value + time' : `prop("${prefix}-${index + 1}", "${property}")`,
++      }] })
++    }
++  }
++  const context = {
++    globalFrame: 30,
++    canvas: { width: 1920, height: 1080, fps: 30 },
++    getItem: (id: string) => items.get(id),
++    getKeyframes: (id: string) => keyframes.get(id),
++  }
++  const preValue = property === 'x' ? 10 : { x: 10, y: 15 }
++  const preview = (source: string) => evaluatePropertyExpression(source, {
++    preValue, globalFrame: 30, fps: 30,
++    resolveProperty: (id, referencedProperty, budget) => resolveExpressionReferenceValue(id, referencedProperty, context, budget),
++  })
++  return { chain, keyframes, context, preValue, preview }
++}
++
++describe.each(['x', 'position'] as const)('expression dependency budget for %s', (property) => {
++  it.each([64, 65])('counts the actual preview source in a %i-expression chain and reuses cached references', (length) => {
++    const { chain, keyframes, context, preValue, preview } = fixture(property)
++    chain('layer', length)
++    const source = `prop("layer-1", "${property}") + prop("layer-1", "${property}")`
++    keyframes.get('layer-0')!.expressions = [{ type: 'expression', targetProperty: property, enabled: true, source }]
++    const expected = length > 64
++      ? { value: preValue, error: 'Expression dependency limit exceeded' }
++      : { value: property === 'x' ? 42 : { x: 42, y: 62 } }
++
++    for (let repeat = 0; repeat < 2; repeat += 1) {
++      expect(resolvePropertyExpressionValue('layer-0', property, preValue, context)).toEqual(expected)
++      expect(preview(source)).toEqual(expected)
++    }
++  })
++
++  it.each([[31, 32], [40, 40]])('shares one preview budget across independent %i and %i-expression branches', (left, right) => {
++    const { chain, keyframes, context, preValue, preview } = fixture(property)
++    chain('root', 1)
++    chain('left', left)
++    chain('right', right)
++    const source = `prop("left-0", "${property}") + prop("right-0", "${property}")`
++    keyframes.get('root-0')!.expressions = [{ type: 'expression', targetProperty: property, enabled: true, source }]
++    const expected = left + right + 1 > 64
++      ? { value: preValue, error: 'Expression dependency limit exceeded' }
++      : { value: property === 'x' ? 42 : { x: 42, y: 62 } }
++
++    expect(resolvePropertyExpressionValue('root-0', property, preValue, context)).toEqual(expected)
++    expect(preview(source)).toEqual(expected)
++  })
++})
++
++it('gives independent transform properties their own budget after a full x-expression chain', () => {
++  const { chain, keyframes, context } = fixture('x')
++  chain('layer', 64)
++  keyframes.get('layer-0')!.expressions!.push({ type: 'expression', targetProperty: 'y', enabled: true, source: 'value + 1' })
++  const base = { x: 20, y: 30, width: 100, height: 100, anchorX: 0, anchorY: 0, rotation: 0, opacity: 1, cornerRadius: 0 }
++
++  expect(resolveAnimatedTransform(base, keyframes.get('layer-0'), 30, context)).toMatchObject({ x: 21, y: 31 })
++})

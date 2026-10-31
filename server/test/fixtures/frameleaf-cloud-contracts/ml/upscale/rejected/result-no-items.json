@@ -1,0 +1,9 @@
+{
+  "schema": "frameleaf.upscale/v1",
+  "modelSku": "ms_54S55W7C",
+  "modelRev": "mr_0WNPDD697MT0",
+  "licence": "BSD-3-Clause and Apache-2.0",
+  "scale": 4,
+  "format": "webp",
+  "items": []
+}

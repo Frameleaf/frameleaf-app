@@ -1,0 +1,2191 @@
+Subject: Cut out the subject in a video clip (FL-639)
+
+The clip is drawn through a subject matte the server made (SAM2.1 video on this
+server or a home computer), with a blurred, removed (see-through), coloured or
+photo background, in preview and export. The Edit inspector card finds the
+subject, sets the background and edge softness, paints Add to subject / Take
+away on the viewer and removes the cut-out.
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.test.tsx
+@@ -0,0 +1,218 @@
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { ReactNode } from 'react'
++import type { SubjectCutout, VideoItem } from '@/types/timeline'
++import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
++import {
++  registerSubjectCutoutHost,
++  type SubjectCutoutHost,
++  type SubjectCutoutJob,
++} from '@/shared/state/subject-cutout-host'
++import { useSubjectCutoutPaintStore } from '@/shared/state/subject-cutout-paint'
++import { SubjectCutoutSection } from './subject-cutout-section'
++
++vi.mock('react-i18next', () => ({
++  useTranslation: () => ({
++    t: (key: string, values?: Record<string, unknown>) => (values?.name ? `${key}:${values.name}` : key),
++  }),
++}))
++vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }))
++vi.mock('../components', () => ({
++  PropertySection: ({ children }: { children: ReactNode }) => <>{children}</>,
++}))
++
++const matte: SubjectCutout['matte'] = {
++  importId: '0195e2a0-0000-4000-8000-000000000050',
++  startSeconds: 0,
++  durationSeconds: 3,
++  fps: 10,
++  frames: 30,
++  columns: 30,
++  frameWidth: 192,
++  frameHeight: 108,
++}
++
++const CLIP: VideoItem = {
++  id: 'clip-1',
++  type: 'video',
++  trackId: 'track-1',
++  from: 0,
++  durationInFrames: 90,
++  label: 'Lake',
++  src: 'blob:video',
++  mediaId: 'media-1',
++  sourceWidth: 1920,
++  sourceHeight: 1080,
++}
++
++const host = (jobs: SubjectCutoutJob[]): SubjectCutoutHost & { start: ReturnType<typeof vi.fn> } => {
++  const queue = [...jobs]
++  return {
++    subjects: vi.fn(async () => [
++      { kind: 'person' as const, personId: '0195e2a0-0000-4000-8000-000000000051', name: 'Jamie' },
++      { kind: 'person' as const, personId: '0195e2a0-0000-4000-8000-000000000052', name: 'Sam' },
++    ]),
++    start: vi.fn(async () => queue.shift()!),
++    read: vi.fn(async () => queue.shift()!),
++    whenMatteReady: vi.fn(async () => true),
++  }
++}
++
++const current = () => useItemsStore.getState().itemById['clip-1'] as VideoItem
++
++describe('Cut out the subject card (FL-639)', () => {
++  beforeEach(() => {
++    vi.useFakeTimers({ shouldAdvanceTime: true })
++    useTimelineStore.setState({ items: [CLIP], fps: 30 })
++  })
++  afterEach(() => {
++    registerSubjectCutoutHost(null)
++    vi.useRealTimers()
++  })
++
++  it('is not offered without a host that can find subjects', () => {
++    const { container } = render(<SubjectCutoutSection item={CLIP} />)
++    expect(container).toBeEmptyDOMElement()
++  })
++
++  it('finds Jamie, follows them through the clip and keeps the matte on the clip with a blurred background', async () => {
++    const fake = host([
++      { id: 'job', status: 'running', progress: 40, error: null, matte: null },
++      { id: 'job', status: 'completed', progress: 100, error: null, matte },
++    ])
++    registerSubjectCutoutHost(fake)
++    render(<SubjectCutoutSection item={CLIP} />)
++    const find = await screen.findByRole('button', { name: 'cutout.find:Jamie' })
++    expect(screen.getByRole('radio', { name: /Jamie/ })).toHaveAttribute('aria-checked', 'true')
++    fireEvent.click(find)
++    expect(await screen.findByText('cutout.finding:Jamie')).toBeInTheDocument()
++    await act(async () => {
++      await vi.advanceTimersByTimeAsync(1100)
++    })
++    await waitFor(() => expect(current().subjectCutout).toBeDefined())
++    expect(fake.start).toHaveBeenCalledWith({
++      clipId: 'clip-1',
++      personId: '0195e2a0-0000-4000-8000-000000000051',
++      points: [],
++    })
++    expect(fake.whenMatteReady).toHaveBeenCalledWith(matte.importId, expect.any(AbortSignal))
++    expect(current().subjectCutout).toEqual({
++      subject: { kind: 'person', personId: '0195e2a0-0000-4000-8000-000000000051', name: 'Jamie' },
++      background: 'blur',
++      softness: 40,
++      matte,
++    })
++  })
++
++  it('always offers Main subject beside the people found, for a new cut-out', async () => {
++    const fake = host([{ id: 'job', status: 'completed', progress: 100, error: null, matte }])
++    registerSubjectCutoutHost(fake)
++    render(<SubjectCutoutSection item={CLIP} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    fireEvent.click(screen.getByRole('radio', { name: /cutout.mainSubject/ }))
++    fireEvent.click(await screen.findByRole('button', { name: 'cutout.findSubject' }))
++    await waitFor(() => expect(fake.start).toHaveBeenCalledWith({ clipId: 'clip-1', personId: null, points: [] }))
++    await waitFor(() => expect(current().subjectCutout?.subject).toEqual({ kind: 'subject' }))
++  })
++
++  it('keeps a person cut-out selected when that person is no longer recognised in the clip', async () => {
++    const riley = '0195e2a0-0000-4000-8000-000000000059'
++    const saved: SubjectCutout = { subject: { kind: 'person', personId: riley, name: 'Riley' }, background: 'blur', softness: 40, matte }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: saved }], fps: 30 })
++    registerSubjectCutoutHost(host([]))
++    render(<SubjectCutoutSection item={current()} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    expect(screen.getByRole('radio', { name: /Riley/ })).toHaveAttribute('aria-checked', 'true')
++    expect(screen.getAllByRole('radio', { name: /Riley/ })).toHaveLength(1)
++    expect(screen.queryByRole('button', { name: 'cutout.find:Riley' })).toBeNull()
++    expect(screen.getByRole('button', { name: 'cutout.remove' })).toBeInTheDocument()
++  })
++
++  it('keeps a Main subject cut-out selected when people are found in the clip', async () => {
++    const main: SubjectCutout = { subject: { kind: 'subject' }, background: 'remove', softness: 40, matte }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: main }], fps: 30 })
++    registerSubjectCutoutHost(host([]))
++    render(<SubjectCutoutSection item={current()} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    expect(screen.queryByRole('button', { name: 'cutout.find:Jamie' })).toBeNull()
++    expect(screen.getByRole('button', { name: 'cutout.remove' })).toBeInTheDocument()
++  })
++
++  it('commits edge softness from the slider', async () => {
++    const found: SubjectCutout = { subject: { kind: 'subject' }, background: 'blur', softness: 40, matte }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: found }], fps: 30 })
++    registerSubjectCutoutHost(host([]))
++    render(<SubjectCutoutSection item={current()} />)
++    const thumb = await screen.findByRole('slider')
++    fireEvent.keyDown(thumb, { key: 'ArrowRight' })
++    await waitFor(() => expect(current().subjectCutout?.softness).toBe(41))
++  })
++
++  it('keeps a background chosen while the subject is being found', async () => {
++    const fake = host([
++      { id: 'job', status: 'running', progress: 40, error: null, matte: null },
++      { id: 'job', status: 'completed', progress: 100, error: null, matte },
++    ])
++    const found: SubjectCutout = {
++      subject: { kind: 'person', personId: '0195e2a0-0000-4000-8000-000000000051', name: 'Jamie' },
++      background: 'blur',
++      softness: 40,
++      matte: { ...matte, importId: '0195e2a0-0000-4000-8000-000000000054' },
++    }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: found }], fps: 30 })
++    registerSubjectCutoutHost(fake)
++    render(<SubjectCutoutSection item={current()} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    act(() => {
++      useSubjectCutoutPaintStore.getState().finish({ itemId: 'clip-1', label: 1, frame: 0, points: [{ x: 0.5, y: 0.5 }] })
++    })
++    await waitFor(() => expect(fake.start).toHaveBeenCalled())
++    // The person picks Colour while the job runs.
++    act(() => {
++      useItemsStore.getState()._updateItem('clip-1', {
++        subjectCutout: { ...current().subjectCutout!, background: 'colour', colour: '#2da44e' },
++      } as Partial<VideoItem>)
++    })
++    await act(async () => {
++      await vi.advanceTimersByTimeAsync(1100)
++    })
++    await waitFor(() => expect(current().subjectCutout?.matte.importId).toBe(matte.importId))
++    expect(current().subjectCutout).toMatchObject({ background: 'colour', colour: '#2da44e' })
++  })
++
++  it('changes the background, and paints Take away points that make the matte again', async () => {
++    const found: SubjectCutout = {
++      subject: { kind: 'person', personId: '0195e2a0-0000-4000-8000-000000000051', name: 'Jamie' },
++      background: 'blur',
++      softness: 40,
++      matte,
++    }
++    useTimelineStore.setState({ items: [{ ...CLIP, subjectCutout: found }], fps: 30 })
++    const fake = host([{ id: 'again', status: 'completed', progress: 100, error: null, matte: { ...matte, importId: '0195e2a0-0000-4000-8000-000000000053' } }])
++    registerSubjectCutoutHost(fake)
++    const { rerender } = render(<SubjectCutoutSection item={current()} />)
++    await screen.findByRole('radio', { name: /Jamie/ })
++    fireEvent.click(screen.getByRole('radio', { name: /cutout.backgrounds.remove.label/ }))
++    expect(current().subjectCutout?.background).toBe('remove')
++    rerender(<SubjectCutoutSection item={current()} />)
++
++    fireEvent.click(screen.getByRole('button', { name: 'cutout.takeAway' }))
++    expect(useSubjectCutoutPaintStore.getState()).toMatchObject({ itemId: 'clip-1', label: 0 })
++    act(() => {
++      useSubjectCutoutPaintStore.getState().finish({ itemId: 'clip-1', label: 0, frame: 15, points: [{ x: 0.9, y: 0.1 }] })
++    })
++    await waitFor(() => expect(fake.start).toHaveBeenCalled())
++    expect(fake.start).toHaveBeenCalledWith({
++      clipId: 'clip-1',
++      personId: '0195e2a0-0000-4000-8000-000000000051',
++      points: [{ sourceSeconds: 0.5, x: 0.9, y: 0.1, label: 0 }],
++    })
++    await waitFor(() => expect(current().subjectCutout?.matte.importId).toBe('0195e2a0-0000-4000-8000-000000000053'))
++    // The new matte keeps what the person chose.
++    expect(current().subjectCutout).toMatchObject({ background: 'remove', points: [{ sourceSeconds: 0.5, label: 0 }] })
++
++    rerender(<SubjectCutoutSection item={current()} />)
++    fireEvent.click(screen.getByRole('button', { name: 'cutout.remove' }))
++    expect(current().subjectCutout).toBeUndefined()
++  })
++})
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/subject-cutout-section.tsx
+@@ -0,0 +1,324 @@
++import { useEffect, useMemo, useRef, useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { Brush, Eraser, UserSquare } from 'lucide-react'
++import { toast } from 'sonner'
++import { Button } from '@/components/ui/button'
++import { Progress } from '@/components/ui/progress'
++import { Slider } from '@/components/ui/slider'
++import type { SubjectCutout, SubjectCutoutBackground, VideoItem } from '@/types/timeline'
++import {
++  cutoutRequestPoints,
++  setSubjectCutout,
++  updateSubjectCutout,
++  useItemsStore,
++  useTimelineStore,
++} from '@/features/editor/deps/timeline-store'
++import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
++import {
++  getSubjectCutoutHost,
++  type SubjectCutoutJob,
++  type SubjectCutoutPerson,
++} from '@/shared/state/subject-cutout-host'
++import { useSubjectCutoutPaintStore } from '@/shared/state/subject-cutout-paint'
++import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
++import { PropertySection } from '../components'
++
++const CUTOUT_BACKGROUNDS: SubjectCutoutBackground[] = ['keep', 'blur', 'remove', 'colour', 'photo']
++const CUTOUT_COLOURS = ['#ffffff', '#111111', '#1f6feb', '#2da44e', '#f2cc60']
++const DEFAULT_SOFTNESS = 40
++const POLL_MS = 1000
++
++const MAIN_SUBJECT: SubjectCutoutPerson = { kind: 'subject', personId: null, name: null }
++const aborted = () => new DOMException('Aborted', 'AbortError')
++const sleep = (ms: number, signal: AbortSignal) =>
++  new Promise<void>((resolve, reject) => {
++    if (signal.aborted) {
++      reject(aborted())
++      return
++    }
++    const timer = setTimeout(resolve, ms)
++    signal.addEventListener('abort', () => {
++      clearTimeout(timer)
++      reject(aborted())
++    }, { once: true })
++  })
++
++const initials = (name: string) =>
++  name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('')
++
++/**
++ * Cut out the subject (FL-639), on the Edit inspector for one video clip. The subject is one of the
++ * people recognised in the clip (or the main subject); the server follows it through the shot and the
++ * clip is drawn through the matte with the chosen background.
++ */
++export function SubjectCutoutSection({ item }: { item: VideoItem }) {
++  const { t } = useTranslation()
++  const host = getSubjectCutoutHost()
++  const fps = useTimelineStore((s) => s.fps)
++  const cutout = item.subjectCutout
++  const [listed, setSubjects] = useState<SubjectCutoutPerson[]>([MAIN_SUBJECT])
++  // Main subject is always offered beside the people found, so a new cut-out (or one refused for a
++  // person) can follow the main subject instead; a person the clip is already cut out on stays listed
++  // even when they are no longer recognised there, so its controls stay reachable.
++  const subjects = useMemo(() => {
++    const list = [...listed]
++    const saved = cutout?.subject
++    if (saved?.kind === 'person' && saved.personId && !list.some((entry) => entry.personId === saved.personId)) {
++      list.unshift({ kind: 'person', personId: saved.personId, name: saved.name ?? null })
++    }
++    if (!list.some((entry) => entry.kind === 'subject')) list.push(MAIN_SUBJECT)
++    return list
++  }, [listed, cutout?.subject])
++  const [chosen, setChosen] = useState<string | null>(cutout?.subject.personId ?? null)
++  const [progress, setProgress] = useState<number | null>(null)
++  const [refining, setRefining] = useState(false)
++  // The slider's value while it is dragged; the clip keeps its softness until the drag ends.
++  const [softnessDraft, setSoftnessDraft] = useState<number | null>(null)
++  const softness = softnessDraft ?? cutout?.softness ?? DEFAULT_SOFTNESS
++  const abortRef = useRef<AbortController | null>(null)
++  // Only a clip with no cut-out yet gets a person chosen for it when the people load.
++  const hasCutout = useRef(!!cutout)
++  hasCutout.current = !!cutout
++  const painting = useSubjectCutoutPaintStore((s) => (s.itemId === item.id ? s.label : null))
++  const pendingStrokes = useSubjectCutoutPaintStore((s) => s.strokes.some((stroke) => stroke.itemId === item.id))
++  const photos = useMediaLibraryStore((s) => s.mediaItems)
++    .filter((media) => media.mimeType.startsWith('image/') && media.mimeType !== 'image/svg+xml')
++    .slice(0, 6)
++
++  useEffect(() => () => {
++    abortRef.current?.abort()
++    if (useSubjectCutoutPaintStore.getState().itemId === item.id) useSubjectCutoutPaintStore.getState().stop()
++  }, [item.id])
++
++  useEffect(() => {
++    if (!host) return
++    const controller = new AbortController()
++    host.subjects(item.id).then(
++      (found) => {
++        if (controller.signal.aborted || found.length === 0) return
++        setSubjects(found)
++        if (!hasCutout.current) setChosen((current) => current ?? found.find((entry) => entry.kind === 'person')?.personId ?? null)
++      },
++      () => {},
++    )
++    return () => controller.abort()
++  }, [host, item.id])
++
++  const who = useMemo(
++    () => subjects.find((entry) => entry.personId === chosen) ?? subjects[0] ?? MAIN_SUBJECT,
++    [subjects, chosen],
++  )
++  const name = who.kind === 'person' && who.name ? who.name : t('cutout.mainSubject')
++  const found = !!cutout && (cutout.subject.personId ?? null) === (who.personId ?? null)
++
++  const run = async (points: NonNullable<SubjectCutout['points']>, refine: boolean) => {
++    if (!host) return
++    abortRef.current?.abort()
++    const controller = new AbortController()
++    abortRef.current = controller
++    setProgress(0)
++    setRefining(refine)
++    try {
++      let job: SubjectCutoutJob = await host.start({ clipId: item.id, personId: who.personId, points })
++      controller.signal.throwIfAborted()
++      while (job.status === 'queued' || job.status === 'running') {
++        setProgress(job.progress)
++        await sleep(POLL_MS, controller.signal)
++        job = await host.read(job.id)
++        controller.signal.throwIfAborted()
++      }
++      if (job.status === 'failed' || !job.matte) {
++        const known = job.errorCode === 'faceDetectionOff' || job.errorCode === 'personNotInFirstFrame'
++        toast.error(t('cutout.failed', { name, reason: known ? t(`cutout.errors.${job.errorCode}`) : (job.error ?? '') }))
++        return
++      }
++      const ready = await host.whenMatteReady(job.matte.importId, controller.signal)
++      controller.signal.throwIfAborted()
++      if (!ready) {
++        toast.error(t('cutout.failed', { name, reason: t('cutout.notKept') }))
++        return
++      }
++      // What the person chose while the job ran (background, colour, photo, softness) wins: read the
++      // clip's cut-out as it is now, not as it was when the job started.
++      const latest = (useItemsStore.getState().itemById[item.id] as VideoItem | undefined)?.subjectCutout
++      const kept = setSubjectCutout(item.id, {
++        subject: { kind: who.kind, ...(who.personId && { personId: who.personId }), ...(who.name && { name: who.name }) },
++        background: latest?.background ?? 'blur',
++        ...(latest?.colour && { colour: latest.colour }),
++        ...(latest?.photo && { photo: latest.photo }),
++        softness: latest?.softness ?? DEFAULT_SOFTNESS,
++        matte: job.matte,
++        ...(points.length > 0 && { points }),
++      })
++      if (!kept) toast.warning(t('cutout.locked'))
++      else if (!refine) toast.success(t('cutout.found', { name, clip: item.label }))
++    } catch (error) {
++      if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
++      toast.error(t('cutout.failed', { name, reason: error instanceof Error ? error.message : '' }))
++    } finally {
++      if (abortRef.current === controller) {
++        setProgress(null)
++        setRefining(false)
++      }
++    }
++  }
++
++  // A finished stroke on the viewer becomes Add to subject / Take away points, followed through the shot.
++  useEffect(() => {
++    if (!pendingStrokes || progress !== null || !cutout) return
++    const strokes = useSubjectCutoutPaintStore.getState().take(item.id)
++    const added = cutoutRequestPoints(item, strokes, fps)
++    if (added.length > 0) void run([...(cutout.points ?? []), ...added].slice(-64), true)
++    // eslint-disable-next-line react-hooks/exhaustive-deps -- run reads the latest clip on purpose
++  }, [pendingStrokes, progress, cutout, item.id, fps])
++
++  if (!host) return null
++  const busy = progress !== null
++  const paint = (label: 0 | 1) => {
++    const store = useSubjectCutoutPaintStore.getState()
++    if (painting === label) store.stop()
++    else {
++      store.start(item.id, label)
++      toast.info(t(label === 1 ? 'cutout.paintAddHint' : 'cutout.paintTakeHint'))
++    }
++  }
++
++  return (
++    <PropertySection title={t('cutout.title')} icon={UserSquare} defaultOpen={false}>
++      <div className="space-y-3 px-1 py-2 text-xs">
++        {(subjects.length > 1 || subjects[0]?.kind === 'person') && (
++          <div role="radiogroup" aria-label={t('cutout.subject')} className="flex flex-wrap gap-2">
++            {subjects.map((entry) => {
++              const on = (entry.personId ?? null) === (who.personId ?? null)
++              const label = entry.kind === 'person' && entry.name ? entry.name : t('cutout.mainSubject')
++              return (
++                <button
++                  key={entry.personId ?? 'subject'}
++                  type="button"
++                  role="radio"
++                  aria-checked={on}
++                  disabled={busy}
++                  className={`flex items-center gap-2 rounded-full border px-2 py-1 ${on ? 'border-primary bg-primary/10' : 'border-border'}`}
++                  onClick={() => setChosen(entry.personId)}
++                >
++                  <span aria-hidden="true" className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
++                    {initials(label)}
++                  </span>
++                  <span>{label}</span>
++                </button>
++              )
++            })}
++          </div>
++        )}
++
++        {busy && (
++          <div aria-live="polite" className="space-y-1">
++            <p>{refining ? t('cutout.refining') : who.kind === 'person' ? t('cutout.finding', { name }) : t('cutout.findingSubject')}</p>
++            <Progress value={progress ?? 0} className="h-1.5" aria-label={t('cutout.title')} />
++          </div>
++        )}
++
++        {!found ? (
++          <Button size="sm" className="h-7 w-full text-xs" disabled={busy} onClick={() => void run([], false)}>
++            {who.kind === 'person' ? t('cutout.find', { name }) : t('cutout.findSubject')}
++          </Button>
++        ) : (
++          <>
++            <div role="radiogroup" aria-label={t('cutout.background')} className="grid grid-cols-1 gap-1">
++              {CUTOUT_BACKGROUNDS.map((background) => (
++                <button
++                  key={background}
++                  type="button"
++                  role="radio"
++                  aria-checked={cutout!.background === background}
++                  className={`rounded border px-2 py-1 text-start ${cutout!.background === background ? 'border-primary bg-primary/10' : 'border-border'}`}
++                  onClick={() =>
++                    updateSubjectCutout(item.id, {
++                      background,
++                      ...(background === 'photo' && !cutout!.photo && photos[0] && { photo: { mediaId: photos[0].id } }),
++                    })
++                  }
++                >
++                  <b className="block">{t(`cutout.backgrounds.${background}.label`)}</b>
++                  <span className="text-muted-foreground">{t(`cutout.backgrounds.${background}.note`)}</span>
++                </button>
++              ))}
++            </div>
++
++            {cutout!.background === 'colour' && (
++              <div role="radiogroup" aria-label={t('cutout.backgroundColour')} className="flex gap-2">
++                {CUTOUT_COLOURS.map((colour) => (
++                  <button
++                    key={colour}
++                    type="button"
++                    role="radio"
++                    aria-checked={(cutout!.colour ?? CUTOUT_COLOURS[2]) === colour}
++                    aria-label={colour}
++                    className={`h-6 w-6 rounded-full border ${(cutout!.colour ?? CUTOUT_COLOURS[2]) === colour ? 'ring-2 ring-primary' : 'border-border'}`}
++                    style={{ background: colour }}
++                    onClick={() => updateSubjectCutout(item.id, { colour })}
++                  />
++                ))}
++              </div>
++            )}
++
++            {cutout!.background === 'photo' && (
++              photos.length > 0 ? (
++                <div role="radiogroup" aria-label={t('cutout.backgroundPhoto')} className="grid grid-cols-3 gap-1">
++                  {photos.map((media) => (
++                    <button
++                      key={media.id}
++                      type="button"
++                      role="radio"
++                      aria-checked={cutout!.photo?.mediaId === media.id}
++                      aria-label={media.fileName}
++                      className={`aspect-video overflow-hidden rounded border ${cutout!.photo?.mediaId === media.id ? 'ring-2 ring-primary' : 'border-border'}`}
++                      onClick={() => updateSubjectCutout(item.id, { photo: { mediaId: media.id } })}
++                    >
++                      <img src={blobUrlManager.get(media.id) ?? ''} alt="" className="h-full w-full object-cover" />
++                    </button>
++                  ))}
++                </div>
++              ) : (
++                <p className="text-muted-foreground">{t('cutout.noPhotos')}</p>
++              )
++            )}
++
++            <label className="block space-y-1">
++              <span>{t('cutout.softness', { value: softness })}</span>
++              <Slider
++                min={0}
++                max={100}
++                step={1}
++                value={[softness]}
++                aria-label={t('cutout.softnessLabel')}
++                onValueChange={([value]) => setSoftnessDraft(value ?? DEFAULT_SOFTNESS)}
++                onValueCommit={([value]) => {
++                  setSoftnessDraft(null)
++                  updateSubjectCutout(item.id, { softness: value ?? DEFAULT_SOFTNESS })
++                }}
++              />
++            </label>
++
++            <div className="flex flex-wrap gap-2">
++              <Button variant={painting === 1 ? 'default' : 'ghost'} size="sm" className="h-7 flex-1 text-xs" disabled={busy}
++                aria-pressed={painting === 1} onClick={() => paint(1)}>
++                <Brush className="me-1 h-3 w-3" aria-hidden="true" />{t('cutout.addToSubject')}
++              </Button>
++              <Button variant={painting === 0 ? 'default' : 'ghost'} size="sm" className="h-7 flex-1 text-xs" disabled={busy}
++                aria-pressed={painting === 0} onClick={() => paint(0)}>
++                <Eraser className="me-1 h-3 w-3" aria-hidden="true" />{t('cutout.takeAway')}
++              </Button>
++              <Button variant="ghost" size="sm" className="h-7 flex-1 text-xs" disabled={busy}
++                onClick={() => { useSubjectCutoutPaintStore.getState().stop(); setSubjectCutout(item.id, null) }}>
++                {t('cutout.remove')}
++              </Button>
++            </div>
++          </>
++        )}
++
++        <p className="text-muted-foreground">{t('cutout.whereItRuns')}</p>
++      </div>
++    </PropertySection>
++  )
++}
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/video-section.tsx
+@@ -30,6 +30,7 @@
+ import { PropertySection, PropertyRow, SliderInput } from '../components'
+ import { SpeedRampSection } from './speed-ramp-section'
+ import { ColourMatchSection } from './colour-match-section'
++import { SubjectCutoutSection } from './subject-cutout-section'
+ import { getMixedValue } from '../utils'
+ import {
+   cropPixelsToRatio,
+@@ -623,6 +624,11 @@
+ 
+       {videoItems.length > 0 && <ColourMatchSection key={videoItemIds.join(',')} items={videoItems} />}
+ 
++      {/* Frameleaf (FL-639): Cut out the subject, for one video clip. */}
++      {videoItems.length === 1 && items.length <= 2 && (
++        <SubjectCutoutSection key={videoItems[0]!.id} item={videoItems[0]!} />
++      )}
++
+       <PropertySection title={t('editor.videoSection.cropping')} icon={Crop} defaultOpen={true}>
+         <PropertyRow label={t('editor.videoSection.cropLeft')}>
+           <div className="flex items-center gap-1 w-full">
+diff --git a/src/features/editor/deps/timeline-store-contract.ts b/src/features/editor/deps/timeline-store-contract.ts
+--- a/src/features/editor/deps/timeline-store-contract.ts
++++ b/src/features/editor/deps/timeline-store-contract.ts
+@@ -50,6 +50,11 @@
+   suggestLoudnessMatch,
+   type ClipLoudnessResult,
+ } from '@/features/timeline/utils/loudness-match'
++export {
++  cutoutRequestPoints,
++  setSubjectCutout,
++  updateSubjectCutout,
++} from '@/features/timeline/stores/actions/edit/subject-cutout-actions'
+ export {
+   analyzeColourMatch,
+   applyColourMatches,
+diff --git a/src/features/export/utils/canvas-item-renderer/render-item.ts b/src/features/export/utils/canvas-item-renderer/render-item.ts
+--- a/src/features/export/utils/canvas-item-renderer/render-item.ts
++++ b/src/features/export/utils/canvas-item-renderer/render-item.ts
+@@ -35,6 +35,7 @@
+   resolveItemTransform,
+ } from './shared'
+ import { renderVideoItem } from './video'
++import { hasActiveSubjectCutout, renderVideoWithSubjectCutout } from '../subject-cutout'
+ import { calculateContainedMediaDrawLayout } from './media-draw'
+ import { getItemRenderTimelineSpan, resolveVideoRenderSourceTimeSeconds } from '../render-span'
+ import {
+@@ -252,32 +253,35 @@
+       // Stabilise (FL-638): draw the clip through its per-frame correction, clipped to where the
+       // media shows, so the moving edges stay outside the frame. Preview and export both pass here.
+       const stabilised = hasStabilisation(videoItem)
+-      if (stabilised) {
+-        ctx.save()
+-        applyVideoStabilisation(
+-          ctx,
+-          videoItem,
+-          transform,
+-          frame,
+-          rctx,
+-          sourceFrameOffset,
+-          renderSpan,
+-        )
++      const stabilise = (target: OffscreenCanvasRenderingContext2D) => {
++        if (stabilised) {
++          applyVideoStabilisation(target, videoItem, transform, frame, rctx, sourceFrameOffset, renderSpan)
++        }
+       }
+-      let videoFrameDrawn: boolean
+-      try {
+-        videoFrameDrawn = await renderVideoItem(
+-          ctx,
+-          videoItem,
+-          transform,
+-          frame,
+-          rctx,
+-          sourceFrameOffset,
+-          renderSpan,
+-        )
+-      } finally {
+-        if (stabilised) ctx.restore()
++      const drawVideo = async (target: OffscreenCanvasRenderingContext2D) => {
++        if (stabilised) target.save()
++        try {
++          stabilise(target)
++          return await renderVideoItem(target, videoItem, transform, frame, rctx, sourceFrameOffset, renderSpan)
++        } finally {
++          if (stabilised) target.restore()
++        }
+       }
++      // Frameleaf (FL-639): a cut-out draws the clip through its subject matte, which follows the
++      // same stabilisation so the subject and its matte stay together.
++      const videoFrameDrawn = hasActiveSubjectCutout(videoItem)
++        ? await renderVideoWithSubjectCutout(
++            ctx,
++            videoItem,
++            transform,
++            frame,
++            rctx,
++            sourceFrameOffset,
++            renderSpan,
++            drawVideo,
++            stabilise,
++          )
++        : await drawVideo(ctx)
+       if (!videoFrameDrawn) {
+         // Preview canvases are cleared before item rendering. A video item is
+         // complete only after one of its real frame sources was drawn; every
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -63,6 +63,7 @@
+   renderItemWithEffects as renderItemWithEffectsPure,
+   type FrameItemRenderDeps,
+ } from './frame-render-tasks'
++import { hasActiveSubjectCutout } from './subject-cutout'
+ import { compositeFrameResults } from './frame-compositing'
+ import {
+   buildMaskFrameIndex,
+@@ -2611,7 +2612,14 @@
+                 const item = getCurrentItem(task.item)
+                 const canSeparateMasks =
+                   useGpuCompositor && gpu.texturePool && !hasCornerPin(item.cornerPin)
+-                if (floatRoute && canSeparateMasks && gpu.texturePool) {
++                // Frameleaf (FL-639): a cut-out is drawn on the Canvas2D route only. An HDR project
++                // refuses it rather than render the clip uncut; other float captures draw it there.
++                const cutout = hasActiveSubjectCutout(item)
++                if (cutout && hdrWorking)
++                  throw new HdrRenderUnavailableError(
++                    'Cut out the subject is not drawn in HDR projects yet',
++                  )
++                if (floatRoute && canSeparateMasks && gpu.texturePool && !cutout) {
+                   // FL-97: keep the item's extended range; masks stay with the compositor.
+                   const floatTexture = gpu.texturePool.acquire(
+                     canvasSettings.width,
+diff --git a/src/features/export/utils/frame-occlusion.ts b/src/features/export/utils/frame-occlusion.ts
+--- a/src/features/export/utils/frame-occlusion.ts
++++ b/src/features/export/utils/frame-occlusion.ts
+@@ -6,6 +6,7 @@
+ import { resolveAnimatedColorEffects } from '@/features/export/deps/keyframes'
+ import { getAdjustmentLayerEffects, type AdjustmentLayerWithTrackOrder } from './canvas-effects'
+ import type { CanvasSettings } from './canvas-item-renderer'
++import { isSeeThroughSubjectCutout } from './subject-cutout'
+ 
+ export interface FrameOcclusionContext {
+   frame: number
+@@ -72,6 +73,9 @@
+   // codec-level check since its opacity depends on the decoded frame's format.)
+   if (item.type === 'video' && hasTransparentVideoSource?.(item)) return false
+ 
++  // Frameleaf (FL-639): a cut-out with its background removed shows what is beneath it.
++  if (isSeeThroughSubjectCutout(item)) return false
++
+   // Items in transitions are blended, not fully occluding
+   if (transitionClipIds.has(item.id)) return false
+ 
+diff --git a/src/features/export/utils/frame-render-tasks.ts b/src/features/export/utils/frame-render-tasks.ts
+--- a/src/features/export/utils/frame-render-tasks.ts
++++ b/src/features/export/utils/frame-render-tasks.ts
+@@ -26,6 +26,7 @@
+ } from './canvas-item-renderer'
+ import type { GpuPipelineManager } from './gpu-pipeline-manager'
+ import type { RenderedTaskResult } from './frame-mask-helpers'
++import { hasActiveSubjectCutout } from './subject-cutout'
+ 
+ function getLog() {
+   return createLogger('ClientRenderEngine')
+@@ -175,7 +176,9 @@
+   // otherwise freeze on effect clips while non-effect clips kept updating.
+   // Outside playback (no provider) this returns null and the mediabunny path runs
+   // exactly as before, and export (renderMode !== 'preview') is unaffected.
+-  if (renderMasks.length === 0 && combinedEffects.length > 0) {
++  // Frameleaf (FL-639): a cut-out clip is drawn through `renderItem`, never a direct GPU path.
++  const cutout = hasActiveSubjectCutout(effectiveItem)
++  if (!cutout && renderMasks.length === 0 && combinedEffects.length > 0) {
+     const directGpuCanvas = renderPreviewVideoGpuEffectsToCanvas(
+       effectiveItem,
+       transform,
+@@ -193,6 +196,7 @@
+   }
+ 
+   const canRenderDirectGpuEffects =
++    !cutout &&
+     allowDirectGpu &&
+     preferGpuTextureOutput &&
+     gpu.texturePool &&
+diff --git a/src/features/export/utils/smart-copy.ts b/src/features/export/utils/smart-copy.ts
+--- a/src/features/export/utils/smart-copy.ts
++++ b/src/features/export/utils/smart-copy.ts
+@@ -143,6 +143,8 @@
+     item.crop,
+     item.cornerPin,
+     hasEnabledTranscriptCaptions(item),
++    // Frameleaf (FL-639): a cut-out is drawn, never copied.
++    item.subjectCutout,
+   ].some(Boolean)
+   const collectionsChanged = [
+     hasEntries(item.effects),
+diff --git a/src/features/export/utils/subject-cutout.test.ts b/src/features/export/utils/subject-cutout.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/subject-cutout.test.ts
+@@ -0,0 +1,195 @@
++import { describe, expect, it, vi } from 'vite-plus/test'
++import type { SubjectCutout, VideoItem } from '@/types/timeline'
++import { createItemRenderContext } from './canvas-item-renderer-test-helpers'
++import { isItemFullyOccluding, type FrameOcclusionContext } from './frame-occlusion'
++import {
++  SUBJECT_MATTE_UNAVAILABLE,
++  canvasPointToSourceFraction,
++  cutoutBlurPixels,
++  cutoutImageItem,
++  hasActiveSubjectCutout,
++  isSeeThroughSubjectCutout,
++  lumaToAlpha,
++  matteCell,
++  matteSample,
++  renderVideoWithSubjectCutout,
++} from './subject-cutout'
++
++const matte: SubjectCutout['matte'] = {
++  importId: '0195e2a0-0000-4000-8000-000000000040',
++  startSeconds: 3,
++  durationSeconds: 2,
++  fps: 10,
++  frames: 20,
++  columns: 8,
++  frameWidth: 192,
++  frameHeight: 108,
++}
++
++const cutout = (background: SubjectCutout['background']): SubjectCutout => ({
++  subject: { kind: 'person', personId: 'jamie', name: 'Jamie' },
++  background,
++  softness: 40,
++  matte,
++})
++
++const clip = (subjectCutout?: SubjectCutout): VideoItem =>
++  ({
++    id: 'clip',
++    type: 'video',
++    trackId: 'v1',
++    from: 60,
++    durationInFrames: 60,
++    label: 'Lake',
++    src: 'blob:clip',
++    mediaId: 'media',
++    sourceStart: 90,
++    sourceFps: 30,
++    sourceWidth: 1920,
++    sourceHeight: 1080,
++    subjectCutout,
++  }) as VideoItem
++
++describe('subject cut-out (FL-639)', () => {
++  it('is active for every background but Keep, and see-through only for Remove', () => {
++    expect(hasActiveSubjectCutout(clip())).toBe(false)
++    expect(hasActiveSubjectCutout(clip(cutout('keep')))).toBe(false)
++    expect(hasActiveSubjectCutout(clip(cutout('blur')))).toBe(true)
++    expect(isSeeThroughSubjectCutout(clip(cutout('blur')))).toBe(false)
++    expect(isSeeThroughSubjectCutout(clip(cutout('remove')))).toBe(true)
++  })
++
++  it('blends the two matte frames around a moment, inside the followed window only', () => {
++    expect(matteSample(matte, 3)).toEqual({ first: 0, second: 1, weight: 0 })
++    expect(matteSample(matte, 3.25)).toEqual({ first: 2, second: 3, weight: expect.closeTo(0.5, 6) })
++    expect(matteSample(matte, 4.96)).toEqual({ first: 19, second: 19, weight: 0 })
++    expect(matteSample(matte, 2.97)).toEqual({ first: 0, second: 1, weight: 0 })
++    expect(matteSample(matte, 2.9)).toBeNull()
++    expect(matteSample(matte, 5.1)).toBeNull()
++  })
++
++  it('reads matte frames row after row', () => {
++    expect(matteCell(matte, 0)).toEqual({ x: 0, y: 0, width: 192, height: 108 })
++    expect(matteCell(matte, 9)).toEqual({ x: 192, y: 108, width: 192, height: 108 })
++  })
++
++  it('turns gray into alpha on white', () => {
++    const data = new Uint8ClampedArray([200, 200, 200, 255, 0, 0, 0, 255])
++    lumaToAlpha(data)
++    expect([...data]).toEqual([255, 255, 255, 200, 255, 255, 255, 0])
++  })
++
++  it('scales softness and the Blur background with the frame', () => {
++    expect(cutoutBlurPixels(100, { width: 1920, height: 1080 })).toEqual({
++      edge: expect.closeTo(12.96, 6),
++      background: expect.closeTo(21.6, 6),
++    })
++    expect(cutoutBlurPixels(0, { width: 1920, height: 1080 }).edge).toBe(0)
++  })
++
++  it('maps a viewer point to the clip picture, undoing rotation and flips', () => {
++    const canvas = { width: 1920, height: 1080 }
++    const fullFrame = { x: 0, y: 0, width: 1920, height: 1080 }
++    expect(canvasPointToSourceFraction({ x: 480, y: 270 }, clip(), fullFrame, canvas)).toEqual({ x: 0.25, y: 0.25 })
++    expect(
++      canvasPointToSourceFraction({ x: 480, y: 270 }, clip(), { ...fullFrame, flipHorizontal: true }, canvas),
++    ).toEqual({ x: 0.75, y: 0.25 })
++    const turned = canvasPointToSourceFraction({ x: 1440, y: 810 }, clip(), { ...fullFrame, rotation: 180 }, canvas)
++    expect(turned!.x).toBeCloseTo(0.25, 6)
++    expect(turned!.y).toBeCloseTo(0.25, 6)
++    // A clip in the right half: a point in the left half is outside its picture.
++    expect(
++      canvasPointToSourceFraction({ x: 100, y: 540 }, clip(), { x: 480, y: 0, width: 960, height: 540 }, canvas),
++    ).toBeNull()
++  })
++
++  it('names its matte and photo by clip and file, so a new matte is a new image', () => {
++    expect(cutoutImageItem(clip(), 'matte', matte.importId)).toMatchObject({
++      id: `clip::cutout-matte::${matte.importId}`,
++      type: 'image',
++      mediaId: matte.importId,
++    })
++  })
++
++  it('a see-through cut-out never hides the tracks below it', () => {
++    const context: FrameOcclusionContext = {
++      frame: 70,
++      canvasWidth: 1920,
++      canvasHeight: 1080,
++      canvasSettings: { width: 1920, height: 1080, fps: 30 },
++      renderMode: 'export',
++      transitionClipIds: new Set(),
++      adjustmentLayers: [],
++      getCurrentItem: (item) => item,
++      getCurrentKeyframes: () => undefined,
++    }
++    expect(isItemFullyOccluding(clip(cutout('blur')), 0, context)).toBe(true)
++    expect(isItemFullyOccluding(clip(cutout('remove')), 0, context)).toBe(false)
++  })
++
++  describe('drawing', () => {
++    const target = () => ({ canvas: { width: 1920, height: 1080 } }) as OffscreenCanvasRenderingContext2D
++
++    it('draws the clip unchanged outside the followed window', async () => {
++      const drawClip = vi.fn().mockResolvedValue(true)
++      const ensureImageItemReady = vi.fn()
++      const ctx = target()
++      // Frame 200 is 7.6 s into the source, past the 3..5 s window.
++      const drawn = await renderVideoWithSubjectCutout(
++        ctx,
++        clip(cutout('blur')) as VideoItem & { subjectCutout: SubjectCutout },
++        { x: 0, y: 0, width: 1920, height: 1080, rotation: 0, opacity: 1, cornerRadius: 0 },
++        200,
++        createItemRenderContext({ ensureImageItemReady }),
++        0,
++        undefined,
++        drawClip,
++      )
++      expect(drawn).toBe(true)
++      expect(drawClip).toHaveBeenCalledWith(ctx)
++      expect(ensureImageItemReady).not.toHaveBeenCalled()
++    })
++
++    it('exports a Photo background with no photo chosen without asking for one', async () => {
++      const ensureImageItemReady = vi.fn()
++      const item = clip(cutout('photo')) as VideoItem & { subjectCutout: SubjectCutout }
++      await expect(
++        renderVideoWithSubjectCutout(
++          target(),
++          item,
++          { x: 0, y: 0, width: 1920, height: 1080, rotation: 0, opacity: 1, cornerRadius: 0 },
++          70,
++          createItemRenderContext({ ensureImageItemReady }),
++          0,
++          undefined,
++          vi.fn().mockResolvedValue(true),
++        ),
++      ).rejects.toThrow(SUBJECT_MATTE_UNAVAILABLE)
++      // Only the matte was asked for (it is missing here); no photo was.
++      expect(ensureImageItemReady.mock.calls.map(([image]) => image.id)).toEqual([
++        `clip::cutout-matte::${matte.importId}`,
++      ])
++    })
++
++    it('refuses to export a frame whose matte cannot be read, and previews it uncut', async () => {
++      const drawClip = vi.fn().mockResolvedValue(true)
++      const item = clip(cutout('remove')) as VideoItem & { subjectCutout: SubjectCutout }
++      const transform = { x: 0, y: 0, width: 1920, height: 1080, rotation: 0, opacity: 1, cornerRadius: 0 }
++      await expect(
++        renderVideoWithSubjectCutout(target(), item, transform, 70, createItemRenderContext({ ensureImageItemReady: vi.fn() }), 0, undefined, drawClip),
++      ).rejects.toThrow(SUBJECT_MATTE_UNAVAILABLE)
++      const preview = target()
++      await renderVideoWithSubjectCutout(
++        preview,
++        item,
++        transform,
++        70,
++        createItemRenderContext({ renderMode: 'preview', ensureImageItemReady: vi.fn() }),
++        0,
++        undefined,
++        drawClip,
++      )
++      expect(drawClip).toHaveBeenCalledWith(preview)
++    })
++  })
++})
+diff --git a/src/features/export/utils/subject-cutout.ts b/src/features/export/utils/subject-cutout.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/subject-cutout.ts
+@@ -0,0 +1,309 @@
++/**
++ * Frameleaf (FL-639): Cut out the subject in a video clip.
++ *
++ * The server follows the subject through the clip (SAM2.1 video) and keeps the matte with the project as
++ * one grayscale PNG: a small frame for every `1 / fps` seconds of the source from `startSeconds`, side by
++ * side, `columns` to a row. This draws the clip with that matte, in preview and export alike, because
++ * both render every item through `renderItem`:
++ *
++ * - the clip is drawn as usual into a scratch canvas with the target's transform;
++ * - the matte for the moment shown is the two nearest matte frames blended by time, drawn into the
++ *   same media rectangle as the video (so crop, fit, transform and keyframes follow), softened by the
++ *   clip's edge softness;
++ * - the background is the clip blurred (Blur), nothing (Remove: see-through, to layer over another
++ *   clip), a solid colour (Colour) or a still from the bin (Photo), always kept inside the clip's own
++ *   visible area, with the subject on top. Keep draws the clip unchanged.
++ *
++ * Outside the matte's window (the clip was trimmed longer afterwards) the clip draws unchanged. In
++ * export a matte that cannot be read is an error rather than a silent un-cut frame.
++ */
++import type { ImageItem, SubjectCutout, VideoItem } from '@/types/timeline'
++import type { ItemRenderContext, ItemTransform } from './canvas-item-renderer/types'
++import { calculateContainedMediaDrawLayout } from './canvas-item-renderer/media-draw'
++import { getItemRenderTimelineSpan, resolveVideoRenderSourceTimeSeconds, type RenderTimelineSpan } from './render-span'
++
++export const SUBJECT_MATTE_UNAVAILABLE = 'SUBJECT_MATTE_UNAVAILABLE'
++
++/** The edge softness slider at 100% blurs the matte by this share of the frame's short side. */
++const MAX_SOFTNESS_SHARE = 0.012
++/** The Blur background, as a share of the frame's short side. */
++const BACKGROUND_BLUR_SHARE = 0.02
++
++/** A cut-out that changes the picture: every background but Keep. */
++export function hasActiveSubjectCutout(item: { type: string; subjectCutout?: SubjectCutout }): item is VideoItem & {
++  subjectCutout: SubjectCutout
++} {
++  return item.type === 'video' && !!item.subjectCutout?.matte?.importId && item.subjectCutout.background !== 'keep'
++}
++
++/** Remove makes the background see-through, so the clip no longer hides what is beneath it. */
++export function isSeeThroughSubjectCutout(item: { type: string; subjectCutout?: SubjectCutout }): boolean {
++  return hasActiveSubjectCutout(item) && item.subjectCutout.background === 'remove'
++}
++
++/**
++ * The matte frames around `sourceSeconds`: the earlier one, the later one and how far between them,
++ * or null outside the followed window (half a matte frame of grace before it).
++ */
++export function matteSample(
++  matte: SubjectCutout['matte'],
++  sourceSeconds: number,
++): { first: number; second: number; weight: number } | null {
++  if (!(matte.fps > 0) || matte.frames < 1 || !Number.isFinite(sourceSeconds)) return null
++  const position = (sourceSeconds - matte.startSeconds) * matte.fps
++  if (position < -0.5 || position > matte.frames + 1e-6) return null
++  const clamped = Math.min(matte.frames - 1, Math.max(0, position))
++  const first = Math.floor(clamped)
++  const second = Math.min(matte.frames - 1, first + 1)
++  return { first, second, weight: second === first ? 0 : clamped - first }
++}
++
++/** Where matte frame `index` is in the matte file. */
++export function matteCell(matte: SubjectCutout['matte'], index: number) {
++  return {
++    x: (index % matte.columns) * matte.frameWidth,
++    y: Math.floor(index / matte.columns) * matte.frameHeight,
++    width: matte.frameWidth,
++    height: matte.frameHeight,
++  }
++}
++
++/** Blur radii in canvas pixels: the matte's edge softness and the Blur background. */
++export function cutoutBlurPixels(softness: number, canvas: { width: number; height: number }) {
++  const short = Math.max(1, Math.min(canvas.width, canvas.height))
++  return {
++    edge: (Math.min(100, Math.max(0, softness)) / 100) * MAX_SOFTNESS_SHARE * short,
++    background: BACKGROUND_BLUR_SHARE * short,
++  }
++}
++
++/** The project file a cut-out reads, as an image item the renderer's image loader understands. */
++export function cutoutImageItem(item: VideoItem, role: 'matte' | 'photo', mediaId: string): ImageItem {
++  return {
++    id: `${item.id}::cutout-${role}::${mediaId}`,
++    type: 'image',
++    mediaId,
++    src: '',
++    label: role,
++    trackId: item.trackId,
++    from: item.from,
++    durationInFrames: item.durationInFrames,
++  } as ImageItem
++}
++
++/** The matte's grayscale as alpha (white subject), for one matte frame. Small: one matte frame big. */
++const alphaCells = new Map<string, OffscreenCanvas>()
++const ALPHA_CELLS_KEPT = 12
++
++function alphaCell(source: CanvasImageSource, matte: SubjectCutout['matte'], index: number): OffscreenCanvas | null {
++  const key = `${matte.importId}:${index}`
++  const cached = alphaCells.get(key)
++  if (cached) {
++    alphaCells.delete(key)
++    alphaCells.set(key, cached)
++    return cached
++  }
++  const cell = matteCell(matte, index)
++  const canvas = new OffscreenCanvas(cell.width, cell.height)
++  const context = canvas.getContext('2d', { willReadFrequently: true })
++  if (!context) return null
++  context.drawImage(source, cell.x, cell.y, cell.width, cell.height, 0, 0, cell.width, cell.height)
++  const pixels = context.getImageData(0, 0, cell.width, cell.height)
++  lumaToAlpha(pixels.data)
++  context.putImageData(pixels, 0, 0)
++  alphaCells.set(key, canvas)
++  while (alphaCells.size > ALPHA_CELLS_KEPT) alphaCells.delete(alphaCells.keys().next().value!)
++  return canvas
++}
++
++/** White with the gray level as alpha: `[g, g, g, 255]` becomes `[255, 255, 255, g]`. */
++export function lumaToAlpha(data: Uint8ClampedArray): void {
++  for (let offset = 0; offset < data.length; offset += 4) {
++    data[offset + 3] = data[offset]!
++    data[offset] = 255
++    data[offset + 1] = 255
++    data[offset + 2] = 255
++  }
++}
++
++type Scratch = { canvas: OffscreenCanvas; ctx: OffscreenCanvasRenderingContext2D }
++
++function scratch(rctx: ItemRenderContext, like: Scratch['ctx'], held: OffscreenCanvas[]): Scratch {
++  let { canvas, ctx } = rctx.canvasPool.acquire()
++  if (canvas.width === like.canvas.width && canvas.height === like.canvas.height) {
++    held.push(canvas)
++  } else {
++    // A target of another size (a corner-pin or nested composition canvas): a canvas of its own.
++    rctx.canvasPool.release(canvas)
++    canvas = new OffscreenCanvas(like.canvas.width, like.canvas.height)
++    const own = canvas.getContext('2d')
++    if (!own) throw new Error('Canvas 2D is unavailable')
++    ctx = own
++  }
++  ctx.save()
++  ctx.setTransform(1, 0, 0, 1, 0, 0)
++  ctx.clearRect(0, 0, canvas.width, canvas.height)
++  ctx.restore()
++  ctx.setTransform(like.getTransform())
++  ctx.globalAlpha = 1
++  ctx.globalCompositeOperation = 'source-over'
++  ctx.filter = 'none'
++  ctx.imageSmoothingEnabled = true
++  ctx.imageSmoothingQuality = 'high'
++  return { canvas, ctx }
++}
++
++async function loadImage(rctx: ItemRenderContext, item: ImageItem) {
++  await rctx.ensureImageItemReady?.(item)
++  return rctx.imageElements.get(item.id) ?? null
++}
++
++/**
++ * Draw a video clip with its cut-out. `drawClip` draws the clip as usual into the context it is given
++ * and answers whether a real frame was drawn.
++ */
++export async function renderVideoWithSubjectCutout(
++  ctx: OffscreenCanvasRenderingContext2D,
++  item: VideoItem & { subjectCutout: SubjectCutout },
++  transform: ItemTransform,
++  frame: number,
++  rctx: ItemRenderContext,
++  sourceFrameOffset: number,
++  renderSpan: RenderTimelineSpan | undefined,
++  drawClip: (target: OffscreenCanvasRenderingContext2D) => Promise<boolean>,
++  /** Applies to the matte what `drawClip` applies to the clip beyond its transform (stabilisation). */
++  alignMatte?: (target: OffscreenCanvasRenderingContext2D) => void,
++): Promise<boolean> {
++  // A Photo background with no photo chosen is drawn as Blur: a defined, opaque fallback.
++  const cutout: SubjectCutout =
++    item.subjectCutout.background === 'photo' && !item.subjectCutout.photo?.mediaId
++      ? { ...item.subjectCutout, background: 'blur' }
++      : item.subjectCutout
++  const { matte } = cutout
++  const sourceSeconds = resolveVideoRenderSourceTimeSeconds(
++    item,
++    renderSpan ?? getItemRenderTimelineSpan(item),
++    frame,
++    rctx.fps,
++    sourceFrameOffset,
++  )
++  const sample = matteSample(matte, sourceSeconds)
++  if (!sample) return drawClip(ctx)
++  const atlas = await loadImage(rctx, cutoutImageItem(item, 'matte', matte.importId))
++  if (!atlas) {
++    if (rctx.renderMode === 'export') throw new Error(SUBJECT_MATTE_UNAVAILABLE)
++    return drawClip(ctx)
++  }
++  const photo =
++    cutout.background === 'photo' && cutout.photo?.mediaId
++      ? await loadImage(rctx, cutoutImageItem(item, 'photo', cutout.photo.mediaId))
++      : null
++  // A chosen photo that cannot be read fails export; preview draws the clip blurred behind instead.
++  if (cutout.background === 'photo' && !photo && rctx.renderMode === 'export') {
++    throw new Error(SUBJECT_MATTE_UNAVAILABLE)
++  }
++  const background = cutout.background === 'photo' && !photo ? 'blur' : cutout.background
++
++  const held: OffscreenCanvas[] = []
++  try {
++    const clip = scratch(rctx, ctx, held)
++    if (!(await drawClip(clip.ctx))) return false
++
++    // The matte, in the video's own media rectangle (crop, fit and transform included).
++    const mask = scratch(rctx, ctx, held)
++    const blur = cutoutBlurPixels(cutout.softness, ctx.canvas)
++    const sourceWidth = item.sourceWidth && item.sourceWidth > 0 ? item.sourceWidth : matte.frameWidth
++    const sourceHeight = item.sourceHeight && item.sourceHeight > 0 ? item.sourceHeight : matte.frameHeight
++    const layout = calculateContainedMediaDrawLayout(sourceWidth, sourceHeight, transform, rctx.canvasSettings, item.crop)
++    alignMatte?.(mask.ctx)
++    mask.ctx.filter = blur.edge >= 0.5 ? `blur(${blur.edge.toFixed(2)}px)` : 'none'
++    const cells: Array<[number, number]> = sample.weight > 0 && sample.second !== sample.first
++      ? [[sample.first, 1 - sample.weight], [sample.second, sample.weight]]
++      : [[sample.first, 1]]
++    for (const [index, weight] of cells) {
++      const cell = alphaCell(atlas.source, matte, index)
++      if (!cell) continue
++      mask.ctx.globalAlpha = weight
++      mask.ctx.globalCompositeOperation = 'lighter'
++      mask.ctx.drawImage(cell, layout.mediaRect.x, layout.mediaRect.y, layout.mediaRect.width, layout.mediaRect.height)
++    }
++
++    // Background, inside the clip's own visible pixels.
++    const out = scratch(rctx, ctx, held)
++    out.ctx.setTransform(1, 0, 0, 1, 0, 0)
++    if (background === 'blur') {
++      out.ctx.filter = `blur(${blur.background.toFixed(2)}px)`
++      out.ctx.drawImage(clip.canvas, 0, 0)
++      out.ctx.filter = 'none'
++    } else if (background === 'colour') {
++      out.ctx.fillStyle = /^#[\da-f]{6}$/i.test(cutout.colour ?? '') ? cutout.colour! : '#000000'
++      out.ctx.fillRect(0, 0, out.canvas.width, out.canvas.height)
++    } else if (background === 'photo' && photo) {
++      // The photo fills the clip's frame, centred and cropped to its shape.
++      out.ctx.setTransform(ctx.getTransform())
++      const box = layout.viewportRect
++      const scale = Math.max(box.width / photo.width, box.height / photo.height)
++      const width = photo.width * scale
++      const height = photo.height * scale
++      out.ctx.drawImage(photo.source, box.x + (box.width - width) / 2, box.y + (box.height - height) / 2, width, height)
++      out.ctx.setTransform(1, 0, 0, 1, 0, 0)
++    }
++    if (background !== 'remove') {
++      out.ctx.globalCompositeOperation = 'destination-in'
++      out.ctx.drawImage(clip.canvas, 0, 0)
++      out.ctx.globalCompositeOperation = 'source-over'
++    }
++
++    // The subject: the clip where the matte is.
++    clip.ctx.save()
++    clip.ctx.setTransform(1, 0, 0, 1, 0, 0)
++    clip.ctx.globalCompositeOperation = 'destination-in'
++    clip.ctx.drawImage(mask.canvas, 0, 0)
++    clip.ctx.restore()
++    out.ctx.drawImage(clip.canvas, 0, 0)
++
++    ctx.save()
++    ctx.setTransform(1, 0, 0, 1, 0, 0)
++    ctx.drawImage(out.canvas, 0, 0)
++    ctx.restore()
++    return true
++  } finally {
++    for (const canvas of held) rctx.canvasPool.release(canvas)
++  }
++}
++
++/**
++ * A point on the project canvas as a fraction of the clip's own picture (0..1 across and down the
++ * source), undoing the clip's rotation and flips; null when it is outside the picture. Used for
++ * Add to subject / Take away, which paint on the viewer.
++ */
++export function canvasPointToSourceFraction(
++  point: { x: number; y: number },
++  item: Pick<VideoItem, 'sourceWidth' | 'sourceHeight' | 'crop'>,
++  transform: { x: number; y: number; width: number; height: number; rotation?: number; flipHorizontal?: boolean; flipVertical?: boolean },
++  canvas: { width: number; height: number },
++): { x: number; y: number } | null {
++  const centreX = canvas.width / 2 + transform.x
++  const centreY = canvas.height / 2 + transform.y
++  const angle = (-(transform.rotation ?? 0) * Math.PI) / 180
++  let dx = point.x - centreX
++  let dy = point.y - centreY
++  ;[dx, dy] = [dx * Math.cos(angle) - dy * Math.sin(angle), dx * Math.sin(angle) + dy * Math.cos(angle)]
++  if (transform.flipHorizontal) dx = -dx
++  if (transform.flipVertical) dy = -dy
++  const sourceWidth = item.sourceWidth && item.sourceWidth > 0 ? item.sourceWidth : transform.width
++  const sourceHeight = item.sourceHeight && item.sourceHeight > 0 ? item.sourceHeight : transform.height
++  const { mediaRect, viewportRect } = calculateContainedMediaDrawLayout(
++    sourceWidth,
++    sourceHeight,
++    transform,
++    { ...canvas, fps: 30 },
++    item.crop,
++  )
++  const x = centreX + dx
++  const y = centreY + dy
++  if (x < viewportRect.x || y < viewportRect.y || x > viewportRect.x + viewportRect.width || y > viewportRect.y + viewportRect.height) {
++    return null
++  }
++  return { x: (x - mediaRect.x) / mediaRect.width, y: (y - mediaRect.y) / mediaRect.height }
++}
+diff --git a/src/features/preview/components/subject-cutout-paint-overlay.tsx b/src/features/preview/components/subject-cutout-paint-overlay.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/preview/components/subject-cutout-paint-overlay.tsx
+@@ -0,0 +1,114 @@
++/**
++ * Frameleaf (FL-639): Add to subject / Take away, painted on the viewer.
++ *
++ * While the cut-out card is painting, a drag over the clip draws a stroke; when it ends the stroke is
++ * handed to the card (as a few points in fractions of the clip's picture) and the matte is made again,
++ * followed through the shot from this frame. Escape stops painting.
++ */
++import { memo, useCallback, useEffect, useMemo, useState, type PointerEvent } from 'react'
++import { useTranslation } from 'react-i18next'
++import { useItemsStore } from '@/features/preview/deps/timeline-store'
++import { canvasPointToSourceFraction } from '@/features/preview/deps/export-contract'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { strokePoints, useSubjectCutoutPaintStore } from '@/shared/state/subject-cutout-paint'
++import { useVisualTransforms } from '../hooks/use-visual-transform'
++import { screenToCanvas } from '../utils/coordinate-transform'
++import type { CoordinateParams } from '../types/gizmo'
++
++interface SubjectCutoutPaintOverlayProps {
++  containerRect: DOMRect | null
++  playerSize: { width: number; height: number }
++  projectSize: { width: number; height: number }
++  zoom: number
++}
++
++export const SubjectCutoutPaintOverlay = memo(function SubjectCutoutPaintOverlay({
++  containerRect,
++  playerSize,
++  projectSize,
++  zoom,
++}: SubjectCutoutPaintOverlayProps) {
++  const { t } = useTranslation()
++  const itemId = useSubjectCutoutPaintStore((s) => s.itemId)
++  const label = useSubjectCutoutPaintStore((s) => s.label)
++  const item = useItemsStore(useCallback((s) => (itemId ? (s.itemById[itemId] ?? null) : null), [itemId]))
++  const transforms = useVisualTransforms(item ? [item] : [], projectSize)
++  const [stroke, setStroke] = useState<Array<{ screen: { x: number; y: number }; source: { x: number; y: number } }>>([])
++
++  const coordParams = useMemo(
++    (): CoordinateParams | null => (containerRect ? { containerRect, playerSize, projectSize, zoom } : null),
++    [containerRect, playerSize, projectSize, zoom],
++  )
++
++  useEffect(() => {
++    if (!itemId) return
++    const onKey = (event: KeyboardEvent) => {
++      if (event.key === 'Escape') useSubjectCutoutPaintStore.getState().stop()
++    }
++    window.addEventListener('keydown', onKey)
++    return () => window.removeEventListener('keydown', onKey)
++  }, [itemId])
++
++  if (!itemId || !item || item.type !== 'video' || !coordParams) return null
++  const transform = transforms.get(item.id)
++  if (!transform) return null
++
++  const sample = (event: PointerEvent<HTMLDivElement>) => {
++    const canvasPoint = screenToCanvas(event.clientX, event.clientY, coordParams)
++    const source = canvasPointToSourceFraction(
++      canvasPoint,
++      item,
++      { ...transform, flipHorizontal: item.transform?.flipHorizontal, flipVertical: item.transform?.flipVertical },
++      projectSize,
++    )
++    if (!source) return null
++    const bounds = event.currentTarget.getBoundingClientRect()
++    return { screen: { x: event.clientX - bounds.left, y: event.clientY - bounds.top }, source }
++  }
++
++  const colour = label === 1 ? 'rgba(46, 160, 67, 0.9)' : 'rgba(248, 81, 73, 0.9)'
++  return (
++    <div
++      className="pointer-events-auto absolute z-50 cursor-crosshair touch-none"
++      data-testid="subject-cutout-paint-overlay"
++      role="application"
++      aria-label={t(label === 1 ? 'cutout.paintAddHint' : 'cutout.paintTakeHint')}
++      style={{ left: 0, top: 0, width: playerSize.width, height: playerSize.height }}
++      onClick={(event) => event.stopPropagation()}
++      onPointerDown={(event) => {
++        event.stopPropagation()
++        event.currentTarget.setPointerCapture(event.pointerId)
++        const point = sample(event)
++        setStroke(point ? [point] : [])
++      }}
++      onPointerMove={(event) => {
++        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
++        const point = sample(event)
++        if (point) setStroke((current) => [...current, point])
++      }}
++      onPointerUp={(event) => {
++        event.stopPropagation()
++        if (stroke.length > 0) {
++          useSubjectCutoutPaintStore.getState().finish({
++            itemId,
++            label,
++            points: strokePoints(stroke.map((point) => point.source)),
++            frame: usePlaybackStore.getState().currentFrame,
++          })
++        }
++        setStroke([])
++      }}
++    >
++      <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
++        <polyline
++          points={stroke.map((point) => `${point.screen.x},${point.screen.y}`).join(' ')}
++          fill="none"
++          stroke={colour}
++          strokeWidth={14}
++          strokeLinecap="round"
++          strokeLinejoin="round"
++        />
++      </svg>
++    </div>
++  )
++})
+diff --git a/src/features/preview/components/video-preview.tsx b/src/features/preview/components/video-preview.tsx
+--- a/src/features/preview/components/video-preview.tsx
++++ b/src/features/preview/components/video-preview.tsx
+@@ -6,6 +6,7 @@
+ import type { TimelineItem } from '@/types/timeline'
+ import { GizmoOverlay } from './gizmo-overlay'
+ import { MaskEditorContainer } from './mask-editor-container'
++import { SubjectCutoutPaintOverlay } from './subject-cutout-paint-overlay'
+ import { CornerPinContainer } from './corner-pin-container'
+ import { PowerWindowOverlayContainer } from './power-window-overlay'
+ import { SpatialEffectPointOverlayContainer } from './spatial-effect-point-overlay'
+@@ -825,6 +826,13 @@
+           hitAreaRef={backgroundRef as React.RefObject<HTMLDivElement>}
+         />
+       )}
++      {/* Frameleaf (FL-639): Add to subject / Take away, painted on the viewer. */}
++      <SubjectCutoutPaintOverlay
++        containerRect={playerContainerRect}
++        playerSize={playerSize}
++        projectSize={{ width: project.width, height: project.height }}
++        zoom={zoom}
++      />
+       {isMaskEditing && (
+         <MaskEditorContainer
+           containerRect={playerContainerRect}
+diff --git a/src/features/preview/deps/export-contract.ts b/src/features/preview/deps/export-contract.ts
+--- a/src/features/preview/deps/export-contract.ts
++++ b/src/features/preview/deps/export-contract.ts
+@@ -8,6 +8,7 @@
+   type VideoFrameSource,
+ } from '@/features/export/utils/shared-video-extractor'
+ export { HdrRenderUnavailableError } from '@/features/export/utils/hdr-video-sources'
++export { canvasPointToSourceFraction, hasActiveSubjectCutout } from '@/features/export/utils/subject-cutout'
+ export {
+   isFrameInsideSourceTimeRamp,
+   resolveAATransitionRamps,
+diff --git a/src/features/preview/hooks/use-gpu-effects-overlay.ts b/src/features/preview/hooks/use-gpu-effects-overlay.ts
+--- a/src/features/preview/hooks/use-gpu-effects-overlay.ts
++++ b/src/features/preview/hooks/use-gpu-effects-overlay.ts
+@@ -15,6 +15,7 @@
+   type ResolvedTransitionWindow,
+ } from '@/shared/timeline/transitions/transition-planner'
+ import { hasCornerPin } from '@/features/preview/deps/composition-runtime'
++import { hasActiveSubjectCutout } from '@/features/preview/deps/export-contract'
+ import { isTextMotionActive } from '@/shared/typography/text-motion'
+ 
+ function hasEnabledGpuEffect(effects: ItemEffect[] | undefined): boolean {
+@@ -49,7 +50,9 @@
+     hasEnabledGpuEffect(item.effects) ||
+     hasRenderableBlendMode(item) ||
+     hasCornerPin(item.cornerPin) ||
+-    hasTextMotionSpec(item)
++    hasTextMotionSpec(item) ||
++    // Frameleaf (FL-639): a cut-out exists only in the rendered picture, never in the DOM player.
++    hasActiveSubjectCutout(item)
+   )
+ }
+ 
+diff --git a/src/features/timeline/stores/actions/edit/subject-cutout-actions.ts b/src/features/timeline/stores/actions/edit/subject-cutout-actions.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/actions/edit/subject-cutout-actions.ts
+@@ -0,0 +1,55 @@
++/**
++ * Frameleaf (FL-639): keep a clip's cut-out. One undo step per change; a locked clip is left alone.
++ */
++import type { SubjectCutout, VideoItem } from '@/types/timeline'
++import { useItemsStore } from '../../items-store'
++import { useTimelineSettingsStore } from '../../timeline-settings-store'
++import { execute } from '../shared'
++import { hasLockedEditParticipants } from '../linked-edit'
++
++function videoItem(itemId: string): VideoItem | null {
++  const item = useItemsStore.getState().itemById[itemId]
++  return item?.type === 'video' ? item : null
++}
++
++/** Set (or with null remove) the clip's cut-out. Answers false when the clip is missing or locked. */
++export function setSubjectCutout(itemId: string, cutout: SubjectCutout | null): boolean {
++  const item = videoItem(itemId)
++  if (!item || hasLockedEditParticipants([item])) return false
++  execute(cutout ? 'SET_SUBJECT_CUTOUT' : 'REMOVE_SUBJECT_CUTOUT', () => {
++    useItemsStore.getState()._updateItem(itemId, { subjectCutout: cutout ?? undefined } as Partial<VideoItem>)
++    useTimelineSettingsStore.getState().markDirty()
++  }, { itemId })
++  return true
++}
++
++/** Change how the found subject is shown (background, colour, photo, softness). */
++export function updateSubjectCutout(
++  itemId: string,
++  patch: Partial<Pick<SubjectCutout, 'background' | 'colour' | 'photo' | 'softness'>>,
++): boolean {
++  const current = videoItem(itemId)?.subjectCutout
++  if (!current) return false
++  return setSubjectCutout(itemId, { ...current, ...patch })
++}
++
++/** Where in the clip's source a timeline frame is, in seconds (constant speed; a ramp is many clips). */
++function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
++  const sourceFps = item.sourceFps ?? fps
++  const speed = item.speed ?? 1
++  return (item.sourceStart ?? 0) / sourceFps + ((frame - item.from) / fps) * speed
++}
++
++/** Painted strokes as the points a new matte is made with. */
++export function cutoutRequestPoints(
++  item: VideoItem,
++  strokes: ReadonlyArray<{ label: 0 | 1; frame: number; points: ReadonlyArray<{ x: number; y: number }> }>,
++  fps: number,
++): NonNullable<SubjectCutout['points']> {
++  return strokes.flatMap((stroke) => {
++    const sourceSeconds = Math.max(0, sourceSecondsAt(item, stroke.frame, fps))
++    return stroke.points
++      .filter((point) => point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1)
++      .map((point) => ({ sourceSeconds, x: point.x, y: point.y, label: stroke.label }))
++  })
++}
+diff --git a/src/i18n/locales/partials/de/cutout.json b/src/i18n/locales/partials/de/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/de/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/en/cutout.json b/src/i18n/locales/partials/en/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/en/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/es/cutout.json b/src/i18n/locales/partials/es/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/es/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/fr/cutout.json b/src/i18n/locales/partials/fr/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/fr/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/ja/cutout.json b/src/i18n/locales/partials/ja/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ja/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/ko/cutout.json b/src/i18n/locales/partials/ko/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/ko/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/pt-BR/cutout.json b/src/i18n/locales/partials/pt-BR/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/pt-BR/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/tr/cutout.json b/src/i18n/locales/partials/tr/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/tr/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/zh/cutout.json b/src/i18n/locales/partials/zh/cutout.json
+new file mode 100644
+--- /dev/null
++++ b/src/i18n/locales/partials/zh/cutout.json
+@@ -0,0 +1,54 @@
++{
++  "cutout": {
++    "addToSubject": "Add to subject",
++    "background": "Background",
++    "backgroundColour": "Background colour",
++    "backgroundPhoto": "Background photo",
++    "backgrounds": {
++      "blur": {
++        "label": "Blur",
++        "note": "Soft background, like portrait mode."
++      },
++      "colour": {
++        "label": "Colour",
++        "note": "A solid colour behind the subject."
++      },
++      "keep": {
++        "label": "Keep",
++        "note": "Subject found and followed; nothing changes yet."
++      },
++      "photo": {
++        "label": "Photo",
++        "note": "A photo from your library behind the subject."
++      },
++      "remove": {
++        "label": "Remove",
++        "note": "See-through, to layer the subject over another clip."
++      }
++    },
++    "failed": "Couldn't cut out {{name}}. {{reason}}",
++    "find": "Find {{name}}",
++    "findSubject": "Find the subject",
++    "finding": "Finding {{name}} in each frame…",
++    "findingSubject": "Finding the subject in each frame…",
++    "found": "Found {{name}} in every frame of {{clip}}.",
++    "locked": "This clip is on a locked track, so the cut-out wasn't added.",
++    "mainSubject": "Main subject",
++    "noPhotos": "Add a photo to the bin to put it behind the subject.",
++    "notKept": "The cut-out couldn't be opened in the editor.",
++    "paintAddHint": "Paint over the viewer to add to the subject. Studio follows the change through the shot.",
++    "paintTakeHint": "Paint over the viewer to take an area out of the subject.",
++    "refining": "Following your change through the shot…",
++    "remove": "Remove cut-out",
++    "softness": "Edge softness · {{value}}%",
++    "softnessLabel": "Edge softness",
++    "subject": "Subject",
++    "takeAway": "Take away",
++    "title": "Cut out the subject",
++    "whereItRuns": "Found and followed on your Frameleaf server or a computer at home. The original video never changes.",
++    "errors": {
++      "faceDetectionOff": "Turn on face recognition on your server or a computer at home to follow a person, or choose Main subject.",
++      "personNotInFirstFrame": "They aren't in the clip's first frame. Trim the clip to start where they appear, or choose Main subject."
++    }
++  }
++}
+diff --git a/src/shared/state/subject-cutout-host.ts b/src/shared/state/subject-cutout-host.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/state/subject-cutout-host.ts
+@@ -0,0 +1,43 @@
++/**
++ * Frameleaf (FL-639): the host side of Cut out the subject.
++ *
++ * Finding a subject needs the server (face recognition and SAM2.1 video on this server or a computer at
++ * home), which the editor reaches only through its host. The adapter registers these calls when the
++ * editor mounts inside Frameleaf; without them (plain Freecut, headless export) the card is not offered.
++ */
++import type { SubjectCutout } from '@/types/timeline'
++
++export type SubjectCutoutPerson = { kind: 'person' | 'subject'; personId: string | null; name: string | null }
++
++export type SubjectCutoutJob = {
++  id: string
++  status: 'queued' | 'running' | 'completed' | 'failed'
++  progress: number
++  error: string | null
++  /** A refusal the card words itself: `faceDetectionOff` or `personNotInFirstFrame`. */
++  errorCode?: string | null
++  matte: SubjectCutout['matte'] | null
++}
++
++export interface SubjectCutoutHost {
++  /** Who the cut-out can follow in a clip: the named people recognised in it, or the main subject. */
++  subjects(clipId: string): Promise<SubjectCutoutPerson[]>
++  start(request: {
++    clipId: string
++    personId: string | null
++    points: NonNullable<SubjectCutout['points']>
++  }): Promise<SubjectCutoutJob>
++  read(cutoutId: string): Promise<SubjectCutoutJob>
++  /** Resolves once the matte file can be read by the renderer (the host has handed it over). */
++  whenMatteReady(importId: string, signal: AbortSignal): Promise<boolean>
++}
++
++let host: SubjectCutoutHost | null = null
++
++export function registerSubjectCutoutHost(next: SubjectCutoutHost | null): void {
++  host = next
++}
++
++export function getSubjectCutoutHost(): SubjectCutoutHost | null {
++  return host
++}
+diff --git a/src/shared/state/subject-cutout-paint.ts b/src/shared/state/subject-cutout-paint.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/state/subject-cutout-paint.ts
+@@ -0,0 +1,48 @@
++/**
++ * Frameleaf (FL-639): Add to subject / Take away. While `itemId` is set, a drag on the viewer paints
++ * points for that clip; the cut-out card turns each finished stroke into a new matte.
++ */
++import { create } from 'zustand'
++
++export type SubjectCutoutStroke = {
++  itemId: string
++  label: 0 | 1
++  /** Fractions of the clip's picture (0..1), in the order painted. */
++  points: Array<{ x: number; y: number }>
++  /** The timeline frame the stroke was painted on. */
++  frame: number
++}
++
++interface SubjectCutoutPaintState {
++  itemId: string | null
++  label: 0 | 1
++  /** Finished strokes the card has not taken yet. */
++  strokes: SubjectCutoutStroke[]
++  start: (itemId: string, label: 0 | 1) => void
++  stop: () => void
++  finish: (stroke: SubjectCutoutStroke) => void
++  take: (itemId: string) => SubjectCutoutStroke[]
++}
++
++export const useSubjectCutoutPaintStore = create<SubjectCutoutPaintState>((set, get) => ({
++  itemId: null,
++  label: 1,
++  strokes: [],
++  start: (itemId, label) => set({ itemId, label }),
++  stop: () => set({ itemId: null }),
++  finish: (stroke) => set((state) => ({ strokes: [...state.strokes, stroke] })),
++  take: (itemId) => {
++    const taken = get().strokes.filter((stroke) => stroke.itemId === itemId)
++    if (taken.length > 0) set((state) => ({ strokes: state.strokes.filter((stroke) => stroke.itemId !== itemId) }))
++    return taken
++  },
++}))
++
++/** At most this many points from one stroke, evenly spaced along it: SAM2 reads points, not pixels. */
++const POINTS_PER_STROKE = 8
++
++export function strokePoints(points: ReadonlyArray<{ x: number; y: number }>): Array<{ x: number; y: number }> {
++  if (points.length <= POINTS_PER_STROKE) return points.map((point) => ({ ...point }))
++  const step = (points.length - 1) / (POINTS_PER_STROKE - 1)
++  return Array.from({ length: POINTS_PER_STROKE }, (_, index) => ({ ...points[Math.round(index * step)]! }))
++}
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -196,9 +196,42 @@
+ }
+ 
+ // Discriminated union types for different item types
++/** Frameleaf (FL-639): what is drawn behind a cut-out subject. */
++export type SubjectCutoutBackground = 'keep' | 'blur' | 'remove' | 'colour' | 'photo'
++
++/**
++ * Frameleaf (FL-639): the subject of a video clip, cut out with a matte the server made (SAM2.1 video
++ * on this server or a home computer). The matte is a project file (`matte.importId`): one grayscale
++ * frame per `1 / fps` seconds of the source from `startSeconds`, side by side, `columns` to a row.
++ */
++export interface SubjectCutout {
++  subject: { kind: 'person' | 'subject'; personId?: string; name?: string }
++  background: SubjectCutoutBackground
++  /** `#rrggbb`, for `colour`. */
++  colour?: string
++  /** A still from the bin, for `photo`. */
++  photo?: { mediaId: string }
++  /** Edge softness, 0 (hard) to 100. */
++  softness: number
++  matte: {
++    importId: string
++    startSeconds: number
++    durationSeconds: number
++    fps: number
++    frames: number
++    columns: number
++    frameWidth: number
++    frameHeight: number
++  }
++  /** Add to subject (1) and Take away (0) points the matte was made with, in source seconds and fractions. */
++  points?: Array<{ sourceSeconds: number; x: number; y: number; label: 0 | 1 }>
++}
++
+ export type VideoItem = BaseTimelineItem & {
+   type: 'video'
+   src: string
++  /** Frameleaf (FL-639): Cut out the subject. */
++  subjectCutout?: SubjectCutout
+   audioSrc?: string // Optional source used for audio playback when visuals use a silent proxy
+   thumbnailUrl?: string
+   offset?: number // Trim offset in source video

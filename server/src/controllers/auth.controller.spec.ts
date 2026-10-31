@@ -1,0 +1,281 @@
+import { BadRequestException } from '@nestjs/common';
+import request from 'supertest';
+import { AuthController } from 'src/controllers/auth.controller.js';
+import { LoginResponseDto } from 'src/dtos/auth.dto.js';
+import { AuthService } from 'src/services/auth.service.js';
+import { errorDto } from 'test/medium/responses.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
+
+describe(AuthController.name, () => {
+  let ctx: ControllerContext;
+  const service = mockBaseService(AuthService);
+
+  beforeAll(async () => {
+    ctx = await controllerSetup(AuthController, [{ provide: AuthService, useValue: service }]);
+    return () => ctx.close();
+  });
+
+  beforeEach(() => {
+    service.resetAllMocks();
+    ctx.reset();
+  });
+
+  describe('POST /auth/admin-sign-up', () => {
+    const name = 'admin';
+    const email = 'admin@example.com';
+    const password = 'password';
+
+    it('should require an email address', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).post('/auth/admin-sign-up').send({ name, password });
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        errorDto.validationError([{ path: ['email'], message: 'Invalid input: expected email, received undefined' }]),
+      );
+    });
+
+    it('should require a password', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).post('/auth/admin-sign-up').send({ name, email });
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['password'], message: 'Invalid input: expected string, received undefined' },
+        ]),
+      );
+    });
+
+    it('should require a name', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).post('/auth/admin-sign-up').send({ email, password });
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        errorDto.validationError([{ path: ['name'], message: 'Invalid input: expected string, received undefined' }]),
+      );
+    });
+
+    it('should require a valid email', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/auth/admin-sign-up')
+        .send({ name, email: 'immich', password });
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        errorDto.validationError([{ path: ['email'], message: 'Invalid input: expected email, received string' }]),
+      );
+    });
+
+    it('should transform email to lower case', async () => {
+      service.adminSignUp.mockReset();
+      const { status } = await request(ctx.getHttpServer())
+        .post('/auth/admin-sign-up')
+        .send({ name: 'admin', password: 'password', email: 'aDmIn@ExAmPlE.CoM' });
+      expect(status).toEqual(201);
+      expect(service.adminSignUp).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'admin@example.com' }),
+        expect.objectContaining({ ip: expect.any(String) }),
+      );
+    });
+
+    it('should accept an email with a local domain', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/auth/admin-sign-up')
+        .send({ name: 'admin', password: 'password', email: 'admin@local' });
+      expect(status).toEqual(201);
+    });
+
+    it('should not sign up an admin when setup is unavailable', async () => {
+      ctx.requireSetupAvailable.mockRejectedValue(new BadRequestException('Admin setup is not available'));
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/auth/admin-sign-up')
+        .send({ name, email, password });
+
+      expect(status).toEqual(400);
+      expect(body).toEqual(errorDto.badRequest('Admin setup is not available'));
+      expect(service.adminSignUp).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /auth/login', () => {
+    it(`should require an email and password`, async () => {
+      const { status, body } = await request(ctx.getHttpServer()).post('/auth/login').send({ name: 'admin' });
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['email'], message: 'Invalid input: expected email, received undefined' },
+          { path: ['password'], message: 'Invalid input: expected string, received undefined' },
+        ]),
+      );
+    });
+
+    it(`should not allow null email`, async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ name: 'admin', email: null, password: 'password' });
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([{ path: ['email'], message: 'Invalid input: expected email, received object' }]),
+      );
+    });
+
+    it(`should not allow null password`, async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ name: 'admin', email: 'admin@example.com', password: null });
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([{ path: ['password'], message: 'Invalid input: expected string, received null' }]),
+      );
+    });
+
+    it('should reject an invalid email', async () => {
+      service.login.mockResolvedValue({ accessToken: 'access-token' } as LoginResponseDto);
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ name: 'admin', email: [], password: 'password' });
+
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([{ path: ['email'], message: 'Invalid input: expected email, received object' }]),
+      );
+    });
+
+    it('should transform the email to all lowercase', async () => {
+      service.login.mockResolvedValue({ accessToken: 'access-token' } as LoginResponseDto);
+
+      const { status } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ name: 'admin', email: 'aDmIn@iMmIcH.ApP', password: 'password' });
+
+      expect(status).toBe(201);
+      expect(service.login).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'admin@immich.app' }),
+        expect.anything(),
+      );
+    });
+
+    it('should accept an email with a local domain', async () => {
+      service.login.mockResolvedValue({ accessToken: 'access-token' } as LoginResponseDto);
+
+      const { status } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ name: 'admin', email: 'admin@local', password: 'password' });
+
+      expect(status).toEqual(201);
+      expect(service.login).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@local' }), expect.anything());
+    });
+
+    it('rejects a non-boolean cookie preference before authentication', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'admin@local', password: 'password', rememberMe: 'false' });
+      expect(status).toBe(400);
+      expect(service.login).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, true, false])('sets login cookie persistence for rememberMe=%s', async (rememberMe) => {
+      service.login.mockResolvedValue(mediumFactory.loginResponse());
+      const { status, headers } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'admin@local', password: 'password', rememberMe });
+
+      expect(status).toBe(201);
+      expect(headers['set-cookie']).toHaveLength(3);
+      for (const cookie of headers['set-cookie']) {
+        expect(cookie.includes('Max-Age=34560000')).toBe(rememberMe !== false);
+        expect(cookie.includes('Expires=')).toBe(rememberMe !== false);
+        expect(cookie.includes('HttpOnly')).toBe(!cookie.startsWith('immich_is_authenticated='));
+        expect(cookie).toContain('SameSite=Lax');
+        expect(cookie).toContain('Path=/');
+      }
+    });
+
+    it('should auth cookies on a secure connection', async () => {
+      const loginResponse = mediumFactory.loginResponse();
+      service.login.mockResolvedValue(loginResponse);
+      const { status, body, headers } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ name: 'admin', email: 'admin@local', password: 'password' });
+
+      expect(status).toEqual(201);
+      expect(body).toEqual(loginResponse);
+
+      const cookies = headers['set-cookie'];
+      expect(cookies).toHaveLength(3);
+      expect(cookies[0].split(';').map((item) => item.trim())).toEqual([
+        `immich_access_token=${loginResponse.accessToken}`,
+        'Max-Age=34560000',
+        'Path=/',
+        expect.stringContaining('Expires='),
+        'HttpOnly',
+        'SameSite=Lax',
+      ]);
+      expect(cookies[1].split(';').map((item) => item.trim())).toEqual([
+        'immich_auth_type=password',
+        'Max-Age=34560000',
+        'Path=/',
+        expect.stringContaining('Expires='),
+        'HttpOnly',
+        'SameSite=Lax',
+      ]);
+      expect(cookies[2].split(';').map((item) => item.trim())).toEqual([
+        'immich_is_authenticated=true',
+        'Max-Age=34560000',
+        'Path=/',
+        expect.stringContaining('Expires='),
+        'SameSite=Lax',
+      ]);
+      // FL-137: the next person signed in on this browser is never answered from an earlier cache
+      expect(headers['clear-site-data']).toBe('"cache"');
+    });
+  });
+
+  describe('POST /auth/logout', () => {
+    it('clears the auth cookies and the browser cache (FL-137)', async () => {
+      service.logout.mockResolvedValue({ successful: true, redirectUri: '/auth/login?autoLaunch=0' });
+      const { status, headers } = await request(ctx.getHttpServer()).post('/auth/logout');
+
+      expect(status).toEqual(200);
+      expect(headers['set-cookie']).toEqual(expect.arrayContaining([expect.stringContaining('immich_access_token=;')]));
+      expect(headers['clear-site-data']).toBe('"cache"');
+    });
+  });
+
+  describe('clearing the browser cache (FL-137)', () => {
+    it('is not sent by requests that do not sign anyone in or out', async () => {
+      const { headers } = await request(ctx.getHttpServer()).post('/auth/validateToken');
+      expect(headers['clear-site-data']).toBeUndefined();
+    });
+  });
+
+  describe('POST /auth/pin-code', () => {
+    it('should reject 5 digits', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).post('/auth/pin-code').send({ pinCode: '12345' });
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['pinCode'], message: String.raw`Invalid string: must match pattern /^\d{6}$/` },
+        ]),
+      );
+    });
+
+    it('should reject 7 digits', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).post('/auth/pin-code').send({ pinCode: '1234567' });
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['pinCode'], message: String.raw`Invalid string: must match pattern /^\d{6}$/` },
+        ]),
+      );
+    });
+
+    it('should reject non-numbers', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).post('/auth/pin-code').send({ pinCode: 'A12345' });
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['pinCode'], message: String.raw`Invalid string: must match pattern /^\d{6}$/` },
+        ]),
+      );
+    });
+  });
+});

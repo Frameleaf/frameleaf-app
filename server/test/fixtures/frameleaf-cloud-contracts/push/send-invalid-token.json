@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://push.frameleaf.cloud/v1/push/send",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://push.frameleaf.cloud/v1/push/send, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "The platform says the token is gone (APNs 410 Unregistered): remove it and never send to it again.",
+    "body": {
+      "platform": "apns",
+      "token": "0badc0de0badc0de0badc0de0badc0de0badc0de0badc0de0badc0de0badc0de",
+      "type": "alert",
+      "priority": "high",
+      "ttlSec": 86400,
+      "payload": "ZmFrZS1jaXBoZXJ0ZXh0LWZvci1maXh0dXJlcy1vbmx5LW5vdC1hLXJlYWwtcHVzaC1lbnZlbG9wZQ"
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "invalid-token"
+  }
+}

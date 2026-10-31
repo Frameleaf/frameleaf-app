@@ -1,0 +1,29 @@
+diff --git a/src/infrastructure/gpu-effects/effects/color.ts b/src/infrastructure/gpu-effects/effects/color.ts
+--- a/src/infrastructure/gpu-effects/effects/color.ts
++++ b/src/infrastructure/gpu-effects/effects/color.ts
+@@ -1411,7 +1411,13 @@
+   let maxC = max(max(color.r, color.g), color.b);
+   let minC = min(min(color.r, color.g), color.b);
+   let sat = (maxC - minC) / (maxC + 0.001);
+-  let vibrance = params.amount * (1.0 - sat);
++  // HDR saturation weight is bounded and stable for signed gamut values and black.
++  var weight = 1.0 - sat;
++  if (FL_EXTENDED_RANGE) {
++    let magnitude = max(max(abs(color.r), abs(color.g)), max(abs(color.b), 0.000001));
++    weight = 1.0 - clamp((maxC - minC) / magnitude, 0.0, 1.0);
++  }
++  let vibrance = params.amount * weight;
+   let gray = luminance601(color.rgb);
+   let adjusted = mix(vec3f(gray), color.rgb, 1.0 + vibrance);
+   return vec4f(fl_range3(adjusted), color.a);
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -63,6 +63,6 @@
+ /** Reviewed in linear display-light BT.709; 1.0 is 203 cd/m². */
+ export function isLinearHdrEffectType(type: string): boolean {
+   return type === 'gpu-brightness' || type === 'gpu-contrast' || type === 'gpu-exposure' || type === 'gpu-saturation' || type === 'gpu-temperature' ||
+-    type === 'gpu-grayscale' || type === 'gpu-sepia' || type === 'gpu-invert' ||
++    type === 'gpu-vibrance' || type === 'gpu-grayscale' || type === 'gpu-sepia' || type === 'gpu-invert' ||
+     type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur'
+ }

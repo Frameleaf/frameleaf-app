@@ -1,0 +1,1031 @@
+import { Insertable, Kysely } from 'kysely';
+import { DateTime } from 'luxon';
+import { createHash, randomBytes } from 'node:crypto';
+import { Stats } from 'node:fs';
+import { resolve } from 'node:path';
+import { Writable } from 'node:stream';
+import { Mocked } from 'vitest';
+import { AssetFace } from 'src/database.js';
+import { AuthDto, LoginResponseDto } from 'src/dtos/auth.dto.js';
+import { SystemConfig } from 'src/dtos/config.dto.js';
+import { AssetEditActionItem, AssetEditsCreateDto } from 'src/dtos/editing.dto.js';
+import {
+  AlbumUserRole,
+  AssetLockReason,
+  AssetType,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  MemoryType,
+  SourceType,
+  SyncEntityType,
+  SyncRequestType,
+} from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
+import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
+import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
+import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CronRepository } from 'src/repositories/cron.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DownloadRepository } from 'src/repositories/download.repository.js';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { EmailRepository } from 'src/repositories/email.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
+import { MemoryRepository } from 'src/repositories/memory.repository.js';
+import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { NotificationRepository } from 'src/repositories/notification.repository.js';
+import { OAuthRepository } from 'src/repositories/oauth.repository.js';
+import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { PluginRepository } from 'src/repositories/plugin.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
+import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
+import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { StackRepository } from 'src/repositories/stack.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
+import { SyncRepository } from 'src/repositories/sync.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
+import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
+import { ViewRepository } from 'src/repositories/view-repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
+import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
+import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
+import { MemoryTable } from 'src/schema/tables/memory.table.js';
+import { PersonTable } from 'src/schema/tables/person.table.js';
+import { SessionTable } from 'src/schema/tables/session.table.js';
+import { StackTable } from 'src/schema/tables/stack.table.js';
+import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
+import { TagTable } from 'src/schema/tables/tag.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.service.js';
+import { MetadataService } from 'src/services/metadata.service.js';
+import { SyncService } from 'src/services/sync.service.js';
+import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
+import { getConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
+import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory.js';
+import { automock, wait } from 'test/utils.js';
+
+// eslint-disable-next-line unicorn/prefer-module
+export const testAssetsDir = resolve(__dirname, '../../e2e/test-assets');
+
+type MediumTestOptions = {
+  mock: Array<(typeof BASE_SERVICE_DEPENDENCIES)[number]>;
+  real: Array<(typeof BASE_SERVICE_DEPENDENCIES)[number]>;
+  database: Kysely<DB>;
+};
+
+type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
+// Repositories that services inject directly (outside BaseService) but medium specs still exercise against a real database.
+type MediumRepositoryKey =
+  | BaseServiceDeps[number]
+  | typeof MediaOperationRepository
+  | typeof StudioProjectRepository
+  | typeof VideoMomentRepository;
+
+export const newMediumService = <S extends ClassConstructor<typeof BaseService>>(
+  Service: S,
+  options: MediumTestOptions,
+) => {
+  const ctx = new MediumTestContext(Service, options);
+  return { sut: ctx.sut, ctx };
+};
+
+export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = ClassConstructor<typeof BaseService>> {
+  private repoCache: Record<string, any> = {};
+  private sutDeps: ClassConstructorsToInstances<BaseServiceDeps>;
+
+  sut: InstanceType<S>;
+  database: Kysely<DB>;
+
+  constructor(
+    Service: S,
+    private options: MediumTestOptions,
+  ) {
+    this.sutDeps = this.makeDeps(options);
+    this.sut = new Service(...this.sutDeps) as InstanceType<S>;
+    this.database = options.database;
+    this.setMockDefaults();
+  }
+
+  /** The defaults the unit tests use too: library workloads go to a healthy local destination (FL-110). */
+  private setMockDefaults() {
+    if (this.options.mock.includes(SystemMetadataRepository)) {
+      this.getMock(SystemMetadataRepository).getEffectiveConfigEpoch.mockResolvedValue(null);
+    }
+    if (this.options.mock.includes(MlDestinationRepository)) {
+      const mlDestination = this.getMock(MlDestinationRepository);
+      mlDestination.getRoute.mockImplementation((workload) =>
+        Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
+      );
+      mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      // FL-456: no processing-order plan unless a test gives one, so admission falls back to `getRoute` above
+      mlDestination.resolveRoute.mockResolvedValue([]);
+      // Synthetic healthy destinations have no restored authority; fence tests override this mock.
+      mlDestination.assertRecoveryAuthority.mockResolvedValue();
+      mlDestination.getRoutes.mockResolvedValue([]);
+      mlDestination.getSpend.mockResolvedValue(0);
+      mlDestination.recordProbe.mockResolvedValue();
+      mlDestination.recordAccounting.mockResolvedValue();
+    }
+    if (this.options.mock.includes(WebsocketRepository)) {
+      // an asset change is pushed to the owner's other sessions (FL-53)
+      this.getMock(WebsocketRepository).clientSend.mockReturnValue();
+    }
+    if (this.options.mock.includes(MachineLearningRepository)) {
+      const machineLearning = this.getMock(MachineLearningRepository);
+      machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
+    }
+  }
+
+  private makeDeps(options: MediumTestOptions) {
+    const deps = BASE_SERVICE_DEPENDENCIES;
+
+    for (const dep of options.mock) {
+      if (!deps.includes(dep)) {
+        throw new Error(`Mocked repository ${dep.name} is not a valid dependency`);
+      }
+    }
+
+    for (const dep of options.real) {
+      if (!deps.includes(dep)) {
+        throw new Error(`Real repository ${dep.name} is not a valid dependency`);
+      }
+    }
+    return deps.map((dep) => {
+      if (options.real.includes(dep)) {
+        return this.get(dep);
+      }
+
+      if (options.mock.includes(dep)) {
+        return newMockRepository(dep);
+      }
+
+      // FL-326: every asset, tag and partner edit records partner-copy lineage; it is real unless mocked
+      if (dep === PartnerOriginRepository) {
+        return this.get(dep);
+      }
+    }) as unknown as ClassConstructorsToInstances<BaseServiceDeps>;
+  }
+
+  get<T extends MediumRepositoryKey>(key: T): InstanceType<T> {
+    if (!Object.hasOwn(this.repoCache, key.name)) {
+      const real = newRealRepository(key, this.options.database);
+      this.repoCache[key.name] = real;
+    }
+
+    return this.repoCache[key.name];
+  }
+
+  getMock<T extends BaseServiceDeps[number], R = Mocked<InstanceType<T>>>(key: T): R {
+    const index = BASE_SERVICE_DEPENDENCIES.indexOf(key);
+    if (index === -1 || !this.options.mock.includes(key)) {
+      throw new Error(`getMock called with a key that is not a mock: ${key.name}`);
+    }
+
+    return this.sutDeps[index] as R;
+  }
+
+  async newUser(dto: Partial<Insertable<UserTable>> = {}) {
+    const clusterGroup = dto.clusterGroupId ? undefined : await this.get(ClusterGroupRepository).create();
+    const user = mediumFactory.userInsert({ ...dto, clusterGroupId: dto.clusterGroupId ?? clusterGroup!.id });
+    const result = await this.get(UserRepository).create(user);
+    return { user, result };
+  }
+
+  async newPartner(dto: { sharedById: string; sharedWithId: string; inTimeline?: boolean; shareLocation?: boolean }) {
+    // explicit, so a spec states the location sharing it relies on (a new partnership defaults to off)
+    const partner = { inTimeline: true, shareLocation: true, ...dto };
+    const result = await this.get(PartnerRepository).create(partner);
+    return { partner, result };
+  }
+
+  async newStack(dto: Omit<Insertable<StackTable>, 'primaryAssetId'>, assetIds: string[]) {
+    const date = factory.date();
+    const stack = {
+      id: factory.uuid(),
+      createdAt: date,
+      updatedAt: date,
+      ...dto,
+    };
+
+    const result = await this.get(StackRepository).create(stack, assetIds);
+    return { stack: { ...stack, primaryAssetId: assetIds[0] }, result };
+  }
+
+  async newAsset(dto: Partial<Insertable<AssetTable>> = {}) {
+    // FL-34: `locked` is a lock record, never a stored visibility. A test that seeds a Locked asset
+    // gets one on the timeline with a lock, and sees `locked` as every response reports it.
+    if (dto.visibility === AssetVisibility.Locked) {
+      const asset = mediumFactory.assetInsert({ ...dto, visibility: AssetVisibility.Timeline });
+      const result = await this.get(AssetRepository).create(asset, { reason: AssetLockReason.Marked, lockedBy: null });
+      return { asset: { ...asset, visibility: AssetVisibility.Locked }, result };
+    }
+
+    const asset = mediumFactory.assetInsert(dto);
+    const result = await this.get(AssetRepository).create(asset);
+    return { asset, result };
+  }
+
+  async newMetadata(dto: Insertable<AssetMetadataTable>) {
+    const { assetId, ...item } = dto;
+    // AssetRepository.upsertMetadata centralizes the asset.is_nsfw sync for
+    // 'ml-enrichment' items — see `syncIsNsfwForItems` — so callers do not need
+    // to mirror the boolean themselves.
+    const result = await this.get(AssetRepository).upsertMetadata(assetId, [item]);
+    return { metadata: dto, result };
+  }
+
+  async newAssetFile(dto: Insertable<AssetFileTable>) {
+    const result = await this.get(AssetRepository).upsertFile(dto);
+    return { result };
+  }
+
+  async newAssetFace(dto: Partial<Insertable<AssetFace>> & { assetId: string }) {
+    const assetFace = mediumFactory.assetFaceInsert(dto);
+    const result = await this.get(PersonRepository).createAssetFace(assetFace);
+    return { assetFace, result };
+  }
+
+  async newMemory(dto: Partial<Insertable<MemoryTable>> = {}) {
+    const memory = mediumFactory.memoryInsert(dto);
+    const result = await this.get(MemoryRepository).create(memory, new Set<string>());
+    return { memory, result };
+  }
+
+  async newMemoryAsset(dto: { memoryId: string; assetId: string }) {
+    const result = await this.get(MemoryRepository).addAssetIds(dto.memoryId, [dto.assetId]);
+    return { memoryAsset: dto, result };
+  }
+
+  async newExif(dto: Insertable<AssetExifTable>) {
+    const result = await this.get(AssetRepository).upsertExif({ exif: dto, lockedPropertiesBehavior: 'override' });
+    return { result };
+  }
+
+  async newAlbum({ ownerId, ...dto }: Insertable<AlbumTable> & { ownerId: string }, assetIds?: string[]) {
+    const album = mediumFactory.albumInsert(dto);
+    const result = await this.get(AlbumRepository).create(
+      album,
+      assetIds ?? [],
+      [{ userId: ownerId, role: AlbumUserRole.Owner }],
+      ownerId,
+    );
+    return { album, result };
+  }
+
+  async newAlbumAsset(albumAsset: { albumId: string; assetId: string }) {
+    const result = await this.get(AlbumRepository).addAssetIds(albumAsset.albumId, [albumAsset.assetId]);
+    return { albumAsset, result };
+  }
+
+  async newAlbumUser(dto: { albumId: string; userId: string; role?: AlbumUserRole }) {
+    const { albumId, userId, role = AlbumUserRole.Editor } = dto;
+    const result = await this.get(AlbumUserRepository).create({ albumId, userId, role });
+    return { albumUser: { albumId, userId, role }, result };
+  }
+
+  /** An album owned by one user, containing one asset, shared with a second user */
+  async newSharedAlbum(dto: { role?: AlbumUserRole } = {}) {
+    const { user: owner } = await this.newUser();
+    const { user: sharedWith } = await this.newUser();
+    const { asset } = await this.newAsset({ ownerId: owner.id });
+    const { album } = await this.newAlbum({ ownerId: owner.id }, [asset.id]);
+    await this.newAlbumUser({ albumId: album.id, userId: sharedWith.id, role: dto.role ?? AlbumUserRole.Editor });
+
+    return { album, asset, owner, sharedWith };
+  }
+
+  async softDeleteAsset(assetId: string) {
+    await this.database.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', assetId).execute();
+  }
+
+  async softDeleteAlbum(albumId: string) {
+    await this.database.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', albumId).execute();
+  }
+
+  async newJobStatus(dto: Partial<Insertable<AssetJobStatusTable>> & { assetId: string }) {
+    const jobStatus = mediumFactory.assetJobStatusInsert({ assetId: dto.assetId });
+    const result = await this.get(AssetRepository).upsertJobStatus(jobStatus);
+    return { jobStatus, result };
+  }
+
+  async newPerson(dto: Partial<Insertable<PersonTable>> & { ownerId: string }) {
+    const repository = this.get(PersonRepository);
+    let personGroupId = dto.personGroupId;
+    if (!personGroupId) {
+      const group = await repository.createGroup(dto.ownerId);
+      personGroupId = group.id;
+    }
+    const person = mediumFactory.personInsert({ ...dto, personGroupId });
+    const result = await repository.create(person);
+    return { person, result };
+  }
+
+  async newSession(dto: Partial<Insertable<SessionTable>> & { userId: string }) {
+    const session = mediumFactory.sessionInsert(dto);
+    const result = await this.get(SessionRepository).create(session);
+    return { session, result };
+  }
+
+  async newSyncAuthUser() {
+    const { user } = await this.newUser();
+    const { session } = await this.newSession({ userId: user.id });
+    const auth = factory.auth({
+      session,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      },
+    });
+
+    return {
+      auth,
+      session,
+      user,
+    };
+  }
+
+  async newTag(dto: Insertable<TagTable>) {
+    const tag = mediumFactory.tagInsert(dto);
+    const result = await this.get(TagRepository).create(tag);
+    return { tag, result };
+  }
+
+  async newTagAsset(tagBulkAssets: { tagIds: string[]; assetIds: string[] }) {
+    const tagsAssets: Insertable<TagAssetTable>[] = [];
+    for (const tagId of tagBulkAssets.tagIds) {
+      for (const assetId of tagBulkAssets.assetIds) {
+        tagsAssets.push({ tagId, assetId });
+      }
+    }
+
+    const result = await this.get(TagRepository).upsertAssetIds(tagsAssets);
+    return { tagsAssets, result };
+  }
+
+  async newEdits(assetId: string, dto: AssetEditsCreateDto) {
+    const edits = await this.get(AssetEditRepository).replaceAll(assetId, dto.edits as AssetEditActionItem[]);
+    return { edits };
+  }
+
+  async getConfig({ withCache = true }: { withCache?: boolean } = {}) {
+    return getConfig(
+      {
+        configRepo: this.get(ConfigRepository),
+        metadataRepo: this.get(SystemMetadataRepository),
+        logger: this.get(LoggingRepository),
+      },
+      { withCache },
+    );
+  }
+
+  async updateConfig(config: SystemConfig) {
+    return withEffectiveConfigWrite(
+      {
+        configRepo: this.get(ConfigRepository),
+        metadataRepo: this.get(SystemMetadataRepository),
+        logger: this.get(LoggingRepository),
+      },
+      (repos) => updateConfig(repos, config),
+    );
+  }
+}
+
+export class SyncTestContext extends MediumTestContext<typeof SyncService> {
+  constructor(database: Kysely<DB>) {
+    super(SyncService, {
+      database,
+      real: [SyncRepository, SyncCheckpointRepository, SessionRepository, PartnerRepository],
+      mock: [LoggingRepository],
+    });
+  }
+
+  async syncStream(auth: AuthDto, types: SyncRequestType[], shouldReset?: boolean) {
+    const stream = mediumFactory.syncStream();
+    // Wait for 2ms to ensure all updates are available and account for setTimeout inaccuracy
+    await wait(2);
+    await this.sut.stream(auth, stream, { types, reset: shouldReset });
+
+    return stream.getResponse();
+  }
+
+  async assertSyncIsComplete(auth: AuthDto, types: SyncRequestType[]) {
+    await expect(this.syncStream(auth, types)).resolves.toEqual([
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+  }
+
+  async syncAckAll(auth: AuthDto, response: Array<{ type: string; ack: string }>) {
+    const acks: Record<string, string> = {};
+    const syncAcks: string[] = [];
+    for (const { type, ack } of response) {
+      if (type === SyncEntityType.SyncAckV1) {
+        syncAcks.push(ack);
+        continue;
+      }
+      acks[type] = ack;
+    }
+
+    await this.sut.setAcks(auth, { acks: [...Object.values(acks), ...syncAcks] });
+  }
+}
+
+const mockDate = new Date('2024-06-01T12:00:00.000Z');
+const mockStats = {
+  mtime: mockDate,
+  atime: mockDate,
+  ctime: mockDate,
+  birthtime: mockDate,
+  atimeMs: 0,
+  mtimeMs: 0,
+  ctimeMs: 0,
+  birthtimeMs: 0,
+};
+
+export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
+  constructor(database: Kysely<DB>) {
+    super(MetadataService, {
+      database,
+      real: [
+        AssetRepository,
+        AssetJobRepository,
+        MediaRepository,
+        MetadataRepository,
+        SystemMetadataRepository,
+        TagRepository,
+      ],
+      mock: [ConfigRepository, EventRepository, LoggingRepository, MapRepository, StorageRepository],
+    });
+
+    this.getMock(ConfigRepository).getEnv.mockReturnValue(mockEnvData({}));
+    this.getMock(EventRepository).emit.mockResolvedValue();
+    this.getMock(MapRepository).reverseGeocode.mockResolvedValue({ country: null, state: null, city: null });
+    this.getMock(StorageRepository).stat.mockResolvedValue(mockStats as Stats);
+  }
+
+  getMockStats() {
+    return mockStats;
+  }
+
+  getGps(assetId: string) {
+    return this.database
+      .selectFrom('asset_exif')
+      .select(['latitude', 'longitude'])
+      .where('assetId', '=', assetId)
+      .executeTakeFirstOrThrow();
+  }
+
+  getTags(assetId: string) {
+    return this.database
+      .selectFrom('tag')
+      .innerJoin('tag_asset', 'tag.id', 'tag_asset.tagId')
+      .where('tag_asset.assetId', '=', assetId)
+      .selectAll()
+      .execute();
+  }
+
+  getDates(assetId: string) {
+    return this.database
+      .selectFrom('asset')
+      .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .where('id', '=', assetId)
+      .select(['asset.fileCreatedAt', 'asset.localDateTime', 'asset_exif.dateTimeOriginal', 'asset_exif.timeZone'])
+      .executeTakeFirstOrThrow();
+  }
+}
+
+const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>): InstanceType<T> => {
+  switch (key) {
+    case AccessRepository:
+    case AdminAuditRepository:
+    case AlbumRepository:
+    case AlbumUserRepository:
+    case ActivityRepository:
+    case ApiKeyRepository:
+    case AssetRepository:
+    case AssetDevelopRepository:
+    case AssetEditRepository:
+    case AssetFileRepository:
+    case AssetJobRepository:
+    case ClassificationRepository:
+    case ClusterGroupRepository:
+    case DuplicateRepository:
+    case IntegrityRepository:
+    case MediaOperationRepository:
+    case MemoryRepository:
+    case DownloadRepository:
+    case AssetChecksumRepository:
+    case FrameleafAccountRepository:
+    case FrameleafUserLicenseRepository:
+    case LibraryRepository:
+    case NotificationRepository:
+    case OcrRepository:
+    case PartnerRepository:
+    case PartnerOriginRepository:
+    case PersonRepository:
+    case PhysicalFileRepository:
+    case PhysicalFileTrashRepository:
+    case SearchRepository:
+    case SessionRepository:
+    case SharedLinkRepository:
+    case SharedLinkAssetRepository:
+    case ItemShareRepository:
+    case AlbumSourceRepository:
+    case SmartAlbumRepository:
+    case StackRepository:
+    case StudioProjectRepository:
+    case TrashRepository:
+    case SyncRepository:
+    case SyncCheckpointRepository:
+    case SystemMetadataRepository:
+    case UserRepository:
+    case VersionHistoryRepository:
+    case VideoMomentRepository:
+    case ViewRepository:
+    case WorkflowRepository: {
+      return new key(db) as InstanceType<T>;
+    }
+
+    case ConfigRepository:
+    case CryptoRepository: {
+      return new key() as InstanceType<T>;
+    }
+
+    case DatabaseRepository: {
+      return new key(db, LoggingRepository.create(), new ConfigRepository()) as InstanceType<T>;
+    }
+
+    case EmailRepository: {
+      return new key(LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case MapRepository: {
+      return new key(
+        new ConfigRepository(),
+        new SystemMetadataRepository(db),
+        LoggingRepository.create(),
+        db as unknown as ConstructorParameters<typeof MapRepository>[3],
+      ) as InstanceType<T>;
+    }
+
+    case MediaRepository:
+    case MetadataRepository: {
+      return new key(LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case PluginRepository: {
+      return new key(db, LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case StorageRepository: {
+      return new key(LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case TagRepository: {
+      return new key(db, LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case LoggingRepository: {
+      return new key(undefined, undefined) as InstanceType<T>;
+    }
+
+    default: {
+      throw new Error(`Unable to create repository instance for key: ${key?.name || key}`);
+    }
+  }
+};
+
+const newMockRepository = <T>(key: ClassConstructor<T>) => {
+  switch (key) {
+    case ActivityRepository:
+    case AdminAuditRepository:
+    case AlbumUserRepository:
+    case ConfigRepository:
+    case CryptoRepository:
+    case AssetChecksumRepository:
+    case FrameleafAccountRepository:
+    case LibraryRepository:
+    case MemoryRepository:
+    case IntegrityRepository:
+    case NotificationRepository:
+    case PartnerRepository:
+    case PartnerOriginRepository:
+    case SessionRepository:
+    case SyncRepository:
+    case SyncCheckpointRepository:
+    case VersionHistoryRepository:
+    case WorkflowRepository: {
+      return automock(key);
+    }
+
+    // Supply inert connection objects only to constructors that wrap their database dependency.
+    case ClusterGroupRepository:
+    case AlbumRepository:
+    case AssetRepository:
+    case AssetJobRepository:
+    case OcrRepository:
+    case PersonRepository:
+    case SystemMetadataRepository:
+    case UserRepository: {
+      return automock(key, { args: [{}] });
+    }
+
+    case TagRepository: {
+      return automock(TagRepository, { args: [{}, { setContext: () => {} }] });
+    }
+
+    case MapRepository: {
+      return automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] });
+    }
+
+    case DatabaseRepository: {
+      return automock(DatabaseRepository, {
+        args: [{}, { setContext: () => {} }, { getEnv: () => ({ database: { vectorExtension: '' } }) }],
+      });
+    }
+
+    case CronRepository: {
+      return automock(CronRepository, { args: [undefined, { setContext: () => {} }], strict: false });
+    }
+
+    case EmailRepository: {
+      return automock(EmailRepository, { args: [{ setContext: () => {} }] });
+    }
+
+    case EventRepository: {
+      return automock(EventRepository, { args: [undefined, undefined, { setContext: () => {} }] });
+    }
+
+    case FrameleafCloudRepository:
+    case MediaRepository:
+    case MetadataRepository:
+    case OAuthRepository: {
+      return automock(key, { args: [{ setContext: () => {} }] });
+    }
+
+    case InstanceIdentityRepository: {
+      return automock(InstanceIdentityRepository);
+    }
+
+    case WebsocketRepository: {
+      return automock(WebsocketRepository, { args: [undefined, { setContext: () => {} }] });
+    }
+
+    case JobRepository: {
+      const mock = automock(JobRepository, {
+        args: [
+          undefined,
+          undefined,
+          undefined,
+          {
+            setContext: () => {},
+          },
+        ],
+      });
+      mock.collectFollowups.mockImplementation((action) => action());
+      mock.pinnedDestination.mockResolvedValue(null);
+      return mock;
+    }
+
+    case LoggingRepository as unknown as ClassConstructor<T>: {
+      const configMock = { getEnv: () => ({ noColor: false }) };
+      return automock(LoggingRepository, { args: [undefined, configMock], strict: false });
+    }
+
+    case MachineLearningRepository: {
+      const mock = automock(MachineLearningRepository, { args: [{ setContext: () => {} }] });
+      mock.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
+      mock.captureClipRead.mockResolvedValue({
+        assertCurrent: () => Promise.resolve(),
+        publish: (write) => write(),
+      });
+      return mock;
+    }
+
+    case MlDestinationRepository: {
+      return automock(MlDestinationRepository);
+    }
+
+    case PluginRepository: {
+      return automock(PluginRepository, { args: [undefined, { setContext: () => {} }] });
+    }
+
+    case StorageRepository: {
+      return automock(StorageRepository, { args: [{ setContext: () => {} }] });
+    }
+
+    default: {
+      throw new Error(`Invalid repository key: ${key}`);
+    }
+  }
+};
+
+const assetInsert = (asset: Partial<Insertable<AssetTable>> = {}) => {
+  const id = asset.id || newUuid();
+  const now = newDate();
+  const defaults: Insertable<AssetTable> = {
+    originalFileName: '',
+    checksum: randomBytes(32),
+    checksumAlgorithm: ChecksumAlgorithm.sha1File,
+    type: AssetType.Image,
+    originalPath: '/path/to/something.jpg',
+    ownerId: 'not-a-valid-uuid',
+    isFavorite: false,
+    fileCreatedAt: now,
+    fileModifiedAt: now,
+    localDateTime: now,
+    visibility: AssetVisibility.Timeline,
+    isEdited: false,
+  };
+
+  return {
+    ...defaults,
+    ...asset,
+    id,
+  };
+};
+
+const albumInsert = (album: Partial<Insertable<AlbumTable>>) => {
+  const id = album.id || newUuid();
+  const defaults: Insertable<AlbumTable> = {
+    albumName: 'Album',
+  };
+
+  return {
+    ...defaults,
+    ...album,
+    id,
+  };
+};
+
+const faceInsert = (face: Partial<Insertable<FaceSearchTable>> & { faceId: string }) => {
+  const defaults = {
+    faceId: face.faceId,
+    embedding: face.embedding || newEmbedding(),
+  };
+  return {
+    ...defaults,
+    ...face,
+  };
+};
+
+const assetFaceInsert = (assetFace: Partial<AssetFace> & { assetId: string }) => {
+  const defaults = {
+    assetId: assetFace.assetId ?? newUuid(),
+    boundingBoxX1: assetFace.boundingBoxX1 ?? 0,
+    boundingBoxX2: assetFace.boundingBoxX2 ?? 1,
+    boundingBoxY1: assetFace.boundingBoxY1 ?? 0,
+    boundingBoxY2: assetFace.boundingBoxY2 ?? 1,
+    deletedAt: assetFace.deletedAt ?? null,
+    id: assetFace.id ?? newUuid(),
+    imageHeight: assetFace.imageHeight ?? 10,
+    imageWidth: assetFace.imageWidth ?? 10,
+    personGroupId: assetFace.personGroupId ?? null,
+    sourceType: assetFace.sourceType ?? SourceType.MachineLearning,
+    isVisible: assetFace.isVisible ?? true,
+  };
+
+  return {
+    ...defaults,
+    ...assetFace,
+  };
+};
+
+const assetJobStatusInsert = (
+  job: Partial<Insertable<AssetJobStatusTable>> & { assetId: string },
+): Insertable<AssetJobStatusTable> => {
+  const date = DateTime.now().minus({ days: 15 }).toISO();
+  const defaults: Omit<Insertable<AssetJobStatusTable>, 'assetId'> = {
+    duplicatesDetectedAt: date,
+    facesRecognizedAt: date,
+    metadataExtractedAt: date,
+  };
+
+  return {
+    ...defaults,
+    ...job,
+  };
+};
+
+const personInsert = (person: Partial<Insertable<PersonTable>> & { ownerId: string; personGroupId: string }) => {
+  const defaults = {
+    birthDate: person.birthDate || null,
+    color: person.color || null,
+    createdAt: person.createdAt || newDate(),
+    faceAssetId: person.faceAssetId || null,
+    isFavorite: person.isFavorite || false,
+    isHidden: person.isHidden || false,
+    name: person.name || 'Test Name',
+    ownerId: person.ownerId || newUuid(),
+    thumbnailPath: person.thumbnailPath || '/path/to/thumbnail.jpg',
+  };
+  return {
+    ...defaults,
+    ...person,
+  };
+};
+
+const sha256 = (value: string) => createHash('sha256').update(value).digest();
+
+const sessionInsert = ({
+  id = newUuid(),
+  userId,
+  ...session
+}: Partial<Insertable<SessionTable>> & { userId: string }) => {
+  const defaults: Insertable<SessionTable> = {
+    id,
+    userId,
+    isPendingSyncReset: false,
+    token: sha256(id),
+  };
+
+  return {
+    ...defaults,
+    ...session,
+    id,
+  };
+};
+
+const userWithClusterGroup = async (db: Kysely<DB>, user: Partial<Insertable<UserTable>> = {}) => {
+  const clusterGroup = await db.insertInto('cluster_group').defaultValues().returningAll().executeTakeFirstOrThrow();
+  return userInsert({ ...user, clusterGroupId: user.clusterGroupId ?? clusterGroup.id });
+};
+
+const userInsert = (user: Partial<Insertable<UserTable>> & { clusterGroupId: string }) => {
+  const id = user.id || newUuid();
+
+  const defaults = {
+    email: `${id}@example.com`,
+    name: `User ${id}`,
+    deletedAt: null,
+    isAdmin: false,
+    profileImagePath: '',
+    profileChangedAt: newDate(),
+    shouldChangePassword: true,
+    storageLabel: null,
+    pinCode: null,
+    oauthId: '',
+    avatarColor: null,
+    quotaSizeInBytes: null,
+    quotaUsageInBytes: 0,
+  };
+
+  return { ...defaults, ...user, id };
+};
+
+const memoryInsert = (memory: Partial<Insertable<MemoryTable>> = {}) => {
+  const id = memory.id || newUuid();
+  const date = newDate();
+
+  const defaults: Insertable<MemoryTable> = {
+    id,
+    createdAt: date,
+    updatedAt: date,
+    deletedAt: null,
+    type: MemoryType.OnThisDay,
+    data: { year: 2025 },
+    showAt: null,
+    hideAt: null,
+    seenAt: null,
+    isSaved: false,
+    memoryAt: date,
+    ownerId: memory.ownerId || newUuid(),
+  };
+
+  return { ...defaults, ...memory, id };
+};
+
+const tagInsert = (tag: Partial<Insertable<TagTable>>) => {
+  const id = tag.id || newUuid();
+
+  const defaults: Insertable<TagTable> = {
+    id,
+    userId: '',
+    value: '',
+    createdAt: newDate(),
+    updatedAt: newDate(),
+    color: '',
+    parentId: null,
+    updateId: newUuid(),
+  };
+
+  return { ...defaults, ...tag, id };
+};
+
+class CustomWritable extends Writable {
+  private data = '';
+
+  // determined by Writable interface
+  // eslint-disable-next-line unicorn/prefer-private-class-fields
+  _write(chunk: any, encoding: string, callback: () => void) {
+    this.data += chunk.toString();
+    callback();
+  }
+
+  getResponse() {
+    const result = this.data;
+    return result
+      .split('\n')
+      .filter((x) => x.length > 0)
+      .map((x) => JSON.parse(x));
+  }
+}
+
+const syncStream = () => {
+  return new CustomWritable();
+};
+
+const loginDetails = () => {
+  return { isSecure: false, clientIp: '', deviceType: '', deviceOS: '', appVersion: null };
+};
+
+const loginResponse = (): LoginResponseDto => {
+  const user = userInsert({ clusterGroupId: newUuid() });
+  return {
+    accessToken: 'access-token',
+    userId: user.id,
+    userEmail: user.email,
+    name: user.name,
+    profileImagePath: user.profileImagePath,
+    isAdmin: user.isAdmin,
+    shouldChangePassword: user.shouldChangePassword,
+    isOnboarded: false,
+  };
+};
+
+const uploadFile = (file: Partial<UploadFile> = {}) => {
+  return {
+    uuid: newUuid(),
+    checksum: randomBytes(32),
+    originalPath: '/path/to/file.jpg',
+    originalName: 'file.jpg',
+    size: 123_456,
+    ...file,
+  };
+};
+
+export const mediumFactory = {
+  assetInsert,
+  assetFaceInsert,
+  assetJobStatusInsert,
+  albumInsert,
+  faceInsert,
+  personInsert,
+  sessionInsert,
+  syncStream,
+  userInsert,
+  userWithClusterGroup,
+  memoryInsert,
+  loginDetails,
+  loginResponse,
+  tagInsert,
+  uploadFile,
+};

@@ -1,0 +1,202 @@
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  SetMetadata,
+  applyDecorators,
+  createParamDecorator,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { ApiBearerAuth, ApiCookieAuth, ApiExtension, ApiOkResponse, ApiQuery, ApiSecurity } from '@nestjs/swagger';
+import { Request } from 'express';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { ApiCustomExtension, MetadataKey, Permission, RequestQuery } from 'src/enum.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { AuthService, LoginDetails } from 'src/services/auth.service.js';
+import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
+import { getUserAgentDetails } from 'src/utils/request.js';
+
+type AdminRoute = { admin?: true };
+type SharedLinkRoute = { sharedLink: true; sharedLinkPassword?: false };
+type AuthorizedRoute = {
+  permission?: Permission | false;
+  public?: never;
+  setup?: never;
+  /**
+   * FL-34: `false` for a read that only reports the session's state: it must not extend an elevated
+   * (PIN-unlocked) session the way a request the person made does. Defaults to `true`.
+   */
+  refreshElevation?: boolean;
+} & (AdminRoute | SharedLinkRoute);
+type PublicRoute = { public: true; setup?: true; permission?: never; admin?: never; sharedLink?: never };
+export type AuthenticatedOptions = AuthorizedRoute | PublicRoute;
+
+type ReflectorTarget = Parameters<Reflector['get']>[1];
+
+/** Resolves the `@Authenticated()` options of a route handler, with the defaults applied. */
+export const getAuthenticatedOptions = (reflector: Reflector, target: ReflectorTarget) => {
+  const options = reflector.getAllAndOverride<AuthenticatedOptions | undefined>(MetadataKey.AuthRoute, [target]);
+  return (
+    options && { sharedLink: false, sharedLinkPassword: true, admin: false, public: false, setup: false, ...options }
+  );
+};
+
+export const Authenticated = (options: AuthenticatedOptions = {}): MethodDecorator => {
+  const decorators: MethodDecorator[] = [SetMetadata(MetadataKey.AuthRoute, options)];
+
+  if (!options.public) {
+    decorators.push(ApiBearerAuth(), ApiCookieAuth(), ApiSecurity(MetadataKey.ApiKeySecurity));
+  }
+
+  if ((options as AdminRoute).admin) {
+    decorators.push(ApiExtension(ApiCustomExtension.AdminOnly, true));
+  }
+
+  if (options?.permission) {
+    decorators.push(ApiExtension(ApiCustomExtension.Permission, options.permission));
+  }
+
+  if ((options as SharedLinkRoute)?.sharedLink) {
+    decorators.push(
+      ApiQuery({ name: RequestQuery.SharedLinkKey, type: String, required: false }),
+      ApiQuery({ name: RequestQuery.SharedLinkSlug, type: String, required: false }),
+    );
+  }
+
+  return applyDecorators(...decorators);
+};
+
+/**
+ * FL-161: marks a route that sends originals, archive downloads or database backups. Over the Frameleaf
+ * relay it is refused unless `frameleafCloud.remoteAccess.allowOriginalsOverRelay` is on; at home and
+ * over a direct connection it is unchanged.
+ */
+export const OriginalTransfer = (): MethodDecorator => SetMetadata(MetadataKey.OriginalTransfer, true);
+
+/**
+ * FL-161: marks a route, or a whole controller, for machines on the home network only, such as the
+ * render workers' API (including the original inputs they read). Any request that arrived through
+ * remote access (`relay` or `wan`) is refused, public routes included, whatever the settings say.
+ */
+export const HomeNetworkOnly = (): MethodDecorator & ClassDecorator => SetMetadata(MetadataKey.HomeNetworkOnly, true);
+
+/**
+ * FL-161: lets any valid session reach a route through remote access, even one that is not a
+ * Frameleaf sign-in. Only for signing out, so such a session can still be revoked and its cookie
+ * cleared from away.
+ */
+export const RemoteSignInExempt = (): MethodDecorator => SetMetadata(MetadataKey.RemoteSignInExempt, true);
+
+export const Auth = createParamDecorator((data, context: ExecutionContext): AuthDto => {
+  return context.switchToHttp().getRequest<AuthenticatedRequest>().user;
+});
+
+/**
+ * Documents a binary file response. FL-436: pass the content types the route really sends, so strict
+ * clients (which reject a `Content-Type` the spec does not list) accept it; `image/*` covers an image
+ * route whose stored files can be in any image format. `application/octet-stream` stays listed on
+ * every route, so no existing client loses the media type it was generated against.
+ */
+export const FileResponse = (...contentTypes: string[]) =>
+  ApiOkResponse({
+    content: Object.fromEntries(
+      ['application/octet-stream', ...contentTypes].map((type) => [
+        type,
+        { schema: { type: 'string', format: 'binary' } },
+      ]),
+    ),
+  });
+
+export const GetLoginDetails = createParamDecorator((data, context: ExecutionContext): LoginDetails => {
+  const request = context.switchToHttp().getRequest<Request>();
+  const { deviceType, deviceOS, appVersion } = getUserAgentDetails(request.headers);
+
+  return {
+    clientIp: request.ip ?? '',
+    isSecure: request.secure,
+    deviceType,
+    deviceOS,
+    appVersion,
+    via: requestVia(request),
+  };
+});
+
+export interface AuthRequest extends Request {
+  user?: AuthDto;
+}
+
+export interface AuthenticatedRequest extends Request {
+  user: AuthDto;
+}
+
+@Injectable()
+export class AuthGuard implements CanActivate {
+  constructor(
+    private logger: LoggingRepository,
+    private reflector: Reflector,
+    private authService: AuthService,
+  ) {
+    this.logger.setContext(AuthGuard.name);
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const options = getAuthenticatedOptions(this.reflector, context.getHandler());
+    if (!options) {
+      throw new Error(`Route ${context.getHandler().name} does not declare @Authenticated()`);
+    }
+
+    if (
+      this.reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [
+        context.getHandler(),
+        context.getClass(),
+      ]) &&
+      isRemoteVia(requestVia(context.switchToHttp().getRequest<Request>()))
+    ) {
+      this.logger.warn(`Refused a home-network route over remote access: ${context.getHandler().name}`);
+      throw new ForbiddenException({
+        message: 'This is only available on the home network',
+        error: 'Forbidden',
+        statusCode: 403,
+        code: 'frameleaf_home_network_only',
+      });
+    }
+
+    if (options.setup) {
+      await this.authService.requireSetupAvailable();
+    }
+
+    if (options.public) {
+      return true;
+    }
+
+    const { admin: adminRoute, sharedLink: sharedLinkRoute, sharedLinkPassword, permission } = options;
+    const refreshElevation = (options as { refreshElevation?: boolean }).refreshElevation !== false;
+    const request = context.switchToHttp().getRequest<AuthRequest>();
+
+    const via = requestVia(request);
+    const remoteSignInExempt =
+      this.reflector.get<boolean | undefined>(MetadataKey.RemoteSignInExempt, context.getHandler()) === true;
+    request.user = await this.authService.authenticate({
+      headers: request.headers,
+      queryParams: request.query as Record<string, string>,
+      metadata: {
+        adminRoute,
+        sharedLinkRoute,
+        sharedLinkPassword,
+        permission,
+        uri: request.path,
+        refreshElevation,
+        via,
+        remoteSignInExempt,
+      },
+    });
+
+    if (this.reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, context.getHandler())) {
+      await this.authService.requireOriginalTransfer(via, request.path);
+    }
+
+    return true;
+  }
+}

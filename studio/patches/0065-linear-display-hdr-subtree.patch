@@ -1,0 +1,1043 @@
+diff --git a/src/features/export/utils/canvas-item-renderer/gpu.ts b/src/features/export/utils/canvas-item-renderer/gpu.ts
+--- a/src/features/export/utils/canvas-item-renderer/gpu.ts
++++ b/src/features/export/utils/canvas-item-renderer/gpu.ts
+@@ -78,6 +78,10 @@
+ import { isHdrVideoSource } from '../hdr-video-sources'
+ import { getLottieItemSource } from './lottie'
+ import { getTextRasterCacheKey, renderTextItem } from './text'
++import {
++  HdrRenderUnavailableError,
++  workingColorDomain,
++} from '@/shared/graphics/color/managed-color'
+
+ type GpuParticipantRenderOptions = { clear?: boolean; blend?: boolean }
+
+@@ -525,6 +529,12 @@
+   frame: number,
+   rctx: ItemRenderContext,
+ ): Promise<PreparedGpuMediaParticipant | null> {
++  if (rctx.gpuPipeline?.getWorkingRange?.() === 'hdr') {
++    if (participant.effects.some((effect) => effect.enabled))
++      throw new HdrRenderUnavailableError('Effects are not migrated to linear HDR working colour')
++    if (participant.item.blendMode && participant.item.blendMode !== 'normal')
++      throw new HdrRenderUnavailableError('Blend mode is not migrated to linear HDR working colour')
++  }
+   const media = await resolveGpuMediaParticipantSource(
+     participant,
+     participant.transform,
+@@ -890,7 +900,7 @@
+   const cacheKey =
+     textMotionActive || bytes > GPU_TEXT_TEXTURE_CACHE_MAX_BYTES
+       ? null
+-      : `${rctx.gpuPipeline.getWorkingRange()}:${getTextRasterCacheKey(resolvedTextItem, sourceWidth, sourceHeight)}`
++      : `${workingColorDomain(rctx.gpuPipeline.getWorkingRange())}:${getTextRasterCacheKey(resolvedTextItem, sourceWidth, sourceHeight)}`
+   const cached = cacheKey ? rctx.gpuTextTextureCache.get(cacheKey) : undefined
+   if (cacheKey && cached) {
+     rctx.gpuTextTextureCache.delete(cacheKey)
+@@ -1057,6 +1067,12 @@
+   const subData = resolveSubCompRenderDataForInstance(participant.item, rctx)
+   const subAdjustmentLayers = subData?.adjustmentLayers ?? []
+   if (!subData) return null
++  // ponytail: nested instances containing transitions refuse until their
++  // transition timing and colour operators are migrated together.
++  if (gpuPipeline.getWorkingRange() === 'hdr' && subData.hasTransitions)
++    throw new HdrRenderUnavailableError(
++      'Nested transitions are not migrated to linear HDR working colour',
++    )
+   const effectiveRenderSpan = participant.renderSpan ?? getItemRenderTimelineSpan(participant.item)
+   const localFrame = resolveCompositionSourceFrame(
+     participant.item,
+diff --git a/src/features/export/utils/canvas-item-renderer/types.ts b/src/features/export/utils/canvas-item-renderer/types.ts
+--- a/src/features/export/utils/canvas-item-renderer/types.ts
++++ b/src/features/export/utils/canvas-item-renderer/types.ts
+@@ -270,6 +270,7 @@
+  * Built once during preload to avoid per-frame allocations and O(n) lookups.
+  */
+ export interface SubCompRenderData {
++  hasTransitions?: boolean
+   fps: number
+   durationInFrames: number
+   compositionControls?: CompositionControlSchema
+diff --git a/src/features/export/utils/client-render-engine.dispose.test.ts b/src/features/export/utils/client-render-engine.dispose.test.ts
+--- a/src/features/export/utils/client-render-engine.dispose.test.ts
++++ b/src/features/export/utils/client-render-engine.dispose.test.ts
+@@ -37,7 +37,16 @@
+       return Promise.resolve(this.effects)
+     }
+     ensureCompositor() {
+-      return false
++      return true
++    }
++    ensureTransition() {}
++    ensureMedia() {}
++    ensureMediaBlend() {}
++    ensureShape() {}
++    ensureText() {}
++    ensureMaskCombine() {}
++    ensureCompositeOutput() {
++      return {}
+     }
+     dispose() {
+       resources.disposeGpu()
+@@ -63,33 +72,36 @@
+   vi.clearAllMocks()
+ })
+ describe('composition renderer disposal', () => {
+-  it('releases its lazy color output before GPU teardown and only once', async () => {
+-    vi.stubGlobal('OffscreenCanvas', TestCanvas)
+-    vi.stubGlobal('GPUTextureUsage', { RENDER_ATTACHMENT: 1, COPY_SRC: 2 })
+-    vi.stubGlobal('GPUBufferUsage', { COPY_DST: 1, MAP_READ: 2 })
+-    vi.stubGlobal('GPUMapMode', { READ: 1 })
+-    const canvas = new OffscreenCanvas(1, 1)
+-    const renderer = await createCompositionRenderer(
+-      {
+-        fps: 24,
+-        width: 1,
+-        height: 1,
+-        durationInFrames: 1,
+-        tracks: [],
+-        colorManagement: { workingRange: 'hdr' },
+-      },
+-      canvas,
+-      canvas.getContext('2d')!,
+-    )
+-    // Rendering makes the lazy, per-renderer output pipeline own a resource.
+-    await renderer.renderFrameSignal(0, 'pq')
+-    expect(resources.destroyColor).not.toHaveBeenCalled()
+-    renderer.dispose()
+-    expect(resources.destroyColor).toHaveBeenCalledTimes(1)
+-    expect(resources.destroyColor.mock.invocationCallOrder[0]).toBeLessThan(
+-      resources.disposeGpu.mock.invocationCallOrder[0]!,
+-    )
+-    renderer.dispose()
+-    expect(resources.destroyColor).toHaveBeenCalledTimes(1)
+-  })
++  it.each(['sdr', 'hdr'] as const)(
++    'releases %s lazy color output before GPU teardown and only once',
++    async (workingRange) => {
++      vi.stubGlobal('OffscreenCanvas', TestCanvas)
++      vi.stubGlobal('GPUTextureUsage', { RENDER_ATTACHMENT: 1, COPY_SRC: 2 })
++      vi.stubGlobal('GPUBufferUsage', { COPY_DST: 1, MAP_READ: 2 })
++      vi.stubGlobal('GPUMapMode', { READ: 1 })
++      const canvas = new OffscreenCanvas(1, 1)
++      const renderer = await createCompositionRenderer(
++        {
++          fps: 24,
++          width: 1,
++          height: 1,
++          durationInFrames: 1,
++          tracks: [],
++          colorManagement: { workingRange },
++        },
++        canvas,
++        canvas.getContext('2d')!,
++      )
++      // Rendering makes the lazy, per-renderer output pipeline own a resource.
++      await renderer.renderFrameSignal(0, 'pq')
++      expect(resources.destroyColor).not.toHaveBeenCalled()
++      renderer.dispose()
++      expect(resources.destroyColor).toHaveBeenCalledTimes(1)
++      expect(resources.destroyColor.mock.invocationCallOrder[0]).toBeLessThan(
++        resources.disposeGpu.mock.invocationCallOrder[0]!,
++      )
++      renderer.dispose()
++      expect(resources.destroyColor).toHaveBeenCalledTimes(1)
++    },
++  )
+ })
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -81,7 +81,11 @@
+ import type { FrameInvalidationRequest } from '@/shared/utils/frame-invalidation'
+ import { collectReachableCompositionIdsFromTracks } from '@/features/export/deps/timeline-compositions'
+ import { appendVirtualTranscriptCaptionTrack } from '@/features/export/deps/caption-items'
+-import { resolveColorManagement } from '@/shared/graphics/color/managed-color'
++import {
++  resolveColorManagement,
++  srgbDecodeExtended,
++  HdrRenderUnavailableError,
++} from '@/shared/graphics/color/managed-color'
+ import { deriveSourceWorkingRange } from './project-color'
+ import { ColorOutputPipeline, type ColorOutputTarget } from '@/infrastructure/gpu-color'
+
+@@ -668,11 +672,14 @@
+  * with full support for effects, masks, transitions, and keyframe animations.
+  */
+ /** '#rgb' / '#rrggbb' background → straight working RGB (SDR, reference white = 1). */
+-function parseBackgroundColor(hex: string): [number, number, number] {
++function parseBackgroundColor(hex: string, hdrWorking = false): [number, number, number] {
+   const value = hex.trim().replace(/^#/, '')
+   const full = value.length === 3 ? [...value].map((c) => c + c).join('') : value
+   if (!/^[0-9a-f]{6}$/i.test(full)) return [0, 0, 0]
+-  return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255) as [number, number, number]
++  return [0, 2, 4].map((i) => {
++    const encoded = parseInt(full.slice(i, i + 2), 16) / 255
++    return hdrWorking ? srgbDecodeExtended(encoded) : encoded
++  }) as [number, number, number]
+ }
+
+ export async function createCompositionRenderer(
+@@ -1332,6 +1339,7 @@
+       fps: subComp.fps,
+       durationInFrames: subComp.durationInFrames,
+       compositionControls: subComp.compositionControls,
++      hasTransitions: (subComp.transitions?.length ?? 0) > 0,
+       sortedTracks: sortedWithItems,
+       keyframesMap: subKfMap,
+       itemsById: new Map(subComp.items.map((item) => [item.id, item])),
+@@ -2435,6 +2443,10 @@
+             return Boolean(blendMode && blendMode !== 'normal')
+           })(),
+       )
++      if (hdrWorking && hasNonNormalBlend)
++        throw new HdrRenderUnavailableError(
++          'Blend mode is not migrated to linear HDR working colour',
++        )
+       if ((hasNonNormalBlend || floatRoute) && !itemRenderContext.gpuPipeline) {
+         itemRenderContext.gpuPipeline = await gpu.ensureEffects()
+         if (!itemRenderContext.gpuPipeline) {
+@@ -2465,6 +2477,8 @@
+       const gpuCompositeOutput = useGpuCompositor
+         ? gpu.ensureCompositeOutput(canvasSettings.width, canvasSettings.height)
+         : null
++      if (hdrWorking && (!useGpuCompositor || !gpuCompositeOutput))
++        throw new HdrRenderUnavailableError('Linear HDR requires the managed GPU compositor')
+       if (shouldUseDeferredGpuBatch && itemRenderContext.gpuPipeline) {
+         itemRenderContext.gpuPipeline.beginBatch()
+       }
+@@ -2585,9 +2599,10 @@
+                     }
+                   }
+                 }
+-                if (item.type === 'image' && hdrRasterSources.has(item.mediaId)) {
+-                  throw new Error('HDR raster could not be rendered on the float route')
+-                }
++                if (hdrWorking)
++                  throw new HdrRenderUnavailableError(
++                    'Item could not be rendered on the linear HDR route',
++                  )
+                 return renderItemWithEffects(
+                   task.item,
+                   task.trackOrder,
+@@ -2597,6 +2612,10 @@
+                   false,
+                 )
+               }
++              if (hdrWorking)
++                throw new HdrRenderUnavailableError(
++                  'Transitions are not migrated to linear HDR working colour',
++                )
+               const transitionMasks = activeMasks.filter((mask) =>
+                 doesMaskAffectTrack(mask.trackOrder, task.trackOrder),
+               )
+@@ -2724,7 +2743,7 @@
+             floatOutput:
+               floatCapture || hdrWorking
+                 ? {
+-                    background: parseBackgroundColor(backgroundColor),
++                    background: parseBackgroundColor(backgroundColor, hdrWorking),
+                     capture: floatCapture ? captureSignal : displayHdr,
+                   }
+                 : undefined,
+diff --git a/src/features/export/utils/gpu-pipeline-manager.ts b/src/features/export/utils/gpu-pipeline-manager.ts
+--- a/src/features/export/utils/gpu-pipeline-manager.ts
++++ b/src/features/export/utils/gpu-pipeline-manager.ts
+@@ -58,6 +58,8 @@
+     this.range = range
+     this.effects?.setWorkingRange(range)
+     this.transition?.setWorkingRange(range)
++    this.media?.setWorkingRange(range)
++    this.shape?.setWorkingRange(range)
+     this.mediaBlend?.setWorkingRange(range)
+     this.compositor?.setWorkingRange(range)
+   }
+@@ -92,6 +94,7 @@
+     if (this.media) return true
+     if (!this.effects) return false
+     this.media = new MediaRenderPipeline(this.effects.getDevice())
++    this.media.setWorkingRange(this.workingRange)
+     return true
+   }
+
+@@ -107,6 +110,7 @@
+     if (this.shape) return true
+     if (!this.effects) return false
+     this.shape = new ShapeRenderPipeline(this.effects.getDevice())
++    this.shape.setWorkingRange(this.workingRange)
+     return true
+   }
+
+diff --git a/src/features/export/utils/hdr-raster-sources.ts b/src/features/export/utils/hdr-raster-sources.ts
+--- a/src/features/export/utils/hdr-raster-sources.ts
++++ b/src/features/export/utils/hdr-raster-sources.ts
+@@ -1,5 +1,6 @@
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
+ import { MANAGED_COLOR_WGSL } from '@/infrastructure/gpu-color/managed-color-wgsl'
++import { HDR_WORKING_DOMAIN } from '@/shared/graphics/color/managed-color'
+
+ export interface HdrRasterInput {
+   width: number
+@@ -28,7 +29,7 @@
+ /** Per-renderer owned textures; integer source codes never pass through a canvas. */
+ export class HdrRasterSources {
+   private disposed = false
+-  private readonly textures = new Map<string, { texture: GPUTexture; referenceWhite: number }>()
++  private readonly textures = new Map<string, { texture: GPUTexture; colorKey: string }>()
+   private readonly inputs: Readonly<Record<string, HdrRasterInput>>
+   constructor(
+     inputs: Readonly<Record<string, HdrRasterInput>>,
+@@ -64,11 +65,12 @@
+     if (!(referenceWhite > 0 && Number.isFinite(referenceWhite)))
+       throw new Error('Invalid reference white')
+     const cached = this.textures.get(mediaId)
+-    if (cached && cached.referenceWhite !== referenceWhite) {
++    const colorKey = `${HDR_WORKING_DOMAIN}:${referenceWhite}`
++    if (cached && cached.colorKey !== colorKey) {
+       cached.texture.destroy()
+       this.textures.delete(mediaId)
+     }
+-    let output = cached?.referenceWhite === referenceWhite ? cached.texture : undefined
++    let output = cached?.colorKey === colorKey ? cached.texture : undefined
+     if (!output) {
+       let source: GPUTexture | undefined
+       let uniform: GPUBuffer | undefined
+@@ -152,7 +154,7 @@
+         pass.end()
+         device.queue.submit([encoder.finish()])
+         output = candidate
+-        this.textures.set(mediaId, { texture: output, referenceWhite })
++        this.textures.set(mediaId, { texture: output, colorKey })
+       } catch (error) {
+         candidate?.destroy()
+         throw error
+diff --git a/src/features/export/utils/hdr-video-sources.ts b/src/features/export/utils/hdr-video-sources.ts
+--- a/src/features/export/utils/hdr-video-sources.ts
++++ b/src/features/export/utils/hdr-video-sources.ts
+@@ -12,17 +12,15 @@
+ import { createLogger } from '@/shared/logging/logger'
+ import { VideoFrameExtractor } from './canvas-video-extractor'
+ import { getMediaMetadataById } from '@/features/export/deps/media-library'
+-import { workingRangeOfSources } from '@/shared/graphics/color/managed-color'
++import {
++  workingRangeOfSources,
++  HDR_WORKING_DOMAIN,
++  HdrRenderUnavailableError,
++} from '@/shared/graphics/color/managed-color'
++export { HdrRenderUnavailableError } from '@/shared/graphics/color/managed-color'
+
+ const log = createLogger('HdrVideoSources')
+ const hdrSourceUrls = new Map<string, string>()
+-
+-export class HdrRenderUnavailableError extends Error {
+-  constructor(message: string) {
+-    super(message)
+-    this.name = 'HdrRenderUnavailableError'
+-  }
+-}
+
+ export class HdrVideoUnavailableError extends HdrRenderUnavailableError {
+   constructor() {
+@@ -64,6 +62,7 @@
+   ready: Promise<boolean>
+   texture: GPUTexture | null
+   textureTime: number | null
++  textureColorKey: string | null
+ }
+
+ export interface HdrVideoFrameTexture {
+@@ -106,12 +105,14 @@
+       })
+       source.textureTime = null
+     }
+-    if (source.textureTime !== frame.sourceTime) {
++    const colorKey = `${HDR_WORKING_DOMAIN}:${referenceWhiteNits}`
++    if (source.textureTime !== frame.sourceTime || source.textureColorKey !== colorKey) {
+       this.uploader ??= new HdrFrameUploader(device)
+       if (!this.uploader.upload(frame, source.texture, referenceWhiteNits)) {
+         return this.fail(url, 'upload')
+       }
+       source.textureTime = frame.sourceTime
++      source.textureColorKey = colorKey
+     }
+     return { texture: source.texture, width: frame.width, height: frame.height }
+   }
+@@ -140,6 +141,7 @@
+       ready: extractor.init(),
+       texture: null,
+       textureTime: null,
++      textureColorKey: null,
+     }
+     this.items.set(itemId, source)
+     return source
+diff --git a/src/infrastructure/gpu-color/color-output-pipeline.ts b/src/infrastructure/gpu-color/color-output-pipeline.ts
+--- a/src/infrastructure/gpu-color/color-output-pipeline.ts
++++ b/src/infrastructure/gpu-color/color-output-pipeline.ts
+@@ -37,20 +37,24 @@
+ fn outputFragment(input: VertexOutput) -> @location(0) vec4f {
+   let c = textureLoad(inputTex, vec2i(input.position.xy), 0);
+   let alpha = clamp(c.a, 0.0, 1.0);
++  // SDR projects retain encoded node maths, including on float capture.
++  let linear = select(fl_srgb_decode(c.rgb), c.rgb, params.hdrWorking != 0u);
+   if (params.outputTarget == 1u) {
+-    return vec4f(fl_pq_encode(fl_working_to_nits2020(c.rgb, params.referenceWhite)), alpha);
++    return vec4f(fl_pq_encode(fl_working_to_nits2020(linear, params.referenceWhite)), alpha);
+   }
+   if (params.outputTarget == 2u) {
+-    let display = min(fl_working_to_nits2020(c.rgb, params.referenceWhite), vec3f(FL_HLG_PEAK));
++    let display = min(fl_working_to_nits2020(linear, params.referenceWhite), vec3f(FL_HLG_PEAK));
+     return vec4f(fl_hlg_oetf(fl_hlg_inverse_ootf(display)), alpha);
+   }
+   // SDR display: clip, or tone map an HDR project by its named policy.
+-  if (params.hdrWorking == 0u || params.toneMap == 0u) {
++  if (params.hdrWorking == 0u) {
+     return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)), alpha);
+   }
+-  let linear = fl_srgb_decode(c.rgb);
++  if (params.toneMap == 0u) {
++    return vec4f(fl_srgb_encode(clamp(linear, vec3f(0.0), vec3f(1.0))), alpha);
++  }
+   let y = dot(vec3f(0.2126, 0.7152, 0.0722), linear);
+-  if (y <= 0.0) { return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)), alpha); }
++  if (y <= 0.0) { return vec4f(fl_srgb_encode(clamp(linear, vec3f(0.0), vec3f(1.0))), alpha); }
+   let nits = y * params.referenceWhite;
+   // One stop of highlight room: SDR_MONITOR_HEADROOM = 2 in managed-color.ts.
+   let mapped = fl_bt2390_eetf(nits, params.masteringPeak, params.referenceWhite * 2.0);
+diff --git a/src/infrastructure/gpu-color/managed-color-wgsl.ts b/src/infrastructure/gpu-color/managed-color-wgsl.ts
+--- a/src/infrastructure/gpu-color/managed-color-wgsl.ts
++++ b/src/infrastructure/gpu-color/managed-color-wgsl.ts
+@@ -108,12 +108,12 @@
+   } else {
+     nits = fl_hlg_ootf(fl_hlg_inverse_oetf(signal));
+   }
+-  return fl_srgb_encode(fl_bt2020_to_bt709(nits / referenceWhite));
++  return fl_bt2020_to_bt709(nits / referenceWhite);
+ }
+
+-// Working (extended sRGB, BT.709, 1.0 = reference white) -> BT.2020 display cd/m².
++// Working (linear display-light BT.709, 1.0 = reference white) -> BT.2020 display cd/m².
+ fn fl_working_to_nits2020(working: vec3f, referenceWhite: f32) -> vec3f {
+-  return max(fl_bt709_to_bt2020(fl_srgb_decode(working)), vec3f(0.0)) * referenceWhite;
++  return max(fl_bt709_to_bt2020(working), vec3f(0.0)) * referenceWhite;
+ }
+
+ fn fl_bt2390_eetf(nits: f32, sourcePeak: f32, targetPeak: f32) -> f32 {
+diff --git a/src/infrastructure/gpu-compositor/compositor-pipeline.ts b/src/infrastructure/gpu-compositor/compositor-pipeline.ts
+--- a/src/infrastructure/gpu-compositor/compositor-pipeline.ts
++++ b/src/infrastructure/gpu-compositor/compositor-pipeline.ts
+@@ -17,7 +17,7 @@
+ import { blendModesWgsl } from '@/infrastructure/gpu-shared/blend-modes'
+ import { drawFullscreenCanvasPass } from '@/infrastructure/gpu-shared/fullscreen-canvas-pass'
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
+-import type { WorkingRange } from '@/shared/graphics/color/managed-color'
++import { HdrRenderUnavailableError, type WorkingRange } from '@/shared/graphics/color/managed-color'
+
+ const logger = createLogger('CompositorPipeline')
+
+@@ -497,6 +497,10 @@
+   ): { texture: GPUTexture; view: GPUTextureView } | null {
+     if (layers.length === 0) return null
+     const hdr = this.workingRange === 'hdr'
++    if (hdr && layers.some((layer) => layer.params.blendMode !== 'normal' || layer.externalTexture))
++      throw new HdrRenderUnavailableError(
++        'Unmigrated blend or external texture in linear HDR compositor',
++      )
+     const regularPipeline = hdr ? this.regularPipelineHdr : this.regularPipeline
+     const externalPipeline = hdr ? this.externalPipelineHdr : this.externalPipeline
+     if (!regularPipeline || !this.regularLayout) return null
+diff --git a/src/infrastructure/gpu-effects/effects-pipeline.ts b/src/infrastructure/gpu-effects/effects-pipeline.ts
+--- a/src/infrastructure/gpu-effects/effects-pipeline.ts
++++ b/src/infrastructure/gpu-effects/effects-pipeline.ts
+@@ -3,7 +3,12 @@
+ import { drawFullscreenCanvasPass } from '@/infrastructure/gpu-shared/fullscreen-canvas-pass'
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
+ import { COMMON_WGSL, effectRangeWgsl } from './common'
+-import type { WorkingRange } from '@/shared/graphics/color/managed-color'
++import {
++  HdrRenderUnavailableError,
++  workingColorDomain,
++  type WorkingRange,
++} from '@/shared/graphics/color/managed-color'
++import { MANAGED_COLOR_WGSL } from '@/infrastructure/gpu-color/managed-color-wgsl'
+ import type {
+   EffectDataTexturePayload,
+   EffectDataTextureSpec,
+@@ -73,11 +78,13 @@
+ // must not premultiply; rgba8unorm performs the explicit SDR quantization.
+ const TEXTURE_CONVERSION_SHADER = /* wgsl */ `
+ ${FULLSCREEN_VERTEX}
++${MANAGED_COLOR_WGSL}
++override decodeSrgbInput: bool = false;
+ @group(0) @binding(1) var inputTex: texture_2d<f32>;
+ @fragment
+ fn convertFragment(input: VertexOutput) -> @location(0) vec4f {
+   let c = textureLoad(inputTex, vec2i(input.position.xy), 0);
+-  return vec4f(c.rgb, clamp(c.a, 0.0, 1.0));
++  return vec4f(select(c.rgb, fl_srgb_decode(c.rgb), decodeSrgbInput), clamp(c.a, 0.0, 1.0));
+ }
+ `
+
+@@ -115,7 +122,7 @@
+   // layout maps; the fragment maps above stay untouched.
+   private computePipelines = new Map<string, GPUComputePipeline>()
+   private computeBindGroupLayouts = new Map<string, GPUBindGroupLayout>()
+-  private conversionPipelines = new Map<EffectTextureFormat, GPURenderPipeline>()
++  private conversionPipelines = new Map<string, GPURenderPipeline>()
+   private sampler: GPUSampler
+   private blitPipeline: GPURenderPipeline | null = null
+   private blitBindGroupLayout: GPUBindGroupLayout | null = null
+@@ -525,6 +532,8 @@
+     w: number,
+     h: number,
+   ): GPUTexture {
++    if (this.workingRange === 'hdr' && effects.length > 0)
++      throw new HdrRenderUnavailableError('Effects are not migrated to linear HDR working colour')
+     const format = startInput.format as EffectTextureFormat
+     let inputTex = startInput
+     let outputTex = startOutput
+@@ -822,12 +831,31 @@
+     outputTexture: GPUTexture,
+   ): boolean {
+     const enabled = effects.filter((e) => e.enabled)
++    if (this.workingRange === 'hdr' && enabled.length > 0)
++      throw new HdrRenderUnavailableError('Effects are not migrated to linear HDR working colour')
+
+     const { width: w, height: h } = getExternalImageSourceDimensions(source)
+     if (w < 2 || h < 2) return false
+     if (outputTexture.width !== w || outputTexture.height !== h) return false
+     if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float')
+       return false
++
++    if (this.workingRange === 'hdr') {
++      if (outputTexture.format !== 'rgba16float')
++        throw new HdrRenderUnavailableError('Linear HDR requires a float texture output')
++      // The authored SDR source is encoded here only until the texel decode.
++      // Float ingest avoids an extra 8-bit round-trip of antialiased text.
++      this.ensurePingPong(w, h, 'rgba16float')
++      this.device.queue.copyExternalImageToTexture(
++        { source, flipY: false },
++        { texture: this.pingTexture! },
++        { width: w, height: h },
++      )
++      const encoder = this.device.createCommandEncoder()
++      this.copyEffectTexture(encoder, this.pingTexture!, outputTexture, w, h, true)
++      this.device.queue.submit([encoder.finish()])
++      return true
++    }
+
+     if (enabled.length === 0) {
+       this.device.queue.copyExternalImageToTexture(
+@@ -870,23 +898,30 @@
+     output: GPUTexture,
+     width: number,
+     height: number,
++    decodeSrgbInput = false,
+   ): void {
+     if (source === output) return
+-    if (source.format === output.format) {
++    if (source.format === output.format && !decodeSrgbInput) {
+       encoder.copyTextureToTexture({ texture: source }, { texture: output }, { width, height })
+       return
+     }
+     const format = output.format as EffectTextureFormat
+-    let pipeline = this.conversionPipelines.get(format)
++    const key = `${format}:${decodeSrgbInput ? workingColorDomain('hdr') : 'identity'}`
++    let pipeline = this.conversionPipelines.get(key)
+     if (!pipeline) {
+       const module = this.device.createShaderModule({ code: TEXTURE_CONVERSION_SHADER })
+       pipeline = this.device.createRenderPipeline({
+         layout: 'auto',
+         vertex: { module, entryPoint: 'vertexMain' },
+-        fragment: { module, entryPoint: 'convertFragment', targets: [{ format }] },
++        fragment: {
++          module,
++          entryPoint: 'convertFragment',
++          targets: [{ format }],
++          constants: { decodeSrgbInput: decodeSrgbInput ? 1 : 0 },
++        },
+         primitive: { topology: 'triangle-list' },
+       })
+-      this.conversionPipelines.set(format, pipeline)
++      this.conversionPipelines.set(key, pipeline)
+     }
+     const group = this.device.createBindGroup({
+       layout: pipeline.getBindGroupLayout(0),
+@@ -915,6 +950,10 @@
+     height: number,
+   ): boolean {
+     const enabled = effects.filter((e) => e.enabled)
++    if (this.workingRange === 'hdr' && enabled.length > 0)
++      throw new HdrRenderUnavailableError('Effects are not migrated to linear HDR working colour')
++    if (this.workingRange === 'hdr' && outputTexture.format !== 'rgba16float')
++      throw new HdrRenderUnavailableError('Linear HDR requires a float texture output')
+     if (width < 2 || height < 2) return false
+     if (
+       sourceTexture.width !== width ||
+@@ -943,7 +982,14 @@
+         : 'rgba8unorm'
+     const commandEncoder = this.device.createCommandEncoder()
+     if (enabled.length === 0) {
+-      this.copyEffectTexture(commandEncoder, sourceTexture, outputTexture, width, height)
++      this.copyEffectTexture(
++        commandEncoder,
++        sourceTexture,
++        outputTexture,
++        width,
++        height,
++        this.workingRange === 'hdr' && sourceTexture.format === 'rgba8unorm',
++      )
+       this.device.queue.submit([commandEncoder.finish()])
+       return true
+     }
+diff --git a/src/infrastructure/gpu-media/media-blend-pipeline.ts b/src/infrastructure/gpu-media/media-blend-pipeline.ts
+--- a/src/infrastructure/gpu-media/media-blend-pipeline.ts
++++ b/src/infrastructure/gpu-media/media-blend-pipeline.ts
+@@ -1,7 +1,7 @@
+ import type { BlendMode } from '@/types/blend-modes'
+ import { BLEND_MODE_INDEX } from '@/types/blend-modes'
+ import { blendModesWgsl } from '@/infrastructure/gpu-shared/blend-modes'
+-import type { WorkingRange } from '@/shared/graphics/color/managed-color'
++import { HdrRenderUnavailableError, type WorkingRange } from '@/shared/graphics/color/managed-color'
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
+
+ const mediaBlendShader = (extended: boolean) => /* wgsl */ `
+@@ -98,6 +98,8 @@
+     blendMode: BlendMode,
+     opacity = 1,
+   ): boolean {
++    if (this.workingRange === 'hdr' && blendMode !== 'normal')
++      throw new HdrRenderUnavailableError('Blend mode is not migrated to linear HDR working colour')
+     if (
+       baseTexture.width !== layerTexture.width ||
+       baseTexture.height !== layerTexture.height ||
+diff --git a/src/infrastructure/gpu-media/media-render-pipeline.ts b/src/infrastructure/gpu-media/media-render-pipeline.ts
+--- a/src/infrastructure/gpu-media/media-render-pipeline.ts
++++ b/src/infrastructure/gpu-media/media-render-pipeline.ts
+@@ -1,4 +1,6 @@
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
++import { MANAGED_COLOR_WGSL } from '@/infrastructure/gpu-color/managed-color-wgsl'
++import type { WorkingRange } from '@/shared/graphics/color/managed-color'
+
+ type GpuMediaSource =
+   | OffscreenCanvas
+@@ -49,6 +51,8 @@
+
+ const MEDIA_RENDER_SHADER = /* wgsl */ `
+ ${FULLSCREEN_QUAD_WGSL}
++${MANAGED_COLOR_WGSL}
++override decodeSrgbInput: bool = false;
+
+ struct MediaUniforms {
+   outputSize: vec2f,
+@@ -77,7 +81,8 @@
+ fn loadPremultiplied(pixel: vec2i) -> vec4f {
+   let lastPixel = vec2i(textureDimensions(sourceTex, 0)) - vec2i(1);
+   let color = textureLoad(sourceTex, clamp(pixel, vec2i(0), lastPixel), 0);
+-  return vec4f(color.rgb * color.a, color.a);
++  let rgb = select(color.rgb, fl_srgb_decode(color.rgb), decodeSrgbInput);
++  return vec4f(rgb * color.a, color.a);
+ }
+
+ fn sampleColor(uv: vec2f) -> vec4f {
+@@ -186,6 +191,7 @@
+ }
+
+ export class MediaRenderPipeline {
++  private workingRange: WorkingRange = 'sdr'
+   private inputTexture: GPUTexture | null = null
+   private inputView: GPUTextureView | null = null
+   private bindGroup: GPUBindGroup | null = null
+@@ -193,6 +199,7 @@
+   private inputH = 0
+   private activeMaskView: GPUTextureView | null = null
+   private readonly floatReplacePipeline: GPURenderPipeline
++  private readonly floatSrgbInputPipeline: GPURenderPipeline
+   private readonly replacePipeline: GPURenderPipeline
+   private readonly blendPipeline: GPURenderPipeline
+   private readonly sampler: GPUSampler
+@@ -215,6 +222,12 @@
+       ],
+     })
+     this.floatReplacePipeline = this.createRenderPipeline(shaderModule, false, 'rgba16float')
++    this.floatSrgbInputPipeline = this.createRenderPipeline(
++      shaderModule,
++      false,
++      'rgba16float',
++      true,
++    )
+     this.replacePipeline = this.createRenderPipeline(shaderModule, false)
+     this.blendPipeline = this.createRenderPipeline(shaderModule, true)
+     this.uniformBuffer = device.createBuffer({
+@@ -227,6 +240,7 @@
+     shaderModule: GPUShaderModule,
+     blend: boolean,
+     format: GPUTextureFormat = 'rgba8unorm',
++    decodeSrgbInput = false,
+   ): GPURenderPipeline {
+     return this.device.createRenderPipeline({
+       label: 'media-render-pipeline',
+@@ -235,6 +249,7 @@
+       fragment: {
+         module: shaderModule,
+         entryPoint: 'fragmentMain',
++        constants: { decodeSrgbInput: decodeSrgbInput ? 1 : 0 },
+         targets: [
+           {
+             format,
+@@ -255,6 +270,10 @@
+     })
+   }
+
++  setWorkingRange(range: WorkingRange): void {
++    this.workingRange = range
++  }
++
+   renderSourceToTexture(
+     source: GpuMediaSource,
+     outputTexture: GPUTexture,
+@@ -281,7 +300,14 @@
+     )
+
+     if (!params.maskTexture) {
+-      return this.renderInputViewToTexture(outputTexture, params, sourceWidth, sourceHeight)
++      return this.renderInputViewToTexture(
++        outputTexture,
++        params,
++        sourceWidth,
++        sourceHeight,
++        this.workingRange === 'hdr',
++        this.workingRange === 'hdr',
++      )
+     }
+
+     const previousMaskView = this.activeMaskView
+@@ -289,7 +315,14 @@
+     this.activeMaskView = params.maskTexture.createView()
+     this.bindGroup = null
+     try {
+-      return this.renderInputViewToTexture(outputTexture, params, sourceWidth, sourceHeight)
++      return this.renderInputViewToTexture(
++        outputTexture,
++        params,
++        sourceWidth,
++        sourceHeight,
++        this.workingRange === 'hdr',
++        this.workingRange === 'hdr',
++      )
+     } finally {
+       this.activeMaskView = previousMaskView
+       this.bindGroup = previousBindGroup
+@@ -319,7 +352,12 @@
+     this.bindGroup = null
+     try {
+       return this.renderInputViewToTexture(
+-        outputTexture, params, sourceWidth, sourceHeight, sourceTexture.format === 'rgba16float',
++        outputTexture,
++        params,
++        sourceWidth,
++        sourceHeight,
++        sourceTexture.format === 'rgba16float' || this.workingRange === 'hdr',
++        this.workingRange === 'hdr' && sourceTexture.format === 'rgba8unorm',
+       )
+     } finally {
+       this.inputView = previousView
+@@ -339,7 +377,10 @@
+     this.inputTexture = this.device.createTexture({
+       size: { width, height },
+       format: 'rgba8unorm',
+-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
++      usage:
++        GPUTextureUsage.TEXTURE_BINDING |
++        GPUTextureUsage.COPY_DST |
++        GPUTextureUsage.RENDER_ATTACHMENT,
+     })
+     this.inputView = this.inputTexture.createView()
+     this.bindGroup = null
+@@ -369,6 +410,7 @@
+     sourceWidth: number,
+     sourceHeight: number,
+     filterStraightAlpha = false,
++    decodeSrgbInput = false,
+   ): boolean {
+     // Float color stays straight; MediaBlendPipeline owns source-over compositing.
+     if (outputTexture.format === 'rgba16float' && params.blend) return false
+@@ -444,7 +486,9 @@
+     })
+     pass.setPipeline(
+       outputTexture.format === 'rgba16float'
+-        ? this.floatReplacePipeline
++        ? decodeSrgbInput
++          ? this.floatSrgbInputPipeline
++          : this.floatReplacePipeline
+         : params.blend
+           ? this.blendPipeline
+           : this.replacePipeline,
+diff --git a/src/infrastructure/gpu-shapes/shape-render-pipeline.ts b/src/infrastructure/gpu-shapes/shape-render-pipeline.ts
+--- a/src/infrastructure/gpu-shapes/shape-render-pipeline.ts
++++ b/src/infrastructure/gpu-shapes/shape-render-pipeline.ts
+@@ -1,5 +1,6 @@
+ import type { ShapeItem } from '@/types/timeline'
+ import { FULLSCREEN_QUAD_WGSL } from '@/infrastructure/gpu-shared/fullscreen-quad'
++import { srgbDecodeExtended, type WorkingRange } from '@/shared/graphics/color/managed-color'
+
+ export interface GpuShapeRect {
+   x: number
+@@ -246,6 +247,7 @@
+ `
+
+ export class ShapeRenderPipeline {
++  private workingRange: WorkingRange = 'sdr'
+   private readonly floatReplacePipeline: GPURenderPipeline
+   private readonly replacePipeline: GPURenderPipeline
+   private readonly blendPipeline: GPURenderPipeline
+@@ -303,6 +305,10 @@
+     })
+   }
+
++  setWorkingRange(range: WorkingRange): void {
++    this.workingRange = range
++  }
++
+   renderShapeToTexture(outputTexture: GPUTexture, params: GpuShapeRenderParams): boolean {
+     // Float color stays straight; MediaBlendPipeline owns source-over compositing.
+     if (outputTexture.format === 'rgba16float' && params.blend) return false
+@@ -331,6 +337,14 @@
+     const trimPathEnd = Math.max(0, Math.min(100, params.trimPathEnd ?? 100))
+     const trimEnabled = trimPathStart !== 0 || trimPathEnd !== 100
+     const gradientEndColor = params.gradientEndColor ?? params.fillColor
++    // Decode authored endpoints before gradient/stroke interpolation. Coverage
++    // masks and SDR projects retain their existing uniform values.
++    const color = (rgba: number[]) =>
++      rgba.map((v, i) =>
++        i < 3 && this.workingRange === 'hdr' && outputTexture.format === 'rgba16float'
++          ? srgbDecodeExtended(v)
++          : v,
++      )
+     const uniformData = new Float32Array([
+       params.outputWidth,
+       params.outputHeight,
+@@ -340,8 +354,8 @@
+       params.transformRect.y,
+       params.transformRect.width,
+       params.transformRect.height,
+-      ...params.fillColor,
+-      ...strokeColor,
++      ...color(params.fillColor),
++      ...color(strokeColor),
+       params.cornerRadius ?? 0,
+       params.strokeWidth ?? 0,
+       params.shapeType === 'path'
+@@ -360,7 +374,7 @@
+       Math.max(0, params.taperEndWidth ?? 100) / 100,
+       Math.max(0, Math.min(100, params.taperStartLength ?? 0)) / 100,
+       Math.max(0, Math.min(100, params.taperEndLength ?? 0)) / 100,
+-      ...gradientEndColor,
++      ...color(gradientEndColor),
+       params.gradientAngleRad ?? 0,
+       params.gradientEndColor ? 1 : 0,
+       0,
+diff --git a/src/infrastructure/gpu-transitions/transition-pipeline.ts b/src/infrastructure/gpu-transitions/transition-pipeline.ts
+--- a/src/infrastructure/gpu-transitions/transition-pipeline.ts
++++ b/src/infrastructure/gpu-transitions/transition-pipeline.ts
+@@ -2,7 +2,7 @@
+ import { TRANSITION_COMMON_WGSL } from './common'
+ import type { GpuTransitionDefinition } from './types'
+ import { GPU_TRANSITION_REGISTRY, getGpuTransition } from './registry'
+-import type { WorkingRange } from '@/shared/graphics/color/managed-color'
++import { HdrRenderUnavailableError, type WorkingRange } from '@/shared/graphics/color/managed-color'
+
+ const log = createLogger('TransitionPipeline')
+
+@@ -419,6 +419,10 @@
+     direction?: string,
+     properties?: Record<string, unknown>,
+   ): OffscreenCanvas | null {
++    if (this.workingRange === 'hdr')
++      throw new HdrRenderUnavailableError(
++        'Transitions are not migrated to linear HDR working colour',
++      )
+     if (!this.pipelines.has(transitionId) || !getGpuTransition(transitionId)) return null
+     if (width < 2 || height < 2) return null
+
+@@ -472,6 +476,10 @@
+     properties?: Record<string, unknown>,
+     outputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
+   ): boolean {
++    if (this.workingRange === 'hdr')
++      throw new HdrRenderUnavailableError(
++        'Transitions are not migrated to linear HDR working colour',
++      )
+     if (!this.pipelines.has(transitionId) || !getGpuTransition(transitionId)) return false
+     if (outputTexture.format !== 'rgba8unorm' && outputTexture.format !== 'rgba16float')
+       return false
+@@ -516,6 +524,10 @@
+       : 'premultiplied',
+     outputAlpha: 'straight' | 'premultiplied' = 'premultiplied',
+   ): boolean {
++    if (this.workingRange === 'hdr')
++      throw new HdrRenderUnavailableError(
++        'Transitions are not migrated to linear HDR working colour',
++      )
+     const record = this.pipelines.get(transitionId)
+     const def = getGpuTransition(transitionId)
+     if (!record || !def) return false
+diff --git a/src/shared/graphics/color/linear-display.test.ts b/src/shared/graphics/color/linear-display.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/graphics/color/linear-display.test.ts
+@@ -0,0 +1,29 @@
++// @vitest-environment node
++import { expect, it } from 'vite-plus/test'
++import {
++  signalToWorking,
++  workingToSignal,
++  resolveColorManagement,
++  workingToSdrDisplay,
++} from './managed-color'
++
++it('keeps decoded HDR light linear before mixing coverage', () => {
++  // Published ST 2084 code for 203 cd/m2; a half-coverage white pixel is 101.5 nits.
++  const white = signalToWorking([0.5806888810416109, 0.5806888810416109, 0.5806888810416109], 'pq')
++  const half = workingToSignal(white.map((v) => v * 0.5) as [number, number, number], 'pq')
++  half.forEach((v) => expect(v).toBeCloseTo(0.5095742647025964, 4))
++  // HLG .5 is 50.6970284911 display nits after the nominal 1000-nit OOTF.
++  signalToWorking([0.5, 0.5, 0.5], 'hlg').forEach((v) =>
++    expect(v).toBeCloseTo(0.24973905660640633, 5),
++  )
++})
++
++it('sRGB-encodes linear HDR only at explicit SDR output', () => {
++  const hdr = { ...resolveColorManagement(undefined, 'hdr'), sdrMonitoring: 'none' as const }
++  expect(workingToSdrDisplay([0.5, 0.25, -0.1], hdr)).toEqual([
++    0.7353569830524495, 0.5370987304831942, 0,
++  ])
++  expect(workingToSdrDisplay([0.5, 0.25, -0.1], resolveColorManagement(undefined))).toEqual([
++    0.5, 0.25, 0,
++  ])
++})
+diff --git a/src/shared/graphics/color/managed-color.test.ts b/src/shared/graphics/color/managed-color.test.ts
+--- a/src/shared/graphics/color/managed-color.test.ts
++++ b/src/shared/graphics/color/managed-color.test.ts
+@@ -120,10 +120,7 @@
+   it('maps SDR sources to reference white, not to a brighter guess', () => {
+     const sdrWhite = workingToSignal([1, 1, 1], 'pq', 203)
+     expect(pqDecode(sdrWhite[0])).toBeCloseTo(203, 1)
+-    const midGrey = workingToSignal(
+-      [srgbEncodeExtended(0.18), srgbEncodeExtended(0.18), srgbEncodeExtended(0.18)],
+-      'pq',
+-    )
++    const midGrey = workingToSignal([0.18, 0.18, 0.18], 'pq')
+     expect(pqDecode(midGrey[1])).toBeCloseTo(0.18 * 203, 1)
+   })
+
+@@ -161,6 +158,6 @@
+     expect(ycbcr2020ToSignal(1019, 512, 512)).toEqual([1, 1, 1])
+     // 100 cd/m² PQ grey through the ingest is below reference white.
+     const pq100 = signalToWorking(ycbcr2020ToSignal(64 + 0.508078 * 876, 512, 512), 'pq')
+-    expect(srgbDecodeExtended(pq100[0]) * 203).toBeCloseTo(100, 0)
++    expect(pq100[0] * 203).toBeCloseTo(100, 0)
+   })
+ })
+diff --git a/src/shared/graphics/color/managed-color.ts b/src/shared/graphics/color/managed-color.ts
+--- a/src/shared/graphics/color/managed-color.ts
++++ b/src/shared/graphics/color/managed-color.ts
+@@ -5,11 +5,12 @@
+  * - SDR projects keep Freecut's reference behaviour: display-referred sRGB-encoded
+  *   BT.709 values in [0, 1], and every node (effect, blend, transition) clamps
+  *   exactly as upstream, whichever GPU route renders it.
+- * - HDR projects use extended-range sRGB encoding with BT.709 primaries, as the
+- *   browser's extended canvas does. 1.0 is reference white, `referenceWhiteNits`
++ * - HDR projects use linear display-light with BT.709 primaries. This is
++ *   display-referred, not a reconstruction of camera scene light.
++ *   1.0 is reference white, `referenceWhiteNits`
+  *   (203 cd/m² by default, ITU-R BT.2408). Values above 1 are highlights. Negative
+- *   values carry colours outside BT.709, up to BT.2020. The transfer is odd-symmetric,
+- *   so the sign survives decoding. Nothing in the graph clips them.
++ *   values carry colours outside BT.709, up to BT.2020. Sign and range survive
++ *   the effect-free managed subtree; unmigrated colour operators refuse it.
+  *
+  * Alpha is straight (not premultiplied) in texture transport and bounded to [0, 1].
+  * Colour is converted only at an explicit boundary:
+@@ -31,6 +32,17 @@
+ export type HdrTransfer = 'pq' | 'hlg'
+ export type ToneMapPolicy = 'none' | 'bt2390'
+
++export const HDR_WORKING_DOMAIN = 'linear-display-bt709-v1'
++export const workingColorDomain = (range: WorkingRange) =>
++  range === 'hdr' ? HDR_WORKING_DOMAIN : 'srgb-display-bt709'
++
++export class HdrRenderUnavailableError extends Error {
++  constructor(message: string) {
++    super(message)
++    this.name = 'HdrRenderUnavailableError'
++  }
++}
++
+ export interface ProjectColorManagement {
+   workingRange: WorkingRange
+   /** cd/m² represented by working value 1.0 in an HDR project. */
+@@ -194,7 +206,7 @@
+ }
+
+ /**
+- * Explicit HDR output conversion: working (extended sRGB, BT.709) → BT.2020 PQ or
++ * Explicit HDR output conversion: working (linear display-light, BT.709) → BT.2020 PQ or
+  * HLG signal in [0, 1]. Colours outside BT.2020 and light above the transfer's
+  * peak are clipped here and nowhere earlier. No tone mapping is implied.
+  */
+@@ -203,12 +215,7 @@
+   transfer: HdrTransfer,
+   referenceWhiteNits = DEFAULT_REFERENCE_WHITE_NITS,
+ ): Rgb {
+-  const linear709: Rgb = [
+-    srgbDecodeExtended(working[0]),
+-    srgbDecodeExtended(working[1]),
+-    srgbDecodeExtended(working[2]),
+-  ]
+-  const nits = multiply(BT709_TO_BT2020, linear709).map(
++  const nits = multiply(BT709_TO_BT2020, working).map(
+     (v) => Math.max(v, 0) * referenceWhiteNits,
+   ) as unknown as Rgb
+   if (transfer === 'pq') return [pqEncode(nits[0]), pqEncode(nits[1]), pqEncode(nits[2])]
+@@ -236,7 +243,7 @@
+   return [r, g, b].map((v) => Math.min(Math.max(v, 0), 1)) as unknown as Rgb
+ }
+
+-/** HDR source ingest: BT.2020 PQ/HLG signal → working (extended sRGB, BT.709). */
++/** HDR source ingest: BT.2020 PQ/HLG signal → linear display-light BT.709. */
+ export function signalToWorking(
+   signal: Rgb,
+   transfer: HdrTransfer,
+@@ -251,12 +258,7 @@
+     nits[1] / referenceWhiteNits,
+     nits[2] / referenceWhiteNits,
+   ]
+-  const linear709 = multiply(BT2020_TO_BT709, relative)
+-  return [
+-    srgbEncodeExtended(linear709[0]),
+-    srgbEncodeExtended(linear709[1]),
+-    srgbEncodeExtended(linear709[2]),
+-  ]
++  return multiply(BT2020_TO_BT709, relative)
+ }
+
+ /**
+@@ -294,12 +296,15 @@
+  * keeping chromaticity.
+  */
+ export function workingToSdrDisplay(working: Rgb, color: ResolvedColorManagement): Rgb {
+-  if (color.workingRange === 'sdr' || color.sdrMonitoring === 'none') {
++  if (color.workingRange === 'sdr') {
+     return working.map((v) => Math.min(Math.max(v, 0), 1)) as unknown as Rgb
+   }
+-  const linear = working.map(srgbDecodeExtended) as unknown as Rgb
++  const clip = () =>
++    working.map((v) => (v <= 0 ? 0 : v >= 1 ? 1 : srgbEncodeExtended(v))) as unknown as Rgb
++  if (color.sdrMonitoring === 'none') return clip()
++  const linear = working
+   const y = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+-  if (y <= 0) return working.map((v) => Math.min(Math.max(v, 0), 1)) as unknown as Rgb
++  if (y <= 0) return clip()
+   const nits = y * color.referenceWhiteNits
+   const displayPeak = color.referenceWhiteNits * SDR_MONITOR_HEADROOM
+   const mapped = bt2390Eetf(nits, color.masteringPeakNits, displayPeak)

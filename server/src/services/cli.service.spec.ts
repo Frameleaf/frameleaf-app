@@ -1,0 +1,268 @@
+import { jwtVerify } from 'jose';
+import { describe, it } from 'vitest';
+import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
+import { CliService } from 'src/services/cli.service.js';
+import { UserFactory } from 'test/factories/user.factory.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
+
+describe(CliService.name, () => {
+  let sut: CliService;
+  let mocks: ServiceMocks;
+
+  beforeEach(() => {
+    ({ sut, mocks } = newTestService(CliService));
+    const metadata = new Map<SystemMetadataKey, unknown>();
+    mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve(metadata.get(key) as never));
+    mocks.systemMetadata.set.mockImplementation((key, value) => {
+      metadata.set(key, value);
+      return Promise.resolve();
+    });
+  });
+
+  describe('listUsers', () => {
+    it('should list users', async () => {
+      mocks.user.getList.mockResolvedValue([UserFactory.create({ isAdmin: true })]);
+      await expect(sut.listUsers()).resolves.toEqual([expect.objectContaining({ isAdmin: true })]);
+      expect(mocks.user.getList).toHaveBeenCalledWith({ withDeleted: true });
+    });
+  });
+
+  describe('schemaReport', () => {
+    it.each([
+      {
+        files: ['002.js', '001.js', '002.js', 'README.md'],
+        rows: ['002', '003', '003'],
+        expected: [
+          { name: '001', status: 'missing' },
+          { name: '002', status: 'applied' },
+          { name: '003', status: 'deleted' },
+        ],
+      },
+      { files: [], rows: [], expected: [] },
+      {
+        files: ['\u{FFFF}.js', '😀.js', 'A.js'],
+        rows: [],
+        expected: [
+          { name: 'A', status: 'missing' },
+          { name: '😀', status: 'missing' },
+          { name: '\u{FFFF}', status: 'missing' },
+        ],
+      },
+      { files: [], rows: ['003', '003'], expected: [{ name: '003', status: 'deleted' }] },
+    ])(
+      'reports each migration once with original code-unit ordering: $files / $rows',
+      async ({ files, rows, expected }) => {
+        const drift = {} as Awaited<ReturnType<typeof mocks.database.getSchemaDrift>>;
+        mocks.storage.readdir.mockResolvedValueOnce(files);
+        mocks.database.getMigrations.mockResolvedValueOnce(rows.map((name) => ({ name, timestamp: 'fixture' })));
+        mocks.database.getSchemaDrift.mockResolvedValueOnce(drift);
+        const report = await sut.schemaReport();
+        expect(report.migrations).toEqual(expected);
+        expect(report.drift).toBe(drift);
+      },
+    );
+  });
+
+  describe('resetAdminPassword', () => {
+    it('should only work when there is an admin account', async () => {
+      mocks.user.getAdmin.mockResolvedValue(void 0);
+      const ask = vitest.fn().mockResolvedValue('new-password');
+
+      await expect(sut.resetAdminPassword(ask)).rejects.toThrowError('Admin account does not exist');
+
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('should default to a random password', async () => {
+      const admin = UserFactory.create({ isAdmin: true });
+
+      mocks.user.getAdmin.mockResolvedValue(admin);
+      mocks.user.update.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+
+      const ask = vitest.fn().mockResolvedValue({ newPassword: undefined, invalidateSessions: false });
+
+      const response = await sut.resetAdminPassword(ask);
+
+      const [id, update] = mocks.user.update.mock.calls[0];
+
+      expect(response.provided).toBe(false);
+      expect(ask).toHaveBeenCalled();
+      expect(id).toEqual(admin.id);
+      expect(update.password).toBeDefined();
+      expect(mocks.session.invalidateAll).not.toHaveBeenCalled();
+    });
+
+    it('should use the supplied password', async () => {
+      const admin = UserFactory.create({ isAdmin: true });
+
+      mocks.user.getAdmin.mockResolvedValue(admin);
+      mocks.user.update.mockResolvedValue(admin);
+
+      const ask = vitest.fn().mockResolvedValue({ newPassword: 'new-password', invalidateSessions: false });
+
+      const response = await sut.resetAdminPassword(ask);
+
+      const [id, update] = mocks.user.update.mock.calls[0];
+
+      expect(response.provided).toBe(true);
+      expect(ask).toHaveBeenCalled();
+      expect(id).toEqual(admin.id);
+      expect(update.password).toBeDefined();
+    });
+
+    it('should invalidate existing sessions when requested', async () => {
+      const admin = UserFactory.create({ isAdmin: true });
+
+      mocks.user.getAdmin.mockResolvedValue(admin);
+      mocks.user.update.mockResolvedValue(admin);
+      mocks.session.invalidateAll.mockResolvedValue(['admin-session']);
+
+      const ask = vitest.fn().mockResolvedValue({ newPassword: 'new-password', invalidateSessions: true });
+
+      await sut.resetAdminPassword(ask);
+
+      expect(mocks.session.invalidateAll).toHaveBeenCalledWith({ userId: admin.id });
+    });
+  });
+
+  describe('disablePasswordLogin', () => {
+    it('should disable password login', async () => {
+      await sut.disablePasswordLogin();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, {
+        passwordLogin: { enabled: false },
+      });
+      expect((await sut.getConfig({ withCache: false })).passwordLogin.enabled).toBe(false);
+    });
+  });
+
+  describe('enablePasswordLogin', () => {
+    it('should enable password login', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce({ passwordLogin: { enabled: false } });
+      await sut.enablePasswordLogin();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, {});
+      expect((await sut.getConfig({ withCache: false })).passwordLogin.enabled).toBe(true);
+    });
+  });
+
+  describe('disableMaintenanceMode', () => {
+    it('should not do anything if not in maintenance mode', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ isMaintenanceMode: false });
+      await expect(sut.disableMaintenanceMode()).resolves.toEqual({
+        alreadyDisabled: true,
+      });
+
+      expect(mocks.app.sendOneShotAppRestart).toHaveBeenCalledTimes(0);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledTimes(0);
+      expect(mocks.event.emit).toHaveBeenCalledTimes(0);
+    });
+
+    it('should disable maintenance mode', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: {
+          action: MaintenanceAction.Start,
+        },
+      });
+
+      await expect(sut.disableMaintenanceMode()).resolves.toEqual({
+        alreadyDisabled: false,
+      });
+
+      expect(mocks.app.sendOneShotAppRestart).toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: false,
+      });
+    });
+  });
+
+  describe('enableMaintenanceMode', () => {
+    it('should not do anything if in maintenance mode', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: {
+          action: MaintenanceAction.Start,
+        },
+      });
+
+      await expect(sut.enableMaintenanceMode()).resolves.toEqual(
+        expect.objectContaining({
+          alreadyEnabled: true,
+        }),
+      );
+
+      expect(mocks.app.sendOneShotAppRestart).toHaveBeenCalledTimes(0);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledTimes(0);
+      expect(mocks.event.emit).toHaveBeenCalledTimes(0);
+    });
+
+    it('should enable maintenance mode', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ isMaintenanceMode: false });
+      await expect(sut.enableMaintenanceMode()).resolves.toEqual(
+        expect.objectContaining({
+          alreadyEnabled: false,
+        }),
+      );
+
+      expect(mocks.app.sendOneShotAppRestart).toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: expect.stringMatching(/^\w{128}$/),
+        action: {
+          action: 'start',
+        },
+      });
+    });
+
+    const RE_LOGIN_URL = /(?:^|\s)\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
+
+    it('should return a valid login URL', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: {
+          action: MaintenanceAction.Start,
+        },
+      });
+
+      const result = await sut.enableMaintenanceMode();
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          authUrl: expect.stringMatching(RE_LOGIN_URL),
+          alreadyEnabled: true,
+        }),
+      );
+
+      const token = RE_LOGIN_URL.exec(result.authUrl)![1];
+
+      await expect(jwtVerify(token, new TextEncoder().encode('secret'))).resolves.toEqual(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            username: 'cli-admin',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('disableOAuthLogin', () => {
+    it('should disable oauth login', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce({ oauth: { enabled: true } });
+      await sut.disableOAuthLogin();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, {});
+      expect((await sut.getConfig({ withCache: false })).oauth.enabled).toBe(false);
+    });
+  });
+
+  describe('enableOAuthLogin', () => {
+    it('should enable oauth login', async () => {
+      await sut.enableOAuthLogin();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig, {
+        oauth: { enabled: true },
+      });
+      expect((await sut.getConfig({ withCache: false })).oauth.enabled).toBe(true);
+    });
+  });
+});

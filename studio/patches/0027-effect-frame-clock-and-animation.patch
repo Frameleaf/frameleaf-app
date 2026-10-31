@@ -1,0 +1,849 @@
+--- a/src/features/export/utils/canvas-effects.ts
++++ b/src/features/export/utils/canvas-effects.ts
+@@ -162,6 +162,7 @@
+  * @param itemTrackOrder - The item's track order
+  * @param adjustmentLayers - All adjustment layers with their track orders
+  * @param frame - Current frame number
++ * @param fps - Frame rate of `frame`; stamps temporal effects' frame clock
+  * @returns Combined effects from all affecting adjustment layers
+  */
+ export function getAdjustmentLayerEffects(
+@@ -171,6 +172,7 @@
+   getPreviewEffectsOverride?: (itemId: string) => ItemEffect[] | undefined,
+   getLiveItemSnapshot?: (itemId: string) => TimelineItem | undefined,
+   getCurrentKeyframes?: (itemId: string) => ItemKeyframes | undefined,
++  fps?: number,
+ ): ItemEffect[] {
+   if (adjustmentLayers.length === 0) return []
+ 
+@@ -195,6 +197,7 @@
+         effectiveEffects,
+         getCurrentKeyframes?.(layer.id),
+         frame - layer.from,
++        fps,
+       )
+       return animatedEffects?.filter((e) => e.enabled) ?? []
+     })
+--- a/src/features/export/utils/canvas-item-renderer/composition.ts
++++ b/src/features/export/utils/canvas-item-renderer/composition.ts
+@@ -8,6 +8,7 @@
+ import { hasMediaCrop } from '@/shared/utils/media-crop'
+ import { applyPreviewPathVerticesToShape } from '@/features/export/deps/composition-runtime'
+ import { hasCornerPin } from '@/features/export/deps/composition-runtime'
++import { resolveAnimatedColorEffects } from '@/features/export/deps/keyframes'
+ import { getAnimatedCrop, getAnimatedTransform } from '../canvas-keyframes'
+ import {
+   renderEffectsFromMaskedSource,
+@@ -211,16 +212,24 @@
+           })
+         }
+ 
+-        const itemEffects =
++        // Nested items resolve keyframed effect params and the temporal-effect
++        // clock on the sub-composition's own timeline and frame rate.
++        const itemEffects = resolveAnimatedColorEffects(
+           (rctx.renderMode === 'preview'
+             ? rctx.getPreviewEffectsOverride?.(subItem.id)
+-            : undefined) ?? subItem.effects
++            : undefined) ?? subItem.effects,
++          subItemKeyframes,
++          localFrame - subItem.from,
++          subCanvasSettings.fps,
++        )
+         const adjEffects = getAdjustmentLayerEffects(
+           track.order,
+           subAdjustmentLayers,
+           localFrame,
+           rctx.renderMode === 'preview' ? rctx.getPreviewEffectsOverride : undefined,
+           rctx.renderMode === 'preview' ? rctx.getLiveItemSnapshotById : undefined,
++          (itemId) => subData.keyframesMap.get(itemId),
++          subCanvasSettings.fps,
+         )
+         const combinedEffects = combineEffects(itemEffects, adjEffects)
+         const hasEffects = combinedEffects.length > 0
+--- a/src/features/export/utils/canvas-item-renderer/gpu.ts
++++ b/src/features/export/utils/canvas-item-renderer/gpu.ts
+@@ -20,7 +20,11 @@
+   invertCornerPinHomography,
+   resolveCornerPinForSize,
+ } from '@/features/export/deps/composition-runtime'
+-import { resolveAnimatedShapeItem, resolveAnimatedTextItem } from '@/features/export/deps/keyframes'
++import {
++  resolveAnimatedColorEffects,
++  resolveAnimatedShapeItem,
++  resolveAnimatedTextItem,
++} from '@/features/export/deps/keyframes'
+ import type { GpuTexturePool } from '@/infrastructure/gpu-compositor'
+ import type { GpuMediaRect, GpuMediaRenderParams } from '@/infrastructure/gpu-media'
+ import { MAX_GPU_SHAPE_PATH_VERTICES } from '@/infrastructure/gpu-shapes'
+@@ -1015,16 +1019,23 @@
+         doesMaskAffectTrack(mask.trackOrder, track.order),
+       )
+       if (!areGpuSubCompMasksSupported(applicableMasks)) return null
++      // Same nested timeline as the Canvas2D sub-composition path.
+       const itemEffects =
+-        (rctx.renderMode === 'preview' ? rctx.getPreviewEffectsOverride?.(item.id) : undefined) ??
+-        item.effects ??
+-        []
++        resolveAnimatedColorEffects(
++          (rctx.renderMode === 'preview' ? rctx.getPreviewEffectsOverride?.(item.id) : undefined) ??
++            item.effects,
++          subData.keyframesMap.get(item.id),
++          localFrame - item.from,
++          subData.fps,
++        ) ?? []
+       const adjEffects = getAdjustmentLayerEffects(
+         track.order,
+         subAdjustmentLayers,
+         localFrame,
+         rctx.renderMode === 'preview' ? rctx.getPreviewEffectsOverride : undefined,
+         rctx.renderMode === 'preview' ? rctx.getLiveItemSnapshotById : undefined,
++        (itemId) => subData.keyframesMap.get(itemId),
++        subData.fps,
+       )
+       const effects = combineEffects(itemEffects, adjEffects)
+       if (
+--- a/src/features/export/utils/canvas-item-renderer/transition.ts
++++ b/src/features/export/utils/canvas-item-renderer/transition.ts
+@@ -5,6 +5,7 @@
+ 
+ import type { TimelineItem } from '@/types/timeline'
+ import { hasCornerPin } from '@/features/export/deps/composition-runtime'
++import { resolveAnimatedColorEffects } from '@/features/export/deps/keyframes'
+ // Side-effect: populate the registry. Without it every consumer that does not
+ // happen to load the editor UI (the headless harness, workers) silently falls
+ // back to the built-in switch, turning 38 declared presets into hard cuts.
+@@ -19,7 +20,11 @@
+   type EffectSourceMask,
+ } from '../canvas-effects'
+ import { renderTransition, type ActiveTransition } from '../canvas-transitions'
+-import { resolveAATransitionRamps, resolveTransitionRenderTimelineSpan } from '../render-span'
++import {
++  applyRenderTimelineSpan,
++  resolveAATransitionRamps,
++  resolveTransitionRenderTimelineSpan,
++} from '../render-span'
+ import { getAnimatedTransform } from '../canvas-keyframes'
+ import { scalePartialTransformForCanvas } from '../canvas-render-scale'
+ import type {
+@@ -553,16 +558,24 @@
+ 
+   effectiveClip = applyAnimatedCropToItem(effectiveClip, frame, rctx, renderSpan)
+ 
+-  const itemEffects =
++  // Participants resolve keyframed effect params and the temporal-effect
++  // clock on the same span-adjusted item timeline as their transform.
++  const itemEffects = resolveAnimatedColorEffects(
+     (rctx.renderMode === 'preview'
+       ? rctx.getPreviewEffectsOverride?.(currentClip.id)
+-      : undefined) ?? effectiveClip.effects
++      : undefined) ?? effectiveClip.effects,
++    itemKeyframes,
++    frame - applyRenderTimelineSpan(effectiveClip, renderSpan).from,
++    rctx.fps,
++  )
+   const adjustmentEffects = getAdjustmentLayerEffects(
+     trackOrder,
+     rctx.adjustmentLayers,
+     frame,
+     rctx.renderMode === 'preview' ? rctx.getPreviewEffectsOverride : undefined,
+     rctx.renderMode === 'preview' ? rctx.getLiveItemSnapshotById : undefined,
++    (itemId) => rctx.getCurrentKeyframes?.(itemId) ?? rctx.keyframesMap.get(itemId),
++    rctx.fps,
+   )
+ 
+   return {
+--- /dev/null
++++ b/src/features/export/utils/canvas-item-renderer.composition-effects.test.ts
+@@ -0,0 +1,175 @@
++// FL-99: nested (Compose) items animate effect params and the temporal-effect
++// clock on the sub-composition's own timeline, as top-level items do.
++import { describe, expect, it, vi } from 'vite-plus/test'
++import { LottieExportProvider } from '@/infrastructure/lottie/lottie-frame-provider'
++import { EFFECT_CLOCK_PARAM } from '@/infrastructure/gpu-effects'
++import { buildEffectAnimatableProperty, type ItemKeyframes } from '@/types/keyframe'
++import type { ItemEffect } from '@/types/effects'
++import type { AdjustmentItem, CompositionItem, ShapeItem } from '@/types/timeline'
++import type { ItemRenderContext, ItemTransform, SubCompRenderData } from './canvas-item-renderer'
++
++const mocks = vi.hoisted(() => ({
++  renderEffects: vi.fn(async (_pool: unknown, source: unknown) => ({ source, poolCanvases: [] })),
++}))
++
++vi.mock('./canvas-shapes', () => ({ renderShape: vi.fn() }))
++vi.mock('./canvas-effects', async () => {
++  const actual = await vi.importActual<typeof import('./canvas-effects')>('./canvas-effects')
++  return { ...actual, renderEffectsFromMaskedSource: mocks.renderEffects }
++})
++
++import { renderItem } from './canvas-item-renderer'
++
++function ctx(): OffscreenCanvasRenderingContext2D {
++  return {
++    save: vi.fn(),
++    restore: vi.fn(),
++    clearRect: vi.fn(),
++    drawImage: vi.fn(),
++    beginPath: vi.fn(),
++    rect: vi.fn(),
++    roundRect: vi.fn(),
++    clip: vi.fn(),
++    translate: vi.fn(),
++    rotate: vi.fn(),
++    globalAlpha: 1,
++  } as unknown as OffscreenCanvasRenderingContext2D
++}
++
++describe('nested composition effect animation', () => {
++  it('resolves keyframes, adjustment keyframes and the clock at the local frame', async () => {
++    const shape: ShapeItem = {
++      id: 'nested-shape',
++      type: 'shape',
++      trackId: 'sub-track',
++      from: 10,
++      durationInFrames: 50,
++      label: 'Nested',
++      shapeType: 'rectangle',
++      fillColor: '#ff0000',
++      transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0, opacity: 1 },
++      effects: [
++        {
++          id: 'bright',
++          enabled: true,
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: 0 } },
++        },
++        {
++          id: 'grain',
++          enabled: true,
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-grain', params: { amount: 0.2 } },
++        },
++      ],
++    }
++    const adjustment: AdjustmentItem = {
++      id: 'nested-adjust',
++      type: 'adjustment',
++      trackId: 'sub-adjust',
++      from: 0,
++      durationInFrames: 60,
++      label: 'Grade',
++      effects: [
++        {
++          id: 'sat',
++          enabled: true,
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-saturation', params: { amount: 1 } },
++        },
++      ],
++    }
++    const keyframes = (itemId: string, property: string, end: number): ItemKeyframes => ({
++      itemId,
++      properties: [
++        {
++          property: property as ItemKeyframes['properties'][number]['property'],
++          keyframes: [
++            { id: 's', frame: 0, value: 0, easing: 'linear' },
++            { id: 'e', frame: 20, value: end, easing: 'linear' },
++          ],
++        },
++      ],
++    })
++    const subData: SubCompRenderData = {
++      fps: 24,
++      durationInFrames: 60,
++      sortedTracks: [{ order: 1, visible: true, items: [shape] }],
++      keyframesMap: new Map([
++        [
++          shape.id,
++          keyframes(
++            shape.id,
++            buildEffectAnimatableProperty('gpu-brightness', 'bright', 'amount'),
++            1,
++          ),
++        ],
++        [
++          adjustment.id,
++          keyframes(
++            adjustment.id,
++            buildEffectAnimatableProperty('gpu-saturation', 'sat', 'amount'),
++            2,
++          ),
++        ],
++      ]),
++      adjustmentLayers: [{ layer: adjustment, trackOrder: 0 }],
++    }
++    const composition: CompositionItem = {
++      id: 'comp',
++      type: 'composition',
++      compositionId: 'sub',
++      trackId: 'parent',
++      from: 0,
++      durationInFrames: 60,
++      label: 'Compose',
++      compositionWidth: 640,
++      compositionHeight: 360,
++    }
++    const pool = Array.from({ length: 4 }, () => ({
++      canvas: { width: 640, height: 360 } as OffscreenCanvas,
++      ctx: ctx(),
++    }))
++    const rctx: ItemRenderContext = {
++      fps: 24,
++      canvasSettings: { width: 640, height: 360, fps: 24 },
++      canvasPool: {
++        acquire: vi.fn(() => pool.shift()),
++        release: vi.fn(),
++      } as unknown as ItemRenderContext['canvasPool'],
++      textMeasureCache: {} as ItemRenderContext['textMeasureCache'],
++      renderMode: 'export',
++      renderItem,
++      videoExtractors: new Map(),
++      videoElements: new Map(),
++      useMediabunny: new Set(),
++      mediabunnyDisabledItems: new Set(),
++      mediabunnyFailureCountByItem: new Map(),
++      imageElements: new Map(),
++      gifFramesMap: new Map(),
++      lottieProvider: new LottieExportProvider(),
++      keyframesMap: new Map(),
++      adjustmentLayers: [],
++      subCompRenderData: new Map([[composition.compositionId, subData]]),
++    }
++    const transform: ItemTransform = {
++      x: 0,
++      y: 0,
++      width: 640,
++      height: 360,
++      rotation: 0,
++      opacity: 1,
++      cornerRadius: 0,
++    }
++
++    // Local frame 20: the shape is 10 frames in, the adjustment 20.
++    await renderItem(ctx(), composition, transform, 20, rctx)
++
++    expect(mocks.renderEffects).toHaveBeenCalledTimes(1)
++    const effects = mocks.renderEffects.mock.calls[0]![2] as unknown as ItemEffect[]
++    const params = (id: string) => {
++      const effect = effects.find((entry) => entry.id === id)?.effect
++      return effect?.type === 'gpu-effect' ? effect.params : undefined
++    }
++    expect(params('bright')?.amount).toBeCloseTo(0.5, 6)
++    expect(params('grain')?.[EFFECT_CLOCK_PARAM]).toBeCloseTo(10 / 24, 9)
++    expect(params('sat')?.amount).toBeCloseTo(2, 6)
++  })
++})
+--- a/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
++++ b/src/features/export/utils/canvas-item-renderer.transition-state.test.ts
+@@ -2,8 +2,10 @@
+ import { LottieExportProvider } from '@/infrastructure/lottie/lottie-frame-provider'
+ import '@/shared/timeline/transitions'
+ import type { ItemEffect } from '@/types/effects'
+-import type { ItemKeyframes } from '@/types/keyframe'
++import { buildEffectAnimatableProperty, type ItemKeyframes } from '@/types/keyframe'
++import { EFFECT_CLOCK_PARAM } from '@/infrastructure/gpu-effects'
+ import type {
++  AdjustmentItem,
+   CompositionItem,
+   ImageItem,
+   ShapeItem,
+@@ -513,6 +515,109 @@
+     expect(result.item.crop?.left).toBeCloseTo(0.05, 5)
+   })
+ 
++  it('resolves keyframed effects and the temporal clock for transition participants (FL-99)', () => {
++    const incomingClip: VideoItem = {
++      id: 'right',
++      type: 'video',
++      trackId: 'track-1',
++      from: 60,
++      durationInFrames: 40,
++      sourceStart: 30,
++      label: 'Incoming',
++      src: 'right.mp4',
++      transform: { x: 0, y: 0, width: 200, height: 100, rotation: 0, opacity: 1 },
++      effects: [
++        {
++          id: 'bright',
++          enabled: true,
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: 0 } },
++        },
++        {
++          id: 'grain',
++          enabled: true,
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-grain', params: { amount: 0.2 } },
++        },
++      ],
++    }
++    const adjustment: AdjustmentItem = {
++      id: 'adjust',
++      type: 'adjustment',
++      trackId: 'track-0',
++      from: 40,
++      durationInFrames: 100,
++      label: 'Grade',
++      effects: [
++        {
++          id: 'sat',
++          enabled: true,
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-saturation', params: { amount: 1 } },
++        },
++      ],
++    }
++    const keyframes = new Map<string, ItemKeyframes>([
++      [
++        incomingClip.id,
++        {
++          itemId: incomingClip.id,
++          properties: [
++            {
++              property: buildEffectAnimatableProperty('gpu-brightness', 'bright', 'amount'),
++              keyframes: [
++                { id: 'a', frame: 0, value: 0, easing: 'linear' },
++                { id: 'b', frame: 10, value: 1, easing: 'linear' },
++              ],
++            },
++          ],
++        },
++      ],
++      [
++        adjustment.id,
++        {
++          itemId: adjustment.id,
++          properties: [
++            {
++              property: buildEffectAnimatableProperty('gpu-saturation', 'sat', 'amount'),
++              keyframes: [
++                { id: 'c', frame: 0, value: 0, easing: 'linear' },
++                { id: 'd', frame: 20, value: 2, easing: 'linear' },
++              ],
++            },
++          ],
++        },
++      ],
++    ])
++    const rctx = createItemRenderContext({
++      canvasSettings: { width: 1920, height: 1080, fps: 30 },
++      renderMode: 'export',
++      keyframesMap: keyframes,
++      adjustmentLayers: [{ layer: adjustment, trackOrder: 1 }],
++    })
++
++    // The incoming clip's span starts at 50 (preroll), so frame 55 is relative frame 5.
++    const result = resolveTransitionParticipantRenderState(
++      incomingClip,
++      createActiveTransition({ rightClip: incomingClip }),
++      55,
++      4,
++      rctx,
++    )
++
++    const params = (id: string) => {
++      const effect = result.effects.find((entry) => entry.id === id)?.effect
++      return effect?.type === 'gpu-effect' ? effect.params : undefined
++    }
++    expect(params('bright')?.amount).toBeCloseTo(0.5, 6)
++    expect(params('grain')?.[EFFECT_CLOCK_PARAM]).toBeCloseTo(5 / 30, 9)
++    // Adjustment layers animate on their own timeline: frame 55 - 40 = 15 of 20.
++    expect(params('sat')?.amount).toBeCloseTo(1.5, 6)
++    // The authored clip is unchanged.
++    expect(incomingClip.effects?.[0]?.effect).toEqual({
++      type: 'gpu-effect',
++      gpuEffectType: 'gpu-brightness',
++      params: { amount: 0 },
++    })
++  })
++
+   it('extends the outgoing clip past its visible end for transition postroll', () => {
+     const outgoingClip: VideoItem = {
+       id: 'left',
+--- a/src/features/export/utils/frame-render-tasks.ts
++++ b/src/features/export/utils/frame-render-tasks.ts
+@@ -135,6 +135,7 @@
+     baseItemEffects,
+     getCurrentKeyframes(effectiveItem.id),
+     frame - effectiveItem.from,
++    canvasSettings.fps,
+   )
+   const adjEffects = getAdjustmentLayerEffects(
+     trackOrder,
+@@ -143,6 +144,7 @@
+     renderMode === 'preview' ? getPreviewEffectsOverride : undefined,
+     renderMode === 'preview' ? getLiveItemSnapshot : undefined,
+     getCurrentKeyframes,
++    canvasSettings.fps,
+   )
+   const combinedEffects = combineEffects(itemEffects, adjEffects)
+   const applicableMasks = activeMasks.filter((mask) =>
+--- a/src/features/keyframes/utils/effect-animatable-properties.test.ts
++++ b/src/features/keyframes/utils/effect-animatable-properties.test.ts
+@@ -4,6 +4,7 @@
+ import { buildEffectAnimatableProperty, type ItemKeyframes } from '@/types/keyframe'
+ import type { TimelineItem } from '@/types/timeline'
+ import type { ItemEffect } from '@/types/effects'
++import { EFFECT_CLOCK_PARAM } from '@/infrastructure/gpu-effects'
+ import {
+   getAnimatableEffectPropertiesForItem,
+   getEffectPropertyBaseValue,
+@@ -139,3 +140,57 @@
+     expect(resolved[0].effect.params.glowColor).toBe('#ba00c2')
+   })
+ })
++
++describe('temporal effect clock stamping (FL-99)', () => {
++  const grain: ItemEffect = {
++    id: 'grain',
++    enabled: true,
++    effect: { type: 'gpu-effect', gpuEffectType: 'gpu-grain', params: { amount: 0.3 } },
++  }
++  const blur: ItemEffect = {
++    id: 'blur',
++    enabled: true,
++    effect: { type: 'gpu-effect', gpuEffectType: 'gpu-gaussian-blur', params: { radius: 4 } },
++  }
++
++  it('stamps item-relative seconds on temporal effects without keyframes', () => {
++    const resolved = resolveAnimatedGpuEffects([grain, blur], undefined, 45, 30)!
++    const [stampedGrain, untouchedBlur] = resolved
++    expect(stampedGrain!.effect.type === 'gpu-effect' && stampedGrain!.effect.params).toEqual({
++      amount: 0.3,
++      [EFFECT_CLOCK_PARAM]: 1.5,
++    })
++    // Non-temporal effects keep their identity so caches stay warm.
++    expect(untouchedBlur).toBe(blur)
++    // The authored effect is never mutated.
++    expect(grain.effect.type === 'gpu-effect' && grain.effect.params).toEqual({ amount: 0.3 })
++  })
++
++  it('is deterministic per frame and leaves callers without fps unchanged', () => {
++    const first = resolveAnimatedGpuEffects([grain], undefined, 12, 24)
++    const again = resolveAnimatedGpuEffects([grain], undefined, 12, 24)
++    expect(again).toEqual(first)
++    expect(resolveAnimatedGpuEffects([grain], undefined, 12)).toEqual([grain])
++    expect(resolveAnimatedGpuEffects([blur], undefined, 12, 24)).toEqual([blur])
++  })
++
++  it('combines the clock with keyframed params', () => {
++    const keyframes: ItemKeyframes = {
++      itemId: 'item-1',
++      properties: [
++        {
++          property: buildEffectAnimatableProperty('gpu-grain', 'grain', 'amount'),
++          keyframes: [
++            { id: 'a', frame: 0, value: 0, easing: 'linear' },
++            { id: 'b', frame: 10, value: 1, easing: 'linear' },
++          ],
++        },
++      ],
++    }
++    const [resolved] = resolveAnimatedGpuEffects([grain], keyframes, 5, 25)!
++    expect(resolved!.effect.type === 'gpu-effect' && resolved!.effect.params).toEqual({
++      amount: 0.5,
++      [EFFECT_CLOCK_PARAM]: 0.2,
++    })
++  })
++})
+--- a/src/features/keyframes/utils/effect-animatable-properties.ts
++++ b/src/features/keyframes/utils/effect-animatable-properties.ts
+@@ -1,4 +1,4 @@
+-import { getGpuEffect } from '@/infrastructure/gpu-effects'
++import { EFFECT_CLOCK_PARAM, getGpuEffect } from '@/infrastructure/gpu-effects'
+ import { getPropertyKeyframes, interpolatePropertyValue } from './interpolation'
+ import {
+   buildEffectAnimatableProperty,
+@@ -307,13 +307,29 @@
+   return interpolatePropertyValue(keyframes, relativeFrame, baseValue)
+ }
+ 
++/**
++ * Resolves keyframed/audio-pulse effect params at an item-relative frame.
++ * When `fps` is given, temporal effects also receive that frame's
++ * item-relative time (EFFECT_CLOCK_PARAM), so every render of a frame, in
++ * preview or export, packs the same uniforms.
++ */
+ export function resolveAnimatedGpuEffects(
+   effects: ItemEffect[] | undefined,
+   itemKeyframes: ItemKeyframes | undefined,
+   relativeFrame: number,
++  fps?: number,
+ ): ItemEffect[] | undefined {
+   const hasAudioPulse = effects?.some((entry) => entry.audioPulse?.enabled) ?? false
+-  if (!effects || effects.length === 0 || (!itemKeyframes && !hasAudioPulse)) {
++  const clockSeconds =
++    fps !== undefined && Number.isFinite(fps) && fps > 0 ? relativeFrame / fps : undefined
++  const hasTemporal =
++    clockSeconds !== undefined &&
++    (effects?.some(
++      (entry) =>
++        entry.effect.type === 'gpu-effect' && getGpuEffect(entry.effect.gpuEffectType)?.temporal,
++    ) ??
++      false)
++  if (!effects || effects.length === 0 || (!itemKeyframes && !hasAudioPulse && !hasTemporal)) {
+     return effects
+   }
+ 
+@@ -392,6 +408,18 @@
+       nextParams[paramKey] = value
+     }
+ 
++    if (
++      clockSeconds !== undefined &&
++      getGpuEffect(gpuEffect.gpuEffectType)?.temporal &&
++      nextParams[EFFECT_CLOCK_PARAM] !== clockSeconds
++    ) {
++      if (!paramsChanged) {
++        nextParams = { ...gpuEffect.params }
++        paramsChanged = true
++      }
++      nextParams[EFFECT_CLOCK_PARAM] = clockSeconds
++    }
++
+     if (!paramsChanged) {
+       return effectEntry
+     }
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/effect-clock.test.ts
+@@ -0,0 +1,61 @@
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { EFFECT_CLOCK_PARAM, GPU_EFFECT_REGISTRY, getGpuEffectDefaultParams } from './index'
++
++// FL-99: temporal/random effects need stable seeds and frame context.
++describe('temporal effect frame clock', () => {
++  afterEach(() => vi.restoreAllMocks())
++
++  const temporal = [...GPU_EFFECT_REGISTRY.values()].filter((effect) => effect.temporal)
++
++  it('declares every effect whose uniforms follow time', () => {
++    expect(temporal.map((effect) => effect.id).sort()).toEqual([
++      'gpu-block-glitch',
++      'gpu-color-glitch',
++      'gpu-grain',
++      'gpu-hue-shift',
++      'gpu-scanlines',
++      'gpu-trigger-wave',
++      'gpu-vhs',
++    ])
++    // No undeclared effect may read the wall clock: its uniforms stay put.
++    const clock = vi.spyOn(performance, 'now')
++    for (const effect of GPU_EFFECT_REGISTRY.values()) {
++      if (effect.temporal) continue
++      const params = getGpuEffectDefaultParams(effect.id)
++      clock.mockReturnValue(1000)
++      const first = Array.from(effect.packUniforms(params, 64, 36) ?? [])
++      clock.mockReturnValue(987_654)
++      expect(Array.from(effect.packUniforms(params, 64, 36) ?? []), effect.id).toEqual(first)
++    }
++  })
++
++  it('packs the stamped frame time instead of wall time', () => {
++    const clock = vi.spyOn(performance, 'now')
++    for (const effect of temporal) {
++      const at = (seconds: number, wall: number) => {
++        clock.mockReturnValue(wall)
++        return Array.from(
++          effect.packUniforms(
++            { ...getGpuEffectDefaultParams(effect.id), flow: 1, [EFFECT_CLOCK_PARAM]: seconds },
++            64,
++            36,
++          ) ?? [],
++        )
++      }
++      // Same frame time, different wall clocks: identical uniforms.
++      expect(at(1.5, 10), effect.id).toEqual(at(1.5, 999_999))
++      // A different frame time changes them.
++      expect(at(2.5, 10), effect.id).not.toEqual(at(1.5, 10))
++    }
++  })
++
++  it('falls back to wall time only without a frame context', () => {
++    const clock = vi.spyOn(performance, 'now')
++    const grain = GPU_EFFECT_REGISTRY.get('gpu-grain')!
++    const params = getGpuEffectDefaultParams('gpu-grain')
++    clock.mockReturnValue(1000)
++    const first = Array.from(grain.packUniforms(params, 64, 36) ?? [])
++    clock.mockReturnValue(4000)
++    expect(Array.from(grain.packUniforms(params, 64, 36) ?? [])).not.toEqual(first)
++  })
++})
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/effect-clock.ts
+@@ -0,0 +1,16 @@
++/**
++ * Frame-context clock for temporal GPU effects (Frameleaf FL-99).
++ *
++ * Grain, scanlines, glitches, VHS, trigger waves and hue flow used to read
++ * `performance.now()`, so an export differed from its preview and from any
++ * re-render of the same frame. Render paths now stamp the item-relative time
++ * of the frame being rendered into the effect params under this reserved key,
++ * and packUniforms reads it through {@link effectClockSeconds}. Only callers
++ * without a timeline frame (e.g. panel thumbnails) fall back to wall time.
++ */
++export const EFFECT_CLOCK_PARAM = '__frameleafEffectTimeSeconds'
++
++export function effectClockSeconds(params: Record<string, number | boolean | string>): number {
++  const time = params[EFFECT_CLOCK_PARAM]
++  return typeof time === 'number' && Number.isFinite(time) ? time : performance.now() / 1000
++}
+--- a/src/infrastructure/gpu-effects/effects/color.ts
++++ b/src/infrastructure/gpu-effects/effects/color.ts
+@@ -8,6 +8,7 @@
+   getGpuCurvesLutKey,
+   getGpuCurvesPointsParamKey,
+ } from '@/shared/utils/gpu-curves'
++import { effectClockSeconds } from '../effect-clock'
+ 
+ function readNumberParam(
+   params: Record<string, number | boolean | string>,
+@@ -161,6 +162,7 @@
+ 
+ export const hueShift: GpuEffectDefinition = {
+   id: 'gpu-hue-shift',
++  temporal: true,
+   name: 'Hue Shift',
+   category: 'color',
+   entryPoint: 'hueShiftFragment',
+@@ -214,7 +216,7 @@
+       (p.shift as number) ?? 0,
+       (p.span as number) ?? 1,
+       (p.flow as number) ?? 0,
+-      performance.now() / 1000,
++      effectClockSeconds(p),
+     ]),
+ }
+ 
+--- a/src/infrastructure/gpu-effects/effects/distort.ts
++++ b/src/infrastructure/gpu-effects/effects/distort.ts
+@@ -1,4 +1,5 @@
+ import type { GpuEffectDefinition } from '../types'
++import { effectClockSeconds } from '../effect-clock'
+ 
+ function parseHexColor(
+   color: string,
+@@ -255,6 +256,7 @@
+ 
+ export const triggerWave: GpuEffectDefinition = {
+   id: 'gpu-trigger-wave',
++  temporal: true,
+   name: 'Trigger Wave',
+   category: 'distort',
+   entryPoint: 'triggerWaveFragment',
+@@ -412,7 +414,7 @@
+     },
+   },
+   packUniforms: (p, w, h) => {
+-    const time = performance.now() / 1000
++    const time = effectClockSeconds(p)
+     const glowColor = parseHexColor((p.glowColor as string) ?? '#2e6b8c', [0.18, 0.42, 0.55, 1])
+     return new Float32Array([
+       (p.strength as number) ?? 0.035,
+--- a/src/infrastructure/gpu-effects/effects/stylize.ts
++++ b/src/infrastructure/gpu-effects/effects/stylize.ts
+@@ -1,4 +1,5 @@
+ import type { EffectDataTexturePayload, GpuEffectDefinition } from '../types'
++import { effectClockSeconds } from '../effect-clock'
+ 
+ export const vignette: GpuEffectDefinition = {
+   id: 'gpu-vignette',
+@@ -70,6 +71,7 @@
+ 
+ export const grain: GpuEffectDefinition = {
+   id: 'gpu-grain',
++  temporal: true,
+   name: 'Film Grain',
+   category: 'stylize',
+   entryPoint: 'grainFragment',
+@@ -127,7 +129,7 @@
+     },
+   },
+   packUniforms: (p) => {
+-    const time = performance.now() / 1000
++    const time = effectClockSeconds(p)
+     return new Float32Array([
+       (p.amount as number) ?? 0.1,
+       (p.size as number) ?? 1,
+@@ -387,6 +389,7 @@
+ 
+ export const scanlines: GpuEffectDefinition = {
+   id: 'gpu-scanlines',
++  temporal: true,
+   name: 'Scanlines',
+   category: 'stylize',
+   entryPoint: 'scanlinesFragment',
+@@ -434,7 +437,7 @@
+     },
+   },
+   packUniforms: (p) => {
+-    const time = performance.now() / 1000
++    const time = effectClockSeconds(p)
+     return new Float32Array([
+       (p.density as number) ?? 5,
+       (p.opacity as number) ?? 0.3,
+@@ -446,6 +449,7 @@
+ 
+ export const colorGlitch: GpuEffectDefinition = {
+   id: 'gpu-color-glitch',
++  temporal: true,
+   name: 'Color Glitch',
+   category: 'stylize',
+   entryPoint: 'colorGlitchFragment',
+@@ -518,13 +522,14 @@
+     },
+   },
+   packUniforms: (p) => {
+-    const time = performance.now() / 1000
++    const time = effectClockSeconds(p)
+     return new Float32Array([(p.intensity as number) ?? 0.5, (p.speed as number) ?? 1, time, 0])
+   },
+ }
+ 
+ export const blockGlitch: GpuEffectDefinition = {
+   id: 'gpu-block-glitch',
++  temporal: true,
+   name: 'Block Glitch',
+   category: 'stylize',
+   entryPoint: 'blockGlitchFragment',
+@@ -631,7 +636,7 @@
+       (p.intensity as number) ?? 0.6,
+       (p.blockSize as number) ?? 40,
+       (p.speed as number) ?? 1,
+-      performance.now() / 1000,
++      effectClockSeconds(p),
+       w,
+       h,
+       0,
+@@ -2331,6 +2336,7 @@
+ 
+ export const vhs: GpuEffectDefinition = {
+   id: 'gpu-vhs',
++  temporal: true,
+   name: 'VHS',
+   category: 'stylize',
+   entryPoint: 'vhsFragment',
+@@ -2435,7 +2441,7 @@
+       (p.waviness as number) ?? 0.3,
+       (p.noise as number) ?? 0.25,
+       (p.scanline as number) ?? 0.35,
+-      (performance.now() / 1000) * ((p.speed as number) ?? 1),
++      effectClockSeconds(p) * ((p.speed as number) ?? 1),
+       w,
+       h,
+       0,
+--- a/src/infrastructure/gpu-effects/index.ts
++++ b/src/infrastructure/gpu-effects/index.ts
+@@ -8,3 +8,4 @@
+   getGpuCategoriesWithEffects,
+   isColorGradeEffectType,
+ } from './registry'
++export { EFFECT_CLOCK_PARAM } from './effect-clock'
+--- a/src/infrastructure/gpu-effects/types.ts
++++ b/src/infrastructure/gpu-effects/types.ts
+@@ -74,6 +74,11 @@
+   dataTexture?: EffectDataTextureSpec
+   /** When set, the effect runs as a compute pass rather than a fragment pass. */
+   compute?: GpuEffectComputeSpec
++  /**
++   * The effect animates over time on its own. Render paths stamp the frame's
++   * item-relative time (see effect-clock.ts) so preview and export agree.
++   */
++  temporal?: boolean
+ }
+ 
+ export type GpuEffectCategory = 'color' | 'blur' | 'distort' | 'stylize' | 'keying'

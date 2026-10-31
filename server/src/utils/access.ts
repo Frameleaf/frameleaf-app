@@ -1,0 +1,500 @@
+import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
+import { AuthSharedLink } from 'src/database.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { AlbumUserRole, Permission } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
+
+export type GrantedRequest = {
+  requested: Permission[];
+  current: Permission[];
+};
+
+export const isGranted = ({ requested, current }: GrantedRequest) => {
+  if (current.includes(Permission.All)) {
+    return true;
+  }
+
+  return new Set(current).isSupersetOf(new Set(requested));
+};
+
+export type AccessRequest = {
+  auth: AuthDto;
+  permission: Permission;
+  ids: Set<string> | string[];
+  /**
+   * Skip the hidden-content / NSFW privacy filter when resolving access.
+   * Use only for endpoints whose purpose is to manage the very content the
+   * privacy filter would hide (e.g. NSFW review / image-enrichment actions).
+   */
+  ignorePrivacy?: boolean;
+};
+
+type SharedLinkAccessRequest = {
+  sharedLink: AuthSharedLink;
+  hideNsfwAssets?: boolean | HiddenContentFilter;
+  permission: Permission;
+  ids: Set<string>;
+};
+type OtherAccessRequest = { auth: AuthDto; permission: Permission; ids: Set<string> };
+
+const accessPrivacy = (auth: AuthDto) => auth.hiddenContent ?? auth.hideNsfwAssets;
+
+const checkAssetOwnerAccess = (
+  access: AccessRepository,
+  auth: AuthDto,
+  ids: Set<string>,
+  hasElevatedPermission: boolean | undefined,
+) =>
+  accessPrivacy(auth)
+    ? access.asset.checkOwnerAccess(auth.user.id, ids, hasElevatedPermission, accessPrivacy(auth))
+    : access.asset.checkOwnerAccess(auth.user.id, ids, hasElevatedPermission);
+
+// FL-34: derivative files carry their source asset's hidden-content filter, like the asset checks above
+const checkAssetFileOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission, accessPrivacy(auth))
+    : access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+
+const checkAssetAlbumAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.asset.checkAlbumAccess(auth.user.id, ids, accessPrivacy(auth))
+    : access.asset.checkAlbumAccess(auth.user.id, ids);
+
+// FL-83 (AL-30b): items shared with this person one by one
+const checkAssetItemShareAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.asset.checkItemShareAccess(auth.user.id, ids, accessPrivacy(auth))
+    : access.asset.checkItemShareAccess(auth.user.id, ids);
+
+const checkPersonOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.person.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
+    : access.person.checkOwnerAccess(auth.user.id, ids);
+
+// a face on the caller's own Locked media needs their elevated session, like the media itself (FL-34)
+const checkPersonFaceOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  access.person.checkFaceOwnerAccess(auth.user.id, ids, accessPrivacy(auth), !!auth.session?.hasElevatedPermission);
+
+const checkActivityOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.activity.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
+    : access.activity.checkOwnerAccess(auth.user.id, ids);
+
+const checkActivityAlbumOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.activity.checkAlbumOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
+    : access.activity.checkAlbumOwnerAccess(auth.user.id, ids);
+
+const checkDuplicateOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.duplicate.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
+    : access.duplicate.checkOwnerAccess(auth.user.id, ids);
+
+// FL-195 follow-up: a memory with an item hidden from the session is out of reach while locked
+const checkMemoryOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  access.memory.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth), getLockedOwnerId(auth));
+
+const checkStackOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.stack.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
+    : access.stack.checkOwnerAccess(auth.user.id, ids);
+
+export const requireUploadAccess = (auth: AuthDto | null): AuthDto => {
+  if (!auth || (auth.sharedLink && !auth.sharedLink.allowUpload)) {
+    throw new UnauthorizedException();
+  }
+  return auth;
+};
+
+/** The refusal every upload path gives while an administrator has paused new uploads (FL-538). */
+export const UPLOADS_PAUSED_MESSAGE = 'New uploads are paused for this account';
+
+/**
+ * FL-538: refuse a new upload while an administrator has paused uploads for the account. Uploads
+ * through a shared link are refused while the link owner's are paused, since they land in that library.
+ */
+export const requireUploadsNotPaused = (auth: AuthDto) => {
+  if (auth.user.uploadsPaused) {
+    throw new ForbiddenException(UPLOADS_PAUSED_MESSAGE);
+  }
+};
+
+export const requireAccess = async (access: AccessRepository, request: AccessRequest) => {
+  const allowedIds = await checkAccess(access, request);
+  const requestedIds = new Set(request.ids);
+  if (requestedIds.size !== allowedIds.size || !requestedIds.isSupersetOf(allowedIds)) {
+    throw new BadRequestException(`Not found or no ${request.permission} access`);
+  }
+};
+
+/**
+ * `requireAccess` for a route that names one person or tag (FL-37, FL-46, FL-58). An id that does
+ * not exist, one that belongs to someone else and one the session suppresses while it is not
+ * unlocked all answer the same 404, so nothing tells a suppressed entity apart from a missing one.
+ */
+export const requireEntityAccess = async (access: AccessRepository, request: AccessRequest, entity: string) => {
+  const allowedIds = await checkAccess(access, request);
+  const requestedIds = new Set(request.ids);
+  if (requestedIds.size !== allowedIds.size || !requestedIds.isSupersetOf(allowedIds)) {
+    throw new NotFoundException(`${entity} not found`);
+  }
+};
+
+export const checkAccess = async (
+  access: AccessRepository,
+  { ids, auth, permission, ignorePrivacy }: AccessRequest,
+): Promise<Set<string>> => {
+  const idSet = Array.isArray(ids) ? new Set(ids) : ids;
+  if (idSet.size === 0) {
+    return new Set<string>();
+  }
+
+  const effectiveAuth = ignorePrivacy ? { ...auth, hiddenContent: undefined, hideNsfwAssets: undefined } : auth;
+
+  return effectiveAuth.sharedLink
+    ? checkSharedLinkAccess(access, {
+        sharedLink: effectiveAuth.sharedLink,
+        hideNsfwAssets: accessPrivacy(effectiveAuth),
+        permission,
+        ids: idSet,
+      })
+    : checkOtherAccess(access, { auth: effectiveAuth, permission, ids: idSet });
+};
+
+const checkSharedLinkAccess = async (
+  access: AccessRepository,
+  request: SharedLinkAccessRequest,
+): Promise<Set<string>> => {
+  const { sharedLink, hideNsfwAssets, permission, ids } = request;
+  const sharedLinkId = sharedLink.id;
+
+  switch (permission) {
+    case Permission.AssetRead: {
+      return hideNsfwAssets
+        ? await access.asset.checkSharedLinkAccess(sharedLinkId, ids, hideNsfwAssets)
+        : await access.asset.checkSharedLinkAccess(sharedLinkId, ids);
+    }
+
+    case Permission.AssetView: {
+      return hideNsfwAssets
+        ? await access.asset.checkSharedLinkAccess(sharedLinkId, ids, hideNsfwAssets)
+        : await access.asset.checkSharedLinkAccess(sharedLinkId, ids);
+    }
+
+    case Permission.AssetDownload: {
+      if (!sharedLink.allowDownload) {
+        return new Set();
+      }
+      return hideNsfwAssets
+        ? await access.asset.checkSharedLinkAccess(sharedLinkId, ids, hideNsfwAssets)
+        : await access.asset.checkSharedLinkAccess(sharedLinkId, ids);
+    }
+
+    case Permission.AssetUpload: {
+      return sharedLink.allowUpload ? ids : new Set();
+    }
+
+    case Permission.AlbumRead: {
+      return await access.album.checkSharedLinkAccess(sharedLinkId, ids);
+    }
+
+    case Permission.AlbumDownload: {
+      return sharedLink.allowDownload ? await access.album.checkSharedLinkAccess(sharedLinkId, ids) : new Set();
+    }
+
+    case Permission.AlbumAssetCreate: {
+      return sharedLink.allowUpload ? await access.album.checkSharedLinkAccess(sharedLinkId, ids) : new Set();
+    }
+
+    default: {
+      return new Set<string>();
+    }
+  }
+};
+
+const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRequest): Promise<Set<string>> => {
+  const { auth, permission, ids } = request;
+
+  switch (permission) {
+    // uses album id
+    case Permission.ActivityCreate: {
+      return await access.activity.checkCreateAccess(auth.user.id, ids);
+    }
+
+    // uses activity id
+    case Permission.ActivityDelete: {
+      const isOwner = await checkActivityOwnerAccess(access, auth, ids);
+      const isAlbumOwner = await checkActivityAlbumOwnerAccess(access, auth, ids.difference(isOwner));
+      return isOwner.union(isAlbumOwner);
+    }
+
+    // FL-326 (spec §4.8): partners receive their own copies, so no partner ever reads the sharer's rows
+    case Permission.AssetRead: {
+      const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+      const isAlbum = await checkAssetAlbumAccess(access, auth, ids.difference(isOwner));
+      const isShared = await checkAssetItemShareAccess(access, auth, ids.difference(isOwner).difference(isAlbum));
+      return isOwner.union(isAlbum).union(isShared);
+    }
+
+    case Permission.AssetShare: {
+      // Owner decision, September 22, 2026: an elevated (PIN-unlocked) owner may put Locked media into
+      // albums by any path; the album then hides it from every session that is not the owner's elevated
+      // one. An ordinary session is still refused. Shared links never carry Locked media, so the
+      // shared-link service refuses it on top of this check (see SharedLinkService).
+      return checkAssetOwnerAccess(access, auth, ids, !!auth.session?.hasElevatedPermission);
+    }
+
+    case Permission.AssetFileDownload: {
+      return checkAssetFileOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.AssetView: {
+      const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+      const isAlbum = await checkAssetAlbumAccess(access, auth, ids.difference(isOwner));
+      const isShared = await checkAssetItemShareAccess(access, auth, ids.difference(isOwner).difference(isAlbum));
+      return isOwner.union(isAlbum).union(isShared);
+    }
+
+    case Permission.AssetDownload: {
+      const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+      const isAlbum = await checkAssetAlbumAccess(access, auth, ids.difference(isOwner));
+      const isShared = await checkAssetItemShareAccess(access, auth, ids.difference(isOwner).difference(isAlbum));
+      return isOwner.union(isAlbum).union(isShared);
+    }
+
+    case Permission.AssetUpdate: {
+      return await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+    }
+
+    case Permission.AssetDelete: {
+      return await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+    }
+
+    case Permission.AssetCopy: {
+      return await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+    }
+
+    case Permission.AssetEditGet: {
+      return await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+    }
+
+    case Permission.AssetEditCreate: {
+      return await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+    }
+
+    case Permission.AssetEditDelete: {
+      return await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
+    }
+
+    case Permission.AssetFileRead:
+    case Permission.AssetFileDelete: {
+      return await checkAssetFileOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.AlbumRead: {
+      const isOwner = await access.album.checkOwnerAccess(auth.user.id, ids);
+      const isShared = await access.album.checkSharedAlbumAccess(
+        auth.user.id,
+        ids.difference(isOwner),
+        AlbumUserRole.Viewer,
+      );
+      return isOwner.union(isShared);
+    }
+
+    case Permission.AlbumAssetCreate: {
+      const isOwner = await access.album.checkOwnerAccess(auth.user.id, ids);
+      const isShared = await access.album.checkSharedAlbumAccess(
+        auth.user.id,
+        ids.difference(isOwner),
+        AlbumUserRole.Editor,
+      );
+      return isOwner.union(isShared);
+    }
+
+    case Permission.AlbumUpdate: {
+      const isOwner = await access.album.checkOwnerAccess(auth.user.id, ids);
+      const isShared = await access.album.checkSharedAlbumAccess(
+        auth.user.id,
+        ids.difference(isOwner),
+        AlbumUserRole.Editor,
+      );
+      return isOwner.union(isShared);
+    }
+
+    case Permission.AlbumDelete: {
+      return await access.album.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    case Permission.AlbumShare: {
+      const isOwner = await access.album.checkOwnerAccess(auth.user.id, ids);
+      const isShared = await access.album.checkSharedAlbumAccess(
+        auth.user.id,
+        ids.difference(isOwner),
+        AlbumUserRole.Editor,
+      );
+      return isOwner.union(isShared);
+    }
+
+    case Permission.AlbumDownload: {
+      const isOwner = await access.album.checkOwnerAccess(auth.user.id, ids);
+      const isShared = await access.album.checkSharedAlbumAccess(
+        auth.user.id,
+        ids.difference(isOwner),
+        AlbumUserRole.Viewer,
+      );
+      return isOwner.union(isShared);
+    }
+
+    case Permission.AlbumAssetDelete: {
+      const isOwner = await access.album.checkOwnerAccess(auth.user.id, ids);
+      const isShared = await access.album.checkSharedAlbumAccess(
+        auth.user.id,
+        ids.difference(isOwner),
+        AlbumUserRole.Editor,
+      );
+      return isOwner.union(isShared);
+    }
+
+    case Permission.AssetUpload: {
+      return ids.has(auth.user.id) ? new Set([auth.user.id]) : new Set<string>();
+    }
+
+    case Permission.ArchiveRead: {
+      return ids.has(auth.user.id) ? new Set([auth.user.id]) : new Set();
+    }
+
+    case Permission.DuplicateRead:
+    case Permission.DuplicateDelete: {
+      return checkDuplicateOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.AuthDeviceDelete: {
+      return await access.authDevice.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    // FL-38: correcting a face (reassign, unassign, move, hide) is its asset owner's call
+    case Permission.FaceUpdate:
+    case Permission.FaceDelete: {
+      return checkPersonFaceOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.NotificationRead:
+    case Permission.NotificationUpdate:
+    case Permission.NotificationDelete: {
+      return access.notification.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    // Owner decision, September 27, 2026 ("use the existing tag regardless"): applying or removing a
+    // tag reuses the owner's tag even when the session cannot see it (a Locked-rule tag, or one only
+    // on hidden items), so a tag created by that name can be applied. It returns nothing about the
+    // tag's other items; reading, renaming and deleting still follow the Locked rules below.
+    case Permission.TagAsset: {
+      return await access.tag.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    case Permission.TagRead:
+    case Permission.TagUpdate:
+    case Permission.TagDelete: {
+      return await access.tag.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth), !getLockedOwnerId(auth));
+    }
+
+    // FL-326 (spec §4.8): a partner's timeline is never read; what they share arrives as the viewer's copies
+    case Permission.TimelineRead: {
+      return ids.has(auth.user.id) ? new Set([auth.user.id]) : new Set<string>();
+    }
+
+    case Permission.TimelineDownload: {
+      return ids.has(auth.user.id) ? new Set([auth.user.id]) : new Set();
+    }
+
+    case Permission.MemoryRead: {
+      return checkMemoryOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.MemoryUpdate: {
+      return checkMemoryOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.MemoryDelete: {
+      return checkMemoryOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.PersonCreate: {
+      return checkPersonFaceOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.PersonRead:
+    case Permission.PersonUpdate:
+    case Permission.PersonDelete:
+    case Permission.PersonMerge: {
+      return await checkPersonOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.PersonReassign: {
+      return checkPersonFaceOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.ClusterGroupRead: {
+      const isMember = await access.clusterGroup.checkOwnerAccess(auth.user.id, ids);
+      const isInvited = await access.clusterGroup.checkInviteAccess(auth.user.id, ids.difference(isMember));
+      return isMember.union(isInvited);
+    }
+
+    case Permission.ClusterGroupLeave:
+    case Permission.ClusterGroupRequestCreate: {
+      return access.clusterGroup.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    case Permission.ClusterGroupRequestDelete: {
+      const isOwner = await access.clusterGroupRequest.checkOwnerAccess(auth.user.id, ids);
+      const isGroupMember = await access.clusterGroupRequest.checkGroupAccess(auth.user.id, ids);
+      return isOwner.union(isGroupMember);
+    }
+
+    case Permission.ClusterGroupRequestRead: {
+      return access.clusterGroupRequest.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    case Permission.PartnerUpdate: {
+      return access.partner.checkUpdateAccess(auth.user.id, ids);
+    }
+
+    case Permission.SessionRead:
+    case Permission.SessionUpdate:
+    case Permission.SessionDelete:
+    case Permission.SessionLock: {
+      return access.session.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    case Permission.StackRead: {
+      return checkStackOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.StackUpdate: {
+      return checkStackOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.StackDelete: {
+      return checkStackOwnerAccess(access, auth, ids);
+    }
+
+    case Permission.WorkflowRead:
+    case Permission.WorkflowUpdate:
+    case Permission.WorkflowDelete:
+    case Permission.WorkflowLogs: {
+      return access.workflow.checkOwnerAccess(auth.user.id, ids);
+    }
+
+    default: {
+      return new Set<string>();
+    }
+  }
+};
+
+export const requireElevatedPermission = (auth: AuthDto) => {
+  if (!auth.session?.hasElevatedPermission) {
+    throw new UnauthorizedException('Elevated permission is required');
+  }
+};

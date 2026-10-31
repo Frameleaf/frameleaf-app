@@ -1,0 +1,74 @@
+import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import {
+  FileTrashEmptyResponseDto,
+  FileTrashListQueryDto,
+  FileTrashResponseDto,
+  FileTrashRestoreResponseDto,
+} from 'src/dtos/physical-file-trash.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
+import { UUIDParamDto } from 'src/validation.js';
+
+/**
+ * Library care → Unused files (named "file trash" in the API). FL-416: only the server owner, the first
+ * administrator, may use it; every other administrator is refused with 403 by the service.
+ */
+@ApiTags(ApiTag.FileTrash)
+@Controller('admin/file-trash')
+export class PhysicalFileTrashController {
+  constructor(private service: PhysicalFileTrashService) {}
+
+  @Get()
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  @Endpoint({
+    summary: 'List the file trash',
+    description:
+      'Unused files: originals no library references any more, newest first, with the total disk space they hold. Nothing here is deleted automatically. Only the server owner (the first administrator) may read it.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  getFileTrash(@Auth() auth: AuthDto, @Query() dto: FileTrashListQueryDto): Promise<FileTrashResponseDto> {
+    return this.service.list(auth, dto);
+  }
+
+  @Post('empty')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  @Endpoint({
+    summary: 'Empty the file trash',
+    description:
+      'Empty Unused files: delete every file in it from disk for good and answer how many went and the space that came back. This cannot be undone. Only the server owner (the first administrator) may empty it.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  emptyFileTrash(@Auth() auth: AuthDto): Promise<FileTrashEmptyResponseDto> {
+    return this.service.empty(auth);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  @Endpoint({
+    summary: 'Restore a file from the file trash',
+    description:
+      'Re-import the file as a new asset in the library it was last in, reading its metadata again. Answers 400 when that account is unknown or gone and 409 when its library already holds the file. Only the server owner may restore.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  restoreFileTrashItem(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<FileTrashRestoreResponseDto> {
+    return this.service.restore(auth, id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  @Endpoint({
+    summary: 'Delete a file permanently',
+    description: 'Delete the file from disk for good. This cannot be undone. Only the server owner may delete.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  deleteFileTrashItem(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.purge(auth, id);
+  }
+}

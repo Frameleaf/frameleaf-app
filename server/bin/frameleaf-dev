@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+if [[ "${FRAMELEAF_ENV:-$IMMICH_ENV}" == "production" ]]; then
+  echo "This command can only be run in development environments"
+  exit 1
+fi
+
+cd /usr/src/app || exit
+pnpm --filter @frameleaf/plugin-sdk build
+pnpm --filter frameleaf exec nest start --debug "0.0.0.0:9230" --watch -- "$@"

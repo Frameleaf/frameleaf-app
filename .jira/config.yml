@@ -1,0 +1,14 @@
+# Names reserved for real deployments. Image publication is a build, not a deployment.
+# Workflows that deploy must create a GitHub deployment and deployment_status events.
+deployments:
+  environmentMapping:
+    development:
+      - development
+      - "preview-*"
+    testing:
+      - testing
+    staging:
+      - staging
+    production:
+      - production
+      - home-server

@@ -1,0 +1,6 @@
+{
+  "code": "use_dpop_nonce",
+  "message": "Retry with the DPoP-Nonce from this response.",
+  "retryable": true,
+  "requestId": "req_01J8ZK3M4N5P6Q7S"
+}

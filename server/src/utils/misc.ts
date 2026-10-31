@@ -1,0 +1,433 @@
+import { BadRequestException, INestApplication } from '@nestjs/common';
+import {
+  ApiBodyOptions,
+  DocumentBuilder,
+  OpenAPIObject,
+  SwaggerCustomOptions,
+  SwaggerDocumentOptions,
+  SwaggerModule,
+} from '@nestjs/swagger';
+import { get, isArray, isDate, isEmpty, isObject, orderBy, unset } from 'lodash-es';
+import { cleanupOpenApiDoc } from 'nestjs-zod';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import picomatch from 'picomatch';
+import { CLIP_MODEL_INFO, JOBS_ASSET_PAGINATION_SIZE, endpointTags, serverVersion } from 'src/constants.js';
+import { extraModels } from 'src/decorators.js';
+import { SystemConfig } from 'src/dtos/config.dto.js';
+import { ApiCustomExtension, AuthCookie, MetadataKey, RequestHeader } from 'src/enum.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+
+type OperationObject = NonNullable<OpenAPIObject['paths'][string]['get']>;
+type ReferenceOrSchemaObject = Extract<ApiBodyOptions, { schema: unknown }>['schema'];
+type ReferenceObject = Extract<ReferenceOrSchemaObject, { $ref: unknown }>;
+type SchemaObject = Exclude<ReferenceOrSchemaObject, ReferenceObject>;
+
+export class FrameleafStartupError extends Error {}
+export const isStartUpError = (error: unknown): error is FrameleafStartupError =>
+  error instanceof FrameleafStartupError;
+
+/** FL-646: PostgreSQL conflicts (lock timeout, deadlock) a worker start-up can lose to another worker's start-up. */
+const RETRYABLE_STARTUP_SQLSTATES: ReadonlySet<string> = new Set(['55P03', '40P01']);
+
+/** Whether a failed start-up should be retried rather than stop the server. Looks through one `cause`. */
+export const isRetryableStartupError = (error: unknown): boolean => {
+  for (const candidate of [error, (error as { cause?: unknown } | undefined)?.cause]) {
+    const code = (candidate as { code?: unknown } | null | undefined)?.code;
+    if (typeof code === 'string' && RETRYABLE_STARTUP_SQLSTATES.has(code)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+export const getKeyByValue = (object: Record<string, unknown>, value: unknown) =>
+  Object.keys(object).find((key) => object[key] === value);
+
+export const getMethodNames = (instance: any) => {
+  const ctx = Object.getPrototypeOf(instance);
+  const methods: string[] = [];
+  for (const property of Object.getOwnPropertyNames(ctx)) {
+    const descriptor = Object.getOwnPropertyDescriptor(ctx, property);
+    if (!descriptor || descriptor.get || descriptor.set) {
+      continue;
+    }
+
+    const handler = instance[property];
+    if (typeof handler !== 'function') {
+      continue;
+    }
+
+    methods.push(property);
+  }
+
+  return methods;
+};
+
+/** The configured external domain, else the caller's fallback (FL-190: never another project's host). */
+export const getExternalDomain = (server: SystemConfig['server'], defaultDomain?: string): string | undefined =>
+  server.externalDomain || defaultDomain || undefined;
+
+/**
+ * @returns a list of strings representing the keys of the object in dot notation
+ */
+export const getKeysDeep = (target: unknown, path: string[] = []): string[] => {
+  if (!target || typeof target !== 'object') {
+    return [];
+  }
+
+  const properties: string[] = [];
+  const object = target as Record<string, unknown>;
+  const stack = [{ object, keys: Object.keys(object), index: 0, prefix: path.length > 0 ? `${path.join('.')}.` : '' }];
+  const ancestors = new WeakSet<object>([object]);
+
+  while (stack.length > 0) {
+    const frame = stack.at(-1)!;
+    if (frame.index === frame.keys.length) {
+      ancestors.delete(frame.object);
+      stack.pop();
+      continue;
+    }
+
+    const key = frame.keys[frame.index++];
+    const value = frame.object[key];
+    if (value === undefined) {
+      continue;
+    }
+
+    const property = `${frame.prefix}${key}`;
+    if (isObject(value) && !isArray(value) && !isDate(value)) {
+      if (typeof value === 'function') {
+        continue;
+      }
+      if (ancestors.has(value)) {
+        throw new RangeError('Cannot list keys of a circular object');
+      }
+      ancestors.add(value);
+      const nested = value as Record<string, unknown>;
+      stack.push({ object: nested, keys: Object.keys(nested), index: 0, prefix: `${property}.` });
+      continue;
+    }
+
+    properties.push(property);
+  }
+
+  return properties;
+};
+
+export const unsetDeep = (object: unknown, key: string) => {
+  const parts = key.split('.');
+  while (parts.length > 0) {
+    unset(object, parts);
+    parts.pop();
+    if (!isEmpty(get(object, parts))) {
+      break;
+    }
+  }
+
+  return isEmpty(object) ? undefined : object;
+};
+
+export const isMachineLearningEnabled = (machineLearning: SystemConfig['machineLearning']) => machineLearning.enabled;
+export const isSmartSearchEnabled = (machineLearning: SystemConfig['machineLearning']) =>
+  isMachineLearningEnabled(machineLearning) && machineLearning.clip.enabled;
+export const isOcrEnabled = (machineLearning: SystemConfig['machineLearning']) =>
+  isMachineLearningEnabled(machineLearning) && machineLearning.ocr.enabled;
+export const isImageDescriptionEnabled = (machineLearning: SystemConfig['machineLearning']) =>
+  isMachineLearningEnabled(machineLearning) && machineLearning.imageDescription.enabled;
+export const isNsfwDetectionEnabled = (machineLearning: SystemConfig['machineLearning']) =>
+  isMachineLearningEnabled(machineLearning) && machineLearning.nsfwDetection.enabled;
+export const isNsfwHidingEnabled = (machineLearning: SystemConfig['machineLearning']) =>
+  machineLearning.nsfwDetection.hideFromLibrary;
+export const isFacialRecognitionEnabled = (machineLearning: SystemConfig['machineLearning']) =>
+  isMachineLearningEnabled(machineLearning) && machineLearning.facialRecognition.enabled;
+export const isDuplicateDetectionEnabled = (machineLearning: SystemConfig['machineLearning']) =>
+  isSmartSearchEnabled(machineLearning) && machineLearning.duplicateDetection.enabled;
+export const isFaceImportEnabled = (metadata: SystemConfig['metadata']) => metadata.faces.import;
+
+export const handlePromiseError = <T>(promise: Promise<T>, logger: LoggingRepository): void => {
+  promise.catch((error: Error | any) => logger.error(`Promise error: ${error}`, error?.stack));
+};
+
+export const findOrFail = async <T>(find: () => Promise<T>, entity: string): Promise<NonNullable<T>> => {
+  const value = await find();
+  if (!value) {
+    throw new BadRequestException(`${entity} not found`);
+  }
+
+  return value;
+};
+
+export async function* batched<T>(items: AsyncIterable<T>, size = JOBS_ASSET_PAGINATION_SIZE): AsyncGenerator<T[]> {
+  if (!Number.isSafeInteger(size) || size < 1) {
+    throw new RangeError('Batch size must be a positive safe integer');
+  }
+  let batch: T[] = [];
+
+  for await (const item of items) {
+    batch.push(item);
+
+    if (batch.length === size) {
+      yield batch;
+      batch = [];
+    }
+  }
+
+  if (batch.length > 0) {
+    yield batch;
+  }
+}
+
+export interface OpenGraphTags {
+  title: string;
+  description: string;
+  imageUrl?: string;
+}
+
+function cleanModelName(modelName: string): string {
+  const token = modelName.split('/').at(-1);
+  if (!token) {
+    throw new Error(`Invalid model name: ${modelName}`);
+  }
+
+  return token.replaceAll(':', '_');
+}
+
+export function getCLIPModelInfo(modelName: string) {
+  const modelInfo = CLIP_MODEL_INFO[cleanModelName(modelName)];
+  if (!modelInfo) {
+    throw new Error(`Unknown CLIP model: ${modelName}`);
+  }
+
+  return modelInfo;
+}
+
+function sortKeys<T>(target: T): T {
+  if (!target || typeof target !== 'object' || Array.isArray(target)) {
+    return target;
+  }
+
+  const keys = Object.keys(target).toSorted() as Array<keyof T>;
+  return Object.fromEntries(keys.map((key) => [key, sortKeys(target[key])])) as T;
+}
+
+export const routeToErrorMessage = (methodName: string) =>
+  'Failed to ' + methodName.replaceAll(/[A-Z]+/g, (letter) => ` ${letter.toLowerCase()}`);
+
+const isSchema = (schema: string | ReferenceObject | SchemaObject): schema is SchemaObject => {
+  return !(typeof schema === 'string' || '$ref' in schema);
+};
+
+/** Removes or rewrites JSON Schema 2020-12 keywords that OpenAPI 3.0 (this spec's version) does not allow. */
+export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
+  if (!target || typeof target !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(target)) {
+    for (const item of target) {
+      removeOpenApi30IncompatibleKeys(item);
+    }
+    return;
+  }
+
+  const object = target as Record<string, unknown>;
+  // Zod literals emit JSON Schema `const`; OpenAPI 3.0 expresses the same restriction as an enum.
+  // Require a schema type so a property map containing a field named `const` is left intact.
+  if (typeof object.type === 'string' && Object.hasOwn(object, 'const')) {
+    object.enum = object.nullable === true && object.const !== null ? [object.const, null] : [object.const];
+    delete object.const;
+  }
+  delete object.propertyNames;
+  delete object.contentEncoding;
+  // A tuple (JSON Schema `prefixItems`) is not OpenAPI 3.0: generators such as openapi-generator reject it. Describe
+  // it as an array of its item schema (the first one when they differ); request validation stays the tuple's and the
+  // schema's description says its shape. No minItems/maxItems are added: the published document never had them, and
+  // adding them reads as a breaking request change to the compatibility check.
+  if (Array.isArray(object.prefixItems)) {
+    const prefixItems = object.prefixItems as unknown[];
+    if ((object.items ?? false) === false) {
+      object.items = prefixItems[0];
+    }
+    delete object.prefixItems;
+  }
+
+  for (const value of Object.values(object)) {
+    removeOpenApi30IncompatibleKeys(value);
+  }
+};
+
+const patchOpenAPI = (document: OpenAPIObject) => {
+  document.paths = sortKeys(document.paths);
+  // Allowed in OpenAPI v3.1 (JSON Schema 2020-12), but not in OpenAPI v3.0 (current spec).
+  removeOpenApi30IncompatibleKeys(document);
+
+  if (document.components?.schemas) {
+    const schemas = document.components.schemas as Record<string, SchemaObject>;
+
+    for (const schema of Object.values(schemas)) {
+      delete (schema as Record<string, unknown>).id;
+
+      // documents a property as required even though it is optional during body validation
+      for (const [key, value] of Object.entries(schema.properties ?? {})) {
+        if (!(ApiCustomExtension.Required in value)) {
+          continue;
+        }
+
+        delete (value as Record<string, unknown>)[ApiCustomExtension.Required];
+        (schema.required ??= []).push(key);
+      }
+    }
+
+    document.components.schemas = sortKeys(schemas);
+
+    const errors: string[] = [];
+
+    for (const [schemaName, schema] of Object.entries(schemas)) {
+      if (!schema.properties) {
+        continue;
+      }
+
+      schema.properties = sortKeys(schema.properties);
+
+      for (const [key, initialValue] of Object.entries(schema.properties)) {
+        if (typeof initialValue === 'string' || !isSchema(initialValue)) {
+          continue;
+        }
+
+        // check array types
+        let value: SchemaObject | ReferenceObject = initialValue;
+        if (value.type === 'array' && value.items) {
+          value = value.items;
+        }
+
+        if (isSchema(value) && value.type === 'number') {
+          if (value.format === 'float') {
+            errors.push(`Invalid number format: ${schemaName}.${key}=float (use double instead). `);
+          }
+
+          // verify it was meant to be a number (and not an integer)
+          if (!value.format) {
+            errors.push(
+              `${schemaName}.${key} is a number (not an integer) and requires a format (e.g .meta({ format: 'double' })). `,
+            );
+          }
+        }
+      }
+      schema.required?.sort();
+
+      if (errors.length > 0) {
+        throw new Error(`Schema validation failed:\n  ${errors.join('\n  ')}`);
+      }
+    }
+  }
+
+  for (const [key, value] of Object.entries(document.paths)) {
+    const newKey = key.replace('/api/', '/');
+    delete document.paths[key];
+    document.paths[newKey] = value;
+  }
+
+  for (const path of Object.values(document.paths)) {
+    const operations = {
+      get: path.get,
+      put: path.put,
+      post: path.post,
+      delete: path.delete,
+      options: path.options,
+      head: path.head,
+      patch: path.patch,
+      trace: path.trace,
+    };
+
+    for (const operation of Object.values(operations) as Array<
+      OperationObject & {
+        [ApiCustomExtension.AdminOnly]?: boolean;
+        [ApiCustomExtension.Permission]?: string;
+      }
+    >) {
+      if (!operation) {
+        continue;
+      }
+
+      if (operation.summary === '') {
+        delete operation.summary;
+      }
+
+      if (operation.description === '') {
+        delete operation.description;
+      }
+
+      if (operation.operationId) {
+        // console.log(`${routeToErrorMessage(operation.operationId).padEnd(40)} (${operation.operationId})`);
+      }
+
+      if (operation.parameters) {
+        operation.parameters = orderBy(operation.parameters, 'name');
+      }
+    }
+  }
+
+  return document;
+};
+
+export const useSwagger = (app: INestApplication, { write }: { write: boolean }) => {
+  const builder = new DocumentBuilder()
+    .setTitle('Frameleaf')
+    .setDescription('Frameleaf API')
+    .setVersion(serverVersion.toString())
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+    })
+    .addCookieAuth(AuthCookie.AccessToken)
+    .addApiKey(
+      {
+        type: 'apiKey',
+        in: 'header',
+        name: RequestHeader.ApiKey,
+      },
+      MetadataKey.ApiKeySecurity,
+    )
+    .addServer('/api');
+
+  for (const [tag, description] of Object.entries(endpointTags)) {
+    builder.addTag(tag, description);
+  }
+  const config = builder.build();
+
+  const options: SwaggerDocumentOptions = {
+    operationIdFactory: (controllerKey: string, methodKey: string) => methodKey,
+    extraModels,
+    ignoreGlobalPrefix: true,
+  };
+
+  const specification = SwaggerModule.createDocument(app, config, options);
+  const openApiDoc = cleanupOpenApiDoc(specification);
+
+  const customOptions: SwaggerCustomOptions = {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+    jsonDocumentUrl: '/api/spec.json',
+    yamlDocumentUrl: '/api/spec.yaml',
+    customSiteTitle: 'Frameleaf API documentation',
+  };
+
+  SwaggerModule.setup('doc', app, openApiDoc, customOptions);
+
+  if (write) {
+    // Generate API Documentation only in development mode
+    const outputPath = path.resolve(process.cwd(), '../open-api/immich-openapi-specs.json');
+    writeFileSync(outputPath, JSON.stringify(patchOpenAPI(openApiDoc), null, 2), { encoding: 'utf8' });
+  }
+};
+
+// Compiles a glob to the equivalent Postgres regex (Postgres's Advanced Regular Expression
+// dialect is a superset of what picomatch emits, so the two stay in sync with `picomatch.isMatch`,
+// including which paths a lone `*` may cross vs `/`).
+export const globToPostgresRegex = (glob: string) => picomatch.makeRe(glob).source;
+
+export function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}

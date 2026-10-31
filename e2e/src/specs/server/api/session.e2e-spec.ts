@@ -1,0 +1,107 @@
+import { LoginResponseDto, getSessions, login, signUpAdmin } from '@frameleaf/sdk';
+import { createUserDto, loginDto, signupDto, uuidDto } from 'src/fixtures.js';
+import { errorDto } from 'src/responses.js';
+import { app, asBearerAuth, utils } from 'src/utils.js';
+import request from 'supertest';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+describe('/sessions', () => {
+  let admin: LoginResponseDto;
+
+  beforeEach(async () => {
+    await utils.resetDatabase();
+    await signUpAdmin({ signUpDto: signupDto.admin });
+    admin = await login({ loginCredentialDto: loginDto.admin });
+  });
+
+  describe('GET /sessions', () => {
+    it('should get a list of authorized devices', async () => {
+      const { status, body } = await request(app).get('/sessions').set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(status).toBe(200);
+      expect(body).toEqual([
+        {
+          id: expect.any(String),
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String),
+          current: true,
+          isPendingSyncReset: false,
+          deviceOS: '',
+          deviceType: '',
+          appVersion: null,
+        },
+      ]);
+    });
+  });
+
+  describe('DELETE /sessions', () => {
+    it('should logout all devices (except the current one)', async () => {
+      for (let i = 0; i < 5; i++) {
+        await login({ loginCredentialDto: loginDto.admin });
+      }
+
+      await expect(getSessions({ headers: asBearerAuth(admin.accessToken) })).resolves.toHaveLength(6);
+
+      const { status } = await request(app).delete(`/sessions`).set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(status).toBe(204);
+
+      await expect(getSessions({ headers: asBearerAuth(admin.accessToken) })).resolves.toHaveLength(1);
+    });
+
+    it('should throw an error for a non-existent device id', async () => {
+      const { status, body } = await request(app)
+        .delete(`/sessions/${uuidDto.notFound}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('Not found or no authDevice.delete access'));
+    });
+
+    it('should logout a device', async () => {
+      const [device] = await getSessions({
+        headers: asBearerAuth(admin.accessToken),
+      });
+      const { status } = await request(app)
+        .delete(`/sessions/${device.id}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(status).toBe(204);
+
+      const response = await request(app)
+        .post('/auth/validateToken')
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(response.body).toEqual(errorDto.unauthorized('Invalid user token'));
+      expect(response.status).toBe(401);
+    });
+
+    // FL-67: a session revoked from another device can no longer be used
+    it('should reject the token of a session revoked from another session', async () => {
+      const other = await login({ loginCredentialDto: loginDto.admin });
+      const sessions = await getSessions({ headers: asBearerAuth(other.accessToken) });
+      const revoked = sessions.find(({ current }) => !current);
+      expect(revoked).toBeDefined();
+
+      const { status } = await request(app)
+        .delete(`/sessions/${revoked!.id}`)
+        .set('Authorization', `Bearer ${other.accessToken}`);
+      expect(status).toBe(204);
+
+      const response = await request(app).get('/users/me').set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual(errorDto.unauthorized('Invalid user token'));
+
+      const stillSignedIn = await request(app).get('/users/me').set('Authorization', `Bearer ${other.accessToken}`);
+      expect(stillSignedIn.status).toBe(200);
+    });
+    // FL-67: an account cannot sign out another account's device
+    it("should refuse to sign out another account's session", async () => {
+      const user = await utils.userSetup(admin.accessToken, createUserDto.user1);
+      const [adminSession] = await getSessions({ headers: asBearerAuth(admin.accessToken) });
+      const { status, body } = await request(app)
+        .delete(`/sessions/${adminSession.id}`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('Not found or no authDevice.delete access'));
+
+      const stillSignedIn = await request(app).get('/users/me').set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(stillSignedIn.status).toBe(200);
+    });
+  });
+});

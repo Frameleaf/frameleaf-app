@@ -1,0 +1,30 @@
+import { Mocked, vitest } from 'vitest';
+import type { RepositoryInterface } from 'src/types.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+
+export const newCryptoRepositoryMock = (): Mocked<RepositoryInterface<CryptoRepository>> => {
+  return {
+    randomUUID: vitest.fn().mockReturnValue('random-uuid'),
+    randomBytes: vitest.fn().mockReturnValue(Buffer.from('random-bytes', 'utf8')),
+    compareBcrypt: vitest.fn().mockResolvedValue(true),
+    hashBcrypt: vitest.fn().mockImplementation((input) => Promise.resolve(`${input} (hashed)`)),
+    hashSha256: vitest.fn().mockImplementation((input) => Buffer.from(`${input} (hashed)`)),
+    verifySha256: vitest.fn().mockImplementation(() => true),
+    hashSha1: vitest.fn().mockImplementation((input) => Buffer.from(`${input.toString()} (hashed)`)),
+    hashFile: vitest.fn().mockImplementation((input) => `${input} (file-hashed)`),
+    hashFileDigests: vitest.fn().mockResolvedValue({
+      sha1: Buffer.from('sha1'),
+      sha256: Buffer.from('sha256'),
+      sizeInBytes: 0,
+    }),
+    hashFileMatching: vitest.fn().mockImplementation((input) => Buffer.from(`${input} (file-hashed)`)),
+    randomBytesAsText: vitest.fn().mockReturnValue(Buffer.from('random-bytes').toString('base64')),
+    serverKeyedHash: vitest
+      .fn()
+      .mockImplementation((_directory: string, purpose: string, value: string) =>
+        Promise.resolve(`${purpose}:${value} (keyed)`),
+      ),
+    signJwt: vitest.fn().mockReturnValue('mock-jwt-token'),
+    verifyJwt: vitest.fn().mockImplementation((token) => ({ verified: true, token })),
+  };
+};

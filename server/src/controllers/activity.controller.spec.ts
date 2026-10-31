@@ -1,0 +1,76 @@
+import request from 'supertest';
+import { ActivityController } from 'src/controllers/activity.controller.js';
+import { ActivityService } from 'src/services/activity.service.js';
+import { factory } from 'test/small.factory.js';
+import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
+
+describe(ActivityController.name, () => {
+  let ctx: ControllerContext;
+  const service = mockBaseService(ActivityService);
+
+  beforeAll(async () => {
+    ctx = await controllerSetup(ActivityController, [{ provide: ActivityService, useValue: service }]);
+    return () => ctx.close();
+  });
+
+  beforeEach(() => {
+    service.resetAllMocks();
+    ctx.reset();
+  });
+
+  describe('GET /activities', () => {
+    it('should require an albumId', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).get('/activities');
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        factory.responses.validationError([
+          { path: ['albumId'], message: 'Invalid input: expected string, received undefined' },
+        ]),
+      );
+    });
+
+    it('should reject an invalid albumId', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).get('/activities').query({ albumId: '123' });
+      expect(status).toEqual(400);
+      expect(body).toEqual(factory.responses.validationError([{ path: ['albumId'], message: 'Invalid UUID' }]));
+    });
+
+    it('should reject an invalid assetId', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .get('/activities')
+        .query({ albumId: factory.uuid(), assetId: '123' });
+      expect(status).toEqual(400);
+      expect(body).toEqual(factory.responses.validationError([{ path: ['assetId'], message: 'Invalid UUID' }]));
+    });
+  });
+
+  describe('POST /activities', () => {
+    it('should require an albumId', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/activities')
+        .send({ albumId: '123', type: 'like' });
+      expect(status).toEqual(400);
+      expect(body).toEqual(factory.responses.validationError([{ path: ['albumId'], message: 'Invalid UUID' }]));
+    });
+
+    it('should require a comment when type is comment', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/activities')
+        .send({ albumId: factory.uuid(), type: 'comment', comment: null });
+      expect(status).toEqual(400);
+      expect(body).toEqual(
+        factory.responses.validationError([
+          { path: ['comment'], message: 'Invalid input: expected string, received null' },
+        ]),
+      );
+    });
+  });
+
+  describe('DELETE /activities/:id', () => {
+    it('should require a valid uuid', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).delete(`/activities/123`);
+      expect(status).toBe(400);
+      expect(body).toEqual(factory.responses.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+    });
+  });
+});

@@ -1,0 +1,31 @@
+{
+  "protocol": "frameleaf-cloud-v2",
+  "region": "eu",
+  "workloads": [],
+  "consent": {
+    "requiredVersion": "2026-09-26.1",
+    "recordedVersion": "2026-01-15.1",
+    "features": {
+      "identityNames": true,
+      "medicalSignals": false,
+      "ocrAddon": false
+    }
+  },
+  "entitlement": {
+    "active": true,
+    "state": "grace",
+    "graceUntil": "2026-10-03T00:00:00.000Z"
+  },
+  "wallet": {
+    "balanceUsd": 4.5,
+    "heldUsd": 0,
+    "dailyCapUsd": 20,
+    "spentTodayUsd": 1.25
+  },
+  "limits": {
+    "maxInputBytes": 2147483648,
+    "maxInputs": 1000,
+    "concurrentTimePriced": 8
+  },
+  "catalogEtag": "\"cat-eu-3f9c2a71b0d4e58c\""
+}

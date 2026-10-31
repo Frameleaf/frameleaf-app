@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Deprecated alias of frameleaf-dev (FL-294).
+
+exec "$(dirname "$0")/frameleaf-dev" "$@"

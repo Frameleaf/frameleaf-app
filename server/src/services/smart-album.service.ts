@@ -1,0 +1,555 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import type { SystemConfig } from 'src/config.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { JobOf } from 'src/types.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import {
+  MySmartAlbumsResponseDto,
+  SmartAlbumOverviewResponseDto,
+  SmartAlbumPreviewDto,
+  SmartAlbumPreviewResponseDto,
+} from 'src/dtos/smart-album.dto.js';
+import { BootstrapEventPriority, FrameleafWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { BaseService } from 'src/services/base.service.js';
+import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { isSmartSearchEnabled } from 'src/utils/misc.js';
+
+type BuiltInKind = keyof SystemConfig['smartAlbums']['builtIn'];
+
+/**
+ * Per-config memoized cache of lowercased tag-trigger sets. Keyed on the
+ * `builtIn` config object reference — when config is reloaded by SystemConfig,
+ * the reference changes and the cache is rebuilt lazily.
+ */
+const tagTriggerCache = new WeakMap<SystemConfig['smartAlbums']['builtIn'], Map<BuiltInKind, Set<string>>>();
+
+/**
+ * Strip control characters + newlines + escape codes from user-controlled
+ * values before they hit the logger. Defense against CWE-117 log injection.
+ * Caps length at 64 chars so logs don't bloat on a pathological input.
+ */
+const sanitizeForLog = (value: string): string =>
+  // eslint-disable-next-line no-control-regex
+  value.replaceAll(/[\u{0000}-\u{001F}\u{007F}]/gu, '?').slice(0, 64);
+
+// predict wraps fetch errors in a cause; healthy malformed responses are item failures, not dependencies.
+const isMlTransportUnavailable = (error: unknown): boolean => {
+  const codes = new Set([
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_SOCKET',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_BODY_TIMEOUT',
+  ]);
+  for (let depth = 0; depth < 4 && error instanceof Error; depth++) {
+    if (error.name === 'TimeoutError' || codes.has((error as Error & { code?: string }).code ?? '')) return true;
+    error = error.cause;
+  }
+  return false;
+};
+
+/**
+ * Memoized textual-CLIP embeddings for smart-album `clipQueries`, keyed on
+ * `<modelName>\0<query>`. The model name is part of the key so a CLIP model
+ * change naturally invalidates every cached query (stale entries for the old
+ * model are harmless — a handful of small vectors). The promise itself is
+ * cached so concurrent evaluations share a single ML round-trip; failed
+ * promises are evicted so the next evaluation retries.
+ */
+const clipQueryCache = new Map<string, Promise<Float32Array | undefined>>();
+
+const getTagTriggerSet = (builtIn: SystemConfig['smartAlbums']['builtIn'], kind: BuiltInKind): Set<string> => {
+  let perConfig = tagTriggerCache.get(builtIn);
+  if (!perConfig) {
+    perConfig = new Map();
+    tagTriggerCache.set(builtIn, perConfig);
+  }
+  let set = perConfig.get(kind);
+  if (!set) {
+    set = new Set(builtIn[kind].tagTriggers.map((t) => t.toLowerCase()));
+    perConfig.set(kind, set);
+  }
+  return set;
+};
+
+@Injectable()
+export class SmartAlbumService extends BaseService {
+  /**
+   * On server startup, ensure the 6 built-in smart albums exist for every
+   * active user. Idempotent — safe to call on every server start. Gated on
+   * `smartAlbums.enabled` so users who haven't opted in don't get six surprise
+   * albums silently injected into their library.
+   *
+   * Runs on the API worker only (one process), AFTER SystemConfig has loaded
+   * its values from the database.
+   */
+  @OnEvent({
+    name: 'AppBootstrap',
+    priority: BootstrapEventPriority.SystemConfig + 1,
+    workers: [FrameleafWorker.Api],
+  })
+  async onBootstrap(): Promise<void> {
+    const { smartAlbums } = await this.getConfig({ withCache: true });
+    if (!smartAlbums.enabled) {
+      return;
+    }
+
+    const users = await this.userRepository.getList({ withDeleted: false });
+    for (const user of users) {
+      try {
+        await this.ensureBuiltInAlbumsForUser(user.id);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to ensure smart albums for user ${user.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Evaluate an asset against all enabled smart-album rules. Called after a
+   * description completes successfully — receives the asset's id, owner id,
+   * and the tags emitted by the description model.
+   *
+   * Tag matching is case-insensitive. CLIP query similarity compares the
+   * asset's smart_search visual embedding against each configured query
+   * phrase (encoded via the textual CLIP model) and matches when the cosine
+   * similarity meets the kind's threshold.
+   *
+   * Pass `onlyKind` to scope the evaluation to a single built-in kind. The
+   * admin "Re-evaluate this album" button uses this to avoid touching
+   * memberships of unrelated kinds. When set, other kinds are neither added
+   * NOR removed for this asset — same semantics as if those kinds were
+   * disabled for this single call.
+   */
+  async evaluate(input: { assetId: string; ownerId: string; tags: string[]; onlyKind?: string }): Promise<void> {
+    const { assetId, ownerId, tags, onlyKind } = input;
+    const { smartAlbums, machineLearning } = await this.getConfig({ withCache: true });
+
+    if (!smartAlbums.enabled) {
+      return;
+    }
+
+    const read = await this.machineLearningRepository.captureClipRead();
+    const allBuiltInKinds = Object.keys(smartAlbums.builtIn) as BuiltInKind[];
+    // When scoped to a single kind, treat the others as if disabled for this
+    // call — they are neither matched nor removed.
+    const builtInKinds = onlyKind ? allBuiltInKinds.filter((k) => k === onlyKind) : allBuiltInKinds;
+    const albumIdByKind = await this.smartAlbumRepository.getAllSmartAlbumIdsForOwner(ownerId);
+    const candidateAlbumIds: string[] = [];
+    for (const kind of builtInKinds) {
+      const id = albumIdByKind.get(kind);
+      if (id) {
+        candidateAlbumIds.push(id);
+      }
+    }
+    const excludedAlbumIds = await this.smartAlbumRepository.getExcludedSmartAlbumIds(assetId, candidateAlbumIds);
+
+    const lowerTags = tags.map((t) => t.toLowerCase());
+
+    const currentKinds = new Set(await this.smartAlbumRepository.getMatchingKinds(assetId, ownerId));
+    const matchedKinds = new Set<string>();
+
+    // CLIP matching requires smart search (the smart_search embedding table is
+    // only populated when it is on). The asset vector is loaded lazily — at
+    // most one DB round-trip per evaluate, and none when every enabled kind
+    // already resolves via tags-only config (empty clipQueries).
+    const clipEligible = isSmartSearchEnabled(machineLearning);
+    let assetVectorPromise: Promise<Float32Array | undefined> | undefined;
+    const getAssetVector = () => (assetVectorPromise ??= this.loadAssetVector(assetId));
+
+    for (const kind of builtInKinds) {
+      const kindConfig = smartAlbums.builtIn[kind];
+      if (!kindConfig.enabled) {
+        continue;
+      }
+
+      const smartAlbumId = albumIdByKind.get(kind);
+      if (!smartAlbumId) {
+        // User not yet bootstrapped — ensureBuiltInAlbumsForUser will create it.
+        continue;
+      }
+
+      if (excludedAlbumIds.has(smartAlbumId)) {
+        continue;
+      }
+
+      // Tag match: case-insensitive comparison against tagTriggers.
+      const tagTriggerLower = getTagTriggerSet(smartAlbums.builtIn, kind);
+      const hasTagMatch = lowerTags.some((tag) => tagTriggerLower.has(tag));
+
+      // CLIP match: cosine similarity between the asset's smart_search visual
+      // embedding and each configured query phrase (encoded via the textual
+      // CLIP model, cached per model+query). ML unavailability degrades
+      // gracefully for direct callers. Queue-owned evaluations retain refusals
+      // as pinned dependency waits and malformed results as failed attempts.
+      const hasClipMatch =
+        clipEligible && kindConfig.clipQueries.length > 0
+          ? await this.matchesClipQueries(
+              machineLearning.clip,
+              kindConfig.clipQueries,
+              kindConfig.threshold,
+              getAssetVector,
+            )
+          : false;
+
+      if (hasTagMatch || hasClipMatch) {
+        matchedKinds.add(kind);
+        const matchReason = hasTagMatch && hasClipMatch ? 'both' : hasTagMatch ? 'tag' : 'clip';
+        await publishJobResult(() =>
+          read.publish(async () => {
+            const excluded = await this.smartAlbumRepository.getExcludedSmartAlbumIds(assetId, [smartAlbumId]);
+            if (!excluded.has(smartAlbumId))
+              await this.smartAlbumRepository.addAssetToSmartAlbum(smartAlbumId, assetId, matchReason);
+          }),
+        );
+      }
+    }
+
+    // Removal: for each kind the asset was previously in that no longer matches,
+    // remove it so that stale memberships don't linger when tags change. When
+    // scoped to a single kind via onlyKind, we MUST limit the removal loop to
+    // that one kind too — otherwise re-evaluating "food" would silently strip
+    // the asset out of "pets" or "travel" because matchedKinds only contains
+    // food matches.
+    for (const kind of currentKinds) {
+      if (onlyKind && kind !== onlyKind) {
+        continue;
+      }
+      // a disabled kind keeps its members until it is enabled again
+      if (!smartAlbums.builtIn[kind as BuiltInKind]?.enabled) {
+        continue;
+      }
+      if (!matchedKinds.has(kind)) {
+        const smartAlbumId = albumIdByKind.get(kind as BuiltInKind);
+        if (smartAlbumId) {
+          await publishJobResult(() =>
+            read.publish(() => this.smartAlbumRepository.removeAssetFromSmartAlbum(smartAlbumId, assetId)),
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Load and L2-normalize the asset's smart_search visual embedding. Returns
+   * undefined (after logging) when the asset has no embedding yet or the read
+   * fails — CLIP matching is then skipped for this evaluation.
+   */
+  private async loadAssetVector(assetId: string): Promise<Float32Array | undefined> {
+    try {
+      const row = await this.searchRepository.getEmbedding(assetId);
+      const parsed = parseEmbedding(row?.embedding);
+      return parsed ? l2Normalize(parsed) : undefined;
+    } catch (error) {
+      this.logger.warn(
+        `Smart-album CLIP matching skipped — failed to load embedding for asset ${assetId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * True when the asset's visual embedding is within the similarity threshold
+   * of ANY configured query phrase. Query embeddings are encoded via the
+   * textual CLIP endpoint and memoized per (model, query). ML failures are
+   * logged and treated as "no match" for direct callers. Queue-owned evaluations
+   * propagate failures so no membership can publish from an incomplete evaluation.
+   */
+  private async matchesClipQueries(
+    clip: SystemConfig['machineLearning']['clip'],
+    queries: string[],
+    threshold: number,
+    getAssetVector: () => Promise<Float32Array | undefined>,
+  ): Promise<boolean> {
+    const assetVector = await getAssetVector();
+    if (!assetVector) {
+      deferJobUntilDependency('source-unavailable');
+      return false;
+    }
+    for (const query of queries) {
+      try {
+        const queryVector = await this.getClipQueryEmbedding(clip, query);
+        if (queueExecution.getStore() && queryVector && queryVector.length !== assetVector.length) {
+          throw new Error('Invalid smart-album query embedding dimensions');
+        }
+        // Both vectors are unit-length, so the dot product IS the cosine
+        // similarity (equivalently 1 - pgvector's <=> cosine distance).
+        if (queryVector && dot(assetVector, queryVector) >= threshold) {
+          return true;
+        }
+      } catch (error) {
+        if (queueExecution.getStore()) throw error;
+        this.logger.warn(
+          `Smart-album CLIP matching unavailable for query "${sanitizeForLog(query)}": ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return false;
+  }
+
+  private async getClipQueryEmbedding(
+    clip: SystemConfig['machineLearning']['clip'],
+    query: string,
+  ): Promise<Float32Array | undefined> {
+    if (queueExecution.getStore()) {
+      const selection = await this.selectClipTextDestination();
+      try {
+        const raw = await this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName });
+        const parsed = parseEmbedding(raw);
+        if (!parsed || parsed.every((value) => value === 0)) throw new Error('Invalid smart-album query embedding');
+        return l2Normalize(parsed);
+      } catch (error) {
+        const context = queueExecution.getStore();
+        context?.signal.throwIfAborted();
+        if (!context?.dependencyReason && isMlTransportUnavailable(error))
+          deferJobUntilDependency('destination-unavailable');
+        throw error;
+      }
+    }
+    const cacheKey = `${clip.modelName}\u{0}${await this.machineLearningRepository.clipCacheKey(clip.modelName)}\u{0}${query}`;
+    const cached = clipQueryCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const promise = this.selectClipTextDestination()
+      .then((selection) => this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName }))
+      .then((raw) => {
+        const parsed = parseEmbedding(raw);
+        if (!parsed || parsed.every((value) => value === 0)) throw new Error('Invalid smart-album query embedding');
+        return l2Normalize(parsed);
+      })
+      .catch((error) => {
+        // Drop the failed promise so the next evaluation retries.
+        clipQueryCache.delete(cacheKey);
+        throw error;
+      });
+    clipQueryCache.set(cacheKey, promise);
+    return promise;
+  }
+
+  /**
+   * When the master smartAlbums toggle flips from false → true, backfill the
+   * six built-in albums for every existing user so they populate without a
+   * server restart.
+   */
+  // workers: [Api] only — backfillAllUsers writes album rows for every user,
+  // which we don't want to multiply by replica count in multi-node deployments.
+  @OnEvent({ name: 'ConfigUpdate', server: true, workers: [FrameleafWorker.Api] })
+  async onConfigUpdate({ newConfig, oldConfig }: ArgOf<'ConfigUpdate'>): Promise<void> {
+    const wasDisabled = !oldConfig.smartAlbums.enabled;
+    const isNowEnabled = newConfig.smartAlbums.enabled;
+    if (wasDisabled && isNowEnabled) {
+      await this.backfillAllUsers();
+    }
+  }
+
+  /**
+   * Bulk re-evaluate every already-described image or video against the smart-album
+   * rules. Freeze the complete selection before the coordinator admits bounded
+   * per-asset work. Retries keep the same manifest instead of re-enumerating a
+   * changing library, and one failed asset cannot hide behind producer success.
+   */
+  @OnJob({ name: JobName.SmartAlbumReevaluateAll, queue: QueueName.BackgroundTask })
+  async handleReevaluateAll(data: JobOf<JobName.SmartAlbumReevaluateAll>): Promise<JobStatus> {
+    const { smartAlbums } = await this.getConfig({ withCache: false });
+    if (!smartAlbums.enabled) {
+      return JobStatus.Skipped;
+    }
+
+    const kind = data?.kind;
+    if (kind && !Object.hasOwn(smartAlbums.builtIn, kind)) {
+      // Sanitize: strip control chars + newlines + cap length so an admin-supplied
+      // `kind` cannot inject log lines (CWE-117).
+      const safeKind = sanitizeForLog(kind);
+      this.logger.warn(`Smart-album re-evaluate dispatched with unknown kind "${safeKind}" — skipping`);
+      return JobStatus.Skipped;
+    }
+
+    await this.jobRepository.queueSelection(
+      JobName.SmartAlbumReevaluate,
+      this.assetJobRepository.selectionForSmartAlbumReevaluation(),
+      { ...(kind && { kind }) },
+    );
+    return JobStatus.Success;
+  }
+
+  @OnJob({ name: JobName.SmartAlbumReevaluate, queue: QueueName.BackgroundTask })
+  async handleReevaluate({ id, kind }: JobOf<JobName.SmartAlbumReevaluate>): Promise<JobStatus> {
+    const { smartAlbums } = await this.getConfig({ withCache: true });
+    if (!smartAlbums.enabled) {
+      deferJobUntilDependency('workload-disabled');
+      return JobStatus.Skipped;
+    }
+    if (kind && !Object.hasOwn(smartAlbums.builtIn, kind)) return JobStatus.Skipped;
+
+    await this.jobRepository.guardAssetSource(id);
+    const asset = await this.assetJobRepository.getForSmartAlbumReevaluation(id);
+    // A frozen ID may have been deleted or become ineligible while waiting.
+    if (!asset) return JobStatus.Skipped;
+    const tags = asset.tags ?? [];
+    if (!Array.isArray(tags) || tags.some((tag) => typeof tag !== 'string')) {
+      throw new Error('Invalid smart-album description tags');
+    }
+    deferJobAdoption(async () => {
+      const current = await this.assetJobRepository.getForSmartAlbumReevaluation(id);
+      if (
+        !current ||
+        current.ownerId !== asset.ownerId ||
+        JSON.stringify(current.tags) !== JSON.stringify(asset.tags)
+      ) {
+        throw new Error('Smart-album evaluation inputs changed before publication');
+      }
+    });
+    // evaluate defers every membership mutation into the accepted claim transaction.
+    // Errors propagate to durable item failure; ML refusals remain pinned dependency waits.
+    await this.evaluate({ assetId: id, ownerId: asset.ownerId, tags, onlyKind: kind });
+    return JobStatus.Success;
+  }
+
+  /**
+   * Backfill the 6 built-in smart albums for every active user. Called when the
+   * master `smartAlbums.enabled` toggle flips from false → true so that existing
+   * users get their albums without waiting for a server restart.
+   */
+  async backfillAllUsers(): Promise<void> {
+    const users = await this.userRepository.getList({ withDeleted: false });
+    for (const user of users) {
+      try {
+        await this.ensureBuiltInAlbumsForUser(user.id);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to backfill smart albums for user ${user.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Ensure the 6 built-in smart albums exist for the given user. Idempotent —
+   * safe to call on every server start or user creation event.
+   *
+   * Query this owner's existing rules in `public.smart_album` first and only
+   * pass missing built-in kinds to the repository for creation. This
+   * skips the per-kind advisory-lock transaction when nothing is missing —
+   * common case after a server restart.
+   */
+  /**
+   * FL-522: the person's own smart albums with what each holds as they see it, and whether they hid
+   * it. Only the kinds the administrator offers (switched on) are listed.
+   */
+  async getMine(auth: AuthDto): Promise<MySmartAlbumsResponseDto> {
+    const { smartAlbums } = await this.getConfig({ withCache: true });
+    if (!smartAlbums.enabled) {
+      return { enabled: false, albums: [] };
+    }
+    await this.ensureBuiltInAlbumsForUser(auth.user.id);
+    const offered = Object.entries(smartAlbums.builtIn).filter(([, config]) => config.enabled);
+    const mine = await this.smartAlbumRepository.listForOwner(auth.user.id, getHiddenContentQueryOptions(auth));
+    return {
+      enabled: true,
+      albums: offered.flatMap(([kind, config]) => {
+        const album = mine.find((item) => item.kind === kind);
+        return album ? [{ ...album, name: config.name }] : [];
+      }),
+    };
+  }
+
+  /** FL-522: hide one of your smart albums from your own library, or show it again. Others are not affected. */
+  async setMineHidden(auth: AuthDto, kind: string, hidden: boolean): Promise<MySmartAlbumsResponseDto> {
+    await this.ensureBuiltInAlbumsForUser(auth.user.id);
+    if (!(await this.smartAlbumRepository.setHidden(auth.user.id, kind, hidden))) {
+      throw new BadRequestException('You have no smart album of this kind');
+    }
+    return this.getMine(auth);
+  }
+
+  /**
+   * FL-522: for an administrator, every album across the household as counts (photos, people who have
+   * it, people who hid it) and a few pictures from their own album. No one else's photo is shown.
+   */
+  async getOverview(auth: AuthDto): Promise<SmartAlbumOverviewResponseDto> {
+    await this.ensureBuiltInAlbumsForUser(auth.user.id);
+    const [counts, mine, people] = await Promise.all([
+      this.smartAlbumRepository.getHouseholdCounts(),
+      this.smartAlbumRepository.listForOwner(auth.user.id, getHiddenContentQueryOptions(auth)),
+      this.userRepository.getList(),
+    ]);
+    const { smartAlbums } = await this.getConfig({ withCache: true });
+    return {
+      people: people.length,
+      albums: Object.keys(smartAlbums.builtIn).map((kind) => {
+        const count = counts.find((item) => item.kind === kind);
+        return {
+          kind,
+          count: count?.count ?? 0,
+          people: count?.people ?? 0,
+          hiddenBy: count?.hiddenBy ?? 0,
+          samples: mine.find((item) => item.kind === kind)?.samples ?? [],
+        };
+      }),
+    };
+  }
+
+  /**
+   * FL-522: before saving a rule, what it would add to and take out of the administrator's own album,
+   * with a few pictures of each. Phrases are compared only while Visual search can answer; otherwise
+   * the words alone are used and the answer says so.
+   */
+  async previewRule(auth: AuthDto, dto: SmartAlbumPreviewDto): Promise<SmartAlbumPreviewResponseDto> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    await this.ensureBuiltInAlbumsForUser(auth.user.id);
+    let looksChecked = dto.clipQueries.length === 0;
+    const embeddings: string[] = [];
+    if (dto.clipQueries.length > 0 && isSmartSearchEnabled(machineLearning)) {
+      try {
+        for (const query of dto.clipQueries) {
+          const vector = await this.getClipQueryEmbedding(machineLearning.clip, query);
+          if (vector) {
+            embeddings.push(`[${[...vector].join(',')}]`);
+          }
+        }
+        looksChecked = embeddings.length === dto.clipQueries.length;
+      } catch (error) {
+        this.logger.warn(`Smart album preview could not compare phrases: ${error}`);
+        embeddings.length = 0;
+      }
+    }
+    const preview = await this.smartAlbumRepository.previewRule(
+      auth.user.id,
+      dto.kind,
+      { tags: dto.tagTriggers, embeddings, threshold: dto.threshold },
+      getHiddenContentQueryOptions(auth),
+    );
+    return { ...preview, looksChecked };
+  }
+
+  async ensureBuiltInAlbumsForUser(ownerId: string): Promise<void> {
+    const { smartAlbums } = await this.getConfig({ withCache: true });
+    if (!smartAlbums.enabled) {
+      return;
+    }
+    const builtInKinds = Object.keys(smartAlbums.builtIn) as BuiltInKind[];
+    const existing = await this.smartAlbumRepository.getAllSmartAlbumIdsForOwner(ownerId);
+    const kinds = builtInKinds
+      .filter((kind) => !existing.has(kind))
+      .map((kind) => ({
+        kind,
+        name: smartAlbums.builtIn[kind].name,
+      }));
+    if (kinds.length === 0) {
+      return;
+    }
+    await this.smartAlbumRepository.ensureForUser(ownerId, kinds);
+  }
+}

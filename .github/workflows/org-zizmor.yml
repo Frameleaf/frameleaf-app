@@ -1,0 +1,34 @@
+# Pinned scanner; annotation mode fails on findings without a write-scoped token.
+name: Zizmor
+'on':
+  workflow_dispatch: null
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  zizmor:
+    name: Zizmor
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          enable-cache: false
+      - name: Audit workflow security
+        run: uvx zizmor==1.30.1 --offline --format=github --min-severity=medium --min-confidence=medium .github/workflows

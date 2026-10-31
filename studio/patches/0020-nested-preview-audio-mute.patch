@@ -1,0 +1,78 @@
+Subject: Preserve detached embedded-audio mute in nested preview
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged.
+
+diff --git a/src/runtime/composition-runtime/components/composition-content.tsx b/src/runtime/composition-runtime/components/composition-content.tsx
+--- a/src/runtime/composition-runtime/components/composition-content.tsx
++++ b/src/runtime/composition-runtime/components/composition-content.tsx
+@@ -379,7 +379,7 @@
+           .map((subItem) => ({
+             ...subItem,
+             zIndex: (maxTrackOrder - trackOrder) * 1000,
+-            muted: parentMuted || track.muted || linkedVideoIdsWithOwnedAudio.has(subItem.id),
++            muted: parentMuted || track.muted || !!subItem.embeddedAudioMuted || linkedVideoIdsWithOwnedAudio.has(subItem.id),
+             trackAudioEq: track.audioEq,
+             trackOrder,
+             trackVisible: parentVisible,
+diff --git a/src/runtime/composition-runtime/components/composition-content.stable-video.test.tsx b/src/runtime/composition-runtime/components/composition-content.stable-video.test.tsx
+--- a/src/runtime/composition-runtime/components/composition-content.stable-video.test.tsx
++++ b/src/runtime/composition-runtime/components/composition-content.stable-video.test.tsx
+@@ -6,6 +6,7 @@
+ import { CompositionContent } from './composition-content'
+ import { NestedMediaResolutionProvider } from '../contexts/nested-media-resolution-context'
+ import {
++  makeNestedAudioItem,
+   makeNestedTimelineTrack,
+   makeNestedVideoItem,
+   makeParentCompositionItem,
+@@ -87,7 +88,9 @@
+ })
+ 
+ vi.mock('./item-content', () => ({
+-  ItemContent: ({ item }: { item: { id: string } }) => <div data-testid={`sub-item-${item.id}`} />,
++  ItemContent: ({ item, muted }: { item: { id: string }; muted: boolean }) => (
++    <div data-testid={`sub-item-${item.id}`} data-muted={muted} />
++  ),
+ }))
+ 
+ vi.mock('./stable-video-sequence', () => ({
+@@ -116,6 +119,38 @@
+     resetCompositionContentRuntimeState()
+   })
+ 
++  it.each([
++    { mode: 'detached', embeddedAudioMuted: true, companion: true, linked: false, muted: true },
++    { mode: 'detached and audio deleted', embeddedAudioMuted: true, companion: false, linked: false, muted: true },
++    { mode: 'linked', embeddedAudioMuted: undefined, companion: true, linked: true, muted: true },
++    { mode: 'original', embeddedAudioMuted: undefined, companion: false, linked: false, muted: false },
++    { mode: 'explicitly unmuted', embeddedAudioMuted: false, companion: false, linked: false, muted: false },
++  ])('preserves $mode nested video audio in preview', ({ embeddedAudioMuted, companion, linked, muted }) => {
++    const subComp = makeTestSubComposition({
++      id: 'sub-comp-audio-mute',
++      name: 'Nested audio ownership',
++      items: [
++        makeNestedVideoItem({
++          embeddedAudioMuted,
++          linkedGroupId: linked ? 'linked-av' : 'sub-video',
++        }),
++        ...(companion ? [makeNestedAudioItem({ linkedGroupId: linked ? 'linked-av' : 'sub-audio' })] : []),
++      ],
++    })
++    storeTestSubComposition(subComp)
++
++    const { getByTestId } = render(
++      <VideoConfigProvider fps={30} width={1280} height={720} durationInFrames={120}>
++        <CompositionContent item={makeParentCompositionItem({ compositionId: subComp.id })} />
++      </VideoConfigProvider>,
++    )
++
++    expect(getByTestId('sub-item-sub-video').getAttribute('data-muted')).toBe(String(muted))
++    if (companion) {
++      expect(getByTestId('sub-item-sub-audio').getAttribute('data-muted')).toBe('false')
++    }
++  })
++
+   it('reuses nested stable-video items when only the wrapper transform changes', () => {
+     const subComp = makeTestSubComposition({
+       id: 'sub-comp-stable-video',

@@ -1,0 +1,51 @@
+# Database GUI
+
+A short guide on connecting [pgAdmin](https://www.pgadmin.org/) to Frameleaf.
+
+## 1. Install pgAdmin
+
+Add a file `docker-compose-pgadmin.yml` next to your `docker-compose.yml` with the following content:
+
+```
+name: immich
+
+services:
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin4_container
+    restart: always
+    ports:
+      - "8888:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: strong-password
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+
+volumes:
+  pgadmin-data:
+```
+
+Change the values of `PGADMIN_DEFAULT_EMAIL` and `PGADMIN_DEFAULT_PASSWORD` in this file.
+
+Run `docker compose -f docker-compose.yml -f docker-compose-pgadmin.yml up` to start Frameleaf along with `pgAdmin`.
+
+## 2. Add a Server
+
+Open [localhost:8888](http://localhost:8888) and login with the default credentials from above.
+
+Right click on `Servers` and click on `Register >> Server..` then enter the values below in the `Connection` tab.
+
+:::note
+The parameters used here match those specified in the example `.env` file. If you have changed your `.env` file, you'll need to adjust accordingly.
+:::
+
+| Name                 | Value                |
+| -------------------- | -------------------- |
+| Host name/address    | `frameleaf_postgres` |
+| Port                 | `5432`               |
+| Maintenance database | `frameleaf`          |
+| Username             | `postgres`           |
+| Password             | `postgres`           |
+
+Click on "Save" to connect to the Frameleaf database.

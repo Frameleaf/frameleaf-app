@@ -1,0 +1,336 @@
+--- a/src/features/projects/components/project-form.tsx
++++ b/src/features/projects/components/project-form.tsx
+@@ -211,6 +211,14 @@
+                   {t('projects.form.resolution')}
+                 </h2>
+               </div>
++
++              <p
++                role="note"
++                aria-label={t('projects.form.colorPolicyTitle')}
++                className="mb-4 text-sm text-muted-foreground"
++              >
++                {t('projects.form.colorPolicy')}
++              </p>
+ 
+               <ProjectTemplatePicker
+                 selectedTemplateId={selectedTemplateId}
+--- /dev/null
++++ b/src/features/projects/components/project-form.test.tsx
+@@ -0,0 +1,42 @@
++import { fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { describe, expect, it, vi } from 'vite-plus/test'
++import { EditProjectForm, InlineCreateProjectForm } from './project-form'
++
++describe('project template colour policy', () => {
++  it.each([EditProjectForm, InlineCreateProjectForm])(
++    'discloses fixed colour behaviour beside templates without changing the form payload',
++    async (Form) => {
++      const onSubmit = vi.fn()
++      render(
++        <Form
++          onSubmit={onSubmit}
++          onCancel={() => {}}
++          defaultValues={{ name: 'Example', width: 1280, height: 720, fps: 24 }}
++        />,
++      )
++      const policy = screen.getByRole('note', { name: 'Colour policy' })
++      expect(policy).toHaveTextContent(
++        'Changing canvas size or frame rate preserves existing colour settings.',
++      )
++      expect(policy).toHaveTextContent(
++        'Adding PQ or HLG media to the timeline, including inside nested compositions, makes the project HDR.',
++      )
++      expect(policy).toHaveTextContent(
++        'Importing media alone does not. Export colour is chosen separately.',
++      )
++      fireEvent.click(screen.getByRole('button', { name: /YouTube 1080p/ }))
++      const submit = screen.getByRole('button', { name: /Update Project|Create Project/ })
++      await waitFor(() => expect(submit).toBeEnabled())
++      fireEvent.click(submit)
++      await waitFor(() => expect(onSubmit).toHaveBeenCalled())
++      expect(onSubmit.mock.calls[0]![0]).toEqual({
++        name: 'Example',
++        description: '',
++        width: 1920,
++        height: 1080,
++        fps: 30,
++      })
++      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
++    },
++  )
++})
+--- a/src/features/editor/components/project-media-match-dialog.tsx
++++ b/src/features/editor/components/project-media-match-dialog.tsx
+@@ -300,6 +300,14 @@
+               </div>
+             </div>
+ 
++            <p
++              role="note"
++              aria-label={t('projects.form.colorPolicyTitle')}
++              className="text-sm text-muted-foreground"
++            >
++              {t('projects.form.colorPolicy')}
++            </p>
++
+             {needsTiming && (
+               <fieldset className="space-y-2">
+                 <legend className="text-sm font-medium text-foreground">
+--- a/src/features/editor/components/project-media-match-dialog.test.tsx
++++ b/src/features/editor/components/project-media-match-dialog.test.tsx
+@@ -241,6 +241,47 @@
+     expect(mocks.markDirty).toHaveBeenCalledTimes(1)
+   })
+ 
++  it.each([
++    ['Keep Current', 'keep-current', null],
++    ['Size Only', 'size-only', { width: 1920, height: 1080 }],
++    ['FPS Only', 'fps-only', { fps: 60 }],
++    ['Match Both', 'match-both', { width: 1920, height: 1080, fps: 60 }],
++  ] as const)(
++    'discloses the fixed colour policy before %s without adding a colour choice',
++    async (button, choice, updates) => {
++      render(<ProjectMediaMatchDialog projectId="project-1" />)
++      let pending!: Promise<string>
++      await act(async () => {
++        pending = useProjectMediaMatchDialogStore.getState().requestProjectMediaMatch('project-1', {
++          fileName: 'hdr.mp4',
++          width: 1920,
++          height: 1080,
++          fps: 60,
++        })
++      })
++      const policy = screen.getByRole('note', { name: 'Colour policy' })
++      expect(policy).toHaveTextContent(
++        'Changing canvas size or frame rate preserves existing colour settings.',
++      )
++      expect(policy).toHaveTextContent(
++        'Adding PQ or HLG media to the timeline, including inside nested compositions, makes the project HDR.',
++      )
++      expect(policy).toHaveTextContent(
++        'Importing media alone does not. Export colour is chosen separately.',
++      )
++      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
++      await act(async () => {
++        fireEvent.click(screen.getByRole('button', { name: button }))
++      })
++      await expect(pending).resolves.toBe(choice)
++      if (updates) expect(mocks.updateProject).toHaveBeenCalledWith('project-1', updates)
++      else {
++        expect(mocks.updateProject).not.toHaveBeenCalled()
++        expect(mocks.addUndoEntry).not.toHaveBeenCalled()
++      }
++    },
++  )
++
+   it('does not prompt again once the project already had a video', async () => {
+     mediaState = {
+       mediaItems: [makeVideo({ id: 'existing-video' })],
+@@ -372,7 +413,9 @@
+         fireEvent.click(screen.getByRole('button', { name: 'Match FPS' }))
+       })
+ 
+-      await waitFor(() => expect(mocks.updateProject).toHaveBeenCalledWith('project-1', { fps: 60 }))
++      await waitFor(() =>
++        expect(mocks.updateProject).toHaveBeenCalledWith('project-1', { fps: 60 }),
++      )
+       expect(mocks.restoreSnapshot).not.toHaveBeenCalled()
+       expect(mocks.addUndoEntry).toHaveBeenCalledTimes(1)
+     })
+@@ -387,7 +430,9 @@
+           fps: 60,
+         })
+       })
+-      await waitFor(() => expect(screen.getByRole('button', { name: 'Match FPS' })).not.toBeDisabled())
++      await waitFor(() =>
++        expect(screen.getByRole('button', { name: 'Match FPS' })).not.toBeDisabled(),
++      )
+       expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+ 
+       mocks.mainTimeline = { items: [clip], markers: [] }
+--- a/src/features/editor/components/properties-sidebar/canvas-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/canvas-panel/index.tsx
+@@ -309,6 +309,14 @@
+         icon={LayoutDashboard}
+         defaultOpen={true}
+       >
++        <p
++          role="note"
++          aria-label={t('projects.form.colorPolicyTitle')}
++          className="mb-3 text-xs text-muted-foreground"
++        >
++          {t('projects.form.colorPolicy')}
++        </p>
++
+         <LinkedDimensions
+           width={width}
+           height={height}
+--- a/src/features/editor/components/properties-sidebar/canvas-panel/index.test.tsx
++++ b/src/features/editor/components/properties-sidebar/canvas-panel/index.test.tsx
+@@ -59,6 +59,9 @@
+       'aria-expanded',
+       'true',
+     )
++    expect(screen.getByRole('note', { name: 'Colour policy' })).toHaveTextContent(
++      'Changing canvas size or frame rate preserves existing colour settings.',
++    )
+     expect(screen.getByDisplayValue('1080')).toBeInTheDocument()
+     expect(screen.getByDisplayValue('1920')).toBeInTheDocument()
+     expect(screen.getByDisplayValue('300')).toBeInTheDocument()
+--- a/src/features/editor/utils/project-metadata-history.test.ts
++++ b/src/features/editor/utils/project-metadata-history.test.ts
+@@ -70,7 +70,10 @@
+   }) as Project
+ 
+ const spans = (timeline: unknown) =>
+-  ((timeline as ProjectTimeline | undefined)?.items ?? []).map((item) => [item.from, item.durationInFrames])
++  ((timeline as ProjectTimeline | undefined)?.items ?? []).map((item) => [
++    item.from,
++    item.durationInFrames,
++  ])
+ const mainSpans = () => spans({ items: useItemsStore.getState().items })
+ const stored = () => ({
+   fps: (disk.project!.metadata as { fps: number }).fps,
+@@ -93,7 +96,9 @@
+   beforeEach(async () => {
+     resetTimelineCompositionTestState()
+     setDefaultRootTimelineTracks()
+-    useItemsStore.getState().setItems([makeTimelineVideoItem({ id: 'main-clip', from: 30, durationInFrames: 45 })])
++    useItemsStore
++      .getState()
++      .setItems([makeTimelineVideoItem({ id: 'main-clip', from: 30, durationInFrames: 45 })])
+     useTimelineSettingsStore.getState().setFps(30)
+     useTimelineCommandStore.getState().clearHistory()
+     disk.readGate = null
+@@ -106,6 +111,48 @@
+ 
+   afterEach(() => resetTimelineCompositionTestState())
+ 
++  it.each([
++    [{ width: 1280 }, undefined],
++    [{ fps: 60 }, 'keep-time'],
++    [{ width: 1280, fps: 60 }, 'keep-frames'],
++  ] as const)(
++    'preserves literal colour metadata through change %j, history, save and reopen',
++    async (updates, timing) => {
++      const colorManagement = {
++        workingRange: 'sdr' as const,
++        referenceWhiteNits: 217,
++        masteringPeakNits: 1200,
++        sdrMonitoring: 'bt2390' as const,
++      }
++      const original = { ...project(), metadata: { ...project().metadata, colorManagement } }
++      disk.project = { ...original, timeline: buildTimelineFromStores() }
++      useProjectStore.setState({ currentProject: original })
++      const literal = JSON.stringify(colorManagement)
++      const expectColour = () => {
++        expect(
++          JSON.stringify((disk.project!.metadata as Project['metadata']).colorManagement),
++        ).toBe(literal)
++        expect(
++          JSON.stringify(useProjectStore.getState().currentProject!.metadata.colorManagement),
++        ).toBe(literal)
++      }
++      await change(updates, timing)
++      expectColour()
++      useTimelineCommandStore.getState().undo()
++      await settle()
++      expectColour()
++      expect(stored()).toEqual({ fps: 30, spans: [[30, 45]] })
++      useTimelineCommandStore.getState().redo()
++      await settle()
++      expectColour()
++      await useTimelineStore.getState().saveTimeline('project-1')
++      useProjectStore.setState({ currentProject: null })
++      await useProjectStore.getState().loadProject('project-1')
++      expectColour()
++      expect(useProjectStore.getState().currentProject!.metadata).toMatchObject(updates)
++    },
++  )
++
+   it('refuses a rate change on content without a policy, changing nothing', async () => {
+     await expect(change({ fps: 60 })).rejects.toBeInstanceOf(RetimePolicyRequiredError)
+     expect(disk.writes).toEqual([])
+@@ -183,7 +230,14 @@
+       id: 'seq-a',
+       name: 'seq-a',
+       tracks: [makeTimelineTrack({ id: 'seq-a-v1', name: 'V1', kind: 'video', order: 0 })],
+-      items: [makeTimelineVideoItem({ id: 'a-clip', trackId: 'seq-a-v1', from: 30, durationInFrames: 30 })],
++      items: [
++        makeTimelineVideoItem({
++          id: 'a-clip',
++          trackId: 'seq-a-v1',
++          from: 30,
++          durationInFrames: 30,
++        }),
++      ],
+       transitions: [],
+       keyframes: [],
+       fps: 30,
+@@ -197,11 +251,15 @@
+     await change({ fps: 60 }, 'keep-time')
+ 
+     expect(getActiveTabId(useCompositionNavigationStore.getState().breadcrumbs)).toBeNull()
+-    expect(useItemsStore.getState().items.map((item) => [item.id, item.from, item.durationInFrames])).toEqual([
+-      ['main-clip', 60, 90],
++    expect(
++      useItemsStore.getState().items.map((item) => [item.id, item.from, item.durationInFrames]),
++    ).toEqual([['main-clip', 60, 90]])
++    const sequence = useCompositionsStore
++      .getState()
++      .compositions.find((entry) => entry.id === 'seq-a')!
++    expect([sequence.fps, sequence.items[0]!.from, sequence.items[0]!.durationInFrames]).toEqual([
++      30, 30, 30,
+     ])
+-    const sequence = useCompositionsStore.getState().compositions.find((entry) => entry.id === 'seq-a')!
+-    expect([sequence.fps, sequence.items[0]!.from, sequence.items[0]!.durationInFrames]).toEqual([30, 30, 30])
+   })
+ 
+   it('refuses a rate with no exact reading before switching timelines or writing', async () => {
+--- a/src/features/export/utils/project-color.test.ts
++++ b/src/features/export/utils/project-color.test.ts
+@@ -1,6 +1,7 @@
+ // @vitest-environment node
+ import { describe, expect, it } from 'vite-plus/test'
+ import type { TimelineTrack } from '@/types/timeline'
++import { resolveColorManagement } from '@/shared/graphics/color/managed-color'
+ import { deriveSourceWorkingRange } from './project-color'
+ 
+ const track = (items: unknown[]): TimelineTrack =>
+@@ -49,6 +50,24 @@
+     )
+   })
+ 
++  it.each(['pq', 'hlg'] as const)(
++    'only placed %s media promotes SDR metadata, including a nested composition',
++    (colorTransfer) => {
++      const getImported = (id: string) => (id === 'imported' ? { colorTransfer } : undefined)
++      expect(deriveSourceWorkingRange([], getImported)).toBe('sdr')
++      const nested = { child: { items: [{ type: 'video', mediaId: 'imported' }] } }
++      const placed = [track([{ type: 'composition', compositionId: 'child' }])]
++      const sourceRange = deriveSourceWorkingRange(placed, getImported, nested as never)
++      expect(sourceRange).toBe('hdr')
++      const metadata = { workingRange: 'sdr' as const, referenceWhiteNits: 217 }
++      const literal = JSON.stringify(metadata)
++      expect(resolveColorManagement(metadata, sourceRange).workingRange).toBe('hdr')
++      expect(JSON.stringify(metadata)).toBe(literal)
++      // Removing placement leaves the imported library source available, but no HDR graph source.
++      expect(deriveSourceWorkingRange([], getImported, nested as never)).toBe('sdr')
++    },
++  )
++
+   it('looks inside nested compositions, once each, without looping', () => {
+     const compositionById = {
+       a: { items: [{ type: 'composition', compositionId: 'b' }] },
+--- a/src/i18n/locales/partials/en/projects.json
++++ b/src/i18n/locales/partials/en/projects.json
+@@ -74,6 +74,8 @@
+     },
+     "form": {
+       "createTitle": "Create New Project",
++      "colorPolicyTitle": "Colour policy",
++      "colorPolicy": "Changing canvas size or frame rate preserves existing colour settings. Adding PQ or HLG media to the timeline, including inside nested compositions, makes the project HDR. Importing media alone does not. Export colour is chosen separately.",
+       "editTitle": "Edit Project",
+       "createSubtitle": "Set up your video editing workspace",
+       "editSubtitle": "Update your project settings",

@@ -1,0 +1,196 @@
+import {
+  AssetTypeEnum,
+  AssetVisibility,
+  getAlbumTree,
+  getAllPeople,
+  getAssetStatistics,
+  getBestPhotos,
+  getTimeBuckets,
+  searchAssets,
+  searchAssetStatistics,
+  searchFacets,
+  SearchFacetField,
+  searchMemories,
+} from '@frameleaf/sdk';
+import { eventManager } from '$lib/managers/event-manager.svelte';
+import { load } from './+page';
+
+vi.mock('@frameleaf/sdk', async (original) => {
+  const sdk = await original<typeof import('@frameleaf/sdk')>();
+  return {
+    ...sdk,
+    getAllPeople: vi.fn(async () => ({ people: [], total: 0, hidden: 0 })),
+    getAlbumTree: vi.fn(async () => ({ albums: [], collections: [], spaces: [] })),
+    getAssetStatistics: vi.fn(async () => ({ images: 0, videos: 0, total: 0 })),
+    getTimeBuckets: vi.fn(async () => [
+      { timeBucket: '2026-08-01', count: 3 },
+      { timeBucket: '2026-07-01', count: 2 },
+    ]),
+    searchAssetStatistics: vi.fn(async () => ({ total: 0 })),
+    getBestPhotos: vi.fn(async () => ({ total: 0, count: 0, items: [], nextPage: null })),
+    searchFacets: vi.fn(async () => ({
+      total: 2,
+      facets: [{ fieldName: 'city', counts: [{ value: 'Paris', count: 2, coverAssetId: 'newest' }] }],
+    })),
+    searchAssets: vi.fn(async () => ({ assets: { items: [] }, albums: { items: [] } })),
+    getVisitedLandmarks: vi.fn(async () => []),
+    searchMemories: vi.fn(async () => []),
+    memoriesStatistics: vi.fn(async () => ({ total: 0 })),
+  };
+});
+vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
+vi.mock('$lib/utils/i18n', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/i18n')>()),
+  getFormatter: async () => (key: string) => key,
+}));
+
+const open = () => load({ url: new URL('https://example.test/explore') } as never);
+
+/**
+ * B1 (FL-50 review): Explore's counts and covers are taken in the scope of the search each card
+ * opens. That search is flat, and the search session sends every flat search with Timeline
+ * visibility, so archived, Locked and Live Photo video parts are never counted or covered.
+ */
+describe('the Explore loader', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    eventManager.emit('AuthLogout');
+  });
+
+  it('asks once more for the tags when the busiest ones are mostly not things (FL-707 item 15)', async () => {
+    const codes = Array.from({ length: 30 }, (_, index) => ({
+      value: `code-${index}`,
+      label: `CODE${index}`,
+      count: 40,
+    }));
+    vi.mocked(searchFacets)
+      .mockResolvedValueOnce({ total: 50, facets: [{ fieldName: SearchFacetField.Tags, counts: codes }] })
+      .mockResolvedValueOnce({
+        total: 50,
+        facets: [
+          { fieldName: SearchFacetField.Tags, counts: [...codes, { value: 'beach', label: 'beach', count: 3 }] },
+        ],
+      });
+
+    const data = await open();
+
+    expect(searchFacets).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(searchFacets).mock.calls[1][0].searchFacetsDto).toMatchObject({
+      visibility: AssetVisibility.Timeline,
+      facets: [SearchFacetField.Tags],
+      facetLimit: 100,
+    });
+    expect(data.things.map(({ label }) => label)).toEqual(['beach']);
+  });
+
+  it('counts and covers People, Places and Things with Timeline visibility, in one request', async () => {
+    const data = await open();
+
+    expect(searchFacets).toHaveBeenCalledOnce();
+    expect(vi.mocked(searchFacets).mock.calls[0][0].searchFacetsDto).toMatchObject({
+      visibility: AssetVisibility.Timeline,
+      facets: [SearchFacetField.People, SearchFacetField.City, SearchFacetField.Tags],
+      facetCovers: true,
+    });
+    expect(data.places).toEqual([expect.objectContaining({ label: 'Paris', count: 2, coverAssetId: 'newest' })]);
+    expect(data.libraryTotal).toBe(2);
+  });
+
+  it('counts the Photos and Videos shortcuts in the Timeline scope their search opens', async () => {
+    await open();
+
+    const bodies = vi.mocked(searchAssetStatistics).mock.calls.map(([{ statisticsSearchDto }]) => statisticsSearchDto);
+    for (const type of [AssetTypeEnum.Image, AssetTypeEnum.Video]) {
+      expect(bodies).toContainEqual({ type, visibility: AssetVisibility.Timeline });
+    }
+  });
+
+  it('counts Favorites with the Favorites timeline query, so a stack counts once as it shows', async () => {
+    const data = await open();
+
+    expect(getTimeBuckets).toHaveBeenCalledWith({ isFavorite: true, withStacked: true });
+    expect(getAssetStatistics).not.toHaveBeenCalled();
+    expect(data.shortcutCounts.favorites).toBe(5);
+  });
+
+  describe('the Best Photos card', () => {
+    const ranked = { id: 'ranked-first' } as never;
+    const scored = { id: 'scored-first' } as never;
+
+    it('borrows its picture from the top of the Best Photos page when nothing reaches the threshold', async () => {
+      vi.mocked(getBestPhotos)
+        .mockResolvedValueOnce({ total: 0, count: 0, items: [], nextPage: null })
+        .mockResolvedValueOnce({ total: 204, count: 1, items: [ranked], nextPage: '2' });
+
+      const data = await open();
+
+      // The same ranking the Best Photos page opens with: no threshold.
+      expect(vi.mocked(getBestPhotos).mock.calls.map(([query]) => query)).toEqual([
+        { minScore: 0.9, limit: 1 },
+        { limit: 1 },
+      ]);
+      // The picture is borrowed; the count is still the threshold's own.
+      expect(data.bestPhotosPreview).toEqual({ total: 0, cover: ranked });
+    });
+
+    it('asks once when an item reaches the threshold', async () => {
+      vi.mocked(getBestPhotos).mockResolvedValueOnce({ total: 7, count: 1, items: [scored], nextPage: '2' });
+
+      const data = await open();
+
+      expect(getBestPhotos).toHaveBeenCalledOnce();
+      expect(data.bestPhotosPreview).toEqual({ total: 7, cover: scored });
+    });
+
+    it('has no picture when nothing is ranked at all, or the ranking cannot be read', async () => {
+      expect((await open()).bestPhotosPreview).toEqual({ total: 0, cover: null });
+
+      vi.mocked(getBestPhotos)
+        .mockResolvedValueOnce({ total: 0, count: 0, items: [], nextPage: null })
+        .mockRejectedValueOnce(new Error('offline'));
+      expect((await open()).bestPhotosPreview).toEqual({ total: 0, cover: null });
+
+      vi.mocked(getBestPhotos).mockRejectedValueOnce(new Error('offline'));
+      expect((await open()).bestPhotosPreview).toEqual({ total: null, cover: null });
+    });
+  });
+
+  it('still opens when a section fails, and says which sections could not load', async () => {
+    vi.mocked(getAllPeople).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(getAlbumTree).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(searchFacets).mockRejectedValueOnce(new Error('offline'));
+
+    const data = await open();
+
+    expect(data.failed).toEqual({
+      people: true,
+      places: true,
+      landmarks: false,
+      memories: false,
+      albums: true,
+      recents: false,
+    });
+    expect(data.peopleCards).toEqual([]);
+    expect(data.albums).toEqual([]);
+    expect(data.libraryTotal).toBeNull();
+    expect(data.shortcutCounts.favorites).toBe(5);
+  });
+
+  it('takes recent captures with Timeline visibility and makes no per-card cover search', async () => {
+    await open();
+
+    expect(searchAssets).toHaveBeenCalledOnce();
+    expect(vi.mocked(searchAssets).mock.calls[0][0].metadataSearchDto).toMatchObject({
+      visibility: AssetVisibility.Timeline,
+    });
+  });
+});
+
+it('loads memories once using the current preferences instead of superseded filters and another page', async () => {
+  vi.clearAllMocks();
+  eventManager.emit('AuthLogout');
+  const data = await open();
+  expect(data.failed.memories).toBe(false);
+  expect(searchMemories).toHaveBeenCalledOnce();
+  expect(vi.mocked(searchMemories).mock.calls[0][0]).toMatchObject({ page: 1 });
+});

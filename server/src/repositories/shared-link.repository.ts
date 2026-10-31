@@ -1,0 +1,363 @@
+import { Injectable } from '@nestjs/common';
+import {
+  type ExpressionBuilder,
+  type Insertable,
+  type Kysely,
+  type Selectable,
+  type ShallowDehydrateObject,
+  type Updateable,
+  sql,
+} from 'kysely';
+import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
+import { omit } from 'lodash-es';
+import { InjectKysely } from 'nestjs-kysely';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { Album, columns } from 'src/database.js';
+import { ChunkedArray, DATABASE_PARAMETER_CHUNK_SIZE, DummyValue, GenerateSql } from 'src/decorators.js';
+import { AlbumUserRole, SharedLinkType } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
+import { withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked } from 'src/utils/locked.js';
+
+export type SharedLinkSearchOptions = HiddenContentQueryOptions & {
+  userId: string;
+  id?: string;
+  albumId?: string;
+};
+
+type SharedLinkPrivacyOptions = HiddenContentQueryOptions;
+
+/**
+ * The assets a shared link shows. Locked media never appears in a shared link (owner decision,
+ * September 22, 2026), not even to the link's creator: a link is a shared context, and an asset moved
+ * into the Locked folder after it was linked drops out of the link's views here.
+ */
+const withSharedAssets = (eb: ExpressionBuilder<DB, 'shared_link'>, options: SharedLinkPrivacyOptions = {}) => {
+  return eb
+    .selectFrom('shared_link_asset')
+    .whereRef('shared_link.id', '=', 'shared_link_asset.sharedLinkId')
+    .innerJoin('asset', 'asset.id', 'shared_link_asset.assetId')
+    .where('asset.deletedAt', 'is', null)
+    .where(isNotLocked('asset'))
+    .$call((qb) => withHiddenContentFilter(qb, options))
+    .selectAll('asset')
+    .orderBy('asset.fileCreatedAt', 'asc');
+};
+
+/** How many items a link's cover shows. */
+const COVER_ASSETS = 4;
+
+/** An album link's items, by the rules of `withSharedAssets`: nothing deleted, Locked or hidden from this viewer. */
+const withSharedAlbumAssets = (eb: ExpressionBuilder<DB, 'shared_link'>, options: SharedLinkPrivacyOptions = {}) => {
+  return eb
+    .selectFrom('album_asset')
+    .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+    .whereRef('album_asset.albumId', '=', 'shared_link.albumId')
+    .where('asset.deletedAt', 'is', null)
+    .where(isNotLocked('asset'))
+    .$call((qb) => withHiddenContentFilter(qb, options));
+};
+
+export const withExifInfo = (eb: ExpressionBuilder<DB, 'asset'>) => {
+  return eb
+    .selectFrom('asset_exif')
+    .select(columns.exif)
+    .whereRef('asset_exif.assetId', '=', 'asset.id')
+    .as('exifInfo');
+};
+
+const withAlbumOwner = (eb: ExpressionBuilder<DB, 'album'>) => {
+  return eb
+    .selectFrom('user')
+    .select(columns.user)
+    .where((eb) =>
+      eb.exists(
+        eb
+          .selectFrom('album_user')
+          .where('album_user.role', '=', sql.lit(AlbumUserRole.Owner))
+          .whereRef('album_user.albumId', '=', 'album.id')
+          .whereRef('album_user.userId', '=', 'user.id'),
+      ),
+    )
+    .where('user.deletedAt', 'is', null)
+    .as('owner');
+};
+
+/**
+ * The link owner's display name, the only detail of the owner a link's viewers are told (FL-83,
+ * prototype "Shared by …"). Selecting the name alone keeps the owner's email, id lookups and profile
+ * image path out of what an anonymous visitor receives.
+ */
+const withSharedLinkOwner = (eb: ExpressionBuilder<DB, 'shared_link'>) => {
+  return jsonObjectFrom(
+    eb
+      .selectFrom('user')
+      .select('user.name')
+      .whereRef('user.id', '=', 'shared_link.userId')
+      .where('user.deletedAt', 'is', null),
+  ).as('owner');
+};
+
+const withSharedLinkAlbum = (eb: ExpressionBuilder<DB, 'shared_link'>) => {
+  return eb
+    .selectFrom('album')
+    .selectAll('album')
+    .whereRef('album.id', '=', 'shared_link.albumId')
+    .where('album.deletedAt', 'is', null);
+};
+
+@Injectable()
+export class SharedLinkRepository {
+  constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, { excludeNsfw: true }] })
+  get(userId: string, id: string, options: SharedLinkPrivacyOptions = {}) {
+    return this.db
+      .selectFrom('shared_link')
+      .selectAll('shared_link')
+      .select((eb) =>
+        jsonArrayFrom(
+          withSharedAssets(eb, options)
+            .innerJoinLateral(withExifInfo, (join) => join.onTrue())
+            .select((eb) => eb.fn.toJson('exifInfo').as('exifInfo')),
+        ).as('assets'),
+      )
+      .select(withSharedLinkOwner)
+      .leftJoinLateral(
+        (eb) =>
+          withSharedLinkAlbum(eb)
+            .leftJoin('album_asset', 'album_asset.albumId', 'album.id')
+            .leftJoinLateral(
+              (eb) =>
+                eb
+                  .selectFrom('asset')
+                  .selectAll('asset')
+                  .whereRef('album_asset.assetId', '=', 'asset.id')
+                  .where('asset.deletedAt', 'is', null)
+                  // an album's Locked members never show through its shared link, see withSharedAssets
+                  .where(isNotLocked('asset'))
+                  .$call((qb) => withHiddenContentFilter(qb, options))
+                  .innerJoinLateral(withExifInfo, (join) => join.onTrue())
+                  .select((eb) => eb.fn.toJson(eb.table('exifInfo')).as('exifInfo'))
+                  .orderBy('asset.fileCreatedAt', 'asc')
+                  .as('assets'),
+              (join) => join.onTrue(),
+            )
+            .innerJoinLateral(withAlbumOwner, (join) => join.onTrue())
+            .select((eb) =>
+              eb.fn
+                .coalesce(
+                  eb.fn
+                    .jsonAgg('assets')
+                    .orderBy('assets.fileCreatedAt', 'asc')
+                    .filterWhere('assets.id', 'is not', null),
+
+                  sql`'[]'`,
+                )
+                .as('assets'),
+            )
+            .select((eb) => eb.fn.toJson('owner').as('owner'))
+            .groupBy(['album.id', sql`"owner".*`])
+            .as('album'),
+        (join) => join.onTrue(),
+      )
+      .select((eb) => eb.fn.toJson(eb.table('album')).$castTo<ShallowDehydrateObject<Album> | null>().as('album'))
+      .where('shared_link.id', '=', id)
+      .where('shared_link.userId', '=', userId)
+      .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]))
+      .orderBy('shared_link.createdAt', 'desc')
+      .executeTakeFirst();
+  }
+
+  @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] })
+  getAll({ userId, id, albumId, ...options }: SharedLinkSearchOptions) {
+    return (
+      this.db
+        .selectFrom('shared_link')
+        .selectAll('shared_link')
+        .select((eb) => jsonArrayFrom(withSharedAssets(eb, options).limit(COVER_ASSETS)).as('assets'))
+        // What a card shows of the link without loading its contents: how much it shares, and an album's cover items
+        // (the cover its owner chose, then the newest).
+        .select((eb) =>
+          eb
+            .case()
+            .when('shared_link.type', '=', SharedLinkType.Album)
+            .then(withSharedAlbumAssets(eb, options).select(sql<number>`count(*)::int`.as('count')))
+            .else(
+              withSharedAssets(eb, options)
+                .clearSelect()
+                .clearOrderBy()
+                .select(sql<number>`count(*)::int`.as('count')),
+            )
+            .end()
+            .as('assetCount'),
+        )
+        .select((eb) =>
+          jsonArrayFrom(
+            withSharedAlbumAssets(eb, options)
+              .innerJoin('album as cover_album', 'cover_album.id', 'album_asset.albumId')
+              .select('asset.id')
+              .orderBy((eb) => eb('asset.id', '=', eb.ref('cover_album.albumThumbnailAssetId')), 'desc')
+              .orderBy('asset.fileCreatedAt', 'desc')
+              .limit(COVER_ASSETS),
+          ).as('coverAssets'),
+        )
+        .where('shared_link.userId', '=', userId)
+        .leftJoinLateral(
+          (eb) =>
+            withSharedLinkAlbum(eb)
+              .innerJoinLateral(withAlbumOwner, (join) => join.onTrue())
+              .select((eb) => eb.fn.toJson('owner').as('owner'))
+              .as('album'),
+          (join) => join.onTrue(),
+        )
+        .select((eb) => eb.fn.toJson('album').$castTo<ShallowDehydrateObject<Album> | null>().as('album'))
+        .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]))
+        .$if(!!albumId, (eb) => eb.where('shared_link.albumId', '=', albumId!))
+        .$if(!!id, (eb) => eb.where('shared_link.id', '=', id!))
+        .orderBy('shared_link.createdAt', 'desc')
+        .execute()
+    );
+  }
+
+  @GenerateSql({ params: [DummyValue.BUFFER] })
+  getByKey(key: Buffer) {
+    return this.authBuilder().where('shared_link.key', '=', key).executeTakeFirst();
+  }
+
+  @GenerateSql({ params: [DummyValue.BUFFER] })
+  getBySlug(slug: string) {
+    return this.authBuilder().where('shared_link.slug', '=', slug).executeTakeFirst();
+  }
+
+  private authBuilder() {
+    return this.db
+      .selectFrom('shared_link')
+      .leftJoin('album', 'album.id', 'shared_link.albumId')
+      .where('album.deletedAt', 'is', null)
+      .select((eb) => [
+        'shared_link.id',
+        'shared_link.userId',
+        'shared_link.albumId',
+        'shared_link.expiresAt',
+        'shared_link.showExif',
+        'shared_link.allowUpload',
+        'shared_link.allowDownload',
+        'shared_link.password',
+        jsonObjectFrom(
+          eb
+            .selectFrom('user')
+            .select(columns.authUser)
+            .whereRef('user.id', '=', 'shared_link.userId')
+            .where('user.deletedAt', 'is', null),
+        ).as('user'),
+      ])
+      .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]));
+  }
+
+  async create(entity: Insertable<SharedLinkTable> & { assetIds?: string[] }) {
+    const { id } = await this.db
+      .insertInto('shared_link')
+      .values(omit(entity, 'assetIds'))
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    if (entity.assetIds && entity.assetIds.length > 0) {
+      await this.db
+        .insertInto('shared_link_asset')
+        .values(entity.assetIds!.map((assetId) => ({ assetId, sharedLinkId: id })))
+        .execute();
+    }
+
+    return this.getSharedLinks(id);
+  }
+
+  async update(entity: Updateable<SharedLinkTable> & { id: string; assetIds?: string[] }) {
+    const { id } = await this.db
+      .updateTable('shared_link')
+      // callers spread a link loaded by `get`, whose relations (including the read-only `owner` name) are not columns
+      .set(omit(entity, 'assets', 'album', 'owner', 'assetIds'))
+      .where('shared_link.id', '=', entity.id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    if (entity.assetIds && entity.assetIds.length > 0) {
+      await this.db
+        .insertInto('shared_link_asset')
+        .values(entity.assetIds!.map((assetId) => ({ assetId, sharedLinkId: id })))
+        .execute();
+    }
+
+    return this.getSharedLinks(id);
+  }
+
+  /**
+   * FL-161: replace a link's plaintext password with its hash, only while it still holds exactly that
+   * plaintext, so two first unlocks at once (or an edit meanwhile) never overwrite each other.
+   */
+  async replaceLegacyPassword(id: string, legacy: string, hashed: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable('shared_link')
+      .set({ password: hashed })
+      .where('shared_link.id', '=', id)
+      .where('shared_link.password', '=', legacy)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.db.deleteFrom('shared_link').where('shared_link.id', '=', id).execute();
+  }
+
+  // two parameters per row: a chunk of DATABASE_PARAMETER_CHUNK_SIZE rows would exceed PostgreSQL's limit
+  @ChunkedArray({ paramIndex: 1, chunkSize: Math.floor(DATABASE_PARAMETER_CHUNK_SIZE / 2) })
+  async addAssets(id: string, assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return [];
+    }
+
+    return await this.db
+      .insertInto('shared_link_asset')
+      .values(assetIds.map((assetId) => ({ assetId, sharedLinkId: id })))
+      .onConflict((oc) => oc.doNothing())
+      .returning(['shared_link_asset.assetId'])
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  private getSharedLinks(id: string) {
+    return this.db
+      .selectFrom('shared_link')
+      .selectAll('shared_link')
+      .where('shared_link.id', '=', id)
+      .leftJoin('shared_link_asset', 'shared_link_asset.sharedLinkId', 'shared_link.id')
+      .leftJoinLateral(
+        (eb) =>
+          eb
+            .selectFrom('asset')
+            .whereRef('asset.id', '=', 'shared_link_asset.assetId')
+            // what create and update hand back follows the same rule as every other read of a link:
+            // no Locked media, including a partner's item that moved into their Locked folder
+            .where(isNotLocked('asset'))
+            .selectAll('asset')
+            .innerJoinLateral(withExifInfo, (join) => join.onTrue())
+            .as('assets'),
+        (join) => join.onTrue(),
+      )
+      .select((eb) =>
+        eb.fn
+          .coalesce(eb.fn.jsonAgg('assets').filterWhere('assets.id', 'is not', null), sql`'[]'`)
+          .$castTo<
+            (ShallowDehydrateObject<Selectable<AssetTable>> & {
+              exifInfo: ShallowDehydrateObject<Selectable<AssetExifTable>>;
+            })[]
+          >()
+          .as('assets'),
+      )
+      .groupBy('shared_link.id')
+      .executeTakeFirstOrThrow();
+  }
+}

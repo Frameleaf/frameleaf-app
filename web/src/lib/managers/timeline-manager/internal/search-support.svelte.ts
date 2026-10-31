@@ -1,0 +1,196 @@
+import { AssetOrder, TimeBucketDateType, type AssetResponseDto } from '@frameleaf/sdk';
+import { getOrderingDate, plainDateTimeCompare, type TimelineYearMonth } from '$lib/utils/timeline-util';
+import { TimelineManager } from '../timeline-manager.svelte';
+import type { TimelineMonth } from '../timeline-month.svelte';
+import type { AssetDescriptor, Direction, TimelineAsset } from '../types';
+
+export async function getAssetWithOffset(
+  timelineManager: TimelineManager,
+  assetDescriptor: AssetDescriptor | AssetResponseDto,
+  interval: 'asset' | 'day' | 'month' | 'year' = 'asset',
+  direction: Direction,
+): Promise<TimelineAsset | undefined> {
+  const timelineMonth = await timelineManager.findTimelineMonthForAsset(assetDescriptor);
+  if (!timelineMonth) {
+    return;
+  }
+  const asset = timelineMonth.findAssetById(assetDescriptor);
+  if (!asset) {
+    return;
+  }
+
+  switch (interval) {
+    case 'asset': {
+      return getAssetByAssetOffset(timelineManager, asset, timelineMonth, direction);
+    }
+    case 'day': {
+      return getAssetByDayOffset(timelineManager, asset, timelineMonth, direction);
+    }
+    case 'month': {
+      return getAssetByMonthOffset(timelineManager, timelineMonth, direction);
+    }
+    case 'year': {
+      return getAssetByYearOffset(timelineManager, timelineMonth, direction);
+    }
+  }
+}
+
+export function findTimelineMonthForAsset(timelineManager: TimelineManager, id: string) {
+  for (const month of timelineManager.months) {
+    const asset = month.findAssetById({ id });
+    if (asset) {
+      return { timelineMonth: month, asset };
+    }
+  }
+}
+
+export function getTimelineMonthByDate(
+  timelineManager: TimelineManager,
+  targetYearMonth: TimelineYearMonth,
+): TimelineMonth | undefined {
+  return timelineManager.months.find(
+    (month) => month.yearMonth.year === targetYearMonth.year && month.yearMonth.month === targetYearMonth.month,
+  );
+}
+
+async function getAssetByAssetOffset(
+  timelineManager: TimelineManager,
+  asset: TimelineAsset,
+  timelineMonth: TimelineMonth,
+  direction: Direction,
+) {
+  const timelineDay = timelineMonth.findTimelineDayForAsset(asset);
+  for await (const targetAsset of timelineManager.assetsIterator({
+    startTimelineMonth: timelineMonth,
+    startTimelineDay: timelineDay,
+    startAsset: asset,
+    direction,
+  })) {
+    if (asset.id !== targetAsset.id) {
+      return targetAsset;
+    }
+  }
+}
+
+async function getAssetByDayOffset(
+  timelineManager: TimelineManager,
+  asset: TimelineAsset,
+  timelineMonth: TimelineMonth,
+  direction: Direction,
+) {
+  const dateType = timelineManager.getDateType();
+  const startDate = getOrderingDate(asset, dateType);
+  const timelineDay = timelineMonth.findTimelineDayForAsset(asset);
+  for await (const targetAsset of timelineManager.assetsIterator({
+    startTimelineMonth: timelineMonth,
+    startTimelineDay: timelineDay,
+    startAsset: asset,
+    direction,
+  })) {
+    const targetDate = getOrderingDate(targetAsset, dateType);
+    if (
+      targetDate.year !== startDate.year ||
+      targetDate.month !== startDate.month ||
+      targetDate.day !== startDate.day
+    ) {
+      return targetAsset;
+    }
+  }
+}
+
+async function getAssetByMonthOffset(timelineManager: TimelineManager, month: TimelineMonth, direction: Direction) {
+  for (const targetMonth of timelineManager.timelineMonthIterator({ startTimelineMonth: month, direction })) {
+    if (targetMonth.yearMonth.year !== month.yearMonth.year || targetMonth.yearMonth.month !== month.yearMonth.month) {
+      const { value, done } = await timelineManager
+        .assetsIterator({ startTimelineMonth: targetMonth, direction })
+        .next();
+      return done ? undefined : value;
+    }
+  }
+}
+
+async function getAssetByYearOffset(timelineManager: TimelineManager, month: TimelineMonth, direction: Direction) {
+  for (const targetMonth of timelineManager.timelineMonthIterator({ startTimelineMonth: month, direction })) {
+    if (targetMonth.yearMonth.year !== month.yearMonth.year) {
+      const { value, done } = await timelineManager
+        .assetsIterator({ startTimelineMonth: targetMonth, direction })
+        .next();
+      return done ? undefined : value;
+    }
+  }
+}
+
+/**
+ * Compares two assets by their position in the timeline iteration order.
+ *
+ * Months and days are grouped/ordered by the ordering date (localDateTime for
+ * "taken", createdAt for "added"), but assets *within a day* are ordered by
+ * fileCreatedAt. The composite key below mirrors that exact layout, so a
+ * descending timeline iterates newest-first and an ascending one oldest-first.
+ *
+ * Returns a negative number when `a` is reached before `b` while iterating,
+ * positive when after, and zero when they share a position.
+ */
+function compareTimelineOrder(order: AssetOrder, dateType: TimeBucketDateType, a: TimelineAsset, b: TimelineAsset) {
+  const aDate = getOrderingDate(a, dateType);
+  const bDate = getOrderingDate(b, dateType);
+  const diff =
+    aDate.year - bDate.year ||
+    aDate.month - bDate.month ||
+    aDate.day - bDate.day ||
+    plainDateTimeCompare(true, a.fileCreatedAt, b.fileCreatedAt);
+  return order === AssetOrder.Desc ? -diff : diff;
+}
+
+export async function retrieveRange(
+  timelineManager: TimelineManager,
+  start: AssetDescriptor,
+  end: AssetDescriptor,
+  /** A flat order (S-15) compares positions, not dates. */
+  position?: (asset: TimelineAsset) => number,
+) {
+  let { asset: startAsset, timelineMonth: startTimelineMonth } =
+    findTimelineMonthForAsset(timelineManager, start.id) ?? {};
+  if (!startTimelineMonth || !startAsset) {
+    return [];
+  }
+  let { asset: endAsset, timelineMonth: endTimelineMonth } = findTimelineMonthForAsset(timelineManager, end.id) ?? {};
+  if (!endTimelineMonth || !endAsset) {
+    return [];
+  }
+  const assetOrder: AssetOrder = timelineManager.getAssetOrder();
+  const dateType: TimeBucketDateType = timelineManager.getDateType();
+  // Ensure startAsset is the endpoint the iterator reaches first. The decision
+  // must follow the real iteration order (ordering date by day, then
+  // fileCreatedAt within a day); comparing localDateTime alone is wrong when the
+  // two endpoints share a day but have different UTC offsets, and would make the
+  // loop below run to the end of the timeline and select every asset.
+  const compare = position
+    ? (a: TimelineAsset, b: TimelineAsset) => position(a) - position(b)
+    : (a: TimelineAsset, b: TimelineAsset) => compareTimelineOrder(assetOrder, dateType, a, b);
+  if (compare(startAsset, endAsset) > 0) {
+    [startAsset, endAsset] = [endAsset, startAsset];
+    // eslint-disable-next-line no-useless-assignment
+    [startTimelineMonth, endTimelineMonth] = [endTimelineMonth, startTimelineMonth];
+  }
+
+  const range: TimelineAsset[] = [];
+  const startTimelineDay = startTimelineMonth.findTimelineDayForAsset(startAsset);
+  for await (const targetAsset of timelineManager.assetsIterator({
+    startTimelineMonth,
+    startTimelineDay,
+    startAsset,
+  })) {
+    // Safety net: stop if we've iterated past where endAsset should be without
+    // matching its id (e.g. an exact-timestamp tie), instead of selecting the
+    // remainder of the library.
+    if (compare(targetAsset, endAsset) > 0) {
+      break;
+    }
+    range.push(targetAsset);
+    if (targetAsset.id === endAsset.id) {
+      break;
+    }
+  }
+  return range;
+}
