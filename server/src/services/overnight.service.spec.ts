@@ -230,6 +230,25 @@ describe(OvernightService.name, () => {
     expect(stored.state?.run).toBeNull();
   });
 
+  it('after the overnight job ended, waits for a tidy-up job that is still running', async () => {
+    const { sut, mocks, stored } = setup();
+    // inside the overnight job: that job plus one tidy-up job queued behind it
+    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts(1, 1)));
+    await sut.handleStart();
+    expect(stored.state?.run).toMatchObject({ step: 'cleanup', begunAt: expect.any(String) });
+
+    // the overnight job has ended; the one active BackgroundTask job is the tidy-up
+    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts(1)));
+    await sut.move();
+    expect(stored.state?.run?.step).toBe('cleanup');
+    expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+
+    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts()));
+    await sut.move();
+    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+    expect(stored.state?.nights[0].results.cleanup).toBe('done');
+  });
+
   it('leaves out a step that is not set up', async () => {
     const { sut, mocks, stored } = setup();
     mocks.icloud.hasConnections.mockResolvedValue(false);

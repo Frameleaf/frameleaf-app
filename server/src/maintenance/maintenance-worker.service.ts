@@ -52,6 +52,8 @@ export class MaintenanceWorkerService {
    * restore ends maintenance, which restarts the worker), so no other action can start meanwhile.
    */
   #restoring = false;
+  /** An End request is being checked or run; a restore must not start under it (taken synchronously). */
+  #ending = false;
   #status: MaintenanceStatusResponseDto = {
     active: true,
     action: MaintenanceAction.Start,
@@ -308,8 +310,19 @@ export class MaintenanceWorkerService {
       throw new ConflictException('A database restore is running. Wait until it finishes or fails.');
     }
     if (action.action === MaintenanceAction.RestoreDatabase) {
+      if (this.#ending) {
+        throw new ConflictException('This server is reopening. Wait until it restarts.');
+      }
       this.#restoring = true;
     }
+    if (action.action === MaintenanceAction.End) {
+      this.#ending = true;
+    }
+  }
+
+  /** Releases an End reservation whose check or action failed, so a restore can be started again. */
+  releaseEnd(): void {
+    this.#ending = false;
   }
 
   async setAction(action: SetMaintenanceModeDto) {
@@ -452,9 +465,14 @@ export class MaintenanceWorkerService {
     });
   }
 
-  private async endMaintenance(): Promise<void> {
+  /** Refuses End while a staged Buddy recovery is unfinished. The controller checks it before answering. */
+  async assertCanEnd(): Promise<void> {
     if (await buddyMaintenanceState(this.configRepository))
       throw new ConflictException('Finish the staged Buddy recovery before reopening this server.');
+  }
+
+  private async endMaintenance(): Promise<void> {
+    await this.assertCanEnd();
     const state: MaintenanceModeState = { isMaintenanceMode: false as const };
     await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, state);
 

@@ -93,6 +93,7 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
     claimNext: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockImplementation((value) => Promise.resolve({ ...value, id: operationId, status: 'queued' })),
     getForWorker: vi.fn().mockResolvedValue(operation),
+    listUnfinishedForProjects: vi.fn().mockResolvedValue([]),
     getForOwner: vi.fn().mockResolvedValue(operation),
     heartbeat: vi.fn().mockResolvedValue(true),
     reportProgress: vi.fn().mockResolvedValue(true),
@@ -108,6 +109,7 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
   const projects = {
     listGeneratedResources: vi.fn().mockResolvedValue([]),
     listImportDeclarations: vi.fn().mockResolvedValue([]),
+    getImport: vi.fn().mockResolvedValue(undefined),
   };
   const studio = {
     requireOwnedProject: vi.fn().mockResolvedValue({}),
@@ -125,6 +127,11 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
   };
   const resources = { resolveProjectResources: vi.fn().mockResolvedValue({ manifest }) };
   const imports = { upload: vi.fn().mockResolvedValue(kept) };
+  const publications = {
+    discover: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    cancel: vi.fn().mockResolvedValue({ status: 'cancelled' }),
+    release: vi.fn().mockResolvedValue(undefined),
+  };
   const users = { get: vi.fn().mockResolvedValue(owner.user) };
   const media = { probe: vi.fn().mockResolvedValue({ audioStreams: [{ index: 1 }], videoStreams: [] }) };
   const storage = {
@@ -165,6 +172,7 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
     studio as never,
     resources as never,
     imports as never,
+    publications as never,
     users as never,
     media as never,
     storage as never,
@@ -173,7 +181,20 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
     machineLearning as never,
     mlDestinations as never,
   );
-  return { sut, operation, operations, resources, imports, storage, audio, movies, machineLearning, query };
+  return {
+    sut,
+    operation,
+    operations,
+    projects,
+    resources,
+    imports,
+    publications,
+    storage,
+    audio,
+    movies,
+    machineLearning,
+    query,
+  };
 };
 
 describe(StudioVoiceCleanupService.name, () => {
@@ -244,6 +265,22 @@ describe(StudioVoiceCleanupService.name, () => {
   });
 
   describe('create', () => {
+    it('answers a request for a clean-up already queued or running with that job', async () => {
+      const { sut, operation, operations } = setup();
+      const running = '0195e2a0-0000-7000-8000-000000000040';
+      operations.listUnfinishedForProjects.mockResolvedValue([{ id: running }]);
+      operations.getForWorker.mockResolvedValue({ ...operation, id: running, status: MediaOperationStatus.Rendering });
+      await expect(
+        sut.create(owner, projectId, { clipId: 'voice', strength: 'standard', noises: ['background', 'wind'] }),
+      ).resolves.toEqual({ id: running, status: MediaOperationStatus.Rendering });
+      expect(operations.listUnfinishedForProjects).toHaveBeenCalledWith(
+        [projectId],
+        [MediaOperationKind.StudioTranscription],
+        owner.user.id,
+      );
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
     it('queues a Studio AI clip job told apart by its snapshot, without a new kind', async () => {
       const { sut, operations } = setup();
       await expect(
@@ -361,6 +398,168 @@ describe(StudioVoiceCleanupService.name, () => {
         expect.stringContaining(`studio-voice-cleanup/${operationId}/${claimToken}`),
         expect.anything(),
       );
+    });
+
+    it('names the same import on every attempt of the same clip and settings, and another for other settings', async () => {
+      const first = setup();
+      await first.sut.run({ operation: first.operation, claimToken });
+      const second = setup();
+      await second.sut.run({ operation: second.operation, claimToken });
+      const other = setup();
+      await other.sut.run({
+        operation: { ...other.operation, snapshot: { ...snapshot, strength: 'strong' } } as MediaOperation,
+        claimToken,
+      });
+      const [stable] = first.imports.upload.mock.calls[0].slice(2);
+      expect(stable).toMatch(/^[\da-f]{8}-[\da-f]{4}-8[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+      expect(second.imports.upload.mock.calls[0][2]).toBe(stable);
+      expect(other.imports.upload.mock.calls[0][2]).not.toBe(stable);
+    });
+
+    it('a retry after a failure supersedes the unfinished import and keeps one cleaned track', async () => {
+      const { sut, operation, imports, publications, query } = setup();
+      await sut.run({ operation, claimToken });
+      const stable = imports.upload.mock.calls[0][2] as string;
+      imports.upload.mockClear();
+      const unfinished = '0195e2a0-0000-4000-8000-000000000031';
+      const aborted = '0195e2a0-0000-4000-8000-000000000032';
+      const unrelated = '0195e2a0-0000-4000-8000-000000000033';
+      publications.discover
+        .mockResolvedValueOnce({
+          items: [
+            { publicationId: unfinished, importId: stable, state: 'preparing', cleanupPending: true },
+            { publicationId: unrelated, importId, state: 'preparing', cleanupPending: true },
+          ],
+          nextCursor: 'next',
+        })
+        .mockResolvedValueOnce({
+          items: [{ publicationId: aborted, importId: stable, state: 'aborted', cleanupPending: true }],
+          nextCursor: null,
+        });
+
+      await sut.run({ operation, claimToken });
+
+      const key = (publicationId: string) => ({ ownerId: owner.user.id, projectId, importId: stable, publicationId });
+      expect(publications.discover).toHaveBeenLastCalledWith(expect.anything(), projectId, 'next');
+      expect(publications.cancel).toHaveBeenCalledTimes(1);
+      expect(publications.cancel).toHaveBeenCalledWith(expect.anything(), key(unfinished));
+      expect(publications.release.mock.calls).toEqual([[key(unfinished)], [key(aborted)]]);
+      expect(imports.upload).toHaveBeenCalledTimes(1);
+      expect(imports.upload).toHaveBeenCalledWith(expect.anything(), projectId, stable, expect.anything());
+      expect(query.set).toHaveBeenLastCalledWith(
+        expect.objectContaining({ result: expect.objectContaining({ import: kept }) }),
+      );
+    });
+
+    it('a retry after a success reuses the finished import instead of keeping a second one', async () => {
+      const { sut, operation, projects, imports, publications, movies, query, operations } = setup();
+      projects.getImport.mockResolvedValue({ ...kept, createdAt: new Date(kept.createdAt), ownerId: owner.user.id });
+      publications.discover.mockResolvedValue({
+        items: [
+          {
+            publicationId: '0195e2a0-0000-4000-8000-000000000031',
+            importId,
+            state: 'published',
+            cleanupPending: false,
+          },
+        ],
+        nextCursor: null,
+      });
+
+      await sut.run({ operation, claimToken });
+
+      expect(projects.getImport).toHaveBeenCalledWith(projectId, expect.any(String));
+      expect(publications.cancel).not.toHaveBeenCalled();
+      expect(publications.release).not.toHaveBeenCalled();
+      expect(movies.encodeMusic).not.toHaveBeenCalled();
+      expect(imports.upload).not.toHaveBeenCalled();
+      expect(query.set).toHaveBeenCalledWith(
+        expect.objectContaining({ result: expect.objectContaining({ import: kept }) }),
+      );
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('queues a new job when the identical one settled after it was listed', async () => {
+      const { sut, operation, operations } = setup();
+      const settled = '0195e2a0-0000-7000-8000-000000000046';
+      operations.listUnfinishedForProjects.mockResolvedValue([{ id: settled }]);
+      operations.getForWorker.mockResolvedValue({ ...operation, id: settled, status: MediaOperationStatus.Cancelled });
+      await expect(
+        sut.create(owner, projectId, { clipId: 'voice', strength: 'standard', noises: ['background', 'wind'] }),
+      ).resolves.toEqual({ id: operationId, status: 'queued' });
+      expect(operations.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('queues a new job when the identical one is being cancelled', async () => {
+      const { sut, operation, operations } = setup();
+      const cancelling = '0195e2a0-0000-7000-8000-000000000045';
+      operations.listUnfinishedForProjects.mockResolvedValue([{ id: cancelling }]);
+      operations.getForWorker.mockResolvedValue({
+        ...operation,
+        id: cancelling,
+        status: MediaOperationStatus.Cancelling,
+      });
+      await expect(
+        sut.create(owner, projectId, { clipId: 'voice', strength: 'standard', noises: ['background', 'wind'] }),
+      ).resolves.toEqual({ id: operationId, status: 'queued' });
+      expect(operations.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('two identical jobs at once keep one track and never cancel the live one', async () => {
+      const { sut, operation, operations, projects, imports, publications, query } = setup();
+      const live = '0195e2a0-0000-7000-8000-000000000041';
+      const liveOperation = {
+        ...operation,
+        id: live,
+        claimToken: '0195e2a0-0000-7000-8000-000000000042',
+        claimExpiresAt: new Date(Date.now() + 60_000),
+      };
+      operations.listUnfinishedForProjects.mockResolvedValue([{ id: live }, { id: operationId }]);
+      operations.getForWorker.mockImplementation((id: string) =>
+        Promise.resolve(id === live ? liveOperation : operation),
+      );
+      publications.discover.mockResolvedValue({
+        items: [{ publicationId: '0195e2a0-0000-4000-8000-000000000043', importId, state: 'preparing' }],
+        nextCursor: null,
+      });
+
+      // The live job is publishing: this one keeps nothing, cancels nothing and is retried.
+      await sut.run({ operation, claimToken });
+      expect(publications.discover).not.toHaveBeenCalled();
+      expect(publications.cancel).not.toHaveBeenCalled();
+      expect(imports.upload).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ errorCode: 'studio_voice_cleanup_failed' }),
+        { retry: true },
+      );
+
+      // Its retry, after the live job finished, answers with that job's track.
+      operations.listUnfinishedForProjects.mockResolvedValue([{ id: operationId }]);
+      publications.discover.mockResolvedValue({ items: [], nextCursor: null });
+      projects.getImport.mockResolvedValue({ ...kept, createdAt: new Date(kept.createdAt), ownerId: owner.user.id });
+      await sut.run({ operation, claimToken });
+      expect(imports.upload).not.toHaveBeenCalled();
+      expect(query.set).toHaveBeenCalledWith(
+        expect.objectContaining({ result: expect.objectContaining({ import: kept }) }),
+      );
+    });
+
+    it('supersedes a twin whose claim has expired', async () => {
+      const { sut, operation, operations, imports } = setup();
+      const abandoned = '0195e2a0-0000-7000-8000-000000000044';
+      operations.listUnfinishedForProjects.mockResolvedValue([{ id: abandoned }]);
+      operations.getForWorker.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === abandoned
+            ? { ...operation, id: abandoned, claimToken: 'old', claimExpiresAt: new Date(Date.now() - 1000) }
+            : operation,
+        ),
+      );
+      await sut.run({ operation, claimToken });
+      expect(imports.upload).toHaveBeenCalledTimes(1);
+      expect(operations.fail).not.toHaveBeenCalled();
     });
 
     it('fails without a retry when the clip changed, and keeps nothing', async () => {

@@ -72,6 +72,7 @@ export class ChangeMediaLocationCommand extends CommandRunner {
     } catch (error) {
       console.error(error);
       console.error('Unable to update database file paths.');
+      process.exitCode = 1;
     }
   }
 }
