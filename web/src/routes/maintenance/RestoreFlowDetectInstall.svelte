@@ -50,8 +50,9 @@
       // a session change drops the result, not the flag, or reload and retry stay disabled
       if (alive) {
         loading = false;
-        // a first check dropped by a session change has nothing to show: offer the retry
-        if (!isCurrentSession() && !detectedInstall) {
+        // a check dropped by a session change: drop the earlier session's result too, and offer the retry
+        if (!isCurrentSession()) {
+          detectedInstall = undefined;
           failed = true;
         }
       }

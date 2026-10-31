@@ -134,6 +134,9 @@
       waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
     } catch {
       // The status then says what previews are, without a count.
+      if (current === waitingReads) {
+        waiting = 0;
+      }
     }
   };
 
