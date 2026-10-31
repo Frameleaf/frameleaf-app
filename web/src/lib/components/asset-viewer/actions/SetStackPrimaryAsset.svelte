@@ -2,6 +2,7 @@
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
 
   import { AssetAction } from '$lib/constants';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { updateStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { mdiImageCheckOutline } from '@mdi/js';
@@ -19,13 +20,17 @@
   let { stack, asset, onAction, text }: Props = $props();
 
   const handleSetPrimaryAsset = async () => {
+    // A request started before a sign-out or account switch must not act on, or sign out, the new session.
+    const isCurrentSession = authManager.captureSession();
     try {
       const updatedStack = await updateStack({ id: stack.id, stackUpdateDto: { primaryAssetId: asset.id } });
-      if (updatedStack) {
+      if (updatedStack && isCurrentSession()) {
         onAction({ type: AssetAction.SET_STACK_PRIMARY_ASSET, stack: updatedStack });
       }
     } catch (error) {
-      handleError(error, $t('errors.something_went_wrong'));
+      if (isCurrentSession()) {
+        handleError(error, $t('errors.something_went_wrong'));
+      }
     }
   };
 </script>

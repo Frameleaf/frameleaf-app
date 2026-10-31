@@ -150,7 +150,7 @@ describe('voice clean-up retry against the real publication journal', () => {
     await expect(supersede(importId)).resolves.toMatchObject({
       id: importId,
       checksum: done.file.declaration.checksum,
-      kind: 'audio',
+      contentType: 'audio/mp4',
     });
 
     expect(await journal.get(done.key)).toMatchObject({ state: 'published', cleanupPending: false });

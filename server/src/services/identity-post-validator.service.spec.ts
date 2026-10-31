@@ -40,6 +40,13 @@ describe(IdentityPostValidator.name, () => {
       });
     });
 
+    it('strips every name of a coordinated possessive after "in"', () => {
+      expect(sut.validate("The child is in Zoë and Chloé's arms.", [person('Anne')])).toEqual({
+        description: "Anne is in Someone and Someone's arms.",
+        flags: { hallucinatedNames: ['Zoë', 'Chloé'] },
+      });
+    });
+
     it('preserves the hyphenated spelling of a known name stored with a space', () => {
       const text = 'I saw Anne-Marie by the lake.';
       expect(sut.validate(text, [person('Anne Marie')])).toEqual({ description: text, flags: {} });

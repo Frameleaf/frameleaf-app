@@ -102,6 +102,9 @@ const isAfterSentenceEnd = (text: string, index: number): boolean => {
 /** Ends with the preposition "in" as a whole word, followed by whitespace. */
 const PLACE_PREPOSITION = /(?<![\p{L}\p{M}\p{N}_])in\s+$/iu;
 
+/** What follows a name that makes it a possessive: "'s", or ", Name and Name's" naming more owners. */
+const POSSESSIVE_AFTER_NAME = /^(?:\s*(?:,|and|&)\s*(?:and\s+)?\p{Lu}[\p{L}\p{M}'’-]*?)*['’]s(?![\p{L}\p{M}\p{N}_])/u;
+
 const escapeRegExp = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 export class IdentityPostValidator {
@@ -172,10 +175,10 @@ export class IdentityPostValidator {
         return match;
       }
       // A capitalised word right after "in" is a place ("in Zürich", "in Paris"), not a person,
-      // unless it is possessive ("in Anne's arms").
+      // unless it starts a possessive, alone or coordinated ("in Anne's arms", "in Zoë and Chloé's arms").
       if (
         PLACE_PREPOSITION.test(description.slice(0, offset)) &&
-        !/^['’]s(?![\p{L}\p{M}\p{N}_])/u.test(description.slice(offset + word.length))
+        !POSSESSIVE_AFTER_NAME.test(description.slice(offset + word.length))
       ) {
         return match;
       }

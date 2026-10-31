@@ -393,7 +393,7 @@ export class StudioVoiceCleanupService {
       ) {
         throw new Error('The same voice clean-up is running in another job');
       }
-      const finished = await this.supersedeUnfinished(auth, snapshot.projectId, importId);
+      const finished = await this.supersede(auth, snapshot.projectId, importId);
       let kept = finished && mapStudioProjectImport(finished);
       let seconds: number;
       if (finished) {
@@ -544,12 +544,6 @@ export class StudioVoiceCleanupService {
    * touched.
    */
   private async supersede(auth: AuthDto, projectId: string, importId: string) {
-    const finished = await this.supersedeUnfinished(auth, projectId, importId);
-    return finished ? mapStudioProjectImport(finished) : undefined;
-  }
-
-  /** {@link supersede}, answering the finished import as stored. */
-  private async supersedeUnfinished(auth: AuthDto, projectId: string, importId: string) {
     let cursor: string | undefined;
     do {
       const page = await this.publications.discover(auth, projectId, cursor);
