@@ -175,6 +175,8 @@ export class ServerClient {
           return watchBody(response, timeout.touch, timeout.stop);
         }
         if (RETRYABLE.has(response.status) && attempt < this.retries && canRetry(method, path, response.status)) {
+          // Release the connection now rather than when the unread body is garbage-collected.
+          await response.body?.cancel();
           timeout.stop();
           await sleep(Math.min(30_000, 500 * 2 ** attempt));
           continue;

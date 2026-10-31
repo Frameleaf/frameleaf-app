@@ -504,16 +504,19 @@ export const findSidecar = (filepath: string): string | undefined => {
 };
 
 // A sidecar named photo.xmp is shared by every original with the stem `photo`; keep it while one stays on disk.
-const isSidecarStillUsed = (sidecar: string, selected: Set<string>): boolean => {
-  const sidecarPath = path.resolve(sidecar);
-  const dir = path.dirname(sidecarPath);
-  return readdirSync(dir).some((entry) => {
+// Paths are lower-cased so a case-only difference counts as "in use": on a case-insensitive filesystem it is the
+// same file, and on a case-sensitive one the worst case is keeping a sidecar that could have been removed.
+const sidecarsInUse = (dir: string, selected: Set<string>): Set<string> => {
+  const inUse = new Set<string>();
+  for (const entry of readdirSync(dir)) {
     const filepath = path.join(dir, entry);
-    if (filepath === sidecarPath || selected.has(filepath) || path.extname(entry).toLowerCase() === '.xmp') {
-      return false;
+    if (selected.has(filepath) || path.extname(entry).toLowerCase() === '.xmp') {
+      continue;
     }
-    return path.join(dir, `${path.parse(entry).name}.xmp`) === sidecarPath || `${filepath}.xmp` === sidecarPath;
-  });
+    inUse.add(path.join(dir, `${path.parse(entry).name}.xmp`).toLowerCase());
+    inUse.add(`${filepath}.xmp`.toLowerCase());
+  }
+  return inUse;
 };
 
 export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], options: UploadOptionsDto): Promise<void> => {
@@ -543,9 +546,21 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
   try {
     const sidecars = new Set<string>();
     const selected = new Set(files.values().map((filepath) => path.resolve(filepath)));
+    // Each directory is listed once, however many selected files it holds.
+    const inUseByDir = new Map<string, Set<string>>();
     for (const filepath of files) {
       const sidecar = findSidecar(filepath);
-      if (sidecar && !files.has(sidecar) && !isSidecarStillUsed(sidecar, selected)) {
+      if (!sidecar || files.has(sidecar)) {
+        continue;
+      }
+      const sidecarPath = path.resolve(sidecar);
+      const dir = path.dirname(sidecarPath);
+      let inUse = inUseByDir.get(dir);
+      if (!inUse) {
+        inUse = sidecarsInUse(dir, selected);
+        inUseByDir.set(dir, inUse);
+      }
+      if (!inUse.has(sidecarPath.toLowerCase())) {
         sidecars.add(sidecar);
       }
     }

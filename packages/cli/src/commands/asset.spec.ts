@@ -573,6 +573,15 @@ describe('deleteFiles', () => {
     expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, true, true]);
   });
 
+  it('keeps a shared sidecar when the remaining original differs only by case', async () => {
+    const raw = path.join(testDir, 'TEST.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [], { delete: true, concurrency: 1 });
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, true, true]);
+  });
+
   it('keeps originals and shared sidecars during dry runs', async () => {
     const sidecar = path.join(testDir, 'test.xmp');
     fs.writeFileSync(sidecar, 'metadata');
