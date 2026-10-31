@@ -3503,6 +3503,8 @@ export type UserAdminResponseDto = {
     /** Is admin user */
     isAdmin: boolean;
     license: (UserLicense) | null;
+    /** Whether this person has Locked encryption on; their PIN can’t be cleared or changed then */
+    lockedEncryption: boolean;
     /** User name */
     name: string;
     /** OAuth ID */
@@ -10373,6 +10375,8 @@ export type FrameleafLinkResponseDto = {
     license: (UserLicense) | null;
     /** Whether the Frameleaf account is now linked (false for a preview) */
     linked: boolean;
+    /** Whether this person has Locked encryption on; their PIN can’t be cleared or changed then */
+    lockedEncryption: boolean;
     /** User name */
     name: string;
     /** OAuth ID */
@@ -17419,6 +17423,8 @@ export type UserMeResponseDto = {
     /** Is admin user */
     isAdmin: boolean;
     license: (UserLicense) | null;
+    /** Whether this person has Locked encryption on; their PIN can’t be cleared or changed then */
+    lockedEncryption: boolean;
     /** User name */
     name: string;
     /** OAuth ID */
@@ -17604,6 +17610,80 @@ export type CloudBackupOwnerSetupResponseDto = {
     /** The next scheduled backup, when cloud backup is set up and on */
     nextRunAt: string | null;
     target: CloudBackupTargetSetting;
+};
+export type LockedEncryptionDisableDto = {
+    /** Advanced Security: your passphrase */
+    passphrase?: string;
+    /** PIN mode: your Locked PIN */
+    pinCode?: string;
+};
+export type LockedEncryptionCountsDto = {
+    /** Locked items whose files are encrypted */
+    encrypted: number;
+    /** Locked items in a folder Frameleaf can’t change, which stay unencrypted */
+    notEncryptable: number;
+};
+export type LockedEncryptionProgressDto = {
+    /** Items whose files are done */
+    done: number;
+    /** Items to do */
+    total: number;
+};
+export type LockedEncryptionStatusResponseDto = {
+    /** Advanced Security: ask for the passphrase again after 8, 24 or 72 hours; null only after a restart */
+    askAgainHours: number | null;
+    counts: LockedEncryptionCountsDto;
+    /** Whether Locked encryption is on (or turning on or off) for you */
+    enabled: boolean;
+    /** When the open key is asked for again; null while it stays open */
+    expiresAt: string | null;
+    /** Whether your key is open on this server now */
+    keyLoaded: boolean;
+    mode: (LockedEncryptionMode) | null;
+    /** Progress while encrypting or decrypting */
+    progress: (LockedEncryptionProgressDto) | null;
+    /** When the current recovery key was made */
+    recoveryKeyCreatedAt: string | null;
+    status: (LockedEncryptionState) | null;
+};
+export type LockedEncryptionEnableDto = {
+    mode: LockedEncryptionMode;
+    /** Advanced Security only: at least 12 characters */
+    passphrase?: string;
+    /** Your Locked PIN */
+    pinCode: string;
+};
+export type LockedEncryptionRecoveryKeyResponseDto = {
+    /** Shown this once: FLRK- and 8 groups of 4 characters. It is never shown again. */
+    recoveryKey: string;
+};
+export type LockedEncryptionUpdateDto = {
+    /** Advanced Security: ask for the passphrase again after 8, 24 or 72 hours; null only after a restart */
+    askAgainHours?: number | null;
+    /** Your PIN (PIN mode) or passphrase (Advanced Security); required to switch mode or passphrase */
+    currentSecret?: string;
+    /** Switch between PIN and Advanced Security */
+    mode?: LockedEncryptionMode;
+    /** The new passphrase, when switching to or within Advanced Security */
+    newPassphrase?: string;
+    /** Your Locked PIN, when switching to PIN mode */
+    pinCode?: string;
+};
+export type LockedEncryptionRecoverDto = {
+    /** Advanced Security: a new passphrase */
+    newPassphrase?: string;
+    /** A new Locked PIN */
+    newPinCode?: string;
+    /** Your recovery key, FLRK- and 8 groups of 4 characters */
+    recoveryKey: string;
+};
+export type LockedEncryptionRecoveryKeyDto = {
+    /** Your PIN (PIN mode) or passphrase (Advanced Security) */
+    secret: string;
+};
+export type LockedEncryptionUnlockDto = {
+    /** Your passphrase */
+    passphrase: string;
 };
 export type OnboardingResponseDto = {
     /** Is user onboarded */
@@ -34644,6 +34724,104 @@ export function setUserLicense({ licenseActivateDto }: {
     })));
 }
 /**
+ * Turn off Locked encryption
+ */
+export function disableLockedEncryption({ lockedEncryptionDisableDto }: {
+    lockedEncryptionDisableDto: LockedEncryptionDisableDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: lockedEncryptionDisableDto
+    })));
+}
+/**
+ * Get your Locked encryption status
+ */
+export function getLockedEncryption(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LockedEncryptionStatusResponseDto;
+    }>("/users/me/locked-encryption", {
+        ...opts
+    }));
+}
+/**
+ * Turn on Locked encryption
+ */
+export function enableLockedEncryption({ lockedEncryptionEnableDto }: {
+    lockedEncryptionEnableDto: LockedEncryptionEnableDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LockedEncryptionRecoveryKeyResponseDto;
+    }>("/users/me/locked-encryption", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionEnableDto
+    })));
+}
+/**
+ * Change your Locked encryption
+ */
+export function updateLockedEncryption({ lockedEncryptionUpdateDto }: {
+    lockedEncryptionUpdateDto: LockedEncryptionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: lockedEncryptionUpdateDto
+    })));
+}
+/**
+ * Lock now
+ */
+export function lockLockedEncryption(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption/lock", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Reset a forgotten Locked PIN or passphrase
+ */
+export function recoverLockedEncryption({ lockedEncryptionRecoverDto }: {
+    lockedEncryptionRecoverDto: LockedEncryptionRecoverDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption/recover", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionRecoverDto
+    })));
+}
+/**
+ * Make a new Locked encryption recovery key
+ */
+export function createLockedEncryptionRecoveryKey({ lockedEncryptionRecoveryKeyDto }: {
+    lockedEncryptionRecoveryKeyDto: LockedEncryptionRecoveryKeyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LockedEncryptionRecoveryKeyResponseDto;
+    }>("/users/me/locked-encryption/recovery-key", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionRecoveryKeyDto
+    })));
+}
+/**
+ * Open your Locked encryption key
+ */
+export function unlockLockedEncryption({ lockedEncryptionUnlockDto }: {
+    lockedEncryptionUnlockDto: LockedEncryptionUnlockDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/users/me/locked-encryption/unlock", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: lockedEncryptionUnlockDto
+    })));
+}
+/**
  * Delete user onboarding
  */
 export function deleteUserOnboarding(opts?: Oazapfts.RequestOpts) {
@@ -38484,6 +38662,10 @@ export enum JobName {
     FacialRecognition = "FacialRecognition",
     FileDelete = "FileDelete",
     FileMigrationQueueAll = "FileMigrationQueueAll",
+    LockedSeal = "LockedSeal",
+    LockedUnseal = "LockedUnseal",
+    LockedRewrap = "LockedRewrap",
+    LockedSweep = "LockedSweep",
     LibraryDeleteCheck = "LibraryDeleteCheck",
     LibraryDelete = "LibraryDelete",
     LibraryRemoveAsset = "LibraryRemoveAsset",
@@ -39349,6 +39531,15 @@ export enum CloudBackupOwnerSetupFirstRun {
     Running = "running",
     Done = "done",
     Failed = "failed"
+}
+export enum LockedEncryptionMode {
+    Pin = "pin",
+    Advanced = "advanced"
+}
+export enum LockedEncryptionState {
+    Encrypting = "encrypting",
+    On = "on",
+    Decrypting = "decrypting"
 }
 export enum Kind11 {
     Album = "album",
