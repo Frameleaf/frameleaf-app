@@ -203,6 +203,28 @@ describe('library media across editor remounts', () => {
     }
   })
 
+  it('processes an asset once when two seeds overlap', async () => {
+    let single = 0
+    const first = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-once', onChange: () => single++ })
+    let overlapping = 0
+    const second = createLibraryMediaSeeder({
+      workspace,
+      projectId: () => 'fl-overlap',
+      onChange: () => overlapping++,
+    })
+    // The second asset is still unprocessed when the first await of the first seed yields.
+    const assets = [libraryAsset, { ...libraryAsset, id: IMPORTED }]
+    try {
+      await first.seed(assets)
+      await Promise.all([second.seed(assets), second.seed(assets)])
+      expect(overlapping).toBe(single)
+      expect((await getProjectMediaIds('fl-overlap')).toSorted()).toEqual([LIBRARY, IMPORTED].toSorted())
+    } finally {
+      first.dispose()
+      second.dispose()
+    }
+  })
+
   it('marks a restored item as HDR again when the server reports it after the restore (FL-636)', async () => {
     const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-lib-hdr', onChange: () => {} })
     try {

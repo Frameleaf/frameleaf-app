@@ -357,6 +357,9 @@ export function createLibraryMediaSeeder(options: {
     async seed(assets) {
       if (controller.signal.aborted) return
       const fresh = assets.filter((asset) => !seeded.has(asset.id) && !asset.isOffline)
+      // Reserve before the first await so an overlapping seed cannot process the same asset twice.
+      const freshIds = new Set(fresh.map((asset) => asset.id))
+      for (const id of freshIds) seeded.add(id)
       const now = Date.now()
       // FL-97: an HDR project reads the original's HDR intermediate once the server has one.
       for (const asset of assets) registerHdrSourceUrl(asset.id, asset.hdrSourceUrl)
@@ -364,7 +367,7 @@ export function createLibraryMediaSeeder(options: {
       // already holds, so the project becomes HDR without a remount.
       let marked = false
       for (const asset of assets) {
-        if (!asset.hdr || !seeded.has(asset.id) || hdrMarked.has(asset.id)) continue
+        if (!asset.hdr || freshIds.has(asset.id) || !seeded.has(asset.id) || hdrMarked.has(asset.id)) continue
         hdrMarked.add(asset.id)
         if (await getMedia(asset.id)) {
           await updateMedia(asset.id, { colorTransfer: 'hdr', updatedAt: now })
@@ -373,7 +376,6 @@ export function createLibraryMediaSeeder(options: {
       }
       if (marked) onChange()
       for (const asset of fresh) {
-        seeded.add(asset.id)
         if (asset.hdr) hdrMarked.add(asset.id)
         if (controller.signal.aborted) return
         const record = initialMediaRecord(asset, now)

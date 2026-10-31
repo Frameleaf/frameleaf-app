@@ -82,6 +82,7 @@ const ENGLISH: Record<LibraryPanelString, string> = {
   libraryAnyTime: 'Any time',
   libraryFacetCount: '{{label}} ({{count}})',
   libraryClearFilters: 'Clear filters',
+  libraryClearSearch: 'Clear search',
   libraryResultOne: '1 result',
   libraryResults: '{{count}} results',
   libraryResultsFor: '{{results}} for “{{query}}”',
@@ -406,7 +407,7 @@ export function LibraryFinderPanel({ host, className }: { host: LibraryFinderHos
           {text && (
             <button
               type="button"
-              aria-label={libraryText(strings, 'libraryClearFilters')}
+              aria-label={libraryText(strings, 'libraryClearSearch')}
               onClick={() => setText('')}
               className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary"
             >

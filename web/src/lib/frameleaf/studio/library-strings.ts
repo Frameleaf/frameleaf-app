@@ -24,6 +24,7 @@ export const LIBRARY_PANEL_STRINGS = {
   libraryAnyTime: { host: 'frameleaf_studio_bin_library_any_time' },
   libraryFacetCount: { host: 'frameleaf_studio_bin_library_facet_count', values: ['label', 'count'] },
   libraryClearFilters: { host: 'frameleaf_studio_bin_library_clear_filters' },
+  libraryClearSearch: { host: 'frameleaf_studio_bin_library_clear_search' },
   libraryResultOne: { host: 'frameleaf_studio_bin_library_result_one' },
   libraryResults: { host: 'frameleaf_studio_bin_library_results', values: ['count'] },
   libraryResultsFor: { host: 'frameleaf_studio_bin_library_results_for', values: ['results', 'query'] },
