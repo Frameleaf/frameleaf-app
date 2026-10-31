@@ -291,6 +291,17 @@ describe(AssetDevelopService.name, () => {
       } as never);
     });
 
+    it("queues LockedSeal for an encrypted Locked item's new artifact (FL-721)", async () => {
+      mocks.asset.getLockedEncryptionItems.mockResolvedValue([
+        { id: asset.id, ownerId: asset.ownerId, pending: false, mode: 'pin' },
+      ] as never);
+
+      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
+
+      expect(mocks.asset.getLockedEncryptionItems).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.LockedSeal, data: { id: asset.id } }]);
+    });
+
     it('stores a normalized bitmap beside the versions, records it, and discards the upload', async () => {
       await expect(
         sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),

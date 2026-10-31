@@ -10,9 +10,11 @@ import { assertPublicationMotionSource } from 'src/queue/transaction.js';
 import { InpaintUnavailableError } from 'src/repositories/machine-learning.repository.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
+import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { getMocks } from 'test/utils.js';
 
@@ -215,6 +217,86 @@ describe('AssetDevelopService native API gaps', () => {
       await expect(
         sut.proposeSemanticMask(authStub.user1, still.id, { target: 'subject', coordinates: 'original' }),
       ).rejects.toThrow('invalid mask');
+    });
+  });
+
+  describe('a sealed Locked original (FL-721, spec §8.2)', () => {
+    const jpeg = () =>
+      sharp({ create: { width: 400, height: 300, channels: 3, background: { r: 90, g: 120, b: 200 } } })
+        .jpeg()
+        .toBuffer();
+
+    it('proposes a mask from a plain copy that is gone afterwards', async () => {
+      const locked = await lockedFixture(still.ownerId);
+      try {
+        locked.loadKey();
+        const sealed = await locked.seal('IMG_0001.jpg', await jpeg(), 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(still),
+          originalPath: sealed,
+        });
+        mocks.machineLearning.semanticMaskLocal.mockImplementation(async (canvas: Buffer) => {
+          const { width, height } = await sharp(canvas).metadata();
+          return sharp({ create: { width: width!, height: height!, channels: 3, background: '#fff' } })
+            .toColourspace('b-w')
+            .png()
+            .toBuffer();
+        });
+        vi.spyOn(sut as unknown as Admits, 'admitGeneratedArtifact').mockResolvedValue({} as never);
+
+        await sut.proposeSemanticMask(authStub.user1, still.id, { target: 'sky', coordinates: 'original' });
+
+        const [canvas] = mocks.machineLearning.semanticMaskLocal.mock.calls[0];
+        expect(await sharp(canvas).metadata()).toMatchObject({ format: 'jpeg', width: 400, height: 300 });
+        expect(await locked.copiesLeft()).toBe(0);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('makes a Clean Up fill from a plain copy that is gone afterwards', async () => {
+      const locked = await lockedFixture(still.ownerId);
+      try {
+        locked.loadKey();
+        const sealed = await locked.seal('IMG_0001.jpg', await jpeg(), 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(still),
+          originalPath: sealed,
+        });
+        mocks.machineLearning.inpaintLocal.mockImplementation(async (image: Buffer) => {
+          const { width, height } = await sharp(image).metadata();
+          return sharp({ create: { width: width!, height: height!, channels: 3, background: { r: 1, g: 2, b: 3 } } })
+            .png()
+            .toBuffer();
+        });
+        vi.spyOn(sut as unknown as Admits, 'admitGeneratedArtifact').mockResolvedValue({} as never);
+
+        await sut.generateFill(authStub.user1, still.id, { region: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, feather: 0 });
+
+        const [image] = mocks.machineLearning.inpaintLocal.mock.calls[0];
+        expect(await sharp(image).metadata()).toMatchObject({ format: 'png', width: 400, height: 300 });
+        expect(await locked.copiesLeft()).toBe(0);
+      } finally {
+        await locked.cleanup();
+      }
+    });
+
+    it('waits for the key instead of decoding ciphertext', async () => {
+      const locked = await lockedFixture(still.ownerId);
+      try {
+        const sealed = await locked.seal('IMG_0001.jpg', await jpeg(), 'image/jpeg');
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(still),
+          originalPath: sealed,
+        });
+
+        await expect(
+          sut.proposeSemanticMask(authStub.user1, still.id, { target: 'subject', coordinates: 'original' }),
+        ).rejects.toBeInstanceOf(LockedKeyUnavailableError);
+        expect(mocks.machineLearning.semanticMaskLocal).not.toHaveBeenCalled();
+      } finally {
+        await locked.cleanup();
+      }
     });
   });
 

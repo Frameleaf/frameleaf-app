@@ -1044,6 +1044,7 @@ export class AssetDevelopService {
         // the same bitmap again: record it again, which restarts its grace period, and make sure its
         // file is still there (a release may have taken both since it was found)
         await this.recordArtifact(asset, id, dto.kind, target, normalized);
+        await this.queueArtifactSeal(asset.id);
         return { id, kind: existing.kind as AssetDevelopArtifactKind, width: existing.width, height: existing.height };
       }
       this.storageRepository.mkdirSync(path.dirname(target));
@@ -1058,6 +1059,7 @@ export class AssetDevelopService {
         await this.queueFileDelete([target]);
         throw error;
       }
+      await this.queueArtifactSeal(asset.id);
       return { id, kind: dto.kind, width: normalized.width, height: normalized.height };
     } finally {
       await this.discard([file.path]);
@@ -1082,10 +1084,16 @@ export class AssetDevelopService {
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || !mimeTypes.isRaw(source.originalFileName))
       throw new BadRequestException('Native semantic masks require a RAW original');
-    const developed = await renderDarktable(
+    // FL-721 (spec §8.2): a sealed original is developed from a plain copy, for a viewer allowed its key
+    const developed = await withPlainCopy(
       source.originalPath,
-      { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0, sensorCanvas: true },
-      signal,
+      (originalPath) =>
+        renderDarktable(
+          originalPath,
+          { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0, sensorCanvas: true },
+          signal,
+        ),
+      { viewerId: lockedViewerOf(auth) },
     );
     const canvas = await sharp(developed)
       .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
@@ -1128,15 +1136,21 @@ export class AssetDevelopService {
     await this.requireEditableStill(assetId);
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) throw new BadRequestException('Only stills have develop masks');
-    const canvas = await sharp(await this.orientedOriginal(source, signal), {
-      failOn: 'error',
-      limitInputPixels: 200_000_000,
-    })
-      .rotate()
-      .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-      .toColourspace('srgb')
-      .jpeg({ quality: 92 })
-      .toBuffer();
+    // FL-721 (spec §8.2): a sealed original is read from a plain copy, for a viewer allowed its key
+    const canvas = await withPlainCopy(
+      source.originalPath,
+      async (originalPath) =>
+        sharp(await this.orientedOriginal({ ...source, originalPath }, signal), {
+          failOn: 'error',
+          limitInputPixels: 200_000_000,
+        })
+          .rotate()
+          .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+          .toColourspace('srgb')
+          .jpeg({ quality: 92 })
+          .toBuffer(),
+      { viewerId: lockedViewerOf(auth) },
+    );
     signal?.throwIfAborted();
     const png = await this.machineLearningRepository.semanticMaskLocal(canvas, target, signal);
     const metadata = await sharp(png, { failOn: 'warning', limitInputPixels: 2048 * 2048 }).metadata();
@@ -1163,6 +1177,34 @@ export class AssetDevelopService {
     await this.requireEditableStill(assetId);
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) throw new BadRequestException('Only stills have Clean Up');
+    // FL-721 (spec §8.2): a sealed original is read from a plain copy, for a viewer allowed its key
+    const { image, mask, fill } = await withPlainCopy(
+      source.originalPath,
+      (originalPath) => this.fillInputs({ ...source, originalPath }, dto, signal),
+      { viewerId: lockedViewerOf(auth) },
+    );
+    signal?.throwIfAborted();
+    let filled: Buffer;
+    try {
+      filled = await this.machineLearningRepository.inpaintLocal(image, mask, signal);
+    } catch (error) {
+      if (error instanceof InpaintUnavailableError) {
+        throw new ServiceUnavailableException({
+          message: 'No inpainting model is available on this server; Remove needs a fill made on the device',
+          code: 'develop_inpaint_unavailable',
+        });
+      }
+      throw error;
+    }
+    const result = await sharp(filled, { failOn: 'warning', limitInputPixels: 4096 * 4096 }).metadata();
+    if (result.format !== 'png' || result.width !== fill.width || result.height !== fill.height)
+      throw new BadRequestException('Local worker returned an invalid fill');
+    const png = await sharp(filled).extract(fill.area).removeAlpha().ensureAlpha(1).png().toBuffer();
+    return this.admitGeneratedArtifact(auth, assetId, AssetDevelopArtifactKind.Fill, png, signal);
+  }
+
+  /** Clean Up Remove's inputs: the area's window of the oriented original, and its mask. */
+  private async fillInputs(source: DevelopSource, dto: AssetDevelopFillGenerateDto, signal?: AbortSignal) {
     const input = await this.orientedOriginal(source, signal);
     const metadata = await sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 }).metadata();
     const swapped = (metadata.orientation ?? 1) >= 5 && !Buffer.isBuffer(input);
@@ -1206,30 +1248,18 @@ export class AssetDevelopService {
       .toColourspace('b-w')
       .png()
       .toBuffer();
-    signal?.throwIfAborted();
-    let filled: Buffer;
-    try {
-      filled = await this.machineLearningRepository.inpaintLocal(image, mask, signal);
-    } catch (error) {
-      if (error instanceof InpaintUnavailableError) {
-        throw new ServiceUnavailableException({
-          message: 'No inpainting model is available on this server; Remove needs a fill made on the device',
-          code: 'develop_inpaint_unavailable',
-        });
-      }
-      throw error;
-    }
-    const result = await sharp(filled, { failOn: 'warning', limitInputPixels: 4096 * 4096 }).metadata();
-    if (result.format !== 'png' || result.width !== fill.width || result.height !== fill.height)
-      throw new BadRequestException('Local worker returned an invalid fill');
-    const png = await sharp(filled).extract(fill.area).removeAlpha().ensureAlpha(1).png().toBuffer();
-    return this.admitGeneratedArtifact(auth, assetId, AssetDevelopArtifactKind.Fill, png, signal);
+    return { image, mask, fill };
   }
 
   /** The original to compute on: the file itself, or a RAW developed by LibRaw (orientation applied). */
   private async orientedOriginal(source: DevelopSource, signal?: AbortSignal): Promise<string | Buffer> {
     const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
     return isRaw ? renderRawWithLibRaw(source.originalPath, signal) : source.originalPath;
+  }
+
+  /** FL-721 (spec §7.2): a Locked item's new develop artifact (a mask or a fill) is sealed after it is written. */
+  private queueArtifactSeal(assetId: string) {
+    return queueLockedSealFor({ asset: this.assetRepository, job: this.jobRepository, logger: this.logger }, [assetId]);
   }
 
   /** A bitmap the server generated goes through the same admission as an uploaded one. */
@@ -1356,8 +1386,7 @@ export class AssetDevelopService {
     for (const artifact of stored) {
       if (
         verify &&
-        (artifact.ownerId !== asset.ownerId ||
-          (await this.hashPlain(artifact.path)).toString('hex') !== artifact.id)
+        (artifact.ownerId !== asset.ownerId || (await this.hashPlain(artifact.path)).toString('hex') !== artifact.id)
       ) {
         throw new BadRequestException({
           message: 'The develop artifact changed or is not owned by this photo',

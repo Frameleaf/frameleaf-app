@@ -30,6 +30,7 @@ import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DevelopBatchService, batchStagingFolder } from 'src/services/develop-batch.service.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
+import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -187,6 +188,37 @@ it('streams originals and permitted sidecars under collision-safe names plus a v
     expect(execFileSync('unzip', ['-p', archive, item.exportName!])).toEqual(
       await readFile(item.assetId === a.id ? a.originalPath : b.originalPath),
     );
+});
+it('streams an original sealed since it was prepared, decrypted for its owner (FL-721)', async () => {
+  const { ctx, sut } = setup(),
+    { user } = await ctx.newUser(),
+    { session } = await ctx.newSession({ userId: user.id }),
+    auth = factory.auth({ user, session });
+  const asset = await photo(ctx, user.id);
+  const plain = await readFile(asset.originalPath);
+  let batch = await sut.create(auth, { assetIds: [asset.id], includeSidecars: false });
+  await sut.prepare(auth, batch.id, batch.items[0].id);
+  batch = await sut.get(auth, batch.id);
+  const locked = await lockedFixture(user.id);
+  try {
+    // the photo went into Locked with encryption on and its original was sealed
+    const sealed = await locked.seal('IMG_0001.png', plain, 'image/png');
+    await db.updateTable('asset').set({ originalPath: sealed }).where('id', '=', asset.id).execute();
+
+    // without the key the archive is refused before it starts
+    await expect(sut.download(auth, batch.id)).rejects.toMatchObject({ status: 423 });
+
+    locked.loadKey();
+    const stream = await sut.download(auth, batch.id);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const archive = join(root, `${randomUUID()}.zip`);
+    await writeFile(archive, Buffer.concat(chunks));
+    expect(execFileSync('unzip', ['-p', archive, batch.items[0].exportName!])).toEqual(plain);
+    expect(await locked.copiesLeft()).toBe(0);
+  } finally {
+    await locked.cleanup();
+  }
 });
 it('imports concurrent/repeated bytes once, survives a repository restart, renders before activation and accepts corrected bytes in this batch', async () => {
   const f = await prepare();
