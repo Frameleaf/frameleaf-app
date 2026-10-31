@@ -49,14 +49,22 @@ class UnusedFilesAccess {
 
   /** Reads the totals again, after something changed them (a restore, emptying it). */
   async refresh(): Promise<void> {
+    // An answer that arrives after the account changed belongs to the previous account: dropped.
+    const userId = this.#userId;
     try {
       const summary = await getUtilitiesSummary();
-      this.totals =
-        summary.unusedFiles === null ? null : { files: summary.unusedFiles, bytes: summary.unusedBytes ?? 0 };
+      if (this.#userId === userId) {
+        this.totals =
+          summary.unusedFiles === null ? null : { files: summary.unusedFiles, bytes: summary.unusedBytes ?? 0 };
+      }
     } catch {
-      this.totals = null;
+      if (this.#userId === userId) {
+        this.totals = null;
+      }
     } finally {
-      this.loaded = true;
+      if (this.#userId === userId) {
+        this.loaded = true;
+      }
     }
   }
 
