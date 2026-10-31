@@ -220,11 +220,43 @@ export const withDefaultTier = (
   }
   const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
   const pastTier = tierStep === -1 || state.reached >= tierStep;
-  if (pastTier && !keepsUnlistedModel(state.flow, context.currentModel)) {
+  // Older saves held the default tier when no choice was made; any other saved tier was chosen.
+  if (pastTier && (state.choices.model !== DEFAULT_TIER || !keepsUnlistedModel(state.flow, context.currentModel))) {
     return state;
   }
   const model = defaultTier(state.flow, context);
-  return model === state.choices.model ? state : { ...state, choices: { ...state.choices, model } };
+  const keptModel = model === KEEP_MODEL ? (context.currentModel ?? '') : '';
+  return model === state.choices.model && keptModel === state.choices.keptModel
+    ? state
+    : { ...state, choices: { ...state.choices, model, keptModel } };
+};
+
+/**
+ * "Keep current model" keeps the model the administrator saw. When the library's model changed while
+ * setup was closed, the choice is taken again: the tier this model defaults to, with setup back on the
+ * tier step so the administrator confirms it. Saves made before the model was recorded keep their choice.
+ */
+export const reconcileKeptModel = (
+  state: SetupState,
+  context: { hardware?: TierHardware | null; currentModel?: string | null },
+): SetupState => {
+  const { model, keptModel } = state.choices;
+  if (model !== KEEP_MODEL || !keptModel || keptModel === (context.currentModel ?? '')) {
+    return state;
+  }
+  const tierStep = flowSteps(state.flow).findIndex((entry) => entry.id === 'processing');
+  const next = defaultTier(state.flow, context);
+  return {
+    ...state,
+    step: tierStep === -1 ? state.step : Math.min(state.step, tierStep),
+    completed: false,
+    choices: {
+      ...state.choices,
+      model: next,
+      modelChosen: false,
+      keptModel: next === KEEP_MODEL ? (context.currentModel ?? '') : '',
+    },
+  };
 };
 
 export const KEEP_LAYOUT = 'keep';
@@ -281,6 +313,8 @@ export type SetupChoices = {
   model: ModelChoice;
   /** Set once the administrator picks a model on the tier step; a default never sets it. */
   modelChosen: boolean;
+  /** The library model "keep current model" named; empty for a tier. */
+  keptModel: string;
   processing: ProcessingChoice;
   nightlyBackup: boolean;
   updates: boolean;
@@ -325,6 +359,7 @@ export const createSetup = (flow: SetupFlow = 'new'): SetupState => {
       layout: existing ? KEEP_LAYOUT : 'year-month',
       model: DEFAULT_TIER,
       modelChosen: false,
+      keptModel: '',
       processing: 'local',
       nightlyBackup: true,
       updates: true,
@@ -432,7 +467,7 @@ export const processingOptions = (state: SetupState): ProcessingChoice[] => [
 
 /** The server's password-free progress payload for this state. */
 export const toProgress = (state: SetupState): FrameleafSetupProgressDto => {
-  const { restore, model, ...choices } = state.choices;
+  const { restore, model, keptModel, ...choices } = state.choices;
   return {
     version: 1,
     step: flowSteps(state.flow)[state.step].id,
@@ -440,7 +475,7 @@ export const toProgress = (state: SetupState): FrameleafSetupProgressDto => {
     // "keep current model" is saved as a choice with no tier
     choices: {
       ...choices,
-      ...(model !== KEEP_MODEL && { model }),
+      ...(model === KEEP_MODEL ? keptModel && { keptModel } : { model }),
       ...(restore && { restore }),
     } as FrameleafSetupProgressDto['choices'],
   };
@@ -496,6 +531,7 @@ export const parseSetup = (raw: unknown, flow: SetupFlow, context: SetupContext 
           ? KEEP_MODEL
           : oneOf<ModelChoice>(choices.model, [KEEP_MODEL, ...modelTiers.map((entry) => entry.id)], defaults.model),
       modelChosen: bool(choices.modelChosen, false),
+      keptModel: text(choices.keptModel, 200),
       processing: oneOf(choices.processing, ['local', 'cloud', 'later'] as const, defaults.processing),
       nightlyBackup: bool(choices.nightlyBackup, true),
       updates: bool(choices.updates, true),

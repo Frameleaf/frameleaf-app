@@ -23,6 +23,7 @@ import {
   parseSetup,
   processingOptions,
   recommendedTier,
+  reconcileKeptModel,
   resumeSetup,
   saveAccountTool,
   saveLocalSetup,
@@ -397,6 +398,34 @@ describe('first-run setup state (FL-176)', () => {
         // a default keep is not saved as a choice and is offered again
         const pending = toProgress({ ...kept, choices: { ...kept.choices, modelChosen: false } });
         expect(resume(pending as ReturnType<typeof saved>).choices.model).toBe(KEEP_MODEL);
+      });
+
+      it('keeps an older save past the tier step that holds a tier other than the default', () => {
+        expect(resume(saved({ model: 'best' })).choices.model).toBe('best');
+      });
+
+      it('saves the kept model with the choice and asks again when it changed while setup was closed', () => {
+        const kept = withDefaultTier(createSetup('existing'), context);
+        expect(kept.choices.keptModel).toBe('custom-model');
+        const chosen = {
+          ...kept,
+          step: tierStep + 1,
+          reached: tierStep + 1,
+          choices: { ...kept.choices, modelChosen: true },
+        };
+        const progress = toProgress(chosen);
+        expect(progress.choices).toMatchObject({ keptModel: 'custom-model', modelChosen: true });
+        const resumed = resumeSetup('existing', { server: progress }, true);
+        expect(reconcileKeptModel(resumed, context)).toBe(resumed);
+
+        // another unlisted model now: "keep" is offered for it, and setup returns to the tier step
+        const other = reconcileKeptModel(resumed, { ...context, currentModel: 'other-model' });
+        expect(other.choices).toMatchObject({ model: KEEP_MODEL, modelChosen: false, keptModel: 'other-model' });
+        expect(other.step).toBe(tierStep);
+        // a listed model now: its tier, back on the tier step
+        const listed = reconcileKeptModel(resumed, { ...context, currentModel: 'ViT-B-32__openai' });
+        expect(listed.choices).toMatchObject({ model: 'light', modelChosen: false, keptModel: '' });
+        expect(listed.step).toBe(tierStep);
       });
     });
 

@@ -58,6 +58,7 @@
     themeAfterSetup,
     toProgress,
     validateStep,
+    reconcileKeptModel,
     withDefaultTier,
     type SetupChoices,
     type SetupState,
@@ -247,7 +248,8 @@
     users = usersResult.status === 'fulfilled' ? usersResult.value : [];
     // A2: the tier starts from what the hardware runs well (a new server) or from the models the
     // library already uses (an existing one), unless the administrator already took that decision.
-    setup = withDefaultTier(setup, { hardware, currentModel: config?.machineLearning.clip.modelName });
+    const tierContext = { hardware, currentModel: config?.machineLearning.clip.modelName };
+    setup = reconcileKeptModel(withDefaultTier(setup, tierContext), tierContext);
     serverLoading = false;
   };
 
@@ -458,8 +460,11 @@
       // has now. If that changes the choice shown on this screen, or "keep" would now keep a model other
       // than the one it named, go back to the tier step to confirm it.
       const serverModel = current.machineLearning.clip.modelName;
-      const settled = withDefaultTier(setup, { hardware, currentModel: serverModel });
-      const keptOther = settled.choices.model === KEEP_MODEL && config?.machineLearning.clip.modelName !== serverModel;
+      const tierContext = { hardware, currentModel: serverModel };
+      const settled = reconcileKeptModel(withDefaultTier(setup, tierContext), tierContext);
+      // "keep" names the model the administrator saw: the saved one, else the one this page loaded.
+      const kept = setup.choices.keptModel || config?.machineLearning.clip.modelName;
+      const keptOther = setup.choices.model === KEEP_MODEL && kept !== serverModel;
       if (settled.choices.model !== setup.choices.model || keptOther) {
         direction = -1;
         config = current;
@@ -1263,7 +1268,7 @@
                         name="frs-tier"
                         value={KEEP_MODEL}
                         checked={keepModel}
-                        onchange={() => choose({ model: KEEP_MODEL, modelChosen: true })}
+                        onchange={() => choose({ model: KEEP_MODEL, modelChosen: true, keptModel: currentModelName })}
                         title={keepModelTitle}
                       />
                     {/if}

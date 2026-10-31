@@ -89104,6 +89104,11 @@
             "maxLength": 120,
             "type": "string"
           },
+          "keptModel": {
+            "description": "The search model \"keep current model\" named, saved with that choice (no tier)",
+            "maxLength": 200,
+            "type": "string"
+          },
           "language": {
             "description": "Language chosen on the welcome step",
             "maxLength": 12,
