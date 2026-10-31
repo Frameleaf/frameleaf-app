@@ -255,6 +255,14 @@ export const linkEndpoints = (document: { issuer: string; api: string; endpoints
   return {
     deviceAuthorization: `${issuer}/device/auth`,
     token: `${issuer}/token`,
+    /**
+     * FL-708 (FC-222): first-run setup links with a Frameleaf account's email and password. These live
+     * on the identity origin (`issuer`, which owns accounts, passwords and codes), not on `api`.
+     */
+    passwordLink: `${issuer}/v1/instances/link-with-password`,
+    passwordLinkVerify: (challengeId: string) =>
+      `${issuer}/v1/instances/link-with-password/${encodeURIComponent(challengeId)}/verify`,
+    signUpConsents: `${issuer}/v1/account/sign-up/consents`,
     instances: `${api}/v1/instances`,
     instance: `${api}/v1/instance`,
     /** FL-185: `GET /v1/discovery` with an instance token, for the per-instance service statuses. */
@@ -324,6 +332,100 @@ export const instanceRegistrationSchema = z.object({
     .default({}),
 });
 export type InstanceRegistration = z.infer<typeof instanceRegistrationSchema>;
+
+/**
+ * FL-708 (FC-222): `POST {issuer}/v1/instances/link-with-password` and its `/verify`. 201 is the
+ * `POST /v1/instances` registration (plus `account`, unused here); 202 asks for a code: an emailed
+ * one when creating an account, or the authenticator app's (or a recovery code) when signing in.
+ */
+export const passwordLinkChallengeSchema = z.object({
+  challengeId: z.string().min(1).max(200),
+  kind: z.enum(['email-code', 'second-factor']),
+  expiresIn: z
+    .number()
+    .int()
+    .min(1)
+    .max(60 * 60),
+});
+export const passwordLinkAnswerSchema = z.union([passwordLinkChallengeSchema, instanceRegistrationSchema]);
+export type PasswordLinkAnswer = z.infer<typeof passwordLinkAnswerSchema>;
+
+const consentSchema = z.object({ version: z.string().min(1).max(64), text: z.string().max(4000) }).loose();
+/** FC-222: `GET {issuer}/v1/account/sign-up/consents`, the statements a new account agrees to. */
+export const signUpConsentsSchema = z.object({ tos: consentSchema, privacy: consentSchema }).loose();
+
+/** Why Frameleaf Cloud did not link with an email and password (FL-708), for the setup screen. */
+export const PASSWORD_LINK_REFUSALS = [
+  'invalid-credentials',
+  'email-taken',
+  'password-too-short',
+  'password-breached',
+  'consent-outdated',
+  'code-invalid',
+  'code-expired',
+  'account-refused',
+  'instance-limit',
+  'instance-id-taken',
+  'key-already-linked',
+  'region-mismatch',
+  'rate-limited',
+  'paused',
+  'unavailable',
+] as const;
+export type PasswordLinkRefusal = (typeof PASSWORD_LINK_REFUSALS)[number];
+
+/**
+ * FL-708 (FC-222): the refusal a failed password link means; anything unexpected is `unavailable`. A
+ * 404 means a void challenge only when a code was sent (`verify`); on `start` it is a missing route.
+ */
+export const passwordLinkRefusalOf = (error: unknown, step: 'start' | 'verify' = 'start'): PasswordLinkRefusal => {
+  if (!(error instanceof FrameleafCloudError) || error.status === null) {
+    return 'unavailable';
+  }
+  const code = error.envelope?.code;
+  if (error.status === 429) {
+    return 'rate-limited';
+  }
+  if (error.status === 503 && code === CloudErrorCode.ServicePaused) {
+    return 'paused';
+  }
+  if (error.status === 401 && code === 'invalid-credentials') {
+    return 'invalid-credentials';
+  }
+  if (error.status === 409 && code === 'email-taken') {
+    return 'email-taken';
+  }
+  if (error.status === 422 && code === 'password-too-short') {
+    return 'password-too-short';
+  }
+  if (
+    error.status === 422 &&
+    code === CloudErrorCode.RequestInvalid &&
+    error.envelope?.detail === 'password-breached'
+  ) {
+    return 'password-breached';
+  }
+  if (error.status === 409 && code === CloudErrorCode.ConsentVersionOutdated) {
+    return 'consent-outdated';
+  }
+  if (error.status === 400 && code === 'code-invalid') {
+    return 'code-invalid';
+  }
+  if (error.status === 404 && step === 'verify') {
+    return 'code-expired';
+  }
+  const refusal = linkRefusalOf(error);
+  if (refusal === 'server-refused') {
+    return 'account-refused';
+  }
+  return refusal ?? 'unavailable';
+};
+
+/** The `data.attemptsLeft` of a wrong code (FC-222), when the cloud sent one. */
+export const attemptsLeftOf = (error: unknown): number | null => {
+  const value = error instanceof FrameleafCloudError ? error.envelope?.data?.attemptsLeft : undefined;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+};
 
 const commandSchema = z
   .object({

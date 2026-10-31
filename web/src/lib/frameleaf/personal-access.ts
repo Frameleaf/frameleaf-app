@@ -5,9 +5,10 @@
  * stores a password, PIN, key or activation key.
  */
 import { Permission, type ApiKeyResponseDto, type SessionResponseDto } from '@frameleaf/sdk';
+import { MIN_PASSWORD_LENGTH } from '$lib/frameleaf/auth-password';
 
-/** The server's minimum for a new password (`ChangePasswordDto`). */
-export const PASSWORD_MIN_LENGTH = 8;
+/** The server's minimum for a new password (`ChangePasswordDto`): the one password rule (FL-708). */
+export const PASSWORD_MIN_LENGTH = MIN_PASSWORD_LENGTH;
 export const PASSWORD_MAX_LENGTH = 256;
 export const API_KEY_NAME_MAX_LENGTH = 100;
 
