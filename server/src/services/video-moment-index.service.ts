@@ -330,7 +330,14 @@ export class VideoMomentIndexService {
 
     if (queueExecution.getStore()) {
       if (claimLost) return CLAIM_LOST;
-      if (failure) return { state: EnrichmentItemState.Failed, reasonKey: 'model-error', message: failure };
+      if (failure) {
+        // Kept like the direct path: the retry only captions the frames that are still missing.
+        if (captions.length > 0)
+          deferJobAdoption(async () => {
+            await publish();
+          });
+        return { state: EnrichmentItemState.Failed, reasonKey: 'model-error', message: failure };
+      }
       deferJobAdoption(async () => {
         const written = await publish();
         if (written !== captions.length) throw new Error('Video caption source or names changed before publication');

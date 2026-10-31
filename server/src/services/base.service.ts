@@ -706,7 +706,7 @@ export class BaseService {
     if (!dto.isAdmin) {
       const localAdmin = await this.userRepository.getAdmin();
       if (!localAdmin) {
-        throw new BadRequestException('The first registered account must the administrator.');
+        throw new BadRequestException('The first registered account must be the administrator.');
       }
     }
 

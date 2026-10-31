@@ -94,7 +94,7 @@ export class AttentionService {
     } else {
       ids.delete(id);
     }
-    await this.systemMetadataRepository.set(SystemMetadataKey.OverviewDismissed, { ids: [...ids].slice(0, 32) });
+    await this.systemMetadataRepository.set(SystemMetadataKey.OverviewDismissed, { ids: [...ids].slice(-32) });
     return this.getAttention();
   }
 
