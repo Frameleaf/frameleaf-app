@@ -1,0 +1,251 @@
+import { Body, Controller, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Res } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import type { NextFunction, Response } from 'express';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
+import { LandmarkIconParamDto } from 'src/dtos/landmark.dto.js';
+import { PersonResponseDto } from 'src/dtos/person.dto.js';
+import {
+  AskSearchDto,
+  AskSearchResponseDto,
+  LargeAssetSearchDto,
+  MetadataSearchDto,
+  PlacesResponseDto,
+  RandomSearchDto,
+  SearchCityCountResponseDto,
+  SearchExploreResponseDto,
+  SearchFacetsDto,
+  SearchFacetsResponseDto,
+  SearchHistogramDto,
+  SearchHistogramResponseDto,
+  SearchLandmarkResponseDto,
+  SearchPeopleDto,
+  SearchPlacesDto,
+  SearchResponseDto,
+  SearchStatisticsResponseDto,
+  SearchSuggestionRequestDto,
+  SmartSearchDto,
+  SmartSearchStatisticsResponseDto,
+  StatisticsSearchDto,
+} from 'src/dtos/search.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SearchService } from 'src/services/search.service.js';
+import { sendFile } from 'src/utils/file.js';
+
+@ApiTags(ApiTag.Search)
+@Controller('search')
+export class SearchController {
+  constructor(
+    private service: SearchService,
+    private logger: LoggingRepository,
+  ) {}
+
+  @Post('metadata')
+  @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Search assets by metadata',
+    description: 'Search for assets based on various metadata criteria.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  searchAssets(@Auth() auth: AuthDto, @Body() dto: MetadataSearchDto): Promise<SearchResponseDto> {
+    return this.service.searchMetadata(auth, dto);
+  }
+
+  @Post('statistics')
+  @Authenticated({ permission: Permission.AssetStatistics })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Search asset statistics',
+    description: 'Retrieve statistical data about assets based on search criteria, such as the total matching count.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  searchAssetStatistics(@Auth() auth: AuthDto, @Body() dto: StatisticsSearchDto): Promise<SearchStatisticsResponseDto> {
+    return this.service.searchStatistics(auth, dto);
+  }
+
+  @Post('facets')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Search facet counts',
+    description:
+      "Count the assets a metadata search body matches by people, media type, places, cameras, lenses, rating, favorites and tags. People and tags are the caller's own.",
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  searchFacets(@Auth() auth: AuthDto, @Body() dto: SearchFacetsDto): Promise<SearchFacetsResponseDto> {
+    return this.service.searchFacets(auth, dto);
+  }
+
+  @Post('histogram')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Search date histogram',
+    description:
+      'Count the assets a metadata search body matches per local capture day, month or year. The buckets add up to the POST /search/statistics total for the same body.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  searchHistogram(@Auth() auth: AuthDto, @Body() dto: SearchHistogramDto): Promise<SearchHistogramResponseDto> {
+    return this.service.searchHistogram(auth, dto);
+  }
+
+  @Post('smart/statistics')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Smart search statistics',
+    description:
+      'How many assets a smart search body would rank, counted up to 1000 and flagged when capped. No text is encoded to answer it.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  searchSmartStatistics(@Auth() auth: AuthDto, @Body() dto: SmartSearchDto): Promise<SmartSearchStatisticsResponseDto> {
+    return this.service.searchSmartStatistics(auth, dto);
+  }
+
+  @Post('random')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Search random assets',
+    description: 'Retrieve a random selection of assets based on the provided criteria.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  searchRandom(@Auth() auth: AuthDto, @Body() dto: RandomSearchDto): Promise<AssetResponseDto[]> {
+    return this.service.searchRandom(auth, dto);
+  }
+
+  @Post('large-assets')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Search large assets',
+    description: 'Search for assets that are considered large based on specified criteria.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  searchLargeAssets(@Auth() auth: AuthDto, @Query() dto: LargeAssetSearchDto): Promise<AssetResponseDto[]> {
+    return this.service.searchLargeAssets(auth, dto);
+  }
+
+  @Post('smart')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Smart asset search',
+    description: 'Perform a smart search for assets by using machine learning vectors to determine relevance.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  searchSmart(@Auth() auth: AuthDto, @Body() dto: SmartSearchDto): Promise<SearchResponseDto> {
+    return this.service.searchSmart(auth, dto);
+  }
+
+  @Post('ask')
+  @Authenticated({ permission: Permission.AssetRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Ask Search',
+    description: 'Interpret a natural language query locally and search assets with existing search primitives.',
+    history: new HistoryBuilder().added('v2.7.0'),
+  })
+  askSearch(@Auth() auth: AuthDto, @Body() dto: AskSearchDto): Promise<AskSearchResponseDto> {
+    return this.service.askSearch(auth, dto);
+  }
+
+  @Get('explore')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Retrieve explore data',
+    description: 'Retrieve data for the explore section, such as popular people and places.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getExploreData(@Auth() auth: AuthDto): Promise<SearchExploreResponseDto[]> {
+    return this.service.getExploreData(auth);
+  }
+
+  @Get('person')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Search people',
+    description: 'Search for people by name.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  searchPerson(@Auth() auth: AuthDto, @Query() dto: SearchPeopleDto): Promise<PersonResponseDto[]> {
+    return this.service.searchPerson(auth, dto);
+  }
+
+  @Get('places')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Search places',
+    description: 'Search for places by name.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  searchPlaces(@Query() dto: SearchPlacesDto): Promise<PlacesResponseDto[]> {
+    return this.service.searchPlaces(dto);
+  }
+
+  @Get('cities')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Retrieve assets by city',
+    description:
+      'Retrieve a list of assets with each asset belonging to a different city. This endpoint is used on the places pages to show a single thumbnail for each city the user has assets in.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getAssetsByCity(@Auth() auth: AuthDto): Promise<AssetResponseDto[]> {
+    return this.service.getAssetsByCity(auth);
+  }
+
+  @Get('cities/counts')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Retrieve asset counts by city',
+    description:
+      'Retrieve how many timeline photos and videos the user can see in each city. Counts include videos, while GET /search/cities lists only cities with at least one photo, so a city that has only videos appears here but not in that list. Locked, hidden and trashed media are never counted.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getCityAssetCounts(@Auth() auth: AuthDto): Promise<SearchCityCountResponseDto[]> {
+    return this.service.getCityAssetCounts(auth);
+  }
+
+  @Get('landmarks')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Retrieve visited landmarks',
+    description:
+      'Retrieve the landmarks, theme parks and other notable places the user has timeline photos or videos at, most photographed first, each with a count, the dates of the first and latest item, a cover and the city, state and country most of its items were taken in. Locked, hidden and trashed media are never counted. Returns an empty list while reverse geocoding is disabled.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getVisitedLandmarks(@Auth() auth: AuthDto): Promise<SearchLandmarkResponseDto[]> {
+    return this.service.getVisitedLandmarks(auth);
+  }
+
+  @Get('landmarks/:id/icon')
+  @FileResponse()
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Get landmark icon',
+    description:
+      "Retrieve a landmark's own brand icon as a square PNG. Only landmarks whose `icon` is present have one; for the rest this is 404 and the client shows the icon for the landmark's kind.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  async getLandmarkIcon(@Res() res: Response, @Next() next: NextFunction, @Param() { id }: LandmarkIconParamDto) {
+    await sendFile(res, next, () => Promise.resolve(this.service.getLandmarkIcon(id)), this.logger);
+  }
+
+  @Get('suggestions')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Retrieve search suggestions',
+    description:
+      'Retrieve search suggestions based on partial input. This endpoint is used for typeahead search features.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getSearchSuggestions(@Auth() auth: AuthDto, @Query() dto: SearchSuggestionRequestDto): Promise<string[]> {
+    // TODO fix open api generation to indicate that results can be nullable
+    return this.service.getSearchSuggestions(auth, dto) as Promise<string[]>;
+  }
+}

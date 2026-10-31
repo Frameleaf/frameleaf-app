@@ -1,0 +1,287 @@
+import { BeforeUpdateTrigger, Column, ColumnOptions } from '@frameleaf/sql-tools';
+import { SetMetadata, applyDecorators } from '@nestjs/common';
+import { ApiOperation, ApiOperationOptions, ApiTags } from '@nestjs/swagger';
+import { chunk, flatten } from 'lodash-es';
+import { ApiCustomExtension, ApiTag, FrameleafWorker, JobName, MetadataKey, QueueName } from 'src/enum.js';
+import { EmitEvent } from 'src/repositories/event.repository.js';
+import { immich_uuid_v7, updated_at } from 'src/schema/functions.js';
+
+const GeneratedUuidV7Column = (options: Omit<ColumnOptions, 'type' | 'default' | 'nullable'> = {}) =>
+  Column({ ...options, type: 'uuid', nullable: false, default: () => `${immich_uuid_v7.name}()` });
+
+export const UpdateIdColumn = (options: Omit<ColumnOptions, 'type' | 'default' | 'nullable'> = {}) =>
+  GeneratedUuidV7Column(options);
+
+export const CreateIdColumn = (options: Omit<ColumnOptions, 'type' | 'default' | 'nullable'> = {}) =>
+  GeneratedUuidV7Column(options);
+
+export const PrimaryGeneratedUuidV7Column = () => GeneratedUuidV7Column({ primary: true });
+
+export const UpdatedAtTrigger = (name: string) =>
+  BeforeUpdateTrigger({
+    name,
+    scope: 'row',
+    function: updated_at,
+  });
+
+// PostgreSQL uses a 16-bit integer to indicate the number of bound parameters. This means that the
+// maximum number of parameters is 65535. Any query that tries to bind more than that (e.g. searching
+// by a list of IDs) requires splitting the query into multiple chunks.
+// We are rounding down this limit, as queries commonly include other filters and parameters.
+export const DATABASE_PARAMETER_CHUNK_SIZE = 65_500;
+
+/**
+ * Chunks an array or set into smaller collections of the same type and specified size.
+ *
+ * @param collection The collection to chunk.
+ * @param size The size of each chunk.
+ */
+function chunks<T>(collection: Array<T>, size: number): Array<Array<T>>;
+function chunks<T>(collection: Set<T>, size: number): Array<Set<T>>;
+function chunks<T>(collection: Array<T> | Set<T>, size: number): Array<Array<T>> | Array<Set<T>> {
+  if (!(collection instanceof Set)) {
+    return chunk(collection, size);
+  }
+  const groups: Set<T>[] = [];
+  let current: Set<T> | undefined;
+  for (const value of collection) {
+    if (!current || current.size === size) {
+      current = new Set<T>();
+      groups.push(current);
+    }
+    current.add(value);
+  }
+  return groups;
+}
+
+/**
+ * Wraps a method that takes a collection of parameters and calls it in parallel with chunks of the collection,
+ * to overcome the maximum number of parameters allowed by the database driver.
+ *
+ * @param options.paramIndex The index of the function parameter to chunk. Defaults to 0.
+ * @param options.mergeFn Optional merger for results in chunk order.
+ */
+export function Chunked(
+  options: { paramIndex?: number; chunkSize?: number; mergeFn?: (results: any) => any } = {},
+): MethodDecorator {
+  return (target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const originalMethod = descriptor.value;
+    const parameterIndex = options.paramIndex ?? 0;
+    const chunkSize = options.chunkSize || DATABASE_PARAMETER_CHUNK_SIZE;
+    const mergeFn = options.mergeFn;
+    descriptor.value = function (...arguments_: any[]) {
+      const argument = arguments_[parameterIndex];
+
+      // Early return if argument length is less than or equal to the chunk size.
+      if (
+        (Array.isArray(argument) && argument.length <= chunkSize) ||
+        (argument instanceof Set && argument.size <= chunkSize)
+      ) {
+        // eslint-disable-next-line unicorn/no-this-outside-of-class
+        return originalMethod.apply(this, arguments_);
+      }
+
+      const prefix = arguments_.slice(0, parameterIndex);
+      const suffix = arguments_.slice(parameterIndex + 1);
+      const results: unknown[] = [];
+      try {
+        for (const chunk of chunks(argument, chunkSize)) {
+          // eslint-disable-next-line unicorn/no-this-outside-of-class
+          results.push(Reflect.apply(originalMethod, this, [...prefix, chunk, ...suffix]));
+        }
+      } catch (error) {
+        // A synchronous throw must not orphan promises returned by earlier chunks.
+        void Promise.allSettled(results);
+        throw error;
+      }
+      return Promise.all(results).then((values) => (mergeFn ? mergeFn(values) : values));
+    };
+  };
+}
+
+export function ChunkedArray(options?: { paramIndex?: number; chunkSize?: number }): MethodDecorator {
+  return Chunked({ ...options, mergeFn: flatten });
+}
+
+export function ChunkedSet(options?: { paramIndex?: number; chunkSize?: number }): MethodDecorator {
+  return Chunked({
+    ...options,
+    mergeFn: (sets: Set<any>[]) => {
+      // Repeated native unions copy the growing result for every chunk; merge once instead.
+      const result = new Set(sets[0]);
+      for (let index = 1; index < sets.length; index++) {
+        for (const value of sets[index]) {
+          result.add(value);
+        }
+      }
+      return result;
+    },
+  });
+}
+
+const UUID = '00000000-0000-4000-a000-000000000000';
+const UUID_1 = '00000000-0000-4000-a000-000000000001';
+
+export const DummyValue = {
+  UUID,
+  UUID_1,
+  UUID_SET: new Set([UUID]),
+  PAGINATION: { take: 10, skip: 0 },
+  EMAIL: 'user@example.com',
+  STRING: 'abcdefghi',
+  NUMBER: 50,
+  BUFFER: Buffer.from('abcdefghi'),
+  DATE: new Date(),
+  TIME_BUCKET: '2024-01-01T00:00:00.000Z',
+  BOOLEAN: true,
+  VECTOR: JSON.stringify(Array.from({ length: 512 }, () => 0)),
+};
+
+export const GENERATE_SQL_KEY = 'generate-sql-key';
+
+export interface GenerateSqlQueries {
+  name?: string;
+  params: unknown[];
+  stream?: boolean;
+}
+
+/** Decorator to enable versioning/tracking of generated Sql */
+export const GenerateSql = (...options: GenerateSqlQueries[]) => SetMetadata(GENERATE_SQL_KEY, options);
+
+export type EventConfig = {
+  name: EmitEvent;
+  /** handle socket.io server events as well */
+  server?: boolean;
+  /** lower value has higher priority, defaults to 0 */
+  priority?: number;
+  /** register events for these workers, defaults to all workers */
+  workers?: FrameleafWorker[];
+};
+export const OnEvent = (config: EventConfig) => SetMetadata(MetadataKey.EventConfig, config);
+
+export type JobConfig = {
+  name: JobName;
+  queue: QueueName;
+};
+export const OnJob = (config: JobConfig) => SetMetadata(MetadataKey.JobConfig, config);
+
+type EndpointOptions = ApiOperationOptions & { history?: HistoryBuilder };
+export const Endpoint = ({ history, ...options }: EndpointOptions) => {
+  const decorators: MethodDecorator[] = [];
+  const extensions = history?.getExtensions() ?? {};
+
+  if (!extensions[ApiCustomExtension.History]) {
+    console.log(`Missing history for endpoint: ${options.summary}`);
+  }
+
+  if (history?.isDeprecated()) {
+    options.deprecated = true;
+    decorators.push(ApiTags(ApiTag.Deprecated));
+  }
+
+  decorators.push(ApiOperation({ ...options, ...extensions }));
+
+  return applyDecorators(...decorators);
+};
+
+type HistoryEntry = {
+  version: string;
+  state: ApiState | 'Added' | 'Updated';
+  description?: string;
+  replacementId?: string;
+};
+
+type DeprecatedOptions = {
+  /** replacement operationId */
+  replacementId?: string;
+};
+
+type CustomExtensions = {
+  [ApiCustomExtension.State]?: ApiState;
+  [ApiCustomExtension.History]?: HistoryEntry[];
+};
+
+enum ApiState {
+  Stable = 'Stable',
+  Alpha = 'Alpha',
+  Beta = 'Beta',
+  Internal = 'Internal',
+  Deprecated = 'Deprecated',
+}
+export class HistoryBuilder {
+  private hasDeprecated = false;
+  private items: HistoryEntry[] = [];
+
+  static v3() {
+    return new HistoryBuilder().added('v3.0.0');
+  }
+
+  added(version: string, description?: string) {
+    return this.push({ version, state: 'Added', description });
+  }
+
+  updated(version: string, description: string) {
+    return this.push({ version, state: 'Updated', description });
+  }
+
+  alpha(version: string) {
+    return this.push({ version, state: ApiState.Alpha });
+  }
+
+  beta(version: string) {
+    return this.push({ version, state: ApiState.Beta });
+  }
+
+  internal(version: string) {
+    return this.push({ version, state: ApiState.Internal });
+  }
+
+  stable(version: string) {
+    return this.push({ version, state: ApiState.Stable });
+  }
+
+  deprecated(version: string, options?: DeprecatedOptions) {
+    const { replacementId } = options || {};
+    this.hasDeprecated = true;
+    return this.push({ version, state: ApiState.Deprecated, replacementId });
+  }
+
+  isDeprecated(): boolean {
+    return this.hasDeprecated;
+  }
+
+  getExtensions() {
+    const extensions: CustomExtensions = {};
+
+    if (this.items.length > 0) {
+      extensions[ApiCustomExtension.History] = this.items;
+    }
+
+    const item = this.items.findLast(
+      (entry): entry is HistoryEntry & { state: ApiState } => entry.state !== 'Added' && entry.state !== 'Updated',
+    );
+    if (item) {
+      extensions[ApiCustomExtension.State] = item.state;
+    }
+
+    return extensions;
+  }
+
+  private push(item: HistoryEntry) {
+    if (!item.version.startsWith('v')) {
+      throw new Error(`Version string must start with 'v': received '${JSON.stringify(item)}'`);
+    }
+    this.items.push(item);
+    return this;
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+export const extraModels: Function[] = [];
+
+export const ExtraModel = (): ClassDecorator => {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  return (object: Function) => {
+    extraModels.push(object);
+  };
+};

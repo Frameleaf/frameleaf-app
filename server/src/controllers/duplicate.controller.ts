@@ -1,0 +1,63 @@
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { DuplicateResolveDto, DuplicateResponseDto } from 'src/dtos/duplicate.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { DuplicateService } from 'src/services/duplicate.service.js';
+import { UUIDParamDto } from 'src/validation.js';
+
+@ApiTags(ApiTag.Duplicates)
+@Controller('duplicates')
+export class DuplicateController {
+  constructor(private service: DuplicateService) {}
+
+  @Get()
+  @Authenticated({ permission: Permission.DuplicateRead })
+  @Endpoint({
+    summary: 'Retrieve duplicates',
+    description: 'Retrieve a list of duplicate assets available to the authenticated user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getAssetDuplicates(@Auth() auth: AuthDto): Promise<DuplicateResponseDto[]> {
+    return this.service.getDuplicates(auth);
+  }
+
+  @Delete()
+  @Authenticated({ permission: Permission.DuplicateDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete duplicates',
+    description: 'Delete multiple duplicate assets specified by their IDs.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  deleteDuplicates(@Auth() auth: AuthDto, @Body() dto: BulkIdsDto): Promise<void> {
+    return this.service.deleteAll(auth, dto);
+  }
+
+  @Delete(':id')
+  @Authenticated({ permission: Permission.DuplicateDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Dismiss a duplicate group',
+    description: 'Dismiss a duplicate group by its ID, unlinking all assets in the group without deleting them.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  deleteDuplicate(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.delete(auth, id);
+  }
+
+  @Post('resolve')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.DuplicateDelete })
+  @Endpoint({
+    summary: 'Resolve duplicate groups',
+    description: 'Resolve duplicate groups by synchronizing metadata across assets and deleting/trashing duplicates.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  resolveDuplicates(@Auth() auth: AuthDto, @Body() dto: DuplicateResolveDto): Promise<BulkIdResponseDto[]> {
+    return this.service.resolve(auth, dto);
+  }
+}

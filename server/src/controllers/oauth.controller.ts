@@ -1,0 +1,153 @@
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Redirect, Req, Res } from '@nestjs/common';
+import { ApiConsumes, ApiTags } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import {
+  type AuthDto,
+  LoginResponseDto,
+  OAuthAuthorizeResponseDto,
+  OAuthBackchannelLogoutDto,
+  OAuthCallbackDto,
+  OAuthConfigDto,
+} from 'src/dtos/auth.dto.js';
+import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
+import { ApiTag, AuthCookie, AuthType } from 'src/enum.js';
+import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
+import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
+import { AuthService, type LoginDetails } from 'src/services/auth.service.js';
+import { respondWithCookie } from 'src/utils/response.js';
+
+@ApiTags(ApiTag.Authentication)
+@Controller('oauth')
+export class OAuthController {
+  constructor(private service: AuthService) {}
+
+  @Get('mobile-redirect')
+  @Authenticated({ public: true })
+  @Redirect()
+  @Endpoint({
+    summary: 'Redirect OAuth to mobile',
+    description:
+      'Requests to this URL are automatically forwarded to the mobile app, and is used in some cases for OAuth redirecting.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  redirectOAuthToMobile(@Req() request: Request) {
+    return {
+      url: this.service.getMobileRedirect(request.url),
+      statusCode: HttpStatus.TEMPORARY_REDIRECT,
+    };
+  }
+
+  @Get('frameleaf-mobile-redirect')
+  @Authenticated({ public: true })
+  @Redirect()
+  @Endpoint({
+    summary: 'Redirect OAuth to the Frameleaf mobile app',
+    description:
+      'Requests to this URL are automatically forwarded to the Frameleaf mobile app (frameleaf-auth:///oauth-callback), and is used when an identity provider only accepts HTTP callbacks.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  redirectOAuthToFrameleafMobile(@Req() request: Request) {
+    return {
+      url: this.service.getFrameleafMobileRedirect(request.url),
+      statusCode: HttpStatus.TEMPORARY_REDIRECT,
+    };
+  }
+
+  @Post('authorize')
+  @Authenticated({ public: true })
+  @Endpoint({
+    summary: 'Start OAuth',
+    description: 'Initiate the OAuth authorization process.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  async startOAuth(
+    @Body() dto: OAuthConfigDto,
+    @Res({ passthrough: true }) res: Response,
+    @GetLoginDetails() loginDetails: LoginDetails,
+  ): Promise<OAuthAuthorizeResponseDto> {
+    const { url, state, codeVerifier } = await this.service.authorize(dto);
+    return respondWithCookie(
+      res,
+      { url },
+      {
+        isSecure: loginDetails.isSecure,
+        values: [
+          { key: AuthCookie.OAuthState, value: state },
+          { key: AuthCookie.OAuthCodeVerifier, value: codeVerifier },
+        ],
+      },
+    );
+  }
+
+  @Post('callback')
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.oauthCallback)
+  @Endpoint({
+    summary: 'Finish OAuth',
+    description: 'Complete the OAuth authorization process by exchanging the authorization code for a session token.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  async finishOAuth(
+    @Req() request: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: OAuthCallbackDto,
+    @GetLoginDetails() loginDetails: LoginDetails,
+  ): Promise<LoginResponseDto> {
+    const body = await this.service.callback(dto, request.headers, loginDetails);
+    res.clearCookie(AuthCookie.OAuthState);
+    res.clearCookie(AuthCookie.OAuthCodeVerifier);
+    return respondWithCookie(res, body, {
+      isSecure: loginDetails.isSecure,
+      rememberMe: dto.rememberMe,
+      values: [
+        { key: AuthCookie.AccessToken, value: body.accessToken },
+        { key: AuthCookie.AuthType, value: AuthType.OAuth },
+        { key: AuthCookie.IsAuthenticated, value: 'true' },
+      ],
+    });
+  }
+
+  @Post('link')
+  @Authenticated()
+  @RateLimited(RATE_LIMITS.oauthCallback)
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Link OAuth account',
+    description: 'Link an OAuth account to the authenticated user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  linkOAuthAccount(
+    @Req() request: Request,
+    @Auth() auth: AuthDto,
+    @Body() dto: OAuthCallbackDto,
+  ): Promise<UserAdminResponseDto> {
+    return this.service.link(auth, dto, request.headers);
+  }
+
+  @Post('unlink')
+  @Authenticated()
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Unlink OAuth account',
+    description: 'Unlink the OAuth account from the authenticated user.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  unlinkOAuthAccount(@Auth() auth: AuthDto): Promise<UserAdminResponseDto> {
+    return this.service.unlink(auth);
+  }
+
+  @Post('backchannel-logout')
+  @Authenticated({ public: true })
+  @HttpCode(HttpStatus.OK)
+  @ApiConsumes('application/x-www-form-urlencoded')
+  @Endpoint({
+    summary: 'Backchannel OAuth logout',
+    description:
+      'Logout the OAuth account and invalidate the session specified by the sid claim or all sessions if the sid claim is not present.',
+    history: new HistoryBuilder().added('v2'),
+  })
+  async logoutOAuth(@Body() dto: OAuthBackchannelLogoutDto): Promise<void> {
+    return this.service.backchannelLogout(dto);
+  }
+}

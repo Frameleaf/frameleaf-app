@@ -1,0 +1,182 @@
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import {
+  TagBulkAssetsDto,
+  TagBulkAssetsResponseDto,
+  TagCreateDto,
+  TagMergeDto,
+  TagResponseDto,
+  TagSearchDto,
+  TagStatisticsResponseDto,
+  TagUpdateDto,
+  TagUpsertDto,
+} from 'src/dtos/tag.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { TagService } from 'src/services/tag.service.js';
+import { UUIDParamDto } from 'src/validation.js';
+
+@ApiTags(ApiTag.Tags)
+@Controller('tags')
+export class TagController {
+  constructor(private service: TagService) {}
+
+  @Post()
+  @Authenticated({ permission: Permission.TagCreate })
+  @Endpoint({
+    summary: 'Create a tag',
+    description: 'Create a new tag by providing a name and optional color.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  createTag(@Auth() auth: AuthDto, @Body() dto: TagCreateDto): Promise<TagResponseDto> {
+    return this.service.create(auth, dto);
+  }
+
+  @Get()
+  @Authenticated({ permission: Permission.TagRead })
+  @Endpoint({
+    summary: 'Retrieve tags',
+    description: 'Retrieve a list of all tags.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getAllTags(@Auth() auth: AuthDto): Promise<TagResponseDto[]> {
+    return this.service.getAll(auth);
+  }
+
+  @Get('search')
+  @Authenticated({ permission: Permission.TagRead })
+  @Endpoint({
+    summary: 'Search tags',
+    description:
+      'Retrieve the tags whose value contains the text, ignoring case, at most `take` of them: a search-as-you-type picker, instead of the whole list.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  searchTags(@Auth() auth: AuthDto, @Query() dto: TagSearchDto): Promise<TagResponseDto[]> {
+    return this.service.getAll(auth, dto);
+  }
+
+  @Get('statistics')
+  @Authenticated({ permission: Permission.TagRead })
+  @Endpoint({
+    summary: 'Retrieve tag statistics',
+    description:
+      'Count the Timeline items that carry each tag: exactly that tag, and that tag or any tag nested under it. Archived, Locked and hidden items are never counted, and tags the session may not see are left out.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getTagStatistics(@Auth() auth: AuthDto): Promise<TagStatisticsResponseDto[]> {
+    return this.service.getStatistics(auth);
+  }
+
+  @Put()
+  @Authenticated({ permission: Permission.TagCreate })
+  @Endpoint({
+    summary: 'Upsert tags',
+    description: 'Create or update multiple tags in a single request.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  upsertTags(@Auth() auth: AuthDto, @Body() dto: TagUpsertDto): Promise<TagResponseDto[]> {
+    return this.service.upsert(auth, dto);
+  }
+
+  @Put('assets')
+  @Authenticated({ permission: Permission.TagAsset })
+  @Endpoint({
+    summary: 'Tag assets',
+    description: 'Add multiple tags to multiple assets in a single request.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  bulkTagAssets(@Auth() auth: AuthDto, @Body() dto: TagBulkAssetsDto): Promise<TagBulkAssetsResponseDto> {
+    return this.service.bulkTagAssets(auth, dto);
+  }
+
+  @Get(':id')
+  @Authenticated({ permission: Permission.TagRead })
+  @Endpoint({
+    summary: 'Retrieve a tag',
+    description: 'Retrieve a specific tag by its ID.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  getTagById(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<TagResponseDto> {
+    return this.service.get(auth, id);
+  }
+
+  @Put(':id')
+  @Authenticated({ permission: Permission.TagUpdate })
+  @Endpoint({
+    summary: 'Update a tag',
+    description: 'Update an existing tag identified by its ID.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2').deprecated('v3', { replacementId: 'updateTag' }),
+  })
+  updateTag(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: TagUpdateDto): Promise<TagResponseDto> {
+    return this.service.update(auth, id, dto);
+  }
+
+  @Patch(':id')
+  @ApiExcludeEndpoint()
+  @Authenticated({ permission: Permission.TagUpdate })
+  updateTagV3(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: TagUpdateDto,
+  ): Promise<TagResponseDto> {
+    return this.service.update(auth, id, dto);
+  }
+
+  @Delete(':id')
+  @Authenticated({ permission: Permission.TagDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete a tag',
+    description: 'Delete a specific tag by its ID.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  deleteTag(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.remove(auth, id);
+  }
+
+  @Post(':id/merge')
+  @Authenticated({ permission: Permission.TagDelete })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Merge a tag into another',
+    description:
+      'Merge the tag in the path into the target tag and answer the target. Every item the merged tag is on carries the target afterwards, including archived, trashed and Locked items; the tags nested under it move under the target, and one that meets a tag of the same name there is merged into it the same way. The merged tag is then deleted. The target keeps its name, colour and place. A tag cannot be merged into itself or a tag nested under it. An API key also needs the permission to update tags.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  mergeTag(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: TagMergeDto): Promise<TagResponseDto> {
+    return this.service.merge(auth, id, dto);
+  }
+
+  @Put(':id/assets')
+  @Authenticated({ permission: Permission.TagAsset })
+  @Endpoint({
+    summary: 'Tag assets',
+    description: 'Add a tag to all the specified assets.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  tagAssets(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: BulkIdsDto,
+  ): Promise<BulkIdResponseDto[]> {
+    return this.service.addAssets(auth, id, dto);
+  }
+
+  @Delete(':id/assets')
+  @Authenticated({ permission: Permission.TagAsset })
+  @Endpoint({
+    summary: 'Untag assets',
+    description: 'Remove a tag from all the specified assets.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
+  untagAssets(
+    @Auth() auth: AuthDto,
+    @Body() dto: BulkIdsDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<BulkIdResponseDto[]> {
+    return this.service.removeAssets(auth, id, dto);
+  }
+}
