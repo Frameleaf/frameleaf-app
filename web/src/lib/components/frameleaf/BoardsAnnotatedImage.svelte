@@ -8,6 +8,7 @@
    */
   import { arrowHead, createAnnotation, type AnnotationTool, type Point } from '$lib/frameleaf/boards-annotations';
   import { AssetAnnotationKind, type AssetAnnotationItem } from '@frameleaf/sdk';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -118,6 +119,13 @@
     drag = null;
     draft = null;
   };
+
+  // Hiding the drawing mid-gesture removes the layer before its pointerup, so end the gesture here.
+  $effect(() => {
+    if (!show) {
+      untrack(onPointerCancel);
+    }
+  });
 
   const startMove = (event: PointerEvent, id: string) => {
     if (tool !== 'select') {
