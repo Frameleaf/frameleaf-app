@@ -35,7 +35,7 @@ const noisy =
   (content: Content, bits = 3): Content =>
   (timeMs) => {
     const hash = content(timeMs);
-    return hash === null ? null : hash ^ (BigInt((1 << bits) - 1) * BigInt(Math.round(timeMs) % 2));
+    return hash === null ? null : hash ^ (BigInt((1 << bits) - 1) * BigInt(Math.floor(timeMs / 1000) % 2));
   };
 
 const film = (durationMs: number, content: Content): VideoFingerprint => ({
@@ -88,7 +88,9 @@ describe('compareVideoFingerprints', () => {
   const original = film(60_000, scenes(1));
 
   it('groups a re-encode', () => {
-    const match = compareVideoFingerprints(original, film(60_000, noisy(scenes(1))), options);
+    const reencoded = film(60_000, noisy(scenes(1)));
+    expect(reencoded.hashes.some((hash, index) => hash !== original.hashes[index])).toBe(true);
+    const match = compareVideoFingerprints(original, reencoded, options);
     expect(match).toMatchObject({ isDuplicate: true, offsetMs: 0 });
   });
 

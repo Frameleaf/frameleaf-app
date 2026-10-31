@@ -48,7 +48,7 @@ export class UserFactory {
     this.#metadata.push({
       updatedAt: newDate(),
       updateId: newUuid(),
-      userId: newUuid(),
+      userId: this.value.id,
       ...dto,
     });
 

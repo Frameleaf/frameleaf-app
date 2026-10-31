@@ -222,6 +222,10 @@ describe('diffStudioGraphs', () => {
     expect(diffStudioGraphs(deep(1), deep(2))).toMatchObject({ changed: 1, paths: ['/a/b/c/d'] });
   });
 
+  it('treats an own constructor key as an addition, not an inherited property', () => {
+    expect(diffStudioGraphs({}, JSON.parse('{"constructor":1}'))).toMatchObject({ added: 1, changed: 0 });
+  });
+
   it('reviews an imported expression as data and never runs it (FL-100)', () => {
     const marker = '__frameleafExpressionRan';
     const hostile = `globalThis.${marker} = true`;

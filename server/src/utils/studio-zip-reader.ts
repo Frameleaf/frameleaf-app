@@ -1,5 +1,5 @@
 /** Internal bounded ZIP reader; no server aliases or vector parser imports. */
-import { inflateRawSync } from 'node:zlib';
+import { crc32, inflateRawSync } from 'node:zlib';
 
 export const STUDIO_BUNDLE_RATIO_FLOOR_BYTES = 64 * 1024;
 export const STUDIO_BUNDLE_MAX_RATIO = 200;
@@ -461,12 +461,7 @@ export const readZipEntry = async (source: ZipByteSource, entry: ZipEntry, maxBy
     if (bytes.length !== entry.uncompressedSize) {
       refuse('bundle_corrupt', `${entry.name.slice(0, 80)} inflated to a different size than declared`);
     }
-    let crc = 0xff_ff_ff_ff;
-    for (const byte of bytes) {
-      crc ^= byte;
-      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xed_b8_83_20 : 0);
-    }
-    if ((crc ^ 0xff_ff_ff_ff) >>> 0 !== entry.crc32) {
+    if (crc32(bytes) !== entry.crc32) {
       refuse('bundle_corrupt', `${entry.name.slice(0, 80)} CRC does not match`);
     }
     return bytes;

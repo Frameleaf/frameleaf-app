@@ -268,7 +268,9 @@ export const sealStudioReframe = (
       throw new StudioReframeError(`The framing names a clip twice: ${entry.clipId}`);
     }
     const path = entry.path;
-    const ordered = path.every((point, index) => index === 0 || point.t > path[index - 1].t);
+    const ordered = path.every(
+      (point, index) => finite(point.t) && finite(point.x) && (index === 0 || point.t > path[index - 1].t),
+    );
     if (path.length === 0 || path.length > REFRAME_MAX_POINTS || !ordered) {
       throw new StudioReframeError(`The framing of ${entry.clipId} is not a path through the shot`);
     }

@@ -390,8 +390,8 @@ export const diffStudioGraphs = (before: unknown, after: unknown): StudioGraphDi
     const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
     for (const key of keys) {
       const next = `${path}/${key}`;
-      const inLeft = key in left && left[key] !== undefined;
-      const inRight = key in right && right[key] !== undefined;
+      const inLeft = Object.hasOwn(left, key) && left[key] !== undefined;
+      const inRight = Object.hasOwn(right, key) && right[key] !== undefined;
       if (inLeft && !inRight) {
         removed += 1;
         record(next);
