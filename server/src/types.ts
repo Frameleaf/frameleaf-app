@@ -276,6 +276,7 @@ export type ConcurrentQueueName = Exclude<
   | QueueName.FacialRecognition
   | QueueName.DuplicateDetection
   | QueueName.BackupDatabase
+  | QueueName.LockedEncryption
 >;
 
 export type Jobs = { [K in JobItem['name']]: (JobItem & { name: K })['data'] };
@@ -645,6 +646,12 @@ export type JobItem =
 
   // Filesystem
   | { name: JobName.FileDelete; data: IDeleteFilesJob }
+
+  // Locked encryption
+  | { name: JobName.LockedSeal; data: { id: string } }
+  | { name: JobName.LockedUnseal; data: { id: string } }
+  | { name: JobName.LockedRewrap; data: { id: string } }
+  | { name: JobName.LockedSweep; data: { userId?: string } }
 
   // Cleanup
   | { name: JobName.SessionCleanup; data?: IBaseJob }

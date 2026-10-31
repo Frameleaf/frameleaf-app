@@ -128,6 +128,7 @@ import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-chang
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
@@ -333,6 +334,7 @@ export class ImmichDatabase {
     AssetJobStatusTable,
     AssetKeyframeTable,
     AssetLockTable,
+    LockedEncryptionTable,
     AssetDocumentEditTable,
     AssetOcrTable,
     AssetOcrAuditTable,
@@ -581,6 +583,7 @@ export interface DB extends QueueDatabase {
   bookmark_tag: BookmarkTagTable;
   asset_source: AssetSourceTable;
   asset_lock: AssetLockTable;
+  locked_encryption: LockedEncryptionTable;
   asset_document_edit: AssetDocumentEditTable;
   asset_ocr: AssetOcrTable;
   asset_ocr_audit: AssetOcrAuditTable;
