@@ -39,8 +39,9 @@
   const onOpen = async (asset: AssetResponseDto) => {
     try {
       const info = await getAssetInfo({ ...authManager.params, id: asset.id });
-      assetViewerManager.setAsset(info);
+      // Show the asset only once the URL points at it, so a failed navigation leaves nothing open.
       await navigate({ targetRoute: 'current', assetId: asset.id });
+      assetViewerManager.setAsset(info);
       return true;
     } catch (error) {
       handleError(error, $t('errors.failed_to_load_asset'));
