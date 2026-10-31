@@ -96,7 +96,14 @@ export class PetService {
 
   async remove(auth: AuthDto, id: string): Promise<void> {
     await this.findOrFail(auth, id);
+    // Its confirmations go with it, so a photo it settled may be open to the other pets again (FL-712).
+    const confirmed = (await this.petRepository.getObservations(auth.user.id, id, { withLocked: true }))
+      .filter(({ state }) => state === PetObservationState.Confirmed)
+      .map(({ assetId }) => assetId);
     await this.petRepository.delete(auth.user.id, id);
+    await this.jobRepository.queueAll(
+      confirmed.map((assetId) => ({ name: JobName.PetRecognition, data: { id: assetId } })),
+    );
   }
 
   /**
