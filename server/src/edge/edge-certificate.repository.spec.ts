@@ -1,4 +1,6 @@
+import { once } from 'node:events';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AcmeClient, EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
@@ -82,6 +84,84 @@ describe(EdgeCertificateRepository.name, () => {
 
   afterEach(async () => {
     await rm(identityDir, { recursive: true, force: true });
+  });
+
+  it('reuses an existing account with POST-as-GET after a fresh client is created', async () => {
+    const accountRequests: string[] = [];
+    const accountHeaders: unknown[] = [];
+    const registrations: unknown[] = [];
+    const registrationHeaders: Array<{ jwk?: unknown; kid?: string }> = [];
+    let refuseLookup = false;
+    let baseUrl = '';
+    const server = createServer((request, response) => {
+      void (async () => {
+        response.setHeader('Replay-Nonce', Buffer.from(String(Math.random())).toString('base64url'));
+        response.setHeader('Content-Type', 'application/json');
+        if (request.url === '/directory') {
+          response.end(JSON.stringify({ newNonce: `${baseUrl}/nonce`, newAccount: `${baseUrl}/new-account` }));
+          return;
+        }
+        if (request.url === '/nonce') {
+          response.end();
+          return;
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        const signed = JSON.parse(Buffer.concat(chunks).toString()) as { payload: string; protected: string };
+        const payload = Buffer.from(signed.payload, 'base64url').toString();
+        const protectedHeader = JSON.parse(Buffer.from(signed.protected, 'base64url').toString());
+        if (request.url === '/new-account') {
+          registrations.push(JSON.parse(payload));
+          registrationHeaders.push(protectedHeader);
+          response.statusCode = registrations.length === 1 ? 201 : 200;
+          response.setHeader('Location', `${baseUrl}/account/1`);
+          response.end(JSON.stringify({ status: 'valid' }));
+          return;
+        }
+        accountRequests.push(payload);
+        accountHeaders.push(protectedHeader);
+        response.statusCode = refuseLookup ? 403 : payload === '' ? 200 : 400;
+        response.end(
+          JSON.stringify(
+            refuseLookup
+              ? { type: 'urn:ietf:params:acme:error:unauthorized', detail: 'Account lookup denied' }
+              : payload === ''
+                ? { status: 'valid' }
+                : {
+                    type: 'urn:ietf:params:acme:error:malformed',
+                    detail: 'Use POST-as-GET to retrieve account data instead of doing an empty update',
+                  },
+          ),
+        );
+      })().catch((error: Error) => response.destroy(error));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing test server address');
+    baseUrl = `http://127.0.0.1:${address.port}`;
+    try {
+      const accountKey = await sut.accountKey(identityDir);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const client = sut.client(`${baseUrl}/directory`, accountKey);
+        await client.createAccount({ termsOfServiceAgreed: true });
+        expect(client.getAccountUrl()).toBe(`${baseUrl}/account/1`);
+      }
+      expect(registrations).toEqual([{ termsOfServiceAgreed: true }, { termsOfServiceAgreed: true }]);
+      expect(accountRequests).toEqual(['']);
+      expect(registrationHeaders[0].jwk).toBeDefined();
+      expect(registrationHeaders[1].jwk).toEqual(registrationHeaders[0].jwk);
+      expect(registrationHeaders.every((header) => header.kid === undefined)).toBe(true);
+      expect(accountHeaders).toEqual([expect.objectContaining({ kid: `${baseUrl}/account/1` })]);
+      expect(accountHeaders[0]).not.toHaveProperty('jwk');
+
+      refuseLookup = true;
+      const refused = sut.client(`${baseUrl}/directory`, accountKey);
+      await expect(refused.createAccount({ termsOfServiceAgreed: true })).rejects.toThrow('Account lookup denied');
+      expect(accountRequests).toEqual(['', '']);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    }
   });
 
   it('issues one wildcard order through DNS-01 and removes every challenge value again', async () => {
