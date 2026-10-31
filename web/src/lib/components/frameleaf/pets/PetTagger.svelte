@@ -88,14 +88,17 @@
     }
   });
 
-  // A region belongs to the photo it was drawn on: when the viewer moves to another photo, the draft
-  // (and the measured image size) start over so Save can never send the old region.
-  let draftFor = asset.id;
+  // A region belongs to the photo it was drawn on: when the viewer moves to another photo, or the
+  // original is replaced, the draft (and the measured image size) start over so Save can never send
+  // the old region.
+  const draftKey = () => `${asset.id}:${asset.checksum}`;
+  let draftFor = draftKey();
   $effect(() => {
-    if (asset.id === draftFor) {
+    const key = draftKey();
+    if (key === draftFor) {
       return;
     }
-    draftFor = asset.id;
+    draftFor = key;
     box = null;
     drag = null;
     preview = null;
