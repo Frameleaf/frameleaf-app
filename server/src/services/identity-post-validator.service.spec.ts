@@ -42,6 +42,16 @@ describe(IdentityPostValidator.name, () => {
       expect(flags.hallucinatedNames).toEqual(['Madison']);
     });
 
+    it.each(['Zoë', 'Zoe\u{308}', 'José', "O'Brien", 'Anne-Marie', "d'Artagnan", 'd’Angelo'])(
+      'replaces the whole unknown name %s, never a fragment of it',
+      (name) => {
+        expect(sut.validate(`I saw ${name} and Madison.`, [])).toEqual({
+          description: 'I saw Someone and Someone.',
+          flags: { hallucinatedNames: [name, 'Madison'] },
+        });
+      },
+    );
+
     it('does not strip a name that IS a known person', () => {
       const { description, flags } = sut.validate('Conner is playing baseball.', [person('Conner')]);
       expect(description).toBe('Conner is playing baseball.');
