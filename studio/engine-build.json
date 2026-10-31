@@ -784,7 +784,12 @@
       "path": "patches/0166-subject-cutout.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0b67de5b391c2821ac52587baf2a662175d79044959810c7554eaa9d3ad5bfe8"
+    },
+    {
+      "path": "patches/0171-parakeet-model-mirror.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2ae428dfcd6b6f5f43541b4765d022044041502fe3b6fe139571a655687e04df"
     }
   ],
-  "sourceSha256": "fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2"
+  "sourceSha256": "6616439af729e6175b697ee55a182e3c472418e058cd5d7a4bc3e5d21227286f"
 }
