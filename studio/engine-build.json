@@ -789,7 +789,12 @@
       "path": "patches/0171-parakeet-model-mirror.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "2ae428dfcd6b6f5f43541b4765d022044041502fe3b6fe139571a655687e04df"
+    },
+    {
+      "path": "patches/0172-coderabbit-review-fixes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "d1122ca704546d354a353230140629cb0752a57d4e7366c64b5f988a682983be"
     }
   ],
-  "sourceSha256": "6616439af729e6175b697ee55a182e3c472418e058cd5d7a4bc3e5d21227286f"
+  "sourceSha256": "49c10b84ca0ea183e5b1d8056ba0be96a06fcb57a88a5c80a6a64f52b920e9ee"
 }
