@@ -143,6 +143,7 @@
       kind="individual"
       keyHint={personal.keyHint}
       activatedAt={personal.activatedAt}
+      error={keyError}
       {badgeHidden}
       {busy}
       onBadgeHidden={(hidden) => void setBadgeHidden(hidden)}
