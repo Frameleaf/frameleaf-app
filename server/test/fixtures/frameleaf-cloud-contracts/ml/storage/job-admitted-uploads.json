@@ -1,0 +1,67 @@
+{
+  "jobId": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+  "status": "admitted",
+  "modelSku": "ms_K6WT70CS",
+  "modelRev": "mr_B2H147RBJBQ0",
+  "computeSku": "cs_KGECTVQ0",
+  "hold": {
+    "amountUsd": 0.203251,
+    "ceilingUsd": 0.223577,
+    "minimumUsd": 0.2
+  },
+  "createdAt": "2026-09-26T04:01:00.000Z",
+  "uploads": [
+    {
+      "inputId": "a1",
+      "bytes": 482113,
+      "contentType": "image/jpeg",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "inline",
+      "headers": {
+        "x-amz-server-side-encryption-customer-algorithm": "AES256",
+        "x-amz-server-side-encryption-customer-key": "q83vEjRWeJCrze8SNFZ4kKvN7xI0VniQq83vEjRWeJA=",
+        "x-amz-server-side-encryption-customer-key-md5": "Qy5a7cDqxXa3k9mBZ0mCFg==",
+        "content-type": "image/jpeg"
+      },
+      "inline": {
+        "url": "https://storage.eu.frameleaf.cloud/flc-jobs-eu/jobs/0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f/in/a1?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=GKmlroleeu000001%2F20260926%2Fgarage%2Fs3%2Faws4_request&X-Amz-Date=20260926T040100Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host%3Bx-amz-server-side-encryption-customer-algorithm%3Bx-amz-server-side-encryption-customer-key%3Bx-amz-server-side-encryption-customer-key-md5&X-Amz-Signature=0101010101010101010101010101010101010101010101010101010101010101",
+        "method": "PUT"
+      },
+      "multipart": null,
+      "uploaded": false,
+      "expiresAt": "2026-09-26T04:16:00.000Z"
+    },
+    {
+      "inputId": "a2",
+      "bytes": 9000000,
+      "contentType": "image/jpeg",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "method": "multipart",
+      "headers": {
+        "x-amz-server-side-encryption-customer-algorithm": "AES256",
+        "x-amz-server-side-encryption-customer-key": "q83vEjRWeJCrze8SNFZ4kKvN7xI0VniQq83vEjRWeJA=",
+        "x-amz-server-side-encryption-customer-key-md5": "Qy5a7cDqxXa3k9mBZ0mCFg==",
+        "content-type": "image/jpeg"
+      },
+      "inline": null,
+      "multipart": {
+        "partBytes": 8388608,
+        "parts": [
+          {
+            "partNumber": 1,
+            "url": "https://storage.eu.frameleaf.cloud/flc-jobs-eu/jobs/0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f/in/a2?partNumber=1&uploadId=VXBsb2FkLTE&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=GKmlroleeu000001%2F20260926%2Fgarage%2Fs3%2Faws4_request&X-Amz-Date=20260926T040100Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host%3Bx-amz-server-side-encryption-customer-algorithm%3Bx-amz-server-side-encryption-customer-key%3Bx-amz-server-side-encryption-customer-key-md5&X-Amz-Signature=0202020202020202020202020202020202020202020202020202020202020202",
+            "bytes": 8388608
+          },
+          {
+            "partNumber": 2,
+            "url": "https://storage.eu.frameleaf.cloud/flc-jobs-eu/jobs/0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f/in/a2?partNumber=2&uploadId=VXBsb2FkLTE&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=GKmlroleeu000001%2F20260926%2Fgarage%2Fs3%2Faws4_request&X-Amz-Date=20260926T040100Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host%3Bx-amz-server-side-encryption-customer-algorithm%3Bx-amz-server-side-encryption-customer-key%3Bx-amz-server-side-encryption-customer-key-md5&X-Amz-Signature=0303030303030303030303030303030303030303030303030303030303030303",
+            "bytes": 611392
+          }
+        ],
+        "completeUrl": "https://storage.eu.frameleaf.cloud/flc-jobs-eu/jobs/0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e0f/in/a2?uploadId=VXBsb2FkLTE&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=GKmlroleeu000001%2F20260926%2Fgarage%2Fs3%2Faws4_request&X-Amz-Date=20260926T040100Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host%3Bx-amz-server-side-encryption-customer-algorithm%3Bx-amz-server-side-encryption-customer-key%3Bx-amz-server-side-encryption-customer-key-md5&X-Amz-Signature=0404040404040404040404040404040404040404040404040404040404040404"
+      },
+      "uploaded": false,
+      "expiresAt": "2026-09-26T04:16:00.000Z"
+    }
+  ]
+}

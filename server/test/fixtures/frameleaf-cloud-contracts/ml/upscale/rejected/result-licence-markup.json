@@ -1,0 +1,59 @@
+{
+  "schema": "frameleaf.upscale/v1",
+  "modelSku": "ms_54S55W7C",
+  "modelRev": "mr_0WNPDD697MT0",
+  "licence": "<b>MIT</b>",
+  "scale": 4,
+  "format": "webp",
+  "items": [
+    {
+      "inputId": "a1",
+      "input": {
+        "width": 2000,
+        "height": 1500
+      },
+      "scale": 4,
+      "outputs": [
+        {
+          "outputId": "a1",
+          "contentType": "image/webp",
+          "width": 8000,
+          "height": 6000,
+          "bytes": 9811203,
+          "sha256": "7d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"
+        }
+      ],
+      "metrics": {
+        "tiles": 24,
+        "seconds": 3.912
+      },
+      "warnings": []
+    },
+    {
+      "inputId": "a2",
+      "input": {
+        "width": 1600,
+        "height": 1200
+      },
+      "scale": 4,
+      "outputs": [
+        {
+          "outputId": "a2",
+          "contentType": "image/webp",
+          "width": 6400,
+          "height": 4800,
+          "bytes": 7012288,
+          "sha256": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+        }
+      ],
+      "metrics": {
+        "tiles": 20,
+        "seconds": 6.25
+      },
+      "warnings": [
+        "metadata-removed",
+        "tiles-reduced"
+      ]
+    }
+  ]
+}

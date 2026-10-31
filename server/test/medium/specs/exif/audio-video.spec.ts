@@ -1,0 +1,67 @@
+import { Kysely } from 'kysely';
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { AssetType } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import { withAudioStream, withVideoFormat, withVideoPackets, withVideoStream } from 'src/utils/database.js';
+import { eiffelTower, train, waterfall } from 'test/fixtures/media.stub.js';
+import { ExifTestContext, testAssetsDir } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
+
+let database: Kysely<DB>;
+
+// Metadata fixtures are measured with the Jellyfin FFmpeg version pinned in mise.toml.
+const EXPECTED_FFMPEG_VERSION_RE = /version (?:n)?8\.1\.3/;
+const ffprobeVersion = (() => {
+  try {
+    return execFileSync('ffprobe', ['-version'], { encoding: 'utf8' });
+  } catch {
+    return '';
+  }
+})();
+const wrongFfmpegSkipReason = EXPECTED_FFMPEG_VERSION_RE.test(ffprobeVersion)
+  ? null
+  : `requires jellyfin-ffmpeg 8.1.3 (see mise.toml). Detected: ${
+      ffprobeVersion.split('\n', 1)[0] || '(ffprobe not found)'
+    }. Install via mise or run \`mise run ci-medium\`.`;
+
+beforeAll(async () => {
+  if (wrongFfmpegSkipReason) {
+    console.warn(`[audio-video.spec] SKIP — ${wrongFfmpegSkipReason}`);
+  }
+  database = await getKyselyDB();
+});
+
+const fixtures = [eiffelTower, waterfall, train];
+
+describe.skipIf(wrongFfmpegSkipReason !== null)('video metadata extraction', () => {
+  it.each(fixtures)('$originalPath', async ({ originalPath: path, videoStream, audioStream, packets, format }) => {
+    const ctx = new ExifTestContext(database);
+    const { user } = await ctx.newUser();
+    const originalPath = resolve(testAssetsDir, 'videos', path);
+    const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath, type: AssetType.Video });
+
+    await ctx.sut.handleMetadataExtraction({ id: asset.id });
+
+    const result = await database
+      .selectFrom('asset')
+      .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .innerJoin('asset_video', 'asset.id', 'asset_video.assetId')
+      .innerJoin('asset_keyframe', 'asset.id', 'asset_keyframe.assetId')
+      .leftJoin('asset_audio', 'asset.id', 'asset_audio.assetId')
+      .where('asset.id', '=', asset.id)
+      .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
+      .select((eb) => withAudioStream(eb).as('audioStream'))
+      .select((eb) => withVideoPackets(eb).$notNull().as('packets'))
+      .select((eb) => withVideoFormat(eb).$notNull().as('format'))
+      .executeTakeFirst();
+
+    const { audioStream: probedAudioStream, ...others } = result ?? {};
+    expect(others).toEqual({ videoStream, packets, format });
+
+    // FL-102: the channel count, layout and sample rate come back with the audio stream, pinned
+    // per fixture (stream-header facts, measured with ffprobe: stereo AAC at 44.1/48/44.1 kHz).
+    // A null here means the probe or the persistence dropped them.
+    expect(probedAudioStream).toEqual(audioStream);
+  });
+});
