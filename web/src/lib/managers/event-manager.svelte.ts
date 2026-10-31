@@ -1,0 +1,130 @@
+import type {
+  AlbumResponseDto,
+  AlbumUserRole,
+  ApiKeyResponseDto,
+  AssetResponseDto,
+  IntegrityReport,
+  JobCreateDto,
+  LoginResponseDto,
+  PersonResponseDto,
+  QueueResponseDto,
+  ReleaseEventV1,
+  SharedLinkResponseDto,
+  AdminConfigDto,
+  ServerFeaturesDto,
+  TagResponseDto,
+  UserAdminResponseDto,
+} from '@frameleaf/sdk';
+import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
+import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
+
+export type Events = {
+  SpeechIndexChange: [];
+  AppInit: [];
+  AppNavigate: [];
+
+  AuthLogin: [LoginResponseDto];
+  AuthLogout: [];
+  AuthUserLoaded: [UserAdminResponseDto];
+
+  LanguageChange: [{ name: string; code: string; rtl?: boolean }];
+
+  ApiKeyCreate: [ApiKeyResponseDto];
+  ApiKeyUpdate: [ApiKeyResponseDto];
+  ApiKeyDelete: [ApiKeyResponseDto];
+
+  AssetUpdate: [AssetResponseDto];
+  AssetsArchive: [string[]];
+  AssetsUnarchive: [TimelineAsset[]];
+  AssetsUndoArchive: [TimelineAsset[]];
+  AssetsDelete: [string[]];
+  AssetsMarkNsfw: [string[]];
+  AssetEditsApplied: [string];
+  AssetsTag: [string[]];
+
+  AlbumAddAssets: [{ assetIds: string[]; albumIds: string[] }];
+  AlbumRemoveAssets: [{ assetIds: string[]; albumIds: string[] }];
+  AlbumCreate: [AlbumResponseDto];
+  AlbumUpdate: [AlbumResponseDto];
+  /** The server says an album changed, possibly from another member or device; re-read it. */
+  AlbumRemoteUpdate: [{ id: string }];
+  AlbumDelete: [AlbumResponseDto];
+  AlbumShare: [];
+  AlbumUserUpdate: [{ albumId: string; userId: string; role: AlbumUserRole }];
+  AlbumUserDelete: [{ albumId: string; userId: string }];
+
+  /** FL-54: `sharedById` stopped sharing their library with `sharedWithId`, here or elsewhere. */
+  PartnerRevoke: [{ sharedById: string; sharedWithId: string }];
+
+  PersonUpdate: [PersonResponseDto];
+  PersonThumbnailReady: [{ id: string }];
+  PersonAssetDelete: [{ id: string; assetId: string }];
+  /**
+   * FL-37: faces moved between people (a merge, Fix incorrect match, a face reassigned or removed).
+   * `personIds` names the people known to have changed; `removedPersonIds` those that no longer
+   * exist (merged away). Listeners re-read the faces and names they show rather than patching them.
+   */
+  PersonFacesChange: [{ personIds: string[]; removedPersonIds?: string[] }];
+
+  BackupDeleteStatus: [{ filename: string; isDeleting: boolean }];
+  BackupDeleted: [{ filename: string }];
+  BackupUpload: [{ progress: number; isComplete: boolean }];
+
+  QueueUpdate: [QueueResponseDto];
+
+  /** The Libraries manager read the libraries again (one added, removed, or a scan moved). */
+  LibrariesChange: [];
+
+  SharedLinkCreate: [SharedLinkResponseDto];
+  SharedLinkUpdate: [SharedLinkResponseDto];
+  SharedLinkDelete: [SharedLinkResponseDto];
+
+  TagCreate: [TagResponseDto];
+  TagUpdate: [TagResponseDto];
+
+  UserPinCodeReset: [];
+  /** FL-67: the signed-in account created its first PIN. */
+  UserPinCodeCreated: [];
+
+  UserAdminCreate: [UserAdminResponseDto];
+  UserAdminUpdate: [UserAdminResponseDto];
+  UserAdminRestore: [UserAdminResponseDto];
+  // soft deleted
+  UserAdminDelete: [UserAdminResponseDto];
+  // confirmed permanently deleted from server
+  UserAdminDeleted: [{ id: string }];
+
+  SessionLocked: [];
+  /**
+   * FL-34: the server revoked elevated access for this session or account (`on_session_lock`), from
+   * this tab or elsewhere. Distinct from `SessionLocked` (this tab's own lock): a non-elevated tab has
+   * nothing to give up, so only the session privacy guard acts on it, and only while elevated.
+   */
+  SessionLockedRemote: [];
+  /** FL-146 (FL-77): an administrator changed this account's preferences; they were read again. */
+  UserPreferencesRemoteUpdate: [];
+  SessionAccessChanged: [{ isElevated: boolean }];
+  SessionDelete: [];
+
+  SystemConfigUpdate: [AdminConfigDto];
+  /** The server's feature flags, read by someone other than the feature flags manager. */
+  ServerFeaturesLoaded: [ServerFeaturesDto];
+
+  IntegrityReportDeleteStatus: [{ type?: IntegrityReport; id?: string; isDeleting: boolean }];
+  IntegrityReportDeleted: [{ type?: IntegrityReport; id?: string }];
+
+  JobCreate: [{ dto: JobCreateDto }];
+
+  /** FL-43: one of this account's jobs changed (`on_media_operation_update`); only its id is known. */
+  MediaOperationUpdate: [{ id: string }];
+
+  ReleaseEvent: [ReleaseEventV1];
+
+  /** FL-155: the Frameleaf Cloud link, licence or a Frameleaf account changed (`on_frameleaf_cloud`). */
+  FrameleafCloudUpdate: [{ topic: 'link' | 'license' | 'account' }];
+
+  WebsocketConnect: [];
+  WebsocketDisconnect: [];
+};
+
+export const eventManager = new BaseEventManager<Events>();

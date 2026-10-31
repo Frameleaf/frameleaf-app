@@ -1,0 +1,113 @@
+// Coordinate spaces used throughout the viewer:
+//
+// "Normalized": 0–1 range, (0,0) = top-left, (1,1) = bottom-right. Resolution-independent.
+//   Example: OCR coordinates, or face coords after dividing by metadata dimensions.
+//
+// "Content": pixel position within the container after scaling (scaleToFit/scaleToCover)
+//   and centering. Used for DOM overlay positioning (face boxes, OCR text).
+//
+// "Natural": pixel position in the original full-resolution image file (e.g. 4000×3000).
+//   Used when cropping or drawing on the source image.
+//
+// "Metadata pixel space": coordinates from face detection / OCR models, in pixels relative
+//   to face.imageWidth/imageHeight. Divide by those dimensions to get normalized coords.
+
+export type Point = {
+  x: number;
+  y: number;
+};
+
+export type Size = {
+  width: number;
+  height: number;
+};
+
+export type ContentMetrics = {
+  contentWidth: number;
+  contentHeight: number;
+  offsetX: number;
+  offsetY: number;
+};
+
+const isMeasurable = (dimensions: Size) => dimensions.width > 0 && dimensions.height > 0;
+
+export const scaleToCover = (dimensions: Size, container: Size): Size => {
+  if (!isMeasurable(dimensions)) {
+    return { width: 0, height: 0 };
+  }
+  const scaleX = container.width / dimensions.width;
+  const scaleY = container.height / dimensions.height;
+  const scale = Math.max(scaleX, scaleY);
+  return {
+    width: dimensions.width * scale,
+    height: dimensions.height * scale,
+  };
+};
+
+export const scaleToFit = (dimensions: Size, container: Size): Size => {
+  if (!isMeasurable(dimensions)) {
+    return { width: 0, height: 0 };
+  }
+  const scaleX = container.width / dimensions.width;
+  const scaleY = container.height / dimensions.height;
+  const scale = Math.min(scaleX, scaleY);
+  return {
+    width: dimensions.width * scale,
+    height: dimensions.height * scale,
+  };
+};
+
+export const getNaturalSize = (element: HTMLImageElement | HTMLVideoElement): Size => {
+  if (element instanceof HTMLVideoElement) {
+    return { width: element.videoWidth, height: element.videoHeight };
+  }
+  return { width: element.naturalWidth, height: element.naturalHeight };
+};
+
+export function mapNormalizedToContent(point: Point, sizeOrMetrics: Size | ContentMetrics): Point {
+  if ('contentWidth' in sizeOrMetrics) {
+    return {
+      x: point.x * sizeOrMetrics.contentWidth + sizeOrMetrics.offsetX,
+      y: point.y * sizeOrMetrics.contentHeight + sizeOrMetrics.offsetY,
+    };
+  }
+  return {
+    x: point.x * sizeOrMetrics.width,
+    y: point.y * sizeOrMetrics.height,
+  };
+}
+
+export type Rect = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+};
+
+export function mapNormalizedRectToContent(
+  topLeft: Point,
+  bottomRight: Point,
+  sizeOrMetrics: Size | ContentMetrics,
+): Rect {
+  let left: number;
+  let top: number;
+  let right: number;
+  let bottom: number;
+  if ('contentWidth' in sizeOrMetrics) {
+    left = topLeft.x * sizeOrMetrics.contentWidth + sizeOrMetrics.offsetX;
+    top = topLeft.y * sizeOrMetrics.contentHeight + sizeOrMetrics.offsetY;
+    right = bottomRight.x * sizeOrMetrics.contentWidth + sizeOrMetrics.offsetX;
+    bottom = bottomRight.y * sizeOrMetrics.contentHeight + sizeOrMetrics.offsetY;
+  } else {
+    left = topLeft.x * sizeOrMetrics.width;
+    top = topLeft.y * sizeOrMetrics.height;
+    right = bottomRight.x * sizeOrMetrics.width;
+    bottom = bottomRight.y * sizeOrMetrics.height;
+  }
+  return {
+    top,
+    left,
+    width: right - left,
+    height: bottom - top,
+  };
+}
