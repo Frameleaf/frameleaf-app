@@ -331,7 +331,9 @@ export class VideoMomentIndexService {
     if (queueExecution.getStore()) {
       if (claimLost) return CLAIM_LOST;
       if (failure) {
-        // Kept like the direct path: the retry only captions the frames that are still missing.
+        // Adopted when the job itself completes (an enrichment plan carries on past a failed item), so
+        // its retry only captions what is missing. A standalone job that returns Failed adopts nothing
+        // by design; its retry captions every frame again.
         if (captions.length > 0)
           deferJobAdoption(async () => {
             await publish();
