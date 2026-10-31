@@ -25,7 +25,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   getServerStatistics: vi.fn(),
 }));
 vi.mock('$lib/components/frameleaf/AccountTable.svelte', async () => ({
-  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+  default: (await import('../../../../test-data/components/MockAccountTable.svelte')).default,
 }));
 vi.mock('./UserDetail.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
@@ -70,5 +70,7 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
     vi.mocked(requestServerInfo).mockReturnValueOnce(new Promise(() => {}));
     render(UsersSection);
     await waitFor(() => expect(searchUsersAdmin).toHaveBeenCalledWith({ withDeleted: true }));
+    // The (mocked) account list renders while the disk check is still pending.
+    expect(await screen.findByTestId('account-table')).toBeInTheDocument();
   });
 });
