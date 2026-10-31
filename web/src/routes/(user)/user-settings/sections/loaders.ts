@@ -50,7 +50,8 @@ export type ComputersData = Awaited<ReturnType<typeof loadComputers>>;
 
 /** One account's detail, the old `/admin/users/[id]` layout loader (FL-76). */
 export const loadUserDetail = async (id: string) => {
-  const [user] = await searchUsersAdmin({ id, withDeleted: true }).catch(() => []);
+  // A failed read rejects (the detail offers a retry); only an account that is not there returns null.
+  const [user] = await searchUsersAdmin({ id, withDeleted: true });
   if (!user) {
     return null;
   }

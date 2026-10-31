@@ -68,7 +68,10 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
   it('reads the accounts without waiting for the disk check', async () => {
     state.url = new URL('http://localhost/user-settings?area=users&section=accounts');
     vi.mocked(requestServerInfo).mockReturnValueOnce(new Promise(() => {}));
-    render(UsersSection);
+    const { container } = render(UsersSection);
     await waitFor(() => expect(searchUsersAdmin).toHaveBeenCalledWith({ withDeleted: true }));
+    // The (mocked) account list renders while the disk check is still pending.
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(screen.queryByText('frameleaf_cc_section_load_failed')).toBeNull();
   });
 });
