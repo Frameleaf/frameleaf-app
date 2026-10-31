@@ -127,6 +127,13 @@ export class IdentityPostValidator {
           .filter((token) => token.length > 0),
       ),
     );
+    // Each person's name as its ordered parts, for hyphenated spellings of a name stored with spaces.
+    const knownTokenRuns = knownPersons.map((p) =>
+      p.name
+        .toLowerCase()
+        .split(/[\s-]+/)
+        .filter((token) => token.length > 0),
+    );
     // Protect complete known tokens before the English candidate heuristic splits their spelling.
     const knownNameSpans = [...knownNames].flatMap((token) =>
       Array.from(
@@ -155,15 +162,16 @@ export class IdentityPostValidator {
       if (COMMON_NON_NAME_WORDS.has(word)) {
         return match;
       }
-      // A known name, or a hyphenated spelling of known tokens ("Anne-Marie" for a stored "Anne Marie").
-      let start = offset;
-      const known = (word as string).split('-').every((part) => {
-        const end = start + part.length;
-        const inside = knownNameSpans.some(([from, to]) => start >= from && end <= to);
-        start = end + 1;
-        return inside;
-      });
-      if (known) {
+      // A known name, or a hyphenated run of one known person's name ("Anne-Marie" for a stored
+      // "Anne Marie"); parts taken from different people ("Anne-Smith") are not a known name.
+      const parts = (word as string).toLowerCase().split('-');
+      if (
+        knownNameSpans.some(([start, end]) => offset >= start && offset + word.length <= end) ||
+        (parts.length > 1 &&
+          knownTokenRuns.some((tokens) =>
+            tokens.some((_, at) => parts.every((part, index) => tokens[at + index] === part)),
+          ))
+      ) {
         return match;
       }
       // Anything else that looks like a name mid-sentence is hallucinated.

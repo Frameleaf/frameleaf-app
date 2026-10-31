@@ -25,6 +25,13 @@ describe(IdentityPostValidator.name, () => {
       expect(sut.validate(text, [person('Anne Marie')])).toEqual({ description: text, flags: {} });
     });
 
+    it('strips a hyphenated name built from two different known people', () => {
+      expect(sut.validate('I saw Anne-Smith by the lake.', [person('Anne Jones'), person('John Smith')])).toEqual({
+        description: 'I saw Someone by the lake.',
+        flags: { hallucinatedNames: ['Anne-Smith'] },
+      });
+    });
+
     it('still strips a hyphenated name only partly made of known tokens', () => {
       expect(sut.validate('I saw Anne-Sophie by the lake.', [person('Anne Marie')])).toEqual({
         description: 'I saw Someone by the lake.',

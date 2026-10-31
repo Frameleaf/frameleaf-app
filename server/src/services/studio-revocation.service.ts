@@ -198,11 +198,13 @@ export class StudioRevocationService {
     if (failures.length > 1) throw new AggregateError(failures, 'Studio revocation failed');
   }
 
-  /** Cancel unfinished exports and previews; a claimed one waits for its worker to acknowledge. */
   /**
+   * Cancel unfinished exports and previews; a claimed one waits for its worker to acknowledge.
+   *
    * With `removedAssetIds`, a clip job (transcription, stabilise, voice clean-up: one clip, its library
-   * source recorded as `assetId` when the job is queued) stops only when that source is the one removed;
-   * the project's other clips keep their work. Exports and previews read the whole project and stop.
+   * source recorded as `assetId` when the job is queued) whose recorded source is another library asset
+   * keeps running. One with no recorded asset (a generated intermediate or an import, whose lineage the
+   * job does not record) still stops, as before. Exports and previews read the whole project and stop.
    */
   private async cancelJobs(
     projectIds: readonly string[],
@@ -216,7 +218,8 @@ export class StudioRevocationService {
       (operation) =>
         !removed ||
         operation.kind !== MediaOperationKind.StudioTranscription ||
-        (operation.assetId !== null && removed.has(operation.assetId.toLowerCase())),
+        operation.assetId === null ||
+        removed.has(operation.assetId.toLowerCase()),
     );
     let cancelled = 0;
     for (const operation of unfinished) {

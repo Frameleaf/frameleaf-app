@@ -94,7 +94,7 @@ describe(StudioRevocationService.name, () => {
   it.each([
     ['trash', () => sut.onAssetTrash({ assetId: ASSET, userId: 'owner-1' })],
     ['delete', () => sut.onAssetDeleteAll({ assetIds: [ASSET], userId: 'owner-1' })],
-  ])('on %s stops only the clip jobs whose source is the removed asset', async (_, act) => {
+  ])('on %s keeps clip jobs whose recorded source is another asset', async (_, act) => {
     operations.listUnfinishedForProjects.mockResolvedValue([
       {
         id: 'export-1',
@@ -118,7 +118,8 @@ describe(StudioRevocationService.name, () => {
         assetId: '0195e2a0-0000-7000-8000-00000000a002',
       },
       {
-        id: 'clip-of-import',
+        // A generated intermediate or an import records no source asset, so it still stops.
+        id: 'clip-without-recorded-source',
         ownerId: 'owner-1',
         kind: MediaOperationKind.StudioTranscription,
         projectId: 'project-2',
@@ -131,6 +132,7 @@ describe(StudioRevocationService.name, () => {
     expect(operations.requestCancel.mock.calls).toEqual([
       ['export-1', 'owner-1'],
       ['clip-of-removed', 'owner-1'],
+      ['clip-without-recorded-source', 'owner-1'],
     ]);
   });
 
