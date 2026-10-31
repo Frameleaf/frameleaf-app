@@ -41,6 +41,8 @@ services:
     # the Frameleaf server to reach port 3003 (an allowlist firewall rule or ACL), or put both hosts on an
     # isolated private network. Binding to a private address (for example 192.168.1.10:3003:3003) is
     # extra defence in depth, not enough on its own: every device on that network could still reach it.
+    # Plain http:// is not encrypted, so image previews cross the network readable. Across an untrusted
+    # network, put the worker behind an HTTPS (TLS) reverse proxy or a VPN and use that address.
     ports:
       - 3003:3003
 
@@ -68,7 +70,7 @@ Adding a new URL to the settings is recommended over replacing the existing URL 
 
 <ComposeBuilder query="machineLearning.external=true" />
 
-Do note that when the remote instance is the only destination that can take this work, Smart Search and Face Detection jobs will fail to be processed while it is not available. This in turn means that tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for affected assets. If this occurs, you must select **Catch up** for **Visual search** and **Face detection** under **Settings → Computers & background work → Background work** for the jobs to be retried.
+Do note that when the remote instance is the only destination that can take this work, Smart Search and Face Detection jobs cannot be processed while it is not available. Jobs that start while it is down wait for it and run when it comes back. Jobs that were already running on it when it went down are refused, so tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for those assets. For refused jobs only, select **Catch up** for **Visual search** and **Face detection** under **Settings → Computers & background work → Background work** to retry them.
 
 ## Load balancing
 
