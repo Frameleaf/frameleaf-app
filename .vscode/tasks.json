@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Frameleaf CLI",
+      "type": "shell",
+      "command": "pnpm --filter @frameleaf/cli build:dev",
+      "problemMatcher": []
+    }
+  ]
+}

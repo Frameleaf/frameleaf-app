@@ -18,7 +18,8 @@ The rules the server enforces:
 
 - A destination on this server or your network is allowed library-analysis work **or** restoration work, not both. The form closes one kind once you tick the other.
 - A restoration is refused (never moved) when its destination is still allowed both kinds of work from before this rule, or points at an endpoint a library workload is routed to.
-- Nothing falls back. A job whose destination is missing, disabled or unreachable is refused and says why.
+- Routed library work (such as smart search and face detection) is tried first on the worker it is routed to. If that worker is missing, disabled or unreachable when a job starts, the job moves to the next available destination in the processing order that is turned on and allowed that work, and waits only when none can take it. When no destination is available as the job starts, the job is assigned to the first destination in the processing order and waits for that one; its retries stay there rather than moving when another destination comes back. Once a job has been admitted to a destination it stays there: the request is sent only to that destination, it is not retried against another URL, and if that destination becomes unavailable before the job finishes, the job is refused rather than moved.
+- A job sent to an explicitly chosen destination, such as a restoration, never falls back. If that destination is missing, disabled or unreachable, the job is refused and says why.
 
 Destinations saved before the separation that allow both kinds of work keep running library analysis and are listed under **Workers allowed both kinds of work** until you limit them to one.
 
@@ -40,7 +41,7 @@ The inventory refreshes every 30 seconds while the page is open. When a refresh 
 
 ### The machine-learning URL list
 
-**Machine-learning endpoints** edits the machine-learning URL list from the machine-learning settings. Use each worker's base URL (HTTP or HTTPS, without a password, query or fragment); up to 32 are supported and at least one must remain. The server creates a destination for each URL on this network and routes library work that has no route yet to the first one; the order sets nothing else. When a URL leaves the list (removed, or edited to a new address) its destination is turned off: work routed to it is refused, not moved, until you route it elsewhere. If the URL is added back, that destination is turned on again. Removing a URL does not stop a remote worker, and existing restorations keep their chosen destination.
+**Machine-learning endpoints** edits the machine-learning URL list from the machine-learning settings. Use each worker's base URL (HTTP or HTTPS, without a password, query or fragment); up to 32 are supported and at least one must remain. The server creates a destination for each URL on this network and routes library work that has no route yet to the first one; the order sets nothing else. When a URL leaves the list (removed, or edited to a new address) its destination is turned off; routes are not rewritten. New jobs routed to it move to the next available destination in the processing order and wait when none can take it, while a job already admitted to it is refused rather than moved. If the URL is added back, that destination is turned on again, unless an administrator had turned it off. Removing a URL does not stop a remote worker, and existing restorations keep their chosen destination.
 
 ## Deployment: a separate restoration container
 
