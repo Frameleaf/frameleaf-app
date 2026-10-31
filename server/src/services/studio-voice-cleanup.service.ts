@@ -377,37 +377,12 @@ export class StudioVoiceCleanupService {
       if (resolved.digest !== snapshot.digest || resolved.clip.mediaId !== snapshot.mediaId) {
         throw new BadRequestException('The project revision or its clip changed');
       }
-      const info = await this.media.probe(resolved.path, { countFrames: false, signal: controller.signal });
-      if (info.audioStreams.length === 0) {
-        throw new BadRequestException('The clip has no sound to clean up');
-      }
       const window = voiceCleanupWindow(resolved.clip);
       total = Math.ceil(toApproximateNumber(window.duration) * 1000);
-      this.storage.mkdirSync(folder);
-      await this.audio.extractAudio(resolved.path, wavPath, window, controller.signal, 48_000);
-      controller.signal.throwIfAborted();
-
-      stage = MediaOperationStatus.Rendering;
-      progress = EXTRACTED_PROGRESS;
-      await monitor();
-      controller.signal.throwIfAborted();
-      const cleaned = await this.onFirstWorker(operation.id, (selection) =>
-        this.machineLearning.cleanVoice(
-          selection,
-          wavPath,
-          { strength: snapshot.strength, noises: snapshot.noises, humHz: snapshot.humHz },
-          cleanedPath,
-          controller.signal,
-          (done, frames) => {
-            processed = Math.round((done / frames) * total);
-            progress = EXTRACTED_PROGRESS + (done / frames) * (CLEANED_PROGRESS - EXTRACTED_PROGRESS);
-          },
-        ),
-      );
-      controller.signal.throwIfAborted();
 
       // Kept with the project as an audio import, like music someone adds in Studio. A retry reuses the
-      // track an earlier attempt kept, and replaces one it left unfinished.
+      // track an earlier attempt kept, and replaces one it left unfinished (owner decision 2026-10-31).
+      // Checked before any sound is read, so a retry of a finished clean-up repeats no work.
       const importId = cleanedImportId(snapshot);
       // Only an abandoned attempt is superseded, never one another job still holds a live claim on.
       const live = await this.twins(operation.ownerId, snapshot.projectId, importId, operation.id);
@@ -418,8 +393,42 @@ export class StudioVoiceCleanupService {
       ) {
         throw new Error('The same voice clean-up is running in another job');
       }
-      let kept = await this.supersede(auth, snapshot.projectId, importId);
-      if (!kept) {
+      const finished = await this.supersedeUnfinished(auth, snapshot.projectId, importId);
+      let kept = finished && mapStudioProjectImport(finished);
+      let seconds: number;
+      if (finished) {
+        // The kept track's own length; nothing is read from the clip again.
+        const keptInfo = await this.media.probe(finished.path, { countFrames: false, signal: controller.signal });
+        seconds = keptInfo.format.duration;
+      } else {
+        const info = await this.media.probe(resolved.path, { countFrames: false, signal: controller.signal });
+        if (info.audioStreams.length === 0) {
+          throw new BadRequestException('The clip has no sound to clean up');
+        }
+        this.storage.mkdirSync(folder);
+        await this.audio.extractAudio(resolved.path, wavPath, window, controller.signal, 48_000);
+        controller.signal.throwIfAborted();
+
+        stage = MediaOperationStatus.Rendering;
+        progress = EXTRACTED_PROGRESS;
+        await monitor();
+        controller.signal.throwIfAborted();
+        const cleaned = await this.onFirstWorker(operation.id, (selection) =>
+          this.machineLearning.cleanVoice(
+            selection,
+            wavPath,
+            { strength: snapshot.strength, noises: snapshot.noises, humHz: snapshot.humHz },
+            cleanedPath,
+            controller.signal,
+            (done, frames) => {
+              processed = Math.round((done / frames) * total);
+              progress = EXTRACTED_PROGRESS + (done / frames) * (CLEANED_PROGRESS - EXTRACTED_PROGRESS);
+            },
+          ),
+        );
+        controller.signal.throwIfAborted();
+        seconds = cleaned.seconds;
+
         const name = fileSafe(resolved.clip.label) || 'Clip';
         const fileName = `${name.slice(0, 120)} (cleaned voice).m4a`;
         incoming = studioImportStagePath(operation.ownerId);
@@ -449,7 +458,7 @@ export class StudioVoiceCleanupService {
         noises: snapshot.noises,
         humHz: snapshot.humHz,
         sourceStartSeconds: voiceSeconds(window.handleBefore),
-        durationSeconds: cleaned.seconds,
+        durationSeconds: seconds,
       });
       const outcome = await this.operations.publishValidated(operation.id, claimToken, async (tx) => {
         // publishValidated holds the claim row; an expired lease is refused even before recovery takes it.
@@ -535,6 +544,12 @@ export class StudioVoiceCleanupService {
    * touched.
    */
   private async supersede(auth: AuthDto, projectId: string, importId: string) {
+    const finished = await this.supersedeUnfinished(auth, projectId, importId);
+    return finished ? mapStudioProjectImport(finished) : undefined;
+  }
+
+  /** {@link supersede}, answering the finished import as stored. */
+  private async supersedeUnfinished(auth: AuthDto, projectId: string, importId: string) {
     let cursor: string | undefined;
     do {
       const page = await this.publications.discover(auth, projectId, cursor);
@@ -554,8 +569,7 @@ export class StudioVoiceCleanupService {
       }
       cursor = page.nextCursor ?? undefined;
     } while (cursor);
-    const finished = await this.projects.getImport(projectId, importId);
-    return finished ? mapStudioProjectImport(finished) : undefined;
+    return this.projects.getImport(projectId, importId);
   }
 
   /**

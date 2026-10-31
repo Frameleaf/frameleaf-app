@@ -135,7 +135,7 @@ The check names the set-up problems it finds, each with the fix and, where docke
   - This is usually pre-installed on the device vendor's Linux images
 - RKNPU driver V0.9.8 or later must be available in the host server
   - You may confirm this by running `cat /sys/kernel/debug/rknpu/version` to check the version
-- Optional: Configure your `.env.ml` file (the machine learning container does not read `.env`; move any existing ML-only settings from `.env` to `.env.ml`), see [environment variables](/install/environment-variables) for RKNN specific settings
+- Optional: Configure your `.env.ml` file (the machine learning container does not read `.env`; move any existing ML-only settings from `.env` to `.env.ml`), see [environment variables](/install/environment-variables) for RKNN-specific settings
   - In particular, setting `MACHINE_LEARNING_RKNN_THREADS` to 2 or 3 can _dramatically_ improve performance for RK3576 and RK3588 compared to the default of 1, at the expense of multiplying the amount of RAM each model uses by that amount.
 
 ## Setup

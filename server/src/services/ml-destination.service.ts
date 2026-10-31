@@ -336,6 +336,20 @@ export class MlDestinationService extends BaseService {
     const row = registry?.quarantine[id]
       ? await this.mlDestinationRepository.updateRecoveryBinding(auth!, current, patch)
       : await this.mlDestinationRepository.update(id, patch);
+    if (dto.enabled !== undefined && current.lastProbeSummary === ML_URL_REMOVED_SUMMARY) {
+      // An administrator decided this row's state, so the URL-list rule no longer owns it: a URL
+      // added back later must not turn on a destination the administrator turned off.
+      const probe = {
+        health: MlDestinationHealth.Unknown,
+        summary: null,
+        workloads: null,
+        probedAt: new Date(),
+        hardware: null,
+        latencyMs: null,
+      };
+      await this.mlDestinationRepository.recordProbe(id, probe);
+      return this.toDto({ ...row, lastProbeHealth: probe.health, lastProbeSummary: null, lastProbeAt: probe.probedAt });
+    }
     return this.toDto(row);
   }
 

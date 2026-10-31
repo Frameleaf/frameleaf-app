@@ -42,7 +42,7 @@ npm uninstall -g immich
 
 If npm is not available on your system you can try the Docker version
 
-Put the server URL and your API key in a Docker env file, so the key stays out of shell history and process arguments. Create `frameleaf-cli.env` in a text editor with your own values, and make it readable only by you (`chmod 600 frameleaf-cli.env`):
+Put the server URL and your API key in a Docker env file, so the key stays out of shell history and process arguments. Keep `frameleaf-cli.env` out of source control: do not create it inside a Git repository, and if you run Docker from one, add it to that repository's `.gitignore` first. Create `frameleaf-cli.env` in a text editor with your own values, and make it readable only by you (`chmod 600 frameleaf-cli.env`):
 
 ```bash
 FRAMELEAF_INSTANCE_URL=https://your-frameleaf-server/api

@@ -193,6 +193,7 @@ const setup = (options: { graph?: unknown; route?: Array<Record<string, unknown>
     audio,
     movies,
     machineLearning,
+    media,
     query,
   };
 };
@@ -452,8 +453,26 @@ describe(StudioVoiceCleanupService.name, () => {
     });
 
     it('a retry after a success reuses the finished import instead of keeping a second one', async () => {
-      const { sut, operation, projects, imports, publications, movies, query, operations } = setup();
-      projects.getImport.mockResolvedValue({ ...kept, createdAt: new Date(kept.createdAt), ownerId: owner.user.id });
+      const {
+        sut,
+        operation,
+        projects,
+        imports,
+        publications,
+        movies,
+        query,
+        operations,
+        audio,
+        machineLearning,
+        media,
+      } = setup();
+      projects.getImport.mockResolvedValue({
+        ...kept,
+        createdAt: new Date(kept.createdAt),
+        ownerId: owner.user.id,
+        path: '/kept.m4a',
+      });
+      media.probe.mockResolvedValue({ audioStreams: [{ index: 0 }], videoStreams: [], format: { duration: 4.02 } });
       publications.discover.mockResolvedValue({
         items: [
           {
@@ -471,10 +490,15 @@ describe(StudioVoiceCleanupService.name, () => {
       expect(projects.getImport).toHaveBeenCalledWith(projectId, expect.any(String));
       expect(publications.cancel).not.toHaveBeenCalled();
       expect(publications.release).not.toHaveBeenCalled();
+      // Nothing is read from the clip or cleaned again; the kept track gives the result its length.
+      expect(media.probe).toHaveBeenCalledTimes(1);
+      expect(media.probe).toHaveBeenCalledWith('/kept.m4a', expect.anything());
+      expect(audio.extractAudio).not.toHaveBeenCalled();
+      expect(machineLearning.cleanVoice).not.toHaveBeenCalled();
       expect(movies.encodeMusic).not.toHaveBeenCalled();
       expect(imports.upload).not.toHaveBeenCalled();
       expect(query.set).toHaveBeenCalledWith(
-        expect.objectContaining({ result: expect.objectContaining({ import: kept }) }),
+        expect.objectContaining({ result: expect.objectContaining({ import: kept, durationSeconds: 4.02 }) }),
       );
       expect(operations.fail).not.toHaveBeenCalled();
     });
@@ -506,7 +530,7 @@ describe(StudioVoiceCleanupService.name, () => {
     });
 
     it('two identical jobs at once keep one track and never cancel the live one', async () => {
-      const { sut, operation, operations, projects, imports, publications, query } = setup();
+      const { sut, operation, operations, projects, imports, publications, query, media } = setup();
       const live = '0195e2a0-0000-7000-8000-000000000041';
       const liveOperation = {
         ...operation,
@@ -539,6 +563,7 @@ describe(StudioVoiceCleanupService.name, () => {
       operations.listUnfinishedForProjects.mockResolvedValue([{ id: operationId }]);
       publications.discover.mockResolvedValue({ items: [], nextCursor: null });
       projects.getImport.mockResolvedValue({ ...kept, createdAt: new Date(kept.createdAt), ownerId: owner.user.id });
+      media.probe.mockResolvedValue({ audioStreams: [{ index: 0 }], videoStreams: [], format: { duration: 4 } });
       await sut.run({ operation, claimToken });
       expect(imports.upload).not.toHaveBeenCalled();
       expect(query.set).toHaveBeenCalledWith(

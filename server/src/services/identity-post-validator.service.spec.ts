@@ -20,6 +20,26 @@ describe(IdentityPostValidator.name, () => {
       },
     );
 
+    it.each([
+      ['Jos\u{E9}', 'Jose\u{301}'],
+      ['Jose\u{301}', 'Jos\u{E9}'],
+    ])('keeps the known name %j when the caption spells it %j', (stored, written) => {
+      const text = `I saw ${written} beside a child.`;
+      expect(sut.validate(text, [person(stored)])).toEqual({ description: text, flags: {} });
+    });
+
+    it('does not treat an accented place after "in" as a person', () => {
+      const text = 'I saw Anne in Zürich.';
+      expect(sut.validate(text, [person('Anne')])).toEqual({ description: text, flags: {} });
+    });
+
+    it('still strips an unknown accented name elsewhere and a possessive after "in"', () => {
+      expect(sut.validate("I saw Zoë and a baby in Chloé's arms.", [])).toEqual({
+        description: "I saw Someone and a baby in Someone's arms.",
+        flags: { hallucinatedNames: ['Zoë', 'Chloé'] },
+      });
+    });
+
     it('preserves the hyphenated spelling of a known name stored with a space', () => {
       const text = 'I saw Anne-Marie by the lake.';
       expect(sut.validate(text, [person('Anne Marie')])).toEqual({ description: text, flags: {} });

@@ -99,6 +99,9 @@ const isAfterSentenceEnd = (text: string, index: number): boolean => {
   return true; // reached start
 };
 
+/** Ends with the preposition "in" as a whole word, followed by whitespace. */
+const PLACE_PREPOSITION = /(?<![\p{L}\p{M}\p{N}_])in\s+$/iu;
+
 const escapeRegExp = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 export class IdentityPostValidator {
@@ -124,7 +127,9 @@ export class IdentityPostValidator {
         p.name
           .split(/\s+/)
           .map((token) => token.trim())
-          .filter((token) => token.length > 0),
+          .filter((token) => token.length > 0)
+          // A caption may spell a name composed ("José") or decomposed ("Jose\u0301") either way.
+          .flatMap((token) => [token, token.normalize('NFC'), token.normalize('NFD')]),
       ),
     );
     // Each person's name as its ordered parts, for hyphenated spellings of a name stored with spaces.
@@ -164,6 +169,14 @@ export class IdentityPostValidator {
       }
       // Allow-listed common non-name words.
       if (COMMON_NON_NAME_WORDS.has(word)) {
+        return match;
+      }
+      // A capitalised word right after "in" is a place ("in Zürich", "in Paris"), not a person,
+      // unless it is possessive ("in Anne's arms").
+      if (
+        PLACE_PREPOSITION.test(description.slice(0, offset)) &&
+        !/^['’]s(?![\p{L}\p{M}\p{N}_])/u.test(description.slice(offset + word.length))
+      ) {
         return match;
       }
       // A known name, or a hyphenated run of one known person's name ("Anne-Marie" for a stored

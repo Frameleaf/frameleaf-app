@@ -316,6 +316,11 @@ export class MaintenanceWorkerService {
       this.#restoring = true;
     }
     if (action.action === MaintenanceAction.End) {
+      // A second End is refused rather than sharing the reservation, so its failure cleanup cannot
+      // release the first End's reservation and let a restore start while that End is running.
+      if (this.#ending) {
+        throw new ConflictException('This server is reopening. Wait until it restarts.');
+      }
       this.#ending = true;
     }
   }
