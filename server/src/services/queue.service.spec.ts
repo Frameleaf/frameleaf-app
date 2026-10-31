@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import {
+  DatabaseLock,
   FrameleafWorker,
   JobName,
   MlDestinationKind,
@@ -276,6 +277,16 @@ describe(QueueService.name, () => {
         nights: [],
         quiet: { holding: [QueueName.SmartSearch] },
       });
+    });
+
+    it('resumes the queue inside the overnight lock so quiet hours cannot hold it in between', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics());
+      mocks.database.withLock.mockImplementation(async () => {});
+
+      await sut.runCommandLegacy(QueueName.VideoConversion, { command: QueueCommand.Resume, force: false });
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.OvernightSequenceRun, expect.any(Function));
+      expect(mocks.job.resume).not.toHaveBeenCalled();
     });
 
     it('leaves the quiet hours record alone when the resumed queue is not held', async () => {
