@@ -196,22 +196,23 @@ export class LockedEncryptionService {
         }
         throw error;
       }
-      const base = {
-        format: FORMAT,
-        userId,
-        label: auth.user.name,
-        publicKey: publicKey.toString('base64'),
-        mode: dto.mode,
-        encrypting: true,
-        createdAt,
-        updatedAt: createdAt,
-      } as const;
-      file = await wrapKey(base, privateKey, modeKind(dto.mode), passphrase ?? dto.pinCode);
-      file = await wrapKey(file, privateKey, 'recovery', recoveryKey);
       try {
+        const base = {
+          format: FORMAT,
+          userId,
+          label: auth.user.name,
+          publicKey: publicKey.toString('base64'),
+          mode: dto.mode,
+          encrypting: true,
+          createdAt,
+          updatedAt: createdAt,
+        } as const;
+        file = await wrapKey(base, privateKey, modeKind(dto.mode), passphrase ?? dto.pinCode);
+        file = await wrapKey(file, privateKey, 'recovery', recoveryKey);
         await this.lockedKeyRepository.write(file);
       } catch (error) {
-        // the write is atomic, so the key file is as it was; only the claim is undone
+        // nothing of this request reached the key file (the write is atomic and comes last), so
+        // only the claim is undone; a retry can then turn it on
         await this.lockedEncryptionRepository.delete(userId);
         throw error;
       }

@@ -213,6 +213,22 @@ describe(LockedEncryptionService.name, () => {
       expect(lockedKeys.has(userId)).toBe(false);
     });
 
+    it('a wrap that fails after the claim leaves no row and no key file, and a retry succeeds', async () => {
+      const crypto = await import('@frameleaf/locked-crypto');
+      const wrap = vi.spyOn(crypto, 'wrapKey').mockRejectedValueOnce(new Error('scrypt: memory limit exceeded'));
+
+      await expect(enablePin()).rejects.toThrow('scrypt');
+      expect(rows.size).toBe(0);
+      expect(files.size).toBe(0);
+      expect(mocks.lockedKey.write).not.toHaveBeenCalled();
+      expect(lockedKeys.has(userId)).toBe(false);
+
+      wrap.mockRestore();
+      const { recoveryKey } = await enablePin();
+      expect(rows.get(userId)).toMatchObject({ status: 'encrypting' });
+      await expect(unwrapKey(fileOf(), 'recovery', recoveryKey)).resolves.toHaveLength(32);
+    }, 20_000);
+
     it('a new recovery key and a passphrase change at once both survive', async () => {
       await enableAdvanced();
       const [{ recoveryKey }] = await Promise.all([
