@@ -1,0 +1,622 @@
+import { Kysely, sql } from 'kysely';
+import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ClusterGroupService } from 'src/services/cluster-group.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
+
+let defaultDatabase: Kysely<DB>;
+
+const setup = (db?: Kysely<DB>) => {
+  const ctx = newMediumService(ClusterGroupService, {
+    database: db || defaultDatabase,
+    real: [AccessRepository, ClusterGroupRepository, PersonRepository, UserRepository],
+    mock: [LoggingRepository, EventRepository],
+  });
+
+  ctx.ctx.getMock(EventRepository).emit.mockResolvedValue();
+
+  return ctx;
+};
+
+const getClusterGroupId = async (ctx: ReturnType<typeof setup>['ctx'], userId: string) => {
+  const { clusterGroupId } = await ctx.database
+    .selectFrom('user')
+    .select('user.clusterGroupId')
+    .where('user.id', '=', userId)
+    .executeTakeFirstOrThrow();
+
+  return clusterGroupId;
+};
+
+const getPeople = (ctx: ReturnType<typeof setup>['ctx'], ownerId: string) =>
+  ctx.database.selectFrom('person').selectAll('person').where('person.ownerId', '=', ownerId).execute();
+
+beforeAll(async () => {
+  defaultDatabase = await getKyselyDB();
+});
+
+describe(ClusterGroupService.name, () => {
+  describe('createRequest', () => {
+    it('should create a request for another user', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const auth = factory.auth({ user: owner });
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const { value: request } = await sut.createRequest(auth, clusterGroupId, { userId: invitee.id });
+
+      expect(request).toEqual(
+        expect.objectContaining({ clusterGroupId, userId: invitee.id, createdAt: expect.any(Date) }),
+      );
+      expect(ctx.getMock(EventRepository).emit).toHaveBeenCalledWith('ClusterGroupRequest', {
+        clusterGroupId,
+        userId: invitee.id,
+        senderName: owner.name,
+      });
+    });
+
+    it('should reject a cluster group the user is not a member of', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const auth = factory.auth({ user: owner });
+      const otherClusterGroupId = await getClusterGroupId(ctx, other.id);
+
+      await expect(sut.createRequest(auth, otherClusterGroupId, { userId: other.id })).rejects.toThrow(
+        'Not found or no clusterGroupRequest.create access',
+      );
+    });
+
+    it('should return the existing request when it was already created', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const auth = factory.auth({ user: owner });
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const created = await sut.createRequest(auth, clusterGroupId, { userId: invitee.id });
+      expect(created.duplicate).toBe(false);
+
+      const again = await sut.createRequest(auth, clusterGroupId, { userId: invitee.id });
+      expect(again.duplicate).toBe(true);
+      expect(again.value).toEqual(created.value);
+
+      await expect(sut.getRequests(factory.auth({ user: invitee }))).resolves.toEqual([created.value]);
+    });
+
+    it('should reject an unknown user', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const auth = factory.auth({ user: owner });
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      await expect(sut.createRequest(auth, clusterGroupId, { userId: factory.uuid() })).rejects.toThrow(
+        'User not found',
+      );
+    });
+  });
+
+  describe('getRequests', () => {
+    it('should only return the requests for the current user', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: invitee.id,
+      });
+      await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, { userId: other.id });
+
+      await expect(sut.getRequests(factory.auth({ user: invitee }))).resolves.toEqual([request]);
+    });
+  });
+
+  describe('getRequestsForGroup', () => {
+    it('should return the requests sent by the cluster group', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const auth = factory.auth({ user: owner });
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const { value: request } = await sut.createRequest(auth, clusterGroupId, { userId: invitee.id });
+
+      await expect(sut.getRequestsForGroup(auth, clusterGroupId)).resolves.toEqual([request]);
+      await expect(sut.getRequestsForGroup(factory.auth({ user: other }), clusterGroupId)).rejects.toThrow(
+        'Not found or no clusterGroup.read access',
+      );
+    });
+  });
+
+  describe('getUsers', () => {
+    it('should return the members of the cluster group', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const auth = factory.auth({ user: owner });
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const { value: request } = await sut.createRequest(auth, clusterGroupId, { userId: member.id });
+      await sut.acceptRequest(factory.auth({ user: member }), request.id);
+
+      const users = await sut.getUsers(auth, clusterGroupId);
+      expect(users.map(({ id }) => id)).toEqual(expect.arrayContaining([owner.id, member.id]));
+      expect(users.map(({ id }) => id)).not.toContain(other.id);
+
+      await expect(sut.getUsers(factory.auth({ user: other }), clusterGroupId)).rejects.toThrow(
+        'Not found or no clusterGroup.read access',
+      );
+    });
+
+    it('should let a user with a pending request see the members', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const auth = factory.auth({ user: owner });
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      await expect(sut.getUsers(factory.auth({ user: invitee }), clusterGroupId)).rejects.toThrow(
+        'Not found or no clusterGroup.read access',
+      );
+
+      await sut.createRequest(auth, clusterGroupId, { userId: invitee.id });
+
+      const users = await sut.getUsers(factory.auth({ user: invitee }), clusterGroupId);
+      expect(users.map(({ id }) => id)).toContain(owner.id);
+    });
+  });
+
+  describe('acceptRequest', () => {
+    it('should move the user into the cluster group and delete the request', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: invitee.id,
+      });
+      await sut.acceptRequest(factory.auth({ user: invitee }), request.id);
+
+      await expect(getClusterGroupId(ctx, invitee.id)).resolves.toBe(clusterGroupId);
+      await expect(sut.getRequests(factory.auth({ user: invitee }))).resolves.toEqual([]);
+    });
+
+    it('should not accept a request belonging to someone else', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+      const otherClusterGroupId = await getClusterGroupId(ctx, other.id);
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: invitee.id,
+      });
+
+      await expect(sut.acceptRequest(factory.auth({ user: other }), request.id)).rejects.toThrow(
+        'Not found or no clusterGroupRequest.read access',
+      );
+      await expect(getClusterGroupId(ctx, other.id)).resolves.toBe(otherClusterGroupId);
+    });
+  });
+
+  describe('leave', () => {
+    it('should move the user into a new cluster group', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+      const auth = factory.auth({ user });
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: user.id,
+      });
+      await sut.acceptRequest(auth, request.id);
+
+      await sut.leave(auth, clusterGroupId);
+
+      const newClusterGroupId = await getClusterGroupId(ctx, user.id);
+      expect(newClusterGroupId).not.toBe(clusterGroupId);
+      await expect(
+        ctx.database
+          .selectFrom('cluster_group')
+          .select('cluster_group.id')
+          .where('cluster_group.id', '=', newClusterGroupId)
+          .executeTakeFirst(),
+      ).resolves.toBeDefined();
+    });
+
+    it('should reject a cluster group the user is not a member of', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const otherClusterGroupId = await getClusterGroupId(ctx, other.id);
+
+      await expect(sut.leave(auth, otherClusterGroupId)).rejects.toThrow('Not found or no clusterGroup.leave access');
+    });
+
+    it('should not let the last member leave', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const clusterGroupId = await getClusterGroupId(ctx, user.id);
+
+      await expect(sut.leave(auth, clusterGroupId)).rejects.toThrow(
+        'Cannot leave a cluster group without any other members',
+      );
+      await expect(getClusterGroupId(ctx, user.id)).resolves.toBe(clusterGroupId);
+    });
+  });
+
+  describe('shared spaces are untouched by recognition groups (FL-54)', () => {
+    it('never adds, removes or changes a space membership or invitation when someone joins or leaves', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { user: invited } = await ctx.newUser();
+      const { album: space } = await ctx.newAlbum({ ownerId: owner.id, kind: AlbumKind.Space });
+      await ctx.newAlbumUser({ albumId: space.id, userId: member.id, role: AlbumUserRole.Viewer });
+      await ctx.get(AlbumUserRepository).createInvite({
+        albumId: space.id,
+        userId: invited.id,
+        role: AlbumUserRole.Editor,
+        invitedById: owner.id,
+      });
+      const membership = () =>
+        ctx.database
+          .selectFrom('album_user')
+          .select(['album_user.userId', 'album_user.role'])
+          .where('album_user.albumId', '=', space.id)
+          .orderBy('album_user.userId')
+          .execute();
+      const invitations = () =>
+        ctx.database
+          .selectFrom('shared_space_invite')
+          .select(['shared_space_invite.userId', 'shared_space_invite.role'])
+          .where('shared_space_invite.albumId', '=', space.id)
+          .execute();
+      const before = { members: await membership(), invites: await invitations() };
+
+      // The space's owner brings the member into their recognition group…
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: member.id,
+      });
+      await sut.acceptRequest(factory.auth({ user: member }), request.id);
+      // …and the invitee into it too, who has not answered the space's invitation.
+      const { value: second } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: invited.id,
+      });
+      await sut.acceptRequest(factory.auth({ user: invited }), second.id);
+      await expect(membership()).resolves.toEqual(before.members);
+      await expect(invitations()).resolves.toEqual(before.invites);
+
+      // Leaving the recognition group takes nobody out of the space either.
+      await sut.leave(factory.auth({ user: member }), clusterGroupId);
+      await expect(membership()).resolves.toEqual(before.members);
+      await expect(invitations()).resolves.toEqual(before.invites);
+    });
+  });
+
+  describe('joining a cluster group', () => {
+    it('should take the groups of the user along', async () => {
+      const database = await getKyselyDB();
+      onTestFinished(() => database.destroy());
+      const { sut, ctx } = setup(database);
+      const personRepo = ctx.get(PersonRepository);
+      const { user: owner } = await ctx.newUser();
+      const { user } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: user.id,
+      });
+      await sut.acceptRequest(factory.auth({ user }), request.id);
+
+      // the group keeps its id, it only changes cluster group
+      await expect(personRepo.getByGroupId(person)).resolves.toEqual(
+        expect.objectContaining({ personGroupId: person.personGroupId }),
+      );
+      await expect(
+        ctx.database
+          .selectFrom('person_group')
+          .select('person_group.clusterGroupId')
+          .where('person_group.id', '=', person.personGroupId)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ clusterGroupId });
+      await expect(
+        ctx.database
+          .selectFrom('asset_face')
+          .select('asset_face.personGroupId')
+          .where('asset_face.id', '=', assetFace.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ personGroupId: person.personGroupId });
+      await expect(getClusterGroupId(ctx, user.id)).resolves.toBe(clusterGroupId);
+    });
+  });
+
+  describe('leaving a shared cluster group', () => {
+    it('should recreate the shared groups and take the rest of its own along', async () => {
+      const database = await getKyselyDB();
+      onTestFinished(() => database.destroy());
+      const { sut, ctx } = setup(database);
+      const personRepo = ctx.get(PersonRepository);
+      const { user: user1 } = await ctx.newUser();
+      const { user: user2 } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, user1.id);
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: user1 }), clusterGroupId, {
+        userId: user2.id,
+      });
+      await sut.acceptRequest(factory.auth({ user: user2 }), request.id);
+
+      // a group both of them have a person in
+      const { person: shared1 } = await ctx.newPerson({ ownerId: user1.id });
+      await ctx.newPerson({ ownerId: user2.id, personGroupId: shared1.personGroupId });
+      // a group only the leaving user has a person in
+      const { person: only2 } = await ctx.newPerson({ ownerId: user2.id });
+      // a group only the remaining user has a person in
+      const { person: only1 } = await ctx.newPerson({ ownerId: user1.id });
+
+      const { asset: asset2 } = await ctx.newAsset({ ownerId: user2.id });
+      const { assetFace: sharedFace2 } = await ctx.newAssetFace({
+        assetId: asset2.id,
+        personGroupId: shared1.personGroupId,
+      });
+      const { asset: asset1 } = await ctx.newAsset({ ownerId: user1.id });
+      const { assetFace: sharedFace1 } = await ctx.newAssetFace({
+        assetId: asset1.id,
+        personGroupId: shared1.personGroupId,
+      });
+
+      await sql`CREATE TABLE test_cluster_write_order_log (id bigint GENERATED ALWAYS AS IDENTITY, kind text)`.execute(
+        ctx.database,
+      );
+      await sql`CREATE FUNCTION test_cluster_write_order() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN INSERT INTO test_cluster_write_order_log(kind) VALUES (TG_TABLE_NAME); RETURN NEW; END
+      $$`.execute(ctx.database);
+      for (const [table, event] of [
+        ['person_group', 'INSERT'],
+        ['person', 'UPDATE'],
+        ['asset_face', 'UPDATE'],
+      ]) {
+        await sql
+          .raw(
+            `CREATE TRIGGER test_cluster_write_order BEFORE ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION test_cluster_write_order()`,
+          )
+          .execute(ctx.database);
+      }
+      await sut.leave(factory.auth({ user: user2 }), clusterGroupId);
+      const {
+        rows: [order],
+      } = await sql<{
+        kinds: string[];
+      }>`SELECT array_agg(kind ORDER BY id) AS kinds FROM test_cluster_write_order_log`.execute(ctx.database);
+      expect(order.kinds).toEqual(['person_group', 'person', 'asset_face']);
+
+      const newClusterGroupId = await getClusterGroupId(ctx, user2.id);
+      expect(newClusterGroupId).not.toBe(clusterGroupId);
+
+      // the shared group is recreated for the leaving user, the one only they had comes along as it is
+      const leaverPeople = await getPeople(ctx, user2.id);
+      const movedShared = leaverPeople.find(({ personGroupId }) => personGroupId !== only2.personGroupId);
+      expect(movedShared).toBeDefined();
+      expect(movedShared!.personGroupId).not.toBe(shared1.personGroupId);
+      await expect(personRepo.getByGroupId(only2)).resolves.toBeDefined();
+
+      // the remaining user is untouched
+      await expect(personRepo.getByGroupId(shared1)).resolves.toBeDefined();
+      await expect(personRepo.getByGroupId(only1)).resolves.toBeDefined();
+
+      const groups = await ctx.database
+        .selectFrom('person_group')
+        .select(['person_group.id', 'person_group.clusterGroupId'])
+        .execute();
+      expect(groups).toEqual(
+        expect.arrayContaining([
+          { id: shared1.personGroupId, clusterGroupId },
+          { id: only1.personGroupId, clusterGroupId },
+          { id: only2.personGroupId, clusterGroupId: newClusterGroupId },
+          { id: movedShared!.personGroupId, clusterGroupId: newClusterGroupId },
+        ]),
+      );
+
+      // only the faces on the assets of the leaving user follow the recreated group
+      const faces = await ctx.database
+        .selectFrom('asset_face')
+        .select(['asset_face.id', 'asset_face.personGroupId'])
+        .where('asset_face.id', 'in', [sharedFace1.id, sharedFace2.id])
+        .execute();
+      expect(faces).toEqual(
+        expect.arrayContaining([
+          { id: sharedFace1.id, personGroupId: shared1.personGroupId },
+          { id: sharedFace2.id, personGroupId: movedShared!.personGroupId },
+        ]),
+      );
+    });
+
+    it('should give each shared group its own new group when a user leaves the group', async () => {
+      const database = await getKyselyDB();
+      onTestFinished(() => database.destroy());
+      const { sut, ctx } = setup(database);
+      const { user: user1 } = await ctx.newUser();
+      const { user: user2 } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, user1.id);
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: user1 }), clusterGroupId, {
+        userId: user2.id,
+      });
+      await sut.acceptRequest(factory.auth({ user: user2 }), request.id);
+
+      // two groups both users have a person in
+      const { person: sharedA } = await ctx.newPerson({ ownerId: user1.id });
+      const { person: sharedB } = await ctx.newPerson({ ownerId: user1.id });
+      await ctx.newPerson({ ownerId: user2.id, personGroupId: sharedA.personGroupId, name: 'Alice' });
+      await ctx.newPerson({ ownerId: user2.id, personGroupId: sharedB.personGroupId, name: 'Bob' });
+
+      const { asset } = await ctx.newAsset({ ownerId: user2.id });
+      const { assetFace: faceA } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: sharedA.personGroupId });
+      const { assetFace: faceB } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: sharedB.personGroupId });
+
+      await sut.leave(factory.auth({ user: user2 }), clusterGroupId);
+
+      const moved = await getPeople(ctx, user2.id);
+      const movedGroupIds = moved.map(({ personGroupId }) => personGroupId);
+      expect(movedGroupIds).toHaveLength(2);
+      expect(movedGroupIds).not.toContain(sharedA.personGroupId);
+      expect(movedGroupIds).not.toContain(sharedB.personGroupId);
+      expect(new Set(movedGroupIds).size).toBe(2);
+
+      // the group id changes on the way out, so the name is what identifies each person
+      const movedA = moved.find(({ name }) => name === 'Alice');
+      const movedB = moved.find(({ name }) => name === 'Bob');
+
+      const faces = await ctx.database
+        .selectFrom('asset_face')
+        .select(['asset_face.id', 'asset_face.personGroupId'])
+        .where('asset_face.id', 'in', [faceA.id, faceB.id])
+        .execute();
+      expect(faces).toEqual(
+        expect.arrayContaining([
+          { id: faceA.id, personGroupId: movedA!.personGroupId },
+          { id: faceB.id, personGroupId: movedB!.personGroupId },
+        ]),
+      );
+    });
+  });
+
+  describe('deleteRequest', () => {
+    it('should let the user it was created for decline it', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+      const inviteeClusterGroupId = await getClusterGroupId(ctx, invitee.id);
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: invitee.id,
+      });
+      await sut.deleteRequest(factory.auth({ user: invitee }), request.id);
+
+      await expect(sut.getRequests(factory.auth({ user: invitee }))).resolves.toEqual([]);
+      await expect(getClusterGroupId(ctx, invitee.id)).resolves.toBe(inviteeClusterGroupId);
+    });
+
+    it('should let the cluster group it was created by revoke it', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: invitee.id,
+      });
+      await sut.deleteRequest(factory.auth({ user: owner }), request.id);
+
+      await expect(sut.getRequests(factory.auth({ user: invitee }))).resolves.toEqual([]);
+    });
+
+    it('should not let an unrelated user delete it', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: invitee } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const clusterGroupId = await getClusterGroupId(ctx, owner.id);
+
+      const { value: request } = await sut.createRequest(factory.auth({ user: owner }), clusterGroupId, {
+        userId: invitee.id,
+      });
+
+      await expect(sut.deleteRequest(factory.auth({ user: other }), request.id)).rejects.toThrow(
+        'Not found or no clusterGroupRequest.delete access',
+      );
+      await expect(sut.getRequests(factory.auth({ user: invitee }))).resolves.toEqual([request]);
+    });
+  });
+});
+
+it('rolls back person and membership changes on a late failure, preserving the invitation for retry', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser();
+  const { user: recipient } = await ctx.newUser();
+  const { person } = await ctx.newPerson({ ownerId: user.id });
+  const groups = ctx.get(ClusterGroupRepository);
+  const invitation = await groups.createRequest({ userId: user.id, clusterGroupId: recipient.clusterGroupId });
+  const auth = factory.auth({ user: { id: user.id } });
+  const error = new Error('late membership write failed');
+  const update = vi.spyOn(ctx.get(UserRepository), 'update').mockRejectedValueOnce(error);
+  try {
+    await expect(sut.acceptRequest(auth, invitation!.id)).rejects.toBe(error);
+  } finally {
+    update.mockRestore();
+  }
+  expect(
+    (await ctx.database.selectFrom('user').select('clusterGroupId').where('id', '=', user.id).executeTakeFirstOrThrow())
+      .clusterGroupId,
+  ).toBe(user.clusterGroupId);
+  expect(
+    (
+      await ctx.database
+        .selectFrom('person_group')
+        .select('clusterGroupId')
+        .where('id', '=', person.personGroupId)
+        .executeTakeFirstOrThrow()
+    ).clusterGroupId,
+  ).toBe(user.clusterGroupId);
+  expect(await groups.getRequest(invitation!.id)).toBeDefined();
+  await sut.acceptRequest(auth, invitation!.id);
+  expect(
+    (await ctx.database.selectFrom('user').select('clusterGroupId').where('id', '=', user.id).executeTakeFirstOrThrow())
+      .clusterGroupId,
+  ).toBe(recipient.clusterGroupId);
+  expect(
+    (
+      await ctx.database
+        .selectFrom('person_group')
+        .select('clusterGroupId')
+        .where('id', '=', person.personGroupId)
+        .executeTakeFirstOrThrow()
+    ).clusterGroupId,
+  ).toBe(recipient.clusterGroupId);
+  expect(await groups.getRequest(invitation!.id)).toBeUndefined();
+});
+
+it('allows only one of the last two members to leave concurrently', async () => {
+  const { ctx, sut } = setup();
+  const { user: first } = await ctx.newUser();
+  const { user: second } = await ctx.newUser({ clusterGroupId: first.clusterGroupId });
+  const outcomes = await Promise.allSettled([
+    sut.leave(factory.auth({ user: { id: first.id } }), first.clusterGroupId),
+    sut.leave(factory.auth({ user: { id: second.id } }), first.clusterGroupId),
+  ]);
+  expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+  const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+  expect(failure?.reason.message).toContain('without any other members');
+  const users = await ctx.database
+    .selectFrom('user')
+    .select(['id', 'clusterGroupId'])
+    .where('id', 'in', [first.id, second.id])
+    .execute();
+  expect(users.filter(({ clusterGroupId }) => clusterGroupId === first.clusterGroupId)).toHaveLength(1);
+  expect(new Set(users.map(({ clusterGroupId }) => clusterGroupId)).size).toBe(2);
+});
