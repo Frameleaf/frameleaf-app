@@ -215,6 +215,39 @@ describe(AttentionService.name, () => {
     ]);
   });
 
+  it('leaves out the heavy work quiet hours save for tonight on a new server (FL-711)', async () => {
+    const { sut, mocks, metadata, config, useConfig } = setup();
+    useConfig({ ...config, nightlyTasks: { startTime: '00:00', days: [0, 1, 2, 3, 4, 5, 6] } });
+    metadata[SystemMetadataKey.OvernightSequence] = {
+      run: null,
+      nights: [],
+      quiet: { holding: [QueueName.VideoConversion, QueueName.FaceDetection] },
+    };
+    mocks.job.getJobCounts.mockImplementation((name: QueueName) =>
+      Promise.resolve(name === QueueName.VideoConversion ? { ...idle, paused: 3 } : idle),
+    );
+    mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.VideoConversion));
+
+    expect((await sut.getAttention()).items).toEqual([]);
+  });
+
+  it('still lists a pause an administrator made on a queue quiet hours do not hold', async () => {
+    const { sut, mocks, metadata, config, useConfig } = setup();
+    useConfig({ ...config, nightlyTasks: { startTime: '00:00', days: [0, 1, 2, 3, 4, 5, 6] } });
+    metadata[SystemMetadataKey.OvernightSequence] = { run: null, nights: [], quiet: { holding: null } };
+    mocks.job.getJobCounts.mockImplementation((name: QueueName) =>
+      Promise.resolve(name === QueueName.VideoConversion ? { ...idle, paused: 3 } : idle),
+    );
+    mocks.job.isPaused.mockImplementation((name: QueueName) => Promise.resolve(name === QueueName.VideoConversion));
+
+    expect((await sut.getAttention()).items).toEqual([
+      expect.objectContaining({
+        id: 'work:paused',
+        work: { count: 3, queues: [{ name: QueueName.VideoConversion, count: 3 }] },
+      }),
+    ]);
+  });
+
   it('lists a newer version the check found, and is off while looking for updates is', async () => {
     const { sut, metadata, config, useConfig } = setup();
     metadata[SystemMetadataKey.VersionCheckState] = { checkedAt: daysAgo(0.1), releaseVersion: 'v99.0.0' };

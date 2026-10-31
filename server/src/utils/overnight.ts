@@ -6,6 +6,7 @@
  *
  * Backups keep a schedule of their own (FL-362). The two are independent, as the owner decided.
  */
+import { CronTime } from 'cron';
 import { DateTime } from 'luxon';
 import { OvernightStepTiming, QueueName } from 'src/enum.js';
 
@@ -189,4 +190,29 @@ export const isHeavyWorkWindow = (
     return !caughtUpAt || DateTime.fromISO(caughtUpAt) < start;
   }
   return now < overnightStopAt(start.toISO()!, nightly.stopTime, zone)!;
+};
+
+/**
+ * FL-711: the heavy queues quiet hours hold now, each with when the overnight window opens and they
+ * start again by themselves (null when the schedule never fires). Callers check the queue is still
+ * paused: one an administrator resumed during the day is no longer held. Such a pause lifts on its
+ * own, so it is said as "saved for tonight", never as work that waits until someone starts it again.
+ */
+export const quietHoursHolds = (
+  state: Pick<OvernightState, 'quiet'> | null | undefined,
+  nightly: { startTime: string; days: number[] },
+  zone: string,
+  now: Date = new Date(),
+): Map<QueueName, string | null> => {
+  const holding = state?.quiet?.holding ?? [];
+  if (holding.length === 0) {
+    return new Map();
+  }
+  let resumesAt: string | null = null;
+  try {
+    resumesAt = new CronTime(overnightCron(nightly), zone).getNextDateFrom(now, zone).toUTC().toISO();
+  } catch {
+    // a schedule that never fires has no next start
+  }
+  return new Map(holding.map((name) => [name, resumesAt]));
 };
