@@ -7,11 +7,13 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { getNextAsset, getPreviousAsset, navigateToAsset } from '$lib/utils/asset-utils';
+  import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
   import type { UtilityData } from '$lib/frameleaf/utilities-load';
   type PageData = Extract<UtilityData, { tool: 'large-files' }>;
@@ -35,9 +37,13 @@
   const inLibrary = $derived(assets.filter((asset) => !trashed.has(asset.id) && !removed.has(asset.id)));
 
   const onOpen = async (asset: AssetResponseDto) => {
-    const info = await getAssetInfo({ ...authManager.params, id: asset.id });
-    assetViewerManager.setAsset(info);
-    await navigate({ targetRoute: 'current', assetId: asset.id });
+    try {
+      const info = await getAssetInfo({ ...authManager.params, id: asset.id });
+      assetViewerManager.setAsset(info);
+      await navigate({ targetRoute: 'current', assetId: asset.id });
+    } catch (error) {
+      handleError(error, $t('errors.failed_to_load_asset'));
+    }
   };
 
   const onRandom = async () => {

@@ -155,6 +155,24 @@ describe('MemoryHighlightControl (FL-194)', () => {
     expect(await screen.findByRole('button', { name: 'frameleaf_memories_highlight_retry' })).toBeInTheDocument();
   });
 
+  it('keeps following a render through a failed poll, and stops once the run is gone', async () => {
+    sdkMock.isHttpError.mockImplementation(
+      (error: unknown) => (error as { status?: number } | undefined)?.status !== undefined,
+    );
+    sdkMock.getMemoryExports.mockResolvedValue([run({ highlight: highlight({ progress: 40 }) })]);
+    sdkMock.getMemoryExport
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(run({ highlight: highlight({ progress: 55 }) }))
+      .mockRejectedValue(Object.assign(new Error('gone'), { status: 404 }));
+    renderControl();
+
+    expect(await screen.findByText('frameleaf_memories_highlight_progress')).toBeInTheDocument();
+    await waitFor(() => expect(sdkMock.getMemoryExport).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.queryByText('frameleaf_memories_highlight_progress')).not.toBeInTheDocument());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sdkMock.getMemoryExport).toHaveBeenCalledTimes(3);
+  });
+
   it('retries a failed render with the settings it was asked for', async () => {
     sdkMock.getMemoryExports.mockResolvedValue([
       run({

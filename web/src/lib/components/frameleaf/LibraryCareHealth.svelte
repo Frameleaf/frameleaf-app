@@ -396,7 +396,13 @@
     }
     if (action === 'trash') {
       // Moving damage to the trash needs the PIN when the account has one, as it always has.
-      const status = await getAuthStatus();
+      let status;
+      try {
+        status = await getAuthStatus();
+      } catch (error) {
+        handleError(error, $t('errors.something_went_wrong'));
+        return;
+      }
       if (status.pinCode && !status.isElevated) {
         await goto(Route.pinPrompt({ continue: page.url.pathname + page.url.search }));
         return;

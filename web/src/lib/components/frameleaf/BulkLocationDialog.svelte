@@ -29,10 +29,12 @@
   const asNumber = (value: string) => (value.trim() === '' ? NaN : Number(value));
   let lat = $derived(asNumber(latitude));
   let lng = $derived(asNumber(longitude));
+  let latInvalid = $derived(Number.isNaN(lat) || Math.abs(lat) > 90);
+  let lngInvalid = $derived(Number.isNaN(lng) || Math.abs(lng) > 180);
   let error = $derived(
-    Number.isNaN(lat) || Math.abs(lat) > 90
+    latInvalid
       ? $t('frameleaf_bulk_location_latitude_range')
-      : Number.isNaN(lng) || Math.abs(lng) > 180
+      : lngInvalid
         ? $t('frameleaf_bulk_location_longitude_range')
         : '',
   );
@@ -50,11 +52,11 @@
   <div class="fl-grid">
     <label>
       {$t('latitude')}
-      <input inputmode="decimal" placeholder="51.4254" bind:value={latitude} aria-invalid={!valid} required />
+      <input inputmode="decimal" placeholder="51.4254" bind:value={latitude} aria-invalid={latInvalid} required />
     </label>
     <label>
       {$t('longitude')}
-      <input inputmode="decimal" placeholder="-116.1773" bind:value={longitude} aria-invalid={!valid} required />
+      <input inputmode="decimal" placeholder="-116.1773" bind:value={longitude} aria-invalid={lngInvalid} required />
     </label>
   </div>
 </BulkFormDialog>

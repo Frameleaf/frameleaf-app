@@ -60,6 +60,24 @@ describe('BoardsTagEditor', () => {
     expect(await screen.findByText('moodboard')).toBeInTheDocument();
   });
 
+  it('opens a closed list on ArrowDown at the first option, and Enter on a closed list adds nothing', async () => {
+    render(BoardsTagEditor, { assetId: 'asset', tags: [texture], canEdit: true });
+    const input = screen.getByRole('combobox', { name: 'frameleaf_info_add_tag' });
+    await fireEvent.focus(input);
+    await fireEvent.input(input, { target: { value: 'he' } });
+    const listbox = await screen.findByRole('listbox', { name: 'frameleaf_info_tag_suggestions' });
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    await fireEvent.blur(input);
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(sdkMock.bulkTagAssets).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', within(listbox).getAllByRole('option')[0].id);
+  });
+
   it('removes a tag and offers Retry when a change fails', async () => {
     sdkMock.untagAssets.mockRejectedValueOnce(new Error('offline'));
     render(BoardsTagEditor, { assetId: 'asset', tags: [texture], canEdit: true });

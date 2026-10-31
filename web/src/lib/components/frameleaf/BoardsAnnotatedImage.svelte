@@ -110,6 +110,15 @@
     draft = null;
   };
 
+  /** The browser took the pointer away: settle a move where it stands, and drop an unfinished drawing. */
+  const onPointerCancel = () => {
+    if (drag?.kind === 'move') {
+      onMove?.(drag.id, 0, 0, true);
+    }
+    drag = null;
+    draft = null;
+  };
+
   const startMove = (event: PointerEvent, id: string) => {
     if (tool !== 'select') {
       return;
@@ -143,6 +152,7 @@
       onpointerdown={onPointerDown}
       onpointermove={onPointerMove}
       onpointerup={onPointerUp}
+      onpointercancel={onPointerCancel}
     >
       {#snippet shape(item: AssetAnnotationItem, index: number)}
         {@const g = item.geometry}

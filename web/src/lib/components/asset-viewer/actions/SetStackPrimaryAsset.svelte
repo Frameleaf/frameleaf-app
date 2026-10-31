@@ -2,6 +2,7 @@
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
 
   import { AssetAction } from '$lib/constants';
+  import { handleError } from '$lib/utils/handle-error';
   import { updateStack, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { mdiImageCheckOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -18,9 +19,13 @@
   let { stack, asset, onAction, text }: Props = $props();
 
   const handleSetPrimaryAsset = async () => {
-    const updatedStack = await updateStack({ id: stack.id, stackUpdateDto: { primaryAssetId: asset.id } });
-    if (updatedStack) {
-      onAction({ type: AssetAction.SET_STACK_PRIMARY_ASSET, stack: updatedStack });
+    try {
+      const updatedStack = await updateStack({ id: stack.id, stackUpdateDto: { primaryAssetId: asset.id } });
+      if (updatedStack) {
+        onAction({ type: AssetAction.SET_STACK_PRIMARY_ASSET, stack: updatedStack });
+      }
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
     }
   };
 </script>

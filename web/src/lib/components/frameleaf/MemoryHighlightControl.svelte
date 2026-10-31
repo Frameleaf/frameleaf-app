@@ -19,6 +19,7 @@
     downloadMemoryExport,
     getMemoryExport,
     getMemoryExports,
+    isHttpError,
     saveMemoryExportToLibrary,
     type MemoryExportResponseDto,
   } from '@frameleaf/sdk';
@@ -103,9 +104,12 @@
       if (asked !== generation) {
         return;
       }
-      // the run is gone with its memory, so there is nothing left to follow
-      handleError(error, $t('frameleaf_memories_highlight_failed'));
-      run = undefined;
+      if (isHttpError(error) && error.status === 404) {
+        // the run is gone with its memory, so there is nothing left to follow
+        handleError(error, $t('frameleaf_memories_highlight_failed'));
+        run = undefined;
+      }
+      // anything else (offline, a busy server) keeps the run, and the next poll tries again
     }
     follow();
   };
