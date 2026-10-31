@@ -94,6 +94,7 @@ import { LibraryProgressService } from 'src/services/library-progress.service.js
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { MailConnectionService } from 'src/services/mail-connection.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
@@ -271,6 +272,7 @@ export const services = [
   LibraryProgressService,
   OvernightService,
   AuthService,
+  LockedEncryptionService,
   AuthAdminService,
   AnalyticsService,
   BestPhotosService,

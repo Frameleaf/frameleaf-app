@@ -181,6 +181,8 @@ export type UserAdmin = User & {
   uploadsPaused: boolean;
   status: UserStatus;
   metadata: UserMetadataItem[];
+  /** FL-721: whether the person has Locked encryption on (a `locked_encryption` row exists). */
+  lockedEncryption?: boolean;
 };
 
 export type StorageAsset = {

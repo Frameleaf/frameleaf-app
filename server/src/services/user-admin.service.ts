@@ -1,4 +1,11 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -22,6 +29,7 @@ import { AdminAuditAction, AssetVisibility, JobName, UserMetadataKey, UserStatus
 import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
@@ -48,12 +56,22 @@ const PASSWORD_LINK_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class UserAdminService extends BaseService {
+  /** FL-721: an administrator can't clear or change the PIN of someone with Locked encryption on. */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
+
+  /** FL-721 (spec §10): the admin user response shows whether Locked encryption is on, nothing else. */
+  private async mapAdmin(user: UserAdmin): Promise<UserAdminResponseDto> {
+    return mapUserAdmin({ ...user, lockedEncryption: await this.lockedEncryption.isOn(user.id) });
+  }
+
   async search(auth: AuthDto, dto: UserAdminSearchDto): Promise<UserAdminResponseDto[]> {
     const users = await this.userRepository.getList({
       id: dto.id,
       withDeleted: dto.withDeleted,
     });
-    return users.map((user) => mapUserAdmin(user));
+    const encrypted = await this.lockedEncryption.usersWithEncryption(users.map(({ id }) => id));
+    return users.map((user) => mapUserAdmin({ ...user, lockedEncryption: encrypted.has(user.id) }));
   }
 
   async create(auth: AuthDto, dto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
@@ -94,7 +112,7 @@ export class UserAdminService extends BaseService {
 
     await this.recordAdminEvents(events);
 
-    return mapUserAdmin(user);
+    return this.mapAdmin(user);
   }
 
   /**
@@ -158,7 +176,7 @@ export class UserAdminService extends BaseService {
 
   async get(auth: AuthDto, id: string): Promise<UserAdminResponseDto> {
     const user = await this.findOrFail(id, { withDeleted: true });
-    return mapUserAdmin(user);
+    return this.mapAdmin(user);
   }
 
   async update(auth: AuthDto, id: string, dto: UserAdminUpdateDto): Promise<UserAdminResponseDto> {
@@ -185,6 +203,14 @@ export class UserAdminService extends BaseService {
       if (duplicate && duplicate.id !== id) {
         throw new BadRequestException('Storage label already in use by another account');
       }
+    }
+
+    // FL-721 (spec §10, owner): their PIN wraps the key to their files, so neither clearing nor
+    // replacing it is left to an administrator; the person resets it with their recovery key
+    if (dto.pinCode !== undefined && (await this.lockedEncryption.isOn(id))) {
+      throw new ConflictException(
+        'This person has Locked encryption on, so their PIN can’t be cleared or changed. They can reset it with their recovery key.',
+      );
     }
 
     if (dto.password) {
@@ -214,11 +240,12 @@ export class UserAdminService extends BaseService {
     if (dto.password !== undefined || dto.pinCode !== undefined) {
       await this.sessionRepository.lockAll(id);
       this.websocketRepository.clientSend('on_session_lock', id);
+      await this.lockedEncryption.onSessionsLocked(id);
     }
 
     await this.recordAdminEvents(this.getUpdateEvents(auth, user, updatedUser, dto));
 
-    return mapUserAdmin(updatedUser);
+    return this.mapAdmin(updatedUser);
   }
 
   /**
@@ -307,7 +334,7 @@ export class UserAdminService extends BaseService {
       ]);
     }
 
-    return mapUserAdmin(user);
+    return this.mapAdmin(user);
   }
 
   async restore(auth: AuthDto, id: string): Promise<UserAdminResponseDto> {
@@ -316,7 +343,7 @@ export class UserAdminService extends BaseService {
     const user = await this.userRepository.restore(id);
     await this.eventRepository.emit('UserRestore', user);
     await this.recordAdminEvents([accountEvent(auth, user, AdminAuditAction.AccountRestored)]);
-    return mapUserAdmin(user);
+    return this.mapAdmin(user);
   }
 
   async getCalendarHeatmap(auth: AuthDto, id: string, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {

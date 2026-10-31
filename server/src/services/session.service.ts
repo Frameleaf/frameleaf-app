@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -10,11 +10,28 @@ import {
   SessionUpdateDto,
   mapSession,
 } from 'src/dtos/session.dto.js';
-import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { FrameleafWorker, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 
 @Injectable()
 export class SessionService extends BaseService {
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
+
+  /**
+   * FL-721 (spec §4.3): a PIN unlock outlives a restart in `session.pinExpiresAt`, but the Locked keys
+   * held in memory don't. End the PIN unlocks of everyone with a key file, so the next Locked view
+   * asks for the PIN, which opens the key again.
+   */
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Api] })
+  async onBootstrap(): Promise<void> {
+    for (const userId of await this.lockedEncryption.usersWithKeyFiles()) {
+      await this.sessionRepository.lockAll(userId);
+      this.websocketRepository.clientSend('on_session_lock', userId);
+    }
+  }
+
   @OnJob({ name: JobName.SessionCleanup, queue: QueueName.BackgroundTask })
   async handleCleanup(): Promise<JobStatus> {
     const sessions = await this.sessionRepository.cleanup();
@@ -70,6 +87,7 @@ export class SessionService extends BaseService {
     await this.sessionRepository.delete(id);
     // FL-34: the revoked session's open tabs clear what they show and sign out
     await this.eventRepository.emit('SessionDelete', { sessionId: id });
+    await this.lockedEncryption.onSessionsLocked(auth.user.id);
   }
 
   async deleteAll(auth: AuthDto): Promise<void> {
@@ -79,6 +97,7 @@ export class SessionService extends BaseService {
     for (const sessionId of deletedIds) {
       await this.eventRepository.emit('SessionDelete', { sessionId });
     }
+    await this.lockedEncryption.onSessionsLocked(userId);
   }
 
   async lock(auth: AuthDto, id: string): Promise<void> {
@@ -86,6 +105,7 @@ export class SessionService extends BaseService {
     await this.sessionRepository.update(id, { pinExpiresAt: null });
     // FL-34: only the locked session's open tabs are told, once the lock is stored
     this.websocketRepository.clientSend('on_session_lock', id);
+    await this.lockedEncryption.onSessionsLocked(auth.user.id);
   }
 
   @OnEvent({ name: 'AuthChangePassword' })
@@ -93,6 +113,7 @@ export class SessionService extends BaseService {
     // FL-34: a password change revokes elevation everywhere, the retained session included
     await this.sessionRepository.lockAll(userId);
     this.websocketRepository.clientSend('on_session_lock', userId);
+    await this.lockedEncryption.onSessionsLocked(userId);
     const deletedIds = await this.sessionRepository.invalidateAll({ userId, excludeId: currentSessionId });
     for (const sessionId of deletedIds) {
       await this.eventRepository.emit('SessionDelete', { sessionId });

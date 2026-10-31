@@ -234,6 +234,10 @@ export const UserAdminResponseSchema = UserResponseSchema.extend({
   uploadsPaused: z.boolean().describe('New uploads are paused for this person'),
   status: UserStatusSchema,
   license: UserLicenseSchema.nullable(),
+  lockedEncryption: z
+    .boolean()
+    .describe('Whether this person has Locked encryption on; their PIN can’t be cleared or changed then')
+    .meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
 }).meta({ id: 'UserAdminResponseDto' });
 
 export class UserAdminResponseDto extends createZodDto(UserAdminResponseSchema) {}
@@ -279,6 +283,8 @@ export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
     quotaSizeInBytes: entity.quotaSizeInBytes,
     quotaUsageInBytes: entity.quotaUsageInBytes,
     uploadsPaused: entity.uploadsPaused ?? false,
+    // FL-721: whether it is on, nothing else (spec §10)
+    lockedEncryption: entity.lockedEncryption ?? false,
     status: entity.status,
     license: license
       ? { kind: 'individual', keyHint: license.keyHint, activatedAt: new Date(license.activatedAt) }

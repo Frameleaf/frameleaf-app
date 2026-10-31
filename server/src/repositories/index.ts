@@ -76,6 +76,7 @@ import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -208,6 +209,7 @@ export const repositories = [
   IntegrityRepository,
   JobRepository,
   LibraryRepository,
+  LockedEncryptionRepository,
   LockedKeyRepository,
   LoggingRepository,
   LivePhotoRepository,

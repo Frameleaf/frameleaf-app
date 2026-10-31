@@ -17,6 +17,27 @@ describe('SessionService', () => {
     expect(sut).toBeDefined();
   });
 
+  describe('onBootstrap', () => {
+    it('on bootstrap, sessions of users with a key file are locked (FL-721, spec §4.3)', async () => {
+      mocks.lockedKey.list.mockResolvedValue([{ userId: 'user-1' }, { userId: 'user-2' }] as never);
+      mocks.session.lockAll.mockResolvedValue();
+
+      await sut.onBootstrap();
+
+      expect(mocks.session.lockAll).toHaveBeenCalledTimes(2);
+      expect(mocks.session.lockAll).toHaveBeenCalledWith('user-1');
+      expect(mocks.session.lockAll).toHaveBeenCalledWith('user-2');
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', 'user-1');
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', 'user-2');
+    });
+
+    it('locks nothing when nobody has a key file', async () => {
+      mocks.lockedKey.list.mockResolvedValue([]);
+      await sut.onBootstrap();
+      expect(mocks.session.lockAll).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleCleanup', () => {
     it('should clean sessions', async () => {
       mocks.session.cleanup.mockResolvedValue([]);

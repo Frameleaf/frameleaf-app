@@ -1,6 +1,7 @@
 /* eslint-disable unicorn/no-this-outside-of-class */
 import { DatabaseConnectionParams, createPostgres } from '@frameleaf/sql-tools';
 import { CallHandler, ExecutionContext, Provider } from '@nestjs/common';
+import { PROPERTY_DEPS_METADATA } from '@nestjs/common/constants.js';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { transformException } from '@nestjs/platform-express/multer/multer/multer.utils';
 import { Test } from '@nestjs/testing';
@@ -55,6 +56,7 @@ import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -98,6 +100,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { RepositoryInterface } from 'src/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { renderSystemNotification } from 'src/utils/notification-locale.js';
@@ -296,6 +299,8 @@ export type ServiceOverrides = {
   library: LibraryRepository;
   /** FL-721: not a BaseService dependency; services that need it take `mocks.lockedKey` explicitly. */
   lockedKey: LockedKeyRepository;
+  /** FL-721: not a BaseService dependency either; `LockedEncryptionService` takes it explicitly. */
+  lockedEncryption: LockedEncryptionRepository;
   logger: LoggingRepository;
   machineLearning: MachineLearningRepository;
   map: MapRepository;
@@ -410,6 +415,7 @@ export const getMocks = () => {
     apiKey: automock(ApiKeyRepository),
     library: automock(LibraryRepository, { strict: false }),
     lockedKey: automock(LockedKeyRepository),
+    lockedEncryption: automock(LockedEncryptionRepository, { args: [database], strict: false }),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
     map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
     media: newMediaRepositoryMock(),
@@ -620,11 +626,33 @@ export const newTestService = <T extends BaseService>(
     overrides.workflow || (mocks.workflow as As<WorkflowRepository>),
   );
 
+  // FL-721: services that take LockedEncryptionService by property injection get one on the same mocks
+  // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
+  const properties: { key: string; type: unknown }[] = Reflect.getMetadata(PROPERTY_DEPS_METADATA, Service) ?? [];
+  for (const { key, type } of properties) {
+    if (type === LockedEncryptionService) {
+      Object.assign(sut, { [key]: newLockedEncryptionService(mocks) });
+    }
+  }
+
   return {
     sut,
     mocks,
   };
 };
+
+/** FL-721: a LockedEncryptionService on these mocks (it is not a BaseService). */
+export const newLockedEncryptionService = (mocks: ServiceMocks) =>
+  new LockedEncryptionService(
+    mocks.logger as As<LoggingRepository>,
+    mocks.lockedKey as As<LockedKeyRepository>,
+    mocks.lockedEncryption as As<LockedEncryptionRepository>,
+    mocks.user as As<UserRepository>,
+    mocks.session as As<SessionRepository>,
+    mocks.job as As<JobRepository>,
+    mocks.crypto as As<CryptoRepository>,
+    mocks.websocket as As<WebsocketRepository>,
+  );
 
 const createPNG = (r: number, g: number, b: number) => {
   const image = new PNG({ width: 1, height: 1 });

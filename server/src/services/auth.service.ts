@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { parseCookie as parse } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
@@ -42,6 +42,7 @@ import {
 } from 'src/enum.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
@@ -58,9 +59,11 @@ import {
   logoutTokenAudiences,
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
+import { checkSecret } from 'src/utils/secret-attempts.js';
 import { createSession } from 'src/utils/session.js';
 import { requireSharedLinkUnlocked } from 'src/utils/shared-link.js';
 import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/websocket-origin.js';
@@ -84,37 +87,9 @@ interface ClaimOptions<T> {
 const ELEVATED_SESSION_DURATION_MINUTES = 60;
 const ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES = 5;
 
-// SECURITY (security.md M5): exponential backoff for PIN unlock attempts.
-// The PIN is only 6 digits (~10^6 keyspace), so without throttling an attacker
-// with a stolen session token can brute-force the full space in minutes.
-// Track failed attempts per user in-process. State resets on process restart,
-// which is conservative — fewer false lockouts at the cost of bypass via
-// process kill (only available to admins).
-const PIN_FAILURE_THRESHOLDS = [
-  { attempts: 5, lockoutMs: 60 * 1000 }, // 5 failures -> 1 minute
-  { attempts: 10, lockoutMs: 60 * 60 * 1000 }, // 10 failures -> 1 hour
-  { attempts: 15, lockoutMs: 24 * 60 * 60 * 1000 }, // 15 failures -> 24 hours
-];
-const PIN_FAILURE_RESET_MS = 30 * 60 * 1000; // failures expire after 30 min of inactivity
-
-type PinAttemptState = { failureCount: number; lastFailureAt: number; lockedUntil: number };
-const pinAttemptsByUser = new Map<string, PinAttemptState>();
-// Keep PIN backoff admission serial while bcrypt runs outside the event loop.
-const pinChecksByUser = new Map<string, Promise<void>>();
-
 /** FL-367: API key uses recorded by this process, so "last used" is written at most every few minutes. */
 const API_KEY_USE_INTERVAL_MS = 5 * 60 * 1000;
 const apiKeyUseRecorded = new Map<string, number>();
-
-function lookupPinLockoutMs(failureCount: number): number {
-  let lockout = 0;
-  for (const tier of PIN_FAILURE_THRESHOLDS) {
-    if (failureCount >= tier.attempts) {
-      lockout = tier.lockoutMs;
-    }
-  }
-  return lockout;
-}
 
 export type ValidateRequest = {
   headers: IncomingHttpHeaders;
@@ -212,6 +187,10 @@ const frameleafRedirectUri = (mobileRedirectUri: string): string => {
 
 @Injectable()
 export class AuthService extends BaseService {
+  /** FL-721: the Locked encryption PIN hooks (spec §4.1, §4.3, §7.5). */
+  @Inject(LockedEncryptionService)
+  private lockedEncryption!: LockedEncryptionService;
+
   async login(dto: LoginCredentialDto, details: LoginDetails) {
     const config = await this.getConfig({ withCache: false });
     if (!config.passwordLogin.enabled) {
@@ -437,17 +416,20 @@ export class AuthService extends BaseService {
     }
 
     const hashed = await this.cryptoRepository.hashBcrypt(pinCode, SALT_ROUNDS);
-    if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, hashed))) {
-      throw new UnauthorizedException('Your PIN or password changed; try again');
-    }
+    // FL-721 (spec §4.1): everyone with a Locked PIN gets a key pair wrapped with it
+    const undo = await this.lockedEncryption.onPinSet(auth.user.id, pinCode);
+    await this.storePinCode(auth.user.id, user, hashed, undo);
   }
 
   async resetPinCode(auth: AuthDto, dto: PinCodeResetDto) {
+    // FL-721 (spec §7.5, owner): while Locked encryption is on, a forgotten PIN is reset with the recovery key
+    await this.lockedEncryption.assertPinResettable(auth.user.id);
     const user = await this.validatePinCode(auth.user.id, dto);
 
     if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, null))) {
       throw new UnauthorizedException('Your PIN or password changed; try again');
     }
+    await this.lockedEncryption.onSessionsLocked(auth.user.id);
     // FL-34: every open tab of every session of this account drops what it unlocked
     this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
@@ -456,63 +438,41 @@ export class AuthService extends BaseService {
     const user = await this.validatePinCode(auth.user.id, dto);
 
     const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
-    if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, hashed))) {
-      throw new UnauthorizedException('Your PIN or password changed; try again');
-    }
+    // FL-721 (spec §7.5): in PIN mode the key file is re-wrapped with the new PIN
+    const undo = await this.lockedEncryption.onPinSet(auth.user.id, dto.newPinCode, dto.pinCode);
+    await this.storePinCode(auth.user.id, user, hashed, undo);
     // FL-34: an elevation granted by the old PIN ends with it, in every session of the account
     this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
-  private async validatePinCode(userId: string, dto: { pinCode?: string; password?: string }) {
-    const previous = pinChecksByUser.get(userId);
-    const { promise, resolve } = Promise.withResolvers<void>();
-    pinChecksByUser.set(userId, promise);
-    await previous;
+  /** Stores a PIN (locking every session); `undo` puts the Locked key file back if it isn't stored. */
+  private async storePinCode(
+    userId: string,
+    verified: { pinCode: string | null; password: string | null },
+    hashed: string,
+    undo: () => Promise<void>,
+  ) {
+    let stored = false;
     try {
-      // Throttle PIN brute-force per user (security.md M5).
-      let now = Date.now();
-      let state = pinAttemptsByUser.get(userId);
-      if (state && state.lockedUntil > now) {
-        const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
-        throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
-      }
-
-      const user = await this.userRepository.getForPinCode(userId);
-      // A pending credential read must observe failures from other requests before checking another guess.
-      now = Date.now();
-      state = pinAttemptsByUser.get(userId);
-      if (state && state.lockedUntil > now) {
-        const retryAfterSec = Math.ceil((state.lockedUntil - now) / 1000);
-        throw new UnauthorizedException(`Too many failed PIN attempts. Try again in ${retryAfterSec} seconds.`);
-      }
-      try {
-        await this.validatePinCodeSecret(user, dto);
-      } catch (error) {
-        // Record failure and apply backoff. Failures expire after a quiet window.
-        const prev =
-          state && now - state.lastFailureAt < PIN_FAILURE_RESET_MS
-            ? state
-            : { failureCount: 0, lastFailureAt: 0, lockedUntil: 0 };
-        const failureCount = prev.failureCount + 1;
-        const lockoutMs = lookupPinLockoutMs(failureCount);
-        pinAttemptsByUser.set(userId, {
-          failureCount,
-          lastFailureAt: now,
-          lockedUntil: lockoutMs > 0 ? now + lockoutMs : 0,
-        });
-        throw error;
-      }
-
-      // Successful credential check resets the per-user counter.
-      pinAttemptsByUser.delete(userId);
-
-      return user;
+      stored = await this.userRepository.setPinCodeAndLockSessions(userId, verified, hashed);
     } finally {
-      resolve();
-      if (pinChecksByUser.get(userId) === promise) {
-        pinChecksByUser.delete(userId);
+      if (!stored) {
+        await undo();
       }
     }
+    if (!stored) {
+      throw new UnauthorizedException('Your PIN or password changed; try again');
+    }
+    await this.lockedEncryption.onSessionsLocked(userId);
+  }
+
+  private async validatePinCode(userId: string, dto: { pinCode?: string; password?: string }) {
+    // Throttle PIN brute-force per user (security.md M5); FL-721 shares it with Locked encryption.
+    return checkSecret(userId, async (verify) => {
+      const user = await this.userRepository.getForPinCode(userId);
+      await verify(() => this.validatePinCodeSecret(user, dto));
+      return user;
+    });
   }
 
   private async validatePinCodeSecret(
@@ -1125,12 +1085,17 @@ export class AuthService extends BaseService {
         ) {
           // FL-34: conditional, so a lock that lands after the read above is never reversed; if the
           // refresh finds the session locked, this request is not elevated either
-          hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(
-            session.id,
-            DateTime.now()
-              .plus({ minutes: await this.relockMinutes(session.user.id) })
-              .toJSDate(),
-          );
+          const pinExpiresAt = DateTime.now()
+            .plus({ minutes: await this.relockMinutes(session.user.id) })
+            .toJSDate();
+          hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(session.id, pinExpiresAt);
+          const userId = session.user.id;
+          if (hasElevatedPermission && lockedKeys.has(userId)) {
+            // FL-721 (spec §4.3): a PIN-mode Locked key stays open while the unlock does
+            await this.lockedEncryption.onPinExtended(userId, pinExpiresAt).catch((error: Error) => {
+              this.logger.warn(`Could not extend the Locked key of user ${userId}: ${error.name}`);
+            });
+          }
           if (!hasElevatedPermission) {
             // A concurrent lock leaves a valid ordinary session, but a concurrent revocation or expiry
             // must reject the request instead of granting ordinary access from the stale read above.
@@ -1183,6 +1148,13 @@ export class AuthService extends BaseService {
     if (!elevated) {
       throw new UnauthorizedException('Your PIN or password changed; unlock again');
     }
+    // FL-721 (spec §4.3): a PIN-mode Locked key opens with the PIN, for as long as the unlock lasts
+    try {
+      await this.lockedEncryption.onPinVerified(auth.user.id, dto.pinCode!);
+    } catch (error) {
+      // the unlock stands; Locked files then ask for the key again (never log the PIN)
+      this.logger.warn(`Could not open the Locked key of user ${auth.user.id}: ${(error as Error).name}`);
+    }
   }
 
   async lockSession(auth: AuthDto): Promise<void> {
@@ -1193,6 +1165,7 @@ export class AuthService extends BaseService {
     await this.sessionRepository.update(auth.session.id, { pinExpiresAt: null });
     // FL-34: only once the lock is stored; the session's other tabs drop what it unlocked
     this.websocketRepository.clientSend('on_session_lock', auth.session.id);
+    await this.lockedEncryption.onSessionsLocked(auth.user.id);
   }
 
   private async createLoginResponse(

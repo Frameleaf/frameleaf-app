@@ -34,6 +34,22 @@ export class LockedKeyRepository {
     return file?.format === FORMAT && file.userId === userId ? (file as LockedKeyFile) : null;
   }
 
+  /**
+   * Whether a key file is on disk for this person, whether or not `read` can use it. A null `read`
+   * never means a new key pair may be made: overwriting a key file loses that person's files.
+   */
+  async exists(userId: string): Promise<boolean> {
+    try {
+      await fs.lstat(this.path(userId));
+      return true;
+    } catch (error) {
+      if (isMissing(error)) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   /** Atomic: a temporary file is written and flushed, renamed over the old one, then the folder is flushed. */
   async write(file: LockedKeyFile): Promise<void> {
     const path = this.path(file.userId);

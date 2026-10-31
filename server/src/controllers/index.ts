@@ -68,6 +68,7 @@ import { LibraryProgressController } from 'src/controllers/library-progress.cont
 import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
+import { LockedEncryptionController } from 'src/controllers/locked-encryption.controller.js';
 import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';
 import { MapController } from 'src/controllers/map.controller.js';
@@ -138,6 +139,7 @@ import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
   SpeechController,
+  LockedEncryptionController,
   LibraryItemController,
   AssetAnnotationController,
   AssetPaletteController,
