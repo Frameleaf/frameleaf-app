@@ -134,13 +134,19 @@ describe('Overview (FL-363)', () => {
         check.kind === 'storage' || check.kind === 'version' ? { ...check, state: 'attention' } : check,
       ),
     });
+    // AI unreachable too, so a per-row "Check again" on any of the three needs would show here.
+    sdk.listMlDestinations.mockResolvedValue([{ id: 'lan', kind: 'lan', health: { status: 'unhealthy' } }]);
+    sdk.getMlWorkloadRoutes.mockResolvedValue({ routes: [{ workload: 'clip', destinationId: 'lan' }] });
     render(Overview);
     expect(await screen.findByRole('heading', { name: 'Something needs you now' })).toBeInTheDocument();
+    expect(await screen.findByText('AI features are not answering')).toBeInTheDocument();
     expect(screen.getAllByText(/almost out of space/i).length).toBeGreaterThan(0);
     const list = screen.getByRole('list', { name: 'Needs your attention' });
     expect(list.querySelector('li')).toHaveClass('is-now');
     // UI review 2026-10-30 #17: the status names only the problems, and "Check again" is there once.
-    expect(screen.getByText('This drive is almost out of space and an update is ready.')).toBeInTheDocument();
+    expect(
+      screen.getByText('This drive is almost out of space, AI features are not answering, and an update is ready.'),
+    ).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Check again/ })).toHaveLength(1);
   });
 
