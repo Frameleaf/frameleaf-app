@@ -252,7 +252,6 @@
   const pathname = $derived(page.url.pathname);
   /** UI review 2026-10-30 #8: Boards, Clients, Studio and Activity head the phone menu, then Help. */
   const phoneSections = $derived(buildPhoneMenuDestinations({ clients: isClientsEnabled(preferences) }));
-  const currentSection = $derived(currentPrimaryDestination(pathname, boards));
   const openHelp = () => {
     sidebarStore.reset();
     helpPanel.open = true;
@@ -322,6 +321,8 @@
    * drawer becomes the "Collections and filters" bottom sheet (README point 13).
    */
   const boards = $derived(workspaceScope === LibraryViewScope.Design);
+  /** The phone menu's current section (Boards here, also on a Boards collection). */
+  const currentSection = $derived(currentPrimaryDestination(pathname, boards));
   type BoardsItemId = 'all' | 'images' | 'videos' | 'links' | 'unfiled';
   /** The parameter Boards' Links view sets: the server's `kinds` on library item search. */
   const BOARDS_KINDS_PARAMETER = 'kinds';
