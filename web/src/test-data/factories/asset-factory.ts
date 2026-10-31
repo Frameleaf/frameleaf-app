@@ -86,6 +86,11 @@ export const toResponseDto = (...timelineAsset: TimelineAsset[]) => {
     bucketAssets.isTrashed.push(asset.isTrashed);
     bucketAssets.livePhotoVideoId.push(asset.livePhotoVideoId!);
     bucketAssets.fileCreatedAt.push(fileCreatedAt);
+    bucketAssets.localOffsetHours.push(
+      (fromTimelinePlainDateTime(asset.localDateTime).toMillis() -
+        fromTimelinePlainDateTime(asset.fileCreatedAt).toMillis()) /
+        3_600_000,
+    );
     bucketAssets.createdAt.push(fromTimelinePlainDateTime(asset.createdAt).toISO());
     bucketAssets.ownerId.push(asset.ownerId);
     bucketAssets.projectionType.push(asset.projectionType!);

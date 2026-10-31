@@ -45,14 +45,13 @@
   let loads = 0;
   const load = async () => {
     const current = ++loads;
-    let next: LibraryResponseDto[];
     try {
-      next = (await getAllLibraries({})).filter((library) => !library.deletedAt);
+      const next = (await getAllLibraries({})).filter((library) => !library.deletedAt);
+      if (current === loads) {
+        folders = next;
+      }
     } catch {
-      next = [];
-    }
-    if (current === loads) {
-      folders = next;
+      // keep what is shown: a failed load must not tell an administrator with folders to add one
     }
   };
   // The Libraries manager above this section adds and removes folders; follow it without a reload.
