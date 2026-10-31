@@ -1,0 +1,600 @@
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import handlebar from 'handlebars';
+import { DateTime } from 'luxon';
+import path from 'node:path';
+import sanitize from 'sanitize-filename';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { PendingAssetMove } from 'src/repositories/move.repository.js';
+import type { JobOf, StorageAsset } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { ConfigTemplateStorageOptionDto } from 'src/dtos/config.dto.js';
+import { StorageMigrationStatusResponseDto } from 'src/dtos/queue.dto.js';
+import {
+  AssetFileType,
+  AssetPathType,
+  AssetType,
+  DatabaseLock,
+  JobName,
+  JobStatus,
+  QueueName,
+  StorageFolder,
+} from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { getAssetFile } from 'src/utils/asset.util.js';
+import { getFilenameExtension, getLivePhotoMotionFilename } from 'src/utils/file.js';
+
+const storageTokens = {
+  secondOptions: ['s', 'ss', 'SSS'],
+  minuteOptions: ['m', 'mm'],
+  dayOptions: ['d', 'dd'],
+  weekOptions: ['W', 'WW'],
+  hourOptions: ['h', 'hh', 'H', 'HH'],
+  yearOptions: ['y', 'yy'],
+  monthOptions: ['M', 'MM', 'MMM', 'MMMM'],
+};
+
+const storagePresets = [
+  '{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}',
+  '{{y}}/{{MM}}-{{dd}}/{{filename}}',
+  '{{y}}/{{MMMM}}-{{dd}}/{{filename}}',
+  '{{y}}/{{MM}}/{{filename}}',
+  '{{y}}/{{#if album}}{{album}}{{else}}Other/{{MM}}{{/if}}/{{filename}}',
+  '{{#if album}}{{album-startDate-y}}/{{album}}{{else}}{{y}}/Other/{{MM}}{{/if}}/{{filename}}',
+  '{{y}}/{{MMM}}/{{filename}}',
+  '{{y}}/{{MMMM}}/{{filename}}',
+  '{{y}}/{{MM}}/{{dd}}/{{filename}}',
+  '{{y}}/{{MMMM}}/{{dd}}/{{filename}}',
+  '{{y}}/{{y}}-{{MM}}/{{y}}-{{MM}}-{{dd}}/{{filename}}',
+  '{{y}}-{{MM}}-{{dd}}/{{filename}}',
+  '{{y}}-{{MMM}}-{{dd}}/{{filename}}',
+  '{{y}}-{{MMMM}}-{{dd}}/{{filename}}',
+  '{{y}}/{{y}}-{{MM}}/{{filename}}',
+  '{{y}}/{{y}}-{{WW}}/{{filename}}',
+  '{{y}}/{{y}}-{{MM}}-{{dd}}/{{assetId}}',
+  '{{y}}/{{y}}-{{MM}}/{{assetId}}',
+  '{{y}}/{{y}}-{{WW}}/{{assetId}}',
+  '{{album}}/{{filename}}',
+  '{{make}}/{{model}}/{{lensModel}}/{{filename}}',
+];
+
+export interface MoveAssetMetadata {
+  storageLabel: string | null;
+  filename: string;
+}
+
+interface RenderMetadata {
+  asset: StorageAsset;
+  filename: string;
+  extension: string;
+  albumName: string | null;
+  albumStartDate: Date | null;
+  albumEndDate: Date | null;
+  make: string | null;
+  model: string | null;
+  lensModel: string | null;
+}
+
+@Injectable()
+export class StorageTemplateService extends BaseService {
+  private _template: {
+    compiled: HandlebarsTemplateDelegate<any>;
+    raw: string;
+    needsAlbum: boolean;
+    needsAlbumMetadata: boolean;
+  } | null = null;
+
+  private get template() {
+    if (!this._template) {
+      throw new Error('Template not initialized');
+    }
+    return this._template;
+  }
+
+  @OnEvent({ name: 'ConfigInit' })
+  onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    const template = newConfig.storageTemplate.template;
+    if (!this._template || template !== this.template.raw) {
+      this.logger.debug(`Compiling new storage template: ${template}`);
+      this._template = this.compile(template);
+    }
+  }
+
+  @OnEvent({ name: 'ConfigUpdate', server: true })
+  onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
+    this.onConfigInit({ newConfig });
+  }
+
+  @OnEvent({ name: 'ConfigValidate' })
+  onConfigValidate({ newConfig }: ArgOf<'ConfigValidate'>) {
+    try {
+      const { compiled } = this.compile(newConfig.storageTemplate.template);
+      this.render(compiled, {
+        asset: {
+          fileCreatedAt: new Date(),
+          originalPath: '/upload/test/IMG_123.jpg',
+          type: AssetType.Image,
+          id: 'd587e44b-f8c0-4832-9ba3-43268bbf5d4e',
+        } as StorageAsset,
+        filename: 'IMG_123',
+        extension: 'jpg',
+        albumName: 'album',
+        albumStartDate: new Date(),
+        albumEndDate: new Date(),
+        make: 'FUJIFILM',
+        model: 'X-T50',
+        lensModel: 'XF27mm F2.8 R WR',
+      });
+    } catch (error) {
+      this.logger.warn(`Storage template validation failed: ${JSON.stringify(error)}`);
+      throw new Error('Invalid storage template', { cause: error });
+    }
+  }
+
+  getStorageTemplateOptions(): ConfigTemplateStorageOptionDto {
+    return { ...storageTokens, presetOptions: storagePresets };
+  }
+
+  /** FL-349: where the storage template migration stands, for the admin Migration page. */
+  async getMigrationStatus(): Promise<StorageMigrationStatusResponseDto> {
+    const { storageTemplate } = await this.getConfig({ withCache: false });
+    const name = QueueName.StorageTemplateMigration;
+    const [isActive, isPaused, hasUnfinishedWork, statistics, candidates] = await Promise.all([
+      this.jobRepository.isActive(name),
+      this.jobRepository.isPaused(name),
+      this.jobRepository.hasUnfinishedWork(name),
+      this.jobRepository.getJobCounts(name),
+      this.assetRepository.countUploadedOriginals(),
+    ]);
+    return {
+      enabled: storageTemplate.enabled,
+      template: storageTemplate.template,
+      isActive,
+      isPaused,
+      hasUnfinishedWork,
+      statistics,
+      candidates,
+    };
+  }
+
+  /**
+   * FL-349: start the storage template migration in the background — the same job as starting the
+   * `storageTemplateMigration` queue. Refused while the template is off (the run would move nothing)
+   * or while a migration is already running.
+   */
+  async runMigration(): Promise<StorageMigrationStatusResponseDto> {
+    const { storageTemplate } = await this.getConfig({ withCache: false });
+    if (!storageTemplate.enabled) {
+      throw new BadRequestException('The storage template is turned off');
+    }
+    const name = QueueName.StorageTemplateMigration;
+    if (await this.jobRepository.isActive(name)) {
+      throw new ConflictException('A storage migration is already running');
+    }
+    await this.eventRepository.emit('QueueStart', { name });
+    await this.jobRepository.queue({ name: JobName.StorageTemplateMigration });
+    return this.getMigrationStatus();
+  }
+
+  @OnEvent({ name: 'AssetMetadataExtracted' })
+  async onAssetMetadataExtracted({ source, assetId }: ArgOf<'AssetMetadataExtracted'>) {
+    await this.jobRepository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { source, id: assetId } });
+  }
+
+  @OnJob({ name: JobName.StorageTemplateMigrationSingle, queue: QueueName.StorageTemplateMigration })
+  async handleMigrationSingle({ id }: JobOf<JobName.StorageTemplateMigrationSingle>): Promise<JobStatus> {
+    const config = await this.getConfig({ withCache: true });
+    const isStorageTemplateEnabled = config.storageTemplate.enabled;
+    if (!isStorageTemplateEnabled) {
+      return JobStatus.Skipped;
+    }
+
+    const asset = await this.assetJobRepository.getForStorageTemplateJob(id);
+    if (!asset) {
+      return JobStatus.Failed;
+    }
+
+    const user = await this.userRepository.get(asset.ownerId, {});
+    const storageLabel = user?.storageLabel || null;
+    const filename = asset.originalFileName || asset.id;
+    await this.moveAsset(asset, { storageLabel, filename });
+
+    // move motion part of live photo
+    if (asset.livePhotoVideoId) {
+      const livePhotoVideo = await this.assetJobRepository.getForStorageTemplateJob(asset.livePhotoVideoId, {
+        includeHidden: true,
+      });
+      if (!livePhotoVideo) {
+        return JobStatus.Failed;
+      }
+      const motionFilename = getLivePhotoMotionFilename(filename, livePhotoVideo.originalPath);
+      await this.moveAsset(livePhotoVideo, { storageLabel, filename: motionFilename }, asset);
+    }
+    return JobStatus.Success;
+  }
+
+  @OnJob({ name: JobName.StorageTemplateMigration, queue: QueueName.StorageTemplateMigration })
+  async handleMigration(): Promise<JobStatus> {
+    this.logger.log('Starting storage template migration');
+    const { storageTemplate } = await this.getConfig({ withCache: true });
+    const { enabled } = storageTemplate;
+    if (!enabled) {
+      this.logger.log('Storage template migration disabled, skipping');
+      return JobStatus.Skipped;
+    }
+
+    await this.moveRepository.cleanMoveHistory();
+
+    const assets = this.assetJobRepository.streamForStorageTemplateJob();
+    const storageLabels = new Map(
+      (await this.userRepository.getList()).map(({ id, storageLabel }) => [id, storageLabel || null]),
+    );
+
+    for await (const asset of assets) {
+      const storageLabel = storageLabels.get(asset.ownerId) ?? null;
+      const filename = asset.originalFileName || asset.id;
+      await this.moveAsset(asset, { storageLabel, filename });
+
+      // move motion part of live photo
+      if (asset.livePhotoVideoId) {
+        const livePhotoVideo = await this.assetJobRepository.getForStorageTemplateJob(asset.livePhotoVideoId, {
+          includeHidden: true,
+        });
+        if (livePhotoVideo) {
+          const motionFilename = getLivePhotoMotionFilename(filename, livePhotoVideo.originalPath);
+          await this.moveAsset(livePhotoVideo, { storageLabel, filename: motionFilename }, asset);
+        }
+      }
+    }
+
+    this.logger.debug('Cleaning up empty directories...');
+    const libraryFolder = StorageCore.getBaseFolder(StorageFolder.Library);
+    await this.storageRepository.removeEmptyDirs(libraryFolder);
+
+    this.logger.log('Finished storage template migration');
+
+    return JobStatus.Success;
+  }
+
+  /**
+   * FL-179: storage moves that are still recorded (deferred during a handoff or a normalization, or
+   * interrupted) are queued again as part of the nightly database cleanup, and each finds its record
+   * and finishes. A record that can never finish is dropped: its asset is gone, the asset already uses
+   * the new path, the move does not apply to the asset (an external or motion part), or the file is at
+   * neither path. One that is only blocked for now (a disabled template, a handoff, a mismatched
+   * mapping) is kept and tried again.
+   */
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async onNightlyDatabaseCleanup() {
+    try {
+      const pending = await this.moveRepository.getPendingAssetMoves();
+      const originals = new Set<string>();
+      const generated = new Set<string>();
+      const finished: PendingAssetMove[] = [];
+      for (const move of pending) {
+        const isTemplateMove = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
+        if (await this.isMoveFinished(move, isTemplateMove)) {
+          finished.push(move);
+          continue;
+        }
+        (isTemplateMove ? originals : generated).add(move.entityId);
+      }
+      if (finished.length > 0) {
+        this.logger.log(`Forgetting ${finished.length} recorded storage moves that cannot finish`);
+        await this.moveRepository.deleteMoves(finished);
+      }
+      await this.jobRepository.queueAll([
+        ...[...originals].map((id) => ({ name: JobName.StorageTemplateMigrationSingle as const, data: { id } })),
+        ...[...generated].map((id) => ({ name: JobName.AssetFileMigration as const, data: { id } })),
+      ]);
+    } catch (error: any) {
+      this.logger.warn(`Pending storage moves deferred: ${error}`);
+    }
+  }
+
+  private async isMoveFinished(move: PendingAssetMove, isTemplateMove: boolean): Promise<boolean> {
+    if (!move.assetExists || move.currentPath === move.newPath) {
+      return true;
+    }
+    if (
+      isTemplateMove &&
+      (move.isExternal || (move.originalPath !== null && StorageCore.isAndroidMotionPath(move.originalPath)))
+    ) {
+      return true;
+    }
+    // Only a file that is certainly gone ends the record: a storage that cannot be read tonight (an
+    // offline mount, EIO, EACCES) may still hold the only copy the record can recover.
+    for (const file of [move.oldPath, move.newPath]) {
+      if ((await this.getFileState(file)) !== 'missing' || !(await this.isMediaFolderReachable(file))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** `missing` only when the filesystem says so (ENOENT); any other failure leaves it unknown. */
+  private async getFileState(file: string): Promise<'present' | 'missing' | 'unknown'> {
+    try {
+      await this.storageRepository.stat(file);
+      return 'present';
+    } catch (error: any) {
+      return error?.code === 'ENOENT' ? 'missing' : 'unknown';
+    }
+  }
+
+  /** Whether the media folder holding `file` is mounted: its mount-check file (`.frameleaf`) is there. */
+  private async isMediaFolderReachable(file: string): Promise<boolean> {
+    for (const folder of Object.values(StorageFolder)) {
+      const base = StorageCore.getBaseFolder(folder);
+      if (file.startsWith(`${base}/`)) {
+        return (await this.getFileState(path.join(base, '.frameleaf'))) === 'present';
+      }
+    }
+    return false;
+  }
+
+  @OnEvent({ name: 'AssetDelete' })
+  async handleMoveHistoryCleanup({ assetId }: ArgOf<'AssetDelete'>) {
+    this.logger.debug(`Cleaning up move history for asset ${assetId}`);
+    await this.moveRepository.cleanMoveHistorySingle(assetId);
+  }
+
+  async moveAsset(asset: StorageAsset, metadata: MoveAssetMetadata, stillPhoto?: StorageAsset) {
+    if (asset.isExternal || StorageCore.isAndroidMotionPath(asset.originalPath)) {
+      // External assets are not affected by storage template
+      // TODO: shouldn't this only apply to external assets?
+      return;
+    }
+
+    return this.databaseRepository.withLock(DatabaseLock.StorageTemplateMigration, async () => {
+      const { id, originalPath, checksum, fileSizeInByte, physicalOriginalFileId } = asset;
+      const oldPath = originalPath;
+      const newPath = await this.getTemplatePath(asset, metadata, stillPhoto);
+
+      if (!fileSizeInByte) {
+        this.logger.error(`Asset ${id} missing exif info, skipping storage template migration`);
+        return;
+      }
+
+      // the sidecar follows the original, never ahead of it
+      let moved = true;
+      try {
+        const isSharedNonCanonical =
+          physicalOriginalFileId &&
+          !(await this.physicalFileRepository.isOriginalCanonical(id, physicalOriginalFileId));
+
+        if (!isSharedNonCanonical) {
+          moved = await this.storageCore.moveFile({
+            entityId: id,
+            pathType: AssetPathType.Original,
+            oldPath,
+            newPath,
+            assetInfo: { sizeInBytes: fileSizeInByte, checksum },
+          });
+          // FL-179: the move already pointed the shared physical file at the new path; this repairs one
+          // left behind by an earlier move. It never runs when the file is not at the new path.
+          if (moved) {
+            await this.physicalFileRepository.updateOriginalPhysicalPathForAsset(id, newPath);
+          }
+        } else if (asset.libraryPath !== newPath) {
+          // FL-417: the shared file stays where it is; the photo shows its own template path
+          await this.assetRepository.update({ id, libraryPath: newPath });
+        }
+
+        const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
+        // A shared copy cannot reserve a template original path; keep its per-asset sidecar path.
+        // FL-179: an original whose move was deferred or failed keeps its sidecar beside it
+        if (sidecarPath && moved && !isSharedNonCanonical) {
+          const sidecarMoved = await this.storageCore.moveFile({
+            entityId: id,
+            pathType: AssetFileType.Sidecar,
+            oldPath: sidecarPath,
+            newPath: `${newPath}.xmp`,
+          });
+          // an uploaded sidecar has its own upload/<user>/xx/yy folder
+          if (sidecarMoved && sidecarPath !== `${newPath}.xmp`) {
+            await this.removeEmptyUploadFolders(asset.ownerId, sidecarPath);
+          }
+        }
+        if (moved && !isSharedNonCanonical && oldPath !== newPath) {
+          await this.removeEmptyUploadFolders(asset.ownerId, oldPath);
+        }
+      } catch (error: any) {
+        this.logger.error(`Problem applying storage template`, error?.stack, { id, oldPath, newPath });
+      }
+    });
+  }
+
+  /**
+   * OPS-08: an upload waits in `upload/<user>/xx/yy` until it is sorted. Once its original (and sidecar) moved
+   * out, the `yy` and `xx` folders it leaves empty go too; the user's own folder stays. Only an empty folder is
+   * removed (`rmdir`), so a folder another file still sits in is kept.
+   */
+  private async removeEmptyUploadFolders(ownerId: string, oldPath: string) {
+    const userFolder = path.resolve(StorageCore.getFolderLocation(StorageFolder.Upload, ownerId));
+    let folder = path.dirname(path.resolve(oldPath));
+    if (path.dirname(path.dirname(folder)) !== userFolder) {
+      return;
+    }
+    // ponytail: an upload that picks this same xx/yy between its mkdir and its write fails once and is retried;
+    // a per-folder lock with the upload path if that ever shows up
+    while (folder !== userFolder && (await this.storageRepository.removeDirIfEmpty(folder))) {
+      folder = path.dirname(folder);
+    }
+  }
+
+  private async getTemplatePath(
+    asset: StorageAsset,
+    metadata: MoveAssetMetadata,
+    stillPhoto?: StorageAsset,
+  ): Promise<string> {
+    const { storageLabel, filename } = metadata;
+
+    try {
+      const filenameWithoutExtension = path.basename(filename, getFilenameExtension(filename));
+
+      const source = asset.originalPath;
+      let extension = getFilenameExtension(source).split('.').pop() as string;
+      const sanitized = sanitize(path.basename(filenameWithoutExtension, `.${extension}`));
+      extension = extension?.toLowerCase();
+      const rootPath = StorageCore.getLibraryFolder({ id: asset.ownerId, storageLabel });
+
+      switch (extension) {
+        case 'jpeg':
+        case 'jpe': {
+          extension = 'jpg';
+          break;
+        }
+        case 'tif': {
+          extension = 'tiff';
+          break;
+        }
+        case '3gpp': {
+          extension = '3gp';
+          break;
+        }
+        case 'mpeg':
+        case 'mpe': {
+          extension = 'mpg';
+          break;
+        }
+        case 'm2ts':
+        case 'm2t': {
+          extension = 'mts';
+          break;
+        }
+      }
+
+      let albumName = null;
+      let albumStartDate = null;
+      let albumEndDate = null;
+      const assetForMetadata = stillPhoto || asset;
+
+      if (this.template.needsAlbum) {
+        // For motion videos, use the still photo's album information since motion videos
+        // don't have album metadata attached directly
+        const albums = await this.albumRepository.getByAssetId(assetForMetadata.ownerId, assetForMetadata.id);
+        const album = albums?.[0];
+        if (album) {
+          albumName = album.albumName || null;
+
+          if (this.template.needsAlbumMetadata) {
+            const [metadata] = await this.albumRepository.getMetadataForIds([album.id]);
+            albumStartDate = metadata?.startDate || null;
+            albumEndDate = metadata?.endDate || null;
+          }
+        }
+      }
+
+      // For motion videos that are part of live photos, use the still photo's date
+      // to ensure both parts end up in the same folder
+      const storagePath = this.render(this.template.compiled, {
+        asset: assetForMetadata,
+        filename: sanitized,
+        extension,
+        albumName,
+        albumStartDate,
+        albumEndDate,
+        make: assetForMetadata.make,
+        model: assetForMetadata.model,
+        lensModel: assetForMetadata.lensModel,
+      });
+      const fullPath = path.normalize(path.join(rootPath, storagePath));
+      let destination = `${fullPath}.${extension}`;
+
+      const relativeDestination = path.relative(rootPath, destination);
+      if (
+        relativeDestination === '..' ||
+        relativeDestination.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relativeDestination)
+      ) {
+        this.logger.warn(`Skipped attempt to access an invalid path: ${fullPath}. Path should start with ${rootPath}`);
+        return source;
+      }
+
+      if (source === destination) {
+        return source;
+      }
+
+      /**
+       * In case of migrating duplicate filename to a new path, we need to check if it is already migrated
+       * Due to the mechanism of appending +1, +2, +3, etc to the filename
+       *
+       * Example:
+       * Source = upload/abc/def/FullSizeRender+7.heic
+       * Expected Destination = upload/abc/def/FullSizeRender.heic
+       *
+       * The file is already at the correct location, but since there are other FullSizeRender.heic files in the
+       * destination, it was renamed to FullSizeRender+7.heic.
+       *
+       * The lines below will be used to check if the differences between the source and destination is only the
+       * +7 suffix, and if so, it will be considered as already migrated.
+       */
+      if (source.startsWith(fullPath) && source.endsWith(`.${extension}`)) {
+        const diff = source.replace(fullPath, '').replace(`.${extension}`, '');
+        const hasDuplicationAnnotation = /^\+\d+$/.test(diff);
+        if (hasDuplicationAnnotation) {
+          return source;
+        }
+      }
+
+      let duplicateCount = 0;
+
+      while (true) {
+        const isExists = await this.storageRepository.checkFileExists(destination);
+        if (!isExists) {
+          break;
+        }
+
+        duplicateCount++;
+        destination = `${fullPath}+${duplicateCount}.${extension}`;
+      }
+
+      return destination;
+    } catch (error: any) {
+      this.logger.error(`Unable to get template path for ${filename}: ${error}`);
+      return asset.originalPath;
+    }
+  }
+
+  private compile(template: string) {
+    return {
+      raw: template,
+      compiled: handlebar.compile(template, { knownHelpers: undefined, strict: true }),
+      needsAlbum: template.includes('album'),
+      needsAlbumMetadata: template.includes('album-startDate') || template.includes('album-endDate'),
+    };
+  }
+
+  private render(template: HandlebarsTemplateDelegate<any>, options: RenderMetadata) {
+    const { filename, extension, asset, albumName, albumStartDate, albumEndDate, make, model, lensModel } = options;
+    const substitutions: Record<string, string> = {
+      filename,
+      ext: extension,
+      filetype: asset.type === AssetType.Image ? 'IMG' : 'VID',
+      filetypefull: asset.type === AssetType.Image ? 'IMAGE' : 'VIDEO',
+      assetId: asset.id,
+      assetIdShort: asset.id.slice(-12),
+      //just throw into the root if it doesn't belong to an album
+      album: (albumName && sanitize(albumName.replaceAll(/\.+/g, ''))) || '',
+      make: make ?? '',
+      model: model ?? '',
+      lensModel: lensModel ?? '',
+    };
+
+    const dt = DateTime.fromJSDate(asset.fileCreatedAt);
+    const albumStartTime = albumName && albumStartDate ? DateTime.fromJSDate(albumStartDate) : undefined;
+    const albumEndTime = albumName && albumEndDate ? DateTime.fromJSDate(albumEndDate) : undefined;
+
+    for (const token of Object.values(storageTokens).flat()) {
+      substitutions[token] = dt.toFormat(token);
+      if (albumName) {
+        // Album date tokens are rendered in the server time zone to match storage template datetime behavior.
+        substitutions['album-startDate-' + token] = albumStartTime?.toFormat(token) ?? '';
+        substitutions['album-endDate-' + token] = albumEndTime?.toFormat(token) ?? '';
+      }
+    }
+
+    return template(substitutions).replaceAll(/\/{2,}/gm, '/');
+  }
+}
