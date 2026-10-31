@@ -20,9 +20,6 @@ export async function loadFromTimeBuckets(
   options: TimelineManagerOptions,
   signal: AbortSignal,
 ): Promise<void> {
-  // A month that is not loaded may still hold assets a live event put there: read the whole bucket
-  // anyway and add only what it does not hold yet.
-  const held = new Set(timelineMonth.getAssets().map(({ id }) => id));
   const timeBucket = toISOYearMonthUTC(timelineMonth.yearMonth);
   for (let attempt = 1; ; attempt++) {
     const projection = timelineManager.projectionGeneration;
@@ -61,6 +58,9 @@ export async function loadFromTimeBuckets(
     for (const id of albumAssets?.id ?? []) {
       timelineManager.albumAssets.add(id);
     }
+    // A month that is not loaded may still hold assets a live event put there (even during this
+    // request): read what it holds now and add only what it does not hold yet.
+    const held = new Set(timelineMonth.getAssets().map(({ id }) => id));
     addBucketAssets(timelineMonth, bucketResponse, held);
     return;
   }

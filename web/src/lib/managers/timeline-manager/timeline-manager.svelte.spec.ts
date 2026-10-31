@@ -392,6 +392,33 @@ describe('TimelineManager', () => {
       }
     });
 
+    it('does not add an asset twice when a live event puts it in the month during the load', async () => {
+      const manager = new TimelineManager();
+      try {
+        sdkMock.getTimeBuckets.mockResolvedValue([{ count: 100, timeBucket: '2024-02-01' }]);
+        await manager.updateOptions({});
+        const assets = bucketAssets['2024-02-01T00:00:00.000Z'];
+        sdkMock.getTimeBucket.mockReset();
+        let live = true;
+        sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) => {
+          if (live) {
+            // The live event lands while the first request is in flight.
+            live = false;
+            manager.invalidateLiveProjection();
+            manager.months[0].addAssets(toResponseDto(assets[0]), false);
+          }
+          return Promise.resolve(bucketAssetsResponse[timeBucket]);
+        });
+        await manager.loadTimelineMonth({ year: 2024, month: 2 }, { cancelable: false });
+        const ids = manager.months[0].getAssets().map(({ id }) => id);
+        expect(sdkMock.getTimeBucket).toHaveBeenCalledTimes(2);
+        expect(ids).toHaveLength(100);
+        expect(new Set(ids).size).toBe(100);
+      } finally {
+        manager.destroy();
+      }
+    });
+
     it('lays the timeline out once per viewport change', async () => {
       const layout = vi.spyOn(
         timelineManager as unknown as { updateViewportGeometry: (w: boolean) => void },
