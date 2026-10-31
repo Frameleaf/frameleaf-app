@@ -26,7 +26,7 @@ export type StudioResourceRights = {
   restrictions: Readonly<Partial<Record<StudioRightsUseName, string>>>;
 };
 
-export const STUDIO_RIGHTS_SOURCE_SHA256 = 'b5e31ceb967f3f34a0b1695601399ab521f8ba1f29d05bbf28e3386dce1dc2c6';
+export const STUDIO_RIGHTS_SOURCE_SHA256 = '54bbd7e41bf53c66b699a7ec211355ffb715192090b91c1863b313643cc2c90a';
 
 /** The owner approval the allowed rows come from, or null when there is none. */
 export const STUDIO_RIGHTS_APPROVAL = {
@@ -34,7 +34,7 @@ export const STUDIO_RIGHTS_APPROVAL = {
   approvedOn: '2026-09-25',
   source:
     'Jira FL-146, comment 34941: Owner decisions (2026-09-25, afternoon), "Studio resource rights: all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown."',
-  sha256: '9387a92c1c76191c26ac740023deec1b7c2c483e9ed10549f8730f2646549c85',
+  sha256: 'a7c2772c8d2e83e3912329ec8ed3d2c6f85e980c3fca7f8271665c9bcaaa218a',
 } as const;
 
 /** Whether the engine as a whole may be redistributed. False blocks every redistribution. */
@@ -1163,7 +1163,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     redistribution: 'allowed',
     localRuntime: 'allowed',
     hostedUse: 'allowed',
-    approvedOn: '2026-09-25',
+    approvedOn: '2026-10-31',
     restrictions: {},
   },
   'model:OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX': {

@@ -119,7 +119,11 @@ export function compositionSourcesFor(sourceSha256) {
         '7a44c73997ea4d1471916e3304504519b0b84ce11156c9f8092d46e9877e31c5',
     }
   // FL-639 Cut out the subject: client-render-engine.ts refuses cut-outs on the linear HDR route; raster unchanged.
-  if (sourceSha256 === 'fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2')
+  if (
+    sourceSha256 === 'fbcf007e30b50cb076f5be5ed4b159b4da91a5e8fbedd092f663fb33268f71c2' ||
+    // FL-685 Parakeet loads from the Frameleaf model mirror; changes no composition or raster producer.
+    sourceSha256 === '6616439af729e6175b697ee55a182e3c472418e058cd5d7a4bc3e5d21227286f'
+  )
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/canvas-item-renderer/gpu.ts':

@@ -500,7 +500,9 @@
     },
     {
       "id": "model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx",
-      "sha256": "56adf754b9908165cb179ee4cee705c8b554e85626d1e4e3f22256518cbeb162"
+      "sha256": "7c2ce591f4636bc62a04f04e39adca8f00814954e9410f65e5d4b409698f94eb",
+      "approvedOn": "2026-10-31",
+      "source": "Owner (AJ Taylor), 2026-10-31, in chat with the Studio session working FL-685: chose \"Mirror Parakeet\", approving this five-file inventory served from the Frameleaf model mirror (frameleaf/parakeet-tdt-0.6b-v3, mirror revision 8fdb7406cf95bd8be6d735010cfd96a17502bfa8; Olicorne/parakeet-tdt-0.6b-v3-optimized-onnx commit 8a9229fe6a84898bcd05abd31d541722560b80f8); mirrored by Frameleaf/frameleaf-cloud#589."
     },
     {
       "id": "model:OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",

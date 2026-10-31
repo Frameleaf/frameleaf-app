@@ -112,7 +112,7 @@ jobs:
       - name: Pin the isolated engine package manager
         run: npm install --global npm@12.2.0 --ignore-scripts --no-audit --no-fund
       - name: Verify recovery safeguards
-        run: node --test studio/tools/engine.test.mjs studio/tools/resource-download-privacy.test.mjs
+        run: node --test studio/tools/engine.test.mjs studio/tools/resource-download-privacy.test.mjs studio/tools/model-mirror-admission.test.mjs
       - name: Recover and verify immutable source, then prepare adapted workspace
         id: prepare_source
         env:
