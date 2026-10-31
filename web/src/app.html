@@ -1,0 +1,217 @@
+<!doctype html>
+<html class="dark" lang="en">
+  <head>
+    <!--
+      CLD-004: /link can be opened with a one-time licence link code (or, from an old link, a key) in
+      its address. Until the page has taken it out, no request sends that address on as a referrer;
+      the page restores the default policy once the address is clean (routes/link/+page.svelte).
+    -->
+    <script>
+      if (location.pathname === '/link') {
+        const referrer = document.createElement('meta');
+        referrer.name = 'referrer';
+        referrer.content = 'no-referrer';
+        referrer.id = 'link-referrer-policy';
+        document.head.append(referrer);
+      }
+    </script>
+    <!-- (used for SSR) -->
+    <!-- metadata:tags -->
+
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+    <!--
+      FL-135: favicon.svg is a verbatim copy of design/frameleaf/brand-kit/frameleaf-symbol.svg
+      (sha256 beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2, matching the brand
+      kit manifest). It comes first so SVG-capable browsers use the authorized Frameleaf mark. The
+      .ico/.png fallbacks below are rendered from the same brand kit (never hand-redrawn) by
+      scripts/frameleaf-logo-exports.mjs, with provenance in design/frameleaf/derivatives/exports.json.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png" />
+    <link rel="icon" type="image/png" sizes="144x144" href="/favicon-144.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon-180.png" />
+    <link rel="preload" as="font" type="font/ttf" href="%app.font%" crossorigin="anonymous" />
+    <link rel="preload" as="font" type="font/ttf" href="%app.monofont%" crossorigin="anonymous" />
+
+    <!--
+      The browser chrome colour: the dark canvas by default (template index.html:9), switched to the
+      light canvas below before first paint, and kept in step with the app theme by
+      $lib/frameleaf/theme-color.ts afterwards.
+    -->
+    <meta name="theme-color" content="#101416" />
+    <script>
+      try {
+        let saved;
+        let legacy = false;
+        try {
+          saved = localStorage.getItem('frameleaf-ui-theme');
+          if (saved === null) {
+            saved = localStorage.getItem('immich-ui-theme');
+            legacy = saved !== null;
+          }
+        } catch {
+          // Blocked storage still follows the device theme.
+        }
+        let value;
+        try {
+          value = JSON.parse(saved);
+        } catch {
+          // Invalid saved preferences fall back to the device theme.
+        }
+        if (value && typeof value === 'object') value = value.system ? 'system' : value.value;
+        const preference = value === 'dark' || value === 'light' ? value : 'system';
+        if (legacy) {
+          try {
+            localStorage.setItem('frameleaf-ui-theme', JSON.stringify(preference));
+            localStorage.removeItem('immich-ui-theme');
+          } catch {
+            // Preserve the previous choice if migration cannot be saved.
+          }
+        }
+        const prefersDark = globalThis.matchMedia('(prefers-color-scheme: dark)').matches;
+        const dark = preference === 'dark' || (preference === 'system' && prefersDark);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.classList.toggle('light', !dark);
+        if (!dark) {
+          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f4f6f7');
+        }
+      } catch {
+        // noop
+      }
+    </script>
+
+    %sveltekit.head%
+
+    <style>
+      /* prevent FOUC */
+      html {
+        height: 100%;
+        width: 100%;
+      }
+
+      /* The canvas of each theme (brand-tokens.json), so the first paint is already Frameleaf. */
+      html.dark {
+        background-color: #101416;
+      }
+
+      html.light {
+        background-color: #f4f6f7;
+      }
+
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+      }
+
+      @keyframes delayedVisibility {
+        to {
+          visibility: visible;
+        }
+      }
+
+      /* The loading mark never spins: a logo is not a spinner. It fades in and holds still. */
+      @keyframes stencilFade {
+        from {
+          opacity: 0;
+        }
+      }
+
+      #stencil {
+        --stencil-width: 64px;
+        display: flex;
+        width: var(--stencil-width);
+        margin-left: auto;
+        margin-right: auto;
+        margin-top: calc(50vh - var(--stencil-width) / 2);
+        margin-bottom: 100vh;
+        place-items: center;
+        justify-content: center;
+        visibility: hidden;
+        animation:
+          0s linear 0.3s forwards delayedVisibility,
+          stencilFade 240ms ease-out 0.3s both;
+      }
+
+      #stencil svg {
+        width: 100%;
+        height: auto;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #stencil {
+          animation: 0s linear 0.3s forwards delayedVisibility;
+        }
+      }
+    </style>
+  </head>
+
+  <noscript style="position: absolute; top: 0px; z-index: 1000; color: black; background-color: white">
+    To use Frameleaf, you must enable JavaScript or use a JavaScript compatible browser.
+  </noscript>
+
+  <body class="bg-light text-dark">
+    <!--
+      FL-135: the loading mark is design/frameleaf/brand-kit/frameleaf-symbol.svg, inlined verbatim
+      (sha256 beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2) so it can show
+      before any stylesheet or script has loaded, without an extra network request. It replaces the original
+      Immich loading mark; the artwork itself is untouched, only embedded.
+    -->
+    <div id="stencil">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        xmlns:xlink="http://www.w3.org/1999/xlink"
+        width="256"
+        height="256"
+        viewBox="0 0 256 256"
+        role="img"
+        aria-labelledby="stencil-title"
+      >
+        <title id="stencil-title">Frameleaf — gradient symbol</title>
+        <desc id="stencil-desc">
+          Native vector artwork: paths, shapes and gradients only. Lettering is outlined. No embedded images, font
+          files, scripts or external resources.
+        </desc>
+        <defs>
+          <linearGradient id="stencil-frame-gradient" gradientUnits="userSpaceOnUse" x1="15" y1="8" x2="226" y2="237">
+            <stop offset="0" stop-color="#86f345" />
+            <stop offset="0.25" stop-color="#36ec72" />
+            <stop offset="0.57" stop-color="#00c4d6" />
+            <stop offset="0.76" stop-color="#00c7b0" />
+            <stop offset="1" stop-color="#00d874" />
+          </linearGradient>
+          <linearGradient id="stencil-leaf-gradient" gradientUnits="userSpaceOnUse" x1="103" y1="101" x2="136" y2="240">
+            <stop offset="0" stop-color="#56f260" />
+            <stop offset="0.5" stop-color="#21de73" />
+            <stop offset="1" stop-color="#00bc9e" />
+          </linearGradient>
+          <linearGradient id="stencil-dot-gradient" x1="0.3" y1="0" x2="0.65" y2="1">
+            <stop offset="0" stop-color="#57f482" />
+            <stop offset="0.6" stop-color="#09dfa5" />
+            <stop offset="1" stop-color="#00bedc" />
+          </linearGradient>
+          <path
+            id="stencil-frame-path"
+            d="M 67 2 H 171 C 207 2 236 31 236 67 V 172 C 236 208 207 237 171 237 H 130 C 145 230 158 219 169 205 C 190 202 205 189 205 168 V 71 C 205 50 188 34 167 34 H 72 C 51 34 34 51 34 72 V 166 C 34 182 37 192 47 200 L 48 235 C 21 228 2 203 2 171 V 68 C 2 31 30 2 67 2 Z"
+          />
+          <path
+            id="stencil-leaf-path"
+            d="M 174 102 C 147 102 128 101 112 106 C 89 112 72 124 61 140 C 49 157 45 177 46 200 L 48 235 C 60 201 83 172 119 147 C 94 173 77 202 66 239 C 101 239 128 229 149 208 C 169 188 175 159 174 129 Z"
+          />
+          <g id="stencil-symbol-color" aria-label="Frameleaf symbol">
+            <use xlink:href="#stencil-frame-path" fill="url(#stencil-frame-gradient)" />
+            <use xlink:href="#stencil-leaf-path" fill="url(#stencil-leaf-gradient)" />
+            <circle cx="172.5" cy="66.5" r="16.5" fill="url(#stencil-dot-gradient)" />
+          </g>
+        </defs>
+        <use xlink:href="#stencil-symbol-color" transform="translate(8 8) scale(1)" />
+      </svg>
+    </div>
+    <div>%sveltekit.body%</div>
+  </body>
+</html>

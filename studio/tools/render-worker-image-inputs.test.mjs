@@ -1,0 +1,770 @@
+import assert from 'node:assert/strict';
+import { createHash, randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
+import test from 'node:test';
+import { createClaimImageInputs, validateClaimResourceClosure, validateInlineLuts } from './render-worker-image-inputs.mjs';
+
+// An input specimen, never an asserted render output. The test uses the prepared engine's real
+// collectMediaIds and media server, including its Range handling; no renderer is mocked.
+const sharp = createRequire(new URL('../engine/package.json', import.meta.url))('sharp');
+const png = await sharp({ create: { width: 1, height: 1, channels: 4, background: '#ffffff' } })
+  .png()
+  .toBuffer();
+const mediaId = '11111111-1111-4111-8111-111111111111';
+const prepared = () => ({
+  operationId: randomUUID(),
+  claimToken: randomUUID(),
+  revisionId: 'immutable-revision-7',
+  artifactInputDigest: 'a'.repeat(64),
+  snapshot: {
+    studio: {
+      resources: [{ key: `library-asset:${mediaId}`, kind: 'library-asset', id: mediaId,
+        graphPath: '/timeline/items/0', grant: 'render', checksum: createHash('sha256').update(png).digest('hex') }],
+      stored: true,
+      revision: 7,
+      graph: {
+        id: 'project',
+        name: 'Image specimen',
+        description: '',
+        createdAt: 0,
+        updatedAt: 0,
+        duration: 1,
+        metadata: { width: 32, height: 32, fps: 24 },
+        timeline: {
+          tracks: [
+            {
+              id: 'v1',
+              name: 'V1',
+              kind: 'video',
+              height: 80,
+              locked: false,
+              visible: true,
+              muted: false,
+              solo: false,
+              order: 0,
+            },
+          ],
+          items: [{ id: 'clip', type: 'image', mediaId, trackId: 'v1', from: 0, durationInFrames: 24 }],
+          transitions: [],
+          keyframes: [],
+        },
+      },
+    },
+  },
+  inputs: new Map([
+    [
+      `library-asset:${mediaId}`,
+      {
+        resourceId: mediaId,
+        kind: 'library-asset',
+        bytes: Buffer.from(png),
+        declaredChecksum: createHash('sha256').update(png).digest('hex'),
+        sha256: createHash('sha256').update(png).digest('hex'),
+      },
+    ],
+  ]),
+});
+
+test('real Freecut input contract preserves graph and serves only bound bytes while lease is live', async () => {
+  const claim = prepared();
+  const original = structuredClone(claim.snapshot.studio.graph);
+  let live = true;
+  const adapted = await createClaimImageInputs(claim, () => live);
+  const url = adapted.input.media[0].url;
+  try {
+    assert.deepEqual(adapted.input.project, original);
+    assert.notEqual(adapted.input.project, claim.snapshot.studio.graph);
+    assert.deepEqual(adapted.binding, {
+      operationId: claim.operationId,
+      claimToken: claim.claimToken,
+      revisionId: claim.revisionId,
+    });
+    assert.equal(adapted.input.media[0].mediaId, mediaId);
+    assert.equal(adapted.input.media[0].metadata.width, 1);
+    assert.equal(adapted.input.media[0].metadata.height, 1);
+    assert.equal(adapted.input.media[0].metadata.fileSize, png.length);
+    assert.equal(adapted.input.media[0].metadata.mimeType, 'image/png');
+    assert.equal(adapted.input.strict, true);
+    assert.ok(!url.includes(mediaId) && !url.includes(claim.claimToken));
+    assert.equal(new URL(url).hostname, '127.0.0.1');
+    const response = await fetch(url);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
+    const partial = await fetch(url, { headers: { Range: 'bytes=0-7' } });
+    assert.equal(partial.status, 206);
+    assert.deepEqual(Buffer.from(await partial.arrayBuffer()), png.subarray(0, 8));
+    const unbound = new URL(`/media/${mediaId}`, url);
+    const denied = await fetch(unbound);
+    assert.equal(denied.status, 404);
+    await denied.arrayBuffer();
+    live = false;
+    const revoked = await fetch(url);
+    assert.equal(revoked.status, 404);
+    await revoked.arrayBuffer();
+    assert.deepEqual(claim.snapshot.studio.graph, original);
+  } finally {
+    await adapted.dispose();
+  }
+  await assert.rejects(fetch(url));
+  await adapted.dispose();
+});
+
+test('cannot rebind verified bytes or substitute another resource identity', async () => {
+  const changed = prepared();
+  changed.inputs.get(`library-asset:${mediaId}`).bytes[0] ^= 1;
+  await assert.rejects(
+    createClaimImageInputs(changed, () => true),
+    /VERIFIED_INPUT_CHANGED/,
+  );
+  const substituted = prepared();
+  substituted.inputs.get(`library-asset:${mediaId}`).resourceId = 'another-asset';
+  await assert.rejects(
+    createClaimImageInputs(substituted, () => true),
+    /RESOURCE_IDENTITY_CHANGED/,
+  );
+});
+
+test('unsupported resource adapters and expired leases fail before opening source URLs', async () => {
+  for (const type of ['video', 'audio', 'text', 'composition']) {
+    const claim = prepared();
+    claim.snapshot.studio.graph.timeline.items[0].type = type;
+    await assert.rejects(
+      createClaimImageInputs(claim, () => true),
+      type === 'video' ? /VIDEO_CONTAINER_ADAPTER_UNAVAILABLE/ : /IMAGE_SOURCE_ADAPTER_ONLY/,
+    );
+  }
+  const linked = prepared();
+  linked.snapshot.studio.graph.timeline.items[0].src = 'https://unapproved.example/source';
+  await assert.rejects(
+    createClaimImageInputs(linked, () => true),
+    /IMAGE_SOURCE_ADAPTER_ONLY/,
+  );
+  await assert.rejects(
+    createClaimImageInputs(prepared(), () => false),
+    /LEASE_LOST/,
+  );
+});
+
+test('nested non-byte resources are rejected even when every byte grant is a valid image', async () => {
+  for (const nested of [
+    { modelId: 'upscale-model' },
+    { $resource: { kind: 'model', id: 'upscale-model' } },
+    { $resource: { kind: 'preset', id: 'alpine', family: 'look' } },
+    { grade: { look: 'alpine' } },
+    { transitionIn: { type: 'Cross dissolve' } },
+  ]) {
+    const claim = prepared();
+    claim.snapshot.studio.graph.timeline.items[0].effects = [{ params: { nested } }];
+    await assert.rejects(
+      createClaimImageInputs(claim, () => true),
+      /RESOURCE_CLOSURE_CHANGED/,
+    );
+  }
+});
+
+test('matching grant hashes do not admit text, video, malformed or incomplete image content', async () => {
+  const truncated = png.subarray(0, png.length - 5);
+  const corrupt = Buffer.from(png);
+  corrupt[corrupt.indexOf(Buffer.from('IDAT')) + 4] ^= 0xff;
+  for (const bytes of [
+    Buffer.from('authorized specimen'),
+    Buffer.from('....ftypisom'),
+    Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+    truncated,
+    corrupt,
+  ]) {
+    const claim = prepared();
+    const input = claim.inputs.get(`library-asset:${mediaId}`);
+    input.bytes = bytes;
+    input.sha256 = createHash('sha256').update(bytes).digest('hex');
+    await assert.rejects(createClaimImageInputs(claim, () => true));
+  }
+});
+
+for (const format of ['jpeg', 'heic'])
+  test(
+    `verified ${format} enters Studio as owned linear HDR with a separate SDR URL`,
+    { skip: !process.env.FRAMELEAF_HDR_BINDING },
+    async () => {
+      const codec = createRequire(import.meta.url)(process.env.FRAMELEAF_HDR_BINDING);
+      const pixels = new Float32Array(64 * 32 * 4);
+      for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+      const original = codec[format === 'heic' ? 'encodeHeic' : 'encode'](
+        Buffer.from(pixels.buffer),
+        64,
+        32,
+        1,
+        16_777_216,
+        1024 ** 3,
+      );
+      const claim = prepared();
+      const input = claim.inputs.get(`library-asset:${mediaId}`);
+      input.bytes = Buffer.from(original);
+      input.sha256 = createHash('sha256').update(original).digest('hex');
+      const previous = process.env.FRAMELEAF_HDR_IMAGES;
+      process.env.FRAMELEAF_HDR_IMAGES = 'experimental';
+      let adapted;
+      try {
+        adapted = await createClaimImageInputs(claim, () => true);
+        const raster = adapted.input.hdrRasters[mediaId];
+        assert.equal(raster.transfer, 'linear');
+        assert.equal(raster.width, 64);
+        assert.equal(raster.height, 32);
+        assert.equal(raster.referenceWhite, 203);
+        assert.ok(raster.rgba instanceof Float32Array);
+        // Pinned lossy codecs allow 0.5 reference-white units for these coloured HDR bars.
+        for (let channel = 0; channel < 4; channel++)
+          assert.ok(Math.abs(raster.rgba[channel] - [8, 4, 2, 1][channel]) <= 0.5);
+        assert.deepEqual(input.bytes, original);
+        const response = await fetch(adapted.input.media[0].url);
+        assert.equal(response.headers.get('content-type'), 'image/jpeg');
+        const baseline = Buffer.from(await response.arrayBuffer());
+        assert.equal(codec.inspect(baseline, 16_777_216, 1024 ** 3).dynamicRange, 'sdr');
+        if (process.env.FRAMELEAF_STUDIO_HDR_GPU_TEST === '1') {
+          const require = createRequire(new URL('../engine/package.json', import.meta.url));
+          const { chromium } = require('playwright');
+          const { chromeLaunchArgs } = await import('../engine/headless/lib/cli.mjs');
+          const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
+          try {
+            const harness = await adapted.createHarness();
+            const page = await browser.newPage();
+            const origin = new URL(harness.harnessUrl).origin;
+            await page.route('**/*', (route) =>
+              new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
+            );
+            await page.goto(harness.harnessUrl);
+            await page.waitForFunction(() => Boolean(window.freecut?.ready));
+            const measured = await page.evaluate(
+              async ({ project, media, id, raster }) => {
+                const adapter = await navigator.gpu?.requestAdapter();
+                if (
+                  !adapter ||
+                  adapter.info.isFallbackAdapter ||
+                  /software|swiftshader|llvmpipe/i.test(JSON.stringify(adapter.info))
+                )
+                  throw new Error('HARDWARE_GPU_REQUIRED');
+                project.metadata.colorManagement = { workingRange: 'hdr' };
+                const result = await window.freecut.renderFrameSignal({
+                  project,
+                  media,
+                  frame: 0,
+                  strict: true,
+                  target: 'pq',
+                  hdrRasters: { [id]: { ...raster, rgba: Float32Array.from(raster.rgba) } },
+                });
+                const offset = (Math.floor(result.height / 2) * result.width + Math.floor(result.width / 2)) * 4;
+                return {
+                  width: result.width,
+                  height: result.height,
+                  sample: Array.from(result.rgba.slice(offset, offset + 4)),
+                };
+              },
+              {
+                project: adapted.input.project,
+                media: harness.media,
+                id: mediaId,
+                raster: { ...raster, rgba: Array.from(raster.rgba) },
+              },
+            );
+            assert.equal(measured.width, 32);
+            assert.equal(measured.height, 32);
+            // Independent ST 2084 EOTF: the rendered signal must still exceed SDR white.
+            const linear = measured.sample.slice(0, 3).map((value) => {
+              const p = value ** (1 / (2523 / 32));
+              return (
+                ((Math.max(p - 3424 / 4096, 0) / (2413 / 128 - (2392 / 128) * p)) ** (1 / (2610 / 16384)) * 10000) / 203
+              );
+            });
+            assert.ok(Math.max(...linear) > 6);
+            assert.ok(Math.min(...linear) > 1);
+            assert.ok(Math.abs(measured.sample[3] - 1) < 0.001);
+          } finally {
+            await browser.close();
+          }
+        }
+        await adapted.dispose();
+        assert.ok(raster.rgba.every((value) => value === 0));
+        assert.deepEqual(input.bytes, original);
+        delete process.env.FRAMELEAF_HDR_IMAGES;
+        await assert.rejects(
+          createClaimImageInputs(claim, () => true),
+          /HDR_IMAGE_PROCESSING_DISABLED/,
+        );
+      } finally {
+        await adapted?.dispose();
+        if (previous === undefined) delete process.env.FRAMELEAF_HDR_IMAGES;
+        else process.env.FRAMELEAF_HDR_IMAGES = previous;
+      }
+    },
+  );
+
+for (const format of ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'sdr-document', '48mp-hdr-jpeg'])
+  test(
+    `Studio ${format} round trip uses the real float renderer and isolated codec`,
+    {
+      skip:
+        process.env.FRAMELEAF_STUDIO_HDR_GPU_TEST !== '1' ||
+        !process.env.FRAMELEAF_HDR_BINDING ||
+        (format === '48mp-hdr-jpeg' && process.env.FRAMELEAF_STUDIO_HDR_LARGE_TEST !== '1'),
+      timeout: 180_000,
+    },
+    async () => {
+      const large = format === '48mp-hdr-jpeg';
+      const outputFormat = large ? 'hdr-jpeg' : format === 'sdr-document' ? 'sdr-jpeg' : format;
+      const width = large ? 8000 : 32,
+        height = large ? 6000 : 32;
+      const sourceWidth = large ? width : 64,
+        sourceHeight = large ? height : 32;
+      const budget = large ? 6 * 1024 ** 3 : 1024 ** 3;
+      const maxPixels = large ? 48_000_000 : 16_777_216;
+      const { renderStillImage } = await import('./render-worker-still-executor.mjs');
+      const { readFile } = await import('node:fs/promises');
+      const codec = createRequire(import.meta.url)(process.env.FRAMELEAF_HDR_BINDING);
+      const pixels = new Float32Array(sourceWidth * sourceHeight * 4);
+      for (let i = 0; i < pixels.length; i += 4) {
+        // Neutral row markers keep this alignment check invariant across BT.2020/P3 conversion.
+        const marker = i >= pixels.length / 2 ? 12 : 8;
+        pixels.set(large ? [marker, marker, marker, 1] : [8, 4, 2, 1], i);
+      }
+      const source =
+        format === 'sdr-document'
+          ? await sharp({ create: { width: 64, height: 32, channels: 3, background: '#6080c0' } })
+              .png()
+              .toBuffer()
+          : codec.encode(
+              Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+              sourceWidth,
+              sourceHeight,
+              2,
+              maxPixels,
+              budget,
+            );
+      const claim = prepared();
+      claim.snapshot.studio.graph.metadata.width = width;
+      claim.snapshot.studio.graph.metadata.height = height;
+      claim.snapshot.studio.graph.metadata.colorManagement = {
+        workingRange: format === 'sdr-document' ? 'sdr' : 'hdr',
+      };
+      claim.snapshot.contract = {
+        image: {
+          version: 1,
+          format: outputFormat,
+          width,
+          height,
+          frame: 0,
+          dynamicRange: outputFormat === 'sdr-jpeg' ? 'sdr' : 'hdr',
+          outputIntent: format === 'sdr-document' ? 'sdr' : 'hdr',
+          referenceWhite: 203,
+          renderer: 'frameleaf-studio-image-v1',
+        },
+        video: { minBitDepth: 8, transfer: null },
+        audio: null,
+      };
+      claim.snapshot.timing = { cadence: '24/1', timeBase: '1/24', sources: [] };
+      claim.settings = { format: outputFormat, color: 'preserve', resolution: 'original', audio: 'preserve' };
+      const input = claim.inputs.get(`library-asset:${mediaId}`);
+      input.bytes = Buffer.from(source);
+      input.sha256 = createHash('sha256').update(source).digest('hex');
+      const previous = process.env.FRAMELEAF_HDR_IMAGES;
+      process.env.FRAMELEAF_HDR_IMAGES = 'experimental';
+      let adapted;
+      let live = true;
+      const release = [];
+      const started = performance.now();
+      try {
+        adapted = await createClaimImageInputs(claim, () => live);
+        if (large) {
+          const raster = adapted.input.hdrRasters[mediaId];
+          const offset = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4;
+          assert.ok(raster.rgba[offset] > 6 && raster.rgba[offset + 2] > 1, 'HDR_INPUT_HEADROOM_LOST');
+        }
+        await renderStillImage(
+          {
+            claim,
+            prepared: claim,
+            engineInputs: adapted,
+            isLeaseActive: () => live,
+            elapsedMs: () => performance.now() - started,
+            heartbeat: async () => {},
+            registerRelease: (callback) => release.push(callback),
+          },
+          async ({ outputPath, checksum, sizeInBytes }) => {
+            const bytes = await readFile(outputPath);
+            assert.equal(createHash('sha256').update(bytes).digest('hex'), checksum);
+            assert.equal(String(bytes.length), sizeInBytes);
+            const encoding = codec.inspect(bytes, maxPixels, budget);
+            assert.equal(encoding.dynamicRange, outputFormat === 'sdr-jpeg' ? 'sdr' : 'hdr');
+            if (outputFormat === 'sdr-jpeg') {
+              const metadata = await sharp(bytes).metadata();
+              assert.deepEqual([metadata.width, metadata.height], [width, height]);
+              assert.ok(!metadata.exif && !metadata.xmp);
+              if (format === 'sdr-document') {
+                const rgb = await sharp(bytes).raw().removeAlpha().toBuffer();
+                const offset = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 3;
+                for (let channel = 0; channel < 3; channel++)
+                  assert.ok(Math.abs(rgb[offset + channel] - [96, 128, 192][channel]) <= 4, 'SDR_APPEARANCE_CHANGED');
+                rgb.fill(0);
+              }
+            } else {
+              const decoded = codec.decode(bytes, maxPixels, budget);
+              const rgb = new Float32Array(
+                decoded.data.buffer.slice(decoded.data.byteOffset, decoded.data.byteOffset + decoded.data.length),
+              );
+              const offset = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4;
+              assert.ok(
+                Math.max(...rgb.slice(offset, offset + 3)) > 6,
+                `HDR_HEADROOM_LOST: ${Array.from(rgb.slice(offset, offset + 4))}`,
+              );
+              assert.ok(
+                Math.min(...rgb.slice(offset, offset + 3)) > 1,
+                `HDR_HEADROOM_LOST: ${Array.from(rgb.slice(offset, offset + 3))}`,
+              );
+              if (large) {
+                for (const [row, red] of [
+                  [0, 8],
+                  [height - 1, 12],
+                ]) {
+                  const offset = (row * width + Math.floor(width / 2)) * 4;
+                  assert.ok(Math.abs(rgb[offset] - red) < 1, `HDR_READBACK_ROWS_CHANGED: row ${row}, expected ${red}, actual ${rgb[offset]}`);
+                }
+              }
+              rgb.fill(0);
+              decoded.data.fill(0);
+            }
+            bytes.fill(0);
+          },
+        );
+        assert.deepEqual(input.bytes, source);
+        if (large) {
+          const secondId = '00000000-0000-4000-8000-000000000002';
+          claim.snapshot.studio.graph.timeline.items.push({
+            ...claim.snapshot.studio.graph.timeline.items[0],
+            id: 'clip2',
+            mediaId: secondId,
+          });
+          claim.snapshot.studio.resources.push({
+            ...claim.snapshot.studio.resources[0],
+            key: `library-asset:${secondId}`,
+            id: secondId,
+            graphPath: '/timeline/items/1',
+          });
+          claim.inputs.set(`library-asset:${secondId}`, { ...input, resourceId: secondId });
+          await assert.rejects(
+            createClaimImageInputs(claim, () => live),
+            /IMAGE_RASTER_RESOURCE_LIMIT/,
+          );
+          assert.deepEqual(input.bytes, source);
+        }
+      } finally {
+        live = false;
+        for (const callback of release) await callback();
+        await adapted?.dispose();
+        pixels.fill(0);
+        source.fill(0);
+        if (previous === undefined) delete process.env.FRAMELEAF_HDR_IMAGES;
+        else process.env.FRAMELEAF_HDR_IMAGES = previous;
+      }
+    },
+  );
+
+
+test('resolved closure binds every graph reference and readable grant, including graph-only resources', () => {
+  const c = prepared();
+  const checksum = createHash('sha256').update(png).digest('hex');
+  c.inputs.get(`library-asset:${mediaId}`).declaredChecksum = checksum;
+  c.snapshot.studio.resources = [{ key: `library-asset:${mediaId}`, kind: 'library-asset', id: mediaId,
+    graphPath: '/timeline/items/0', grant: 'render', checksum }];
+  const refs = [{ kind: 'library-asset', id: mediaId, graphPath: '/timeline/items/0' }];
+  assert.doesNotThrow(() => validateClaimResourceClosure(c, { references: refs, violations: [] }));
+  const original = structuredClone(c.snapshot);
+  for (const alter of [
+    (x) => { delete x.snapshot.studio.resources; },
+    (x) => { x.snapshot.studio.resources[0].id = 'other'; },
+    (x) => { x.snapshot.studio.resources[0].checksum = 'other'; },
+    (x) => { x.snapshot.studio.resources[0].grant = 'none'; },
+    (x) => { x.snapshot.studio.resources.push(x.snapshot.studio.resources[0]); },
+    (x) => { x.inputs.set('unused', x.inputs.values().next().value); },
+    (x) => { x.inputs.values().next().value.bytes[0] ^= 1; },
+  ]) {
+    const bad = structuredClone(c);
+    // structuredClone converts Node Buffers to Uint8Array; retain an owned Buffer for the reader contract.
+    for (const input of bad.inputs.values()) input.bytes = Buffer.from(input.bytes);
+    alter(bad);
+    assert.throws(() => validateClaimResourceClosure(bad, { references: refs, violations: [] }));
+  }
+  assert.deepEqual(c.snapshot, original);
+  c.snapshot.studio.resources.push({ key: 'preset:look:alpine', kind: 'preset', family: 'look', id: 'alpine',
+    graphPath: '/timeline/items/0/effects/0', checksum: null, grant: 'none' });
+  refs.push({ kind: 'preset', family: 'look', id: 'alpine', graphPath: '/timeline/items/0/effects/0' });
+  assert.doesNotThrow(() => validateClaimResourceClosure(c, { references: refs, violations: [] }));
+  assert.throws(() => validateClaimResourceClosure(c, { references: refs, violations: [{ reason: 'external-locator' }] }));
+});
+
+
+test('full multiasset raster graph remains immutable through real metadata and private URL binding', async () => {
+  const c = prepared();
+  const secondId = '22222222-2222-4222-8222-222222222222';
+  const second = await sharp({ create: { width: 2, height: 3, channels: 4, background: '#ff0000' } }).png().toBuffer();
+  const checksum = createHash('sha256').update(second).digest('hex');
+  c.inputs.set(`library-asset:${secondId}`, { resourceId: secondId, kind: 'library-asset', bytes: second,
+    declaredChecksum: checksum, sha256: checksum });
+  c.snapshot.studio.resources.push({ key: `library-asset:${secondId}`, id: secondId, kind: 'library-asset',
+    graphPath: '/timeline/items/1', grant: 'render', checksum });
+  const graph = c.snapshot.studio.graph;
+  graph.duration = 2;
+  graph.timeline.items.push({ ...graph.timeline.items[0], id: 'clip-b', mediaId: secondId, from: 24 });
+  graph.timeline.items[0].effects = [{ id: 'fx', enabled: true, effect: {
+    type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: 0.15 } } }];
+  graph.timeline.transitions = [{ id: 'dissolve', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+    trackId: 'v1', leftClipId: 'clip', rightClipId: 'clip-b', durationInFrames: 12 }];
+  graph.timeline.keyframes = [{ itemId: 'clip', properties: [{ property: 'opacity', keyframes: [
+    { id: 'k0', frame: 0, value: 0, easing: 'linear' }, { id: 'k1', frame: 12, value: 1, easing: 'linear' } ] }] }];
+  const original = structuredClone(graph);
+  const adapter = await createClaimImageInputs(c, () => true);
+  try {
+    assert.deepEqual(adapter.input.project, original);
+    assert.equal(adapter.input.media.length, 2);
+    assert.equal(adapter.input.media[1].metadata.width, 2);
+    assert.equal(adapter.input.media[1].metadata.height, 3);
+    assert.deepEqual(Buffer.from(await (await fetch(adapter.input.media[1].url)).arrayBuffer()), second);
+    assert.deepEqual(graph, original);
+  } finally { await adapter.dispose(); }
+});
+
+function nestedClaim() {
+  const claim = prepared();
+  const graph = claim.snapshot.studio.graph;
+  const child = {
+    id: 'child',
+    name: 'Nested',
+    fps: 30,
+    width: 32,
+    height: 32,
+    durationInFrames: 30,
+    tracks: structuredClone(graph.timeline.tracks),
+    items: [{ ...graph.timeline.items[0], durationInFrames: 30 }],
+    transitions: [],
+    keyframes: [],
+  };
+  graph.timeline.compositions = [child];
+  graph.timeline.items = [
+    {
+      id: 'placement',
+      type: 'composition',
+      compositionId: 'child',
+      trackId: 'v1',
+      from: 0,
+      durationInFrames: 24,
+      sourceStart: 0,
+      sourceFps: 30,
+      compositionWidth: 32,
+      compositionHeight: 32,
+    },
+  ];
+  claim.snapshot.studio.resources[0].graphPath = '/timeline/compositions/0/items/0';
+  claim.snapshot.studio.resources.push({
+    key: 'nested-sequence:child',
+    kind: 'nested-sequence',
+    id: 'child',
+    graphPath: '/timeline/items/0',
+    grant: 'none',
+    checksum: null,
+  });
+  return claim;
+}
+
+const inlineLut = (params) => ({
+  id: 'lut',
+  enabled: true,
+  effect: { type: 'gpu-effect', gpuEffectType: 'gpu-lut', params },
+});
+
+test('whole canonical nested graph preserves parent mapping and verifies unused-definition resources', async () => {
+  const claim = nestedClaim();
+  const graph = claim.snapshot.studio.graph;
+  const unused = structuredClone(graph.timeline.compositions[0]);
+  unused.id = 'unused';
+  unused.items[0].id = 'unused-image';
+  const unusedId = '22222222-2222-4222-8222-222222222222';
+  unused.items[0].mediaId = unusedId;
+  const key = `library-asset:${unusedId}`;
+  claim.inputs.set(key, { ...claim.inputs.get(`library-asset:${mediaId}`), resourceId: unusedId, bytes: Buffer.from(png) });
+  claim.snapshot.studio.resources.push({ ...claim.snapshot.studio.resources[0], key, id: unusedId, graphPath: '/timeline/compositions/1/items/0' });
+  graph.timeline.compositions.push(unused);
+  const expected = structuredClone(graph);
+  const adapter = await createClaimImageInputs(claim, () => true);
+  try {
+    assert.deepEqual(adapter.input.project, expected);
+    assert.equal(adapter.input.media.length, 2);
+  } finally {
+    await adapter.dispose();
+  }
+});
+
+test('inline identity and nonidentity LUT data remain authored in nested graphs', async () => {
+  for (const params of [
+    { lutSize: '0', lutData: '', lutName: '' },
+    { lutSize: '2', lutData: Buffer.alloc(32, 127).toString('base64'), lutName: 'Authored grade' },
+  ]) {
+    const claim = nestedClaim();
+    claim.snapshot.studio.graph.timeline.compositions[0].items[0].effects = [inlineLut(params)];
+    const graph = structuredClone(claim.snapshot.studio.graph);
+    const adapter = await createClaimImageInputs(claim, () => true);
+    try {
+      assert.deepEqual(adapter.input.project, graph);
+    } finally {
+      await adapter.dispose();
+    }
+  }
+});
+
+for (const [name, params] of [
+  ['fractional size', { lutSize: '2.5', lutData: Buffer.alloc(32).toString('base64'), lutName: 'Bad' }],
+  ['oversize', { lutSize: '130', lutData: 'AAAA', lutName: 'Bad' }],
+  ['noncanonical base64', { lutSize: '2', lutData: Buffer.alloc(32).toString('base64') + '\n', lutName: 'Bad' }],
+  ['wrong length', { lutSize: '2', lutData: 'AAAA', lutName: 'Bad' }],
+  ['malformed identity', { lutSize: '0', lutData: '', lutName: 'Populated' }],
+])
+  test(`inline LUT refuses ${name} before creating engine resources`, async () => {
+    const claim = prepared();
+    claim.snapshot.studio.graph.timeline.items[0].effects = [inlineLut(params)];
+    await assert.rejects(async () => {
+      const adapter = await createClaimImageInputs(claim, () => true);
+      await adapter.dispose();
+    }, /INVALID_INLINE_LUT/);
+  });
+
+test('parent placement cadence must agree with actual child composition', async () => {
+  const claim = nestedClaim();
+  claim.snapshot.studio.graph.timeline.items[0].sourceFps = 24;
+  await assert.rejects(
+    createClaimImageInputs(claim, () => true),
+    /COMPOSITION_CADENCE_CHANGED/,
+  );
+});
+
+test('aggregate inline LUT allocation is bounded before decoding repeated cubes', () => {
+  const data = Buffer.alloc(100 ** 3 * 4).toString('base64');
+  const effects = Array.from({ length: 3 }, () => inlineLut({ lutSize: '100', lutData: data, lutName: 'Large' }));
+  assert.throws(() => validateInlineLuts({ effects }), /INLINE_LUT_ALLOCATION_LIMIT/);
+});
+
+test('serialized inline LUT graph limit remains independent of decoded allocation', async () => {
+  const claim = prepared();
+  claim.snapshot.studio.graph.timeline.items[0].effects = [
+    inlineLut({ lutSize: '129', lutData: Buffer.alloc(129 ** 3 * 4).toString('base64'), lutName: 'Large' }),
+  ];
+  await assert.rejects(
+    createClaimImageInputs(claim, () => true),
+    /GRAPH_RESOURCE_LIMIT/,
+  );
+});
+
+
+test('malformed LUT in an unused canonical definition refuses without identity fallback', async () => {
+  const claim = nestedClaim();
+  const unused = structuredClone(claim.snapshot.studio.graph.timeline.compositions[0]);
+  unused.id = 'unused';
+  unused.items[0].effects = [inlineLut({ lutSize: '2', lutData: 'AAAA', lutName: 'Invalid unused' })];
+  claim.snapshot.studio.graph.timeline.compositions.push(unused);
+  await assert.rejects(createClaimImageInputs(claim, () => true), /INVALID_INLINE_LUT/);
+});
+
+test('actual preparation pauses at post-await authority boundaries and terminal loss cannot finish it', async () => {
+  const { createClaimLeaseAuthority } = await import('./render-worker-claim.mjs');
+  for (const terminate of [false, true]) {
+    const claim = prepared();
+    const authority = createClaimLeaseAuthority();
+    authority.activate(performance.now() + 30_000);
+    const wait = authority.wait.bind(authority);
+    let reached;
+    const barrier = new Promise(resolve => { reached = resolve; });
+    let calls = 0;
+    authority.wait = async signal => {
+      // Initial admission, pre-read admission, then the configuration read's post-await gate.
+      if (++calls === 3) { authority.pending(); reached(); }
+      await wait(signal);
+    };
+    let settled = false;
+    const preparing = createClaimImageInputs(claim, authority.isActive, authority);
+    preparing.finally(() => { settled = true; }).catch(() => {});
+    await barrier;
+    await new Promise(resolve => setTimeout(resolve, 75));
+    assert.equal(settled, false, 'pending renewal must pause rather than abort preparation');
+    if (terminate) {
+      const failure = new Error('DEFINITIVE_PREPARATION_LEASE_LOSS');
+      authority.terminate(failure);
+      await assert.rejects(preparing, error => error === failure);
+    } else {
+      authority.activate(performance.now() + 30_000);
+      const adapter = await preparing;
+      try { assert.deepEqual(adapter.input.project, claim.snapshot.studio.graph); }
+      finally { await adapter.dispose(); }
+    }
+    assert.equal(authority.signal.aborted, true);
+    for (const input of claim.inputs.values()) input.bytes.fill(0);
+  }
+});
+
+test('actual private serving closes suspended open/read handles before forwarding after loss', async () => {
+  const fs = await import('node:fs');
+  const { createServer } = await import('node:http');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { serveFile } = await import('../engine/headless/lib/http-security.mjs');
+  const { createClaimLeaseAuthority } = await import('./render-worker-claim.mjs');
+  for (const boundary of ['open', 'read']) {
+    const folder = await mkdtemp(path.join(tmpdir(), 'frameleaf-lease-fs-test-'));
+    const file = path.join(folder, 'bound.png');
+    await writeFile(file, png, { mode: 0o600 });
+    const authority = createClaimLeaseAuthority();
+    authority.activate(performance.now() + 30_000);
+    let entered, release;
+    const reached = new Promise(resolve => { entered = resolve; });
+    const blocked = new Promise(resolve => { release = resolve; });
+    const originalOpen = fs.promises.open;
+    let closed = false, writes = 0;
+    fs.promises.open = async (...args) => {
+      const handle = await originalOpen(...args);
+      if (args[0] !== file) return handle;
+      const close = handle.close.bind(handle);
+      handle.close = async () => { try { return await close(); } finally { closed = true; } };
+      if (boundary === 'open') { entered(); await blocked; }
+      else {
+        const read = handle.read.bind(handle);
+        handle.read = async (...values) => { const result = await read(...values); entered(); await blocked; return result; };
+      }
+      return handle;
+    };
+    let served;
+    const servingDone = new Promise(resolve => { served = resolve; });
+    const server = createServer(async (req, res) => {
+      const write = res.write.bind(res);
+      res.write = (...args) => { writes++; return write(...args); };
+      try { await serveFile(req, res, file, { authority, allowRange: true }); }
+      finally { served(); }
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const reading = fetch(`http://127.0.0.1:${server.address().port}/media/bound`, { headers: { range: 'bytes=0-7' } }).then(response => response.arrayBuffer());
+      reading.catch(() => {});
+      await reached;
+      authority.terminate(new Error('DEFINITIVE_FS_LEASE_LOSS'));
+      release();
+      await assert.rejects(reading);
+      await new Promise(resolve => server.close(resolve));
+      await servingDone;
+      assert.equal(writes, 0, boundary + ' post-await fence must refuse every new forwarding');
+      assert.equal(closed, true, boundary + ' owned handle must close');
+    } finally {
+      release();
+      authority.terminate();
+      fs.promises.open = originalOpen;
+      server.closeAllConnections();
+      if (server.listening) await new Promise(resolve => server.close(resolve));
+      await rm(folder, { recursive: true, force: true });
+    }
+  }
+});
