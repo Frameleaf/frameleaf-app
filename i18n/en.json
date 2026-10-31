@@ -13968,6 +13968,7 @@
   "frameleaf_setup_tier_balanced_summary": "Sharper search, captions and faces. Already on this server; runs on any processor, faster with a graphics card.",
   "frameleaf_setup_tier_best": "Best",
   "frameleaf_setup_tier_best_summary": "Highest quality. About twice as slow on this server.",
+  "frameleaf_setup_tier_keep": "Keep current model ({model})",
   "frameleaf_setup_tier_label": "Model tier",
   "frameleaf_setup_tier_light": "Light",
   "frameleaf_setup_tier_light_summary": "Fastest. Good search and faces on any processor.",

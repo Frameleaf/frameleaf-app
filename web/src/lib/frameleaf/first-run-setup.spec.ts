@@ -9,6 +9,8 @@ import {
   flowSteps,
   goToStep,
   KEEP_LAYOUT,
+  KEEP_MODEL,
+  keepsUnlistedModel,
   loadAccountTool,
   loadLocalSetup,
   markSection,
@@ -296,7 +298,7 @@ describe('first-run setup state (FL-176)', () => {
       expect(defaultTier('new', { hardware: null })).toBe('balanced');
       expect(defaultTier('existing', { hardware: gpu, currentModel: 'ViT-B-32__openai' })).toBe('light');
       expect(defaultTier('existing', { hardware: gpu, currentModel: 'ViT-SO400M-16-SigLIP2-384__webli' })).toBe('best');
-      expect(defaultTier('existing', { hardware: gpu, currentModel: 'custom-model' })).toBe('balanced');
+      expect(defaultTier('existing', { hardware: gpu, currentModel: 'custom-model' })).toBe(KEEP_MODEL);
       expect(defaultTier('existing', { hardware: gpu })).toBe('balanced');
 
       const fresh = withDefaultTier(createSetup('new'), { hardware: gpu });
@@ -309,6 +311,40 @@ describe('first-run setup state (FL-176)', () => {
       // no change, no new state
       const same = createSetup('new');
       expect(withDefaultTier(same, { hardware: ml({ vramGb: 8 }) })).toBe(same);
+    });
+
+    it('pre-selects keeping an unlisted search model and leaves it unchanged unless a tier is chosen', () => {
+      const config = {
+        storageTemplate: { enabled: false, template: '{{y}}/{{filename}}', hashVerificationEnabled: true },
+        machineLearning: {
+          clip: { enabled: true, modelName: 'custom-model' },
+          facialRecognition: { enabled: true, modelName: 'antelopev2' },
+        },
+        backup: { database: { enabled: false, cronExpression: '0 02 * * *', keepLastAmount: 14 } },
+        newVersionCheck: { enabled: false },
+        map: { enabled: true, lightStyle: '', darkStyle: '' },
+      } as unknown as AdminConfigDto;
+      expect(keepsUnlistedModel('existing', 'custom-model')).toBe(true);
+      expect(keepsUnlistedModel('existing', 'ViT-B-32__openai')).toBe(false);
+      expect(keepsUnlistedModel('existing', undefined)).toBe(false);
+      expect(keepsUnlistedModel('new', 'custom-model')).toBe(false);
+      // a new server still starts at the hardware's tier
+      expect(defaultTier('new', { hardware: ml({ vramGb: 24 }), currentModel: 'custom-model' })).toBe('best');
+
+      const kept = withDefaultTier(createSetup('existing'), {
+        hardware: ml({ vramGb: 24 }),
+        currentModel: 'custom-model',
+      });
+      expect(kept.choices.model).toBe(KEEP_MODEL);
+      expect(applySetupChoices(config, kept).machineLearning).toEqual(config.machineLearning);
+      expect(needsReindex(config, kept)).toBe(false);
+      // the choice survives a resume
+      expect(parseSetup(JSON.stringify(kept), 'existing')?.choices.model).toBe(KEEP_MODEL);
+
+      // choosing a tier still switches the search model and re-indexes, as before
+      const best = { ...kept, choices: { ...kept.choices, model: 'best' as const } };
+      expect(applySetupChoices(config, best).machineLearning.clip.modelName).toBe('ViT-SO400M-16-SigLIP2-384__webli');
+      expect(needsReindex(config, best)).toBe(true);
     });
 
     it("keeps the administrator's tier once the tier step was reached", () => {
